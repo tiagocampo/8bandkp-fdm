@@ -22,7 +22,7 @@ Author: Tiago de Campos
 
 # Citation
 
- I used this code to compute results of 10.1021/acsaelm.0c00269    
+ I used this code to compute results of 10.1021/acsaelm.0c00269 and part of 10.1088/1361-648X/ab38a1.
 
  Please, add me to you citation list!
 
