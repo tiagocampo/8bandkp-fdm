@@ -22,20 +22,19 @@ Author: Tiago de Campos
 
 # Citation
 
- I used this code to compute results of
+ I used this code to compute results of 10.1021/acsaelm.0c00269    
 
-    MAYER, WILLIAM ; SCHIELA, WILLIAM F. ; YUAN, JOSEPH ; HATEFIPOUR, MEHDI ; SARNEY, WENDY L. ; SVENSSON, STEFAN P. ; LEFF, ASHER C. ; CAMPOS, TIAGO ; WICKRAMASINGHE, KAUSHINI S. ; DARTIAILH, MATTHIEU C. ; 'UTI', IGOR ; SHABANI, JAVAD . Superconducting Proximity Effect in InAsSb Surface Quantum Wells with In Situ Al Contacts . ACS Applied Electronic Materials, v. 2, p. 2351-2356, 2020.
-
-Please, add me to you citation list!
+ Please, add me to you citation list!
 
 ## If you use this software and wish to contribute to my citation count, here is a list of articles you can cite.
 
-    MAYER, WILLIAM ; SCHIELA, WILLIAM F. ; YUAN, JOSEPH ; HATEFIPOUR, MEHDI ; SARNEY, WENDY L. ; SVENSSON, STEFAN P. ; LEFF, ASHER C. ; CAMPOS, TIAGO ; WICKRAMASINGHE, KAUSHINI S. ; DARTIAILH, MATTHIEU C. ; 'UTI', IGOR ; SHABANI, JAVAD . Superconducting Proximity Effect in InAsSb Surface Quantum Wells with In Situ Al Contacts	. ACS Applied Electronic Materials, v. 2, p. 2351-2356, 2020.
-    DIRNBERGER, FLORIAN ; KAMMERMEIER, MICHAEL ; KÖNIG, JAN ; FORSCH, MORITZ ; FARIA JUNIOR, PAULO E. ; CAMPOS, TIAGO ; FABIAN, JAROSLAV ; SCHLIEMANN, JOHN ; SCHÜLLER, CHRISTIAN ; KORN, TOBIAS ; WENK, PAUL ; BOUGEARD, DOMINIQUE . Ultralong spin lifetimes in one-dimensional semiconductor nanowires . APPLIED PHYSICS LETTERS, v. 114, p. 202101, 2019.
-    CAMPOS, T; TOLOZA SANDOVAL, M A ; DIAGO-CISNEROS, L ; SIPAHI, G M . Electrical tuning of helical edge states in topological multilayers . JOURNAL OF PHYSICS-CONDENSED MATTER, v. 31, p. 495501, 2019.
-    CAMPOS, T.; FARIA JUNIOR, PAULO E. ; GMITRA, MARTIN ; SIPAHI, GUILHERME M. ; FABIAN, JAROSLAV . Spin-orbit coupling effects in zinc-blende InSb and wurtzite InAs nanowires: Realistic calculations with multiband k · p method. PHYSICAL REVIEW B, v. 97, p. 245402, 2018.
-    BASTOS, C. M. O. ; SABINO, F. ; FARIA JUNIOR, PAULO E. ; CAMPOS, T. ; SILVA, J. L. F. ; SIPAHI, G. M. . Stability and accuracy control of k · p parameters. Semiconductor Science and Technology (Print), v. 31, p. 105002, 2016.
-    FARIA JUNIOR, PAULO E. ; CAMPOS, TIAGO ; BASTOS, CARLOS M. O. ; GMITRA, MARTIN ; FABIAN, JAROSLAV ; SIPAHI, GUILHERME M. . Realistic multiband approach from and spin-orbit coupling effects of InAs and InP in wurtzite phase. Physical Review B, v. 93, p. 235204, 2016.
-    FARIA JUNIOR, P. E. ; CAMPOS, T. ; SIPAHI, G. M. . Interband polarized absorption in InP polytypic superlattices. JOURNAL OF APPLIED PHYSICS, v. 116, p. 193501, 2014.
+ * 10.1021/acsaelm.0c00269 
+ * 10.1063/1.5096970 
+ * 10.1088/1361-648X/ab38a1
+ * 10.1103/PhysRevB.97.245402
+ * 10.1088/0268-1242/31/10/105002
+ * 10.1103/PhysRevB.93.235204
+ * 10.1063/1.4901209
+
 
 
