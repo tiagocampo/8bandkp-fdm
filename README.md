@@ -36,5 +36,9 @@ Author: Tiago de Campos
  * 10.1103/PhysRevB.93.235204
  * 10.1063/1.4901209
 
+# LICENSE
+GNU General Public License v3.0
+just please cite 10.1021/acsaelm.0c00269 or one of the other listed articles if it suits more your work.
+
 
 
