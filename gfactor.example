@@ -1,6 +1,6 @@
-waveVector: kx
+waveVector: k0
 waveVectorMax: 0.1
-waveVectorStep: 11
+waveVectorStep: 0
 confinement:  1
 FDstep: 101
 numLayers:  3

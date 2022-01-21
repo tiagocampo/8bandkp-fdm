@@ -9,6 +9,7 @@ vpath  %.f90 $(SRC_D)
 vpath  %.mod $(HOMEDIR)
 vpath  %.o   $(HOMEDIR)
 
+
 DEBUG_FLAG := -g -fbacktrace -fbounds-check -fcheck=all -fopenmp #-ffpe-trap=zero,overflow,underflow,denormal #-Wall #-Wextra -pedantic -Wsurprising
 
 FPP := -x f95-cpp-input
@@ -22,15 +23,20 @@ FFLAGS=-ffree-line-length-none -mtune=native -march=native\
           -fno-second-underscore -ffree-form -fimplicit-none \
           -m64 -O2 -flto -funroll-loops
 
-LDFLAGS=-I/usr/include -L/usr/lib64 -L$(MKLROOT)/lib/intel64 -I$(MKLROOT)/include \
+# if you have installed mkl use this ldflgas
+#LDFLAGS=-I/usr/include -L/usr/lib64 -L$(MKLROOT)/lib/intel64 -I$(MKLROOT)/include \
       -I$(MKLROOT)/include/fftw -Wl,--no-as-needed -lmkl_gf_lp64 -lmkl_intel_thread \
       -lmkl_core -liomp5 -lpthread -lm -ldl -lfftw3 #-lfftw3f -lfftw3l
+
+# if you dont have mkl, but have normal lapack and blass use this
+LDFLAGS=-I/usr/include -L/usr/lib64 -lm -lfftw3 -llapack -lblas
+
 # #
 # LDFLAGS=-I/usr/include -L/usr/lib64 -L$(MKLROOT)/lib/intel64 -I$(MKLROOT)/include \
 #         -I$(MKLROOT)/include/fftw -Wl,--no-as-needed -lmkl_gf_lp64 -lmkl_sequential \
 # 				-lmkl_core -lpthread -lm -ldl -lfftw3 #-lfftw3f #-lfftw3l -lfftw3q -lquadmath
 
-all :  exe
+all :  exe gfactor
 .PHONY: all
 
 gfactor: gfactorCalculation
@@ -47,6 +53,7 @@ clean_exe: clean
 clean_files:
 	rm -f *.txt
 	rm -f fort.*
+	rm -f *dat
 
 clean: clean_obs clean_files
 
