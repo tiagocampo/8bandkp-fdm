@@ -1,0 +1,33 @@
+# Build directory
+build/
+
+# Compiled Object files
+*.o
+*.mod
+*.smod
+
+# Executables
+bandStructure
+gfactorCalculation
+
+# Data files
+*.dat
+fort.*
+*.txt
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*~
+
+# Debug files
+gmon.out
+core
+
+# Dependencies
+*.d
+
+# System specific files
+.DS_Store
+Thumbs.db 

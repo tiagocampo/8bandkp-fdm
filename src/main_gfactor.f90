@@ -270,7 +270,7 @@ program gfactor
   ! print *, HT
 
   ! if (smallk(k)%kx==0)
-   if (nlayers > 1 ) call writeEigenfunctions(N, 20, HT(1:N,6*fdstep-11:6*fdstep+10), 1, fdstep, z)
+   if (nlayers > 1 ) call writeEigenfunctions(N, N, HT, k, fdstep, z, nlayers==1)
 
   ! call writeEigenfunctions(N, evnum, HT(1:N,il:iuu), k, fdstep)
 

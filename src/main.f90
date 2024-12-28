@@ -37,8 +37,8 @@ program kpfdm
   real(kind=dp), allocatable :: eig(:,:), rwork(:)
   complex(kind=dp), allocatable :: work(:)
   complex(kind=dp), allocatable, dimension(:,:,:) :: eigv
+  complex(kind=dp), allocatable, dimension(:,:) :: HT, HTmp
   integer, allocatable :: iwork(:), ifail(:)
-  complex(kind=dp), allocatable, dimension(:,:) :: HT
   real(kind = dp), allocatable, dimension(:,:,:) :: kpterms
   real(kind = dp), allocatable, dimension(:,:) :: profile
 
@@ -142,8 +142,23 @@ program kpfdm
   evnum = numcb+numvb
   vl = 0
   vu = 0
-  il = 6*fdStep - numvb + 1
-  iuu = 6*fdStep + numcb
+  if (confinement == 0) then
+    ! For bulk calculations, select from 8x8 matrix directly
+    ! Note: In bulk we have exactly 8 bands
+    if (evnum > 8) then
+      print *, "Warning: requesting more bands than available in bulk (8). Using all 8 bands."
+      evnum = 8
+    end if
+    ! For bulk, we want valence bands first (6) then conduction bands (2)
+    ! LAPACK returns eigenvalues in ascending order
+    ! So we select all 8 eigenvalues and will reorder them later
+    il = 1
+    iuu = 8
+  else
+    ! For quantum wells, select from expanded basis
+    il = 6*fdStep - numvb + 1
+    iuu = 6*fdStep + numcb
+  end if
 
   NB = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
   NB = MAX(NB,N)
@@ -156,29 +171,20 @@ program kpfdm
   if (allocated(ifail)) deallocate(ifail)
   allocate(ifail(N))
   if (allocated(eig)) deallocate(eig)
-  allocate(eig(N,wvStep))
+  allocate(eig(8,wvStep))  ! For bulk, we only need 8 eigenvalues
   if (allocated(eigv)) deallocate(eigv)
-  allocate(eigv(N,evnum,wvStep))
+  allocate(eigv(8,8,wvStep))  ! For bulk, 8x8 eigenvectors
 
   eig(:,:) = 0_dp
   eigv(:,:,:) = 0_dp
 
-  ! lwork = 2*(NB+1)*N
-  ! if (allocated(work)) deallocate(work)
-  ! allocate(work(lwork))
-
   allocate(HT(N,N))
+  allocate(HTmp(8,8))  ! Temporary array for bulk diagonalization
   HT = 0.0_dp
-
+  HTmp = 0.0_dp
 
   if (allocated(work)) deallocate(work)
-  allocate(work(1))
-  lwork = -1
-  call zheevx('V','I','U',N,HT,N,vl,vu,il,iuu,ABSTOL,M,eig(:,k),eigv(:,:,k),&
-  & N,work,lwork,rwork,iwork,ifail,info)
-  lwork = work(1)
-  if (allocated(work)) deallocate(work)
-  allocate(work(lwork))
+  allocate(work(2*N))  ! Initial conservative allocation
 
   read(data_unit, *) label, externalField, EFtype
   print *, trim(label), externalField, EFtype
@@ -215,6 +221,8 @@ program kpfdm
     if (confDir == 'n') then !BULK
 
       call ZB8bandBulk(HT,smallk(k),params(1))
+      ! Copy to temporary array
+      HTmp = HT(1:8,1:8)
 
     else if (confDir == 'z') then ! QUANTUM WELL
 
@@ -239,22 +247,26 @@ program kpfdm
 
     end if
 
-    ! full diagonalization
-    ! call zheev('V', 'U', N, HT, N, eig(:,k), work, lwork, rwork, info)
-    ! if (info /= 0) stop "error diag"
-    !print *, "k = ", smallk(k)%kx, eig(:,k)
-    ! write(100,*) smallk(k)%kx, eig(il:iu,k)
+    ! Query optimal workspace
+    if (k == 1) then
+      if (allocated(work)) deallocate(work)
+      allocate(work(1))
+      lwork = -1
+      call zheev('V','U',8,HTmp,8,eig(:,k),work,lwork,rwork,info)
+      lwork = int(work(1))
+      if (allocated(work)) deallocate(work)
+      allocate(work(lwork))
+    end if
 
-    ! print *, 'before diag'
-    call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, ABSTOL, M, &
-    & eig(:,k), eigv(1:N,:,k), N, work, lwork, rwork, iwork, ifail, info)
+    ! Actual diagonalization - use zheev for full diagonalization
+    call zheev('V', 'U', 8, HTmp, 8, eig(:,k), work, lwork, rwork, info)
     if (info /= 0) stop "error diag"
-    ! print *, 'after diag'
-    ! write(100,*) smallk(k)%kx, eig(1:evnum,k)
 
-    if (smallk(k)%kx==0) call writeEigenfunctions(N, evnum, &
-    & eigv(1:N,1:evnum,k), k, fdstep, z)
-    ! call writeEigenfunctions(N, evnum, HT(1:N,il:iu), k, fdstep)
+    ! Copy eigenvectors
+    eigv(:,:,k) = HTmp
+
+    ! Write eigenfunctions for all k-points
+    call writeEigenfunctions(8, 8, eigv(:,:,k), k, fdstep, z, confinement==0)
 
   end do
   call writeEigenvalues(smallk, eig(1:evnum,:), wvStep)
@@ -266,6 +278,7 @@ program kpfdm
 
   if (allocated(smallk)) deallocate(smallk)
   if (allocated(HT)) deallocate(HT)
+  if (allocated(HTmp)) deallocate(HTmp)
   if (allocated(work)) deallocate(work)
   if (allocated(iwork)) deallocate(iwork)
   if (allocated(rwork)) deallocate(rwork)

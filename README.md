@@ -1,74 +1,121 @@
 # 8bandkp-fdm
-Fortran implementation of 8band ZB kp-method using finite difference method, working for bulk and quantum-wells
+Fortran implementation of 8band ZB k·p-method using finite difference method, working for bulk and quantum-wells
 
 ## Disclaim:
  * This software is for my personal usage only. It comes with no warranty at all.
 Author: Tiago de Campos
 
 ## Description:
- * Solves k.p Hamiltonian by finite differences method;
- * Its based on Chuang, S. L. and Chang, C. S., Semiconductor Science and Technology, 12, 252, 1997.
- * For a description of the derivatives see https://www.wias-berlin.de/people/john/LEHRE/NUM_PDE_FUB/num_pde_fub_2.pdf
- * Use of renormalization of the Kane interband momentum matrix element, P, suggested by Foreman B A 1997 Physical Review B 56 R12748.
- * g-factor calculation using second order Lowdin partitioning. Winkler, R. Spin-orbit coupling effects in two-dimensional electron and hole systems; Physics and Astronomy online Library 191; Springer, 2003. Tadjine, A; Niquet, Y.-M.; Delerue, C. Universal behavior of electron g-factors in semiconductor nanostructures. Physical Review B 2017, 95, 235437.
- * Addition of electric field, but no self-consistency calculation.
+ * Solves k·p Hamiltonian by finite differences method for zinc-blende semiconductors;
+ * Implements a full 8-band model (6 valence bands + 2 conduction bands) using modern Fortran;
+ * Based on Chuang, S. L. and Chang, C. S., Semiconductor Science and Technology, 12, 252, 1997;
+ * For a description of the derivatives see https://www.wias-berlin.de/people/john/LEHRE/NUM_PDE_FUB/num_pde_fub_2.pdf;
+ * Uses renormalization of the Kane interband momentum matrix element, P, suggested by Foreman B A 1997 Physical Review B 56 R12748;
+ * g-factor calculation using second order Lowdin partitioning, following:
+   - Winkler, R. Spin-orbit coupling effects in two-dimensional electron and hole systems; Physics and Astronomy online Library 191; Springer, 2003
+   - Tadjine, A; Niquet, Y.-M.; Delerue, C. Universal behavior of electron g-factors in semiconductor nanostructures. Physical Review B 2017, 95, 235437
+ * Supports external electric field (non-self-consistent calculation)
+ * Parallel processing support through OpenMP
+ * High-performance linear algebra operations using LAPACK/MKL
+
+## Key Features:
+ * Full 8-band k·p Hamiltonian implementation
+ * Support for both bulk and quantum well calculations
+ * Finite difference method for spatial discretization
+ * Multiple material layer support for heterostructures
+ * Band structure calculations along arbitrary k-vector directions
+ * g-factor calculations for spin-related properties
+ * External electric field effects
+ * Efficient sparse matrix techniques
+ * OpenMP parallelization for improved performance
 
 ## Use:
 
 ### General info
 
- * makefile provided
+ * makefile provided with MKL and standard LAPACK/BLAS options
  * example input.cfg provided
- * some materials have built-in parameters, check parameters.f90 to see availability. You can add more if so pleased.
- * Material parameters can be found at Vurgaftman, I. Meyer, J. R. and Ram-Mohan, L. R., Journal of Applied Physics, 11, 5815, 2001.
+ * Built-in material parameters for common semiconductors (check parameters.f90)
+ * Additional material parameters can be found in Vurgaftman, I. Meyer, J. R. and Ram-Mohan, L. R., Journal of Applied Physics, 11, 5815, 2001
 
 ### Compilation steps
 
-Steps to compile and run the program
+Steps to compile and run the program:
 
- * modify Makefile to reflect either intel mkl library or just un-optimized lapack and blas. You should choose the correct LDFLAGS.
+ * modify Makefile to reflect either intel mkl library or standard lapack and blas by selecting appropriate LDFLAGS
  * make all
 
-This will generate two executable files: bandStructure and gfactorCalculation.
-
-To compute the band structure just run ./bandStructure
-
-To compute the gfactors just run ./gfactorCalculation
+This will generate two executable files:
+ * bandStructure: for electronic band structure calculations
+ * gfactorCalculation: for g-factor computations
 
 ### Input file structure
 
- * waveVector: reciprocal space direction kx or ky or kz. For confined system should be kx or ky since kz is the confined direction.
- * waveVectorMax: percentage of Brillouin Zone to compute. Should not be too far due to k.p being an approximation to the Brillouin zone center.
- * waveVectorStep: number of points between k=0 and k=kmax
- * confinement: 0 for bulk 1 for quantum well
- * FDStep: number of discretization points.
- * numLayers: number of layers that your quantum well is formed. Centered at 0.
- * material
-	* material1: initial and final position of material. Usually material 1 is the host and the rest of materials make the well inside. Band offset. See input.cfg for example
-	* material2: inital and final position and band offset
-	* etc
- * numcb: number of conduction band. Should be 2 for bulk and not exceed 2 x fdstep for confined system
- * numvb: number of valence band. Should be 6 for bulk and not exceed 6 x fdstep for confined system.
- * ExternalField: 0 or 1 and EF. Sets filed on aor off and set type. EF means electric field and it is the only one implemented
- * EFParams: strenght of the field.
+ * waveVector: reciprocal space direction (kx, ky, or kz). For confined systems, use kx or ky (kz is the confined direction)
+ * waveVectorMax: percentage of Brillouin Zone to compute (keep close to zone center for k·p validity)
+ * waveVectorStep: number of k-points between k=0 and k=kmax
+ * confinement: 0 for bulk, 1 for quantum well
+ * FDStep: number of spatial discretization points
+ * numLayers: number of layers in the quantum well structure (centered at 0)
+ * material definitions:
+    * material1: host material (defines outer regions)
+    * material2...N: well/barrier materials with positions and band offsets
+ * numcb: number of conduction bands (2 for bulk, ≤ 2 × fdstep for confined)
+ * numvb: number of valence bands (6 for bulk, ≤ 6 × fdstep for confined)
+ * ExternalField: 0/1 and type (EF for electric field)
+ * EFParams: field strength parameter
+
+### Output files
+
+The program generates several output files depending on the calculation type:
+
+#### Band Structure Calculation (bandStructure):
+1. `eigenvalues.dat`: Contains the energy eigenvalues for each k-point
+   * Format: k-vector value followed by energy values
+   * For bulk: outputs 8 bands
+   * For quantum wells: outputs all requested bands (numcb + numvb)
+
+2. `eigenfunctions_k_#####_ev_#####.dat`: Wavefunctions at k=0
+   * Generated for each eigenstate
+   * For bulk: only the 8 main bands
+   * For quantum wells: includes position (z) and wavefunction components for all bands
+   * Format: z-position followed by wavefunction components for each band
+
+3. `parts.dat`: Band character analysis
+   * For bulk: direct eigenvector components
+   * For quantum wells: integrated probability densities for each band component
+   * Format: 8 columns representing contribution from each band
+
+4. `fort.101`: Potential profile (quantum wells only)
+   * Contains the potential profile along the growth direction
+   * Format: z-position and potential values for different bands
+
+#### G-factor Calculation (gfactorCalculation):
+* Similar output structure to band structure calculation
+* Additional g-factor specific results for magnetic field effects
+* Includes Zeeman splitting information
 
 ### Pre-requisits
 
- * fortran compiler, blas, lapack and fftw3
- * On ubuntu: sudo apt install gfortran gcc g++ liblapack-dev libblas-dev libfftw3-dev 
+ * Fortran compiler (gfortran recommended)
+ * BLAS and LAPACK libraries
+ * FFTW3 library
+ * OpenMP support (included in most compilers)
 
-The above will install un-optimized lapack and blas. For the intel version, search for intel mkl to see how to install it.
+#### Ubuntu installation:
+```bash
+sudo apt install gfortran gcc g++ liblapack-dev libblas-dev libfftw3-dev
+```
 
+For optimal performance, Intel MKL is recommended (see Intel's website for installation)
 
 # Citation
 
- I used this code to compute results of 10.1021/acsaelm.0c00269 and part of 10.1088/1361-648X/ab38a1.
+This code has been used in several published works. If you use it, please cite:
 
- Please, add me to you citation list!
+Primary citation: 10.1021/acsaelm.0c00269
 
-## If you use this software and wish to contribute to my citation count, here is a list of articles you can cite.
-
- * 10.1021/acsaelm.0c00269 
+Additional relevant works:
  * 10.1063/1.5096970 
  * 10.1088/1361-648X/ab38a1
  * 10.1103/PhysRevB.97.245402
@@ -78,7 +125,7 @@ The above will install un-optimized lapack and blas. For the intel version, sear
 
 # LICENSE
 GNU General Public License v3.0
-just please cite 10.1021/acsaelm.0c00269 or one of the other listed articles if it suits more your work.
+Please cite 10.1021/acsaelm.0c00269 or one of the other listed articles if it better suits your work.
 
 
 
