@@ -11,20 +11,12 @@ set ylabel 'Energy (eV)'
 set grid
 
 # Style settings
-set style line 1 lt 1 lw 2 pt 7 ps 0.5 lc rgb '#0060ad'  # Blue (CB)
-set style line 2 lt 1 lw 2 pt 7 ps 0.5 lc rgb '#dd181f'  # Red (HH)
-set style line 3 lt 1 lw 2 pt 7 ps 0.5 lc rgb '#00A000'  # Green (LH)
-set style line 4 lt 1 lw 2 pt 7 ps 0.5 lc rgb '#9400D3'  # Purple (SO)
+set style data lines
+set style line 1 lw 2 lc rgb '#0060ad'  # Blue
 
 # Plot data
-plot '../output/eigenvalues.dat' using 1:2 title 'VB1' w l ls 2, \
-     '' using 1:3 title 'VB2' w l ls 2, \
-     '' using 1:4 title 'VB3' w l ls 3, \
-     '' using 1:5 title 'VB4' w l ls 3, \
-     '' using 1:6 title 'VB5' w l ls 4, \
-     '' using 1:7 title 'VB6' w l ls 4, \
-     '' using 1:8 title 'CB1' w l ls 1, \
-     '' using 1:9 title 'CB2' w l ls 1
+plot '../output/eigenvalues.dat' using 1:2 title 'Band 1' ls 1, \
+     for [i=3:*] '../output/eigenvalues.dat' using 1:i title sprintf('Band %d',i-1) ls 1
 
 # Reset terminal
 set output

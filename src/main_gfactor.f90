@@ -153,7 +153,7 @@ program gfactor
   print *, trim(label), numvb
 
   print *, 'adjusting numcb and numvb to get all states'
-  numcb = 2*fdStep
+  numcb = 2!2*fdStep
   numvb = 6*fdStep
 
   evnum = numcb+numvb

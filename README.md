@@ -17,6 +17,8 @@ Author: Tiago de Campos
  * Supports external electric field (non-self-consistent calculation)
  * Parallel processing support through OpenMP
  * High-performance linear algebra operations using LAPACK/MKL
+ * Selective eigenvalue computation for improved performance
+ * Automatic band structure visualization with customizable plotting
 
 ## Key Features:
  * Full 8-band k·p Hamiltonian implementation
@@ -28,6 +30,10 @@ Author: Tiago de Campos
  * External electric field effects
  * Efficient sparse matrix techniques
  * OpenMP parallelization for improved performance
+ * Selective eigenvalue computation:
+   - Bulk: Up to 8 bands (2 CB + 6 VB)
+   - Quantum wells: Up to 2×fdStep CB and 6×fdStep VB states
+ * Automated visualization tools for band structure and wavefunctions
 
 ## Use:
 
@@ -60,8 +66,12 @@ This will generate two executable files:
  * material definitions:
     * material1: host material (defines outer regions)
     * material2...N: well/barrier materials with positions and band offsets
- * numcb: number of conduction bands (2 for bulk, ≤ 2 × fdstep for confined)
- * numvb: number of valence bands (6 for bulk, ≤ 6 × fdstep for confined)
+ * numcb: number of conduction bands to compute
+    * For bulk: maximum 2
+    * For quantum wells: maximum 2 × fdstep
+ * numvb: number of valence bands to compute
+    * For bulk: maximum 6
+    * For quantum wells: maximum 6 × fdstep
  * ExternalField: 0/1 and type (EF for electric field)
  * EFParams: field strength parameter
 

@@ -139,25 +139,44 @@ program kpfdm
   print *, trim(label), numcb
   read(data_unit, *) label, numvb
   print *, trim(label), numvb
-  evnum = numcb+numvb
-  vl = 0
-  vu = 0
-  if (confinement == 0) then
-    ! For bulk calculations, select from 8x8 matrix directly
-    ! Note: In bulk we have exactly 8 bands
+  evnum = numcb + numvb
+  
+  ! Set matrix dimensions and eigenvalue range
+  N = fdStep * 8
+  if (confDir == 'n') then
+    N = 8  ! For bulk, we only need 8x8
     if (evnum > 8) then
       print *, "Warning: requesting more bands than available in bulk (8). Using all 8 bands."
       evnum = 8
+      numcb = 2
+      numvb = 6
     end if
-    ! For bulk, we want valence bands first (6) then conduction bands (2)
-    ! LAPACK returns eigenvalues in ascending order
-    ! So we select all 8 eigenvalues and will reorder them later
+  end if
+
+  ! For quantum well, check if requested bands are within limits
+  if (confDir == 'z') then
+    if (numcb > 2*fdStep) then
+      print *, "Warning: requesting more conduction bands than available. Limiting to ", 2*fdStep
+      numcb = 2*fdStep
+    end if
+    if (numvb > 6*fdStep) then
+      print *, "Warning: requesting more valence bands than available. Limiting to ", 6*fdStep
+      numvb = 6*fdStep
+    end if
+    evnum = numcb + numvb
+  end if
+
+  vl = 0.0_dp
+  vu = 0.0_dp
+  if (confinement == 0) then
     il = 1
-    iuu = 8
+    iuu = evnum
   else
-    ! For quantum wells, select from expanded basis
-    il = 6*fdStep - numvb + 1
-    iuu = 6*fdStep + numcb
+    ! For quantum well, select the right range of states
+    ! We want the highest numvb valence states and lowest numcb conduction states
+    il = 6*fdStep - numvb + 1  ! Start from highest valence band
+    iuu = 6*fdStep + numcb     ! Up to highest conduction band
+    print *, "Computing states from index", il, "to", iuu
   end if
 
   NB = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
@@ -165,15 +184,19 @@ program kpfdm
   ABSTOL = DLAMCH('P')
 
   if (allocated(rwork)) deallocate(rwork)
-  allocate(rwork(7*N))
+  allocate(rwork(7*N))  ! For ZHEEVX
   if (allocated(iwork)) deallocate(iwork)
   allocate(iwork(5*N))
   if (allocated(ifail)) deallocate(ifail)
   allocate(ifail(N))
   if (allocated(eig)) deallocate(eig)
-  allocate(eig(8,wvStep))  ! For bulk, we only need 8 eigenvalues
+  allocate(eig(iuu-il+1,wvStep))  ! Only store the states we want
   if (allocated(eigv)) deallocate(eigv)
-  allocate(eigv(8,8,wvStep))  ! For bulk, 8x8 eigenvectors
+  if (confDir == 'n') then
+    allocate(eigv(8,evnum,wvStep))  ! 8x8 for bulk
+  else
+    allocate(eigv(N,iuu-il+1,wvStep))  ! Only store the states we want
+  end if
 
   eig(:,:) = 0_dp
   eigv(:,:,:) = 0_dp
@@ -183,8 +206,9 @@ program kpfdm
   HT = 0.0_dp
   HTmp = 0.0_dp
 
+  ! Initial workspace allocation
   if (allocated(work)) deallocate(work)
-  allocate(work(2*N))  ! Initial conservative allocation
+  allocate(work(N))  ! Will be resized after workspace query
 
   read(data_unit, *) label, externalField, EFtype
   print *, trim(label), externalField, EFtype
@@ -222,57 +246,80 @@ program kpfdm
 
     print *, smallk(k)%kx, smallk(k)%ky, smallk(k)%kz
     if (confDir == 'n') then !BULK
-
       call ZB8bandBulk(HT,smallk(k),params(1))
       ! Copy to temporary array
       HTmp = HT(1:8,1:8)
 
-    else if (confDir == 'z') then ! QUANTUM WELL
+      ! Query optimal workspace
+      if (k == 1) then
+        if (allocated(work)) deallocate(work)
+        allocate(work(1))
+        lwork = -1
+        call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:evnum,k), &
+                   HTmp, 8, work, lwork, rwork, iwork, ifail, info)
+        lwork = int(real(work(1)))
+        if (allocated(work)) deallocate(work)
+        allocate(work(lwork))
+      end if
 
+      ! Actual diagonalization - use zheevx for selected eigenvalues
+      call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:evnum,k), &
+                 HTmp, 8, work, lwork, rwork, iwork, ifail, info)
+      if (info /= 0) then
+        print *, "Diagonalization error in bulk calculation, info = ", info
+        if (info < 0) then
+          print *, "Parameter ", -info, " had illegal value"
+        end if
+        stop "error diag"
+      end if
+
+      ! For bulk, just copy the selected eigenvectors
+      eigv(:,:,k) = HTmp(:,1:evnum)
+
+    else if (confDir == 'z') then ! QUANTUM WELL
       call ZB8bandQW(HT, smallk(k), profile, kpterms)
 
-      ! do lin=1,N
-      !  do col=lin,N
-      !     if ( zabs(HT(lin,col) - dconjg(HT(col,lin))) .gt. 1e-4) then
-      !        print *, lin, col, HT(lin,col), HT(col,lin), zabs(HT(lin,col)-dconjg(HT(col,lin)))
-      !     end if
-      !  end do
-      ! end do
-      !
-      ! do ii = 1, N, 1
-      !   write(103,*) (real(HT(ii,jj)), jj=1, N)
-      ! end do
-      ! stop
+      ! Query optimal workspace for full matrix
+      if (k == 1) then
+        if (allocated(work)) deallocate(work)
+        allocate(work(1))
+        lwork = -1
+        call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,k), &
+                   HT, N, work, lwork, rwork, iwork, ifail, info)
+        lwork = int(real(work(1)))
+        if (allocated(work)) deallocate(work)
+        allocate(work(lwork))
+      end if
 
+      ! Actual diagonalization of full matrix using zheevx
+      call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,k), &
+                 HT, N, work, lwork, rwork, iwork, ifail, info)
+      if (info /= 0) then
+        print *, "Diagonalization error in quantum well calculation, info = ", info
+        if (info < 0) then
+          print *, "Parameter ", -info, " had illegal value"
+        end if
+        stop "error diag"
+      end if
+
+      ! For quantum well, copy only the selected eigenvectors
+      eigv(:,:,k) = HT(:,1:iuu-il+1)
     else
-
       stop "verify confinement direction or something else"
-
     end if
 
-    ! Query optimal workspace
-    if (k == 1) then
-      if (allocated(work)) deallocate(work)
-      allocate(work(1))
-      lwork = -1
-      call zheev('V','U',8,HTmp,8,eig(:,k),work,lwork,rwork,info)
-      lwork = int(work(1))
-      if (allocated(work)) deallocate(work)
-      allocate(work(lwork))
+    ! Write eigenfunctions only at k=0 or specific k-points
+    if (k == 1 .or. k == int(wvStep/2) .or. k == wvStep) then  ! Write at start, middle, and end k-points
+      if (confDir == 'n') then
+        call writeEigenfunctions(8, min(evnum,8), HTmp(:,1:min(evnum,8)), k, fdstep, z, .true.)
+      else
+        ! For quantum well, write only the requested number of states
+        call writeEigenfunctions(N, iuu-il+1, HT(:,1:iuu-il+1), k, fdstep, z, .false.)
+      end if
     end if
-
-    ! Actual diagonalization - use zheev for full diagonalization
-    call zheev('V', 'U', 8, HTmp, 8, eig(:,k), work, lwork, rwork, info)
-    if (info /= 0) stop "error diag"
-
-    ! Copy eigenvectors
-    eigv(:,:,k) = HTmp
-
-    ! Write eigenfunctions for all k-points
-    call writeEigenfunctions(8, 8, eigv(:,:,k), k, fdstep, z, confinement==0)
 
   end do
-  call writeEigenvalues(smallk, eig(1:evnum,:), wvStep)
+  call writeEigenvalues(smallk, eig(:,:), wvStep)
   ! call writeEigenvalues(smallk, eig(il:iu,:), wvStep)
 
 

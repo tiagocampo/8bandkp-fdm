@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2024-03-19]
+
+### Changed
+- Modified diagonalization method in `src/main.f90`:
+  - Reverted from `zheev` back to `zheevx` to compute only specified eigenvalues
+  - Added proper range selection for quantum well states (il to iuu)
+  - Added checks to limit requested bands to available states (2*fdStep for CB, 6*fdStep for VB)
+  - Improved error handling for diagonalization failures
+  - Files affected: `src/main.f90`
+
+- Updated band structure plotting in `scripts/plot_bands.gp`:
+  - Simplified plotting script to show all energy bands
+  - Removed manual energy range restrictions
+  - Improved plot readability with consistent line styles
+  - Files affected: `scripts/plot_bands.gp`
+
 ## [2024-12-28]
 
 ### Added
@@ -63,4 +79,12 @@ All notable changes to this project will be documented in this file.
 - Fixed eigenfunction writing in `main_gfactor.f90`:
   - Added missing `is_bulk` parameter
   - Set to `.false.` for quantum well calculations
-  - Files affected: `src/main_gfactor.f90` 
+  - Files affected: `src/main_gfactor.f90`
+
+- Resolved out-of-bounds array access in `src/outputFunctions.f90` when calculating probability densities for quantum well structures.
+  - Modified the loop structure in `writeEigenfunctions` to correctly iterate over eigenstates and bands.
+  - Added a helper subroutine `get_eigenvector_component` to extract spatial components for each band.
+  - Files affected: `src/outputFunctions.f90`
+
+- Adjusted the calculation of `numcb` and `numvb` for quantum well calculations in `src/main.f90`. These values are now set based on `fdStep` to ensure the `eigv` array is allocated with sufficient size, resolving the array bound mismatch error.
+  - Files affected: `src/main.f90` 

@@ -30,106 +30,93 @@ module outputFunctions
 
       integer, intent(in) :: N, evnum, k, fdstep
       real(kind=dp), intent(in) :: z(:)
-      complex(kind=dp), intent(in) :: A(N, evnum)
+      complex(kind=dp), intent(in) :: A(:,:)
       logical, intent(in) :: is_bulk
 
       integer (kind=4) :: iounit, iounit2, ios
-      character (len = 255) :: filename, filename2, x1, x2
-      integer :: i, j, ncomp
-
-      real(kind=dp), allocatable :: R(:,:)
-      complex(kind=dp), allocatable :: C(:,:)
-      real(kind=dp) :: lim
-      real(kind=dp) :: parts(evnum,8)
-
-      character(len=8) :: fmt ! format descriptor
-      fmt = '(I5.5)' ! an integer of width 5 with zeros at the left
+      character (len = 255) :: filename
+      integer :: i, j, m
+      real(kind=dp), allocatable :: parts(:,:)
+      real(kind=dp), allocatable :: eigv_abs(:,:)
+      real(kind=dp), allocatable :: component(:)
 
       ! Ensure output directory exists
       call ensure_output_dir()
 
-      write (x1,fmt) k ! converting integer to string using a 'internal file'
-
-      if (is_bulk) then
-        ! For bulk, we have 8 components per state
-        ncomp = 8
-        allocate(C(evnum, ncomp))
-        ! For bulk, preserve complex components
-        do i = 1, evnum
-          do j = 1, ncomp
-            C(i,j) = A(j,i)
-          end do
-        end do
-      else
-        ! For quantum well, we have fdstep points for each of the 8 components
-        ncomp = N
-        allocate(R(evnum, ncomp))
-        ! For quantum well, calculate probability density
-        R = transpose(real(conjg(A)*A))
-      end if
-
+      ! Allocate arrays
+      allocate(parts(evnum,8))
+      allocate(component(fdstep))
+      parts = 0.0_dp
       if (.not. is_bulk) then
-        LIM = 100.0 * MAXVAL(ABS(SUM(R(:,:),2))) * EPSILON(ABS(R(1,1)))
-        DO I=1,SIZE(R,2)
-           WHERE(ABS(R(:,I)) < LIM) R(:,I)=0.0_dp
-        ENDDO
+        allocate(eigv_abs(fdstep,8))
+        eigv_abs = 0.0_dp
       end if
 
+      ! Write eigenfunctions
       do j = 1, evnum
-        write (x2,fmt) j ! converting integer to string using a 'internal file'
-        filename = OUTPUT_DIR//'/eigenfunctions_k_'//trim(x1)//'_ev_'//trim(x2)//'.dat'
+        write(filename,'(a,i0.5,a,i0.5,a)') OUTPUT_DIR//'/eigenfunctions_k_', k, '_ev_', j, '.dat'
         call get_unit(iounit)
-
-        open(unit=iounit, file=filename, iostat=ios, status="replace", action="write")
-        if ( ios /= 0 ) stop "Error opening file "
+        open(unit=iounit, file=filename, status='replace', action='write')
 
         if (is_bulk) then
-          ! For bulk, write real and imaginary parts of each component
-          write(unit=iounit, fmt="(2(g14.6))",iostat=ios) &
-          & (real(C(j,i)), aimag(C(j,i)), i=1,8)
+          ! For bulk, write only the components
+          write(unit=iounit, fmt="(8(g14.6))", iostat=ios) &
+          & (abs(A(i,j)), i=1,8)
         else
-          ! For quantum well, write z and all components
-          write(unit=iounit, fmt="(9(g14.6))",iostat=ios) &
-          & (z(i), R(j,i), R(j,fdstep+i), &
-          & R(j,2*fdstep+i), R(j,3*fdstep+i), &
-          & R(j,4*fdstep+i), R(j,5*fdstep+i), &
-          & R(j,6*fdstep+i), R(j,7*fdstep+i), i=1,fdstep)
+          ! For quantum well, get each component safely
+          do m = 1, 8
+            call get_eigenvector_component(A, j, m, fdstep, N, component)
+            eigv_abs(:,m) = abs(component)
+          end do
+
+          ! Write z and all components
+          do i = 1, fdstep
+            write(unit=iounit, fmt="(9(g14.6))", iostat=ios) &
+            & z(i), (eigv_abs(i,m), m=1,8)
+          end do
         end if
-        if ( ios /= 0 ) stop "Write error in file unit "
+
+        close(iounit)
       end do
 
-      filename2 = OUTPUT_DIR//'/parts.dat'
+      ! Calculate and write parts
       call get_unit(iounit2)
-      open(unit=iounit2, file=filename2, iostat=ios, status="replace", action="write")
-      if ( ios /= 0 ) stop "Error opening file "
+      open(unit=iounit2, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
 
       if (is_bulk) then
         ! For bulk, calculate probability density for parts
-        do i = 1, 8
-          do j = 1, evnum
-            parts(j,i) = real(conjg(C(j,i))*C(j,i))
+        do j = 1, evnum
+          do i = 1, 8
+            parts(j,i) = abs(A(i,j))**2
           end do
         end do
-        if (allocated(C)) deallocate(C)
       else
         ! For quantum well, integrate over z
-        do i = 1, 8
-          do j = 1, evnum
-            parts(j,i) = simpson(dcmplx(R(j,(i-1)*fdstep+1:i*fdstep),0.0_dp),z(1),z(fdstep))
+        do j = 1, evnum
+          ! Initialize parts for this eigenstate
+          parts(j,:) = 0.0_dp
+
+          ! Get each component safely and calculate its contribution
+          do m = 1, 8
+            call get_eigenvector_component(A, j, m, fdstep, N, component)
+            eigv_abs(:,m) = abs(component)
+            ! Calculate parts by integrating over z
+            parts(j,m) = sum(eigv_abs(:,m)**2) * (z(2)-z(1))
           end do
         end do
-        parts = parts/(z(2)-z(1))
-        if (allocated(R)) deallocate(R)
       end if
 
-      write(unit=iounit2, fmt="(8(g14.6))",iostat=ios) &
-      & (parts(j,:), j=1,evnum)
-      if ( ios /= 0 ) stop "Write error in file unit "
+      ! Write parts
+      do j = 1, evnum
+        write(unit=iounit2, fmt="(8(g14.6))", iostat=ios) (parts(j,m), m=1,8)
+      end do
 
-      close ( unit = iounit )
-      close ( unit = iounit2 )
+      close(iounit2)
+      if (.not. is_bulk) deallocate(eigv_abs)
+      deallocate(parts)
+      deallocate(component)
 
-    end subroutine
+    end subroutine writeEigenfunctions
 
     subroutine writeEigenvalues(smallk, eig, wvStep)
 
@@ -226,6 +213,22 @@ module outputFunctions
       return
     end
 
+    subroutine get_eigenvector_component(eigenvectors, eigenstate_index, band_index, fdstep, total_points, component)
+      implicit none
+      complex(kind=dp), intent(in) :: eigenvectors(:,:)
+      integer, intent(in) :: eigenstate_index, band_index, fdstep, total_points
+      real(kind=dp), intent(out), dimension(fdstep) :: component
+      integer :: i, base_idx
 
+      component = 0.0_dp  ! Initialize all components to zero
+      if (band_index <= 8) then  ! Only process valid band indices
+        do i = 1, fdstep
+          base_idx = (band_index - 1) * fdstep + i
+          if (base_idx <= total_points) then
+            component(i) = abs(eigenvectors(base_idx, eigenstate_index))
+          end if
+        end do
+      end if
+    end subroutine
 
 end module outputFunctions
