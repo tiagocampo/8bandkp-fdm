@@ -1,6 +1,9 @@
 # Build directory
 build/
 
+# Output directory
+output/
+
 # Compiled Object files
 *.o
 *.mod

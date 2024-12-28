@@ -47,7 +47,7 @@ program gfactor
   real(kind = dp), allocatable, dimension(:,:) :: profile
 
   ! file handling
-  integer ( kind = 4 ) :: data_unit
+  integer ( kind = 4 ) :: data_unit, iounit
   integer :: status
   character ( len = 255 ) :: data_filename, label
 
@@ -355,9 +355,10 @@ program gfactor
   call zheev('N', 'U', 2, tensor(:,:,3), 2, gfac(:,3), work, lwork, rwork, info)
   print *, 2*gfac(1,3) !+ 2.00231
 
-  open(unit=666, file='gfactor.dat', status="replace", action="write")
-  write(666,*) 2*gfac(1,1), 2*gfac(1,2), 2*gfac(1,3)
-  close(666)
+  call get_unit(iounit)
+  open(unit=iounit, file='output/gfactor.dat', status="replace", action="write")
+  write(iounit,*) 2*gfac(1,1), 2*gfac(1,2), 2*gfac(1,3)
+  close(iounit)
 
   !----------------------------------------------------------------------------
 

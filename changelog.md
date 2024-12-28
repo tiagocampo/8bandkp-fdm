@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [2024-12-28]
 
 ### Added
+- Created visualization scripts in `scripts/` directory:
+  - `plot_bands.gp`: Band structure visualization
+  - `plot_eigenfunctions.gp`: Eigenfunction components visualization
+  - `plot_potential.gp`: Potential profile visualization
+  - `plot_gfactor.gp`: g-factor components visualization
+  - `plot_all.sh`: Shell script to run all plots
+  - Files affected: New files in `scripts/` directory
+
 - Created `.gitignore` file:
   - Added rules for build artifacts (*.o, *.mod)
   - Added rules for executables (bandStructure, gfactorCalculation)
@@ -13,6 +21,13 @@ All notable changes to this project will be documented in this file.
   - Files affected: `.gitignore`
 
 ### Changed
+- Implemented output directory organization:
+  - Added 'output' directory for all generated files
+  - Added automatic directory creation
+  - Moved all data files to output directory
+  - Improved file unit handling
+  - Files affected: `src/outputFunctions.f90`, `src/main.f90`, `src/main_gfactor.f90`
+
 - Modified Makefile to improve build organization and dependency management:
   - Added `build` directory for all compilation outputs
   - Moved `.o` (object) files to `build` directory
@@ -24,6 +39,11 @@ All notable changes to this project will be documented in this file.
   - Files affected: `Makefile`
 
 ### Fixed
+- Fixed missing variable declarations:
+  - Added `iounit` variable declaration in main programs
+  - Fixed implicit typing errors
+  - Files affected: `src/main.f90`, `src/main_gfactor.f90`
+
 - Fixed bulk calculations in `main.f90`:
   - Added explicit temporary array (HTmp) for bulk diagonalization
   - Switched from zheevx to zheev for bulk calculations

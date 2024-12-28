@@ -5,8 +5,26 @@ module outputFunctions
 
   implicit NONE
 
+  private
+  public :: writeEigenfunctions, writeEigenvalues, get_unit
+
+  character(len=*), parameter :: OUTPUT_DIR = 'output'
+
   CONTAINS
 
+    subroutine ensure_output_dir()
+      ! Local variables
+      logical :: dir_exists
+      integer :: status
+
+      ! Check if directory exists
+      inquire(file=OUTPUT_DIR//'/.', exist=dir_exists)
+      
+      ! Create directory if it doesn't exist
+      if (.not. dir_exists) then
+        call system('mkdir -p '//OUTPUT_DIR)
+      end if
+    end subroutine
 
     subroutine writeEigenfunctions(N, evnum, A, k, fdstep, z, is_bulk)
 
@@ -26,6 +44,9 @@ module outputFunctions
 
       character(len=8) :: fmt ! format descriptor
       fmt = '(I5.5)' ! an integer of width 5 with zeros at the left
+
+      ! Ensure output directory exists
+      call ensure_output_dir()
 
       write (x1,fmt) k ! converting integer to string using a 'internal file'
 
@@ -56,7 +77,7 @@ module outputFunctions
 
       do j = 1, evnum
         write (x2,fmt) j ! converting integer to string using a 'internal file'
-        filename = 'eigenfunctions_k_'//trim(x1)//'_ev_'//trim(x2)//'.dat'
+        filename = OUTPUT_DIR//'/eigenfunctions_k_'//trim(x1)//'_ev_'//trim(x2)//'.dat'
         call get_unit(iounit)
 
         open(unit=iounit, file=filename, iostat=ios, status="replace", action="write")
@@ -77,7 +98,7 @@ module outputFunctions
         if ( ios /= 0 ) stop "Write error in file unit "
       end do
 
-      filename2 = 'parts.dat'
+      filename2 = OUTPUT_DIR//'/parts.dat'
       call get_unit(iounit2)
       open(unit=iounit2, file=filename2, iostat=ios, status="replace", action="write")
       if ( ios /= 0 ) stop "Error opening file "
@@ -120,7 +141,10 @@ module outputFunctions
       character (len = 255) :: filename
       integer :: i
 
-      filename = 'eigenvalues.dat'
+      ! Ensure output directory exists
+      call ensure_output_dir()
+
+      filename = OUTPUT_DIR//'/eigenvalues.dat'
       call get_unit(iounit)
 
       open(unit=iounit, file=filename, iostat=ios, status="replace", action="write")

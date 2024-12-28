@@ -43,7 +43,7 @@ program kpfdm
   real(kind = dp), allocatable, dimension(:,:) :: profile
 
   ! file handling
-  integer ( kind = 4 ) :: data_unit
+  integer ( kind = 4 ) :: data_unit, iounit
   integer :: status
   character ( len = 255 ) :: data_filename, label
 
@@ -209,9 +209,12 @@ program kpfdm
       call externalFiledSetup_electricField(profile, Evalue, totalSize, z)
     end if
     !printing profile
+    call get_unit(iounit)
+    open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
     do i = 1, fdStep, 1
-      write(101,*) z(i), profile(i,1), profile(i,2), profile(i,3)
+      write(iounit,*) z(i), profile(i,1), profile(i,2), profile(i,3)
     end do
+    close(iounit)
   end if
 
 
