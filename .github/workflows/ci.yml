@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_type: [Release, Debug]
+        use_mkl: [ON, OFF]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gfortran gcc g++ liblapack-dev libblas-dev libfftw3-dev
+
+    - name: Install Intel MKL (if needed)
+      if: matrix.use_mkl == 'ON'
+      run: |
+        wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+        sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+        sudo add-apt-repository "deb https://apt.repos.intel.com/oneapi all main"
+        sudo apt-get update
+        sudo apt-get install -y intel-oneapi-mkl-devel
+
+    - name: Configure CMake
+      run: |
+        mkdir build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+              -DUSE_MKL=${{ matrix.use_mkl }} \
+              -DENABLE_OPENMP=ON \
+              -DBUILD_TESTING=ON ..
+
+    - name: Build
+      run: |
+        cd build
+        make -j$(nproc)
+
+    - name: Run tests
+      run: |
+        cd build
+        ctest --output-on-failure
+
+    - name: Check for compiler warnings
+      run: |
+        cd build
+        if [ -f compile_commands.json ]; then
+          if grep -i "warning:" compile_commands.json; then
+            echo "Compiler warnings found"
+            exit 1
+          fi
+        fi 

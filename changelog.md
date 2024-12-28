@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2024-12-28] - Continuous Integration Setup
+
+### Added
+- Implemented GitHub Actions workflow:
+  - Added CI configuration in `.github/workflows/ci.yml`
+  - Set up matrix builds for Release/Debug and MKL/non-MKL configurations
+  - Added automated dependency installation
+  - Configured test execution
+  - Added compiler warning checks
+
+### Changed
+- Enhanced CMake configuration:
+  - Added compile commands generation for static analysis
+  - Enabled comprehensive compiler warnings
+  - Added Intel compiler support with appropriate flags
+  - Improved warning configuration for both Debug and Release builds
+
+## [2024-12-28] - Directory Structure Reorganization
+
+### Added
+- Created modular directory structure:
+  - `src/core/`: Core functionality (defs.f90, parameters.f90, utils.f90)
+  - `src/math/`: Mathematical operations (mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90)
+  - `src/physics/`: Physics calculations (hamiltonianConstructor.f90, gfactor_functions.f90)
+  - `src/io/`: Input/Output operations (outputFunctions.f90)
+  - `src/apps/`: Main applications (main.f90, main_gfactor.f90)
+  - `tests/`: Test directories (unit, integration, regression)
+  - `docs/`: Documentation directories (api, user, examples)
+
+### Changed
+- Updated CMake configuration to reflect new directory structure:
+  - Modified source file paths in src/CMakeLists.txt
+  - Updated file dependencies to use new paths
+  - Verified build system works with new structure
+
 ## [2024-12-28] - Build System Modernization
 
 ### Added

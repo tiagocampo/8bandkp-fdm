@@ -6,6 +6,9 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Enable compile commands generation
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Add cmake modules path
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
@@ -17,8 +20,12 @@ option(USE_MKL "Use Intel MKL" ON)
 # Compiler flags
 if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
     set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -ffree-line-length-none -fimplicit-none -fno-second-underscore")
-    set(CMAKE_Fortran_FLAGS_DEBUG "-g -fbacktrace -fbounds-check -fcheck=all -Wall")
-    set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -mtune=native -march=native -flto -funroll-loops")
+    set(CMAKE_Fortran_FLAGS_DEBUG "-g -fbacktrace -fbounds-check -fcheck=all -Wall -Wextra -Wconversion -Wno-compare-reals")
+    set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -mtune=native -march=native -flto -funroll-loops -Wall -Wextra -Wconversion -Wno-compare-reals")
+elseif(CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
+    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -implicitnone")
+    set(CMAKE_Fortran_FLAGS_DEBUG "-g -traceback -check all -warn all")
+    set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -xHost -ipo -warn all")
 endif()
 
 # OpenMP

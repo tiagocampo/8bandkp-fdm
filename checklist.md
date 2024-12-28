@@ -8,14 +8,14 @@
   - [x] Configure compiler flags and options [2024-12-28]
   - [x] Set up MKL/LAPACK dependencies [2024-12-28]
   - [x] Create installation targets [2024-12-28]
-- [ ] Create directory structure
-  - [ ] Organize source files into modules
-  - [ ] Set up test directory
-  - [ ] Create documentation directory
-- [ ] Set up continuous integration
-  - [ ] Configure GitHub Actions
-  - [ ] Set up automated builds
-  - [ ] Configure compiler warning checks
+- [x] Create directory structure [2024-12-28]
+  - [x] Organize source files into modules [2024-12-28]
+  - [x] Set up test directory [2024-12-28]
+  - [x] Create documentation directory [2024-12-28]
+- [x] Set up continuous integration [2024-12-28]
+  - [x] Configure GitHub Actions [2024-12-28]
+  - [x] Set up automated builds [2024-12-28]
+  - [x] Configure compiler warning checks [2024-12-28]
 
 ### 1.2 Core Infrastructure (Week 2)
 - [ ] Create base types and interfaces

@@ -20,6 +20,52 @@ Author: Tiago de Campos
  * Selective eigenvalue computation for improved performance
  * Automatic band structure visualization with customizable plotting
 
+## Project Structure
+
+The project is organized into the following directories:
+
+### Source Code (`src/`)
+* `core/`: Core functionality and definitions
+  - `defs.f90`: Type definitions and constants
+  - `parameters.f90`: Material parameters and configuration
+  - `utils.f90`: Utility functions and common operations
+
+* `math/`: Mathematical operations and numerical methods
+  - `mkl_spblas.f90`: MKL sparse BLAS interface
+  - `mkl_sparse_handle.f90`: MKL sparse matrix handling
+  - `finitedifferences.f90`: Finite difference method implementation
+
+* `physics/`: Physics calculations and models
+  - `hamiltonianConstructor.f90`: k·p Hamiltonian construction
+  - `gfactor_functions.f90`: g-factor calculations
+
+* `io/`: Input/Output operations
+  - `outputFunctions.f90`: File I/O and data output
+
+* `apps/`: Main applications
+  - `main.f90`: Band structure calculation program
+  - `main_gfactor.f90`: g-factor calculation program
+
+### Tests (`tests/`)
+* `unit/`: Unit tests for individual components
+* `integration/`: Integration tests for combined functionality
+* `regression/`: Regression tests for verified results
+
+### Documentation (`docs/`)
+* `api/`: API documentation and code reference
+* `user/`: User guides and tutorials
+* `examples/`: Example configurations and use cases
+
+### Build System
+* `CMakeLists.txt`: Main CMake configuration
+* `src/CMakeLists.txt`: Source build configuration
+* `cmake/`: CMake modules and find scripts
+
+### Other
+* `scripts/`: Utility and plotting scripts
+* `output/`: Generated data and results
+* `build/`: Build directory (created during compilation)
+
 ## Key Features:
  * Full 8-band k·p Hamiltonian implementation
  * Support for both bulk and quantum well calculations
