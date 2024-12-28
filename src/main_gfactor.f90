@@ -125,22 +125,26 @@ program gfactor
   end if
 
   if (wvStep /= 0 .and. wvDir /= 'k0') stop 'g-factor calculation requires only k=0'
+  if (wvStep /= 0) then
+    print *, 'Warning: Setting wvStep to 0 for g-factor calculation'
+    wvStep = 0
+  endif
 
-  allocate(smallk(wvStep))
-  smallk%kx = 0
-  smallk%ky = 0
-  smallk%kz = 0
+  ! Initialize k for workspace query
+  k = 1
+
+  ! Allocate arrays for single k-point
+  if (allocated(smallk)) deallocate(smallk)
+  allocate(smallk(1))
+  smallk(1)%kx = 0
+  smallk(1)%ky = 0
+  smallk(1)%kz = 0
 
   select case(wvDir)
-
     case ("k0")
-      smallk%kx = 0
-      smallk%ky = 0
-      smallk%kz = 0
-
+      ! Already set to zero
     case default
       stop "no such direction"
-
   end select
 
   read(data_unit, *) label, numcb
@@ -160,37 +164,40 @@ program gfactor
   NB = MAX(NB,N)
   ABSTOL = DLAMCH('P')
 
-  if (allocated(eig)) deallocate(eig)
-  allocate(eig(N,wvStep))
+  ! For g-factor calculation, we only need one k-point
+  if (wvDir /= 'k0') stop 'g-factor calculation requires only k=0'
 
+  ! Initialize k for workspace query
+  k = 1
+
+  ! Allocate arrays
+  if (allocated(eig)) deallocate(eig)
+  allocate(eig(N,1))  ! Only one k-point for g-factor
   eig(:,:) = 0_dp
 
   allocate(HT(N,N))
   HT = 0.0_dp
 
-  ! lwork = 2*(NB+1)*N
-  ! if (allocated(work)) deallocate(work)
-  ! allocate(work(lwork))
+  ! Workspace query for LAPACK
   if (allocated(work)) deallocate(work)
   allocate(work(1))
   if (allocated(rwork)) deallocate(rwork)
   allocate(rwork(1))
   if (allocated(iwork)) deallocate(iwork)
   allocate(iwork(1))
-  lwork = -1
-  lrwork = -1
-  liwork = -1
+
+  ! Workspace query
   if (nlayers == 1) then
-    call zheev('V', 'U', N, HT, N, eig(:,k), work, lwork, rwork, info)
-    lwork = work(1)
+    call zheev('V', 'U', N, HT, N, eig(:,1), work, -1, rwork, info)
+    lwork = int(work(1))
     if (allocated(work)) deallocate(work)
     allocate(work(lwork))
     if (allocated(rwork)) deallocate(rwork)
-    allocate(rwork(3*N-2))
+    allocate(rwork(max(1,3*N-2)))
   else
-    call zheevd('V', 'U', N, HT, N, eig(:,k), work, lwork, rwork, lrwork, iwork, liwork, info)
-    lwork = work(1)
-    lrwork = rwork(1)
+    call zheevd('V', 'U', N, HT, N, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(work(1))
+    lrwork = int(rwork(1))
     liwork = iwork(1)
     if (allocated(work)) deallocate(work)
     allocate(work(lwork))
@@ -198,9 +205,14 @@ program gfactor
     allocate(rwork(lrwork))
     if (allocated(iwork)) deallocate(iwork)
     allocate(iwork(liwork))
-
   end if
 
+  ! Actual diagonalization
+  if (nlayers == 1) then
+    call zheev('V', 'U', N, HT, N, eig(:,1), work, lwork, rwork, info)
+  else
+    call zheevd('V', 'U', N, HT, N, eig(:,1), work, lwork, rwork, lrwork, iwork, liwork, info)
+  end if
 
   read(data_unit, *) label, externalField, EFtype
   print *, trim(label), externalField, EFtype

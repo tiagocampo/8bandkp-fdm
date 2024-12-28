@@ -334,6 +334,7 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
 
     print *, 'gfactor for conduction band'
 
+    ii = 0  ! Initialize counter
     do n = bandIdx,bandIdx+1
       ii = ii+1
       jj = 0
