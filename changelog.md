@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2024-12-28] - Build System Modernization
+
+### Added
+- Implemented CMake build system:
+  - Created root CMakeLists.txt with project configuration and build options
+  - Added cmake/FindMKL.cmake module for MKL dependency detection
+  - Created src/CMakeLists.txt for source build configuration
+  - Added proper dependency tracking between source files
+  - Files affected: `CMakeLists.txt`, `cmake/FindMKL.cmake`, `src/CMakeLists.txt`
+
+### Changed
+- Improved build organization:
+  - Separated common code into static library
+  - Added proper compiler flags management
+  - Improved MKL library detection and linking
+  - Added installation targets
+  - Added CPack configuration for packaging
+
 ## [2024-03-19]
 
 ### Changed
@@ -87,4 +105,7 @@ All notable changes to this project will be documented in this file.
   - Files affected: `src/outputFunctions.f90`
 
 - Adjusted the calculation of `numcb` and `numvb` for quantum well calculations in `src/main.f90`. These values are now set based on `fdStep` to ensure the `eigv` array is allocated with sufficient size, resolving the array bound mismatch error.
+  - Files affected: `src/main.f90`
+
+- Corrected the argument passed to the `ZB8bandBulk` subroutine in `src/main.f90`. The entire `params` array is now passed instead of a scalar element, resolving the rank mismatch error.
   - Files affected: `src/main.f90` 

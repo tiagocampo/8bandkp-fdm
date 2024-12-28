@@ -1,5 +1,8 @@
-# Build directory
+# Build directories
 build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
 
 # Output directory
 output/
@@ -8,6 +11,7 @@ output/
 *.o
 *.mod
 *.smod
+*.a
 
 # Executables
 bandStructure
@@ -16,13 +20,13 @@ gfactorCalculation
 # Data files
 *.dat
 fort.*
-*.txt
 
 # IDE specific files
 .vscode/
 .idea/
 *.swp
 *~
+.cursorrules
 
 # Debug files
 gmon.out
@@ -33,4 +37,14 @@ core
 
 # System specific files
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Backup files
+*.bak
+*.old
+*.orig
+
+# CMake generated files
+Makefile
+*.cmake
+Testing/ 

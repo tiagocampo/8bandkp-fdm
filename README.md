@@ -46,10 +46,40 @@ Author: Tiago de Campos
 
 ### Compilation steps
 
-Steps to compile and run the program:
+You can build the project using either Make or CMake:
 
+#### Using Make (Legacy method)
  * modify Makefile to reflect either intel mkl library or standard lapack and blas by selecting appropriate LDFLAGS
  * make all
+
+#### Using CMake (Recommended)
+```bash
+# Create and enter build directory
+mkdir build && cd build
+
+# Configure with CMake
+cmake ..                    # Default Release build
+# OR
+cmake -DCMAKE_BUILD_TYPE=Debug ..  # Debug build with extra checks
+
+# Build the project
+make                       # Or 'make -j$(nproc)' for parallel build
+
+# Optional: Install the executables
+sudo make install         # Installs to default system location
+# OR
+cmake -DCMAKE_INSTALL_PREFIX=/custom/path .. && make install  # Custom install location
+```
+
+CMake build options:
+* BUILD_TESTING: Enable/disable tests (default: OFF)
+* ENABLE_OPENMP: Enable/disable OpenMP support (default: ON)
+* USE_MKL: Use Intel MKL instead of standard LAPACK/BLAS (default: ON)
+
+Example with all options:
+```bash
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DENABLE_OPENMP=ON -DUSE_MKL=ON ..
+```
 
 This will generate two executable files:
  * bandStructure: for electronic band structure calculations

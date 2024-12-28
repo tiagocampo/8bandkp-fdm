@@ -1,11 +1,11 @@
-waveVector: k0
-waveVectorMax:    0.02
-waveVectorStep: 1
+waveVector: kx
+waveVectorMax: 0.1
+waveVectorStep: 11
 confinement:  0
-FDstep: 1
+FDstep: 101
 numLayers:  1
-material3: InAs60Sb40
-numcb: 16
-numvb: 256
+material1: GaAs
+numcb: 2
+numvb: 6
 ExternalField: 0  EF
 EFParams: 0.0005
