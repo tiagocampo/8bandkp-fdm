@@ -1,0 +1,568 @@
+% 2012/09/18 - 2012/09/30.
+
+%% \documentclass[preprint,12pt]{elsarticle}
+
+%% Use the option review to obtain double line spacing
+   \documentclass[preprint,review,12pt]{elsarticle}
+
+%% Use the options 1p,twocolumn; 3p; 3p,twocolumn; 5p; or 5p,twocolumn
+%% for a journal layout:
+%% \documentclass[final,1p,times]{elsarticle}
+%% \documentclass[final,1p,times,twocolumn]{elsarticle}
+%% \documentclass[final,3p,times]{elsarticle}
+%% \documentclass[final,3p,times,twocolumn]{elsarticle}
+%% \documentclass[final,5p,times]{elsarticle}
+%% \documentclass[final,5p,times,twocolumn]{elsarticle}
+
+%% if you use PostScript figures in your article
+%% use the graphics package for simple commands
+%% \usepackage{graphics}
+%% or use the graphicx package for more complicated commands
+
+\usepackage{graphicx}
+\graphicspath{{./}{../figure/}}
+\DeclareGraphicsExtensions{.eps}
+
+%% The amssymb package provides various useful mathematical symbols
+\usepackage{amsmath,amssymb}
+
+%% The lineno packages adds line numbers. Start line numbering with
+%% \begin{linenumbers}, end it with \end{linenumbers}. Or switch it on
+%% for the whole article with \linenumbers after \end{frontmatter}.
+%% \usepackage{lineno}
+
+%% natbib.sty is loaded by default. However, natbib options can be
+%% provided with \biboptions{...} command. Following options are
+%% valid:
+
+%%   round  -  round parentheses are used (default)
+%%   square -  square brackets are used   [option]
+%%   curly  -  curly braces are used      {option}
+%%   angle  -  angle brackets are used    <option>
+%%   semicolon  -  multiple citations separated by semi-colon
+%%   colon  - same as semicolon, an earlier confusion
+%%   comma  -  separated by comma
+%%   numbers-  selects numerical citations
+%%   super  -  numerical citations as superscripts
+%%   sort   -  sorts multiple citations according to order in ref. list
+%%   sort&compress   -  like sort, but also compresses numerical citations
+%%   compress - compresses without sorting
+%%
+%% \biboptions{comma,round}
+
+% \biboptions{}
+
+%% Begin additional packages and definitions
+\usepackage{color}
+\usepackage{bm}
+\newcommand{\kp}{\mbox{$\bm{k} \! \cdot \! \bm{p}$}}
+%% End additional packages and definitions
+
+\journal{Computer Physics Communications}
+
+\begin{document}
+
+\begin{frontmatter}
+
+%% Title, authors and addresses
+
+%% use the tnoteref command within \title for footnotes;
+%% use the tnotetext command for the associated footnote;
+%% use the fnref command within \author or \address for footnotes;
+%% use the fntext command for the associated footnote;
+%% use the corref command within \author for corresponding author footnotes;
+%% use the cortext command for the associated footnote;
+%% use the ead command for the email address,
+%% and the form \ead[url] for the home page:
+%%
+%% \title{Title\tnoteref{label1}}
+%% \tnotetext[label1]{}
+%% \author{Name\corref{cor1}\fnref{label2}}
+%% \ead{email address}
+%% \ead[url]{home page}
+%% \fntext[label2]{}
+%% \cortext[cor1]{}
+%% \address{Address\fnref{label3}}
+%% \fntext[label3]{}
+
+\title{Full-band electronic structure calculation of semiconductor nanostructures: a reduced-order approach}
+
+%% use optional labels to link authors explicitly to addresses:
+%% \author[label1,label2]{<author name>}
+%% \address[label1]{<address>}
+%% \address[label2]{<address>}
+
+\author[polito,cnr,bu]{Francesco Bertazzi}
+\ead{francesco.bertazzi@polito.it}
+\author[polito]{Xiangyu Zhou}
+\author[polito,cnr]{Michele Goano}
+\author[bu]{Enrico Bellotti}
+\author[polito]{Giovanni Ghione}
+
+\address[polito]{Dipartimento di Elettronica e Telecomunicazioni, Politecnico di Torino, corso Duca degli Abruzzi 24, 10129 Torino, Italy}
+\address[cnr]{IEIIT-CNR, Politecnico di Torino, corso Duca degli Abruzzi 24, 10129 Torino, Italy}
+\address[bu]{ECE Department, Boston University, 8 Saint Mary's Street, 02215 Boston, MA}
+
+\begin{abstract}
+We propose an efficient reduced-order technique for electronic structure calculations of semiconductor nanostructures, suited for inclusion in full-band quantum transport simulators.
+The model is based on the linear combination of bulk bands obtained by the empirical pseudopotential method, combined with the use of problem-matched basis functions numerically generated from the singular value decomposition.
+The efficiency and accuracy of the proposed approach are demonstrated in the case of the dispersion relation of hole subbands in an unstrained GaN layer.
+\end{abstract}
+
+\begin{keyword}
+Electronic structure \sep Linear combination of bulk bands \sep Singular value decomposition \sep Empirical pseudopotential method \sep \kp\ method
+% PACS: 71.15.-m Methods of electronic structure calculations; 73.21.-b Electron states and collective excitations in multilayers, quantum wells, mesoscopic, and nanoscale systems
+\end{keyword}
+
+\end{frontmatter}
+
+%%
+%% Start line numbering here if you want
+%%
+%% \linenumbers
+
+%% main text
+
+\section{Introduction}
+
+A rigorous atomistic description of the electronic structure in confined systems is of crucial importance to understand quantum transport phenomena in technologically relevant nanostructures \cite{2003DiCarlo_SST}.
+Traditionally, theoretical studies of nanostructures have relied on the multiband \kp\ method \cite{2009LewYanVoon} in the framework of envelope-function approximation (EFA) \cite{1990Smith_RMP}.
+In this approach the electronic states of the nanostructure are expanded in zone-center Bloch wavefunctions of the underlying bulk crystal, and the expansion coefficients (envelope functions) are assumed to be slowly varying spatial functions.
+Despite the numerous approximations involved, envelope function approaches based on \kp\ models have been widely adopted, mainly due to a fair compromise between simplicity and reliability.
+However, there is evidence that a full-zone description is critical for an accurate quantitative modeling of nanostructures.
+As an example, quantum-mechanical mixing between the zone center $\Gamma$ and the zone edge $X$ states ($\Gamma$--$X$ coupling) due to the crossover from direct to indirect band gap in some cubic III-V systems has a relevant effect on electrical and optical properties \cite{1997Wang_PRL}.
+In general, full-zone electronic structure models are attractive because they allow for an atomistic description of the band structure and a unified treatment of bound and unbound states.
+The latter feature is important in the description of scattering mechanisms between continuum and bound states \cite{1986Brum_PRB, 1996Abou-Khalil_PTL, 1997Register_APL}, which play a crucial role e.g.\ in the dynamic properties of semiconductor lasers and in the quantum efficiency of light-emitting diodes (LEDs).
+As a topical example, the efficiency droop observed in GaN-based LEDs \cite{2010Piprek_PSSA} has been attributed by some researchers to Auger recombination processes which, due to the large energy gap, promote carriers to high energy states in different bands above the barrier, thus contributing to leakage \cite{1990Chik_JAP, 2012Bertazzi_APL}.
+A correct microscopic description of such interband processes would require a full-zone approach.
+An atomistic description of the band structure is also important for the correct inclusion of strain and of the strong piezoelectric charges which are predicted in GaN-based heterostructures \cite{2007Bernardini}.
+The conventional EFA approach is oblivious of the atomic details of heterointerfaces and implies a slow variation of the envelope function.
+While interface-related effects lying outside the scope of conventional EFA can be accounted for, in principle, by exact envelope function theories such as those developed by Burt \cite{1992Burt_JPCM} and Foreman \cite{1997Foreman_PRB}, the description of realistic strain configurations in partially relaxed structures and the treatment of defects call for an atomistic approach.
+
+An alternative to EFA, along the lines of the linear combination of atomic orbitals (LCAO) method \cite{1954Slater_PR,1999Munoz_CPC,2011Schulz_PSSB}, is obtained by the linear combination of bulk bands (LCBB) \cite{1999WangLW_PRB.1, 2005Esseni_PRB}, which avoids the decomposition of the wavefunction into envelope functions by expanding the states of the quantum structure in terms of the full-zone Bloch eigenstates of the constituent bulk crystals.
+LCBB guarantees that the physical symmetry of the system is preserved, and allows for an atomistic description of surfaces, interfaces, and strain \cite{1999WangLW_PRB.1}.
+Compared with exact diagonalization techniques, LCBB enables to select the physically important bands and wavevector points \cite{1999WangLW_PRB.1}.
+As a result, the number of basis functions can be reduced significantly compared to the plane-wave basis.
+Although LCBB has been applied to large scale electronic structure calculations \cite{1997Wang_PRL}, the method is still too computationally intensive to be included in carrier transport device simulation codes.
+This applies in particular to nitride-based nanostructures, where charge rearrangement induced by the presence of externally applied or internally induced fields has to be considered for a realistic device description \cite{2001Chirico_PRB}.
+Ideally, one should try to combine a complete quantum-mechanical description with a full-band approach, avoiding the computationally prohibitive load of atomistic methods and the inherent limitations of the EFA.
+
+\section{From LCBB to LCBB-SVD}
+
+With a view of the above remarks, we present a simple acceleration strategy, LCBB-SVD, based on the singular value decomposition (SVD).
+This strategy was inspired by a numerical technique proposed by some of the authors to generate reduced sets of problem-matched basis functions in guided-wave finite-element analysis \cite{2002Bertazzi_MTT, 2003Bertazzi_MTT} and already demonstrated for bulk electronic structure calculations \cite{2010Penna_IWCE}.
+Although this reduced-order technique can be applied to any type of nanostructure (2D, 1D, or 0D), here we restrict our attention to 2D systems with a confining potential $U(\bm{r},z)=U(z)$ which is constant in the $\bm{r}$ plane normal to the confining direction $z$.
+Before presenting the details of the reduced-order model, we briefly summarize LCBB.
+Following the notation in \cite{2005Esseni_PRB}, we write wavevectors and reciprocal lattice vectors as $\bm{K}=(\bm{k},k_z)$, $\bm{G}=(\bm{g},g_z)$, respectively.
+We assume that the nanostructure is composed of a single material%
+%
+\footnote{This approximation is well justified for semiconductor-insulator heterojunctions where the band discontinuity is very large, or for the opposite extreme of weakly confining quantum wells (QWs).
+For vertical transport across III-nitride multiple QWs, where this simplification could be questionable, the proposed method can be extended to take into account the full details of realistic heterojunctions.}
+%
+and we expand the nanostructure eigenfunction $\psi$ as a linear combination of bulk states $\Phi_{n'\bm{k}'k_z'}$ of the material considered
+\begin{equation}
+\psi = \sum_{n'\bm{k}'k_z'}{A_{n'\bm{k}'k_z'}\Phi_{n'\bm{k}'k_z'}}
+\label{psi}
+\end{equation}
+where $\Phi_{n'\bm{k}'k_z'} = u_{n'\bm{k}'k_z'}(\bm{r},z)e^{j\bm{k}'\cdot \bm{r}}e^{jk_z' z}$
+and $u_{n'\bm{k}'k_z'}$ is the periodic component, which can be expanded in the plane wave basis set with coefficients $B_{n'\bm{k}'k_z}(\bm{g},g_z)$
+\begin{equation}
+u_{n'\bm{k}'k_z'}(\bm{r},z) = \frac{1}{\sqrt{V}} \sum_{\bm{g},g_z} B_{n'\bm{k}'k_z'}(\bm{g},g_z) e^{j\bm{g}\cdot \bm{r}} e^{jk_z' z}.
+\end{equation}
+The unknown wavefunction $\psi$ must satisfy the Schr\"odinger equation $[H+U(\bm{r},z)]\psi = \epsilon \psi$, where $H$ is the Hamiltonian corresponding to the kinetic energy operator and the periodic crystalline potential.
+By projecting the Schr\"odinger equation on the generic state $\Phi_{n\bm{k}k_z}$, a separate eigenvalue equation for each wavevector $\bm{k}$ in the unconstrained plane can be obtained with an appropriate choice of the expansion volume in the reciprocal lattice space
+\begin{equation}
+\begin{split}
+E_{FB}^{(n)} (\bm{k},k_z) A_{n\bm{k}k_z} + \nonumber \\
+\frac{2\pi}{L}\sum_{n',k_z'} \sum_{\bm{G}_z} U_T(k_z'-k_z+G_z)S_{\bm{k}k_z\bm{k} k_z'}^{(n,n')}(\bm{G}_z)A_{n'\bm{k}k_z'} =  \nonumber \\
+\epsilon(\bm{k})A_{n\bm{k}k_z}
+\end{split}
+\label{eig}
+\end{equation}
+where $L={2\pi}/{\Delta k_z}$ is the length of the nanostructure in the $z$ direction, $\Delta k_z$ is the spacing between $k_z$ values, $U_T(q_z)$ denotes the 1D Fourier transform of the confining potential $U(z)$, $\bm{G}_{z}$ is a reciprocal lattice vector along $k_z$, and $S_{\bm{K}\bm{K}'}^{(n,n')}(\bm{G}_z)=\langle u_{n,\bm{K}+\bm{G}_z} | u_{n',\bm{K}'}\rangle $ are overlap integrals between periodic components.
+The wavevector $(\bm{k},k_z)$ belongs to the first 2D Brillouin zone \cite{2005Esseni_PRB}, thus $|k_z|<G_{zm}/2$, where $G_{zm}$ is the magnitude of the smallest reciprocal lattice vector $\bm{G}_z$.
+The empirical pseudopotential method (EPM) \cite{1988Cohen} is used to determine both the full-band dispersion $E_{FB}^{(n)} (\bm{k},k_z)$ and the Fourier components $B_{n\bm{k}k_z}(\bm{g},g_z)$ of the periodic functions of the underlying 3D crystal.
+The expansion coefficients $B_{n\bm{k}k_z}(\bm{g},g_z)$ are then used to compute the overlap integrals $S_{\bm{k}k_z\bm{k} k_z'}^{(n,n')}(\bm{G}_z)$.
+The sum over $\bm{G}_z$ in (\ref{eig}) can be safely truncated to include only the terms $\bm{G}_z=(\bm{0},\pm G_{zm})$ in addition to $\bm{G}_z=(\bm{0},0)$ \cite{2005Esseni_PRB}.
+
+LCBB leads to an eigenvalue problem of rank $n_b n_{k_z}$, where $n_{k_z}$ is the number of wavevectors along $k_z$ and $n_b$ is the number of bulk bands included in the calculation.
+The number of points $n_{k_z}$ in (\ref{psi}) needed to achieve a given accuracy is structure-dependent \cite{2001Chirico_PRB}.
+Moreover, the presence of a confining potential implies a lower bound on the number of points for the Fourier representation of the potential itself.
+In general, a few hundred points are necessary for an accurate description of the energy dispersion of typical 2D systems.
+In practical cases, the computation time is dominated by the calculation of the matrix itself (which requires the calculation of the Bloch waves $\Phi_{n\bm{k}k_z}$) rather than by its diagonalization.
+We will show that the information necessary to build the eigenvalue matrix (\ref{eig}) can be efficiently extracted from a few numerically generated problem-matched basis functions.
+To this end, it is convenient to write the Hamiltonian $H$ in the form used in complex band structure calculations \cite{1990Smith_RMP}, which explicitly displays the $k_z$ dependence of $H$ (non-local terms and spin-orbit corrections are not included for conceptual simplicity)
+\begin{equation}
+H_{\bm{G},\bm{G}'}(\bm{k},k_z) = H^2_{\bm{G},\bm{G}'}k^2_z + H^1_{\bm{G},\bm{G}'}k^2_z + H^0_{\bm{G},\bm{G}'}
+\label{Smith}
+\end{equation}
+with
+\begin{align}
+H^2_{\bm{G},\bm{G}'} &= \frac{\hbar^2}{2m} \delta_{\bm{G},\bm{G}'} \\
+H^1_{\bm{G},\bm{G}'} &= \frac{\hbar^2}{m} g_z \delta_{\bm{G},\bm{G}'} \\
+H^0_{\bm{G},\bm{G}'} &= \frac{\hbar^2}{2m}(k^2+2\bm{k}\cdot \bm{g} +g^2) \delta_{\bm{G},\bm{G}'} + V(\bm{G}-\bm{G}')
+\end{align}
+Rather than repeatedly solving the bulk problem for each $(\bm{k},k_z)$ point, we diagonalize $H$ in a few selected $n_p$ points (the \emph{expansion points}) evenly spaced along $k_z$ between $0$ and $G_{zm}/2$.
+The eigenvectors computed at the expansion points are then arranged columnwise in a matrix $X$ with dimensions $n_G \times n_b n_p$, where $n_G$ is the number of plane waves used in the EPM calculations.
+By applying the economy-size SVD \cite{96Golub} $X = U \Sigma V^{\dagger}$, we obtain a $n_G \times n_b n_p$ unitary matrix of left singular vectors $U$, a $n_b n_p \times n_b n_p$ diagonal matrix $\Sigma$ with positive elements (the singular values), and a $n_b n_p \times n_b n_p$ unitary matrix of right singular vectors $V$.
+The significance of each singular vector in the description of the bands considered is measured by the amplitude of the corresponding singular value \cite{96Golub}.
+Since singular values typically range over several orders of magnitude, just a few of them may be needed to obtain an accurate description of the band structure.
+Having selected a suitable lower bound for the singular values, the bulk problem can be efficiently solved for arbitrary points in the range $0<k_z<G_{zm}/2$ by diagonalizing the reduced-order Hamiltonian of rank $\tilde{n}_{G}$
+\begin{align}
+\tilde{H}_{\bm{G},\bm{G}'}(\bm{k},k_z) = \tilde{H}^2_{\bm{G},\bm{G}'}k^2_z + \tilde{H}^1_{\bm{G},\bm{G}'}k_z + \tilde{H}^0_{\bm{G},\bm{G}'}
+\label{reduced_Smith}
+\end{align}
+where $\tilde{H}^{\alpha}_{\bm{G},\bm{G}'} = \hat{U}^{\dagger} H^{\alpha}_{\bm{G},\bm{G}'} \hat{U}$ with $\alpha=0,1,2$ and the columns of $\hat{U}$ are the $\tilde{n}_{G}$ columns of $U$ corresponding to singular values larger than the lower bound.
+The eigenvectors used to build matrix $X$ should be carefully selected in order to prevent spurious bands in the desired energy range of the dispersion relation.
+As a general rule, ghost solutions may appear if bands lying close to the energy range of interest are not included in $X$.
+Having computed the Bloch states in the interval $0<k_z<G_{zm}/2$ with the reduced-order model, the additional information needed in the secular equation (\ref{eig}) can be obtained by symmetry considerations.
+The wavefunction coefficients associated to $(\bm{k},k_z)$ and $(\bm{k},-k_z)$ are related (to within a phase) by \cite{1990Smith_RMP}
+\begin{equation}
+B_{n\overline{\bm{K}}}(\bm{G}) = B^*_{n,\bm{K}}(\overline{\bm{G}})
+\label{inv}
+\end{equation}
+with $\overline{\bm{K}} = (\bm{k},-k_z)$ and $\overline{\bm{G}} = (\bm{g},-g_z)$.
+A phase factor may apply depending of the specific choice of the primitive vectors \cite[App.~A]{04Hjelm_PhD}, \cite{2000Brennan_TED}.
+In the reduced-order representation, Eq.~(\ref{inv}) can be written as $\tilde{B}_{n,\tilde{\bm{K}}} = \tilde{T}_{\bm{G},\tilde{\bm{G}}} \tilde{B}^*_{n,\bm{K}}$, where $\tilde{T}_{\bm{G},\tilde{\bm{G}}}=\hat{U}^{\dagger} T_{\bm{G},\tilde{\bm{G}}} \hat{U}^*$ and $T_{\bm{G},\tilde{\bm{G}}}$ is the matrix that incorporates the swap sequence of the $\bm{G}$ vectors with the appropriate phase factors.
+Out-of-zone states can be constructed using the periodicity condition (strictly valid if the basis set is not truncated)
+\begin{equation}
+B_{n,\bm{K}+\bm{G}_z}(\bm{G}) = B_{n,\bm{K}}(\bm{G}+\bm{G}_z)
+\end{equation}
+leading to $\tilde{B}_{n,\bm{K}+\bm{G}_z} = \tilde{T}_{\bm{G},\bm{G}'+\bm{G}_z} \tilde{B}_{n,\bm{K}}$, with $\tilde{T}_{\bm{G},\bm{G}'+\bm{G}_z}=\hat{U}^{\dagger} T_{\bm{G},\bm{G}'+\bm{G}_z} \hat{U}$ and $T_{\bm{G},\bm{G}'+\bm{G}_z}=\delta(\bm{G},\bm{G}'+\bm{G}_z)$.
+Once all the necessary bulk eigensolutions have been computed, the overlap integrals $S_{\bm{k}k_z\bm{k} k_z'}^{(n,n')}(\bm{G}_z)$ can be efficiently computed by evaluating scalar products in the reduced-order subspace spanned by $\hat{U}$.
+
+\begin{figure}
+\centerline{\includegraphics[width=1.0\columnwidth]{fig1}}
+\caption{Valence subband structure of an unstrained 25\,\AA\ thick GaN layer with a confining potential of 0.1\,eV along [001], computed with LCBB (solid lines) and \kp\ EFA (dashed lines).}
+\label{GaN001}
+\end{figure}
+
+\begin{figure}
+\centerline{\includegraphics[width=1.0\columnwidth]{fig2}}
+\caption{Electronic structure of wurtzite GaN computed with EPM (solid lines) and its $6\times 6$ \kp\ fit (dotted lines).}
+\label{EPMvskp}
+\end{figure}
+
+\section{Application example}
+
+Active regions of blue- and green-emitting optoelectronic devices usually consist of multiple III-nitride QWs.
+As a numerical example, we calculated the in-plane hole subband structure of an unstrained 25\,\AA\ thick GaN layer with a confining potential of 0.1\,eV along [001].
+The LCBB-SVD model was obtained by computing the upper six valence bands at $n_p=5$ expansion points, evenly spaced between 0 and $G_{zm}/2$ along $k_z$.
+The EPM parameters were taken from \cite{2000Goano_JAP.1, 2007Bellotti_JAP}, with an energy cutoff corresponding to $n_G=197$ plane waves.
+The application of SVD decomposition yields $n_b n_p = 30$ singular vectors.
+The corresponding singular values span five orders of magnitude, which confirms that the sampling rate in momentum space is sufficient to represent the selected valence bands.
+In order to eliminate the redundancy from the basis functions set, the $\tilde{n}_{G}=18$ singular vectors corresponding to singular values having magnitude larger than 1/100 of the dominant one were included in $\hat{U}$.
+The reduced-order model was solved in $n_{k_z}=201$ points along the $k_z$ direction between $-G_{zm}/2$ and $G_{zm}/2$.
+The selected problem-matched basis functions alone are sufficient to reproduce the LCBB dispersion diagram of the structure with excellent accuracy, and no difference can be appreciated in Fig.\,\ref{GaN001} (solid lines) between LCBB and LCBB-SVD results.
+A comparison between Fortran implementations of the standard LCBB and the reduced-order technique confirms that the latter is about 10 times faster than the former.
+
+It is interesting to compare the LCBB results with conventional multiband \kp\ EFA models.
+Common \kp\ implementations for GaN are based on the symmetrized version of the wurtzite Hamiltonian \cite{1996Chuang_PRB, 1997Chuang_SST}, which is numerically unstable in structures having significant discontinuities of the material parameters at interfaces \cite{1999Mireles_PRB, 2000Mireles_PRB}.
+Another important issue in EFA is the correct ordering of the differential operators.
+Reliable and spurious-solution-free subband structures are calculated here with a finite element discretization in real space that includes Burt-Foreman operator ordering \cite{1992Burt_JPCM, 1993Foreman_PRB, 1997Foreman_PRB}, ensuring the ellipticity of the equations in the framework of standard EFA \cite{2008Veprek_JCE, 2009Veprek_OQE}.
+Fig.\,\ref{EPMvskp} compares the electronic structure of unstrained bulk GaN computed with EPM (solid lines) and a $6\times 6$ \kp\ fitting near $\Gamma$ (dashed lines) obtained by least-squares optimization.
+From Fig.\,\ref{GaN001} (dashed lines), it can be seen that $6 \times 6$ \kp\ models are able to approximate the bound states of the nanostructure in the limits of EFA.
+However, simplified approaches, where bound levels are treated as 2D states within EFA while the continuum portion of the spectrum is described through bulk states, are intrinsically unable to provide a microscopic description of capture (continuum-to-bound) and escape (bound-to-continuum) processes, since initial and final states are not treated on equal footing \cite{Rossi}.
+Investigations of capture processes in separate confinement heterostructures (SCH) based on \kp\ EFA and Fermi golden rule have also led to unphysical results due to the finite coherence length of the carriers \cite{1999Mosko_SST, 1999Zakhleniuk_PSSA, 1999Levetas_PRB}.
+Moreover, a zone-center description of the electronic structure is not suitable to describe scattering processes that involve states far from $\Gamma$, a notable example being Auger recombination in wide band gap semiconductors \cite{2010Bertazzi_APL, 2012Bertazzi_APL}.
+Although this problem can be alleviated by full-zone \kp\ approaches \cite{2004Beresford_JAP}, they usually require multiple expansion points to cover the entire Brillouin zone with a computational cost comparable to EPM and possible added complexity related to interpolation issues \cite{2007Persson_CPC, 2010Marnetto_JAP}.
+The present LCCB-SVD model allows for a unified full-zone treatment of extended (bulk-like) and localized (QW-like) states with a small overhead with respect to the EPM problem for bulk semiconductors.
+LCCB-SVD is therefore suited for the evaluation of scattering rates between extended and localized states, a crucial ingredient to investigate vertical carrier transport across heterostructures.
+
+\section*{Acknowledgments}
+
+The authors would like to thank Dr.~Michele Penna for useful discussions.
+This work was supported in part by the U.S.\ Army Research Laboratory through the Collaborative Research Alliance (CRA) for MultiScale multidisciplinary Modeling of Electronic materials (MSME).
+
+%% The Appendices part is started with the command \appendix;
+%% appendix sections are then done as normal sections
+%% \appendix
+
+%% \section{}
+%% \label{}
+
+%% References
+%%
+%% Following citation commands can be used in the body text:
+%% Usage of \cite is as follows:
+%%   \cite{key}         ==>>  [#]
+%%   \cite[chap. 2]{key} ==>> [#, chap. 2]
+%%
+
+%% References with bibTeX database:
+
+%% \bibliographystyle{elsarticle-num}
+%% \bibliography{libri,conferenze,grigia,riviabbr,2012Bertazzi_APL,materia,electric,silicon,oxides,nitrides,tellurides,Photonics,linee}
+
+%% Authors are advised to submit their bibtex database files. They are
+%% requested to list a bibtex style file in the manuscript if they do
+%% not want to use elsarticle-num.bst.
+
+\begin{thebibliography}{10}
+\expandafter\ifx\csname url\endcsname\relax
+  \def\url#1{\texttt{#1}}\fi
+\expandafter\ifx\csname urlprefix\endcsname\relax\def\urlprefix{URL }\fi
+\expandafter\ifx\csname href\endcsname\relax
+  \def\href#1#2{#2} \def\path#1{#1}\fi
+
+\bibitem{2003DiCarlo_SST}
+A.~Di~Carlo, Microscopic theory of nanostructured semiconductor devices: beyond
+  the envelope-function approximation, Semiconductor Sci. Tech. 18~(1) (2003)
+  R1--R31.
+\newblock \href {http://dx.doi.org/10.1088/0268-1242/18/1/201}
+  {\path{doi:10.1088/0268-1242/18/1/201}}.
+
+\bibitem{2009LewYanVoon}
+L.~C. Lew Yan~Voon, M.~Willatzen, The {$k \cdot p$} Method. {E}lectronic
+  Properties of Semiconductors, Springer-Verlag, Berlin, 2009.
+
+\bibitem{1990Smith_RMP}
+D.~L. Smith, C.~Mailhiot, Theory of semiconductor superlattice electronic
+  structure, Rev. Modern Phys. 62~(1) (1990) 173--234.
+\newblock \href {http://dx.doi.org/10.1103/RevModPhys.62.173}
+  {\path{doi:10.1103/RevModPhys.62.173}}.
+
+\bibitem{1997Wang_PRL}
+L.-W. Wang, A.~Franceschetti, A.~Zunger, Million-atom pseudopotential
+  calculation of $\gamma$-{X} mixing in {GaAs/AlAs} superlattices and quantum
+  dots, Phys. Rev. Lett. 78~(14) (1997) 2819--2822.
+\newblock \href {http://dx.doi.org/10.1103/PhysRevLett.78.2819}
+  {\path{doi:10.1103/PhysRevLett.78.2819}}.
+
+\bibitem{1986Brum_PRB}
+J.~A. Brum, G.~Bastard, Resonant carrier capture by semiconductor quantum
+  wells, Phys. Rev. B 33~(2) (1986) 1420--1423.
+
+\bibitem{1996Abou-Khalil_PTL}
+M.~Abou-Khalil, M.~Goano, A.~Champagne, R.~Maciejko, Capture and escape in
+  quantum wells as scattering events in {M}onte {C}arlo simulation, IEEE
+  Photon. Technol. Lett. 8~(1) (1996) 19--21.
+\newblock \href {http://dx.doi.org/10.1109/68.475764}
+  {\path{doi:10.1109/68.475764}}.
+
+\bibitem{1997Register_APL}
+L.~F. Register, K.~Hess, Simulation of carrier capture in semiconductor quantum
+  wells: {B}ridging the gap from quantum to classical transport, Appl. Phys.
+  Lett. 71~(9) (1997) 1222--1224.
+
+\bibitem{2010Piprek_PSSA}
+J.~Piprek, Efficiency droop in nitride-based light-emitting diodes, Phys. Stat.
+  Sol. (a) 207~(10) (2010) 2217--2225.
+\newblock \href {http://dx.doi.org/10.1002/pssa.201026149}
+  {\path{doi:10.1002/pssa.201026149}}.
+
+\bibitem{1990Chik_JAP}
+K.~D. Chik, B.~A. Richardson, On the origin of the carrier leakage in
+  {GaInAsP/InP} double heterojunction lasers, J. Appl. Phys. 67~(5) (1990)
+  2660--2662.
+\newblock \href {http://dx.doi.org/10.1063/1.345478}
+  {\path{doi:10.1063/1.345478}}.
+
+\bibitem{2012Bertazzi_APL}
+F.~Bertazzi, M.~Goano, E.~Bellotti, Numerical analysis of indirect {A}uger
+  transitions in {InGaN}, Appl. Phys. Lett. 101~(1) (2012) 011111.
+\newblock \href {http://dx.doi.org/10.1063/1.4733353}
+  {\path{doi:10.1063/1.4733353}}.
+
+\bibitem{2007Bernardini}
+F.~Bernardini, Spontaneous and piezoelectric polarization: {B}asic theory vs.\
+  practical recipes, in: J.~Piprek (Ed.), Nitride Semiconductor Devices:
+  {P}rinciples and Simulation, Wiley-VCH Verlag, Weinheim, 2007, Ch.~3, pp.
+  49--68.
+
+\bibitem{1992Burt_JPCM}
+M.~G. Burt, The justification for applying the effective-mass approximation to
+  microstructures, J. Phys. Condens. Matter 4~(32) (1992) 6651--6690.
+\newblock \href {http://dx.doi.org/10.1088/0953-8984/4/32/003}
+  {\path{doi:10.1088/0953-8984/4/32/003}}.
+
+\bibitem{1997Foreman_PRB}
+B.~A. Foreman, Elimination of spurious solutions from eight-band {$k \cdot p$}
+  theory, Phys. Rev. B 56 (1997) R12748--R12751.
+\newblock \href {http://dx.doi.org/10.1103/PhysRevB.56.R12748}
+  {\path{doi:10.1103/PhysRevB.56.R12748}}.
+
+\bibitem{1954Slater_PR}
+J.~C. Slater, G.~F. Koster, Simplified {LCAO} method for the periodic potential
+  problem, Phys. Rev. 94~(6) (1954) 1498--1524.
+
+\bibitem{1999Munoz_CPC}
+A.~Mu{\~n}oz, I.~Nieves, E.~Suarez, {BANDAS}: a program for teaching band
+  theory ({LCAO}) in solid state physics, Comp. Phys. Comm. 121--122 (1999)
+  706.
+\newblock \href {http://dx.doi.org/10.1016/S0010-4655(06)70110-2}
+  {\path{doi:10.1016/S0010-4655(06)70110-2}}.
+
+\bibitem{2011Schulz_PSSB}
+S.~Schulz, D.~Mourad, S.~Schumacher, G.~Czycholl, Tight-binding model for the
+  electronic and optical properties of nitride-based quantum dots, Phys. Stat.
+  Sol. (b) 248~(8) (2011) 1853--1866.
+\newblock \href {http://dx.doi.org/10.1002/pssb.201147158}
+  {\path{doi:10.1002/pssb.201147158}}.
+
+\bibitem{1999WangLW_PRB.1}
+L.-W. Wang, A.~Zunger, Linear combination of bulk bands method for large-scale
+  electronic structure calculations on strained nanostructures, Phys. Rev. B
+  59~(24) (1999) 15806--15818.
+\newblock \href {http://dx.doi.org/10.1103/PhysRevB.59.15806}
+  {\path{doi:10.1103/PhysRevB.59.15806}}.
+
+\bibitem{2005Esseni_PRB}
+D.~Esseni, P.~Palestri, Linear combination of bulk bands method for
+  investigating the low-dimensional electron gas in nanostructured devices,
+  Phys. Rev. B 72~(16) (2005) 165342.
+\newblock \href {http://dx.doi.org/10.1103/PhysRevB.72.165342}
+  {\path{doi:10.1103/PhysRevB.72.165342}}.
+
+\bibitem{2001Chirico_PRB}
+F.~Chirico, A.~Di~Carlo, P.~Lugli, Efficient self-consistent pseudopotential
+  calculation of nanostructured devices, Phys. Rev. B 64~(4) (2001) 045314.
+\newblock \href {http://dx.doi.org/10.1103/PhysRevB.64.045314}
+  {\path{doi:10.1103/PhysRevB.64.045314}}.
+
+\bibitem{2002Bertazzi_MTT}
+F.~Bertazzi, O.~A. Peverini, M.~Goano, G.~Ghione, R.~Orta, R.~Tascone, A fast
+  reduced-order model for the full-wave {FEM} analysis of lossy inhomogeneous
+  anisotropic waveguides, IEEE Trans. Microwave Theory Tech. MTT-50~(9) (2002)
+  2108--2114.
+\newblock \href {http://dx.doi.org/10.1109/TMTT.2002.802323}
+  {\path{doi:10.1109/TMTT.2002.802323}}.
+
+\bibitem{2003Bertazzi_MTT}
+F.~Bertazzi, G.~Ghione, M.~Goano, Efficient quasi-{TEM} frequency-dependent
+  analysis of lossy multiconductor lines through a fast reduced-order {FEM}
+  model, IEEE Trans. Microwave Theory Tech. MTT-51~(9) (2003) 2029--2035.
+\newblock \href {http://dx.doi.org/10.1109/TMTT.2003.815875}
+  {\path{doi:10.1109/TMTT.2003.815875}}.
+
+\bibitem{2010Penna_IWCE}
+M.~Penna, F.~Bertazzi, M.~Goano, A reduced-order technique for the acceleration
+  of electronic structure calculations, in: 14th International Workshop on
+  Computational Electronics, Pisa, 2010, pp. 65--68.
+\newblock \href {http://dx.doi.org/10.1109/IWCE.2010.5677941}
+  {\path{doi:10.1109/IWCE.2010.5677941}}.
+
+\bibitem{1988Cohen}
+M.~L. Cohen, J.~R. Chelikowsky, Electronic Structure and Optical Properties of
+  Semiconductors, Springer-Verlag, Berlin, 1988.
+
+\bibitem{96Golub}
+G.~H. Golub, C.~F. Van~Loan, Matrix Computations, 3rd Edition, John Hopkins
+  Press, Baltimore, MD, 1996.
+
+\bibitem{04Hjelm_PhD}
+M.~Hjelm, {M}onte {C}arlo simulations of homogeneous and inhomogeneous
+  transport in silicon carbide, Ph.D. thesis, Kungl Tekniska H{\"o}gskolan,
+  Stockholm (Feb. 2004).
+
+\bibitem{2000Brennan_TED}
+K.~F. Brennan, E.~Bellotti, M.~Farahmand, H.-E. Nilsson, P.~P. Ruden, Y.~Zhang,
+  {M}onte {C}arlo simulation of noncubic symmetry semiconducting materials and
+  devices, IEEE Trans. Electron Devices ED-47~(10) (2000) 1882--1890.
+
+\bibitem{2000Goano_JAP.1}
+M.~Goano, E.~Bellotti, E.~Ghillino, G.~Ghione, K.~F. Brennan, Band structure
+  nonlocal pseudopotential calculation of the {III}-nitride wurtzite phase
+  materials system. {P}art {I}. {B}inary compounds {GaN}, {AlN}, and {InN}, J.
+  Appl. Phys. 88~(11) (2000) 6467--6475.
+\newblock \href {http://dx.doi.org/10.1063/1.1309046}
+  {\path{doi:10.1063/1.1309046}}.
+
+\bibitem{2007Bellotti_JAP}
+E.~Bellotti, F.~Bertazzi, M.~Goano, Alloy scattering in {AlGaN} and {InGaN}:
+  {A} numerical study, J. Appl. Phys. 101~(12) (2007) 123706.
+\newblock \href {http://dx.doi.org/10.1063/1.2748353}
+  {\path{doi:10.1063/1.2748353}}.
+
+\bibitem{1996Chuang_PRB}
+S.~L. Chuang, C.~S. Chang, {$k \cdot p$} method for strained wurtzite
+  semiconductors, Phys. Rev. B 54~(4) (1996) 2491--2504.
+\newblock \href {http://dx.doi.org/10.1103/PhysRevB.54.2491}
+  {\path{doi:10.1103/PhysRevB.54.2491}}.
+
+\bibitem{1997Chuang_SST}
+S.~L. Chuang, C.~S. Chang, A band-structure model of strained quantum-well
+  wurtzite semiconductors, Semiconductor Sci. Tech. 12 (1997) 252--263.
+
+\bibitem{1999Mireles_PRB}
+F.~Mireles, S.~E. Ulloa, Ordered {H}amiltonian and matching conditions for
+  heterojunctions with wurtzite symmetry: {GaN/Al$_{x}$Ga$_{1-x}$N} quantum
+  wells, Phys. Rev. B 60 (1999) 13659--13667.
+\newblock \href {http://dx.doi.org/10.1103/PhysRevB.60.13659}
+  {\path{doi:10.1103/PhysRevB.60.13659}}.
+
+\bibitem{2000Mireles_PRB}
+F.~Mireles, S.~E. Ulloa, Strain and crystallographic orientation effects on the
+  valence subbands of wurtzite quantum wells, Phys. Rev. B 62 (2000)
+  2562--2572.
+\newblock \href {http://dx.doi.org/10.1103/PhysRevB.62.2562}
+  {\path{doi:10.1103/PhysRevB.62.2562}}.
+
+\bibitem{1993Foreman_PRB}
+B.~A. Foreman, Effective-mass {H}amiltonian and boundary conditions for the
+  valence bands of semiconductor microstructures, Phys. Rev. B 48 (1993)
+  4964--4967.
+\newblock \href {http://dx.doi.org/10.1103/PhysRevB.48.4964}
+  {\path{doi:10.1103/PhysRevB.48.4964}}.
+
+\bibitem{2008Veprek_JCE}
+R.~G. Veprek, S.~Steiger, B.~Witzigmann, Reliable {$k \cdot p$} band structure
+  calculation for nanostructures using finite elements, J. Comp. Electron. 7
+  (2008) 521--529.
+\newblock \href {http://dx.doi.org/10.1007/s10825-008-0262-y}
+  {\path{doi:10.1007/s10825-008-0262-y}}.
+
+\bibitem{2009Veprek_OQE}
+R.~G. Veprek, S.~Steiger, B.~Witzigmann, Operator ordering, ellipticity and
+  spurious solutions in {$k \cdot p$} calculations of {III}-nitride
+  nanostructures, Opt. Quantum Electron. 40 (2009) 1169--1174.
+\newblock \href {http://dx.doi.org/10.1007/s11082-008-9259-9}
+  {\path{doi:10.1007/s11082-008-9259-9}}.
+
+\bibitem{Rossi}
+F.~Rossi, Coherent phenomena in semiconductors, Semiconductor Sci. Tech. 13
+  (1998) 147--168.
+
+\bibitem{1999Mosko_SST}
+M.~Mo{\v{s}}ko, K.~K{\'a}lna, Carrier capture into a {GaAs} quantum well with a
+  separate confinement region: comment on quantum and classical aspects,
+  Semiconductor Sci. Tech. 14 (1999) 790--796.
+
+\bibitem{1999Zakhleniuk_PSSA}
+N.~A. Zakhleniuk, C.~R. Bennett, V.~N. Stavrou, M.~Babiker, B.~K. Ridley,
+  Quantum capture of injected electrons in {GaN}-based laser heterostructures,
+  Phys. Stat. Sol. (a) 176 (1999) 79--83.
+
+\bibitem{1999Levetas_PRB}
+S.~A. Levetas, M.~J. Godfrey, Calculation of capture of carriers by quantum
+  wells, Phys. Rev. B 59~(15) (1999) 10202--10207.
+
+\bibitem{2010Bertazzi_APL}
+F.~Bertazzi, M.~Goano, E.~Bellotti, A numerical study of {A}uger recombination
+  in bulk {InGaN}, Appl. Phys. Lett. 97~(23) (2010) 231118.
+\newblock \href {http://dx.doi.org/10.1063/1.3525605}
+  {\path{doi:10.1063/1.3525605}}.
+
+\bibitem{2004Beresford_JAP}
+R.~Beresford, Full-zone {$k \cdot p$} method of band structure calculation for
+  wurtzite semiconductors, J. Appl. Phys. 95~(11) (2004) 6216--6224.
+\newblock \href {http://dx.doi.org/10.1063/1.1713043}
+  {\path{doi:10.1063/1.1713043}}.
+
+\bibitem{2007Persson_CPC}
+C.~Persson, C.~Ambrosch-{D}raxl, A full-band {FPLAPW} + {$k \cdot p$}-method
+  for solving the {K}ohn–{S}ham equation, Comp. Phys. Comm. 177 (2007)
+  280--287.
+\newblock \href {http://dx.doi.org/10.1016/j.cpc.2007.02.111}
+  {\path{doi:10.1016/j.cpc.2007.02.111}}.
+
+\bibitem{2010Marnetto_JAP}
+A.~Marnetto, M.~Penna, M.~Goano, An accurate dual-expansion-point
+  full-{B}rillouin-zone {$k \cdot p$} model for wurtzite semiconductors, J.
+  Appl. Phys. 108~(3) (2010) 033701.
+\newblock \href {http://dx.doi.org/10.1063/1.3459883}
+  {\path{doi:10.1063/1.3459883}}.
+
+\end{thebibliography}
+
+\end{document}
