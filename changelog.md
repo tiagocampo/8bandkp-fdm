@@ -2,23 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2024-12-28] - Continuous Integration Setup
-
-### Added
-- Implemented GitHub Actions workflow:
-  - Added CI configuration in `.github/workflows/ci.yml`
-  - Set up matrix builds for Release/Debug and MKL/non-MKL configurations
-  - Added automated dependency installation
-  - Configured test execution
-  - Added compiler warning checks
-
-### Changed
-- Enhanced CMake configuration:
-  - Added compile commands generation for static analysis
-  - Enabled comprehensive compiler warnings
-  - Added Intel compiler support with appropriate flags
-  - Improved warning configuration for both Debug and Release builds
-
 ## [2024-12-28] - Directory Structure Reorganization
 
 ### Added
