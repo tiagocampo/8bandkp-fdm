@@ -1,0 +1,39 @@
+# Validation Test Case: GaSb/InAs/AlSb Quantum Well
+# Purpose: Verify quantum well confinement effects
+# Expected: Quantized energy levels, clear subband structure
+# Reference: Type-II quantum well with strong confinement
+
+# Wave vector configuration
+waveVector: kx                    # In-plane momentum
+waveVectorMax: 0.1                # Small k-range for validation
+waveVectorStep: 11                # Multiple k-points for band structure
+
+# System configuration
+confinement: 1                    # Quantum well system
+FDstep: 101                       # Sufficient discretization for accuracy
+numLayers: 3                      # Three material layers
+
+# Material layer definitions
+# Format: materialN: name start_position end_position band_offset
+material1: AlSb -250 250 0        # AlSb barrier (wide)
+material2: GaSb -135 135 0.2414   # GaSb barrier (eV band offset)
+material3: InAs -35 35 -0.0914    # InAs quantum well (70 nm wide)
+
+# Band configuration
+numcb: 32                         # Many conduction bands for subband structure
+numvb: 32                         # Many valence bands for subband structure
+
+# External field configuration
+ExternalField: 0 EF               # No external field
+EFParams: 0.0005                  # Unused parameter
+
+# Validation Criteria:
+# 1. Quantized energy levels in the InAs well
+# 2. Clear subband structure due to confinement
+# 3. Type-II band alignment (electron-hole separation)
+# 4. Heavy hole and light hole subbands
+# 5. Energy levels should show confinement effects
+# 6. Subband spacing should be reasonable for 70nm well
+
+
+

@@ -1,0 +1,35 @@
+# Validation Test Case: Bulk InAs60Sb40
+# Purpose: Verify band structure calculation against known physics
+# Expected: Clear band gap, proper valence/conduction band structure
+# Reference: InAs60Sb40 is a well-studied III-V semiconductor
+
+# Wave vector configuration
+waveVector: k0                    # Single k-point calculation
+waveVectorMax: 0.02               # Small k-range for validation
+waveVectorStep: 1                 # Single point calculation
+
+# System configuration
+confinement: 0                    # Bulk system
+FDstep: 1                         # Minimal discretization for validation
+numLayers: 1                      # Single material layer
+
+# Material definition
+material3: InAs60Sb40             # InAs60Sb40 alloy
+
+# Band configuration
+numcb: 2                          # Two conduction bands
+numvb: 6                          # Six valence bands (heavy hole, light hole, split-off)
+
+# External field configuration
+ExternalField: 0 EF               # No external field
+EFParams: 0.0005                  # Unused parameter
+
+# Validation Criteria:
+# 1. Band gap should be approximately 0.1-0.2 eV
+# 2. Valence band maximum at k=0
+# 3. Conduction band minimum at k=0
+# 4. Heavy hole, light hole, and split-off bands visible
+# 5. Energy levels should be physically reasonable
+
+
+

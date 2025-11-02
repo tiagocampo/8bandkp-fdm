@@ -1,0 +1,38 @@
+# Quantum Well Calculation: GaSb/InAs/AlSb
+# Structure: AlSb (barrier) | GaSb (barrier) | InAs (well) | GaSb (barrier) | AlSb (barrier)
+# Purpose: Validation test case for quantum well confinement effects
+# Reference: Type-II quantum well with strong confinement
+
+# Wave vector configuration
+waveVector: kx                    # Direction: kx (in-plane momentum)
+waveVectorMax: 0.1                # Maximum k-point as fraction of Brillouin Zone
+waveVectorStep: 11                # Number of k-points for band structure
+
+# System configuration
+confinement: 1                    # 1 = quantum well system
+FDstep: 101                       # Finite difference discretization points
+numLayers: 3                      # Number of material layers
+
+# Material layer definitions
+# Format: materialN: name start_position end_position band_offset
+material1: AlSb -250 250 0        # AlSb barrier (left and right)
+material2: GaSb -135 135 0.2414   # GaSb barrier (eV band offset)
+material3: InAs -35 35 -0.0914    # InAs quantum well (eV band offset)
+
+# Band configuration
+numcb: 32                         # Number of conduction bands (quantized levels)
+numvb: 32                         # Number of valence bands (quantized levels)
+
+# External field configuration
+ExternalField: 0 EF               # No external field for basic calculation
+EFParams: 0.0005                  # Field strength parameter (unused)
+
+# Expected Results:
+# - Quantized energy levels in the InAs well
+# - Confinement effects visible in band structure
+# - Type-II band alignment with electron-hole separation
+# - Clear subband structure due to quantum confinement
+# - Heavy hole and light hole subbands
+
+
+

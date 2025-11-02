@@ -1,0 +1,38 @@
+# G-Factor Calculation: GaSb/InAs/AlSb Quantum Well
+# Structure: Same as quantum well example but focused on g-factor calculation
+# Purpose: Calculate Landé g-factors for quantum well system
+# Reference: Spin-orbit coupling and g-factor anisotropy
+
+# Wave vector configuration
+waveVector: k0                    # Direction: k0 (single point calculation)
+waveVectorMax: 0.1                # Maximum k-point as fraction of Brillouin Zone
+waveVectorStep: 0                 # Number of k-points (0 for single point)
+
+# System configuration
+confinement: 1                    # 1 = quantum well system
+FDstep: 101                       # Finite difference discretization points
+numLayers: 3                      # Number of material layers
+
+# Material layer definitions
+# Format: materialN: name start_position end_position band_offset
+material1: AlSb -250 250 0        # AlSb barrier (left and right)
+material2: GaSb -135 135 0.2414   # GaSb barrier (eV band offset)
+material3: InAs -35 35 -0.0914    # InAs quantum well (eV band offset)
+
+# Band configuration
+numcb: 32                         # Number of conduction bands
+numvb: 32                         # Number of valence bands
+
+# External field configuration
+ExternalField: 0 EF               # No external field for basic calculation
+EFParams: 0.0005                  # Field strength parameter (unused)
+
+# Expected Results:
+# - G-factors for different subbands
+# - Anisotropy between in-plane and out-of-plane g-factors
+# - Values typically in range 1.5-3.0 for III-V materials
+# - Dependence on quantum well width and material composition
+# - Spin-orbit coupling effects visible in g-factor values
+
+
+

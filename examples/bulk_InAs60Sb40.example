@@ -1,0 +1,34 @@
+# Bulk InAs60Sb40 Band Structure Calculation
+# Material: InAs60Sb40 (Indium Arsenide 60% - Antimonide 40%)
+# Purpose: Validation test case for bulk band structure calculation
+# Reference: Standard bulk semiconductor band structure
+
+# Wave vector configuration
+waveVector: k0                    # Direction: k0 (bulk calculation)
+waveVectorMax: 0.02               # Maximum k-point as fraction of Brillouin Zone
+waveVectorStep: 1                 # Number of k-points (1 for single point)
+
+# System configuration
+confinement: 0                    # 0 = bulk system, 1 = quantum well
+FDstep: 1                         # Finite difference discretization points
+numLayers: 1                      # Number of material layers
+
+# Material definition
+material3: InAs60Sb40             # Material name (must match parameter database)
+
+# Band configuration
+numcb: 2                          # Number of conduction bands to calculate
+numvb: 6                          # Number of valence bands to calculate
+
+# External field configuration
+ExternalField: 0 EF               # 0 = no field, 1 = with field; EF = electric field
+EFParams: 0.0005                  # Field strength parameter
+
+# Expected Results:
+# - Conduction band minimum at k=0
+# - Valence band maximum at k=0
+# - Band gap approximately 0.1-0.2 eV
+# - Heavy hole, light hole, and split-off bands visible
+
+
+
