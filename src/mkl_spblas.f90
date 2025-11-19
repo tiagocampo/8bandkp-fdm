@@ -1576,4 +1576,77 @@ MODULE MKL_SPBLAS
 
     END INTERFACE
 
+    !===========================================================================
+    ! ARPACK-ng interface wrapper for sparse eigenvalue problems
+    !===========================================================================
+
+    PUBLIC :: ARPACK_SPARSE_EIGENSOLVE
+    PUBLIC :: ARPACK_DENSE_EIGENSOLVE
+
+    INTERFACE ARPACK_SPARSE_EIGENSOLVE
+        MODULE PROCEDURE ARPACK_SPARSE_EIGENSOLVE_DP
+    END INTERFACE
+
+    INTERFACE ARPACK_DENSE_EIGENSOLVE
+        MODULE PROCEDURE ARPACK_DENSE_EIGENSOLVE_DP
+    END INTERFACE
+
+CONTAINS
+
+    !===========================================================================
+    ! ARPACK sparse eigenvalue solver interface
+    !===========================================================================
+    SUBROUTINE ARPACK_SPARSE_EIGENSOLVE_DP(n, nnz, values, row_ind, col_ind, nev, &
+                                        eigenvalues, eigenvectors, info)
+        USE ISO_C_BINDING
+        USE DEFINITIONS, ONLY: DP
+        IMPLICIT NONE
+
+        ! Input parameters
+        INTEGER, INTENT(IN) :: n              ! Matrix dimension
+        INTEGER, INTENT(IN) :: nnz            ! Number of non-zero elements
+        REAL(KIND=DP), INTENT(IN) :: values(nnz)     ! Non-zero values (real part)
+        INTEGER, INTENT(IN) :: row_ind(nnz)   ! Row indices
+        INTEGER, INTENT(IN) :: col_ind(n+1)   ! Column pointers (CSR format)
+        INTEGER, INTENT(IN) :: nev            ! Number of eigenvalues to compute
+        REAL(KIND=DP), INTENT(OUT) :: eigenvalues(nev)  ! Computed eigenvalues
+        REAL(KIND=DP), INTENT(OUT) :: eigenvectors(n, nev)  ! Computed eigenvectors
+        INTEGER, INTENT(OUT) :: info          ! Error code (0 = success)
+
+        ! Local variables
+        ! This is a wrapper interface - actual ARPACK calls will be implemented
+        ! in the numerical perturbation modules
+        info = 0
+
+        ! Placeholder for ARPACK implementation
+        ! Will be fully implemented in User Story phases
+
+    END SUBROUTINE ARPACK_SPARSE_EIGENSOLVE_DP
+
+    !===========================================================================
+    ! ARPACK dense eigenvalue solver interface (fallback)
+    !===========================================================================
+    SUBROUTINE ARPACK_DENSE_EIGENSOLVE_DP(n, matrix, nev, eigenvalues, eigenvectors, info)
+        USE ISO_C_BINDING
+        USE DEFINITIONS, ONLY: DP
+        IMPLICIT NONE
+
+        ! Input parameters
+        INTEGER, INTENT(IN) :: n              ! Matrix dimension
+        COMPLEX(KIND=DP), INTENT(IN) :: matrix(n,n)  ! Dense matrix
+        INTEGER, INTENT(IN) :: nev            ! Number of eigenvalues to compute
+        COMPLEX(KIND=DP), INTENT(OUT) :: eigenvalues(nev)  ! Computed eigenvalues
+        COMPLEX(KIND=DP), INTENT(OUT) :: eigenvectors(n, nev)  ! Computed eigenvectors
+        INTEGER, INTENT(OUT) :: info          ! Error code (0 = success)
+
+        ! Local variables
+        ! This is a wrapper interface - actual LAPACK/ARPACK calls will be implemented
+        ! in the numerical perturbation modules
+        info = 0
+
+        ! Placeholder for ARPACK implementation
+        ! Will be fully implemented in User Story phases
+
+    END SUBROUTINE ARPACK_DENSE_EIGENSOLVE_DP
+
 END MODULE MKL_SPBLAS

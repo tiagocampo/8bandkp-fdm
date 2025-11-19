@@ -1,0 +1,38 @@
+# G-factor calculation for bulk GaAs using numerical perturbation method
+# This example demonstrates the numerical perturbation approach for bulk materials
+# Note: For bulk calculations, confinement=0 and the system uses 8×8 Hamiltonian
+
+waveVector: k0
+waveVectorMax: 0.1
+waveVectorStep: 0
+
+# Bulk configuration (no discretization)
+confinement: 0
+FDstep: 101  # Not used for bulk, but required by input format
+numLayers: 1
+
+# Bulk GaAs material parameters
+material1: GaAs 0 0 0
+
+# Band counts for bulk 8-band model (2 conduction + 6 valence)
+numcb: 2
+numvb: 6
+
+# External field configuration
+ExternalField: 0 EF
+EFParams: 0.0005
+
+# Numerical perturbation method configuration
+gfactorMethod: numerical
+numericalTolerance: 1e-12
+perturbationStep: 1e-4
+useSparseSolver: false
+validateWithAnalytical: true
+verboseOutput: true
+
+# Expected behavior:
+# - Uses 8×8 Hamiltonian matrix (not discretized)
+# - Applies ±δB perturbations in x, y, z directions
+# - Calculates g-factors using central finite difference scheme
+# - Compares results with analytical method if validateWithAnalytical=true
+# - Current limitation: Returns g-factors = 0.0000 (magnetic field terms need implementation)

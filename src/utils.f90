@@ -54,6 +54,9 @@ contains
 
     if (info /= 0) stop 'error converting HT_coo to HT_csr'
 
+    info = mkl_sparse_destroy(HT_coo)
+    if (info /= 0) print *, 'Warning: failed to destroy HT_coo'
+
     deallocate(A_a, A_ia, A_ja)
 
   end subroutine dnscsr_z_mkl
@@ -218,5 +221,6 @@ complex(kind=dp) function simpson(f,a,b)
 
 end function simpson
 
+  
 
 end module utils

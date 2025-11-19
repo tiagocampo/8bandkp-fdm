@@ -141,6 +141,8 @@ Physical accuracy checks:
 ## Active Technologies
 - Fortran 2008+ (with gfortran 15.2.1+ or Intel ifort/ifx) + Intel MKL 2025.0+, ARPACK-ng, FFTW3, OpenMP (002-generic-numerical-perturbation)
 - File-based I/O with structured outputs in timestamped directories (002-generic-numerical-perturbation)
+- Fortran 2008+ (gfortran 15.2.1+ or Intel ifort/ifx) + Intel MKL 2025.0+, ARPACK-ng, FFTW3, OpenMP (002-generic-numerical-perturbation)
+- File-based input/output with structured timestamped directories (002-generic-numerical-perturbation)
 
 ## Recent Changes
 - 002-generic-numerical-perturbation: Added Fortran 2008+ (with gfortran 15.2.1+ or Intel ifort/ifx) + Intel MKL 2025.0+, ARPACK-ng, FFTW3, OpenMP

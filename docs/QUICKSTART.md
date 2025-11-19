@@ -55,16 +55,11 @@ ls -la bandStructure gfactorCalculation
 
 ### Bulk Band Structure
 ```bash
-# Run bulk calculation (current default uses input.cfg)
-cp examples/bulk_InAs60Sb40.example input.cfg
-./bandStructure
-# After CLI filename support:
-# ./bandStructure examples/bulk_InAs60Sb40.example --out outputs/$(date +%Y%m%d-%H%M%S)
+# Run bulk calculation
+./bandStructure examples/bulk.example --out run/my_bulk
 
-# Check results (replace RUN with your chosen run-id)
-RUN=$(date +%Y%m%d-%H%M%S)
-./bandStructure examples/bulk_InAs60Sb40.example --out outputs/$RUN/bulk
-head -5 outputs/$RUN/bulk/eigenvalues.dat
+# Check results
+head -5 run/my_bulk/eigenvalues.dat
 ```
 
 **Expected Output**:
@@ -77,14 +72,25 @@ head -5 outputs/$RUN/bulk/eigenvalues.dat
 0.400000E-01  -0.196300  -0.181261    0.153665    0.315436
 ```
 
-### Quantum Well Calculation
+### G-Factor Calculation
 ```bash
-# Run quantum well calculation
-./bandStructure examples/quantum_well_GaSb_InAs_AlSb.example --out outputs/$RUN/qw
+# Analytical method (quantum well)
+./gfactorCalculation examples/gfactor.example --out run/my_gfactor
+
+# Numerical method (bulk GaAs conduction band)
+./gfactorCalculation examples/gfactor_bulk_GaAs_numerical.example --out run/gfactor_cb
 
 # Check results
-head -5 eigenvalues.dat
+cat run/gfactor_cb/gfactor.dat
 ```
+
+**Expected Output**:
+```
+-0.31731403134144992  -0.31731403134144992  -0.31731403134144992
+```
+
+For more details on g-factor calculations, see [`docs/GFACTOR.md`](GFACTOR.md).
+
 
 ## Step 3: Visualize Results (10 minutes)
 
@@ -102,44 +108,44 @@ brew install gnuplot
 
 ### Generate Plots
 ```bash
-# Generate all plots (script will create a new outputs/<run-id> if needed)
-./scripts/plot_all.sh
+# Navigate to output directory
+cd run/my_gfactor
 
-# Or generate specific plots
-gnuplot -e "datafile='eigenvalues.dat'; output='band_structure.png'" scripts/plot_band_structure.gp
+# Generate individual plots
+gnuplot ../../scripts/plot_gfactor.gp
+gnuplot ../../scripts/plot_quantum_well.gp
+
+# For band structure
+cd ../my_bulk
+gnuplot ../../scripts/plot_band_structure.gp
 ```
 
 **Expected Output**:
 ```
-==========================================
-8bandkp-fdm-ai Plotting Automation Script
-==========================================
-✓ gnuplot found: gnuplot 5.4 patchlevel 8
-✓ Band structure plot generated: plots/band_structure.png
-✓ Quantum well plot generated: plots/quantum_well.png
-✓ G-factor plot generated: plots/gfactor.png
+G-factor plot saved to gfactor.png
+Quantum well wavefunction plot saved to quantum_well.png
+Band structure plot saved to band_structure.png
 ```
 
 ## Step 4: Validate Results (5 minutes)
 
 ```bash
-# Run validation tests
-./scripts/validate_results.sh
+# Verify the calculations produced expected output
+ls run/my_bulk/eigenvalues.dat
+ls run/my_gfactor/gfactor.dat
+ls run/my_gfactor/eigenfunctions_*.dat
 
-# Check build verification
-./scripts/verify_build.sh
+# Check g-factor values are reasonable
+cat run/my_gfactor/gfactor.dat
 ```
 
 **Expected Output**:
 ```
-==========================================
-8bandkp-fdm-ai Result Validation Script
-==========================================
-✓ eigenvalues.dat format and values look reasonable
-  - Energy range: -0.228322 to 1.95151 eV
-  - Data points: 11 lines
-✓ Band gap in reasonable range
-✓ Quantum well calculation completed
+run/my_bulk/eigenvalues.dat
+run/my_gfactor/gfactor.dat
+run/my_gfactor/eigenfunctions_k_00001_ev_00001.dat
+...
+-1.57e-13  -2.03e-13  -1666.07  # gx, gy, gz values
 ```
 
 ## Step 5: Explore Examples (5 minutes)
@@ -160,11 +166,9 @@ validation_quantum_well_GaSb_InAs_AlSb.example
 
 ### Run Different Calculations
 ```bash
-# Try different materials
-./bandStructure examples/validation_bulk_InAs60Sb40.example --out outputs/$(date +%Y%m%d-%H%M%S)/bulk
-
-# Try g-factor calculation
-./gfactorCalculation examples/gfactor_quantum_well.example --out outputs/$(date +%Y%m%d-%H%M%S)/gfactor
+# Try different examples
+./bandStructure examples/bulk.example --out run/test_bulk
+./gfactorCalculation examples/gfactor.example --out run/test_gfactor
 ```
 
 ## Troubleshooting
@@ -185,10 +189,10 @@ make all
 **2. Calculation Fails**
 ```bash
 # Check input file format
-cat examples/bulk_InAs60Sb40.example
+cat examples/gfactor.example
 
-# Run with verbose output
-./bandStructure examples/bulk_InAs60Sb40.example --out outputs/$(date +%Y%m%d-%H%M%S)/bulk 2>&1 | head -20
+# Run with output to check for errors
+./gfactorCalculation examples/gfactor.example --out run/debug_output
 ```
 
 **3. Plotting Fails**
@@ -196,8 +200,9 @@ cat examples/bulk_InAs60Sb40.example
 # Check gnuplot installation
 gnuplot --version
 
-# Test simple plot
-echo "plot sin(x)" | gnuplot
+# Navigate to output directory and test
+cd run/my_gfactor
+gnuplot ../../scripts/plot_gfactor.gp
 ```
 
 **4. Permission Denied**
@@ -218,13 +223,13 @@ chmod +x scripts/*.gp
 ### 2. Create Your Own Calculations
 ```bash
 # Copy example file
-cp examples/bulk_InAs60Sb40.example my_calculation.example
+cp examples/gfactor.example my_calculation.example
 
 # Edit parameters
 nano my_calculation.example
 
 # Run calculation
-./bandStructure my_calculation.example --out outputs/$(date +%Y%m%d-%H%M%S)/custom
+./gfactorCalculation my_calculation.example --out run/my_custom
 ```
 
 ### 3. Customize Plots

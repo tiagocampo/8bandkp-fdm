@@ -32,6 +32,8 @@ module parameters
             params(i)%gamma3  = 2.93_dp
             params(i)%EV      = -0.8
             params(i)%EC      = 0.719
+            params(i)%kappa   = 1.2_dp
+            params(i)%q       = 0.04_dp
 
           case ("GaAsW")
 
@@ -102,6 +104,24 @@ module parameters
             params(i)%gamma1  = 11.97_dp
             params(i)%gamma2  = 4.36_dp
             params(i)%gamma3  = 5.15_dp
+
+          case ("In20Ga80As")
+
+            ! In0.2Ga0.8As - strained to GaAs
+            ! Linear interpolation between GaAs and InAs with bowing
+            ! x = 0.2 (In fraction)
+            params(i)%meff    = 0.0607_dp  ! Linear interpolation
+            params(i)%EP      = 27.96_dp   ! Linear interpolation
+            params(i)%P       = dsqrt(params(i)%EP*const)
+            params(i)%Eg      = 1.299_dp   ! With bowing parameter ~0.477 eV
+            params(i)%deltaSO = 0.351_dp   ! Linear interpolation
+            gamma0         = 1.0_dp/params(i)%meff
+            params(i)%A       = gamma0
+            params(i)%gamma1  = 9.604_dp   ! Linear interpolation
+            params(i)%gamma2  = 3.48_dp    ! Linear interpolation
+            params(i)%gamma3  = 4.174_dp   ! Linear interpolation
+            params(i)%EV      = -0.762_dp  ! Estimated from linear interpolation
+            params(i)%EC      = 0.537_dp   ! Estimated
 
           case ("Al47In53AsW")
 

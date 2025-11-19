@@ -1,0 +1,16 @@
+waveVector k0
+waveVectorMax 0
+waveVectorStep 0
+confinement 1
+FDstep 101
+numLayers 2
+material1 Al30Ga70As -200 200 0
+material2 GaAs -50 50 -0.258
+numcb 32
+numvb 32
+ExternalField 0 EF
+EFParams 0.0005
+gfactorMethod numerical
+perturbationStep 1e-4
+numericalTolerance 1e-12
+gfactorBand vb 1

@@ -46,10 +46,59 @@ program kpfdm
   integer ( kind = 4 ) :: data_unit
   integer :: status
   character ( len = 255 ) :: data_filename, label
+  character ( len = 512 ) :: outdir
+  integer :: argc, argi
+  character(len=512) :: arg
+  character(len=8) :: date_s, time_s, zone_s
+  integer, dimension(8) :: values
+
+  ! CLI argument parsing: [CONFIG_FILE] [--out <dir>]
+  outdir = ''
+  data_filename = 'input.cfg'
+  argc = command_argument_count()
+  argi = 1
+  do while (argi <= argc)
+    call get_command_argument(argi, arg)
+    if (len_trim(arg) > 0) then
+      if (arg == '--out') then
+        if (argi+1 <= argc) then
+          call get_command_argument(argi+1, outdir)
+          argi = argi + 2
+          cycle
+        else
+          stop 'missing value for --out'
+        end if
+      else if (index(arg, '--out=') == 1) then
+        outdir = trim(arg(7:))
+      else if (index(arg, '--') == 1) then
+        ! ignore unknown switches for now
+      else
+        data_filename = trim(arg)
+      end if
+    end if
+    argi = argi + 1
+  end do
+
+  if (len_trim(outdir) == 0) then
+    call date_and_time(date_s, time_s, zone_s, values)
+    write(outdir, '(a,i4.4,a,i2.2,a,i2.2,a,i2.2,a,i2.2,a,i2.2)') 'outputs/', &
+      values(1), '-', values(2), '-', values(3), '_', values(5), '-', values(6), '-', values(7)
+  end if
+
+  call execute_command_line('mkdir -p ' // trim(outdir))
+  call setOutputDir(trim(outdir))
+
+  ! write run metadata
+  call get_unit ( data_unit )
+  open(data_unit, file=trim(outdir)//'/run.meta', status='replace', action='write')
+  write(data_unit, '(a)') 'executable=bandStructure'
+  write(data_unit, '(a)') 'input_file='//trim(data_filename)
+  call date_and_time(date_s, time_s)
+  write(data_unit, '(a)') 'timestamp='//trim(date_s)//'T'//trim(time_s)
+  close(data_unit)
 
   !reading input/configuration file
   call get_unit ( data_unit )
-  data_filename = 'input.cfg'
   open( data_unit ,file=data_filename ,status="old")
 
 
@@ -174,7 +223,7 @@ program kpfdm
   if (allocated(work)) deallocate(work)
   allocate(work(1))
   lwork = -1
-  call zheevx('V','I','U',N,HT,N,vl,vu,il,iuu,ABSTOL,M,eig(:,k),eigv(:,:,k),&
+  call zheevx('V','I','U',N,HT,N,vl,vu,il,iuu,ABSTOL,M,eig(:,1),eigv(:,:,1),&
   & N,work,lwork,rwork,iwork,ifail,info)
   lwork = work(1)
   if (allocated(work)) deallocate(work)
@@ -252,7 +301,7 @@ program kpfdm
     ! print *, 'after diag'
     ! write(100,*) smallk(k)%kx, eig(1:evnum,k)
 
-    if (smallk(k)%kx==0) call writeEigenfunctions(N, evnum, &
+    if (fdstep > 1 .and. smallk(k)%kx == 0) call writeEigenfunctions(N, evnum, &
     & eigv(1:N,1:evnum,k), k, fdstep, z)
     ! call writeEigenfunctions(N, evnum, HT(1:N,il:iu), k, fdstep)
 

@@ -22,6 +22,19 @@ module definitions
   real(kind=dp), parameter :: tolerance=1e-7
   logical, parameter :: renormalization = .False.
 
+  ! Numerical perturbation constants
+  real(kind=dp), parameter :: mu_B = 5.7883818012e-5_dp  ! Bohr magneton in eV/T
+  real(kind=dp), parameter :: g_e = 2.0023193043622_dp    ! Free electron g-factor
+  real(kind=dp), parameter :: perturbation_tolerance_default = 1e-12_dp  ! Default convergence tolerance
+  real(kind=dp), parameter :: min_magnetic_field = 1e-8_dp      ! Minimum magnetic field [T]
+  real(kind=dp), parameter :: max_magnetic_field = 10.0_dp     ! Maximum magnetic field [T]
+  real(kind=dp), parameter :: default_step_size = 1e-4_dp      ! Default perturbation step [T]
+  real(kind=dp), parameter :: min_step_size = 1e-8_dp          ! Minimum step size [T]
+  real(kind=dp), parameter :: max_step_size = 1e-2_dp          ! Maximum step size [T]
+  real(kind=dp), parameter :: degeneracy_threshold = 1e-6_dp  ! Energy difference for degenerate states [eV]
+  real(kind=dp), parameter :: small_bandgap_threshold = 0.01_dp ! Small band gap threshold [eV]
+  real(kind=dp), parameter :: hermitian_threshold = 1e-12_dp  ! Hermitian detection threshold
+
   complex(kind=dp), parameter :: IU = dcmplx(0.0_dp, 1.0_dp)
   real(kind=dp), parameter :: SQR3 = dsqrt(3.0_dp)
   real(kind=dp), parameter :: SQR2 = dsqrt(2.0_dp)
@@ -40,7 +53,7 @@ module definitions
 
   type paramStruct
 
-    real(kind=dp) :: meff, gamma1, gamma2, gamma3, P, A, deltaSO, EP, Eg, EV, EC
+    real(kind=dp) :: meff, gamma1, gamma2, gamma3, P, A, deltaSO, EP, Eg, EV, EC, kappa, q
 
   end type paramStruct
 

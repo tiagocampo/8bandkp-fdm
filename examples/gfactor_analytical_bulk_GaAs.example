@@ -1,0 +1,30 @@
+# G-factor calculation for bulk GaAs using analytical method (default)
+# This example demonstrates the standard analytical approach for bulk materials
+# Note: For bulk calculations, confinement=0 and the system uses 8×8 Hamiltonian
+
+waveVector: k0
+waveVectorMax: 0.1
+waveVectorStep: 0
+
+# Bulk configuration (no discretization)
+confinement: 0
+FDstep: 101  # Not used for bulk, but required by input format
+numLayers: 1
+
+# Bulk GaAs material parameters
+material1: GaAs 0 0 0
+
+# Band counts for bulk 8-band model (2 conduction + 6 valence)
+numcb: 2
+numvb: 6
+
+# External field configuration
+ExternalField: 0 EF
+EFParams: 0.0005
+
+# Note: No gfactorMethod specified - defaults to analytical method
+# Expected behavior:
+# - Uses 8×8 Hamiltonian matrix (not discretized)
+# - Applies analytical Löwdin partitioning method
+# - Calculates g-factors using established analytical formulas
+# - Should produce non-zero g-factor values for GaAs

@@ -1,0 +1,42 @@
+# G-factor calculation for quantum well using numerical perturbation method
+# This example demonstrates the numerical perturbation approach for quantum wells
+# Uses the standard GaSb/InAs/AlSb type-II quantum well system
+
+waveVector: k0
+waveVectorMax: 0.1
+waveVectorStep: 0
+
+# Quantum well configuration with discretization
+confinement: 1
+FDstep: 101    # Discretization points for finite difference method
+numLayers: 3
+
+# Quantum well structure (positions in Angstroms)
+material1: AlSb -250  250 0      # Barrier layer
+material2: GaSb -135  135 0.2414 # Well layer
+material3: InAs  -35   35 -0.0914 # Well layer
+
+# Band counts for discretized quantum well (2×FDstep conduction + 6×FDstep valence)
+# Note: These will be automatically adjusted to numcb=2*FDstep and numvb=6*FDstep
+numcb: 2     # Will become 202 for FDstep=101
+numvb: 6     # Will become 606 for FDstep=101
+
+# External field configuration
+ExternalField: 0 EF
+EFParams: 0.0005
+
+# Numerical perturbation method configuration
+gfactorMethod: numerical
+numericalTolerance: 1e-12
+perturbationStep: 1e-4
+useSparseSolver: false
+validateWithAnalytical: true
+verboseOutput: true
+
+# Expected behavior:
+# - Uses (8×FDstep)×(8×FDstep) = 808×808 discretized Hamiltonian matrix
+# - Applies finite difference discretization for quantum confinement
+# - Applies ±δB perturbations in x, y, z directions
+# - Calculates g-factors using central finite difference scheme
+# - Handles band mixing and confinement effects automatically
+# - Current limitation: Returns g-factors = 0.0000 (magnetic field terms need implementation)

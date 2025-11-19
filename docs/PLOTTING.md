@@ -40,18 +40,19 @@ brew install gnuplot imagemagick
 
 ### 1. Band Structure Plotting (`plot_band_structure.gp`)
 
-**Purpose**: Create band structure plots for bulk and quantum well systems  
+**Purpose**: Create band structure plots for bulk systems  
 **Usage**:
 ```bash
-# After running a calculation to outputs/<run-id>/bulk/eigenvalues.dat
-gnuplot -e "datafile='outputs/<run-id>/bulk/eigenvalues.dat'; output='band_structure.png'" scripts/plot_band_structure.gp
+# Navigate to output directory and run script
+cd run/bulk_output
+gnuplot ../../scripts/plot_band_structure.gp
 ```
 
 **Features**:
-- Multiple band visualization
+- 8-band visualization (6 VB + 2 CB)
 - Customizable colors and styles
 - Grid and axis labels
-- Publication-quality output
+- Publication-quality PNG output
 
 **Parameters**:
 - `datafile`: Input data file (default: eigenvalues.dat)
@@ -60,17 +61,19 @@ gnuplot -e "datafile='outputs/<run-id>/bulk/eigenvalues.dat'; output='band_struc
 
 ### 2. Quantum Well Plotting (`plot_quantum_well.gp`)
 
-**Purpose**: Create quantum well subband structure plots  
+**Purpose**: Create quantum well wavefunction plots  
 **Usage**:
 ```bash
-gnuplot -e "datafile='outputs/<run-id>/qw/eigenvalues.dat'; output='quantum_well.png'" scripts/plot_quantum_well.gp
+# Navigate to g-factor output directory
+cd run/gfactor_output
+gnuplot ../../scripts/plot_quantum_well.gp
 ```
 
 **Features**:
-- Subband structure visualization
-- Multiple subband plotting
-- Quantum confinement effects
-- Enhanced styling for quantum wells
+- Wavefunction |ψ|² visualization
+- Multiple eigenstate plotting (states 1, 5, 10, 15, 20)
+- Spatial confinement effects
+- Position vs probability density
 
 **Parameters**:
 - `datafile`: Input data file (default: eigenvalues.dat)
@@ -79,36 +82,26 @@ gnuplot -e "datafile='outputs/<run-id>/qw/eigenvalues.dat'; output='quantum_well
 
 ### 3. G-Factor Plotting (`plot_gfactor.gp`)
 
-**Purpose**: Create g-factor dependence plots  
+**Purpose**: Create g-factor component bar charts  
 **Usage**:
 ```bash
-gnuplot -e "datafile='gfactor_data.dat'; output='gfactor.png'" scripts/plot_gfactor.gp
+# Navigate to g-factor output directory
+cd run/gfactor_output
+gnuplot ../../scripts/plot_gfactor.gp
 ```
 
 **Features**:
-- G-factor component visualization
-- Anisotropy analysis
-- Reference lines (g=0, g=2)
-- Customizable styling
+- G-factor component visualization (gx, gy, gz)
+- Bar chart format
+- Automatic value extraction from gfactor.dat
+- Anisotropy visualization
 
 **Parameters**:
 - `datafile`: Input data file (default: gfactor_data.dat)
 - `output`: Output image file (default: gfactor.png)
 - `title`: Plot title (default: "G-Factor Dependence")
 
-### 4. Automated Plotting (`plot_all.sh`)
 
-**Purpose**: Generate all plots automatically  
-**Usage**:
-```bash
-./scripts/plot_all.sh
-```
-
-**Features**:
-- Automatic plot generation
-- Multiple plot types
-- Publication-quality output
-- Combined analysis plots
 
 ## Data Format Requirements
 
@@ -124,19 +117,28 @@ gnuplot -e "datafile='gfactor_data.dat'; output='gfactor.png'" scripts/plot_gfac
 - Column 1: k-point values
 - Columns 2+: Energy eigenvalues for each band
 
-### gfactor_data.dat Format
+### gfactor.dat Format
 ```
-# parameter gx gy gz
-0.0  2.1  2.1  2.1
-0.1  2.05  2.15  2.0
-...
+gx  gy  gz
+-1.57e-13  -2.03e-13  -1666.07
+```
+
+**Single line with three values**:
+- Value 1: g_x component
+- Value 2: g_y component
+- Value 3: g_z component
+
+### Eigenfunction Files Format
+```
+# z_position  real(psi_band1)  imag(psi_band1)  real(psi_band2)  imag(psi_band2)  ...
+-250.0  0.0001  0.0000  0.0002  0.0001  ...
 ```
 
 **Columns**:
-- Column 1: Parameter values
-- Column 2: G-factor x-component
-- Column 3: G-factor y-component
-- Column 4: G-factor z-component
+- Column 1: z-position (Ångstroms)
+- Columns 2-3: real and imaginary parts of first band component
+- Columns 4-5: real and imaginary parts of second band component
+- etc. (8 bands total, 16 columns + position)
 
 ## Customization Options
 
@@ -299,13 +301,33 @@ gnuplot -e "datafile='outputs/<run-id>/qw/eigenvalues.dat'; output='qw_custom.pn
 
 ### Batch Processing
 ```bash
-# Generate all plots
-./scripts/plot_all.sh
+# Generate plots for bulk calculation
+cd run/bulk_output
+gnuplot ../../scripts/plot_ band_structure.gp
 
-# Generate specific plots
-gnuplot scripts/plot_band_structure.gp
-gnuplot scripts/plot_quantum_well.gp
-gnuplot scripts/plot_gfactor.gp
+# Generate plots for g-factor calculation
+cd ../gfactor_output
+gnuplot ../../scripts/plot_gfactor.gp
+gnuplot ../../scripts/plot_quantum_well.gp
+```
+
+## Complete Workflow Example
+
+```bash
+# 1. Run calculations
+./bandStructure examples/bulk.example --out run/my_bulk
+./gfactorCalculation examples/gfactor.example --out run/my_gfactor
+
+# 2. Generate all plots
+cd run/my_bulk
+gnuplot ../../scripts/plot_band_structure.gp
+
+cd ../my_gfactor  
+gnuplot ../../scripts/plot_gfactor.gp
+gnuplot ../../scripts/plot_quantum_well.gp
+
+# 3. View plots
+ls -l *.png
 ```
 
 ## Next Steps

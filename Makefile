@@ -24,12 +24,12 @@ FFLAGS=-ffree-line-length-none -mtune=native -march=native\
           -m64 -O2 -flto -funroll-loops
 
 # if you have installed mkl use this ldflgas
-#LDFLAGS=-I/usr/include -L/usr/lib64 -L$(MKLROOT)/lib/intel64 -I$(MKLROOT)/include \
-      -I$(MKLROOT)/include/fftw -Wl,--no-as-needed -lmkl_gf_lp64 -lmkl_intel_thread \
-      -lmkl_core -liomp5 -lpthread -lm -ldl -lfftw3 #-lfftw3f -lfftw3l
+LDFLAGS=-I/usr/include -L/usr/lib64 -L/opt/intel/oneapi/mkl/2025.0/lib/intel64 -I/opt/intel/oneapi/mkl/2025.0/include \
+      -I/opt/intel/oneapi/mkl/2025.0/include/fftw -L/opt/intel/oneapi/compiler/2025.0/lib -Wl,--no-as-needed -lmkl_gf_lp64 -lmkl_intel_thread \
+      -lmkl_core -liomp5 -lpthread -lm -ldl -lfftw3 #-lfftw3f -lfftw3l #-larpack
 
 # if you dont have mkl, but have normal lapack and blass use this
-LDFLAGS=-I/usr/include -L/usr/lib64 -lm -lfftw3 -llapack -lblas
+#LDFLAGS=-I/usr/include -L/usr/lib64 -lm -lfftw3 -llapack -lblas
 
 # #
 # LDFLAGS=-I/usr/include -L/usr/lib64 -L$(MKLROOT)/lib/intel64 -I$(MKLROOT)/include \
@@ -74,18 +74,23 @@ utils.o
 
 OBJS_gfactor :=\
 main_gfactor.o\
-gfactor_functions.o
+gfactor_functions.o\
+perturbation_errors.o
 
-mkl_spblas.o: mkl_spblas.f90
+mkl_spblas.o: mkl_spblas.f90 defs.o
 	$(FC) -w -fcray-pointer -cpp -c $< -o $@
 
 gfactorCalculation: $(OBJS) $(OBJS_gfactor) main_gfactor.o
 	$(FC) $(FFLAGS) -o $(EXENAME_gfactor) $^ $(LDFLAGS) $(CPPFLAGS) $(DEBUG_FLAG)
 
-gfactor_functions.o: gfactor_functions.f90 defs.o hamiltonianConstructor.o mkl_spblas.o
+gfactor_functions.o: gfactor_functions.f90 defs.o hamiltonianConstructor.o mkl_spblas.o perturbation_errors.o
 	$(FC) $(FPP) $(FFLAGS) $(DEBUG_FLAG) -c $< -o $@
 
 main_gfactor.o: main_gfactor.f90 $(OBJS) gfactor_functions.o
+	$(FC) $(FPP) $(FFLAGS) $(DEBUG_FLAG) -c $< -o $@
+
+# Perturbation error handling dependency
+perturbation_errors.o: perturbation_errors.f90 defs.o
 	$(FC) $(FPP) $(FFLAGS) $(DEBUG_FLAG) -c $< -o $@
 
 finitedifferences.o: finitedifferences.f90 defs.o utils.o

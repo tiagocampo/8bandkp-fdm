@@ -5,8 +5,27 @@ module outputFunctions
 
   implicit NONE
 
+  character(len=512) :: output_dir = ''
+
   CONTAINS
 
+
+    subroutine setOutputDir(dir)
+      character(len=*), intent(in) :: dir
+      output_dir = trim(dir)
+    end subroutine
+
+    pure function joinPath(dir, name) result(p)
+      character(len=*), intent(in) :: dir, name
+      character(len=1024) :: p
+      if (len_trim(dir) == 0) then
+        p = trim(name)
+      else if (dir(len_trim(dir):len_trim(dir)) == '/') then
+        p = trim(dir)//trim(name)
+      else
+        p = trim(dir)//'/'//trim(name)
+      end if
+    end function
 
     subroutine writeEigenfunctions(N, evnum, A, k, fdstep, z)
 
@@ -16,7 +35,8 @@ module outputFunctions
 
 
       integer (kind=4) :: iounit, iounit2, ios
-      character (len = 255) :: filename, filename2, x1, x2
+      character (len = 1024) :: filename, filename2
+      character (len = 255) :: x1, x2
       integer :: i, j
 
       real(kind=dp) :: R(evnum, N)
@@ -38,7 +58,7 @@ module outputFunctions
       do j = 1, evnum
 
         write (x2,fmt) j ! converting integer to string using a 'internal file'
-        filename = 'eigenfunctions_k_'//trim(x1)//'_ev_'//trim(x2)//'.dat'
+        filename = joinPath(output_dir, 'eigenfunctions_k_'//trim(x1)//'_ev_'//trim(x2)//'.dat')
         call get_unit(iounit)
 
         open(unit=iounit, file=filename, iostat=ios, status="replace", action="write")
@@ -53,7 +73,7 @@ module outputFunctions
 
       end do
 
-      filename2 = 'parts.dat'
+      filename2 = joinPath(output_dir, 'parts.dat')
       call get_unit(iounit2)
       open(unit=iounit2, file=filename2, iostat=ios, status="replace", action="write")
       if ( ios /= 0 ) stop "Error opening file "
@@ -79,10 +99,10 @@ module outputFunctions
       integer, intent(in) :: wvStep
 
       integer (kind=4) :: iounit, ios
-      character (len = 255) :: filename
+      character (len = 1024) :: filename
       integer :: i
 
-      filename = 'eigenvalues.dat'
+      filename = joinPath(output_dir, 'eigenvalues.dat')
       call get_unit(iounit)
 
       open(unit=iounit, file=filename, iostat=ios, status="replace", action="write")
