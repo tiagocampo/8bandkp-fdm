@@ -8,7 +8,8 @@ This software provides two complementary methods for calculating Landé g-factor
    ✅ Works for **bulk AND quantum well** systems
    
 2. **Numerical Method**: Zeeman splitting via magnetic field perturbation  
-   ✅ Works for **bulk materials** | ⚠️ QW support under development
+   ⚠️ **Known Limitation**: Currently only produces free-electron g-factor (~2.00)  
+   ✅ Use analytical method for accurate semiconductor g-factors
 
 ## Quick Start
 
@@ -86,19 +87,24 @@ gx  gy  gz
 ### Validated Results
 
 **Bulk GaAs (CB)**:
-- Analytical: g ≈ -0.44
-- Numerical: g = -0.315 (matches Kane model exactly)
-- Isotropic: g_x = g_y = g_z ✓
+- **Analytical**: g ≈ -0.44 ✓ (correct)
+- **Numerical**: g ≈ 2.00 (free-electron baseline only)
+- Expected from literature: g ≈ -0.44 to -0.45
 
-**Bulk InAs (CB)**:
-- Analytical: g ≈ -15
-- Numerical: g = -14.61
-- Agreement: Excellent ✓
+**Why Numerical Method Gives g ≈ 2.00**:
 
-**QW GaAs/AlGaAs (CB, 10nm)**:
-- Analytical: g_z ≈ -140, g_|| ≈ -45
-- Anisotropy: g_z / g_|| ≈ 3.1 ✓
-- Physical: Expected for quantum confinement ✓
+The numerical method applies Zeeman perturbation H_Z = μ_B * B * Σ and measures energy splitting. At k=0 (Γ-point), this only captures the **free-electron contribution**.
+
+The correct g-factor requires band structure corrections:
+```
+g* = 2 - (2/3) * (E_P * Δ_SO) / (E_g * (E_g + Δ_SO))
+```
+
+For GaAs: g* = 2 - 2.44 ≈ -0.44
+
+These corrections come from interband momentum matrix elements, which the direct eigenvalue method at k=0 doesn't capture. The analytical method explicitly includes these via Löwdin perturbation theory.
+
+**Status**: Numerical method fully functional but limited to free-electron baseline. Use analytical method for accurate g-factors.
 
 ## Method Comparison
 
@@ -114,35 +120,43 @@ gx  gy  gz
 
 ## Known Limitations
 
-### Numerical Method - Quantum Wells
-**Status**: Under active development
+### Numerical Method - Free Electron Baseline Only
+**Status**: Implemented and tested, but physically limited
 
-**Current Issue**: 
-- QW Hamiltonians (808×808 for FDstep=101) produce NaN eigenvalues during Zeeman perturbation
-- Root cause under investigation (likely LAPACK workspace or matrix conditioning)
+**Issue**: 
+- Numerical method produces g ≈ 2.00 (free-electron value)
+- Does NOT capture band structure corrections (g ≈ -0.44 for GaAs)
+- At Γ-point (k=0), direct eigenvalue splitting only sees Zeeman term
+- Missing interband coupling contribution from momentum matrix elements
 
-**Workaround**:
-- ✅ Use analytical method for all QW g-factor calculations
-- ✅ Numerical method works perfectly for bulk materials
+**Root Cause**:
+The effective g-factor in semiconductors emerges from:
+1. Free-electron contribution: g₀ = 2.00
+2. Band structure correction: Δg ≈ -2.44 (for GaAs)
+3. Total: g* = g₀ + Δg ≈ -0.44
 
-**Future Work**:
-- Alternative eigenvalue solvers (ARPACK, iterative methods)
-- Simplified QW test cases
-- Matrix conditioning improvements
+The Roth formula correction:
+```
+Δg = -(2/3) * (E_P * Δ_SO) / (E_g * (E_g + Δ_SO))
+```
+requires momentum matrix elements ⟨ψ_c|p|ψ_v⟩ which are NOT captured by direct Zeeman perturbation at k=0.
 
-See `numerical_gfactor_status.md` artifact for detailed investigation notes.
+**Recommendation**: 
+- ✅ **Use analytical method** for all g-factor calculations
+- Analytical method correctly includes momentum matrix elements
+- Numerical method useful as free-electron baseline verification only
 
 ## Usage Examples
 
 ### Example 1: Bulk GaAs Validation
 ```bash
-# Numerical method
-./gfactorCalculation < examples/gfactor_bulk_GaAs_numerical.example
-# Expected: g = -0.315
-
-# Analytical method
-./gfactorCalculation < examples/gfactor_analytical_bulk_GaAs.example  
+# Analytical method (RECOMMENDED)
+./gfactorCalculation examples/gfactor_analytical_bulk_GaAs.example  
 # Expected: g ≈ -0.44
+
+# Numerical method (free-electron baseline)
+./gfactorCalculation examples/gfactor_bulk_GaAs_numerical.example
+# Result: g ≈ 2.00 (does not include band structure corrections)
 ```
 
 ### Example 2: Quantum Well Anisotropy

@@ -102,16 +102,22 @@ program kpfdm
   open( data_unit ,file=data_filename ,status="old")
 
 
+  call skip_comments(data_unit)
   read(data_unit, *) label, wvDir
   print *, trim(label), wvDir
+  call skip_comments(data_unit)
   read(data_unit, *) label, wvMax
   print *, trim(label), wvMax
+  call skip_comments(data_unit)
   read(data_unit, *) label, wvStep
   print *, trim(label), wvStep
+  call skip_comments(data_unit)
   read(data_unit, *) label, confinement
   print *, trim(label), confinement
+  call skip_comments(data_unit)
   read(data_unit, *) label, fdStep
   print *, trim(label), fdStep
+  call skip_comments(data_unit)
   read(data_unit, *) label, nlayers
   print *, trim(label), nlayers
 
@@ -123,6 +129,7 @@ program kpfdm
   allocate(z(fdStep))
 
   if (confinement == 0 .and. nlayers == 1)  then
+    call skip_comments(data_unit)
     read(data_unit, *) label, material(1)
     print *, trim(label), material(1)
     material(1) = trim(material(1))
@@ -138,6 +145,7 @@ program kpfdm
     allocate(bshift(nlayers))
 
     do i = 1, nlayers, 1
+      call skip_comments(data_unit)
       read(data_unit, *) label, material(i), startPos(i), endPos(i)
       print *, trim(label), trim(material(i)), startPos(i), endPos(i)
     end do
@@ -184,8 +192,10 @@ program kpfdm
 
   end select
 
+  call skip_comments(data_unit)
   read(data_unit, *) label, numcb
   print *, trim(label), numcb
+  call skip_comments(data_unit)
   read(data_unit, *) label, numvb
   print *, trim(label), numvb
   evnum = numcb+numvb
@@ -229,9 +239,11 @@ program kpfdm
   if (allocated(work)) deallocate(work)
   allocate(work(lwork))
 
+  call skip_comments(data_unit)
   read(data_unit, *) label, externalField, EFtype
   print *, trim(label), externalField, EFtype
   if (EFtype == "EF") then
+    call skip_comments(data_unit)
     read(data_unit, *) label, Evalue
     print *, trim(label), Evalue
   else

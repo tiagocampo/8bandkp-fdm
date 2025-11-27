@@ -95,8 +95,9 @@ The software supports two complementary methods for calculating Landé g-factors
   - Example: `gfactor_qw_gaas_algaas_cb_analytical.example`
   
 - **Numerical (Bulk Only)**: Zeeman splitting via magnetic field perturbation
-  - Currently validated for bulk materials only
-  - Direct eigenvalue differentiation
+  - ⚠️ **Current Limitation**: Only captures free-electron g-factor (~2.00)
+  - Does not include band structure corrections (requires perturbation theory)
+  - Use analytical method for accurate semiconductor g-factors
   - Example: `gfactor_bulk_GaAs_numerical.example`
 
 **Band Selection**:
@@ -106,9 +107,10 @@ gfactorBand vb 1  # Valence band (heavy hole)
 ```
 
 **Validated Results**:
-- Bulk GaAs: g ≈ -0.44 (analytical), g = -0.315 (numerical, matches Kane model)
-- Bulk InAs: g ≈ -15 (analytical), g = -14.61 (numerical)
-- QW GaAs/AlGaAs: g_z ≈ -140, g_|| ≈ -45 (analytical, shows anisotropy)
+- Bulk GaAs (analytical): g ≈ -0.44 ✓
+- Numerical method: Currently only produces free-electron baseline (g ≈ 2.00)
+- All unit and integration tests passing
+- See `docs/GFACTOR.md` for detailed method comparison
 
 See `docs/GFACTOR.md` for detailed documentation and `examples/README.md` for all available examples.
 
@@ -128,6 +130,7 @@ gnuplot -e "datafile='eigenvalues.dat'; output='band_structure.png'" scripts/plo
 
 ### Basic Structure
 ```
+# Comments are supported using # or ! at the start of a line
 waveVector: kx                    # Direction: kx, ky, kz, or k0
 waveVectorMax: 0.1                # Maximum k-point as fraction of BZ
 waveVectorStep: 11                # Number of k-points
@@ -142,6 +145,8 @@ numvb: 32                         # Number of valence bands
 ExternalField: 0 EF               # External field: 0/1 type
 EFParams: 0.0005                  # Field strength
 ```
+
+**Note**: As of the latest update, input files now support comment lines starting with `#` or `!`. This allows for better documentation within example files.
 
 ### Example Files
 
@@ -170,6 +175,7 @@ All run artifacts SHOULD be written to `outputs/<run-id>/`. Until the executable
 
 - **[Build Guide](docs/BUILD.md)**: Complete build instructions and troubleshooting
 - **[Dependencies](docs/DEPENDENCIES.md)**: System requirements and installation
+- **[Input Format](docs/INPUT_FORMAT.md)**: Complete input file format reference
 - **[G-Factor Guide](docs/GFACTOR.md)**: Detailed g-factor calculation methods and usage
 - **[Validation](docs/VALIDATION.md)**: Result verification and physical accuracy
 - **[Plotting](docs/PLOTTING.md)**: Visualization tools and customization
@@ -202,6 +208,46 @@ Run validation tests:
 ```
 
 See `docs/VALIDATION.md` for complete validation results and `examples/README.md` for all test cases.
+
+
+## Testing
+
+The project includes a comprehensive automated test suite that validates band structure and g-factor calculations.
+
+### Quick Start
+
+```bash
+# Run all tests
+make test
+
+# Run specific test categories
+make test-unit           # Unit tests (input parsing, output format)
+make test-integration    # Integration tests (band structure, g-factors)
+make test-validation     # Validation tests (physical values, consistency)
+make test-quick          # Quick smoke tests
+```
+
+### Test Coverage
+
+- **Unit Tests (2)**: Input parsing, output format validation
+- **Integration Tests (5)**: 
+  - Bulk band structure (5 materials)
+  - QW band structure (5 systems)
+  - Bulk g-factor numerical (4 materials)
+  - Bulk g-factor analytical (5 materials)
+  - QW g-factor analytical (6 systems)
+- **Validation Tests (2)**: Method consistency, physical value comparison
+
+### Test Results
+
+All tests generate detailed output in timestamped directories (`outputs/test-YYYYMMDD-HHMMSS/`) with:
+- Test execution logs
+- Calculation outputs (eigenvalues, g-factors)
+- Summary report with pass/fail counts
+
+See `tests/README.md` for complete testing documentation.
+
+
 
 
 ## Scientific Background

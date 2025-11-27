@@ -1,0 +1,19 @@
+{
+    "layers": [
+        { "material": "Al30Ga70As", "start": -200, "end": -50, "offset": 0 },
+        { "material": "GaAs", "start": -50, "end": 50, "offset": -0.258 },
+        { "material": "Al30Ga70As", "start": 50, "end": 200, "offset": 0 }
+    ],
+    "settings": {
+        "waveVector": "kx",
+        "waveVectorMax": 0.1,
+        "waveVectorStep": 11,
+        "fdStep": 101,
+        "numCB": 8,
+        "numVB": 8,
+        "efParams": 0.0005,
+        "gfactorMethod": "none",
+        "confinement": 1
+    },
+    "simulationType": "bandstructure"
+}

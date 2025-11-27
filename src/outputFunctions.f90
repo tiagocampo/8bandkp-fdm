@@ -108,7 +108,11 @@ module outputFunctions
       open(unit=iounit, file=filename, iostat=ios, status="replace", action="write")
       if ( ios /= 0 ) stop "Error opening file "
 
-      write(iounit, *) '#k, values'
+      write(iounit, '(a)', advance='no') '#k'
+      do i = 1, size(eig,1)
+         write(iounit, '(a,i0)', advance='no') ' E', i
+      end do
+      write(iounit, *) ''
       do i = 1, wvStep, 1
         write(unit=iounit, fmt="(1000(1x,g14.6))", iostat=ios) &
         & smallk(i)%kx, eig(:,i)

@@ -25,6 +25,7 @@ program gfactor
   integer :: externalField
   character(len = 2) :: EFtype
   real(kind=dp) :: Evalue
+  type(NumericalConfig) :: num_config
 
   ! wave vector
   character (len = 2) :: wvDir
@@ -50,6 +51,8 @@ program gfactor
   integer ( kind = 4 ) :: data_unit
   integer :: status
   character ( len = 255 ) :: data_filename, label
+  integer :: argc, argi
+  character(len=512) :: arg
 
   ! gfactor
   complex(kind=dp), allocatable, dimension(:,:) :: cb_state, vb_state
@@ -64,22 +67,52 @@ program gfactor
 
   !reading input/configuration file
   call get_unit ( data_unit )
+  
+  ! CLI argument parsing
   data_filename = 'input.cfg'
+  argc = command_argument_count()
+  argi = 1
+  do while (argi <= argc)
+    call get_command_argument(argi, arg)
+    if (len_trim(arg) > 0) then
+      if (index(arg, '--') == 1) then
+        ! ignore switches for now
+      else
+        data_filename = trim(arg)
+      end if
+    end if
+    argi = argi + 1
+  end do
+
   open( data_unit ,file=data_filename ,status="old")
 
 
+  ! Skip comments before first read
+  ! Skip comments before first read
+  ! Skip comments before first read
+  call skip_comments(data_unit)
   read(data_unit, *) label, wvDir
   print *, trim(label), wvDir
+  call skip_comments(data_unit)
   read(data_unit, *) label, wvMax
   print *, trim(label), wvMax
+  call skip_comments(data_unit)
   read(data_unit, *) label, wvStep
+  if (wvStep == 0) wvStep = 1
   print *, trim(label), wvStep
+  call skip_comments(data_unit)
   read(data_unit, *) label, confinement
   print *, trim(label), confinement
+  call skip_comments(data_unit)
   read(data_unit, *) label, fdStep
   print *, trim(label), fdStep
+  call skip_comments(data_unit)
   read(data_unit, *) label, nlayers
   print *, trim(label), nlayers
+
+  if (confinement == 0 .and. nlayers == 1) then
+     fdStep = 1
+  end if
 
   N = fdStep*8
 
@@ -89,6 +122,7 @@ program gfactor
   allocate(z(fdStep))
 
   if (confinement == 0 .and. nlayers == 1)  then
+    call skip_comments(data_unit)
     read(data_unit, *) label, material(1)
     print *, trim(label), trim(material(1))
     material(1) = trim(material(1))
@@ -104,6 +138,7 @@ program gfactor
     allocate(bshift(nlayers))
 
     do i = 1, nlayers, 1
+      call skip_comments(data_unit)
       read(data_unit, *) label, material(i), startPos(i), endPos(i)
       print *, trim(label), trim(material(i)), startPos(i), endPos(i)
     end do
@@ -143,8 +178,10 @@ program gfactor
 
   end select
 
+  call skip_comments(data_unit)
   read(data_unit, *) label, numcb
   print *, trim(label), numcb
+  call skip_comments(data_unit)
   read(data_unit, *) label, numvb
   print *, trim(label), numvb
 
@@ -180,6 +217,7 @@ program gfactor
   lwork = -1
   lrwork = -1
   liwork = -1
+  k = 1
   if (nlayers == 1) then
     call zheev('V', 'U', N, HT, N, eig(:,k), work, lwork, rwork, info)
     lwork = work(1)
@@ -202,13 +240,46 @@ program gfactor
   end if
 
 
+  call skip_comments(data_unit)
   read(data_unit, *) label, externalField, EFtype
   print *, trim(label), externalField, EFtype
   if (EFtype == "EF") then
+    call skip_comments(data_unit)
     read(data_unit, *) label, Evalue
     print *, trim(label), Evalue
   else
     stop "Type of external field not implemented"
+  end if
+
+  ! Initialize numerical config with defaults
+  num_config%method = 'analytical'
+  num_config%tolerance = 1e-12_dp
+  num_config%perturbation_step = 1e-4_dp
+  num_config%use_sparse_solver = .false.
+  num_config%validate_with_analytical = .false.
+  num_config%verbose_output = .true.
+
+  ! Try to read optional numerical configuration
+  ! Skip comments and find gfactorMethod
+  do
+     read(data_unit, *, iostat=status) label, num_config%method
+     if (status /= 0) exit
+     if (label(1:1) == '#' .or. label(1:1) == '!') cycle
+     if (index(label, 'gfactorMethod') > 0) then
+        print *, trim(label), trim(num_config%method)
+        exit
+     end if
+  end do
+
+  if (status == 0) then
+     read(data_unit, *, iostat=status) label, num_config%tolerance
+     if (status == 0) print *, trim(label), num_config%tolerance
+     read(data_unit, *, iostat=status) label, num_config%perturbation_step
+     if (status == 0) print *, trim(label), num_config%perturbation_step
+     read(data_unit, *, iostat=status) label, num_config%use_sparse_solver
+     if (status == 0) print *, trim(label), num_config%use_sparse_solver
+     read(data_unit, *, iostat=status) label, num_config%validate_with_analytical
+     if (status == 0) print *, trim(label), num_config%validate_with_analytical
   end if
 
   print *, ' '
@@ -300,12 +371,34 @@ program gfactor
   allocate(tensor(2,2,3))
   tensor = 0
 
-  if (nlayers == 1) call gfactorCalculation(tensor, whichBand, bandIdx, numcb, &
-  & numvb, cb_state, vb_state, cb_value, vb_value, nlayers, params, &
-  & startPos(1), endPos(1))
-  if (nlayers > 1)  call gfactorCalculation(tensor, whichBand, bandIdx, numcb, &
-  & numvb, cb_state, vb_state, cb_value, vb_value, nlayers, params, &
-  & startPos(1), endPos(1), profile=profile, kpterms=kpterms, dz=(z(2)-z(1)))
+  if (trim(num_config%method) == 'numerical' .or. trim(num_config%method) == 'Numerical') then
+     if (nlayers == 1) then
+        ! Pass dummy start/end for bulk if not allocated
+        call gfactorCalculationNumerical(tensor, whichBand, bandIdx, numcb, &
+        & numvb, cb_state, vb_state, cb_value, vb_value, nlayers, params, &
+        & 0.0_dp, 0.0_dp, dz=0.0_dp, num_config=num_config)
+     else
+        call gfactorCalculationNumerical(tensor, whichBand, bandIdx, numcb, &
+        & numvb, cb_state, vb_state, cb_value, vb_value, nlayers, params, &
+        & startPos(1), endPos(1), profile=profile, kpterms=kpterms, dz=(z(2)-z(1)), num_config=num_config)
+     end if
+  else
+     if (nlayers == 1) then
+        if (allocated(startPos)) then
+           call gfactorCalculation(tensor, whichBand, bandIdx, numcb, &
+           & numvb, cb_state, vb_state, cb_value, vb_value, nlayers, params, &
+           & startPos(1), endPos(1))
+        else
+           call gfactorCalculation(tensor, whichBand, bandIdx, numcb, &
+           & numvb, cb_state, vb_state, cb_value, vb_value, nlayers, params, &
+           & 0.0_dp, 0.0_dp)
+        end if
+     else
+        call gfactorCalculation(tensor, whichBand, bandIdx, numcb, &
+        & numvb, cb_state, vb_state, cb_value, vb_value, nlayers, params, &
+        & startPos(1), endPos(1), profile=profile, kpterms=kpterms, dz=(z(2)-z(1)))
+     end if
+  end if
 
   print *, 'tensor'
   do i = 1, 2

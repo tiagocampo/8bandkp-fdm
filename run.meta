@@ -1,0 +1,3 @@
+executable=bandStructure
+input_file=examples/bulk_GaAs.example
+timestamp=20251119T193232.0

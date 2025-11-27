@@ -116,3 +116,27 @@ main.o: main.f90 $(OBJS)
 
 exe: $(OBJS) main.o
 	$(FC) $(FFLAGS) -o $(EXENAME) $^ $(LDFLAGS) $(CPPFLAGS) $(DEBUG_FLAG)
+
+# Test targets
+test: all
+	@echo "Running all tests..."
+	@bash tests/run_tests.sh all
+
+test-unit: all
+	@echo "Running unit tests..."
+	@bash tests/run_tests.sh unit
+
+test-integration: all
+	@echo "Running integration tests..."
+	@bash tests/run_tests.sh integration
+
+test-validation: all
+	@echo "Running validation tests..."
+	@bash tests/run_tests.sh validation
+
+test-quick: all
+	@echo "Running quick tests..."
+	@bash tests/run_tests.sh quick
+
+.PHONY: test test-unit test-integration test-validation test-quick
+

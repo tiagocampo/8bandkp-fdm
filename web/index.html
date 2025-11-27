@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>8-band k·p Quantum Well Simulator</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+
+<body>
+    <!-- Top Navigation Bar -->
+    <nav class="top-nav">
+        <div class="nav-content">
+            <div class="logo">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M3 3h18v18H3z" />
+                    <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+                </svg>
+                <h1>8-band k·p Simulator</h1>
+            </div>
+            <div class="nav-actions">
+                <button class="btn-secondary" onclick="app.resetAll()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                        <path d="M21 3v5h-5" />
+                    </svg>
+                    Reset
+                </button>
+                <button class="btn-secondary" onclick="app.generateInputFile()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    Download Input
+                </button>
+                <button class="btn-primary" id="runSimButton" onclick="app.runSimulation()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    Run Simulation
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Left Sidebar: Material Selection -->
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <h2>Material Library</h2>
+                <div class="search-box">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="11" cy="11" r="8" />
+                        <path d="m21 21-4.35-4.35" />
+                    </svg>
+                    <input type="text" id="materialSearch" placeholder="Search materials..."
+                        oninput="app.filterMaterials(this.value)">
+                </div>
+                <div class="material-list" id="materialList">
+                    <!-- Materials will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h2>System Type</h2>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="confinement" value="0" onchange="app.updateConfinement(0)">
+                        <span>Bulk System</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="confinement" value="1" checked onchange="app.updateConfinement(1)">
+                        <span>Quantum Well</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h2>Selected Material</h2>
+                <div id="materialInfo" class="material-info">
+                    <p class="info-placeholder">Select a material to view details</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Center Panel: Quantum Well Builder -->
+        <main class="center-panel">
+            <div class="panel-card">
+                <div class="card-header">
+                    <h2>Quantum Well Structure</h2>
+                    <button class="btn-icon" onclick="app.addLayer()" title="Add Layer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="layer-builder" id="layerBuilder">
+                    <!-- Layers will be added here -->
+                </div>
+
+                <div class="visual-diagram" id="visualDiagram">
+                    <svg id="layerSvg" viewBox="0 0 800 300">
+                        <!-- Visual representation will be drawn here -->
+                    </svg>
+                </div>
+            </div>
+
+            <div class="panel-card">
+                <div class="card-header">
+                    <h2>Calculation Settings</h2>
+                </div>
+
+                <div class="settings-grid">
+                    <div class="settings-group">
+                        <label>Wave Vector Direction</label>
+                        <select id="waveVector" onchange="app.updateSettings()">
+                            <option value="kx">kx</option>
+                            <option value="ky">ky</option>
+                            <option value="kz">kz</option>
+                            <option value="k0">k0 (Γ-point)</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-group">
+                        <label>k-Vector Max (fraction of BZ)</label>
+                        <input type="number" id="waveVectorMax" value="0.1" step="0.01" onchange="app.updateSettings()">
+                    </div>
+
+                    <div class="settings-group">
+                        <label>k-Points</label>
+                        <input type="number" id="waveVectorStep" value="11" min="1" onchange="app.updateSettings()">
+                    </div>
+
+                    <div class="settings-group">
+                        <label>FD Grid Points</label>
+                        <input type="number" id="fdStep" value="101" min="1" onchange="app.updateSettings()">
+                    </div>
+
+                    <div class="settings-group">
+                        <label>Conduction Bands</label>
+                        <input type="number" id="numCB" value="32" min="1" onchange="app.updateSettings()">
+                    </div>
+
+                    <div class="settings-group">
+                        <label>Valence Bands</label>
+                        <input type="number" id="numVB" value="32" min="1" onchange="app.updateSettings()">
+                    </div>
+
+                    <div class="settings-group">
+                        <label>Electric Field (V/Å)</label>
+                        <input type="number" id="efParams" value="0.0005" step="0.0001" onchange="app.updateSettings()">
+                    </div>
+
+                    <div class="settings-group">
+                        <label>G-Factor Method</label>
+                        <select id="gfactorMethod" onchange="app.updateSettings()">
+                            <option value="none">None (Band Structure Only)</option>
+                            <option value="analytical">Analytical (Löwdin)</option>
+                            <option value="numerical">Numerical (Bulk Only)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="gfactorSettings" class="settings-grid" style="display:none;">
+                    <div class="settings-group">
+                        <label>Band Type</label>
+                        <select id="gfactorBandType">
+                            <option value="cb">Conduction Band</option>
+                            <option value="vb">Valence Band</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-group">
+                        <label>Band Index</label>
+                        <input type="number" id="gfactorBandIndex" value="1" min="1">
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Panel: Visualization -->
+        <aside class="right-panel">
+            <div class="panel-card">
+                <div class="card-header">
+                    <h2>Bandstructure</h2>
+                    <div class="card-actions">
+                        <label class="file-upload-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="17 8 12 3 7 8" />
+                                <line x1="12" y1="3" x2="12" y2="15" />
+                            </svg>
+                            Load Data
+                            <input type="file" id="eigenvaluesFile" accept=".dat"
+                                onchange="app.loadEigenvalues(this.files[0])" hidden>
+                        </label>
+                    </div>
+                </div>
+                <div id="bandstructurePlot" class="plot-container"></div>
+            </div>
+
+            <div class="panel-card">
+                <div class="card-header">
+                    <h2>G-Factors</h2>
+                    <div class="card-actions">
+                        <label class="file-upload-btn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="17 8 12 3 7 8" />
+                                <line x1="12" y1="3" x2="12" y2="15" />
+                            </svg>
+                            Load Data
+                            <input type="file" id="gfactorFile" accept=".dat" onchange="app.loadGfactor(this.files[0])"
+                                hidden>
+                        </label>
+                    </div>
+                </div>
+                <div id="gfactorPlot" class="plot-container"></div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

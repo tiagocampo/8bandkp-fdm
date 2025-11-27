@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"="width=device-width, initial-scale=1.0">
+    <title>File Upload Demo</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #0f172a;
+            color: white;
+            padding: 50px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .upload-section {
+            background: rgba(30, 41, 59, 0.8);
+            padding: 30px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+
+        button {
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        #plot {
+            min-height: 400px;
+            background: #1e293b;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .info {
+            background: rgba(139, 92, 246, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #8b5cf6;
+        }
+    </style>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+
+<body>
+    <h1>Data Visualization Test</h1>
+
+    <div class="info">
+        <strong>Test Files Location:</strong><br>
+        • Bandstructure: <code>/data/8bandkp-fdm-ai/web/test_eigenvalues.dat</code><br>
+        • G-factors: <code>/data/8bandkp-fdm-ai/web/test_gfactor.dat</code>
+    </div>
+
+    <div class="upload-section">
+        <h2>Upload Eigenvalues Data</h2>
+        <input type="file" id="fileInput" accept=".dat" style="display:none">
+        <button onclick="document.getElementById('fileInput').click()">Choose File</button>
+        <span id="fileName" style="margin-left: 15px;">No file selected</span>
+    </div>
+
+    <div id="plot"></div>
+
+    <script>
+        document.getElementById('fileInput').addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            document.getElementById('fileName').textContent = file.name;
+
+            const reader = new FileReader();
+            reader.onload = function (event) {
+                const text = event.target.result;
+                console.log('File loaded, first 500 chars:', text.substring(0, 500));
+
+                try {
+                    plotData(text);
+                } catch (error) {
+                    console.error('Error plotting:', error);
+                    alert('Error: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        function plotData(text) {
+            const lines = text.trim().split('\n').filter(l => !l.startsWith('#') && l.trim().length > 0);
+            console.log('Number of data lines:', lines.length);
+
+            const data = lines.map(line => {
+                const values = line.trim().split(/\s+/).map(parseFloat);
+                return values;
+            });
+
+            if (data.length === 0) {
+                alert('No data found in file');
+                return;
+            }
+
+            const numBands = data[0].length - 1;
+            console.log('Number of bands:', numBands);
+
+            const traces = [];
+            const colors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#a855f7'];
+
+            for (let band = 0; band < numBands; band++) {
+                traces.push({
+                    x: data.map(row => row[0]),
+                    y: data.map(row => row[band + 1]),
+                    mode: 'lines',
+                    name: `Band ${band + 1}`,
+                    line: {
+                        color: colors[band % colors.length],
+                        width: 2
+                    }
+                });
+            }
+
+            const layout = {
+                title: 'Band Structure',
+                paper_bgcolor: '#0f172a',
+                plot_bgcolor: '#1e293b',
+                font: { color: '#cbd5e1', family: 'Arial' },
+                margin: { t: 50, r: 30, b: 50, l: 60 },
+                xaxis: {
+                    title: 'k-vector',
+                    gridcolor: '#334155',
+                    color: '#cbd5e1'
+                },
+                yaxis: {
+                    title: 'Energy (eV)',
+                    gridcolor: '#334155',
+                    color: '#cbd5e1'
+                }
+            };
+
+            console.log('Drawing plot with', traces.length, 'traces');
+            Plotly.newPlot('plot', traces, layout, { responsive: true });
+        }
+    </script>
+</body>
+
+</html>

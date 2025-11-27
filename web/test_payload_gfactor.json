@@ -1,0 +1,19 @@
+{
+    "layers": [
+        { "material": "GaAs", "start": 0, "end": 0, "offset": 0 }
+    ],
+    "settings": {
+        "waveVector": "k0",
+        "waveVectorMax": 0.0,
+        "waveVectorStep": 1,
+        "fdStep": 101,
+        "numCB": 8,
+        "numVB": 8,
+        "efParams": 0.0005,
+        "gfactorMethod": "analytical",
+        "gfactorBandType": "cb",
+        "gfactorBandIndex": 1,
+        "confinement": 0
+    },
+    "simulationType": "gfactor"
+}

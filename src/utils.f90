@@ -223,4 +223,18 @@ end function simpson
 
   
 
+  subroutine skip_comments(unit)
+    integer, intent(in) :: unit
+    character(len=512) :: line
+    integer :: stat
+    do
+       read(unit, '(A)', iostat=stat) line
+       if (stat /= 0) exit
+       if (len_trim(line) == 0) cycle
+       if (line(1:1) == '#' .or. line(1:1) == '!') cycle
+       backspace(unit)
+       exit
+    end do
+  end subroutine skip_comments
+
 end module utils

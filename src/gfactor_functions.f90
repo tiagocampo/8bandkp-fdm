@@ -4,8 +4,23 @@ module gfactorFunctions
   use hamiltonianConstructor
   use mkl_spblas
   use OMP_lib
+  use perturbation_errors
 
   implicit none
+
+  ! Numerical perturbation method selection
+  integer, parameter :: METHOD_ANALYTICAL = 1
+  integer, parameter :: METHOD_NUMERICAL = 2
+
+  ! Numerical perturbation configuration
+  type :: NumericalConfig
+    character(len=32) :: method = 'analytical'
+    real(kind=dp) :: tolerance = 1e-12_dp
+    real(kind=dp) :: perturbation_step = 1e-6_dp
+    logical :: use_sparse_solver = .true.
+    logical :: validate_with_analytical = .false.
+    logical :: verbose_output = .false.
+  end type NumericalConfig
 
   contains
 
@@ -334,6 +349,7 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
 
     print *, 'gfactor for conduction band'
 
+    ii = 0
     do n = bandIdx,bandIdx+1
       ii = ii+1
       jj = 0
@@ -669,5 +685,289 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
 end subroutine gfactorCalculation
 
 
+
+  subroutine gfactorCalculationNumerical(tensor, whichBand, bandIdx, numcb, numvb, &
+    & cb_state, vb_state, cb_value, vb_value, nlayers, params, startz, endz, &
+    & profile, kpterms, dz, num_config)
+
+    implicit none
+
+    ! Input/output parameters
+    complex(kind=dp), intent(inout), dimension(:,:,:) :: tensor
+    integer, intent(in) :: whichBand ! 0=cb, 1=vb
+    integer, intent(in) :: bandIdx ! idx of band to compute
+    integer, intent(in) :: numcb, numvb ! total number of cb and vb bands
+    complex(kind=dp), intent(in), dimension(:,:) :: cb_state, vb_state ! wave functions at k=0
+    real(kind=dp), intent(in), dimension(:) :: cb_value, vb_value ! energies at k=0
+    integer, intent(in) :: nlayers
+    type(paramStruct), intent(in) :: params(nlayers)
+    real(kind=dp), intent(in) :: startz, endz
+    real(kind = dp), intent(in), optional, dimension(:,:) :: profile
+    real(kind = dp), intent(in), optional, dimension(:,:,:) :: kpterms
+    real(kind=dp), intent(in), optional :: dz
+    type(NumericalConfig), intent(in) :: num_config
+
+    ! Local variables for numerical perturbation
+    integer :: dimax, fdStep, target_state_idx
+    real(kind=dp) :: delta_B, E_plus, E_minus, g_factor_num
+    complex(kind=dp), allocatable, dimension(:,:) :: H_plus, eigenvectors_plus
+    real(kind=dp), allocatable, dimension(:) :: eigenvalues_plus
+    complex(kind=dp) :: spin_proj
+    integer :: i, d, info
+    character(len=1) :: field_dir
+    type(wavevector) :: k_vec
+    type(perturbation_error) :: error_info
+    logical :: success
+
+    ! Initialize output tensor
+    tensor = (0.0_dp, 0.0_dp)
+
+    ! Set up k-vector at k=0 for perturbation
+    k_vec%kx = 0.0_dp
+    k_vec%ky = 0.0_dp
+    k_vec%kz = 0.0_dp
+
+    ! Determine target state index based on band type
+    if (whichBand == 0) then ! conduction band
+      target_state_idx = numvb + bandIdx
+    else ! valence band
+      target_state_idx = numvb - bandIdx + 1
+    end if
+
+    dimax = size(cb_state, 1)
+    fdStep = int(dimax/8)
+    delta_B = num_config%perturbation_step
+
+    if (num_config%verbose_output) then
+      print *, '=== Numerical G-Factor Calculation ==='
+      print *, 'Target state index:', target_state_idx
+      print *, 'Perturbation step:', delta_B
+      print *, 'Tolerance:', num_config%tolerance
+      print *, 'Method:', trim(num_config%method)
+    end if
+
+    ! Calculate g-factor components for each direction
+    do d = 1, 3
+
+      ! Determine field direction
+      if (d == 1) field_dir = 'x'
+      if (d == 2) field_dir = 'y'
+      if (d == 3) field_dir = 'z'
+
+      if (num_config%verbose_output) then
+        print *, 'Computing g-factor for direction:', field_dir
+      end if
+
+      ! Allocate Hamiltonians for +/- deltaB perturbations
+      allocate(H_plus(dimax, dimax))
+      allocate(eigenvalues_plus(dimax))
+      allocate(eigenvectors_plus(dimax, dimax))
+
+      ! Build perturbed Hamiltonians with +/- deltaB in specified direction
+      call build_perturbed_hamiltonian(H_plus, dimax, field_dir, +delta_B, &
+        & k_vec, nlayers, params, profile, kpterms, startz, endz, dz)
+
+      ! Solve eigenvalue problem for H_plus
+      call solve_hamiltonian_numerical(H_plus, dimax, eigenvalues_plus, eigenvectors_plus, &
+        & num_config%use_sparse_solver, info)
+
+      if (info /= 0) then
+        error_info = create_error(ERROR_EIGENVALUE_FAILURE, &
+          "Eigenvalue solver failed for +deltaB Hamiltonian", &
+          "gfactorCalculationNumerical", SEVERITY_ERROR, .false., &
+          "Target state: " // trim(itoa(target_state_idx)) // ", Direction: " // field_dir)
+        call handle_error(error_info, success)
+      end if
+
+      ! Extract target state energies (splitting method)
+      ! We assume the states target_state_idx and target_state_idx+1 form the spin pair
+      ! zheev sorts eigenvalues, so E_lower is at target_state_idx, E_higher at target_state_idx+1
+      E_minus = eigenvalues_plus(target_state_idx)     ! Lower energy
+      E_plus = eigenvalues_plus(target_state_idx+1)    ! Higher energy
+
+      ! Calculate splitting
+      ! Splitting = |g * mu_B * B|
+      ! |g| = (E_higher - E_lower) / (mu_B * B)
+      g_factor_num = (E_plus - E_minus) / (mu_B * delta_B)
+
+      ! Determine sign of g-factor
+      ! E = g * mu_B * B * S_proj
+      ! If g < 0: S_proj > 0 (Up) is Lower Energy.
+      ! If g > 0: S_proj < 0 (Down) is Lower Energy.
+      ! We check the spin projection of the LOWER energy state (target_state_idx)
+      
+      ! Calculate expectation value of Sigma in field direction for lower state
+      ! Note: sigmaElem returns complex, but diagonal expectation value should be real
+      spin_proj = sigmaElem(eigenvectors_plus(:,target_state_idx), &
+                            eigenvectors_plus(:,target_state_idx), &
+                            field_dir, fdStep, startz, endz, dz, nlayers)
+      
+      if (real(spin_proj) > 0.0_dp) then
+         ! Spin Up is lower energy => g < 0
+         g_factor_num = -g_factor_num
+      end if
+      ! If Spin Down (proj < 0) is lower energy => g > 0 (g_factor_num already positive)
+
+      ! Store result in tensor (assuming diagonal)
+      tensor(1,1,d) = cmplx(g_factor_num, 0.0_dp)
+      tensor(2,2,d) = cmplx(g_factor_num, 0.0_dp)
+
+      if (num_config%verbose_output) then
+        print *, 'Splitting:', (E_plus - E_minus)
+        ! print *, 'Spin projection (lower state):', spin_proj
+        print *, 'Numerical g-factor (', field_dir, '):', g_factor_num
+      end if
+
+      ! Deallocate arrays
+      if (allocated(H_plus)) deallocate(H_plus)
+      if (allocated(eigenvalues_plus)) deallocate(eigenvalues_plus)
+      if (allocated(eigenvectors_plus)) deallocate(eigenvectors_plus)
+
+    end do
+
+    if (num_config%verbose_output) then
+      print *, '=== Numerical G-Factor Calculation Complete ==='
+    end if
+
+  end subroutine gfactorCalculationNumerical
+
+  ! Helper subroutine to build Hamiltonian with magnetic field perturbation
+  subroutine build_perturbed_hamiltonian(H, dimax, field_dir, delta_B, k_vec, &
+    & nlayers, params, profile, kpterms, startz, endz, dz)
+
+    integer, intent(in) :: dimax
+    complex(kind=dp), intent(out) :: H(dimax, dimax)
+    character(len=1), intent(in) :: field_dir
+    real(kind=dp), intent(in) :: delta_B
+    type(wavevector), intent(in) :: k_vec
+    integer, intent(in) :: nlayers
+    type(paramStruct), intent(in) :: params(nlayers)
+    real(kind=dp), intent(in), optional :: profile(:,:), kpterms(:,:,:), startz, endz, dz
+
+    complex(kind=dp) :: SIGMA_X(8,8), SIGMA_Y(8,8), SIGMA_Z(8,8)
+    integer :: i, j, fdStep, n, m
+    complex(kind=dp) :: Zeeman(8,8)
+
+    ! Define Sigma matrices
+    SIGMA_X(1,:) = (/ ZERO, -IU*RQS3, ZERO, ZERO, UM*SQR2o3, ZERO, ZERO, ZERO /)
+    SIGMA_X(2,:) = (/ IU*RQS3, ZERO, -IU*2.0_dp/3.0_dp, ZERO, ZERO, -UM*SQR2/3.0_dp, ZERO, ZERO /)
+    SIGMA_X(3,:) = (/ ZERO, 2.0_dp*IU/3.0_dp, ZERO, -IU*RQS3, UM*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_X(4,:) = (/ ZERO, ZERO, IU*RQS3, ZERO, ZERO, -UM*SQR2o3, ZERO, ZERO /)
+    SIGMA_X(5,:) = (/ UM*SQR2o3, ZERO, UM*SQR2/3.0_dp, ZERO, ZERO, -IU/3.0_dp, ZERO, ZERO /)
+    SIGMA_X(6,:) = (/ ZERO, -UM*SQR2/3.0_dp, ZERO, -UM*SQR2o3, IU/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_X(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM /)
+    SIGMA_X(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
+
+    SIGMA_Y(1,:) = (/ ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO, ZERO /)
+    SIGMA_Y(2,:) = (/ UM*RQS3, ZERO, UM*2.0_dp/3.0_dp, ZERO, ZERO, -IU*SQR2/3.0_dp, ZERO, ZERO /)
+    SIGMA_Y(3,:) = (/ ZERO, UM*2.0_dp/3.0_dp, ZERO, UM*RQS3, -IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_Y(4,:) = (/ ZERO, ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO /)
+    SIGMA_Y(5,:) = (/ -IU*SQR2o3, ZERO, IU*SQR2/3.0_dp, ZERO, ZERO, UM/3.0_dp, ZERO, ZERO /)
+    SIGMA_Y(6,:) = (/ ZERO, IU*SQR2/3.0_dp, ZERO, -IU*SQR2o3, UM/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_Y(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, IU /)
+    SIGMA_Y(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -IU, ZERO /)
+
+    SIGMA_Z(1,:) = (/ UM, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO /)
+    SIGMA_Z(2,:) = (/ ZERO, UM/3.0_dp, ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_Z(3,:) = (/ ZERO, ZERO, -UM/3.0_dp, ZERO, ZERO, 2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO /)
+    SIGMA_Z(4,:) = (/ ZERO, ZERO, ZERO, -UM, ZERO, ZERO, ZERO, ZERO /)
+    SIGMA_Z(5,:) = (/ ZERO, 2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, -UM/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_Z(6,:) = (/ ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, UM/3.0_dp, ZERO, ZERO /)
+    SIGMA_Z(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
+    SIGMA_Z(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -UM /)
+
+    ! Build standard Hamiltonian with FULL k·p coupling (no  'g' parameter)
+    ! The effective g-factor emerges from the full band structure
+    if (nlayers == 1) then
+      call ZB8bandBulk(H, k_vec, params(1))
+    else
+      call ZB8bandQW(H, k_vec, profile, kpterms)
+    end if
+
+    ! Add Zeeman term
+    Zeeman = 0.0_dp
+    if (field_dir == 'x') Zeeman = SIGMA_X
+    if (field_dir == 'y') Zeeman = SIGMA_Y
+    if (field_dir == 'z') Zeeman = SIGMA_Z
+
+    ! Debug print
+    ! print *, 'Applying Zeeman for direction ', field_dir, ' delta_B=', delta_B
+    ! print *, 'Zeeman(7,7)=', Zeeman(7,7), ' Zeeman(8,8)=', Zeeman(8,8)
+    
+    fdStep = dimax / 8
+    
+    do i = 1, fdStep
+      do n = 1, 8
+        do m = 1, 8
+           H( (i-1)*8 + n, (i-1)*8 + m ) = H( (i-1)*8 + n, (i-1)*8 + m ) + &
+             mu_B * delta_B * Zeeman(n,m)
+        end do
+      end do
+    end do
+    
+    ! Debug print H diagonal
+    ! if (field_dir == 'z') then
+    !    print *, 'H(7,7)=', H(7,7), ' H(8,8)=', H(8,8)
+    ! end if
+
+  end subroutine build_perturbed_hamiltonian
+
+  ! Helper subroutine to solve Hamiltonian eigenvalue problem
+  subroutine solve_hamiltonian_numerical(H, dimax, eigenvalues, eigenvectors, use_sparse, info)
+
+    integer, intent(in) :: dimax
+    complex(kind=dp), intent(in) :: H(dimax, dimax)
+    real(kind=dp), intent(out) :: eigenvalues(dimax)
+    complex(kind=dp), intent(out) :: eigenvectors(dimax, dimax)
+    logical, intent(in) :: use_sparse
+    integer, intent(out) :: info
+
+    ! For now, use dense LAPACK solver
+    complex(kind=dp), allocatable :: H_work(:,:)
+    complex(kind=dp), allocatable :: work(:)
+    real(kind=dp), allocatable :: rwork(:)
+    integer :: lwork
+
+    ! Copy Hamiltonian to work array
+    allocate(H_work(dimax, dimax))
+    H_work = H
+
+    ! Query workspace size
+    allocate(work(1))
+    allocate(rwork(3*dimax-2))
+    
+    call zheev('V', 'U', dimax, H_work, dimax, eigenvalues, work, -1, rwork, info)
+    lwork = int(work(1))
+    deallocate(work)
+    allocate(work(lwork))
+
+    ! Debug print
+    ! print *, 'solve_hamiltonian_numerical: dimax=', dimax, ' lwork=', lwork
+
+    ! Solve eigenvalue problem
+    call zheev('V', 'U', dimax, H_work, dimax, eigenvalues, work, lwork, rwork, info)
+
+    ! Debug print
+    ! print *, 'solve info=', info
+    ! print *, 'eigenvalues:', eigenvalues
+
+    if (info == 0) then
+      ! Copy eigenvectors
+      eigenvectors = H_work
+    end if
+
+    deallocate(H_work)
+    deallocate(work)
+    deallocate(rwork)
+
+  end subroutine solve_hamiltonian_numerical
+
+  ! Helper function to convert integer to string
+  function itoa(i) result(str)
+    integer, intent(in) :: i
+    character(len=20) :: str
+    write(str, *) i
+    str = adjustl(str)
+  end function itoa
 
 end module gfactorFunctions
