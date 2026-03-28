@@ -139,7 +139,7 @@ module outputFunctions
 
       write(iounit, *) '#k, values'
       do i = 1, wvStep, 1
-        write(unit=iounit, fmt="(1000(1x,g14.6))", iostat=ios) &
+        write(unit=iounit, fmt="(*(1x,g14.6))", iostat=ios) &
         & smallk(i)%kx, eig(:,i)
         if ( ios /= 0 ) stop "Write error in file unit "
       end do

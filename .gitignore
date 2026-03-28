@@ -30,7 +30,7 @@ fort.*
 
 # Debug files
 gmon.out
-core
+/core
 
 # Dependencies
 *.d
