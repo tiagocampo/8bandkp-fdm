@@ -5,7 +5,7 @@ EXENAME_gfactor := gfactorCalculation
 HOMEDIR		:= .
 BUILD_DIR   := build
 SRC_D		:= $(HOMEDIR)/src
-vpath  %.f90 $(SRC_D)
+vpath  %.f90 $(SRC_D)/core $(SRC_D)/math $(SRC_D)/io $(SRC_D)/physics $(SRC_D)/apps
 vpath  %.mod $(BUILD_DIR)
 vpath  %.o   $(BUILD_DIR)
 
@@ -89,6 +89,3 @@ $(BUILD_DIR)/hamiltonianConstructor.o: hamiltonianConstructor.f90 $(BUILD_DIR)/d
 $(BUILD_DIR)/main.o: main.f90 $(addprefix $(BUILD_DIR)/,$(OBJS))
 $(BUILD_DIR)/gfactor_functions.o: gfactor_functions.f90 $(BUILD_DIR)/defs.o $(BUILD_DIR)/hamiltonianConstructor.o $(BUILD_DIR)/mkl_spblas.o
 $(BUILD_DIR)/main_gfactor.o: main_gfactor.f90 $(addprefix $(BUILD_DIR)/,$(OBJS)) $(BUILD_DIR)/gfactor_functions.o
-
-build/utils.o: src/utils.f90
-	$(FC) -x f95-cpp-input -ffree-line-length-none -mtune=native -march=native -fno-second-underscore -ffree-form -fimplicit-none -m64 -O2 -flto -funroll-loops -g -fbacktrace -fbounds-check -fcheck=all -fopenmp -Jbuild -c ./src/utils.f90 -o build/utils.o

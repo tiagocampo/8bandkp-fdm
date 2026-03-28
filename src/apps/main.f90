@@ -24,7 +24,7 @@ program kpfdm
 
   ! wave vector
   character (len = 2) :: wvDir
-  real(kind=sp) :: wvMax ![1/AA]
+  real(kind=dp) :: wvMax ![1/AA]
   integer :: wvStep
   type(wavevector), allocatable, dimension(:) :: smallk
 
@@ -50,7 +50,11 @@ program kpfdm
   !reading input/configuration file
   call get_unit ( data_unit )
   data_filename = 'input.cfg'
-  open( data_unit ,file=data_filename ,status="old")
+  open( data_unit ,file=data_filename ,status="old",iostat=status)
+  if (status /= 0) then
+    print *, 'Error: Cannot open input file: ', trim(data_filename)
+    stop 1
+  end if
 
 
   read(data_unit, *) label, wvDir
@@ -71,7 +75,15 @@ program kpfdm
   allocate(params(nlayers))
   allocate(material(nlayers))
 
-  allocate(z(fdStep))
+  ! Validate input combinations
+  if (confinement == 0 .and. nlayers /= 1) then
+    print *, 'Error: bulk mode (confinement=0) requires nlayers=1'
+    stop 1
+  end if
+  if (confinement < 0 .or. confinement > 1) then
+    print *, 'Error: confinement must be 0 or 1, got:', confinement
+    stop 1
+  end if
 
   if (confinement == 0 .and. nlayers == 1)  then
     read(data_unit, *) label, material(1)
@@ -94,7 +106,7 @@ program kpfdm
     end do
 
     totalSize = endPos(1)-startPos(1)
-    delta = totalSize/(fdStep-1)
+    delta = totalSize/real(fdStep-1, kind=dp)
 
     z = [ (startPos(1) + (i-1)*delta, i=1,fdStep) ]
 
@@ -126,9 +138,7 @@ program kpfdm
       smallk%kz = [ ((i-1)*wvMax/(wvStep-1), i=1,wvStep) ]
 
     case ("k0")
-      smallk%kx = 0
-      smallk%ky = 0
-      smallk%kz = 0
+      ! Already zeroed above
 
     case default
       stop "no such direction"
@@ -257,6 +267,10 @@ program kpfdm
         lwork = -1
         call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:evnum,k), &
                    HTmp, 8, work, lwork, rwork, iwork, ifail, info)
+        if (info /= 0) then
+          print *, 'Error: zheevx bulk workspace query failed, info =', info
+          stop 1
+        end if
         lwork = int(real(work(1)))
         if (allocated(work)) deallocate(work)
         allocate(work(lwork))
@@ -286,6 +300,10 @@ program kpfdm
         lwork = -1
         call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,k), &
                    HT, N, work, lwork, rwork, iwork, ifail, info)
+        if (info /= 0) then
+          print *, 'Error: zheevx QW workspace query failed, info =', info
+          stop 1
+        end if
         lwork = int(real(work(1)))
         if (allocated(work)) deallocate(work)
         allocate(work(lwork))
