@@ -12,9 +12,17 @@ find_package(MKL CONFIG REQUIRED)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 find_package(FFTW3 REQUIRED)
 
-# --- Fortran compiler flags (matching original Makefile) ---
-set(CMAKE_Fortran_FLAGS "-ffree-line-length-none -mtune=native -march=native -fno-second-underscore -ffree-form -fimplicit-none -m64 -O2 -flto -funroll-loops")
-set(CMAKE_Fortran_FLAGS_DEBUG "-g -fbacktrace -fbounds-check -fcheck=all -fopenmp")
+# --- Fortran compiler flags (gfortran) ---
+if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
+    set(CMAKE_Fortran_FLAGS "-ffree-line-length-none -fno-second-underscore -ffree-form -fimplicit-none -m64")
+    set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -flto -funroll-loops -mtune=native -march=native")
+    set(CMAKE_Fortran_FLAGS_DEBUG "-g -fbacktrace -fbounds-check -fcheck=all")
+endif()
+
+# Default to Release build if not specified
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 
 # --- Centralize .mod files ---
 set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)

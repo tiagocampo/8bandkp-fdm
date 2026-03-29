@@ -1,12 +1,12 @@
 #!/bin/bash
 # Integration test: g-factor calculation regression
-# Args: <gfactorCalculation_exe> <config_file> <ref_data_dir> <compare_script>
+# Args: <gfactorCalculation_exe> <config_file> <ref_data_dir> <compare_script_unused>
 set -euo pipefail
 
 EXE="$1"
 CONFIG="$2"
 REF_DIR="$3"
-COMPARE="$4"
+# Arg $4 (compare_script) is unused — g-factor values are compared inline
 
 WORKDIR=$(mktemp -d)
 trap "rm -rf $WORKDIR" EXIT
@@ -24,10 +24,10 @@ if [ $RC -ne 0 ]; then
 fi
 
 # Compare g-factor values extracted from stdout
-# Reference output has lines like:
+# Reference output format:
 #   gx
-#   (-16.225364267971994,-2.73e-16)
-#    -16.225364267971987
+#   (real_part, imag_part)
+#   real_value
 # We compare the real g-values (the third line after gx/gy/gz)
 
 extract_gvalue() {
@@ -55,20 +55,22 @@ for comp in gx gy gz; do
         continue
     fi
 
-    python3 -c "
+    python3 - "$comp" "$REF_VAL" "$TEST_VAL" "$TOL" <<'PYEOF' || PASS=false
 import sys
-r, t = float('$REF_VAL'), float('$TEST_VAL')
-tol = float('$TOL')
-if r == 0:
-    err = abs(t)
+_, comp, ref_s, test_s, tol_s = sys.argv
+r, t = float(ref_s), float(test_s)
+tol = float(tol_s)
+atol = 1e-14
+if abs(r) < atol:
+    err = abs(t - r)
 else:
     err = abs((t - r) / r)
 if err > tol:
-    print(f'FAIL: $comp ref={r:.10e} test={t:.10e} rel_err={err:.2e}')
+    print(f'FAIL: {comp} ref={r:.10e} test={t:.10e} rel_err={err:.2e}')
     sys.exit(1)
 else:
-    print(f'PASS: $comp ref={r:.10e} test={t:.10e} rel_err={err:.2e}')
-" || PASS=false
+    print(f'PASS: {comp} ref={r:.10e} test={t:.10e} rel_err={err:.2e}')
+PYEOF
 done
 
 if $PASS; then

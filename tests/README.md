@@ -31,7 +31,7 @@ tests/
 cmake -G Ninja -B build \
     -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
     -DBUILD_TESTING=ON \
-    -DpFUnit_DIR=$HOME/.local/pfunit/lib/cmake/pfunit
+    -DPFUNIT_DIR=$HOME/.local/pfunit/PFUNIT-<ver>/cmake
 cmake --build build
 ```
 

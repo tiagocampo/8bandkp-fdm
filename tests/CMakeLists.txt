@@ -1,38 +1,42 @@
 # tests/CMakeLists.txt — pFUnit unit tests + regression tests
 
 # pFUnit installs as PFUNIT (uppercase) — use CMAKE_PREFIX_PATH or -DPFUNIT_DIR
-find_package(PFUNIT REQUIRED)
+find_package(PFUNIT QUIET)
 
-# --- pFUnit unit tests ---
-add_pfunit_ctest(test_defs
-    TEST_SOURCES unit/test_defs.pf
-    LINK_LIBRARIES 8bandkp_common
-    LABELS "unit"
-)
+if(PFUNIT_FOUND)
+    # --- pFUnit unit tests ---
+    add_pfunit_ctest(test_defs
+        TEST_SOURCES unit/test_defs.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
 
-add_pfunit_ctest(test_finitedifferences
-    TEST_SOURCES unit/test_finitedifferences.pf
-    LINK_LIBRARIES 8bandkp_common
-    LABELS "unit"
-)
+    add_pfunit_ctest(test_finitedifferences
+        TEST_SOURCES unit/test_finitedifferences.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
 
-add_pfunit_ctest(test_utils
-    TEST_SOURCES unit/test_utils.pf
-    LINK_LIBRARIES 8bandkp_common
-    LABELS "unit"
-)
+    add_pfunit_ctest(test_utils
+        TEST_SOURCES unit/test_utils.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
 
-add_pfunit_ctest(test_parameters
-    TEST_SOURCES unit/test_parameters.pf
-    LINK_LIBRARIES 8bandkp_common
-    LABELS "unit"
-)
+    add_pfunit_ctest(test_parameters
+        TEST_SOURCES unit/test_parameters.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
 
-add_pfunit_ctest(test_hamiltonian
-    TEST_SOURCES unit/test_hamiltonian.pf
-    LINK_LIBRARIES 8bandkp_common
-    LABELS "unit"
-)
+    add_pfunit_ctest(test_hamiltonian
+        TEST_SOURCES unit/test_hamiltonian.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
+else()
+    message(STATUS "pFUnit not found — unit tests disabled. Install pFUnit and set -DPFUNIT_DIR to enable.")
+endif()
 
 # --- Regression tests ---
 # Use shell scripts from tests/integration/ to avoid CMake shell escaping issues

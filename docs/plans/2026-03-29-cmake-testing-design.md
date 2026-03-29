@@ -37,7 +37,7 @@ The project used a 94-line Makefile with manually tracked Fortran module depende
 |---|---|
 | `CMakeLists.txt` | Created (root, with MKL LP64/sequential defaults) |
 | `src/CMakeLists.txt` | Rewritten (added input_parser.f90, removed manual deps) |
-| `cmake/FindFFTW3.cmake` | Created |
+| `cmake/FindFFTW3.cmake` | Pre-existing (untracked) |
 | `Makefile` | Replaced with CMake wrapper |
 | `tests/CMakeLists.txt` | Created |
 | `tests/unit/test_defs.pf` | Created |

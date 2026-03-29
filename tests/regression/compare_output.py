@@ -9,12 +9,14 @@ content are skipped. Exit code 0 = pass, 1 = fail.
 
 import sys
 import argparse
-import math
+
+ATOL = 1e-14  # Absolute tolerance for near-zero reference values
 
 
 def parse_numeric_lines(filepath):
     """Parse file, returning list of lists of floats (one per numeric line)."""
     rows = []
+    skipped = 0
     with open(filepath) as f:
         for line in f:
             line = line.strip()
@@ -25,7 +27,10 @@ def parse_numeric_lines(filepath):
                 vals = [float(t) for t in tokens]
                 rows.append(vals)
             except ValueError:
+                skipped += 1
                 continue
+    if skipped > 0 and len(rows) == 0:
+        print(f"WARNING: All {skipped} lines were non-numeric in {filepath}", file=sys.stderr)
     return rows
 
 
@@ -41,9 +46,9 @@ def compare(ref_rows, test_rows, tolerance):
             details.append(f"Line {i+1}: column count mismatch {len(ref_row)} vs {len(test_row)}")
             return False, max_rel_err, "\n".join(details)
         for j, (rv, tv) in enumerate(zip(ref_row, test_row)):
-            if rv == 0.0 and tv == 0.0:
+            if abs(rv) < ATOL and abs(tv) < ATOL:
                 continue
-            if rv == 0.0:
+            if abs(rv) < ATOL:
                 rel_err = abs(tv)
             else:
                 rel_err = abs((tv - rv) / rv)

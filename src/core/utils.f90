@@ -181,6 +181,11 @@ complex(kind=dp) function simpson(f,a,b)
   integer :: num, i, j, N
   real(kind=dp), allocatable :: sc(:)
 
+  if (size(f) < 3) then
+    print *, 'Error: Simpson integration requires at least 3 points, got', size(f)
+    stop
+  end if
+
   if (mod(size(f), 2) == 0) then
     print *, 'Error: Simpson integration requires odd number of points.'
     stop
@@ -194,6 +199,7 @@ complex(kind=dp) function simpson(f,a,b)
   allocate(sc(num))
 
   sc = 1.0_dp
+  ! Simpson's 1/3 rule: even-index interior points get 4, odd-index get 2
   forall(i=2:N-1:2) sc(i) = 4.0_dp
   forall(i=3:N-1:2) sc(i) = 2.0_dp
 
