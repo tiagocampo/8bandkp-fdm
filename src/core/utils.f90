@@ -201,6 +201,11 @@ complex(kind=dp) function simpson(f,a,b)
   integer :: num, i, j, N
   real(kind=dp), allocatable :: sc(:)
 
+  if (mod(size(f), 2) == 0) then
+    print *, 'Error: Simpson integration requires odd number of points.'
+    stop
+  end if
+
   num = size(f)
   h = (b-a)/(num-1)
   h = h/3.0_dp
