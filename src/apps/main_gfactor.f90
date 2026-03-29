@@ -17,7 +17,7 @@ program gfactor
   integer :: confinement, nlayers
   character (len = 255), allocatable, dimension(:) :: material
   type(paramStruct), allocatable, dimension(:) :: params
-  real(kind=dp), allocatable, dimension(:) :: z, startPos, endPos, bshift
+  real(kind=dp), allocatable, dimension(:) :: z, startPos, endPos
   integer, allocatable, dimension(:) :: intStartPos, intEndPos
   integer :: fdStep, evnum, numcb, numvb
   character (len = 1) :: confDir
@@ -119,7 +119,6 @@ program gfactor
     allocate(endPos(nlayers))
     allocate(intStartPos(nlayers))
     allocate(intEndPos(nlayers))
-    allocate(bshift(nlayers))
 
     do i = 1, nlayers, 1
       read(data_unit, *) label, material(i), startPos(i), endPos(i)
@@ -258,7 +257,7 @@ program gfactor
     allocate(kpterms(fdStep,fdStep,10))
     kpterms = 0.0_dp
     call confinementInitialization(z, intStartPos, intEndPos, material, &
-    & nlayers, params, bshift, confDir, profile, kpterms)
+    & nlayers, params, confDir, profile, kpterms)
     if (externalField == 1 .and. EFType == "EF") then
       call externalFieldSetup_electricField(profile, Evalue, totalSize, z)
     end if
@@ -279,41 +278,18 @@ program gfactor
     stop "verify confinement direction or something else"
   end if
 
-  ! do lin=1,N
-  !  do col=lin,N
-  !     if ( zabs(HT(lin,col) - dconjg(HT(col,lin))) .gt. 1e-4) then
-  !        print *, lin, col, HT(lin,col), HT(col,lin), zabs(HT(lin,col)-dconjg(HT(col,lin)))
-  !     end if
-  !  end do
-  ! end do
-
-  ! LIM = 100.0 * MAXVAL(ABS(SUM(HT(:,:),2))) * EPSILON(ABS(HT(1,1)))
-  ! DO I=1,SIZE(HT,2)
-  !    WHERE(ABS(REAL(HT(:,I)))  < LIM) HT(:,I)=dCMPLX(0.0,AIMAG(HT(:,I)))
-  !    WHERE(ABS(AIMAG(HT(:,I))) < LIM) HT(:,I)=dCMPLX(REAL(HT(:,I)),0.0)
-  ! ENDDO
 
   ! full diagonalization
 
   if (nlayers == 1) call zheev('V', 'L', N, HT, N, eig(:,k), work, lwork, rwork, info)
-  ! if (info /= 0) stop "error diag"
-  ! print *, "k = ", smallk(k)%kx, eig(:,k)
 
   if (nlayers > 1) call zheevd('V', 'U', N, HT, N, eig(:,k), work, lwork, rwork, lrwork, iwork, liwork, info)
 
   if (info /= 0) stop "error diag"
-  ! stop
-  ! print *, eig(:,1)
 
-  ! print *, HT
 
-  ! if (smallk(k)%kx==0)
    if (nlayers > 1 ) call writeEigenfunctions(N, N, HT, k, fdstep, z, nlayers==1)
 
-  ! call writeEigenfunctions(N, evnum, HT(1:N,il:iuu), k, fdstep)
-
-  ! call writeEigenvalues(smallk, eig(1:evnum,:), wvStep)
-  ! call writeEigenvalues(smallk, eig(il:iuu ,:), wvStep)
 
   whichBand = 0 !cb
   bandIdx = 1 !first band
@@ -406,11 +382,9 @@ program gfactor
   if (allocated(work)) deallocate(work)
   if (allocated(iwork)) deallocate(iwork)
   if (allocated(rwork)) deallocate(rwork)
-  if (allocated(ifail)) deallocate(ifail)
   if (allocated(params)) deallocate(params)
   if (allocated(material)) deallocate(material)
   if (allocated(z)) deallocate(z)
-  if (allocated(bshift)) deallocate(bshift)
   if (allocated(profile)) deallocate(profile)
   if (allocated(kpterms)) deallocate(kpterms)
   if (allocated(cb_state)) deallocate(cb_state)

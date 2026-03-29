@@ -25,13 +25,12 @@ module finitedifferences
 
     end subroutine FDmatrixDense
 
-    subroutine FDstencil(order, stencil, d, vector, type)
+    subroutine FDstencil(order, stencil, d, vector)
 
       integer, intent(in) :: order, stencil
       real(kind=dp), intent(in) :: d
       real(kind=dp), intent(inout), allocatable, dimension(:) :: vector
       integer :: length, hf
-      character(len = 1), optional :: type
 
       length = size(vector, dim=1)
 
@@ -190,33 +189,5 @@ module finitedifferences
     end subroutine toeplitz
 
 
-    ! from https://rosettacode.org/wiki/Kronecker_product#Fortran
-    SUBROUTINE KPRODUCT(A,B,AB)	!AB = Kronecker product of A and B, both two-dimensional arrays.
-  !Considers the arrays to be addressed as A(row,column), despite any storage order arrangements.        .
-  !Creating array AB to fit here, adjusting the caller's array AB, may not work on some compilers.
-     real(kind=dp) ::  A(:,:),B(:,:)		!Two-dimensional arrays, lower bound one.
-     real(kind=dp), ALLOCATABLE :: AB(:,:)	!To be created to fit.
-     INTEGER R,RA,RB,C,CA,CB,I,J	!Assistants.
-      RA = UBOUND(A,DIM = 1)	!Ascertain the upper bounds of the incoming arrays.
-      CA = UBOUND(A,DIM = 2)	!Their lower bounds will be deemed one,
-      RB = UBOUND(B,DIM = 1)	!And the upper bound as reported will correspond.
-      CB = UBOUND(B,DIM = 2)	!UBOUND(A) would give an array of two values, RA and CA, more for higher dimensionality.
-      WRITE (6,1) "A",RA,CA,"B",RB,CB,"A.k.B",RA*RB,CA*CB	!Announce.
-  1     FORMAT (3(A," is ",I0,"x",I0,1X))	!Three sets of sizes.
-      !IF (ALLOCATED(AB)) DEALLOCATE(AB)	!Discard any lingering storage.
-      !ALLOCATE (AB(RA*RB,CA*CB))		!Obtain the exact desired size.
-      R = 0		!Syncopation: start the row offset.
-
-      DO I = 1,RA	!Step down the rows of A.
-        C = 0		!For each row, start the column offset.
-        DO J = 1,CA		!Step along the columns of A.
-          AB(R + 1:R + RB,C + 1:C + CB) = AB(R + 1:R + RB,C + 1:C + CB) + A(I,J)*B	!Place a block of B values.
-          C = C + CB		!Advance a block of columns.
-        END DO		!On to the next column of A.
-        R = R + RB		!Advance a block of rows.
-
-      END DO	!On to the next row of A.
-
-    END SUBROUTINE KPRODUCT	!No tests for bad parameters, or lack of storage...
 
 end module finitedifferences

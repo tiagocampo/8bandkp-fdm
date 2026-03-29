@@ -13,7 +13,7 @@ program kpfdm
   integer :: confinement, nlayers
   character (len = 255), allocatable, dimension(:) :: material
   type(paramStruct), allocatable, dimension(:) :: params
-  real(kind=dp), allocatable, dimension(:) :: z, startPos, endPos, bshift
+  real(kind=dp), allocatable, dimension(:) :: z, startPos, endPos
   integer, allocatable, dimension(:) :: intStartPos, intEndPos
   integer :: fdStep, evnum, numcb, numvb
   character (len = 1) :: confDir
@@ -98,7 +98,6 @@ program kpfdm
     allocate(endPos(nlayers))
     allocate(intStartPos(nlayers))
     allocate(intEndPos(nlayers))
-    allocate(bshift(nlayers))
 
     do i = 1, nlayers, 1
       read(data_unit, *) label, material(i), startPos(i), endPos(i)
@@ -238,7 +237,7 @@ program kpfdm
     allocate(kpterms(fdStep,fdStep,10))
     kpterms = 0.0_dp
     call confinementInitialization(z, intStartPos, intEndPos, material, &
-    & nlayers, params, bshift, confDir, profile, kpterms)
+    & nlayers, params, confDir, profile, kpterms)
     if (externalField == 1 .and. EFType == "EF") then
       call externalFieldSetup_electricField(profile, Evalue, totalSize, z)
     end if
@@ -338,7 +337,6 @@ program kpfdm
 
   end do
   call writeEigenvalues(smallk, eig(:,:), wvStep)
-  ! call writeEigenvalues(smallk, eig(il:iu,:), wvStep)
 
 
   !----------------------------------------------------------------------------
@@ -354,7 +352,6 @@ program kpfdm
   if (allocated(params)) deallocate(params)
   if (allocated(material)) deallocate(material)
   if (allocated(z)) deallocate(z)
-  if (allocated(bshift)) deallocate(bshift)
   if (allocated(profile)) deallocate(profile)
   if (allocated(kpterms)) deallocate(kpterms)
 

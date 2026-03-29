@@ -68,7 +68,7 @@ contains
       integer ( kind = 4 ) :: exists, ii
 
       exists = 0
-      if ( vvalue /= cmplx(0.0d0,0.0d0) .and. abs(vvalue) >= 10E-10 ) then
+      if ( vvalue /= cmplx(0.0_dp, 0.0_dp, kind=dp) .and. abs(vvalue) >= 10E-10 ) then
       !if ( vvalue /= 0.0d0) then
           !print *, vvalue
           if (nnz < next ) THEN
@@ -102,95 +102,6 @@ contains
 
   end subroutine insertCOO_cmplx
 
-  subroutine dnscsr ( nrow, ncol, nzmax, dns, ndns, a, ja, ia, ierr )
-
-!*****************************************************************************80
-!
-!! DNSCSR converts Dense to Compressed Row Sparse format.
-!
-!  Discussion:
-!
-!    This routine converts a densely stored matrix into a row orientied
-!    compactly sparse matrix.  It is the reverse of CSRDNS.
-!
-!    This routine does not check whether an element is small.  It considers
-!    that A(I,J) is zero only if it is exactly equal to zero.
-!
-!  Modified:
-!
-!    07 January 2004
-!
-!  Author:
-!
-!    Youcef Saad
-!
-!  Parameters:
-!
-!    Input, integer ( kind = 4 ) NROW, the row dimension of the matrix.
-!
-!    Input, integer ( kind = 4 ) NCOL, the column dimension of the matrix.
-!
-!    Input, integer ( kind = 4 ) NZMAX, the maximum number of nonzero elements
-!    allowed.  This should be set to be the lengths of the arrays A and JA.
-!
-!    Input, real DNS(NDNS,NCOL), an NROW by NCOL dense matrix.
-!
-!    Input, integer ( kind = 4 ) NDNS, the first dimension of DNS, which must be
-!    at least NROW.
-!
-!    Output, real A(*), integer ( kind = 4 ) JA(*), IA(NROW+1), the matrix in CSR
-!    Compressed Sparse Row format.
-!
-!    Output, integer ( kind = 4 ) IERR, error indicator.
-!    0 means normal return;
-!    I, means that the the code stopped while processing row I, because
-!       there was no space left in A and JA, as defined by NZMAX.
-!
-  implicit none
-
-  integer ( kind = 4 ) ncol
-  integer ( kind = 4 ) ndns
-  integer ( kind = 4 ) nrow
-
-  real ( kind = 8 ) a(*)
-  real ( kind = 8 ) dns(ndns,ncol)
-  integer ( kind = 4 ) i
-  integer ( kind = 4 ) ia(nrow+1)
-  integer ( kind = 4 ) ierr
-  integer ( kind = 4 ) j
-  integer ( kind = 4 ) ja(*)
-  integer ( kind = 4 ) next
-  integer ( kind = 4 ) nzmax
-
-  ierr = 0
-  next = 1
-  ia(1) = 1
-
-  do i = 1, nrow
-
-    do j = 1, ncol
-
-      if ( dns(i,j) /= 0.0D+00 ) then
-
-        if ( nzmax < next ) then
-          ierr = i
-          return
-        end if
-
-        ja(next) = j
-        a(next) = dns(i,j)
-        next = next + 1
-
-      end if
-
-    end do
-
-    ia(i+1) = next
-
-  end do
-
-  return
-end
 
 complex(kind=dp) function simpson(f,a,b)
 

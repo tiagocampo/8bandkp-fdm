@@ -22,14 +22,14 @@ module definitions
   real(kind=dp), parameter :: tolerance=1e-7
   logical, parameter :: renormalization = .False.
 
-  complex(kind=dp), parameter :: IU = dcmplx(0.0_dp, 1.0_dp)
+  complex(kind=dp), parameter :: IU = cmplx(0.0_dp, 1.0_dp, kind=dp)
   real(kind=dp), parameter :: SQR3 = dsqrt(3.0_dp)
   real(kind=dp), parameter :: SQR2 = dsqrt(2.0_dp)
   real(kind=dp), parameter :: SQR2o3 = dsqrt(2.0_dp/3.0_dp)
   real(kind=dp), parameter :: RQS3 = 1.0_dp/SQR3
   real(kind=dp), parameter :: RQS2 = 1.0_dp/SQR2
-  complex(kind=dp), parameter :: ZERO = dcmplx(0.0_dp,0.0_dp)
-  complex(kind=dp), parameter :: UM = dcmplx(1.0_dp,0.0_dp)
+  complex(kind=dp), parameter :: ZERO = cmplx(0.0_dp, 0.0_dp, kind=dp)
+  complex(kind=dp), parameter :: UM = cmplx(1.0_dp, 0.0_dp, kind=dp)
 
 
   type wavevector
@@ -49,13 +49,6 @@ module definitions
       real(kind=dp) :: value       ! values to be sorted by
   end type group
 
-  type hilbertspace
-    integer :: globalIndex
-    integer :: localIndex(2)
-    !integer :: qn_nx1, qn_ny1, qn_nx2, qn_ny2
-    integer :: basisSpinIndex(2)
-    real(kind=dp) :: energies
-  end type hilbertspace
 
   contains
 
@@ -81,15 +74,5 @@ module definitions
       tock = real(now - t)/real(clock_rate)
   end function tock
 
-  recursive function gcd_rec(u, v) result(gcd)
-      integer             :: gcd
-      integer, intent(in) :: u, v
-
-      if (mod(u, v) /= 0) then
-          gcd = gcd_rec(v, mod(u, v))
-      else
-          gcd = v
-      end if
-  end function gcd_rec
 
 end module
