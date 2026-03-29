@@ -257,6 +257,21 @@ module parameters
             params(i)%gamma2  = 4.7_dp
             params(i)%gamma3  = 6.0_dp
 
+          case ("GaSbW")
+
+            params(i)%meff    = 0.041_dp
+            params(i)%EP      = 22.37_dp
+            params(i)%P       = dsqrt(params(i)%EP*const)
+            params(i)%Eg      = 0.812_dp
+            params(i)%deltaSO = 0.76_dp
+            gamma0         = 1.0_dp/params(i)%meff
+            params(i)%A       = gamma0
+            params(i)%gamma1  = 13.4_dp
+            params(i)%gamma2  = 4.7_dp
+            params(i)%gamma3  = 5.7_dp
+            params(i)%EV      = -0.03_dp
+            params(i)%EC      = 0.782_dp
+
           case ("AlSb")
 
             params(i)%meff    = 0.14_dp
