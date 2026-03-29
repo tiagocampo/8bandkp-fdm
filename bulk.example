@@ -3,6 +3,7 @@ waveVectorMax: 0.1
 waveVectorStep: 11
 confinement:  0
 FDstep: 101
+FDorder: 2
 numLayers:  1
 material1: GaAs
 numcb: 2

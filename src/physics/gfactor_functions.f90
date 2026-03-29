@@ -72,6 +72,14 @@ complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, d
 
   integer :: lin, col
 
+  ! Spin matrices in the 8-band zincblende basis.
+  ! Basis ordering: 1=|3/2,+3/2> (HH), 2=|3/2,+1/2> (LH), 3=|3/2,-1/2> (LH),
+  !   4=|3/2,-3/2> (HH), 5=|1/2,+1/2> (SO), 6=|1/2,-1/2> (SO),
+  !   7=|S,+1/2> (CB), 8=|S,-1/2> (CB)
+  ! Phase convention matches ZB8bandBulk in hamiltonianConstructor.f90.
+  ! CB block (bands 7-8) gives standard Pauli matrices.
+  ! VB-VB and VB-SO off-diagonal elements may differ from the Chuang & Chang
+  ! convention by factors of +/-i (Winkler, Table 2.3).
   SIGMA_X(1,:) = (/ ZERO, -IU*RQS3, ZERO, ZERO, UM*SQR2o3, ZERO, ZERO, ZERO /)
   SIGMA_X(2,:) = (/ IU*RQS3, ZERO, -IU*2.0_dp/3.0_dp, ZERO, ZERO, -UM*SQR2/3.0_dp, ZERO, ZERO /)
   SIGMA_X(3,:) = (/ ZERO, 2.0_dp*IU/3.0_dp, ZERO, -IU*RQS3, UM*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
@@ -111,12 +119,12 @@ complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, d
   aux_v = 0
   aux1_v = 0
 
-  if (abs(dz) < tolerance) then
-    print *, 'Error: sigmaElem called with dz=0. Grid spacing is zero.'
-    stop 1
-  end if
-
   if (nlayers > 1) then
+
+    if (abs(dz) < tolerance) then
+      print *, 'Error: sigmaElem called with dz=0. Grid spacing is zero.'
+      stop 1
+    end if
 
     Y = 0
 
@@ -383,21 +391,6 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
 
       end if
 
-      if (nlayers > 1 .and. .not. sparse) then
-        if (allocated(smallk)) deallocate(smallk)
-        allocate(smallk(1))
-        if (allocated(hkp)) deallocate(hkp)
-        allocate(hkp(dimax,dimax))
-
-        call set_perturbation_direction(mod1, smallk(1))
-        call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.False.,g='g')
-
-        call set_perturbation_direction(mod2, smallk(1))
-        call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.False.,g='g')
-
-      end if
-
-
       ! tensor loop
       ii = 0
       do n=bandIdx,bandIdx+1
@@ -444,14 +437,16 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
         end do
       end do
 
-      if ( numcb > 2 ) then
-        ii = 0
-        do n=bandidx,bandidx+1
-          ii = ii + 1
-          jj = 0
-          do m=bandidx,bandidx+1
-            jj = jj + 1
-            do l=1,numcb
+      ii = 0
+      do n=bandidx,bandidx+1
+        ii = ii + 1
+        jj = 0
+        do m=bandidx,bandidx+1
+          jj = jj + 1
+          do l=1,numcb
+
+              ! Skip self-interaction (l==n or l==m gives zero contribution)
+              if (l == n .or. l == m) cycle
 
               Pele1 = 0
               Pele2 = 0
@@ -483,7 +478,151 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
             end do
           end do
         end do
+    if (skip_count > 0) print *, 'Total skipped contributions:', skip_count
+    end do ! end main loop
+
+  else if (whichBand == 1) then
+
+    print *, 'gfactor for valence band'
+
+    ! Sigma matrix between VB doublet (Kramers partners)
+    ii = 0
+    do n = bandIdx,bandIdx+1
+      ii = ii+1
+      jj = 0
+      do m = bandIdx,bandIdx+1
+        jj = jj+1
+        sigma(ii,jj,1) = sigmaElem(vb_state(:,n), vb_state(:,m),'x',fdStep, startz,endz,dz,nlayers)
+        sigma(ii,jj,2) = sigmaElem(vb_state(:,n), vb_state(:,m),'y',fdStep, startz,endz,dz,nlayers)
+        sigma(ii,jj,3) = sigmaElem(vb_state(:,n), vb_state(:,m),'z',fdStep, startz,endz,dz,nlayers)
+      end do
+    end do
+    print *, 'sigma'
+    do i = 1, 2
+      write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,1), j=1,2)
+    end do
+    print *, ' '
+    do i = 1, 2
+      write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,2), j=1,2)
+    end do
+    print *, ' '
+    do i = 1, 2
+      write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,3), j=1,2)
+    end do
+
+    skip_count = 0
+    do d = 1,3
+      ii = 0
+      jj = 0
+
+      if(d==1) then
+        mod1 = 2
+        mod2 = 3
+      elseif ( d==2 ) then
+        mod1 = 3
+        mod2 = 1
+      elseif ( d==3 ) then
+        mod1 = 1
+        mod2 = 2
       end if
+
+      if (nlayers > 1 .and. sparse) then
+        if (allocated(smallk)) deallocate(smallk)
+        allocate(smallk(1))
+        allocate(hkp(dimax,dimax))
+
+        call set_perturbation_direction(mod1, smallk(1))
+        call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.True., HT_csr=HT_csr_mod1,g='g')
+
+        call set_perturbation_direction(mod2, smallk(1))
+        call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.True., HT_csr=HT_csr_mod2,g='g')
+
+        if (allocated(hkp)) deallocate(hkp)
+      end if
+
+      ! VB doublet (n,m) with CB intermediates (l)
+      ii = 0
+      do n=bandIdx,bandIdx+1
+        ii = ii + 1
+        jj = 0
+        do m=bandIdx,bandIdx+1
+          jj = jj+1
+
+          do l=1,numcb
+
+            Pele1 = 0
+            Pele2 = 0
+            Pele3 = 0
+            Pele4 = 0
+
+            call compute_pele(Pele1, mod1, vb_state(:,n), cb_state(:,l), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod1, hkp, startz, endz, dz)
+
+            call compute_pele(Pele2, mod2, cb_state(:,l), vb_state(:,m), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod2, hkp, startz, endz, dz)
+
+            call compute_pele(Pele3, mod2, vb_state(:,n), cb_state(:,l), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod2, hkp, startz, endz, dz)
+
+            call compute_pele(Pele4, mod1, cb_state(:,l), vb_state(:,m), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod1, hkp, startz, endz, dz)
+
+            denom = (vb_value(n) - cb_value(l)) + (vb_value(m) - cb_value(l))
+            if (abs(denom) > tolerance) then
+              tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
+            else
+              skip_count = skip_count + 1
+              if (skip_count <= 5) then
+                print *, 'WARNING: near-zero energy denominator, n=', n, 'm=', m, 'l=', l, 'denom=', denom
+              end if
+            end if
+
+          end do
+
+        end do
+      end do
+
+      ! VB doublet (n,m) with VB intermediates (l), skip self-term
+      ii = 0
+      do n=bandIdx,bandIdx+1
+        ii = ii + 1
+        jj = 0
+        do m=bandIdx,bandIdx+1
+          jj = jj+1
+          do l=1,numvb
+
+            if (l == n .or. l == m) cycle
+
+            Pele1 = 0
+            Pele2 = 0
+            Pele3 = 0
+            Pele4 = 0
+
+            call compute_pele(Pele1, mod1, vb_state(:,n), vb_state(:,l), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod1, hkp, startz, endz, dz)
+
+            call compute_pele(Pele2, mod2, vb_state(:,l), vb_state(:,m), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod2, hkp, startz, endz, dz)
+
+            call compute_pele(Pele3, mod2, vb_state(:,n), vb_state(:,l), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod2, hkp, startz, endz, dz)
+
+            call compute_pele(Pele4, mod1, vb_state(:,l), vb_state(:,m), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod1, hkp, startz, endz, dz)
+
+            denom = (vb_value(n) - vb_value(l)) + (vb_value(m) - vb_value(l))
+            if (abs(denom) > tolerance) then
+              tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
+            else
+              skip_count = skip_count + 1
+              if (skip_count <= 5) then
+                print *, 'WARNING: near-zero energy denominator, n=', n, 'm=', m, 'l=', l, 'denom=', denom
+              end if
+            end if
+
+          end do
+        end do
+      end do
     if (skip_count > 0) print *, 'Total skipped contributions:', skip_count
     end do ! end main loop
   end if
