@@ -126,6 +126,11 @@ contains
       print *, trim(label), cfg%materialN(1)
       cfg%materialN(1) = trim(cfg%materialN(1))
       cfg%confDir = 'n'
+      ! Allocate startPos/endPos with dummy values for bulk mode
+      allocate(cfg%startPos(1))
+      allocate(cfg%endPos(1))
+      cfg%startPos(1) = 0.0_dp
+      cfg%endPos(1) = 1.0_dp
     end if
 
     if (cfg%confinement == 1) then
@@ -190,6 +195,17 @@ contains
     else
       stop "Type of external field not implemented"
     end if
+
+      ! Try reading gfactor params; use defaults if missing (backward compatible)
+      read(data_unit, *, iostat=status) label, cfg%whichBand
+      if (status == 0) then
+        print *, trim(label), cfg%whichBand
+        read(data_unit, *, iostat=status) label, cfg%bandIdx
+        if (status == 0) print *, trim(label), cfg%bandIdx
+      else
+        cfg%whichBand = 0
+        cfg%bandIdx= 1
+      end if
 
     print *, ' '
 

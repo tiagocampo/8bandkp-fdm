@@ -75,7 +75,7 @@ program gfactor
   end select
 
   print *, 'adjusting numcb and numvb to get all states'
-  cfg%numcb = 2!2*cfg%fdStep
+  cfg%numcb = 2*cfg%fdStep
   cfg%numvb = 6*cfg%fdStep
 
   cfg%evnum = cfg%numcb + cfg%numvb
@@ -181,9 +181,9 @@ program gfactor
    if (cfg%numLayers > 1 ) call writeEigenfunctions(N, N, HT, k, cfg%fdstep, cfg%z, cfg%numLayers==1)
 
 
-  whichBand = 0 !cb
-  bandIdx = 1 !first band
-  cfg%numcb = 2!2*cfg%fdStep
+  whichBand = cfg%whichBand
+  bandIdx = cfg%bandIdx
+  cfg%numcb = 2*cfg%fdStep
   cfg%numvb = 6*cfg%fdStep
 
   allocate(cb_state(N,cfg%numcb))
@@ -206,7 +206,7 @@ program gfactor
 
   if (cfg%numLayers == 1) call gfactorCalculation(tensor, whichBand, bandIdx, cfg%numcb, &
   & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg%numLayers, cfg%params, &
-  & cfg%startPos(1), cfg%endPos(1))
+  & cfg%startPos(1), cfg%endPos(1), dz=cfg%dz)
   if (cfg%numLayers > 1)  call gfactorCalculation(tensor, whichBand, bandIdx, cfg%numcb, &
   & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg%numLayers, cfg%params, &
   & cfg%startPos(1), cfg%endPos(1), profile=profile, kpterms=kpterms, dz=cfg%dz)

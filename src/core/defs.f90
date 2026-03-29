@@ -62,6 +62,8 @@ module definitions
     real(kind=dp) :: totalSize = 0.0_dp
     real(kind=dp) :: delta = 0.0_dp
     real(kind=dp) :: dz = 0.0_dp
+    integer :: whichBand = 0     ! 0=CB g-factor, 1=VB g-factor
+    integer :: bandIdx = 1       ! which doublet (1=ground, 2=first excited, ...)
     real(kind=dp), allocatable :: startPos(:)
     real(kind=dp), allocatable :: endPos(:)
     real(kind=dp), allocatable :: z(:)
