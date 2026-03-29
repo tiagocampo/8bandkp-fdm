@@ -44,6 +44,32 @@ module definitions
 
   end type paramStruct
 
+  type simulation_config
+    integer :: confinement = 0
+    integer :: fdStep = 1
+    integer :: numLayers = 1
+    integer :: numcb = 2
+    integer :: numvb = 6
+    integer :: evnum = 8
+    integer :: waveVectorStep = 100
+    integer :: ExternalField = 0
+    character(len=2) :: waveVector = 'k0'
+    character(len=1) :: confDir = 'n'
+    character(len=2) :: EFtype = '  '
+    real(kind=dp) :: waveVectorMax = 0.0_dp
+    real(kind=dp) :: Evalue = 0.0_dp
+    real(kind=dp) :: totalSize = 0.0_dp
+    real(kind=dp) :: delta = 0.0_dp
+    real(kind=dp) :: dz = 0.0_dp
+    real(kind=dp), allocatable :: startPos(:)
+    real(kind=dp), allocatable :: endPos(:)
+    real(kind=dp), allocatable :: z(:)
+    integer, allocatable :: intStartPos(:)
+    integer, allocatable :: intEndPos(:)
+    character(len=255), allocatable :: materialN(:)
+    type(paramStruct), allocatable :: params(:)
+  end type simulation_config
+
   type group
       integer :: order    ! original order of unsorted data
       real(kind=dp) :: value       ! values to be sorted by
