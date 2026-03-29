@@ -45,6 +45,8 @@ module parameters
             params(i)%gamma1  = 6.85_dp
             params(i)%gamma2  = 2.10_dp
             params(i)%gamma3  = 2.90_dp
+            params(i)%EV      = -0.8_dp
+            params(i)%EC      = 0.719_dp
 
           case ("Al20Ga80As")
 
@@ -89,6 +91,8 @@ module parameters
             params(i)%gamma1  = 6.107_dp
             params(i)%gamma2  = 1.773_dp
             params(i)%gamma3  = 2.543_dp
+            params(i)%EV      = -0.959_dp
+            params(i)%EC      = 1.018_dp
 
           case ("Ga47In53AsW")
 
@@ -102,6 +106,8 @@ module parameters
             params(i)%gamma1  = 11.97_dp
             params(i)%gamma2  = 4.36_dp
             params(i)%gamma3  = 5.15_dp
+            params(i)%EV      = -0.689_dp
+            params(i)%EC      = 0.128_dp
 
           case ("Al47In53AsW")
 
@@ -115,6 +121,8 @@ module parameters
             params(i)%gamma1  = 6.17_dp
             params(i)%gamma2  = 1.62_dp
             params(i)%gamma3  = 2.31_dp
+            params(i)%EV      = -0.938_dp
+            params(i)%EC      = 0.755_dp
 
           case ("InAs")
 
@@ -143,6 +151,8 @@ module parameters
             params(i)%gamma1  = 20.4_dp
             params(i)%gamma2  = 8.3_dp
             params(i)%gamma3  = 9.1_dp
+            params(i)%EV      = -0.59_dp
+            params(i)%EC      = -0.172_dp
 
           case ("AlAs")
 
@@ -171,6 +181,8 @@ module parameters
             params(i)%gamma1  = 3.25_dp
             params(i)%gamma2  = 0.65_dp
             params(i)%gamma3  = 1.21_dp
+            params(i)%EV      = -1.33_dp
+            params(i)%EC      = 1.800_dp
 
           case ("GaP")
 
@@ -184,6 +196,8 @@ module parameters
             params(i)%gamma1  = 4.05_dp
             params(i)%gamma2  = 0.49_dp
             params(i)%gamma3  = 2.93_dp
+            params(i)%EV      = -1.27_dp
+            params(i)%EC      = 1.08_dp
 
           case ("AlP")
 
@@ -197,6 +211,8 @@ module parameters
             params(i)%gamma1  = 3.35_dp
             params(i)%gamma2  = 0.71_dp
             params(i)%gamma3  = 1.23_dp
+            params(i)%EV      = -1.74_dp
+            params(i)%EC      = 0.78_dp
 
           case ("InP")
 
@@ -210,6 +226,8 @@ module parameters
             params(i)%gamma1  = 5.08_dp
             params(i)%gamma2  = 1.60_dp
             params(i)%gamma3  = 2.10_dp
+            params(i)%EV      = -0.70_dp
+            params(i)%EC      = 0.7236_dp
 
           case ("InPW")
 
@@ -223,6 +241,8 @@ module parameters
             params(i)%gamma1  = 4.95_dp
             params(i)%gamma2  = 1.65_dp
             params(i)%gamma3  = 2.35_dp
+            params(i)%EV      = -0.70_dp
+            params(i)%EC      = 0.723_dp
 
           case ("GaSb")
 
@@ -236,6 +256,21 @@ module parameters
             params(i)%gamma1  = 13.4_dp
             params(i)%gamma2  = 4.7_dp
             params(i)%gamma3  = 6.0_dp
+
+          case ("GaSbW")
+
+            params(i)%meff    = 0.041_dp
+            params(i)%EP      = 22.37_dp
+            params(i)%P       = dsqrt(params(i)%EP*const)
+            params(i)%Eg      = 0.812_dp
+            params(i)%deltaSO = 0.76_dp
+            gamma0         = 1.0_dp/params(i)%meff
+            params(i)%A       = gamma0
+            params(i)%gamma1  = 13.4_dp
+            params(i)%gamma2  = 4.7_dp
+            params(i)%gamma3  = 5.7_dp
+            params(i)%EV      = -0.03_dp
+            params(i)%EC      = 0.782_dp
 
           case ("AlSb")
 
@@ -264,6 +299,8 @@ module parameters
             params(i)%gamma1  = 4.15_dp
             params(i)%gamma2  = 1.01_dp
             params(i)%gamma3  = 1.71_dp
+            params(i)%EV      = -0.41_dp
+            params(i)%EC      = 1.974_dp
 
           case ("InSb")
 
@@ -292,6 +329,8 @@ module parameters
             params(i)%gamma1  = 37.1_dp
             params(i)%gamma2  = 16.5_dp
             params(i)%gamma3  = 17.7_dp
+            params(i)%EV      = 0.0_dp
+            params(i)%EC      = 0.237_dp
 
           case ("Vacuum")
 

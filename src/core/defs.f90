@@ -22,14 +22,14 @@ module definitions
   real(kind=dp), parameter :: tolerance=1e-7
   logical, parameter :: renormalization = .False.
 
-  complex(kind=dp), parameter :: IU = dcmplx(0.0_dp, 1.0_dp)
+  complex(kind=dp), parameter :: IU = cmplx(0.0_dp, 1.0_dp, kind=dp)
   real(kind=dp), parameter :: SQR3 = dsqrt(3.0_dp)
   real(kind=dp), parameter :: SQR2 = dsqrt(2.0_dp)
   real(kind=dp), parameter :: SQR2o3 = dsqrt(2.0_dp/3.0_dp)
   real(kind=dp), parameter :: RQS3 = 1.0_dp/SQR3
   real(kind=dp), parameter :: RQS2 = 1.0_dp/SQR2
-  complex(kind=dp), parameter :: ZERO = dcmplx(0.0_dp,0.0_dp)
-  complex(kind=dp), parameter :: UM = dcmplx(1.0_dp,0.0_dp)
+  complex(kind=dp), parameter :: ZERO = cmplx(0.0_dp, 0.0_dp, kind=dp)
+  complex(kind=dp), parameter :: UM = cmplx(1.0_dp, 0.0_dp, kind=dp)
 
 
   type wavevector
@@ -44,25 +44,45 @@ module definitions
 
   end type paramStruct
 
+  type simulation_config
+    integer :: confinement = 0
+    integer :: fdStep = 1
+    integer :: FDorder = 2
+    integer :: numLayers = 1
+    integer :: numcb = 2
+    integer :: numvb = 6
+    integer :: evnum = 8
+    integer :: waveVectorStep = 100
+    integer :: ExternalField = 0
+    character(len=2) :: waveVector = 'k0'
+    character(len=1) :: confDir = 'n'
+    character(len=2) :: EFtype = '  '
+    real(kind=dp) :: waveVectorMax = 0.0_dp
+    real(kind=dp) :: Evalue = 0.0_dp
+    real(kind=dp) :: totalSize = 0.0_dp
+    real(kind=dp) :: delta = 0.0_dp
+    real(kind=dp) :: dz = 0.0_dp
+    real(kind=dp), allocatable :: startPos(:)
+    real(kind=dp), allocatable :: endPos(:)
+    real(kind=dp), allocatable :: z(:)
+    integer, allocatable :: intStartPos(:)
+    integer, allocatable :: intEndPos(:)
+    character(len=255), allocatable :: materialN(:)
+    type(paramStruct), allocatable :: params(:)
+  end type simulation_config
+
   type group
       integer :: order    ! original order of unsorted data
       real(kind=dp) :: value       ! values to be sorted by
   end type group
 
-  type hilbertspace
-    integer :: globalIndex
-    integer :: localIndex(2)
-    !integer :: qn_nx1, qn_ny1, qn_nx2, qn_ny2
-    integer :: basisSpinIndex(2)
-    real(kind=dp) :: energies
-  end type hilbertspace
 
   contains
 
   pure function kronij(i,j)
     integer, intent(in) :: i,j
     integer :: kronij
-    kronij = int((float((i+j)-abs(i-j)))/(float((i+j)+abs(i-j))))
+    kronij = merge(1, 0, i == j)
   end function
 
   subroutine tick(t)
@@ -81,15 +101,5 @@ module definitions
       tock = real(now - t)/real(clock_rate)
   end function tock
 
-  recursive function gcd_rec(u, v) result(gcd)
-      integer             :: gcd
-      integer, intent(in) :: u, v
-
-      if (mod(u, v) /= 0) then
-          gcd = gcd_rec(v, mod(u, v))
-      else
-          gcd = v
-      end if
-  end function gcd_rec
 
 end module

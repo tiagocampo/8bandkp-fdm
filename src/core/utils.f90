@@ -15,7 +15,7 @@ contains
     integer, intent(in) :: N
     complex(kind=dp), intent(in), dimension(:,:) :: dns
 
-    integer :: ierr, info, next, i, j
+    integer :: ierr, info, next, i, j, nnz_count
     complex(kind=dp), allocatable, dimension(:) :: Aa_a, A_a
     integer, allocatable, dimension(:) :: Aa_ia, Aa_ja, A_ia, A_ja
     type(sparse_matrix_T) :: HT_coo
@@ -31,15 +31,22 @@ contains
         call insertCOO_cmplx(Aa_a, Aa_ia, Aa_ja, dns(i,j), i, j, next, nzmax)
       end do
     end do
-    ! print *, next-1
+
+    ! Finalize: sort by (row, col) and merge duplicates
+    if (next > 1) then
+      nnz_count = next - 1
+      call finalizeCOO_cmplx(Aa_a, Aa_ia, Aa_ja, nnz_count)
+    else
+      nnz_count = 0
+    end if
 
     allocate(A_a(0))
     allocate(A_ia(0))
     allocate(A_ja(0))
 
-    A_a = [ Aa_a(1:next-1) ]
-    A_ia = [ Aa_ia(1:next-1) ]
-    A_ja = [ Aa_ja(1:next-1) ]
+    A_a = [ Aa_a(1:nnz_count) ]
+    A_ia = [ Aa_ia(1:nnz_count) ]
+    A_ja = [ Aa_ja(1:nnz_count) ]
 
     deallocate(Aa_a, Aa_ia, Aa_ja)
 
@@ -65,132 +72,105 @@ contains
       complex ( kind = dp ), intent(in) :: vvalue
       integer ( kind = 4 ), intent(in) :: i, j, nnz
 
-      integer ( kind = 4 ) :: exists, ii
+      if ( vvalue /= cmplx(0.0_dp, 0.0_dp, kind=dp) .and. abs(vvalue) >= 10E-10 ) then
 
-      exists = 0
-      if ( vvalue /= cmplx(0.0d0,0.0d0) .and. abs(vvalue) >= 10E-10 ) then
-      !if ( vvalue /= 0.0d0) then
-          !print *, vvalue
           if (nnz < next ) THEN
             print *, nnz, next
             stop 'next greater than nnz'
           endif
 
-          if (next > 1) then
-              do ii = 1, next-1
-                  if (r(ii) == i .and. c(ii) == j .and. exists /= 1) then
-                      v(ii) = v(ii) + vvalue
-                      exists = 1
-                  end if
-              end do
-              if (exists == 0) then
-                  v(next) = vvalue
-                  r(next) = i
-                  c(next) = j
-                  next = next + 1
-                  exists = 0
-              end if
-          else
-              v(next) = vvalue
-              r(next) = i
-              c(next) = j
-              next = next + 1
-              exists = 0
-          end if
+          v(next) = vvalue
+          r(next) = i
+          c(next) = j
+          next = next + 1
 
       end if
 
   end subroutine insertCOO_cmplx
 
-  subroutine dnscsr ( nrow, ncol, nzmax, dns, ndns, a, ja, ia, ierr )
+  subroutine finalizeCOO_cmplx(v, r, c, nnz)
+      complex ( kind = dp ), intent(inout), allocatable :: v(:)
+      integer ( kind = 4 ), intent(inout), allocatable :: r(:), c(:)
+      integer ( kind = 4 ), intent(inout) :: nnz
 
-!*****************************************************************************80
-!
-!! DNSCSR converts Dense to Compressed Row Sparse format.
-!
-!  Discussion:
-!
-!    This routine converts a densely stored matrix into a row orientied
-!    compactly sparse matrix.  It is the reverse of CSRDNS.
-!
-!    This routine does not check whether an element is small.  It considers
-!    that A(I,J) is zero only if it is exactly equal to zero.
-!
-!  Modified:
-!
-!    07 January 2004
-!
-!  Author:
-!
-!    Youcef Saad
-!
-!  Parameters:
-!
-!    Input, integer ( kind = 4 ) NROW, the row dimension of the matrix.
-!
-!    Input, integer ( kind = 4 ) NCOL, the column dimension of the matrix.
-!
-!    Input, integer ( kind = 4 ) NZMAX, the maximum number of nonzero elements
-!    allowed.  This should be set to be the lengths of the arrays A and JA.
-!
-!    Input, real DNS(NDNS,NCOL), an NROW by NCOL dense matrix.
-!
-!    Input, integer ( kind = 4 ) NDNS, the first dimension of DNS, which must be
-!    at least NROW.
-!
-!    Output, real A(*), integer ( kind = 4 ) JA(*), IA(NROW+1), the matrix in CSR
-!    Compressed Sparse Row format.
-!
-!    Output, integer ( kind = 4 ) IERR, error indicator.
-!    0 means normal return;
-!    I, means that the the code stopped while processing row I, because
-!       there was no space left in A and JA, as defined by NZMAX.
-!
-  implicit none
+      integer ( kind = 4 ), allocatable :: idx(:)
+      integer ( kind = 4 ) :: i, nnz_final
+      complex ( kind = dp ), allocatable :: v_sorted(:)
+      integer ( kind = 4 ), allocatable :: r_sorted(:), c_sorted(:)
 
-  integer ( kind = 4 ) ncol
-  integer ( kind = 4 ) ndns
-  integer ( kind = 4 ) nrow
+      ! Nothing to do for empty or single-element arrays
+      if (nnz <= 1) return
 
-  real ( kind = 8 ) a(*)
-  real ( kind = 8 ) dns(ndns,ncol)
-  integer ( kind = 4 ) i
-  integer ( kind = 4 ) ia(nrow+1)
-  integer ( kind = 4 ) ierr
-  integer ( kind = 4 ) j
-  integer ( kind = 4 ) ja(*)
-  integer ( kind = 4 ) next
-  integer ( kind = 4 ) nzmax
+      ! Build index array and sort by (row, col)
+      allocate(idx(nnz))
+      do i = 1, nnz
+        idx(i) = i
+      end do
 
-  ierr = 0
-  next = 1
-  ia(1) = 1
+      ! Index sort: sort idx by (r, c) pairs using insertion sort
+      call index_sort_by_rc(idx, r, c, nnz)
 
-  do i = 1, nrow
+      ! Apply permutation into temporary arrays
+      allocate(v_sorted(nnz))
+      allocate(r_sorted(nnz))
+      allocate(c_sorted(nnz))
+      do i = 1, nnz
+        v_sorted(i) = v(idx(i))
+        r_sorted(i) = r(idx(i))
+        c_sorted(i) = c(idx(i))
+      end do
 
-    do j = 1, ncol
-
-      if ( dns(i,j) /= 0.0D+00 ) then
-
-        if ( nzmax < next ) then
-          ierr = i
-          return
+      ! Merge duplicates in-place in the sorted arrays
+      nnz_final = 1
+      do i = 2, nnz
+        if (r_sorted(nnz_final) == r_sorted(i) .and. &
+          & c_sorted(nnz_final) == c_sorted(i)) then
+          ! Merge: add value to previous unique entry
+          v_sorted(nnz_final) = v_sorted(nnz_final) + v_sorted(i)
+        else
+          ! New unique entry
+          nnz_final = nnz_final + 1
+          v_sorted(nnz_final) = v_sorted(i)
+          r_sorted(nnz_final) = r_sorted(i)
+          c_sorted(nnz_final) = c_sorted(i)
         end if
+      end do
 
-        ja(next) = j
-        a(next) = dns(i,j)
-        next = next + 1
+      ! Copy merged results back
+      v(1:nnz_final) = v_sorted(1:nnz_final)
+      r(1:nnz_final) = r_sorted(1:nnz_final)
+      c(1:nnz_final) = c_sorted(1:nnz_final)
+      nnz = nnz_final
 
-      end if
+      deallocate(idx, v_sorted, r_sorted, c_sorted)
 
-    end do
+  end subroutine finalizeCOO_cmplx
 
-    ia(i+1) = next
+  subroutine index_sort_by_rc(idx, r, c, n)
+      integer ( kind = 4 ), intent(inout) :: idx(:)
+      integer ( kind = 4 ), intent(in) :: r(:), c(:)
+      integer ( kind = 4 ), intent(in) :: n
 
-  end do
+      integer ( kind = 4 ) :: i, j, key_idx
+      integer ( kind = 4 ) :: key_r, key_c
 
-  return
-end
+      ! Insertion sort of idx by (r(idx), c(idx)) pairs
+      do i = 2, n
+        key_idx = idx(i)
+        key_r = r(key_idx)
+        key_c = c(key_idx)
+        j = i - 1
+        do while (j >= 1)
+          if (r(idx(j)) < key_r) exit
+          if (r(idx(j)) == key_r .and. c(idx(j)) <= key_c) exit
+          idx(j+1) = idx(j)
+          j = j - 1
+        end do
+        idx(j+1) = key_idx
+      end do
+
+  end subroutine index_sort_by_rc
+
 
 complex(kind=dp) function simpson(f,a,b)
 
@@ -200,6 +180,11 @@ complex(kind=dp) function simpson(f,a,b)
   real(kind=dp) :: h
   integer :: num, i, j, N
   real(kind=dp), allocatable :: sc(:)
+
+  if (mod(size(f), 2) == 0) then
+    print *, 'Error: Simpson integration requires odd number of points.'
+    stop
+  end if
 
   num = size(f)
   h = (b-a)/(num-1)

@@ -9,7 +9,49 @@ module hamiltonianConstructor
 
   contains
 
-    subroutine externalFiledSetup_electricField(profile, Evalue, totalSize, z)
+    subroutine build_kpterm_block(kpterms, profile_vec, central, forward, &
+      & backward, diag, offup, offdown, N, term_idx, scale_factor, has_diag)
+
+      real(kind=dp), intent(inout), dimension(:,:,:) :: kpterms
+      real(kind=dp), intent(in), dimension(:) :: profile_vec
+      real(kind=dp), intent(in), dimension(:,:) :: central, forward, backward
+      real(kind=dp), intent(inout), dimension(:) :: diag, offup, offdown
+      integer, intent(in) :: N, term_idx
+      real(kind=dp), intent(in) :: scale_factor
+      logical, intent(in) :: has_diag
+
+      integer :: ii
+
+      if (has_diag) then
+        call dgemv('N', N, N, 1.0_dp, central, N, profile_vec, 1, 0.0_dp, diag, 1)
+      end if
+      call dgemv('N', N, N, 1.0_dp, forward, N, profile_vec, 1, 0.0_dp, offup, 1)
+      call dgemv('N', N, N, 1.0_dp, backward, N, profile_vec, 1, 0.0_dp, offdown, 1)
+
+      if (has_diag) then
+        forall(ii=2:N-1)
+          kpterms(ii,ii,term_idx) = diag(ii)
+          kpterms(ii+1,ii,term_idx) = -offup(ii)
+          kpterms(ii-1,ii,term_idx) = -offdown(ii)
+        end forall
+        kpterms(1,1,term_idx) = diag(1)
+        kpterms(N,N,term_idx) = diag(N)
+        kpterms(2,1,term_idx) = -offup(1)
+        kpterms(N-1,N,term_idx) = -offdown(N)
+      else
+        forall(ii=2:N-1)
+          kpterms(ii+1,ii,term_idx) = offup(ii)
+          kpterms(ii-1,ii,term_idx) = -offdown(ii)
+        end forall
+        kpterms(2,1,term_idx) = offup(1)
+        kpterms(N-1,N,term_idx) = -offdown(N)
+      end if
+
+      kpterms(:,:,term_idx) = kpterms(:,:,term_idx) * scale_factor
+
+    end subroutine build_kpterm_block
+
+    subroutine externalFieldSetup_electricField(profile, Evalue, totalSize, z)
 
       real(kind = dp), intent(inout), allocatable, dimension(:,:) :: profile
       real(kind = dp), intent(in) :: Evalue, totalSize
@@ -21,12 +63,12 @@ module hamiltonianConstructor
           profile(i,:) = profile(i,:) - (Evalue*totalSize) * (z(i)+z(1))/(2.0_dp*z(1))
       end do
 
-    end subroutine externalFiledSetup_electricField
+    end subroutine externalFieldSetup_electricField
 
     subroutine confinementInitialization(z, startPos, endPos, material, nlayers,&
-      & params, bshift, confDir, profile, kpterms)
+      & params, confDir, profile, kpterms, FDorder)
 
-      real(kind = dp), intent(in), dimension(:) :: z, bshift
+      real(kind = dp), intent(in), dimension(:) :: z
       integer, intent(in), dimension(:) :: startPos, endPos
       character(len = 255), intent(in) :: material(nlayers)
       integer, intent(in) :: nlayers
@@ -34,19 +76,28 @@ module hamiltonianConstructor
       character(len = 1), intent(in) :: confDir
       real(kind = dp), intent(inout), allocatable, dimension(:,:) :: profile
       real(kind = dp), intent(inout), dimension(:,:,:) :: kpterms
+      integer, intent(in), optional :: FDorder
 
       real(kind=dp), allocatable, dimension(:,:) :: ScnDer, FstDer, kptermsProfile
       real(kind=dp), allocatable, dimension(:,:) :: forward, central, backward
       real(kind=dp), allocatable, dimension(:) :: diag, offup, offdown
+      real(kind=dp), allocatable, dimension(:,:) :: D2, D1
 
       integer :: i, initIDX, endIDX, N, ii, jj
+      integer :: order
       real(kind = dp) :: delta
 
-      ! complex(kind=dp) :: zgemv
 
       N = size(z, dim=1)
       delta = abs(z(2) - z(1))
       print *, delta
+
+      ! Resolve FD order (default 2 for backward compatibility)
+      if (present(FDorder)) then
+        order = FDorder
+      else
+        order = 2
+      end if
 
       if (allocated(profile)) deallocate(profile)
       allocate(profile(N,3))
@@ -54,19 +105,19 @@ module hamiltonianConstructor
       if (allocated(kptermsProfile)) deallocate(kptermsProfile)
       allocate(kptermsProfile(N,5))
 
-      ! allocate(ScnDer(N,N))
-      ! allocate(Fstder(N,N))
-      ! call FDmatrixDense(N, delta, 2, 2, 1, ScnDer)
-      ! call FDmatrixDense(N, delta, 1, 2, 1, FstDer)
-      !call Identity(N, Idn)
 
       if (confDir == 'z') then
 
         do i = 1, nlayers, 1
+          if (params(i)%EV == 0.0_dp .and. params(i)%EC == 0.0_dp) then
+            print *, "WARNING: Material '", trim(material(i)), &
+              & "' has EV=0 and EC=0. Band offsets may be incorrect."
+            print *, "  Check that EV/EC are set in the parameter database."
+          end if
+        end do
 
-          ! profile(startPos(i):endPos(i),1) = (params(1)%Eg - params(i)%Eg)*bshift(i)
-          ! profile(startPos(i):endPos(i),2) = (params(1)%Eg - params(i)%Eg)*bshift(i) - params(i)%DeltaSO
-          ! profile(startPos(i):endPos(i),3) =  params(1)%Eg + (params(i)%Eg - params(1)%Eg)*(1.0_dp - bshift(i))
+        do i = 1, nlayers, 1
+
 
           profile(startPos(i):endPos(i),1) = params(i)%EV
           profile(startPos(i):endPos(i),2) = params(i)%EV - params(i)%DeltaSO
@@ -94,130 +145,77 @@ module hamiltonianConstructor
         kpterms(ii,ii,10) = kptermsProfile(ii,4) !A
       end forall
 
-      allocate(forward(N,N))
-      allocate(backward(N,N))
-      allocate(central(N,N))
-      forward = 0.0_dp
-      backward = 0.0_dp
-      central = 0.0_dp
+      if (order == 2) then
+        ! ---- Order 2: use existing tridiagonal approach (backward compatible) ----
+        allocate(forward(N,N))
+        allocate(backward(N,N))
+        allocate(central(N,N))
+        forward = 0.0_dp
+        backward = 0.0_dp
+        central = 0.0_dp
 
-      forall(ii=1:N-1)
-        forward(ii,ii) = 1
-        forward(ii,ii+1) = 1
-      end forall
-      !last element done alone to avoid if inside loop
-      forward(N,N) = 1
-      backward = transpose(forward)
-      central = backward + forward
-
-      ! do ii = 1, N, 1
-      !   write(104,*) (forward(ii,jj), jj=1,N)
-      !   write(105,*) (backward(ii,jj), jj=1,N)
-      !   write(106,*) (central(ii,jj), jj=1,N)
-      ! end do
-      ! stop
-
-      allocate(diag(N))
-      allocate(offup(N))
-      allocate(offdown(N))
-
-      ! A*kz**2
-      call dgemv('N', N, N, 1.0_dp, central, N, kptermsProfile(1:N,4), 1, 0.0_dp, diag, 1)
-      call dgemv('N', N, N, 1.0_dp, forward, N, kptermsProfile(1:N,4), 1, 0.0_dp, offup, 1)
-      call dgemv('N', N, N, 1.0_dp, backward, N, kptermsProfile(1:N,4), 1, 0.0_dp, offdown, 1)
-      forall(ii=2:N-1)
-        kpterms(ii,ii,5) = diag(ii)
-        kpterms(ii+1,ii,5) = -offup(ii)
-        kpterms(ii-1,ii,5) = -offdown(ii)
-      end forall
-      kpterms(1,1,5) = diag(1)
-      kpterms(N,N,5) = diag(N)
-      kpterms(2,1,5) = -offup(1)
-      kpterms(N-1,N,5) = -offdown(N)
-      kpterms(:,:,5) = kpterms(:,:,5)*(1.0_dp/(2.0_dp*delta**2))
-
-      ! do ii = 1, N, 1
-      !   write(104,*) (kpterms(ii,jj,5), jj=1,N)
-      ! end do
-
-      !Q
-      call dgemv('N', N, N, 1.0_dp, central, N, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, diag, 1)
-      call dgemv('N', N, N, 1.0_dp, forward, N, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, offup, 1)
-      call dgemv('N', N, N, 1.0_dp, backward, N, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, offdown, 1)
-      forall(ii=2:N-1)
-        kpterms(ii,ii,7) = diag(ii)
-        kpterms(ii+1,ii,7) = -offup(ii)
-        kpterms(ii-1,ii,7) = -offdown(ii)
-      end forall
-      kpterms(1,1,7) = diag(1)
-      kpterms(N,N,7) = diag(N)
-      kpterms(2,1,7) = -offup(1)
-      kpterms(N-1,N,7) = -offdown(N)
-      kpterms(:,:,7) = kpterms(:,:,7)*(1.0_dp/(2.0_dp*delta**2))
-
-      ! do ii = 1, N, 1
-      !   write(105,*) (kpterms(ii,jj,7), jj=1,N)
-      ! end do
-
-      !T
-      call dgemv('N', N, N, 1.0_dp, central, N, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, diag, 1)
-      call dgemv('N', N, N, 1.0_dp, forward, N, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, offup, 1)
-      call dgemv('N', N, N, 1.0_dp, backward, N, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, offdown, 1)
-      forall(ii=2:N-1)
-        kpterms(ii,ii,8) = diag(ii)
-        kpterms(ii+1,ii,8) = -offup(ii)
-        kpterms(ii-1,ii,8) = -offdown(ii)
-      end forall
-      kpterms(1,1,8) = diag(1)
-      kpterms(N,N,8) = diag(N)
-      kpterms(2,1,8) = -offup(1)
-      kpterms(N-1,N,8) = -offdown(N)
-      kpterms(:,:,8) = kpterms(:,:,8)*(1.0_dp/(2.0_dp*delta**2))
-
-      ! do ii = 1, N, 1
-      !   write(106,*) (kpterms(ii,jj,8), jj=1,N)
-      ! end do
+        forall(ii=1:N-1)
+          forward(ii,ii) = 1
+          forward(ii,ii+1) = 1
+        end forall
+        !last element done alone to avoid if inside loop
+        forward(N,N) = 1
+        backward = transpose(forward)
+        central = backward + forward
 
 
-      ! P*kz
-      call dgemv('N', N, N, 1.0_dp, forward, N, kptermsProfile(1:N,5), 1, 0.0_dp, offup, 1)
-      call dgemv('N', N, N, 1.0_dp, backward, N, kptermsProfile(1:N,5), 1, 0.0_dp, offdown, 1)
-      forall(ii=2:N-1)
-        kpterms(ii+1,ii,6) = offup(ii)
-        kpterms(ii-1,ii,6) = -offdown(ii)
-      end forall
-      kpterms(2,1,6) = offup(1)
-      kpterms(N-1,N,6) = -offdown(N)
-      kpterms(:,:,6) = kpterms(:,:,6)*(1.0_dp/(4.0_dp*delta))
+        allocate(diag(N))
+        allocate(offup(N))
+        allocate(offdown(N))
 
-      ! do ii = 1, N, 1
-      !   write(107,*) (kpterms(ii,jj,6), jj=1,N)
-      ! end do
+        ! A*kz**2
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,4), central, forward, &
+          & backward, diag, offup, offdown, N, 5, 1.0_dp/(2.0_dp*delta**2), .True.)
 
-      ! S -> gamma3*kz
-      call dgemv('N', N, N, 1.0_dp, forward, N, kptermsProfile(1:N,3), 1, 0.0_dp, offup, 1)
-      call dgemv('N', N, N, 1.0_dp, backward, N, kptermsProfile(1:N,3), 1, 0.0_dp, offdown, 1)
-      forall(ii=2:N-1)
-        kpterms(ii+1,ii,9) = offup(ii)
-        kpterms(ii-1,ii,9) = -offdown(ii)
-      end forall
-      kpterms(2,1,9) = offup(1)
-      kpterms(N-1,N,9) = -offdown(N)
-      kpterms(:,:,9) = kpterms(:,:,9)*(1.0_dp/(4.0_dp*delta))
 
-      ! do ii = 1, N, 1
-      !   write(108,*) (kpterms(ii,jj,9), jj=1,N)
-      ! end do
-      !
-      ! stop
+        !Q
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), &
+          & central, forward, backward, diag, offup, offdown, N, 7, 1.0_dp/(2.0_dp*delta**2), .True.)
 
-      ! forall(ii=1:N, jj=1:N)
-      !   kpterms(ii,jj,5) = -ScnDer(ii,jj)*kptermsProfile(ii,4) !A*kz**2
-      !   kpterms(ii,jj,6) = -FstDer(ii,jj)*kptermsProfile(ii,5) !Pz
-      !   kpterms(ii,jj,7) = -ScnDer(ii,jj)*(kptermsProfile(ii,1) - 2.0_dp*kptermsProfile(ii,1)) !Q
-      !   kpterms(ii,jj,8) = -ScnDer(ii,jj)*(kptermsProfile(ii,1) + 2.0_dp*kptermsProfile(ii,1)) !T
-      !   kpterms(ii,jj,9) = -FstDer(ii,jj)*kptermsProfile(ii,3) !S
-      ! end forall
+
+        !T
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), &
+          & central, forward, backward, diag, offup, offdown, N, 8, 1.0_dp/(2.0_dp*delta**2), .True.)
+
+
+        ! P*kz
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,5), central, forward, &
+          & backward, diag, offup, offdown, N, 6, 1.0_dp/(4.0_dp*delta), .False.)
+
+
+        ! S -> gamma3*kz
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,3), central, forward, &
+          & backward, diag, offup, offdown, N, 9, 1.0_dp/(4.0_dp*delta), .False.)
+
+      else
+        ! ---- Higher order: use FD matrix approach ----
+        ! Build 2nd-derivative and 1st-derivative FD matrices
+        call buildFD2ndDerivMatrix(N, delta, order, D2)
+        call buildFD1stDerivMatrix(N, delta, order, D1)
+
+        ! A*kz**2 (term 5): profile = A(z), operator = d^2/dz^2
+        call applyVariableCoeff(kpterms, kptermsProfile(1:N,4), D2, N, 5)
+
+        ! Q (term 7): profile = gamma1 - 2*gamma2, operator = d^2/dz^2
+        call applyVariableCoeff(kpterms, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), &
+          & D2, N, 7)
+
+        ! T (term 8): profile = gamma1 + 2*gamma2, operator = d^2/dz^2
+        call applyVariableCoeff(kpterms, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), &
+          & D2, N, 8)
+
+        ! P*kz (term 6): profile = P(z), operator = d/dz
+        call applyVariableCoeff(kpterms, kptermsProfile(1:N,5), D1, N, 6)
+
+        ! S -> gamma3*kz (term 9): profile = gamma3(z), operator = d/dz
+        call applyVariableCoeff(kpterms, kptermsProfile(1:N,3), D1, N, 9)
+
+      end if
 
       if (allocated(ScnDer)) deallocate(ScnDer)
       if (allocated(FstDer)) deallocate(FstDer)
@@ -228,8 +226,32 @@ module hamiltonianConstructor
       if (allocated(diag)) deallocate(diag)
       if (allocated(offup)) deallocate(offup)
       if (allocated(offdown)) deallocate(offdown)
+      if (allocated(D2)) deallocate(D2)
+      if (allocated(D1)) deallocate(D1)
 
     end subroutine confinementInitialization
+
+    !---------------------------------------------------------------------------
+    !> Apply variable coefficient to FD matrix and store in kpterms.
+    !> Computes: kpterms(:,:,term_idx) = -diag(profile) @ FD
+    !> This gives the correct sign for both 1st and 2nd derivative terms
+    !> in the k.p Hamiltonian.
+    !---------------------------------------------------------------------------
+    subroutine applyVariableCoeff(kpterms, profile_vec, FD, N, term_idx)
+
+      real(kind=dp), intent(inout), dimension(:,:,:) :: kpterms
+      real(kind=dp), intent(in), dimension(:) :: profile_vec
+      real(kind=dp), intent(in), dimension(:,:) :: FD
+      integer, intent(in) :: N, term_idx
+
+      integer :: ii, jj
+
+      ! kpterms(j,i) = -profile_vec(j) * FD(j,i)
+      forall(ii=1:N, jj=1:N)
+        kpterms(jj, ii, term_idx) = -profile_vec(jj) * FD(jj, ii)
+      end forall
+
+    end subroutine applyVariableCoeff
 
     subroutine ZB8bandQW(HT, wv, profile, kpterms, sparse, HT_csr, g)
 
@@ -253,19 +275,12 @@ module hamiltonianConstructor
       complex(kind=dp), allocatable, dimension(:,:) :: Q, R, RC, S, SC, T, PZ, PM, PP, A
 
       ! constants
-      ! complex(kind=dp) :: IU
-      ! real(kind=dp) :: SQR3, RQS2, SQR2, RQS3
 
       integer :: i, j, N, ii, jj
 
       N = size(HT, dim=1)/8
 
       !constants
-      ! IU = dcmplx(0.0_dp,1.0_dp)
-      ! SQR3 = dsqrt(3.0_dp)
-      ! SQR2 = dsqrt(2.0_dp)
-      ! RQS2 = 1.0_dp/dsqrt(2.0_dp)
-      ! RQS3 = 1.0_dp/dsqrt(3.0_dp)
 
 
       !wave vectors
@@ -314,7 +329,6 @@ module hamiltonianConstructor
           PM(ii,ii) = kpterms(ii,ii,4) * kminus * RQS2
         end forall
       else
-        ! print *, wv%kz, kplus, kminus
         forall(ii=1:N, jj=1:N)
           PZ(ii,jj) = kpterms(ii,jj,4) * wv%kz
         end forall
@@ -351,7 +365,6 @@ module hamiltonianConstructor
 
       !col 3
       HT(1 + 2*N : 3*N, 1 + 0*N : 1*N) =  R
-      !HT(3,2) =  0.0_dp
       HT(1 + 2*N : 3*N, 1 + 2*N : 3*N) =  T
       HT(1 + 2*N : 3*N, 1 + 3*N : 4*N) = -SC
       HT(1 + 2*N : 3*N, 1 + 4*N : 5*N) =  IU * SQR3 * RQS2 * S
@@ -360,7 +373,6 @@ module hamiltonianConstructor
       HT(1 + 2*N : 3*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PZ
 
       !col 4
-      !HT(4,1) =  0.0_dp
       HT(1 + 3*N : 4*N, 1 + 1*N : 2*N) =  R
       HT(1 + 3*N : 4*N, 1 + 2*N : 3*N) = (-S)
       HT(1 + 3*N : 4*N, 1 + 3*N : 4*N) =  Q
@@ -384,7 +396,6 @@ module hamiltonianConstructor
       HT(1 + 5*N : 6*N, 1 + 1*N : 2*N) =  IU * SQR3 * RQS2 * (S)
       HT(1 + 5*N : 6*N, 1 + 2*N : 3*N) = -IU * RQS2 * (Q- T)
       HT(1 + 5*N : 6*N, 1 + 3*N : 4*N) = -IU * RQS2 * (SC)
-      !HT(6,5) =  0.0_dp
       HT(1 + 5*N : 6*N, 1 + 5*N : 6*N) =  0.5_dp*(Q + T)
       HT(1 + 5*N : 6*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PM
       HT(1 + 5*N : 6*N, 1 + 7*N : 8*N) = -RQS3 * PZ
@@ -393,20 +404,17 @@ module hamiltonianConstructor
       HT(1 + 6*N : 7*N, 1 + 0*N : 1*N) = -IU * PM
       HT(1 + 6*N : 7*N, 1 + 1*N : 2*N) =  SQR2 * RQS3 * (PZ)
       HT(1 + 6*N : 7*N, 1 + 2*N : 3*N) = -IU * RQS3 * PP
-      !HT(7,4) =  0.0_dp
       HT(1 + 6*N : 7*N, 1 + 4*N : 5*N) = -IU * RQS3 * (PZ)
       HT(1 + 6*N : 7*N, 1 + 5*N : 6*N) =  SQR2 * RQS3 * PP
       HT(1 + 6*N : 7*N, 1 + 6*N : 7*N) =  A
       ! HT(7,8) =  0.0_dp
 
       !col 8
-      !HT(8,1) =  0.0_dp
       HT(1 + 7*N : 8*N, 1 + 1*N : 2*N) = -RQS3 * PM
       HT(1 + 7*N : 8*N, 1 + 2*N : 3*N) = -IU * SQR2 * RQS3 * (PZ)
       HT(1 + 7*N : 8*N, 1 + 3*N : 4*N) = -PP
       HT(1 + 7*N : 8*N, 1 + 4*N : 5*N) = -IU * SQR2 * RQS3 * PM
       HT(1 + 7*N : 8*N, 1 + 5*N : 6*N) = -RQS3 * (PZ)
-      !HT(8,7) =  0.0_dp
       HT(1 + 7*N : 8*N, 1 + 7*N : 8*N) =  A
 
 
@@ -423,14 +431,6 @@ module hamiltonianConstructor
       end forall
 
 
-      ! do i = 1, 8, 1
-      !   write(102,*) (real(HT(i,j)), j=1,8)
-      !   write(103,*) (aimag(HT(i,j)), j=1,8)
-      ! end do
-      ! stop
-
-      ! HT = transpose(HT)
-
       deallocate(Q)
       deallocate(T)
       deallocate(S)
@@ -445,49 +445,11 @@ module hamiltonianConstructor
       if (present(sparse)) then
         if (sparse .eqv. .True.) then
           nzmax = (N + (N-1)*2 + 2)*64
-          ! print *, nzmax
 
           call dnscsr_z_mkl(nzmax, N*8, HT, HT_csr)
 
-          ! allocate(Aa_a(nzmax))
-          ! allocate(Aa_ia(nzmax))
-          ! allocate(Aa_ja(nzmax))
-          !
-          ! next = 1
-          ! do i = 1, N*8
-          !   do j = 1, N*8
-          !     call insertCOO_cmplx(Aa_a, Aa_ia, Aa_ja, HT(i,j), i, j, next, nzmax)
-          !   end do
-          ! end do
-          ! ! print *, next-1
-          !
-          ! allocate(A_a(0))
-          ! allocate(A_ia(0))
-          ! allocate(A_ja(0))
-          !
-          ! A_a = [ Aa_a(1:next-1) ]
-          ! A_ia = [ Aa_ia(1:next-1) ]
-          ! A_ja = [ Aa_ja(1:next-1) ]
-          !
-          ! deallocate(Aa_a, Aa_ia, Aa_ja)
-          !
-          ! nzmax = ubound(A_a, 1)
-          !
-          ! info = mkl_sparse_z_create_coo (HT_coo, SPARSE_INDEX_BASE_ONE, N*8, &
-          ! & N*8, ubound(A_a, dim=1), A_ia, A_ja, A_a)
-          !
-          ! if (info /= 0) stop 'error creating HT_coo'
-          !
-          ! info = mkl_sparse_convert_csr (HT_coo, SPARSE_OPERATION_NON_TRANSPOSE, HT_csr)
-          !
-          ! if (info /= 0) stop 'error converting HT_coo to HT_csr'
-          !
-          ! deallocate(A_a, A_ia, A_ja)
-          ! deallocate (HT)
-
         end if
       end if
-
 
 
     end subroutine ZB8bandQW
@@ -513,18 +475,11 @@ module hamiltonianConstructor
       complex(kind=dp) :: Q, R, RC, S, SC, T
 
       ! constants
-      ! complex(kind=dp) :: IU
-      ! real(kind=dp) :: SQR3, RQS2, SQR2, RQS3
 
       integer :: i, j
 
 
       !constants
-      ! IU = dcmplx(0.0_dp,1.0_dp)
-      ! SQR3 = dsqrt(3.0_dp)
-      ! SQR2 = dsqrt(2.0_dp)
-      ! RQS2 = 1.0_dp/dsqrt(2.0_dp)
-      ! RQS3 = 1.0_dp/dsqrt(3.0_dp)
 
 
       !wave vectors
@@ -595,7 +550,6 @@ module hamiltonianConstructor
 
       !col 3
       HT(3,1) =  R
-      !HT(3,2) =  0.0_dp
       HT(3,3) =  T
       HT(3,4) = -SC
       HT(3,5) =  IU * SQR3 * RQS2 * S
@@ -604,7 +558,6 @@ module hamiltonianConstructor
       HT(3,8) =  IU * SQR2 * RQS3 * PZ
 
       !col 4
-      !HT(4,1) =  0.0_dp
       HT(4,2) =  R
       HT(4,3) = -S
       HT(4,4) =  Q
@@ -628,7 +581,6 @@ module hamiltonianConstructor
       HT(6,2) =  IU * SQR3 * RQS2 * S
       HT(6,3) = -IU * RQS2 * (Q - T)
       HT(6,4) = -IU * RQS2 * SC
-      !HT(6,5) =  0.0_dp
       HT(6,6) =  0.5_dp*(Q + T)
       HT(6,7) =  SQR2 * RQS3 * PM
       HT(6,8) = -RQS3 * PZ
@@ -637,45 +589,29 @@ module hamiltonianConstructor
       HT(7,1) = -IU * PM
       HT(7,2) =  SQR2 * RQS3 * PZ
       HT(7,3) = -IU * RQS3 * PP
-      !HT(7,4) =  0.0_dp
       HT(7,5) = -IU * RQS3 * PZ
       HT(7,6) =  SQR2 * RQS3 * PP
       HT(7,7) =  A * K2
       HT(7,8) =  0.0_dp
 
       !col 8
-      !HT(8,1) =  0.0_dp
       HT(8,2) = -RQS3 * PM
       HT(8,3) = -IU * SQR2 * RQS3 * PZ
       HT(8,4) = -PP
       HT(8,5) = -IU * SQR2 * RQS3 * PM
       HT(8,6) = -RQS3 * PZ
-      !HT(8,7) =  0.0_dp
       HT(8,8) =  A * K2
 
 
       ! SOC
-      ! HT(1:6,1:6) = HT(1:6,1:6) + params(1)%EV
       HT(5,5) = HT(5,5) - params(1)%DeltaSO
       HT(6,6) = HT(6,6) - params(1)%DeltaSO
 
       HT(7,7) = HT(7,7) + params(1)%Eg
       HT(8,8) = HT(8,8) + params(1)%Eg
-      ! HT(7,7) = HT(7,7) + params(1)%Ec
-      ! HT(8,8) = HT(8,8) + params(1)%Ec
 
-      ! do i = 1, 8, 1
-      !   write(102,*) (real(HT(i,j)), j=1,8)
-      !   write(103,*) (aimag(HT(i,j)), j=1,8)
-      ! end do
-      ! stop
 
     end subroutine ZB8bandBulk
-
-
-
-
-
 
 
 end module hamiltonianConstructor

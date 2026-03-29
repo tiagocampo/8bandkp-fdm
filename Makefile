@@ -58,7 +58,8 @@ parameters.o\
 utils.o\
 finitedifferences.o\
 outputFunctions.o\
-hamiltonianConstructor.o
+hamiltonianConstructor.o\
+input_parser.o
 
 OBJS_gfactor :=\
 main_gfactor.o\
@@ -86,6 +87,7 @@ $(BUILD_DIR)/utils.o: utils.f90 $(BUILD_DIR)/defs.o $(BUILD_DIR)/mkl_spblas.o
 $(BUILD_DIR)/finitedifferences.o: finitedifferences.f90 $(BUILD_DIR)/defs.o $(BUILD_DIR)/utils.o
 $(BUILD_DIR)/outputFunctions.o: outputFunctions.f90 $(BUILD_DIR)/defs.o
 $(BUILD_DIR)/hamiltonianConstructor.o: hamiltonianConstructor.f90 $(BUILD_DIR)/defs.o $(BUILD_DIR)/finitedifferences.o $(BUILD_DIR)/mkl_spblas.o $(BUILD_DIR)/utils.o
+$(BUILD_DIR)/input_parser.o: input_parser.f90 $(BUILD_DIR)/defs.o $(BUILD_DIR)/parameters.o $(BUILD_DIR)/hamiltonianConstructor.o $(BUILD_DIR)/outputFunctions.o
 $(BUILD_DIR)/main.o: main.f90 $(addprefix $(BUILD_DIR)/,$(OBJS))
 $(BUILD_DIR)/gfactor_functions.o: gfactor_functions.f90 $(BUILD_DIR)/defs.o $(BUILD_DIR)/hamiltonianConstructor.o $(BUILD_DIR)/mkl_spblas.o
 $(BUILD_DIR)/main_gfactor.o: main_gfactor.f90 $(addprefix $(BUILD_DIR)/,$(OBJS)) $(BUILD_DIR)/gfactor_functions.o

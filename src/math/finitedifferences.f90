@@ -25,13 +25,12 @@ module finitedifferences
 
     end subroutine FDmatrixDense
 
-    subroutine FDstencil(order, stencil, d, vector, type)
+    subroutine FDstencil(order, stencil, d, vector)
 
       integer, intent(in) :: order, stencil
       real(kind=dp), intent(in) :: d
       real(kind=dp), intent(inout), allocatable, dimension(:) :: vector
       integer :: length, hf
-      character(len = 1), optional :: type
 
       length = size(vector, dim=1)
 
@@ -142,6 +141,535 @@ module finitedifferences
 
     end subroutine FDstencil
 
+    !---------------------------------------------------------------------------
+    !> Build a full NxN FD matrix for the 2nd derivative with proper boundary
+    !> handling using one-sided stencils at the boundary regions.
+    !>
+    !> For interior points (away from boundaries by at least half_bandwidth),
+    !> the central stencil is used. For points near boundaries, one-sided
+    !> forward/backward stencils provide the specified accuracy.
+    !>
+    !> @param[in]  N        Number of grid points
+    !> @param[in]  dz       Grid spacing
+    !> @param[in]  FDorder  FD accuracy order (2, 4, 6, 8, or 10)
+    !> @param[out] D2       N x N 2nd-derivative FD matrix
+    !---------------------------------------------------------------------------
+    subroutine buildFD2ndDerivMatrix(N, dz, FDorder, D2)
+
+      integer, intent(in) :: N, FDorder
+      real(kind=dp), intent(in) :: dz
+      real(kind=dp), intent(inout), allocatable, dimension(:,:) :: D2
+
+      integer :: half_bw, i, j, npts
+      real(kind=dp), allocatable, dimension(:) :: coeffs
+
+      half_bw = FDorder / 2
+
+      if (allocated(D2)) deallocate(D2)
+      allocate(D2(N, N))
+      D2 = 0.0_dp
+
+      ! Interior points: use central stencil
+      do i = half_bw + 1, N - half_bw
+        call FDcentralCoeffs2nd(FDorder, dz, coeffs)
+        do j = -half_bw, half_bw
+          D2(i, i + j) = coeffs(j + half_bw + 1)
+        end do
+      end do
+
+      ! Boundary points at the left: use forward one-sided stencils
+      do i = 1, min(half_bw, N)
+        call FDforwardCoeffs2nd(i, FDorder, dz, coeffs)
+        npts = size(coeffs)
+        do j = 1, npts
+          if (j <= N) D2(i, j) = coeffs(j)
+        end do
+      end do
+
+      ! Boundary points at the right: use backward one-sided stencils
+      do i = max(N - half_bw + 1, half_bw + 1), N
+        call FDbackwardCoeffs2nd(N - i + 1, FDorder, dz, coeffs)
+        npts = size(coeffs)
+        do j = 1, npts
+          if (N - npts + j >= 1) D2(i, N - npts + j) = coeffs(j)
+        end do
+      end do
+
+      if (allocated(coeffs)) deallocate(coeffs)
+
+    end subroutine buildFD2ndDerivMatrix
+
+    !---------------------------------------------------------------------------
+    !> Build a full NxN FD matrix for the 1st derivative with proper boundary
+    !> handling using one-sided stencils at the boundary regions.
+    !>
+    !> @param[in]  N        Number of grid points
+    !> @param[in]  dz       Grid spacing
+    !> @param[in]  FDorder  FD accuracy order (2, 4, 6, 8, or 10)
+    !> @param[out] D1       N x N 1st-derivative FD matrix
+    !---------------------------------------------------------------------------
+    subroutine buildFD1stDerivMatrix(N, dz, FDorder, D1)
+
+      integer, intent(in) :: N, FDorder
+      real(kind=dp), intent(in) :: dz
+      real(kind=dp), intent(inout), allocatable, dimension(:,:) :: D1
+
+      integer :: half_bw, i, j, npts
+      real(kind=dp), allocatable, dimension(:) :: coeffs
+
+      half_bw = FDorder / 2
+
+      if (allocated(D1)) deallocate(D1)
+      allocate(D1(N, N))
+      D1 = 0.0_dp
+
+      ! Interior points: use central stencil for 1st derivative
+      do i = half_bw + 1, N - half_bw
+        call FDcentralCoeffs1st(FDorder, dz, coeffs)
+        do j = -half_bw, half_bw
+          D1(i, i + j) = coeffs(j + half_bw + 1)
+        end do
+      end do
+
+      ! Boundary points at the left: use forward one-sided stencils
+      do i = 1, min(half_bw, N)
+        call FDforwardCoeffs1st(i, FDorder, dz, coeffs)
+        npts = size(coeffs)
+        do j = 1, npts
+          if (j <= N) D1(i, j) = coeffs(j)
+        end do
+      end do
+
+      ! Boundary points at the right: use backward one-sided stencils
+      do i = max(N - half_bw + 1, half_bw + 1), N
+        call FDbackwardCoeffs1st(N - i + 1, FDorder, dz, coeffs)
+        npts = size(coeffs)
+        do j = 1, npts
+          if (N - npts + j >= 1) D1(i, N - npts + j) = coeffs(j)
+        end do
+      end do
+
+      if (allocated(coeffs)) deallocate(coeffs)
+
+    end subroutine buildFD1stDerivMatrix
+
+    !---------------------------------------------------------------------------
+    !> Central stencil coefficients for 2nd derivative.
+    !> Returns coefficients for points at offsets -half_bw, ..., 0, ..., +half_bw.
+    !---------------------------------------------------------------------------
+    subroutine FDcentralCoeffs2nd(FDorder, d, coeffs)
+
+      integer, intent(in) :: FDorder
+      real(kind=dp), intent(in) :: d
+      real(kind=dp), allocatable, dimension(:), intent(out) :: coeffs
+
+      integer :: npts, hf
+
+      npts = FDorder + 1
+
+      if (allocated(coeffs)) deallocate(coeffs)
+      allocate(coeffs(npts))
+      coeffs = 0.0_dp
+
+      hf = npts / 2 + 1  ! center index (1-based)
+
+      select case(FDorder)
+      case(2)
+        coeffs(hf-1) = 1.0_dp
+        coeffs(hf)   = -2.0_dp
+        coeffs(hf+1) = 1.0_dp
+      case(4)
+        coeffs(hf-2) = -1.0_dp/12.0_dp
+        coeffs(hf-1) = 4.0_dp/3.0_dp
+        coeffs(hf)   = -5.0_dp/2.0_dp
+        coeffs(hf+1) = 4.0_dp/3.0_dp
+        coeffs(hf+2) = -1.0_dp/12.0_dp
+      case(6)
+        coeffs(hf-3) = 1.0_dp/90.0_dp
+        coeffs(hf-2) = -3.0_dp/20.0_dp
+        coeffs(hf-1) = 3.0_dp/2.0_dp
+        coeffs(hf)   = -49.0_dp/18.0_dp
+        coeffs(hf+1) = 3.0_dp/2.0_dp
+        coeffs(hf+2) = -3.0_dp/20.0_dp
+        coeffs(hf+3) = 1.0_dp/90.0_dp
+      case(8)
+        coeffs(hf-4) = -1.0_dp/560.0_dp
+        coeffs(hf-3) = 8.0_dp/315.0_dp
+        coeffs(hf-2) = -1.0_dp/5.0_dp
+        coeffs(hf-1) = 8.0_dp/5.0_dp
+        coeffs(hf)   = -205.0_dp/72.0_dp
+        coeffs(hf+1) = 8.0_dp/5.0_dp
+        coeffs(hf+2) = -1.0_dp/5.0_dp
+        coeffs(hf+3) = 8.0_dp/315.0_dp
+        coeffs(hf+4) = -1.0_dp/560.0_dp
+      case(10)
+        coeffs(hf-5) = 8.0_dp/25200.0_dp
+        coeffs(hf-4) = -125.0_dp/25200.0_dp
+        coeffs(hf-3) = 1000.0_dp/25200.0_dp
+        coeffs(hf-2) = -6000.0_dp/25200.0_dp
+        coeffs(hf-1) = 42000.0_dp/25200.0_dp
+        coeffs(hf)   = -73766.0_dp/25200.0_dp
+        coeffs(hf+1) = 42000.0_dp/25200.0_dp
+        coeffs(hf+2) = -6000.0_dp/25200.0_dp
+        coeffs(hf+3) = 1000.0_dp/25200.0_dp
+        coeffs(hf+4) = -125.0_dp/25200.0_dp
+        coeffs(hf+5) = 8.0_dp/25200.0_dp
+      case default
+        print *, 'Error: unsupported FDorder:', FDorder
+        stop 1
+      end select
+
+      coeffs = coeffs / d**2
+
+    end subroutine FDcentralCoeffs2nd
+
+    !---------------------------------------------------------------------------
+    !> Central stencil coefficients for 1st derivative.
+    !---------------------------------------------------------------------------
+    subroutine FDcentralCoeffs1st(FDorder, d, coeffs)
+
+      integer, intent(in) :: FDorder
+      real(kind=dp), intent(in) :: d
+      real(kind=dp), allocatable, dimension(:), intent(out) :: coeffs
+
+      integer :: npts, hf
+
+      npts = FDorder + 1
+
+      if (allocated(coeffs)) deallocate(coeffs)
+      allocate(coeffs(npts))
+      coeffs = 0.0_dp
+
+      hf = npts / 2 + 1
+
+      select case(FDorder)
+      case(2)
+        coeffs(hf-1) = -1.0_dp/2.0_dp
+        coeffs(hf+1) = 1.0_dp/2.0_dp
+      case(4)
+        coeffs(hf-2) = 1.0_dp/12.0_dp
+        coeffs(hf-1) = -2.0_dp/3.0_dp
+        coeffs(hf+1) = 2.0_dp/3.0_dp
+        coeffs(hf+2) = -1.0_dp/12.0_dp
+      case(6)
+        coeffs(hf-3) = -1.0_dp/60.0_dp
+        coeffs(hf-2) = 3.0_dp/20.0_dp
+        coeffs(hf-1) = -3.0_dp/4.0_dp
+        coeffs(hf+1) = 3.0_dp/4.0_dp
+        coeffs(hf+2) = -3.0_dp/20.0_dp
+        coeffs(hf+3) = 1.0_dp/60.0_dp
+      case(8)
+        coeffs(hf-4) = 1.0_dp/280.0_dp
+        coeffs(hf-3) = -4.0_dp/105.0_dp
+        coeffs(hf-2) = 1.0_dp/5.0_dp
+        coeffs(hf-1) = -4.0_dp/5.0_dp
+        coeffs(hf+1) = 4.0_dp/5.0_dp
+        coeffs(hf+2) = -1.0_dp/5.0_dp
+        coeffs(hf+3) = 4.0_dp/105.0_dp
+        coeffs(hf+4) = -1.0_dp/280.0_dp
+      case(10)
+        coeffs(hf-5) = -1.0_dp/1260.0_dp
+        coeffs(hf-4) = 5.0_dp/1008.0_dp
+        coeffs(hf-3) = -5.0_dp/126.0_dp
+        coeffs(hf-2) = 5.0_dp/21.0_dp
+        coeffs(hf-1) = -5.0_dp/3.0_dp
+        coeffs(hf+1) = 5.0_dp/3.0_dp
+        coeffs(hf+2) = -5.0_dp/21.0_dp
+        coeffs(hf+3) = 5.0_dp/126.0_dp
+        coeffs(hf+4) = -5.0_dp/1008.0_dp
+        coeffs(hf+5) = 1.0_dp/1260.0_dp
+      case default
+        print *, 'Error: unsupported FDorder:', FDorder
+        stop 1
+      end select
+
+      coeffs = coeffs / d
+
+    end subroutine FDcentralCoeffs1st
+
+    !---------------------------------------------------------------------------
+    !> Forward (one-sided) 2nd-derivative stencil coefficients.
+    !> Evaluated at point 0, using points 0, 1, ..., npts-1.
+    !> boundary_idx is the distance from the boundary (1 = boundary point).
+    !> For interior accuracy at boundaries, uses fewer points when closer.
+    !---------------------------------------------------------------------------
+    subroutine FDforwardCoeffs2nd(boundary_idx, FDorder, d, coeffs)
+
+      integer, intent(in) :: boundary_idx, FDorder
+      real(kind=dp), intent(in) :: d
+      real(kind=dp), allocatable, dimension(:), intent(out) :: coeffs
+
+      integer :: npts
+
+      ! Number of points in the one-sided stencil: need FDorder+1 points
+      ! for FDorder-th order accuracy
+      npts = FDorder + 1
+
+      if (allocated(coeffs)) deallocate(coeffs)
+      allocate(coeffs(npts))
+      coeffs = 0.0_dp
+
+      ! Coefficients for d^2f/dx^2 at point 0 using points 0,1,...,FDorder
+      ! These give FDorder-th order accuracy
+      select case(FDorder)
+      case(2)
+        ! 3-point forward 2nd derivative
+        coeffs(1) = 1.0_dp
+        coeffs(2) = -2.0_dp
+        coeffs(3) = 1.0_dp
+      case(4)
+        ! 5-point forward 2nd derivative
+        coeffs(1) = 35.0_dp/12.0_dp
+        coeffs(2) = -26.0_dp/3.0_dp
+        coeffs(3) = 19.0_dp/2.0_dp
+        coeffs(4) = -14.0_dp/3.0_dp
+        coeffs(5) = 11.0_dp/12.0_dp
+      case(6)
+        ! 7-point forward 2nd derivative
+        coeffs(1) = 203.0_dp/45.0_dp
+        coeffs(2) = -87.0_dp/5.0_dp
+        coeffs(3) = 117.0_dp/4.0_dp
+        coeffs(4) = -254.0_dp/9.0_dp
+        coeffs(5) = 33.0_dp/2.0_dp
+        coeffs(6) = -27.0_dp/5.0_dp
+        coeffs(7) = 137.0_dp/180.0_dp
+      case(8)
+        ! 9-point forward 2nd derivative
+        coeffs(1) = 29531.0_dp/5040.0_dp
+        coeffs(2) = -962.0_dp/35.0_dp
+        coeffs(3) = 621.0_dp/10.0_dp
+        coeffs(4) = -4006.0_dp/45.0_dp
+        coeffs(5) = 691.0_dp/8.0_dp
+        coeffs(6) = -282.0_dp/5.0_dp
+        coeffs(7) = 2143.0_dp/90.0_dp
+        coeffs(8) = -206.0_dp/35.0_dp
+        coeffs(9) = 363.0_dp/560.0_dp
+      case(10)
+        ! 11-point forward 2nd derivative
+        coeffs(1)  = 177133.0_dp/25200.0_dp
+        coeffs(2)  = -4861.0_dp/126.0_dp
+        coeffs(3)  = 6121.0_dp/56.0_dp
+        coeffs(4)  = -13082.0_dp/63.0_dp
+        coeffs(5)  = 6751.0_dp/24.0_dp
+        coeffs(6)  = -6877.0_dp/25.0_dp
+        coeffs(7)  = 6961.0_dp/36.0_dp
+        coeffs(8)  = -2006.0_dp/21.0_dp
+        coeffs(9)  = 3533.0_dp/112.0_dp
+        coeffs(10) = -263.0_dp/42.0_dp
+        coeffs(11) = 7129.0_dp/12600.0_dp
+      case default
+        print *, 'Error: unsupported FDorder:', FDorder
+        stop 1
+      end select
+
+      coeffs = coeffs / d**2
+
+    end subroutine FDforwardCoeffs2nd
+
+    !---------------------------------------------------------------------------
+    !> Backward (one-sided) 2nd-derivative stencil coefficients.
+    !> Evaluated at point 0, using points 0, -1, ..., -(npts-1).
+    !---------------------------------------------------------------------------
+    subroutine FDbackwardCoeffs2nd(boundary_idx, FDorder, d, coeffs)
+
+      integer, intent(in) :: boundary_idx, FDorder
+      real(kind=dp), intent(in) :: d
+      real(kind=dp), allocatable, dimension(:), intent(out) :: coeffs
+
+      integer :: npts
+
+      npts = FDorder + 1
+
+      if (allocated(coeffs)) deallocate(coeffs)
+      allocate(coeffs(npts))
+      coeffs = 0.0_dp
+
+      ! Backward stencils are the reverse of forward stencils
+      select case(FDorder)
+      case(2)
+        coeffs(3) = 1.0_dp
+        coeffs(2) = -2.0_dp
+        coeffs(1) = 1.0_dp
+      case(4)
+        coeffs(5) = 35.0_dp/12.0_dp
+        coeffs(4) = -26.0_dp/3.0_dp
+        coeffs(3) = 19.0_dp/2.0_dp
+        coeffs(2) = -14.0_dp/3.0_dp
+        coeffs(1) = 11.0_dp/12.0_dp
+      case(6)
+        coeffs(7) = 203.0_dp/45.0_dp
+        coeffs(6) = -87.0_dp/5.0_dp
+        coeffs(5) = 117.0_dp/4.0_dp
+        coeffs(4) = -254.0_dp/9.0_dp
+        coeffs(3) = 33.0_dp/2.0_dp
+        coeffs(2) = -27.0_dp/5.0_dp
+        coeffs(1) = 137.0_dp/180.0_dp
+      case(8)
+        coeffs(9) = 29531.0_dp/5040.0_dp
+        coeffs(8) = -962.0_dp/35.0_dp
+        coeffs(7) = 621.0_dp/10.0_dp
+        coeffs(6) = -4006.0_dp/45.0_dp
+        coeffs(5) = 691.0_dp/8.0_dp
+        coeffs(4) = -282.0_dp/5.0_dp
+        coeffs(3) = 2143.0_dp/90.0_dp
+        coeffs(2) = -206.0_dp/35.0_dp
+        coeffs(1) = 363.0_dp/560.0_dp
+      case(10)
+        coeffs(11) = 177133.0_dp/25200.0_dp
+        coeffs(10) = -4861.0_dp/126.0_dp
+        coeffs(9)  = 6121.0_dp/56.0_dp
+        coeffs(8)  = -13082.0_dp/63.0_dp
+        coeffs(7)  = 6751.0_dp/24.0_dp
+        coeffs(6)  = -6877.0_dp/25.0_dp
+        coeffs(5)  = 6961.0_dp/36.0_dp
+        coeffs(4)  = -2006.0_dp/21.0_dp
+        coeffs(3)  = 3533.0_dp/112.0_dp
+        coeffs(2)  = -263.0_dp/42.0_dp
+        coeffs(1)  = 7129.0_dp/12600.0_dp
+      case default
+        print *, 'Error: unsupported FDorder:', FDorder
+        stop 1
+      end select
+
+      coeffs = coeffs / d**2
+
+    end subroutine FDbackwardCoeffs2nd
+
+    !---------------------------------------------------------------------------
+    !> Forward (one-sided) 1st-derivative stencil coefficients.
+    !---------------------------------------------------------------------------
+    subroutine FDforwardCoeffs1st(boundary_idx, FDorder, d, coeffs)
+
+      integer, intent(in) :: boundary_idx, FDorder
+      real(kind=dp), intent(in) :: d
+      real(kind=dp), allocatable, dimension(:), intent(out) :: coeffs
+
+      integer :: npts
+
+      npts = FDorder + 1
+
+      if (allocated(coeffs)) deallocate(coeffs)
+      allocate(coeffs(npts))
+      coeffs = 0.0_dp
+
+      select case(FDorder)
+      case(2)
+        coeffs(1) = -3.0_dp/2.0_dp
+        coeffs(2) = 2.0_dp
+        coeffs(3) = -1.0_dp/2.0_dp
+      case(4)
+        coeffs(1) = -25.0_dp/12.0_dp
+        coeffs(2) = 4.0_dp
+        coeffs(3) = -3.0_dp
+        coeffs(4) = 4.0_dp/3.0_dp
+        coeffs(5) = -1.0_dp/4.0_dp
+      case(6)
+        coeffs(1) = -49.0_dp/20.0_dp
+        coeffs(2) = 6.0_dp
+        coeffs(3) = -15.0_dp/2.0_dp
+        coeffs(4) = 20.0_dp/3.0_dp
+        coeffs(5) = -15.0_dp/4.0_dp
+        coeffs(6) = 6.0_dp/5.0_dp
+        coeffs(7) = -1.0_dp/6.0_dp
+      case(8)
+        coeffs(1) = -761.0_dp/280.0_dp
+        coeffs(2) = 8.0_dp
+        coeffs(3) = -14.0_dp
+        coeffs(4) = 56.0_dp/3.0_dp
+        coeffs(5) = -35.0_dp/2.0_dp
+        coeffs(6) = 56.0_dp/5.0_dp
+        coeffs(7) = -14.0_dp/3.0_dp
+        coeffs(8) = 8.0_dp/7.0_dp
+        coeffs(9) = -1.0_dp/8.0_dp
+      case(10)
+        coeffs(1)  = -7381.0_dp/2520.0_dp
+        coeffs(2)  = 10.0_dp
+        coeffs(3)  = -45.0_dp/2.0_dp
+        coeffs(4)  = 40.0_dp
+        coeffs(5)  = -105.0_dp/2.0_dp
+        coeffs(6)  = 252.0_dp/5.0_dp
+        coeffs(7)  = -35.0_dp
+        coeffs(8)  = 120.0_dp/7.0_dp
+        coeffs(9)  = -45.0_dp/8.0_dp
+        coeffs(10) = 10.0_dp/9.0_dp
+        coeffs(11) = -1.0_dp/10.0_dp
+      case default
+        print *, 'Error: unsupported FDorder:', FDorder
+        stop 1
+      end select
+
+      coeffs = coeffs / d
+
+    end subroutine FDforwardCoeffs1st
+
+    !---------------------------------------------------------------------------
+    !> Backward (one-sided) 1st-derivative stencil coefficients.
+    !---------------------------------------------------------------------------
+    subroutine FDbackwardCoeffs1st(boundary_idx, FDorder, d, coeffs)
+
+      integer, intent(in) :: boundary_idx, FDorder
+      real(kind=dp), intent(in) :: d
+      real(kind=dp), allocatable, dimension(:), intent(out) :: coeffs
+
+      integer :: npts
+
+      npts = FDorder + 1
+
+      if (allocated(coeffs)) deallocate(coeffs)
+      allocate(coeffs(npts))
+      coeffs = 0.0_dp
+
+      ! Backward = reverse sign and reverse order of forward
+      select case(FDorder)
+      case(2)
+        coeffs(3) = 3.0_dp/2.0_dp
+        coeffs(2) = -2.0_dp
+        coeffs(1) = 1.0_dp/2.0_dp
+      case(4)
+        coeffs(5) = 25.0_dp/12.0_dp
+        coeffs(4) = -4.0_dp
+        coeffs(3) = 3.0_dp
+        coeffs(2) = -4.0_dp/3.0_dp
+        coeffs(1) = 1.0_dp/4.0_dp
+      case(6)
+        coeffs(7) = 49.0_dp/20.0_dp
+        coeffs(6) = -6.0_dp
+        coeffs(5) = 15.0_dp/2.0_dp
+        coeffs(4) = -20.0_dp/3.0_dp
+        coeffs(3) = 15.0_dp/4.0_dp
+        coeffs(2) = -6.0_dp/5.0_dp
+        coeffs(1) = 1.0_dp/6.0_dp
+      case(8)
+        coeffs(9) = 761.0_dp/280.0_dp
+        coeffs(8) = -8.0_dp
+        coeffs(7) = 14.0_dp
+        coeffs(6) = -56.0_dp/3.0_dp
+        coeffs(5) = 35.0_dp/2.0_dp
+        coeffs(4) = -56.0_dp/5.0_dp
+        coeffs(3) = 14.0_dp/3.0_dp
+        coeffs(2) = -8.0_dp/7.0_dp
+        coeffs(1) = 1.0_dp/8.0_dp
+      case(10)
+        coeffs(11) = 7381.0_dp/2520.0_dp
+        coeffs(10) = -10.0_dp
+        coeffs(9)  = 45.0_dp/2.0_dp
+        coeffs(8)  = -40.0_dp
+        coeffs(7)  = 105.0_dp/2.0_dp
+        coeffs(6)  = -252.0_dp/5.0_dp
+        coeffs(5)  = 35.0_dp
+        coeffs(4)  = -120.0_dp/7.0_dp
+        coeffs(3)  = 45.0_dp/8.0_dp
+        coeffs(2)  = -10.0_dp/9.0_dp
+        coeffs(1)  = 1.0_dp/10.0_dp
+      case default
+        print *, 'Error: unsupported FDorder:', FDorder
+        stop 1
+      end select
+
+      coeffs = coeffs / d
+
+    end subroutine FDbackwardCoeffs1st
+
     subroutine Identity(n,matrix,factor)
 
       integer, intent(in) :: n
@@ -190,33 +718,5 @@ module finitedifferences
     end subroutine toeplitz
 
 
-    ! from https://rosettacode.org/wiki/Kronecker_product#Fortran
-    SUBROUTINE KPRODUCT(A,B,AB)	!AB = Kronecker product of A and B, both two-dimensional arrays.
-  !Considers the arrays to be addressed as A(row,column), despite any storage order arrangements.        .
-  !Creating array AB to fit here, adjusting the caller's array AB, may not work on some compilers.
-     real(kind=dp) ::  A(:,:),B(:,:)		!Two-dimensional arrays, lower bound one.
-     real(kind=dp), ALLOCATABLE :: AB(:,:)	!To be created to fit.
-     INTEGER R,RA,RB,C,CA,CB,I,J	!Assistants.
-      RA = UBOUND(A,DIM = 1)	!Ascertain the upper bounds of the incoming arrays.
-      CA = UBOUND(A,DIM = 2)	!Their lower bounds will be deemed one,
-      RB = UBOUND(B,DIM = 1)	!And the upper bound as reported will correspond.
-      CB = UBOUND(B,DIM = 2)	!UBOUND(A) would give an array of two values, RA and CA, more for higher dimensionality.
-      WRITE (6,1) "A",RA,CA,"B",RB,CB,"A.k.B",RA*RB,CA*CB	!Announce.
-  1     FORMAT (3(A," is ",I0,"x",I0,1X))	!Three sets of sizes.
-      !IF (ALLOCATED(AB)) DEALLOCATE(AB)	!Discard any lingering storage.
-      !ALLOCATE (AB(RA*RB,CA*CB))		!Obtain the exact desired size.
-      R = 0		!Syncopation: start the row offset.
-
-      DO I = 1,RA	!Step down the rows of A.
-        C = 0		!For each row, start the column offset.
-        DO J = 1,CA		!Step along the columns of A.
-          AB(R + 1:R + RB,C + 1:C + CB) = AB(R + 1:R + RB,C + 1:C + CB) + A(I,J)*B	!Place a block of B values.
-          C = C + CB		!Advance a block of columns.
-        END DO		!On to the next column of A.
-        R = R + RB		!Advance a block of rows.
-
-      END DO	!On to the next row of A.
-
-    END SUBROUTINE KPRODUCT	!No tests for bad parameters, or lack of storage...
 
 end module finitedifferences

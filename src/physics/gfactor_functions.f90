@@ -9,6 +9,48 @@ module gfactorFunctions
 
   contains
 
+subroutine set_perturbation_direction(d, smallk)
+  integer, intent(in) :: d
+  type(wavevector), intent(inout) :: smallk
+
+  smallk%kx = 0
+  smallk%ky = 0
+  smallk%kz = 0
+  if (d == 1) smallk%kx = 1
+  if (d == 2) smallk%ky = 1
+  if (d == 3) smallk%kz = 1
+end subroutine set_perturbation_direction
+
+subroutine compute_pele(Pele, direction, state_a, state_b, nlayers, params, &
+  & sparse_mode, profile, kpterms, HT_csr_dir, hkp_mat, startz, endz, dz)
+
+  complex(kind=dp), intent(inout) :: Pele
+  integer, intent(in) :: direction
+  complex(kind=dp), intent(in), dimension(:) :: state_a, state_b
+  integer, intent(in) :: nlayers
+  type(paramStruct), intent(in) :: params(nlayers)
+  logical, intent(in) :: sparse_mode
+  real(kind=dp), intent(in), optional, dimension(:,:) :: profile
+  real(kind=dp), intent(in), optional, dimension(:,:,:) :: kpterms
+  type(sparse_matrix_T), intent(in), optional :: HT_csr_dir
+  complex(kind=dp), intent(in), optional, dimension(:,:) :: hkp_mat
+  real(kind=dp), intent(in), optional :: startz, endz, dz
+
+  if (nlayers == 1) then
+    call pMatrixEleCalc(Pele, direction, state_a, state_b, nlayers, params)
+  else
+    if (sparse_mode) then
+      call pMatrixEleCalc(Pele, direction, state_a, state_b, nlayers, params, &
+        & profile=profile, kpterms=kpterms, HT_csr=HT_csr_dir)
+    else
+      call pMatrixEleCalc(Pele, direction, state_a, state_b, nlayers, params, &
+        & hkp_out=hkp_mat, profile=profile, kpterms=kpterms, &
+        & startz=startz, endz=endz, dz=dz)
+    end if
+  end if
+
+end subroutine compute_pele
+
 complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, dz, nlayers)
 
   complex(kind=dp), intent(in), dimension(:) :: state1, state2
@@ -34,13 +76,6 @@ complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, d
   SIGMA_X(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM /)
   SIGMA_X(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
 
-  ! do lin=1,8
-  !  do col=lin,8
-  !     if ( zabs(sigma_x(lin,col) - dconjg(sigma_x(col,lin))) .gt. 1e-4) then
-  !        print *, lin, col, sigma_x(lin,col), sigma_x(col,lin), zabs(sigma_x(lin,col)-dconjg(sigma_x(col,lin)))
-  !     end if
-  !  end do
-  ! end do
 
   SIGMA_Y(1,:) = (/ ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO, ZERO /)
   SIGMA_Y(2,:) = (/ UM*RQS3, ZERO, UM*2.0_dp/3.0_dp, ZERO, ZERO, -IU*SQR2/3.0_dp, ZERO, ZERO /)
@@ -51,13 +86,6 @@ complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, d
   SIGMA_Y(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, IU /)
   SIGMA_Y(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -IU, ZERO /)
 
-  ! do lin=1,8
-  !  do col=lin,8
-  !     if ( zabs(sigma_y(lin,col) - dconjg(sigma_y(col,lin))) .gt. 1e-4) then
-  !        print *, lin, col, sigma_y(lin,col), sigma_y(col,lin), zabs(sigma_y(lin,col)-dconjg(sigma_y(col,lin)))
-  !     end if
-  !  end do
-  ! end do
 
   SIGMA_Z(1,:) = (/ UM, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO /)
   SIGMA_Z(2,:) = (/ ZERO, UM/3.0_dp, ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
@@ -68,31 +96,12 @@ complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, d
   SIGMA_Z(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
   SIGMA_Z(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -UM /)
 
-  ! do lin=1,8
-  !  do col=lin,8
-  !     if ( zabs(sigma_z(lin,col) - dconjg(sigma_z(col,lin))) .gt. 1e-4) then
-  !        print *, lin, col, sigma_z(lin,col), sigma_z(col,lin), zabs(sigma_z(lin,col)-dconjg(sigma_z(col,lin)))
-  !     end if
-  !  end do
-  ! end do
 
-  ! do i = 1, 8
-  !   write(200,'(8(f9.4,1x,f9.4))') (SIGMA_X(i,j), j=1,8)
-  ! end do
-  ! print *, ' '
-  ! do i = 1, 8
-  !   write(201,'(8(f9.4,1x,f9.4))') (SIGMA_Y(i,j), j=1,8)
-  ! end do
-  ! print *, ' '
-  ! do i = 1, 8
-  !   write(202,'(8(f9.4,1x,f9.4))') (SIGMA_Z(i,j), j=1,8)
-  ! end do
-  ! stop
 
   allocate(v(fdstep))
   v = 0
-  alpha = dcmplx(1.,0.)
-  beta = dcmplx(0.,0.)
+  alpha = cmplx(1.0_dp, 0.0_dp, kind=dp)
+  beta = cmplx(0.0_dp, 0.0_dp, kind=dp)
   sigmaElem = 0
   aux_v = 0
   aux1_v = 0
@@ -129,8 +138,6 @@ complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, d
     sigmaElem = simpson(v,startz,endz)/dz
   else
     Y = 0
-    ! print *, state2
-    ! print *, state1
     if ( dir == 'x' ) then
       call zgemv('N',8,8,alpha,SIGMA_X,8,state2,1,beta,Y,1)
     elseif ( dir == 'y' ) then
@@ -168,7 +175,7 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
   complex(kind=dp), allocatable, dimension(:,:) :: hkp
 
   type(matrix_descr) :: descrA
-  integer :: pm(128), info
+  integer :: info
 
   complex(kind=dp) :: alpha, beta
   complex(kind=dp) :: zdotc
@@ -183,34 +190,19 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
   allocate(smallk(1))
   if (.not. present(HT_csr)) then
     allocate(hkp(dimax,dimax))
-    hkp(:,:) = cmplx(0,0)
+    hkp(:,:) = cmplx(0, 0, kind=dp)
   end if
 
   if (present(hkp_out)) hkp = hkp_out
 
-  alpha = cmplx(1.,0.)
-  beta = cmplx(0.,0.)
+  alpha = cmplx(1.0_dp, 0.0_dp, kind=dp)
+  beta = cmplx(0.0_dp, 0.0_dp, kind=dp)
 
-  if ( d==1 ) then
-    smallk%kx = 1
-    smallk%ky = 0
-    smallk%kz = 0
-  end if
-  if ( d==2 ) then
-    smallk%kx = 0
-    smallk%ky = 1
-    smallk%kz = 0
-  end if
-  if ( d==3 ) then
-    smallk%kx = 0
-    smallk%ky = 0
-    smallk%kz = 1
-  end if
+  call set_perturbation_direction(d, smallk(1))
   if (nlayers == 1) then
     call ZB8bandBulk(hkp,smallk(1),params(1),g='g')
   end if
   if (nlayers == 2 .and. .not. present(HT_csr) .and. .not. present(hkp_out)) then
-    ! print *, 'here'
     call ZB8bandQW(hkp, smallk(1), profile, kpterms,g='g')
   end if
 
@@ -231,7 +223,6 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
     deallocate(Y1)
 
   else
-    ! print *, 'here'
     allocate(v(fdstep))
     v = 0
     aux_v = 0
@@ -242,7 +233,6 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
 
       do n = 1, 8, 1
         do m = 1, 8, 1
-          ! print *, i + (m-1)*fdstep, i + (n-1)*fdstep
           aux(m,n) = hkp(i + (m-1)*fdstep,i + (n-1)*fdstep)
         end do
       end do
@@ -258,7 +248,6 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
     if (nlayers > 1)  Pele = simpson(v,startz,endz)/dz
 
   end if
-  ! stop
 
   if (allocated(hkp)) deallocate(hkp)
 
@@ -289,22 +278,21 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
   integer :: mod1, mod2 !which matrix elements to compute
   integer :: i, j, ii, jj, n, m, l!aux loop variables
   integer :: dimax, fdStep
+  real(kind=dp) :: denom
 
   complex(kind=dp) :: Pele1, Pele2, Pele3, Pele4
   complex(kind=dp) :: sigma(2,2,3)
 
-  real(kind=dp), allocatable, dimension(:,:) :: derivative
-  complex(kind=dp), allocatable, dimension(:,:) :: der
 
   complex(kind=dp) :: alpha, beta
   complex(kind=dp), allocatable, dimension(:) :: Y
   complex(kind=dp) :: zdotc
 
   type(wavevector), allocatable, dimension(:) :: smallk
-  type(sparse_matrix_T) :: HT_csr_mod1,HT_csr_mod2, der_csr
+  type(sparse_matrix_T) :: HT_csr_mod1,HT_csr_mod2
   complex(kind=dp), allocatable, dimension(:,:) :: hkp
   logical :: sparse
-  integer :: nzmax, info
+  integer :: info
   type(matrix_descr) :: descrA
 
   dimax = size(cb_state,1)
@@ -314,17 +302,6 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
   Pele2 = 0.
   Pele3 = 0.
   Pele4 = 0.
-
-  if (present(dz)) then
-    ! call FDmatrixDense(fdstep, dz, 1, 2, 0, derivative)
-    ! ! der = dcmplx(derivative,0.0_dp)
-    ! nzmax = (dimax+(dimax-1)*2)
-    ! ! print *, nzmax
-    ! call dnscsr_z_mkl(nzmax, dimax, dcmplx(derivative, 0.0_dp), der_csr)
-    ! allocate(Y(dimax))
-    ! deallocate(derivative)
-    ! descrA%TYPE = SPARSE_MATRIX_TYPE_GENERAL
-  end if
 
   sparse = .True.
 
@@ -357,7 +334,6 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
     do i = 1, 2
       write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,3), j=1,2)
     end do
-    ! stop
 
     do d = 1,3
       !compute sigma element, spin
@@ -377,40 +353,14 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
       end if
 
       if (nlayers == 2 .and. sparse) then
-        ! print *, 'sparse'
         if (allocated(smallk)) deallocate(smallk)
         allocate(smallk(1))
         allocate(hkp(dimax,dimax))
 
-        if ( mod1==1 ) then
-          smallk%kx = 1
-          smallk%ky = 0
-          smallk%kz = 0
-        elseif ( mod1==2 ) then
-          smallk%kx = 0
-          smallk%ky = 1
-          smallk%kz = 0
-        elseif ( mod1==3 ) then
-          smallk%kx = 0
-          smallk%ky = 0
-          smallk%kz = 1
-        end if
-
+        call set_perturbation_direction(mod1, smallk(1))
         call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.True., HT_csr=HT_csr_mod1,g='g')
 
-        if ( mod2==1 ) then
-          smallk%kx = 1
-          smallk%ky = 0
-          smallk%kz = 0
-        elseif ( mod2==2 ) then
-          smallk%kx = 0
-          smallk%ky = 1
-          smallk%kz = 0
-        elseif ( mod2==3 ) then
-          smallk%kx = 0
-          smallk%ky = 0
-          smallk%kz = 1
-        end if
+        call set_perturbation_direction(mod2, smallk(1))
         call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.True., HT_csr=HT_csr_mod2,g='g')
 
         if (allocated(hkp)) deallocate(hkp)
@@ -418,41 +368,15 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
       end if
 
       if (nlayers == 2 .and. .not. sparse) then
-        ! print *, 'sparse'
         if (allocated(smallk)) deallocate(smallk)
         allocate(smallk(1))
         if (allocated(hkp)) deallocate(hkp)
         allocate(hkp(dimax,dimax))
 
-        if ( mod1==1 ) then
-          smallk%kx = 1
-          smallk%ky = 0
-          smallk%kz = 0
-        elseif ( mod1==2 ) then
-          smallk%kx = 0
-          smallk%ky = 1
-          smallk%kz = 0
-        elseif ( mod1==3 ) then
-          smallk%kx = 0
-          smallk%ky = 0
-          smallk%kz = 1
-        end if
-
+        call set_perturbation_direction(mod1, smallk(1))
         call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.False.,g='g')
 
-        if ( mod2==1 ) then
-          smallk%kx = 1
-          smallk%ky = 0
-          smallk%kz = 0
-        elseif ( mod2==2 ) then
-          smallk%kx = 0
-          smallk%ky = 1
-          smallk%kz = 0
-        elseif ( mod2==3 ) then
-          smallk%kx = 0
-          smallk%ky = 0
-          smallk%kz = 1
-        end if
+        call set_perturbation_direction(mod2, smallk(1))
         call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.False.,g='g')
 
       end if
@@ -463,11 +387,9 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
       do n=bandIdx,bandIdx+1
         ii = ii + 1
         jj = 0
-        ! print *, 'n', n
         do m=bandIdx,bandIdx+1
           jj = jj+1
 
-          ! print *, 'm', m
 
           !now run over numvb valence bands
           do l=1,numvb
@@ -478,81 +400,23 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
             Pele4 = 0
 
             !have to compute <cb_n|p|vb_l> and <vb_l|p|cb_m> for mod1 and mod2
-            !========Pele1========
-            if (nlayers == 1) then
-              call pMatrixEleCalc(Pele1, mod1, cb_state(:,n), vb_state(:,l), nlayers, params)
-            else
-              if(sparse) then
-                call pMatrixEleCalc(Pele1, mod1, cb_state(:,n), vb_state(:,l), nlayers, params, profile=profile, kpterms=kpterms, HT_csr=HT_csr_mod1)
-              else
-                call pMatrixEleCalc(Pele1, mod1, cb_state(:,n), vb_state(:,l), nlayers, params, hkp_out=hkp, profile=profile, kpterms=kpterms, startz=startz, endz=endz,dz=dz)
-              end if
+            call compute_pele(Pele1, mod1, cb_state(:,n), vb_state(:,l), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod1, hkp, startz, endz, dz)
 
-              ! if ( mod1==3 ) then
-              !   Y = 0
-              !   info = mkl_sparse_z_mv (SPARSE_OPERATION_NON_TRANSPOSE, alpha, der_csr, descrA, vb_state(:,l), beta, Y)
-              !   Pele1 = Pele1 -cmplx(0.,1.)*hbar*zdotc(dimax,cb_state(:,n),1,Y(:),1)
-              ! end if
+            call compute_pele(Pele2, mod2, vb_state(:,l), cb_state(:,m), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod2, hkp, startz, endz, dz)
+
+            call compute_pele(Pele3, mod2, cb_state(:,n), vb_state(:,l), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod2, hkp, startz, endz, dz)
+
+            call compute_pele(Pele4, mod1, vb_state(:,l), cb_state(:,m), nlayers, params, &
+              & sparse, profile, kpterms, HT_csr_mod1, hkp, startz, endz, dz)
+
+
+            denom = (cb_value(n) - vb_value(l)) + (cb_value(m) - vb_value(l))
+            if (abs(denom) > tolerance) then
+              tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
             end if
-            !========Pele1========
-
-            !========Pele2========
-            if (nlayers == 1) then
-              call pMatrixEleCalc(Pele2, mod2, vb_state(:,l), cb_state(:,m), nlayers, params)
-            else
-              if(sparse) then
-                call pMatrixEleCalc(Pele2, mod2, vb_state(:,l), cb_state(:,m), nlayers, params, profile=profile, kpterms=kpterms, HT_csr=HT_csr_mod2)
-              else
-                call pMatrixEleCalc(Pele2, mod2, vb_state(:,l), cb_state(:,m), nlayers, params, hkp_out=hkp, profile=profile, kpterms=kpterms, startz=startz, endz=endz,dz=dz)
-              end if
-
-              ! if ( mod2==3 ) then
-              !   Y = 0
-              !   info = mkl_sparse_z_mv (SPARSE_OPERATION_NON_TRANSPOSE, alpha, der_csr, descrA, cb_state(:,m), beta, Y)
-              !   Pele2 = Pele2 -cmplx(0.,1.)*hbar*zdotc(dimax,vb_state(:,l),1,Y(:),1)
-              ! end if
-            end if
-            !========Pele2========
-
-            !========Pele3========
-            if (nlayers == 1) then
-              call pMatrixEleCalc(Pele3, mod2, cb_state(:,n), vb_state(:,l), nlayers, params)
-            else
-              if(sparse) then
-                call pMatrixEleCalc(Pele3, mod2, cb_state(:,n), vb_state(:,l), nlayers, params, hkp_out=hkp, profile=profile, kpterms=kpterms, HT_csr=HT_csr_mod2)
-              else
-                call pMatrixEleCalc(Pele3, mod2, cb_state(:,n), vb_state(:,l), nlayers, params, profile=profile, kpterms=kpterms, startz=startz, endz=endz,dz=dz)
-              end if
-
-              ! if ( mod2==3 ) then
-              !   Y = 0
-              !   info = mkl_sparse_z_mv (SPARSE_OPERATION_NON_TRANSPOSE, alpha, der_csr, descrA, vb_state(:,l), beta, Y)
-              !   Pele3 = Pele3 -cmplx(0.,1.)*hbar*zdotc(dimax,cb_state(:,n),1,Y(:),1)
-              ! end if
-            end if
-            !========Pele3========
-
-            !========Pele4========
-            if (nlayers == 1) then
-              call pMatrixEleCalc(Pele4, mod1, vb_state(:,l), cb_state(:,m), nlayers, params)
-            else
-              if(sparse) then
-                call pMatrixEleCalc(Pele4, mod1, vb_state(:,l), cb_state(:,m), nlayers, params, hkp_out=hkp, profile=profile, kpterms=kpterms, HT_csr=HT_csr_mod1)
-              else
-                call pMatrixEleCalc(Pele4, mod1, vb_state(:,l), cb_state(:,m), nlayers, params, profile=profile, kpterms=kpterms, startz=startz, endz=endz,dz=dz)
-              end if
-
-              ! if ( mod1==3 ) then
-              !   Y = 0
-              !   info = mkl_sparse_z_mv (SPARSE_OPERATION_NON_TRANSPOSE, alpha, der_csr, descrA, cb_state(:,m), beta, Y)
-              !   Pele4 = Pele4 -cmplx(0.,1.)*hbar*zdotc(dimax,vb_state(:,l),1,Y(:),1)
-              ! end if
-            end if
-
-            !========Pele4========
-
-
-            tensor(ii,jj,d) = tensor(ii,jj,d) + ( (Pele1*Pele2-Pele3*Pele4) / ( ( cb_value(n)-vb_value(l) ) + ( cb_value(m)-vb_value(l) ) ) )
 
           end do
 
@@ -562,12 +426,10 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
       if ( numcb > 2 ) then
         ii = 0
         do n=bandidx,bandidx+1
-          ! print *, 'n', n
           ii = ii + 1
           jj = 0
           do m=bandidx,bandidx+1
             jj = jj + 1
-            ! print *, 'm', m
             do l=1,numcb
 
               Pele1 = 0
@@ -575,85 +437,23 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
               Pele3 = 0
               Pele4 = 0
 
-              if ( ( cb_value(n)-cb_value(l) ) /= 0. .and. ( cb_value(m)-cb_value(l) ) /= 0. ) then
+                call compute_pele(Pele1, mod1, cb_state(:,n), cb_state(:,l), nlayers, params, &
+                  & sparse, profile, kpterms, HT_csr_mod1, hkp, startz, endz, dz)
 
-                !========Pele1========
-                if (nlayers == 1) then
-                  call pMatrixEleCalc(Pele1, mod1, cb_state(:,n), cb_state(:,l), nlayers, params)
-                else
-                  if(sparse) then
-                    call pMatrixEleCalc(Pele1, mod1, cb_state(:,n), cb_state(:,l), nlayers, params, profile=profile, kpterms=kpterms, HT_csr=HT_csr_mod1)
-                  else
-                    call pMatrixEleCalc(Pele1, mod1, cb_state(:,n), cb_state(:,l), nlayers, params, profile=profile, kpterms=kpterms, startz=startz, endz=endz,dz=dz)
-                  end if
+                call compute_pele(Pele2, mod2, cb_state(:,l), cb_state(:,m), nlayers, params, &
+                  & sparse, profile, kpterms, HT_csr_mod2, hkp, startz, endz, dz)
 
-                  ! if ( mod1==3 ) then
-                  !   Y = 0
-                  !   info = mkl_sparse_z_mv (SPARSE_OPERATION_NON_TRANSPOSE, alpha, der_csr, descrA, cb_state(:,l), beta, Y)
-                  !   Pele1 = Pele1 -cmplx(0.,1.)*hbar*zdotc(dimax,cb_state(:,n),1,Y(:),1)
-                  ! end if
+                call compute_pele(Pele3, mod2, cb_state(:,n), cb_state(:,l), nlayers, params, &
+                  & sparse, profile, kpterms, HT_csr_mod2, hkp, startz, endz, dz)
 
+                call compute_pele(Pele4, mod1, cb_state(:,l), cb_state(:,m), nlayers, params, &
+                  & sparse, profile, kpterms, HT_csr_mod1, hkp, startz, endz, dz)
+
+                denom = (cb_value(n) - cb_value(l)) + (cb_value(m) - cb_value(l))
+                if (abs(denom) > tolerance) then
+                  tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
                 end if
 
-                !========Pele1========
-
-                !========Pele2========
-                if (nlayers == 1) then
-                  call pMatrixEleCalc(Pele2, mod2, cb_state(:,l), cb_state(:,m), nlayers, params)
-                else
-                  if(sparse) then
-                    call pMatrixEleCalc(Pele2, mod2, cb_state(:,l), cb_state(:,m), nlayers, params, profile=profile, kpterms=kpterms, HT_csr=HT_csr_mod2)
-                  else
-                    call pMatrixEleCalc(Pele2, mod2, cb_state(:,l), cb_state(:,m), nlayers, params, profile=profile, kpterms=kpterms, startz=startz, endz=endz,dz=dz)
-                  end if
-
-                  ! if ( mod2==3 ) then
-                  !   Y = 0
-                  !   info = mkl_sparse_z_mv (SPARSE_OPERATION_NON_TRANSPOSE, alpha, der_csr, descrA, cb_state(:,m), beta, Y)
-                  !   Pele2 = Pele2 -cmplx(0.,1.)*hbar*zdotc(dimax,cb_state(:,l),1,Y(:),1)
-                  ! end if
-                end if
-                !========Pele2========
-
-                !========Pele3========
-                if (nlayers == 1) then
-                  call pMatrixEleCalc(Pele3, mod2, cb_state(:,n), cb_state(:,l), nlayers, params)
-                else
-                  if(sparse) then
-                    call pMatrixEleCalc(Pele3, mod2, cb_state(:,n), cb_state(:,l), nlayers, params, profile=profile, kpterms=kpterms, HT_csr=HT_csr_mod2)
-                  else
-                    call pMatrixEleCalc(Pele3, mod2, cb_state(:,n), cb_state(:,l), nlayers, params, profile=profile, kpterms=kpterms, startz=startz, endz=endz,dz=dz)
-                  end if
-                  !
-                  ! if ( mod2==3 ) then
-                  !   Y = 0
-                  !   info = mkl_sparse_z_mv (SPARSE_OPERATION_NON_TRANSPOSE, alpha, der_csr, descrA, cb_state(:,l), beta, Y)
-                  !   Pele3 = Pele3 -cmplx(0.,1.)*hbar*zdotc(dimax,cb_state(:,n),1,Y(:),1)
-                  ! end if
-                end if
-                !========Pele3========
-
-                !========Pele4========
-                if (nlayers == 1) then
-                  call pMatrixEleCalc(Pele4, mod1, cb_state(:,l), cb_state(:,m), nlayers, params)
-                else
-                  if(sparse) then
-                    call pMatrixEleCalc(Pele4, mod1, cb_state(:,l), cb_state(:,m), nlayers, params, profile=profile, kpterms=kpterms, HT_csr=HT_csr_mod1)
-                  else
-                    call pMatrixEleCalc(Pele4, mod1, cb_state(:,l), cb_state(:,m), nlayers, params, profile=profile, kpterms=kpterms, startz=startz, endz=endz,dz=dz)
-                  end if
-
-                  ! if ( mod1==3 ) then
-                  !   Y = 0
-                  !   info = mkl_sparse_z_mv (SPARSE_OPERATION_NON_TRANSPOSE, alpha, der_csr, descrA, cb_state(:,m), beta, Y)
-                  !   Pele4 = Pele4 -cmplx(0.,1.)*hbar*zdotc(dimax,cb_state(:,l),1,Y(:),1)
-                  ! end if
-                end if
-                !========Pele4========
-
-                tensor(ii,jj,d) = tensor(ii,jj,d) + ( (Pele1*Pele2-Pele3*Pele4) / ( ( cb_value(n)-cb_value(l) ) + ( cb_value(m)-cb_value(l) ) ) )
-
-              end if
             end do
           end do
         end do
@@ -661,14 +461,11 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
     end do ! end main loop
   end if
 
-  tensor(1:2,1:2,1:3) = -cmplx(0.,1.)*tensor(1:2,1:2,1:3)/hbar2O2m0
+  tensor(1:2,1:2,1:3) = -cmplx(0.0_dp, 1.0_dp, kind=dp)*tensor(1:2,1:2,1:3)/hbar2O2m0
   tensor(1:2,1:2,1:3) = tensor(1:2,1:2,1:3) - (2.00231_dp/2.0_dp)*sigma(1:2,1:2,1:3)
 
 
-  if (allocated(Y)) deallocate(Y)
-
 end subroutine gfactorCalculation
-
 
 
 end module gfactorFunctions
