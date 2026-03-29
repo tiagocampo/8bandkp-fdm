@@ -72,6 +72,14 @@ complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, d
 
   integer :: lin, col
 
+  ! Spin matrices in the 8-band zincblende basis.
+  ! Basis ordering: 1=|3/2,+3/2> (HH), 2=|3/2,+1/2> (LH), 3=|3/2,-1/2> (LH),
+  !   4=|3/2,-3/2> (HH), 5=|1/2,+1/2> (SO), 6=|1/2,-1/2> (SO),
+  !   7=|S,+1/2> (CB), 8=|S,-1/2> (CB)
+  ! Phase convention matches ZB8bandBulk in hamiltonianConstructor.f90.
+  ! CB block (bands 7-8) gives standard Pauli matrices.
+  ! VB-VB and VB-SO off-diagonal elements may differ from the Chuang & Chang
+  ! convention by factors of +/-i (Winkler, Table 2.3).
   SIGMA_X(1,:) = (/ ZERO, -IU*RQS3, ZERO, ZERO, UM*SQR2o3, ZERO, ZERO, ZERO /)
   SIGMA_X(2,:) = (/ IU*RQS3, ZERO, -IU*2.0_dp/3.0_dp, ZERO, ZERO, -UM*SQR2/3.0_dp, ZERO, ZERO /)
   SIGMA_X(3,:) = (/ ZERO, 2.0_dp*IU/3.0_dp, ZERO, -IU*RQS3, UM*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
@@ -383,21 +391,6 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
 
       end if
 
-      if (nlayers > 1 .and. .not. sparse) then
-        if (allocated(smallk)) deallocate(smallk)
-        allocate(smallk(1))
-        if (allocated(hkp)) deallocate(hkp)
-        allocate(hkp(dimax,dimax))
-
-        call set_perturbation_direction(mod1, smallk(1))
-        call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.False.,g='g')
-
-        call set_perturbation_direction(mod2, smallk(1))
-        call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.False.,g='g')
-
-      end if
-
-
       ! tensor loop
       ii = 0
       do n=bandIdx,bandIdx+1
@@ -545,19 +538,6 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
         call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.True., HT_csr=HT_csr_mod2,g='g')
 
         if (allocated(hkp)) deallocate(hkp)
-      end if
-
-      if (nlayers > 1 .and. .not. sparse) then
-        if (allocated(smallk)) deallocate(smallk)
-        allocate(smallk(1))
-        if (allocated(hkp)) deallocate(hkp)
-        allocate(hkp(dimax,dimax))
-
-        call set_perturbation_direction(mod1, smallk(1))
-        call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.False.,g='g')
-
-        call set_perturbation_direction(mod2, smallk(1))
-        call ZB8bandQW(hkp, smallk(1), profile, kpterms, sparse=.False.,g='g')
       end if
 
       ! VB doublet (n,m) with CB intermediates (l)

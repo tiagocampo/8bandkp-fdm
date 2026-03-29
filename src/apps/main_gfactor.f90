@@ -183,8 +183,7 @@ program gfactor
 
   whichBand = cfg%whichBand
   bandIdx = cfg%bandIdx
-  cfg%numcb = 2*cfg%fdStep
-  cfg%numvb = 6*cfg%fdStep
+  ! numcb/numvb already set above (2*fdStep, 6*fdStep)
 
   allocate(cb_state(N,cfg%numcb))
   allocate(vb_state(N,cfg%numvb))
