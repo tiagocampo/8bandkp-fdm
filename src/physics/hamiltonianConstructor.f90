@@ -9,6 +9,48 @@ module hamiltonianConstructor
 
   contains
 
+    subroutine build_kpterm_block(kpterms, profile_vec, central, forward, &
+      & backward, diag, offup, offdown, N, term_idx, scale_factor, has_diag)
+
+      real(kind=dp), intent(inout), dimension(:,:,:) :: kpterms
+      real(kind=dp), intent(in), dimension(:) :: profile_vec
+      real(kind=dp), intent(in), dimension(:,:) :: central, forward, backward
+      real(kind=dp), intent(inout), dimension(:) :: diag, offup, offdown
+      integer, intent(in) :: N, term_idx
+      real(kind=dp), intent(in) :: scale_factor
+      logical, intent(in) :: has_diag
+
+      integer :: ii
+
+      if (has_diag) then
+        call dgemv('N', N, N, 1.0_dp, central, N, profile_vec, 1, 0.0_dp, diag, 1)
+      end if
+      call dgemv('N', N, N, 1.0_dp, forward, N, profile_vec, 1, 0.0_dp, offup, 1)
+      call dgemv('N', N, N, 1.0_dp, backward, N, profile_vec, 1, 0.0_dp, offdown, 1)
+
+      if (has_diag) then
+        forall(ii=2:N-1)
+          kpterms(ii,ii,term_idx) = diag(ii)
+          kpterms(ii+1,ii,term_idx) = -offup(ii)
+          kpterms(ii-1,ii,term_idx) = -offdown(ii)
+        end forall
+        kpterms(1,1,term_idx) = diag(1)
+        kpterms(N,N,term_idx) = diag(N)
+        kpterms(2,1,term_idx) = -offup(1)
+        kpterms(N-1,N,term_idx) = -offdown(N)
+      else
+        forall(ii=2:N-1)
+          kpterms(ii+1,ii,term_idx) = offup(ii)
+          kpterms(ii-1,ii,term_idx) = -offdown(ii)
+        end forall
+        kpterms(2,1,term_idx) = offup(1)
+        kpterms(N-1,N,term_idx) = -offdown(N)
+      end if
+
+      kpterms(:,:,term_idx) = kpterms(:,:,term_idx) * scale_factor
+
+    end subroutine build_kpterm_block
+
     subroutine externalFieldSetup_electricField(profile, Evalue, totalSize, z)
 
       real(kind = dp), intent(inout), allocatable, dimension(:,:) :: profile
@@ -24,7 +66,7 @@ module hamiltonianConstructor
     end subroutine externalFieldSetup_electricField
 
     subroutine confinementInitialization(z, startPos, endPos, material, nlayers,&
-      & params, confDir, profile, kpterms)
+      & params, confDir, profile, kpterms, FDorder)
 
       real(kind = dp), intent(in), dimension(:) :: z
       integer, intent(in), dimension(:) :: startPos, endPos
@@ -34,18 +76,28 @@ module hamiltonianConstructor
       character(len = 1), intent(in) :: confDir
       real(kind = dp), intent(inout), allocatable, dimension(:,:) :: profile
       real(kind = dp), intent(inout), dimension(:,:,:) :: kpterms
+      integer, intent(in), optional :: FDorder
 
       real(kind=dp), allocatable, dimension(:,:) :: ScnDer, FstDer, kptermsProfile
       real(kind=dp), allocatable, dimension(:,:) :: forward, central, backward
       real(kind=dp), allocatable, dimension(:) :: diag, offup, offdown
+      real(kind=dp), allocatable, dimension(:,:) :: D2, D1
 
       integer :: i, initIDX, endIDX, N, ii, jj
+      integer :: order
       real(kind = dp) :: delta
 
 
       N = size(z, dim=1)
       delta = abs(z(2) - z(1))
       print *, delta
+
+      ! Resolve FD order (default 2 for backward compatibility)
+      if (present(FDorder)) then
+        order = FDorder
+      else
+        order = 2
+      end if
 
       if (allocated(profile)) deallocate(profile)
       allocate(profile(N,3))
@@ -93,97 +145,77 @@ module hamiltonianConstructor
         kpterms(ii,ii,10) = kptermsProfile(ii,4) !A
       end forall
 
-      allocate(forward(N,N))
-      allocate(backward(N,N))
-      allocate(central(N,N))
-      forward = 0.0_dp
-      backward = 0.0_dp
-      central = 0.0_dp
+      if (order == 2) then
+        ! ---- Order 2: use existing tridiagonal approach (backward compatible) ----
+        allocate(forward(N,N))
+        allocate(backward(N,N))
+        allocate(central(N,N))
+        forward = 0.0_dp
+        backward = 0.0_dp
+        central = 0.0_dp
 
-      forall(ii=1:N-1)
-        forward(ii,ii) = 1
-        forward(ii,ii+1) = 1
-      end forall
-      !last element done alone to avoid if inside loop
-      forward(N,N) = 1
-      backward = transpose(forward)
-      central = backward + forward
-
-
-      allocate(diag(N))
-      allocate(offup(N))
-      allocate(offdown(N))
-
-      ! A*kz**2
-      call dgemv('N', N, N, 1.0_dp, central, N, kptermsProfile(1:N,4), 1, 0.0_dp, diag, 1)
-      call dgemv('N', N, N, 1.0_dp, forward, N, kptermsProfile(1:N,4), 1, 0.0_dp, offup, 1)
-      call dgemv('N', N, N, 1.0_dp, backward, N, kptermsProfile(1:N,4), 1, 0.0_dp, offdown, 1)
-      forall(ii=2:N-1)
-        kpterms(ii,ii,5) = diag(ii)
-        kpterms(ii+1,ii,5) = -offup(ii)
-        kpterms(ii-1,ii,5) = -offdown(ii)
-      end forall
-      kpterms(1,1,5) = diag(1)
-      kpterms(N,N,5) = diag(N)
-      kpterms(2,1,5) = -offup(1)
-      kpterms(N-1,N,5) = -offdown(N)
-      kpterms(:,:,5) = kpterms(:,:,5)*(1.0_dp/(2.0_dp*delta**2))
+        forall(ii=1:N-1)
+          forward(ii,ii) = 1
+          forward(ii,ii+1) = 1
+        end forall
+        !last element done alone to avoid if inside loop
+        forward(N,N) = 1
+        backward = transpose(forward)
+        central = backward + forward
 
 
-      !Q
-      call dgemv('N', N, N, 1.0_dp, central, N, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, diag, 1)
-      call dgemv('N', N, N, 1.0_dp, forward, N, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, offup, 1)
-      call dgemv('N', N, N, 1.0_dp, backward, N, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, offdown, 1)
-      forall(ii=2:N-1)
-        kpterms(ii,ii,7) = diag(ii)
-        kpterms(ii+1,ii,7) = -offup(ii)
-        kpterms(ii-1,ii,7) = -offdown(ii)
-      end forall
-      kpterms(1,1,7) = diag(1)
-      kpterms(N,N,7) = diag(N)
-      kpterms(2,1,7) = -offup(1)
-      kpterms(N-1,N,7) = -offdown(N)
-      kpterms(:,:,7) = kpterms(:,:,7)*(1.0_dp/(2.0_dp*delta**2))
+        allocate(diag(N))
+        allocate(offup(N))
+        allocate(offdown(N))
+
+        ! A*kz**2
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,4), central, forward, &
+          & backward, diag, offup, offdown, N, 5, 1.0_dp/(2.0_dp*delta**2), .True.)
 
 
-      !T
-      call dgemv('N', N, N, 1.0_dp, central, N, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, diag, 1)
-      call dgemv('N', N, N, 1.0_dp, forward, N, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, offup, 1)
-      call dgemv('N', N, N, 1.0_dp, backward, N, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), 1, 0.0_dp, offdown, 1)
-      forall(ii=2:N-1)
-        kpterms(ii,ii,8) = diag(ii)
-        kpterms(ii+1,ii,8) = -offup(ii)
-        kpterms(ii-1,ii,8) = -offdown(ii)
-      end forall
-      kpterms(1,1,8) = diag(1)
-      kpterms(N,N,8) = diag(N)
-      kpterms(2,1,8) = -offup(1)
-      kpterms(N-1,N,8) = -offdown(N)
-      kpterms(:,:,8) = kpterms(:,:,8)*(1.0_dp/(2.0_dp*delta**2))
+        !Q
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), &
+          & central, forward, backward, diag, offup, offdown, N, 7, 1.0_dp/(2.0_dp*delta**2), .True.)
 
 
-      ! P*kz
-      call dgemv('N', N, N, 1.0_dp, forward, N, kptermsProfile(1:N,5), 1, 0.0_dp, offup, 1)
-      call dgemv('N', N, N, 1.0_dp, backward, N, kptermsProfile(1:N,5), 1, 0.0_dp, offdown, 1)
-      forall(ii=2:N-1)
-        kpterms(ii+1,ii,6) = offup(ii)
-        kpterms(ii-1,ii,6) = -offdown(ii)
-      end forall
-      kpterms(2,1,6) = offup(1)
-      kpterms(N-1,N,6) = -offdown(N)
-      kpterms(:,:,6) = kpterms(:,:,6)*(1.0_dp/(4.0_dp*delta))
+        !T
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), &
+          & central, forward, backward, diag, offup, offdown, N, 8, 1.0_dp/(2.0_dp*delta**2), .True.)
 
 
-      ! S -> gamma3*kz
-      call dgemv('N', N, N, 1.0_dp, forward, N, kptermsProfile(1:N,3), 1, 0.0_dp, offup, 1)
-      call dgemv('N', N, N, 1.0_dp, backward, N, kptermsProfile(1:N,3), 1, 0.0_dp, offdown, 1)
-      forall(ii=2:N-1)
-        kpterms(ii+1,ii,9) = offup(ii)
-        kpterms(ii-1,ii,9) = -offdown(ii)
-      end forall
-      kpterms(2,1,9) = offup(1)
-      kpterms(N-1,N,9) = -offdown(N)
-      kpterms(:,:,9) = kpterms(:,:,9)*(1.0_dp/(4.0_dp*delta))
+        ! P*kz
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,5), central, forward, &
+          & backward, diag, offup, offdown, N, 6, 1.0_dp/(4.0_dp*delta), .False.)
+
+
+        ! S -> gamma3*kz
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,3), central, forward, &
+          & backward, diag, offup, offdown, N, 9, 1.0_dp/(4.0_dp*delta), .False.)
+
+      else
+        ! ---- Higher order: use FD matrix approach ----
+        ! Build 2nd-derivative and 1st-derivative FD matrices
+        call buildFD2ndDerivMatrix(N, delta, order, D2)
+        call buildFD1stDerivMatrix(N, delta, order, D1)
+
+        ! A*kz**2 (term 5): profile = A(z), operator = d^2/dz^2
+        call applyVariableCoeff(kpterms, kptermsProfile(1:N,4), D2, N, 5)
+
+        ! Q (term 7): profile = gamma1 - 2*gamma2, operator = d^2/dz^2
+        call applyVariableCoeff(kpterms, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), &
+          & D2, N, 7)
+
+        ! T (term 8): profile = gamma1 + 2*gamma2, operator = d^2/dz^2
+        call applyVariableCoeff(kpterms, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), &
+          & D2, N, 8)
+
+        ! P*kz (term 6): profile = P(z), operator = d/dz
+        call applyVariableCoeff(kpterms, kptermsProfile(1:N,5), D1, N, 6)
+
+        ! S -> gamma3*kz (term 9): profile = gamma3(z), operator = d/dz
+        call applyVariableCoeff(kpterms, kptermsProfile(1:N,3), D1, N, 9)
+
+      end if
 
       if (allocated(ScnDer)) deallocate(ScnDer)
       if (allocated(FstDer)) deallocate(FstDer)
@@ -194,8 +226,32 @@ module hamiltonianConstructor
       if (allocated(diag)) deallocate(diag)
       if (allocated(offup)) deallocate(offup)
       if (allocated(offdown)) deallocate(offdown)
+      if (allocated(D2)) deallocate(D2)
+      if (allocated(D1)) deallocate(D1)
 
     end subroutine confinementInitialization
+
+    !---------------------------------------------------------------------------
+    !> Apply variable coefficient to FD matrix and store in kpterms.
+    !> Computes: kpterms(:,:,term_idx) = -diag(profile) @ FD
+    !> This gives the correct sign for both 1st and 2nd derivative terms
+    !> in the k.p Hamiltonian.
+    !---------------------------------------------------------------------------
+    subroutine applyVariableCoeff(kpterms, profile_vec, FD, N, term_idx)
+
+      real(kind=dp), intent(inout), dimension(:,:,:) :: kpterms
+      real(kind=dp), intent(in), dimension(:) :: profile_vec
+      real(kind=dp), intent(in), dimension(:,:) :: FD
+      integer, intent(in) :: N, term_idx
+
+      integer :: ii, jj
+
+      ! kpterms(j,i) = -profile_vec(j) * FD(j,i)
+      forall(ii=1:N, jj=1:N)
+        kpterms(jj, ii, term_idx) = -profile_vec(jj) * FD(jj, ii)
+      end forall
+
+    end subroutine applyVariableCoeff
 
     subroutine ZB8bandQW(HT, wv, profile, kpterms, sparse, HT_csr, g)
 

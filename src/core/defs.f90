@@ -47,6 +47,7 @@ module definitions
   type simulation_config
     integer :: confinement = 0
     integer :: fdStep = 1
+    integer :: FDorder = 2
     integer :: numLayers = 1
     integer :: numcb = 2
     integer :: numvb = 6

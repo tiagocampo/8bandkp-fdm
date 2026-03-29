@@ -44,6 +44,8 @@ contains
     print *, trim(label), cfg%confinement
     read(data_unit, *) label, cfg%fdStep
     print *, trim(label), cfg%fdStep
+    read(data_unit, *) label, cfg%FDorder
+    print *, trim(label), cfg%FDorder
     read(data_unit, *) label, cfg%numLayers
     print *, trim(label), cfg%numLayers
 
@@ -51,6 +53,13 @@ contains
     if (cfg%confinement == 0 .and. cfg%fdStep /= 1) then
       print *, 'Warning: bulk mode requires fdStep=1. Forcing fdStep=1.'
       cfg%fdStep = 1
+    end if
+
+    ! Validate FDorder
+    if (cfg%FDorder /= 2 .and. cfg%FDorder /= 4 .and. cfg%FDorder /= 6 &
+        .and. cfg%FDorder /= 8 .and. cfg%FDorder /= 10) then
+      print *, 'Error: FDorder must be 2, 4, 6, 8, or 10, got:', cfg%FDorder
+      stop 1
     end if
 
     allocate(cfg%params(cfg%numLayers))
@@ -127,7 +136,8 @@ contains
       allocate(kpterms(cfg%fdStep, cfg%fdStep, 10))
       kpterms = 0.0_dp
       call confinementInitialization(cfg%z, cfg%intStartPos, cfg%intEndPos, &
-        & cfg%materialN, cfg%numLayers, cfg%params, cfg%confDir, profile, kpterms)
+        & cfg%materialN, cfg%numLayers, cfg%params, cfg%confDir, profile, kpterms, &
+        & cfg%FDorder)
       if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
         call externalFieldSetup_electricField(profile, cfg%Evalue, cfg%totalSize, cfg%z)
       end if
