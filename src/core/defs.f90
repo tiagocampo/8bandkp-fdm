@@ -62,7 +62,7 @@ module definitions
   pure function kronij(i,j)
     integer, intent(in) :: i,j
     integer :: kronij
-    kronij = int((float((i+j)-abs(i-j)))/(float((i+j)+abs(i-j))))
+    kronij = merge(1, 0, i == j)
   end function
 
   subroutine tick(t)
