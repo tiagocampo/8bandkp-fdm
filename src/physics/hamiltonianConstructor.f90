@@ -63,6 +63,14 @@ module hamiltonianConstructor
       if (confDir == 'z') then
 
         do i = 1, nlayers, 1
+          if (params(i)%EV == 0.0_dp .and. params(i)%EC == 0.0_dp) then
+            print *, "WARNING: Material '", trim(material(i)), &
+              & "' has EV=0 and EC=0. Band offsets may be incorrect."
+            print *, "  Check that EV/EC are set in the parameter database."
+          end if
+        end do
+
+        do i = 1, nlayers, 1
 
           ! profile(startPos(i):endPos(i),1) = (params(1)%Eg - params(i)%Eg)*bshift(i)
           ! profile(startPos(i):endPos(i),2) = (params(1)%Eg - params(i)%Eg)*bshift(i) - params(i)%DeltaSO
