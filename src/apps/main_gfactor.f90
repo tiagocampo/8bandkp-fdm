@@ -82,6 +82,12 @@ program gfactor
   print *, trim(label), confinement
   read(data_unit, *) label, fdStep
   print *, trim(label), fdStep
+
+  if (confinement == 0 .and. fdStep /= 1) then
+    print *, 'Warning: bulk mode requires fdStep=1. Forcing fdStep=1.'
+    fdStep = 1
+  end if
+
   read(data_unit, *) label, nlayers
   print *, trim(label), nlayers
 
@@ -254,7 +260,7 @@ program gfactor
     call confinementInitialization(z, intStartPos, intEndPos, material, &
     & nlayers, params, bshift, confDir, profile, kpterms)
     if (externalField == 1 .and. EFType == "EF") then
-      call externalFiledSetup_electricField(profile, Evalue, totalSize, z)
+      call externalFieldSetup_electricField(profile, Evalue, totalSize, z)
     end if
     !printing profile
     do i = 1, fdStep, 1
