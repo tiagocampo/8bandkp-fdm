@@ -47,9 +47,9 @@ The project is organized into the following directories:
   - `main_gfactor.f90`: g-factor calculation program
 
 ### Tests (`tests/`)
-* `unit/`: Unit tests for individual components
-* `integration/`: Integration tests for combined functionality
-* `regression/`: Regression tests for verified results
+* `unit/`: pFUnit unit tests for individual modules (defs, FD, utils, parameters, Hamiltonian)
+* `integration/`: Shell scripts for full-executable regression tests
+* `regression/`: Reference configs, golden data, and `compare_output.py`
 
 ### Documentation (`docs/`)
 * `api/`: API documentation and code reference
@@ -115,6 +115,26 @@ make                       # Or 'make -j$(nproc)' for parallel build
 sudo make install         # Installs to default system location
 # OR
 cmake -DCMAKE_INSTALL_PREFIX=/custom/path .. && make install  # Custom install location
+```
+
+#### Running Tests
+```bash
+# Configure with tests enabled (requires pFUnit for unit tests)
+cmake -DBUILD_TESTING=ON -DpFUnit_DIR=$HOME/.local/pfunit/lib/cmake/pfunit ..
+
+# Build and run tests
+make
+ctest                      # all tests
+ctest -L unit              # pFUnit unit tests only
+ctest -L regression        # regression tests only
+ctest -V                   # verbose output
+```
+
+pFUnit can be installed from source:
+```bash
+git clone https://github.com/Goddard-Fortran-Ecosystem/pFUnit
+cd pFUnit && mkdir build && cd build
+cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/.local/pfunit && make install
 ```
 
 CMake build options:

@@ -194,8 +194,8 @@ complex(kind=dp) function simpson(f,a,b)
   allocate(sc(num))
 
   sc = 1.0_dp
-  forall(i=2:N-1:2) sc(i) = 2.0_dp
-  forall(i=3:N-1:2) sc(i) = 4.0_dp
+  forall(i=2:N-1:2) sc(i) = 4.0_dp
+  forall(i=3:N-1:2) sc(i) = 2.0_dp
 
   simpson= h*sum(sc*f)
 

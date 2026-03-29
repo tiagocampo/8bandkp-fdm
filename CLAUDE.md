@@ -9,28 +9,55 @@ Fortran 90 code solving the **8-band zinc-blende k.p Hamiltonian** via finite di
 ## Build Commands
 
 ```bash
-make all            # Build both executables: bandStructure and gfactorCalculation
+# Configure (first time or after clean)
+cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl
+
+# Build
+cmake --build build                # builds both executables into build/src/
+
+# Or use the Make wrapper
+make all            # Configure + build both executables
 make run            # Build and run bandStructure
-make clean          # Remove build/ directory and data files
-make clean_all      # Also remove executables
+make clean          # Remove build/ directory
+make clean_all      # Also remove output files
+make test           # Configure with BUILD_TESTING=ON, build, run ctest
 ```
 
-**Prerequisites:** gfortran, Intel MKL (sequential), FFTW3. The Makefile LDFLAGS must be set for your linear algebra backend.
+**Executables** are at `build/src/bandStructure` and `build/src/gfactorCalculation`.
 
-**No test framework exists.** Verification is done by running executables against known results.
+**Prerequisites:** gfortran, Intel MKL (sequential, LP64 interface), FFTW3, CMake >= 3.15, Ninja (optional). The MKL defaults are set in `CMakeLists.txt` (`MKL_INTERFACE=lp64`, `MKL_THREADING=sequential`).
 
 **Stale `.mod` files:** Old `.mod` files in the project root can shadow fresh ones in `build/`. If you get inexplicable type mismatch errors, run `rm -f *.mod` before building.
+
+## Testing
+
+```bash
+# Configure with tests enabled
+cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
+    -DBUILD_TESTING=ON -DpFUnit_DIR=/path/to/pfunit/install
+cmake --build build
+
+# Run tests
+ctest --test-dir build                    # all tests
+ctest --test-dir build -L unit            # pFUnit unit tests only
+ctest --test-dir build -L regression      # regression/golden-output tests only
+ctest --test-dir build -V                 # verbose output
+```
+
+**Prerequisites for unit tests:** pFUnit >= 4.9 (built from source, provides `pFUnitConfig.cmake`). Install via `git clone https://github.com/Goddard-Fortran-Ecosystem/pFUnit && cmake -DCMAKE_INSTALL_PREFIX=$HOME/.local/pfunit .. && make install`.
+
+**Regression tests** use shell scripts + Python (`tests/regression/compare_output.py`) to compare numerical output against reference data. No extra dependencies beyond Python 3.
 
 ## Running
 
 ```bash
-./bandStructure       # Reads input.cfg, outputs to output/
-./gfactorCalculation  # Reads input.cfg, outputs to output/ (requires k=0)
+./build/src/bandStructure       # Reads input.cfg, outputs to output/
+./build/src/gfactorCalculation  # Reads input.cfg, outputs to output/ (requires k=0)
 ```
 
 Both programs read from `input.cfg` in the working directory. Output goes to `output/` directory. Plot results with scripts in `scripts/`.
 
-Copy an example config to get started: `cp bulk.example input.cfg` (or `quantumwell.example` / `gfactor.example`).
+Copy an example config to get started: write `bulk.example` contents to `input.cfg` (or `quantumwell.example` / `gfactor.example`). Use the Write tool directly rather than `cp` to avoid interactive alias issues.
 
 ## Architecture
 
@@ -40,10 +67,15 @@ Copy an example config to get started: `cp bulk.example input.cfg` (or `quantumw
 src/
   core/       defs.f90, parameters.f90, utils.f90
   math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90
-  io/         outputFunctions.f90
+  io/         outputFunctions.f90, input_parser.f90
   physics/    hamiltonianConstructor.f90, gfactor_functions.f90
   apps/       main.f90, main_gfactor.f90
-build/        .o and .mod files (created by make)
+tests/
+  unit/       pFUnit .pf test files (test_defs.pf, test_fd.pf, etc.)
+  integration/  shell scripts for full-executable tests
+  regression/   configs/, data/, compare_output.py
+cmake/        FindFFTW3.cmake
+build/        .o, .mod, executables (created by cmake)
 scripts/      gnuplot plotting scripts
 ```
 
