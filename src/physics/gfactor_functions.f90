@@ -579,8 +579,6 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
               Pele3 = 0
               Pele4 = 0
 
-              if ( ( cb_value(n)-cb_value(l) ) /= 0. .and. ( cb_value(m)-cb_value(l) ) /= 0. ) then
-
                 !========Pele1========
                 if (nlayers == 1) then
                   call pMatrixEleCalc(Pele1, mod1, cb_state(:,n), cb_state(:,l), nlayers, params)
@@ -655,9 +653,11 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
                 end if
                 !========Pele4========
 
-                tensor(ii,jj,d) = tensor(ii,jj,d) + ( (Pele1*Pele2-Pele3*Pele4) / ( ( cb_value(n)-cb_value(l) ) + ( cb_value(m)-cb_value(l) ) ) )
+                denom = (cb_value(n) - cb_value(l)) + (cb_value(m) - cb_value(l))
+                if (abs(denom) > tolerance) then
+                  tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
+                end if
 
-              end if
             end do
           end do
         end do
