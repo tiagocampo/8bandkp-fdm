@@ -289,6 +289,7 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
   integer :: mod1, mod2 !which matrix elements to compute
   integer :: i, j, ii, jj, n, m, l!aux loop variables
   integer :: dimax, fdStep
+  real(kind=dp) :: denom
 
   complex(kind=dp) :: Pele1, Pele2, Pele3, Pele4
   complex(kind=dp) :: sigma(2,2,3)
@@ -552,7 +553,10 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
             !========Pele4========
 
 
-            tensor(ii,jj,d) = tensor(ii,jj,d) + ( (Pele1*Pele2-Pele3*Pele4) / ( ( cb_value(n)-vb_value(l) ) + ( cb_value(m)-vb_value(l) ) ) )
+            denom = (cb_value(n) - vb_value(l)) + (cb_value(m) - vb_value(l))
+            if (abs(denom) > tolerance) then
+              tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
+            end if
 
           end do
 
