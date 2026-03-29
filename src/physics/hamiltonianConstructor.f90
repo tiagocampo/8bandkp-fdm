@@ -9,7 +9,7 @@ module hamiltonianConstructor
 
   contains
 
-    subroutine externalFiledSetup_electricField(profile, Evalue, totalSize, z)
+    subroutine externalFieldSetup_electricField(profile, Evalue, totalSize, z)
 
       real(kind = dp), intent(inout), allocatable, dimension(:,:) :: profile
       real(kind = dp), intent(in) :: Evalue, totalSize
@@ -21,7 +21,7 @@ module hamiltonianConstructor
           profile(i,:) = profile(i,:) - (Evalue*totalSize) * (z(i)+z(1))/(2.0_dp*z(1))
       end do
 
-    end subroutine externalFiledSetup_electricField
+    end subroutine externalFieldSetup_electricField
 
     subroutine confinementInitialization(z, startPos, endPos, material, nlayers,&
       & params, bshift, confDir, profile, kpterms)

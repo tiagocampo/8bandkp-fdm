@@ -240,7 +240,7 @@ program kpfdm
     call confinementInitialization(z, intStartPos, intEndPos, material, &
     & nlayers, params, bshift, confDir, profile, kpterms)
     if (externalField == 1 .and. EFType == "EF") then
-      call externalFiledSetup_electricField(profile, Evalue, totalSize, z)
+      call externalFieldSetup_electricField(profile, Evalue, totalSize, z)
     end if
     !printing profile
     call get_unit(iounit)
