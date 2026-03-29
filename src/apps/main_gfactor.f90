@@ -171,7 +171,11 @@ program gfactor
 
   if (cfg%numLayers > 1) call zheevd('V', 'U', N, HT, N, eig(:,k), work, lwork, rwork, lrwork, iwork, liwork, info)
 
-  if (info /= 0) stop "error diag"
+  if (info /= 0) then
+    print *, "Diagonalization error in g-factor calculation, info = ", info
+    if (info < 0) print *, "Parameter ", -info, " had illegal value"
+    stop 1
+  end if
 
 
    if (cfg%numLayers > 1 ) call writeEigenfunctions(N, N, HT, k, cfg%fdstep, cfg%z, cfg%numLayers==1)

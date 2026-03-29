@@ -110,9 +110,10 @@ module hamiltonianConstructor
 
         do i = 1, nlayers, 1
           if (params(i)%EV == 0.0_dp .and. params(i)%EC == 0.0_dp) then
-            print *, "WARNING: Material '", trim(material(i)), &
-              & "' has EV=0 and EC=0. Band offsets may be incorrect."
-            print *, "  Check that EV/EC are set in the parameter database."
+            print *, "ERROR: Material '", trim(material(i)), &
+              & "' has EV=0 and EC=0. Band offsets are required."
+            print *, "  Check that the material name is correct and EV/EC are in the database."
+            stop 1
           end if
         end do
 
@@ -217,8 +218,6 @@ module hamiltonianConstructor
 
       end if
 
-      if (allocated(ScnDer)) deallocate(ScnDer)
-      if (allocated(FstDer)) deallocate(FstDer)
       if (allocated(kptermsProfile)) deallocate(kptermsProfile)
       if (allocated(forward)) deallocate(forward)
       if (allocated(backward)) deallocate(backward)

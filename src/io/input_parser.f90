@@ -34,20 +34,54 @@ contains
       stop 1
     end if
 
-    read(data_unit, *) label, cfg%waveVector
+    read(data_unit, *, iostat=status) label, cfg%waveVector
+    if (status /= 0) then
+      print *, 'Error: Failed to read waveVector from input.cfg'
+      stop 1
+    end if
     print *, trim(label), cfg%waveVector
-    read(data_unit, *) label, cfg%waveVectorMax
+    read(data_unit, *, iostat=status) label, cfg%waveVectorMax
+    if (status /= 0) then
+      print *, 'Error: Failed to read waveVectorMax from input.cfg'
+      stop 1
+    end if
     print *, trim(label), cfg%waveVectorMax
-    read(data_unit, *) label, cfg%waveVectorStep
+    read(data_unit, *, iostat=status) label, cfg%waveVectorStep
+    if (status /= 0) then
+      print *, 'Error: Failed to read waveVectorStep from input.cfg'
+      stop 1
+    end if
     print *, trim(label), cfg%waveVectorStep
-    read(data_unit, *) label, cfg%confinement
+    read(data_unit, *, iostat=status) label, cfg%confinement
+    if (status /= 0) then
+      print *, 'Error: Failed to read confinement from input.cfg'
+      stop 1
+    end if
     print *, trim(label), cfg%confinement
-    read(data_unit, *) label, cfg%fdStep
+    read(data_unit, *, iostat=status) label, cfg%fdStep
+    if (status /= 0) then
+      print *, 'Error: Failed to read fdStep from input.cfg'
+      stop 1
+    end if
     print *, trim(label), cfg%fdStep
-    read(data_unit, *) label, cfg%FDorder
+    read(data_unit, *, iostat=status) label, cfg%FDorder
+    if (status /= 0) then
+      print *, 'Error: Failed to read FDorder from input.cfg'
+      stop 1
+    end if
     print *, trim(label), cfg%FDorder
-    read(data_unit, *) label, cfg%numLayers
+    read(data_unit, *, iostat=status) label, cfg%numLayers
+    if (status /= 0) then
+      print *, 'Error: Failed to read numLayers from input.cfg'
+      stop 1
+    end if
     print *, trim(label), cfg%numLayers
+
+    ! QW fdStep guard: ensure enough grid points for finite differences
+    if (cfg%confinement == 1 .and. cfg%fdStep < 3) then
+      print *, 'Error: QW mode requires fdStep >= 3, got:', cfg%fdStep
+      stop 1
+    end if
 
     ! Bulk fdStep guard: force fdStep=1 for bulk mode
     if (cfg%confinement == 0 .and. cfg%fdStep /= 1) then
@@ -59,6 +93,14 @@ contains
     if (cfg%FDorder /= 2 .and. cfg%FDorder /= 4 .and. cfg%FDorder /= 6 &
         .and. cfg%FDorder /= 8 .and. cfg%FDorder /= 10) then
       print *, 'Error: FDorder must be 2, 4, 6, 8, or 10, got:', cfg%FDorder
+      stop 1
+    end if
+
+    ! Ensure fdStep is large enough for the requested FD order
+    if (cfg%confinement == 1 .and. cfg%fdStep < cfg%FDorder + 1) then
+      print *, 'Error: fdStep must be >= FDorder + 1 for QW simulations'
+      print *, '  fdStep=', cfg%fdStep, ' FDorder=', cfg%FDorder
+      print *, '  (FDorder requires at least ', cfg%FDorder+1, ' grid points)'
       stop 1
     end if
 
@@ -76,7 +118,11 @@ contains
     end if
 
     if (cfg%confinement == 0 .and. cfg%numLayers == 1) then
-      read(data_unit, *) label, cfg%materialN(1)
+      read(data_unit, *, iostat=status) label, cfg%materialN(1)
+      if (status /= 0) then
+        print *, 'Error: Failed to read material name from input.cfg'
+        stop 1
+      end if
       print *, trim(label), cfg%materialN(1)
       cfg%materialN(1) = trim(cfg%materialN(1))
       cfg%confDir = 'n'
@@ -90,7 +136,11 @@ contains
       allocate(cfg%intEndPos(cfg%numLayers))
 
       do i = 1, cfg%numLayers, 1
-        read(data_unit, *) label, cfg%materialN(i), cfg%startPos(i), cfg%endPos(i)
+        read(data_unit, *, iostat=status) label, cfg%materialN(i), cfg%startPos(i), cfg%endPos(i)
+        if (status /= 0) then
+          print *, 'Error: Failed to read layer', i, 'material/positions from input.cfg'
+          stop 1
+        end if
         print *, trim(label), trim(cfg%materialN(i)), cfg%startPos(i), cfg%endPos(i)
       end do
 
@@ -110,16 +160,32 @@ contains
 
     end if
 
-    read(data_unit, *) label, cfg%numcb
+    read(data_unit, *, iostat=status) label, cfg%numcb
+    if (status /= 0) then
+      print *, 'Error: Failed to read numcb from input.cfg'
+      stop 1
+    end if
     print *, trim(label), cfg%numcb
-    read(data_unit, *) label, cfg%numvb
+    read(data_unit, *, iostat=status) label, cfg%numvb
+    if (status /= 0) then
+      print *, 'Error: Failed to read numvb from input.cfg'
+      stop 1
+    end if
     print *, trim(label), cfg%numvb
     cfg%evnum = cfg%numcb + cfg%numvb
 
-    read(data_unit, *) label, cfg%ExternalField, cfg%EFtype
+    read(data_unit, *, iostat=status) label, cfg%ExternalField, cfg%EFtype
+    if (status /= 0) then
+      print *, 'Error: Failed to read ExternalField from input.cfg'
+      stop 1
+    end if
     print *, trim(label), cfg%ExternalField, cfg%EFtype
     if (cfg%EFtype == "EF") then
-      read(data_unit, *) label, cfg%Evalue
+      read(data_unit, *, iostat=status) label, cfg%Evalue
+      if (status /= 0) then
+        print *, 'Error: Failed to read Evalue from input.cfg'
+        stop 1
+      end if
       print *, trim(label), cfg%Evalue
     else
       stop "Type of external field not implemented"
@@ -138,6 +204,14 @@ contains
       call confinementInitialization(cfg%z, cfg%intStartPos, cfg%intEndPos, &
         & cfg%materialN, cfg%numLayers, cfg%params, cfg%confDir, profile, kpterms, &
         & cfg%FDorder)
+      ! Guard: electric field requires z(1) /= 0
+      if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
+        if (abs(cfg%z(1)) < tolerance) then
+          print *, 'Error: Electric field requires z(1) /= 0.'
+          print *, '  Adjust startPos/endPos so grid does not start at z=0.'
+          stop 1
+        end if
+      end if
       if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
         call externalFieldSetup_electricField(profile, cfg%Evalue, cfg%totalSize, cfg%z)
       end if

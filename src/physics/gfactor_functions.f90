@@ -16,9 +16,14 @@ subroutine set_perturbation_direction(d, smallk)
   smallk%kx = 0
   smallk%ky = 0
   smallk%kz = 0
-  if (d == 1) smallk%kx = 1
-  if (d == 2) smallk%ky = 1
-  if (d == 3) smallk%kz = 1
+  select case(d)
+  case(1); smallk%kx = 1
+  case(2); smallk%ky = 1
+  case(3); smallk%kz = 1
+  case default
+    print *, 'Error: perturbation direction must be 1, 2, or 3, got:', d
+    stop 1
+  end select
 end subroutine set_perturbation_direction
 
 subroutine compute_pele(Pele, direction, state_a, state_b, nlayers, params, &
@@ -106,6 +111,10 @@ complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, d
   aux_v = 0
   aux1_v = 0
 
+  if (abs(dz) < tolerance) then
+    print *, 'Error: sigmaElem called with dz=0. Grid spacing is zero.'
+    stop 1
+  end if
 
   if (nlayers > 1) then
 
@@ -202,7 +211,7 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
   if (nlayers == 1) then
     call ZB8bandBulk(hkp,smallk(1),params(1),g='g')
   end if
-  if (nlayers == 2 .and. .not. present(HT_csr) .and. .not. present(hkp_out)) then
+  if (nlayers > 1 .and. .not. present(HT_csr) .and. .not. present(hkp_out)) then
     call ZB8bandQW(hkp, smallk(1), profile, kpterms,g='g')
   end if
 
@@ -217,6 +226,11 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
     descrA%TYPE =SPARSE_MATRIX_TYPE_GENERAL
 
     info = mkl_sparse_z_mv (SPARSE_OPERATION_NON_TRANSPOSE, alpha, HT_csr, descrA, state2(:), beta, Y1)
+
+    if (info /= 0) then
+      print *, 'Error: mkl_sparse_z_mv failed with info =', info
+      stop 1
+    end if
 
     Pele = zdotc(dimax,state1(:),1,Y1(:),1)
 
@@ -275,6 +289,7 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
   real(kind=dp), intent(in), optional :: dz
 
   integer :: d, init, endit !loop variables
+  integer :: skip_count
   integer :: mod1, mod2 !which matrix elements to compute
   integer :: i, j, ii, jj, n, m, l!aux loop variables
   integer :: dimax, fdStep
@@ -335,6 +350,7 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
       write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,3), j=1,2)
     end do
 
+    skip_count = 0
     do d = 1,3
       !compute sigma element, spin
       ii = 0
@@ -352,7 +368,7 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
         mod2 = 2
       end if
 
-      if (nlayers == 2 .and. sparse) then
+      if (nlayers > 1 .and. sparse) then
         if (allocated(smallk)) deallocate(smallk)
         allocate(smallk(1))
         allocate(hkp(dimax,dimax))
@@ -367,7 +383,7 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
 
       end if
 
-      if (nlayers == 2 .and. .not. sparse) then
+      if (nlayers > 1 .and. .not. sparse) then
         if (allocated(smallk)) deallocate(smallk)
         allocate(smallk(1))
         if (allocated(hkp)) deallocate(hkp)
@@ -416,6 +432,11 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
             denom = (cb_value(n) - vb_value(l)) + (cb_value(m) - vb_value(l))
             if (abs(denom) > tolerance) then
               tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
+            else
+              skip_count = skip_count + 1
+              if (skip_count <= 5) then
+                print *, 'WARNING: near-zero energy denominator, n=', n, 'm=', m, 'l=', l, 'denom=', denom
+              end if
             end if
 
           end do
@@ -452,12 +473,18 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
                 denom = (cb_value(n) - cb_value(l)) + (cb_value(m) - cb_value(l))
                 if (abs(denom) > tolerance) then
                   tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
+                else
+                  skip_count = skip_count + 1
+                  if (skip_count <= 5) then
+                    print *, 'WARNING: near-zero energy denominator, n=', n, 'm=', m, 'l=', l, 'denom=', denom
+                  end if
                 end if
 
             end do
           end do
         end do
       end if
+    if (skip_count > 0) print *, 'Total skipped contributions:', skip_count
     end do ! end main loop
   end if
 

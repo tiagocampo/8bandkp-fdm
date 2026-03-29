@@ -132,7 +132,7 @@ module finitedifferences
           vector(hf+2) = -6000./25200.
           vector(hf+3) = 1000./25200.
           vector(hf+4) = -125./25200.
-          vector(hf-5) = 8./25200.
+          vector(hf+5) = 8.0_dp/25200.0_dp
         endif
 
         vector = vector/d**2
