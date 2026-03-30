@@ -104,9 +104,9 @@ For a 100 AA GaAs/AlAs QW:
 
 | Quantity | This work | Literature | Reference |
 |----------|-----------|------------|-----------|
-| CB1 energy | 1.774 eV | ~1.78 eV | Bastard, PRB 24, 4714 (1981) |
-| CB subband spacing | 8.8 meV | ~9 meV | Bastard (1981) |
-| SC convergence | 19 iter | ~15-25 iter | Birner, IEEE Trans. Nanotechnol. (2006) |
+| CB1 energy | 1.772 eV | ~1.78 eV | Bastard, PRB 24, 4714 (1981) |
+| CB subband spacing | 9.29 meV | ~9 meV | Bastard (1981) |
+| SC convergence | 8 iter | ~8-20 iter | Birner, IEEE Trans. Nanotechnol. (2006) |
 
 The GaAs/AlAs conduction band offset is ~1.0 eV (65/35 rule from Adachi 1985).
 With a 100 AA well, the ground state confinement energy above the well bottom is
@@ -204,7 +204,7 @@ to accommodate the transferred charge. Key physical signatures:
 
 1. Fermi level above CB1 confirms electron accumulation in the well
 2. SC potential is symmetric (barrier doping on both sides)
-3. CB subband spacing (7.27 meV) is reduced relative to undoped case (8.82 meV)
+3. CB subband spacing (7.27 meV) is reduced relative to undoped case (9.29 meV)
    due to self-consistent band bending
 
 ### nextnano/Snider Benchmark (Reference Comparison)
