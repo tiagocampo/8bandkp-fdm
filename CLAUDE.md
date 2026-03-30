@@ -68,7 +68,7 @@ src/
   core/       defs.f90, parameters.f90, utils.f90
   math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90
   io/         outputFunctions.f90, input_parser.f90
-  physics/    hamiltonianConstructor.f90, gfactor_functions.f90, poisson.f90, charge_density.f90, sc_loop.f90, poisson.f90, charge_density.f90, sc_loop.f90
+  physics/    hamiltonianConstructor.f90, gfactor_functions.f90, poisson.f90, charge_density.f90, sc_loop.f90
   apps/       main.f90, main_gfactor.f90
 tests/
   unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_poisson, test_charge_density, test_sc_loop)

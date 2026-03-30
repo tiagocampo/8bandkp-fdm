@@ -29,7 +29,7 @@ if [ ! -f "$WORKDIR/output/eigenvalues.dat" ]; then
 fi
 
 # Check that SC loop actually converged
-if ! grep -q "converged" test_output.log; then
+if ! grep -q "SC loop converged" test_output.log; then
     echo "FAIL: SC loop did not converge"
     cat test_output.log
     exit 1

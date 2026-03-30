@@ -79,6 +79,7 @@ contains
     ! Local variables
     real(kind=dp) :: dz_val, kpar_max_val
     integer :: iz, nz
+    logical :: sc_converged
     type(wavevector) :: wv
 
     nz = cfg%fdStep
@@ -126,6 +127,7 @@ contains
     ! Initialize potential
     phi_old = 0.0_dp
     phi_new = 0.0_dp
+    sc_converged = .false.
 
     ! Fermi level
     if (cfg%sc%fermi_mode == 1) then
@@ -236,7 +238,7 @@ contains
       call update_diis_history(phi_history, res_history, &
         & phi_old, phi_poisson, nz, cfg%sc%diis_history, iter)
 
-      ! Step 7: Check convergence
+      ! Step 7: Check convergence (phi in Volts; tolerance in eV; V == eV for electron potential
       delta_phi = maxval(abs(phi_new - phi_old))
 
       print '(A, I4, A, ES12.4, A, F10.4, A, ES12.4)', &
@@ -246,6 +248,7 @@ contains
       if (delta_phi < cfg%sc%tolerance) then
         print *, '=== SC loop converged at iteration', iter, '==='
         phi_old = phi_new
+        sc_converged = .true.
         exit
       end if
 
@@ -253,7 +256,7 @@ contains
 
     end do
 
-    if (iter > niter) then
+    if (.not. sc_converged) then
       print *, 'Warning: SC loop did not converge after', niter, 'iterations'
       print *, '  Final |dPhi|:', delta_phi
     end if

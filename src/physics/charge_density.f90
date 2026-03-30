@@ -229,8 +229,8 @@ contains
           ! CB subbands
           n_electron = n_electron + prefactor * occ * shell_vol
         else
-          ! VB subbands
-          n_hole = n_hole + prefactor * occ * shell_vol
+          ! VB subbands: holes = absence of electrons, so (1 - f)
+          n_hole = n_hole + prefactor * (1.0_dp - occ) * shell_vol
         end if
       end do
     end do
