@@ -48,7 +48,13 @@ contains
     real(kind=dp) :: eps_plus, eps_minus
     integer :: i
 
+    if (N < 3) then
+      phi = 0.0_dp
+      return
+    end if
+
     allocate(a(N), b(N), c(N), rhs(N))
+    a = 0.0_dp; b = 0.0_dp; c = 0.0_dp; rhs = 0.0_dp
 
     ! --- Interior points (i = 2 .. N-1) ---
     do i = 2, N - 1
