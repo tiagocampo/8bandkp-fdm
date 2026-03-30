@@ -9,6 +9,7 @@ set(COMMON_SOURCES
     io/outputFunctions.f90
     io/input_parser.f90
     physics/hamiltonianConstructor.f90
+    physics/poisson.f90
 )
 
 # Create library of common code
@@ -37,6 +38,7 @@ set_source_files_properties(
     io/outputFunctions.f90
     io/input_parser.f90
     physics/hamiltonianConstructor.f90
+    physics/poisson.f90
     physics/gfactor_functions.f90
     apps/main.f90
     apps/main_gfactor.f90
