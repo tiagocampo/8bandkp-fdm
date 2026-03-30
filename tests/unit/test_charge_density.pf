@@ -117,9 +117,9 @@ contains
     ! which is very close to 1.
 
     ! Let's just verify positivity and reasonable magnitude.
-    ! Expected: ~ 1/(2*pi) * 1e21 ~ 1.59e20 cm^-3
-    @assertTrue(n_electron(1) > 1.0e19_dp, message="Electron density has reasonable magnitude")
-    @assertTrue(n_electron(1) < 1.0e21_dp, message="Electron density not too large")
+    ! Expected: ~ 1/(2*pi) * 1e24 ~ 1.59e23 cm^-3 (conversion from 1/AA^3)
+    @assertTrue(n_electron(1) > 1.0e22_dp, message="Electron density has reasonable magnitude")
+    @assertTrue(n_electron(1) < 1.0e24_dp, message="Electron density not too large")
   end subroutine test_eight_component_sum
 
 

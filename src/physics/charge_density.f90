@@ -170,7 +170,7 @@ contains
       do iz = 1, N
         do idx = 1, nk
           k_par = kpar_grid(idx)
-          occ = fermi_dirac(eigenvalues_kpar(s, idx), fermi_level, temperature)
+          occ = 1.0_dp - fermi_dirac(eigenvalues_kpar(s, idx), fermi_level, temperature)
           integrand(idx) = cmplx(psi2_z(iz, idx) * occ * k_par / (2.0_dp * pi_dp), &
             & 0.0_dp, kind=dp)
         end do
@@ -178,9 +178,9 @@ contains
       end do
     end do
 
-    ! --- Convert 1/nm^3 to cm^-3 ---
-    n_electron = n_electron * 1.0e21_dp
-    n_hole = n_hole * 1.0e21_dp
+    ! --- Convert 1/AA^3 to cm^-3 ---
+    n_electron = n_electron * 1.0e24_dp
+    n_hole = n_hole * 1.0e24_dp
 
     deallocate(psi2_z, integrand, sorted_evals, sort_idx)
 
@@ -235,9 +235,9 @@ contains
       end do
     end do
 
-    ! Convert 1/nm^3 to cm^-3
-    n_electron = n_electron * 1.0e21_dp
-    n_hole = n_hole * 1.0e21_dp
+    ! Convert 1/AA^3 to cm^-3
+    n_electron = n_electron * 1.0e24_dp
+    n_hole = n_hole * 1.0e24_dp
 
   end subroutine compute_charge_density_bulk
 
