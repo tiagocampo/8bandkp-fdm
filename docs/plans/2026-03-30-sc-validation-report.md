@@ -123,20 +123,80 @@ E1 = 3.81 * pi^2 / (2 * 0.067 * 0.511e6 / (2.998e10)^2 * 100^2)
 This is consistent with our CB1 = 1.77 eV being ~0.49 eV above the GaAs CB edge,
 plus the band offset contribution.
 
-## Test System 2: Validation Against nextnano Benchmark
+## Test System 2: nextnano/Snider Modulation-Doped GaAs/AlGaAs QW
 
 The nextnano software (Birner et al., 2006) provides a well-documented benchmark
-for a GaAs/AlGaAs modulation-doped quantum well:
+for a GaAs/AlGaAs modulation-doped quantum well, originally from Snider's 1D
+Poisson code and independently verified by nextnano and Aestimo.
 
-**System**: 5 nm GaAs QW, Al_0.3Ga_0.7As barriers, delta-doped at 20 nm
+**Reference**: Tan, Snider, Chang, Hu, JAP 68, 4071 (1990);
+nextnano tutorial: nextnano.com/nextnano3/tutorial/1Dtutorial_SchroedingerPoisson.htm;
+Hebal et al., Comput. Mater. Sci. 186, 110015 (2021).
 
-**nextnano results** (from documentation):
-- E1 = -3.0 meV (CB ground state relative to reference)
-- E2 = 44.0 meV
-- Sheet electron density: 0.664 x 10^12 cm^-2
+**Layer structure** (from surface to substrate):
 
-Our implementation reproduces the correct order of magnitude for these quantities
-with comparable material parameters.
+| Layer | Material | Width | Doping |
+|-------|----------|-------|--------|
+| Surface | Schottky barrier 0.6 V | - | - |
+| 1 | GaAs | 15 nm | n-type, 1e18 cm^-3 |
+| 2 | Al0.3Ga0.7As | 20 nm | n-type, 1e18 cm^-3 |
+| 3 | Al0.3Ga0.7As | 5 nm | undoped (spacer) |
+| 4 | GaAs | 15 nm | undoped (quantum well) |
+| 5 | Al0.3Ga0.7As | 50 nm | undoped |
+| 6 | Al0.3Ga0.7As | 250 nm | p-type, 1e17 cm^-3 |
+
+**Published results** (single-band effective mass, 3 independent codes):
+
+| Quantity | nextnano | Snider | Aestimo |
+|----------|----------|--------|---------|
+| E1 (meV) | -3.0 | -1.3 | -0.1 |
+| E2 (meV) | 43.5 | 44.0 | 43.6 |
+| E3 (meV) | 117.5 | 117.8 | 117.1 |
+| n_2D (cm^-2, QW) | 0.664e12 | 0.636e12 | ~0.65e12 |
+| p_2D (cm^-2, right) | 1.033e12 | 1.085e12 | - |
+
+The ~1-2 meV differences arise from grid spacing and interface treatment.
+For 8-band k.p, expect ~5-10 meV shifts due to non-parabolicity and
+valence-band mixing. The total charge density should be comparable within ~20%.
+
+## Test System 3: QCSE in GaAs/AlGaAs Undoped QW (Harrison Benchmark)
+
+**Reference**: Harrison and Valavanis, "Quantum Wells, Wires and Dots," 4th ed.,
+Wiley (2016), Section 3.12;
+Miller et al., Phys. Rev. B 32, 1043 (1985);
+nextnano QCSE tutorial.
+
+**Structure**: 20 nm Al0.2Ga0.8As / 6 nm GaAs / 20 nm Al0.2Ga0.8As
+
+**Published results** (single-band, no SC):
+
+| Field | E1 (meV) nextnano | E1 (meV) Harrison |
+|-------|-------------------|-------------------|
+| 0 kV/cm | 53.287 | 53.260 |
+| -70 kV/cm | 51.497 | 51.472 |
+
+**Stark shift**: Delta_E1 = -1.79 meV at -70 kV/cm, consistent with
+perturbation theory: Delta_E1 ~ -alpha * F^2 with alpha ~ 3.6e-5 meV/(kV/cm)^2.
+
+This benchmark validates the external electric field implementation without
+requiring self-consistency (undoped, no mobile charge).
+
+## Test System 4: Bulk n-type GaAs (Carrier Statistics)
+
+**Reference**: Sze, "Physics of Semiconductor Devices," 3rd ed. (2007);
+nextnano doped semiconductor tutorial.
+
+**System**: Bulk n-type GaAs, uniform ND = 1e17 cm^-3.
+
+**Material parameters**:
+- Eg = 1.424 eV (300 K), me = 0.067 m0
+- Nc = 4.45e17 cm^-3, NV = 7.72e17 cm^-3
+- ni = 1.84e6 cm^-3
+
+**Expected Fermi level at 300 K** (full ionization, non-degenerate):
+EC - EF = kT * ln(Nc/ND) = 0.02585 * ln(4.45e17/1e17) = 38.6 meV below EC
+
+This validates the Fermi level finder and charge neutrality loop in bulk mode.
 
 ## Electric Field Verification
 
@@ -193,34 +253,55 @@ the band gap.
    "A self-consistent solution of Schrodinger-Poisson equations
    using a nonuniform mesh",
    J. Appl. Phys. **68**, 4071 (1990).
+   DOI: 10.1063/1.346245
 
 2. S. Birner, T. Zibold, T. Andlauer, T. Kubis, M. Sabathil,
    A. Trellakis, P. Vogl,
    "nextnano: General Purpose 3-D Simulations",
    IEEE Trans. Electron Devices **54**, 2137 (2007).
 
-3. P. Vogl, private communication (nextnano software documentation).
+3. S. Birner et al.,
+   "Modeling of semiconductor nanostructures with nextnano3,"
+   Acta Physica Polonica A **110**, 111 (2006).
 
 4. I. Vurgaftman, J. R. Meyer, L. R. Ram-Mohan,
    "Band parameters for III-V compound semiconductors and their alloys",
-   J. Appl. Phys. **89**, 5815 (2001).
+   J. Appl. Phys. **89**, 5815 (2001). DOI: 10.1063/1.1368156
 
 5. P. Pulay,
    "Convergence acceleration of iterative sequences. The case of SCF iteration",
    Chem. Phys. Lett. **73**, 393 (1980).
 
-6. O. A. von Lilienfeld, R. Ramakrishnan, M. E. Tuckerman,
-   "Molecular dynamics based enhanced sampling",
-   arXiv:2104.04384 (2021) - DIIS review.
-
-7. G. Bastard,
+6. G. Bastard,
    "Superlattice band structure in the envelope-function approximation",
    Phys. Rev. B **24**, 4714 (1981).
 
-8. S. Adachi,
+7. S. Adachi,
    "GaAs, AlAs, and Al_xGa_{1-x}As: Material parameters for use
    in research and device applications",
    J. Appl. Phys. **58**, R1 (1985).
+
+8. P. Harrison and A. Valavanis,
+   "Quantum Wells, Wires and Dots," 4th ed., Wiley (2016).
+   Chapter 3, Section 3.12 (QCSE).
+
+9. D.A.B. Miller et al.,
+   "Electric field dependence of optical absorption near the band gap
+   of quantum well structures,"
+   Phys. Rev. B **32**, 1043 (1985). DOI: 10.1103/PhysRevB.32.1043
+
+10. C. Sirtori, F. Capasso, J. Faist, S. Scandolo,
+    "Nonparabolicity and a sum rule associated with bound-to-bound and
+    bound-to-continuum intersubband transitions in quantum wells,"
+    Phys. Rev. B **50**, 8663 (1994). DOI: 10.1103/PhysRevB.50.8663
+
+11. H. Hebal et al.,
+    "Aestimo 1D: A simulator for 1D semiconductor heterostructures,"
+    Comput. Mater. Sci. **186**, 110015 (2021).
+    DOI: 10.1016/j.commatsci.2020.110015
+
+12. S. M. Sze and K. K. Ng,
+    "Physics of Semiconductor Devices," 3rd ed., Wiley (2007).
 
 ## Conclusions
 
