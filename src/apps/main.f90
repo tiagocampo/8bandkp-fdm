@@ -7,6 +7,7 @@ program kpfdm
   use OMP_lib
   use outputFunctions
   use input_parser
+  use sc_loop
 
   implicit none
 
@@ -139,6 +140,22 @@ program kpfdm
     close(iounit)
   end if
 
+  ! --- Self-consistent loop (QW only) ---
+  if (cfg%confDir == 'z' .and. cfg%sc%enabled == 1) then
+    print *, ''
+    print *, '=== Running self-consistent Schrodinger-Poisson loop ==='
+    call self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv, &
+      & smallk, N, il, iuu)
+
+    ! Write updated profile after SC convergence
+    call get_unit(iounit)
+    open(unit=iounit, file='output/sc_potential_profile.dat', status="replace", action="write")
+    do i = 1, cfg%fdStep, 1
+      write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
+    end do
+    close(iounit)
+    print *, 'SC potential profile written to output/sc_potential_profile.dat'
+  end if
 
   do k = 1, cfg%waveVectorStep, 1
 
