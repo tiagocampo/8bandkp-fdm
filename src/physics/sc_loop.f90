@@ -357,7 +357,7 @@ contains
 
 
   ! ------------------------------------------------------------------
-  ! Update DIIS circular buffer
+  ! Update DIIS circular buffer, maintaining temporal order (oldest=1)
   ! ------------------------------------------------------------------
   subroutine update_diis_history(phi_history, res_history, &
       & phi_input, phi_poisson, N, diis_len, iter)
@@ -367,11 +367,23 @@ contains
     real(kind=dp), intent(inout) :: res_history(N, diis_len)
     real(kind=dp), intent(in) :: phi_input(N), phi_poisson(N)
 
-    integer :: idx
+    integer :: m, j
 
-    idx = mod(iter - 1, diis_len) + 1
-    phi_history(:, idx) = phi_input
-    res_history(:, idx) = phi_poisson - phi_input
+    m = min(iter, diis_len)
+
+    if (iter <= diis_len) then
+      ! Buffer not yet full: append at next slot
+      phi_history(:, iter) = phi_input
+      res_history(:, iter) = phi_poisson - phi_input
+    else
+      ! Buffer full: shift left (discard oldest), append at end
+      do j = 1, diis_len - 1
+        phi_history(:, j) = phi_history(:, j + 1)
+        res_history(:, j) = res_history(:, j + 1)
+      end do
+      phi_history(:, diis_len) = phi_input
+      res_history(:, diis_len) = phi_poisson - phi_input
+    end if
 
   end subroutine update_diis_history
 

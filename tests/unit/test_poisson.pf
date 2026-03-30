@@ -148,4 +148,49 @@ contains
 
   end subroutine test_thomas_algorithm
 
+  @test
+  subroutine test_invalid_bc_type()
+    ! Unknown bc_type should return phi = 0 without crashing
+
+    integer, parameter :: N = 11
+    real(kind=dp) :: phi(N), rho(N), epsilon(N)
+    real(kind=dp) :: max_val
+    integer :: i
+
+    rho = 1.0_dp
+    epsilon = 1.0_dp
+
+    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 0.0_dp, 0.0_dp, 'XX')
+
+    max_val = 0.0_dp
+    do i = 1, N
+      max_val = max(max_val, abs(phi(i)))
+    end do
+
+    @assertTrue(max_val == 0.0_dp, message="Invalid BC type returns zero potential")
+  end subroutine test_invalid_bc_type
+
+
+  @test
+  subroutine test_n_less_than_3()
+    ! N < 3 should return phi = 0 without crashing
+
+    integer, parameter :: N = 2
+    real(kind=dp) :: phi(N), rho(N), epsilon(N)
+    real(kind=dp) :: max_val
+    integer :: i
+
+    rho = 1.0_dp
+    epsilon = 1.0_dp
+
+    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 0.0_dp, 0.0_dp, 'DD')
+
+    max_val = 0.0_dp
+    do i = 1, N
+      max_val = max(max_val, abs(phi(i)))
+    end do
+
+    @assertTrue(max_val == 0.0_dp, message="N<3 returns zero potential")
+  end subroutine test_n_less_than_3
+
 end module test_poisson

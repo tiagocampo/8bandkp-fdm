@@ -219,4 +219,69 @@ contains
     deallocate(cfg%intStartPos, cfg%intEndPos, cfg%doping)
   end subroutine test_build_doping_charge
 
+
+  @test
+  subroutine test_find_fermi_level_with_doping()
+    ! Same as test_find_fermi_level_simple but with n-type doping.
+    ! Positive rho_doping means net donors (ND - NA > 0).
+    ! With donors present, Fermi level should shift toward CB (higher than
+    ! the intrinsic case where it sits between VB and CB).
+
+    integer, parameter :: N = 3
+    integer, parameter :: num_subbands = 2
+    integer, parameter :: nk = 3
+    integer, parameter :: nz = 3
+    real(kind=dp), parameter :: dz = 1.0_dp
+
+    real(kind=dp) :: eig_kpar(num_subbands, nk)
+    complex(kind=dp) :: eigv_kpar(8*N, num_subbands, nk)
+    real(kind=dp) :: kpar_grid(nk)
+    type(simulation_config) :: cfg
+    real(kind=dp) :: rho_doping(nz)
+    real(kind=dp) :: mu, mu_intrinsic
+
+    ! CB subband at E=0.5 eV, VB at E=-0.5 eV
+    eig_kpar(1, :) = -0.5_dp   ! VB
+    eig_kpar(2, :) = 0.5_dp    ! CB
+
+    ! Eigenvectors: normalized over all z-points
+    eigv_kpar = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    ! VB: band 1
+    eigv_kpar(1, 1, :) = cmplx(1.0_dp / sqrt(real(N, kind=dp)), 0.0_dp, kind=dp)
+    eigv_kpar(2, 1, :) = cmplx(1.0_dp / sqrt(real(N, kind=dp)), 0.0_dp, kind=dp)
+    eigv_kpar(3, 1, :) = cmplx(1.0_dp / sqrt(real(N, kind=dp)), 0.0_dp, kind=dp)
+    ! CB: band 7
+    eigv_kpar(6*N+1, 2, :) = cmplx(1.0_dp / sqrt(real(N, kind=dp)), 0.0_dp, kind=dp)
+    eigv_kpar(6*N+2, 2, :) = cmplx(1.0_dp / sqrt(real(N, kind=dp)), 0.0_dp, kind=dp)
+    eigv_kpar(6*N+3, 2, :) = cmplx(1.0_dp / sqrt(real(N, kind=dp)), 0.0_dp, kind=dp)
+
+    kpar_grid(1) = 0.0_dp
+    kpar_grid(2) = 0.1_dp
+    kpar_grid(3) = 0.2_dp
+
+    cfg%fdStep = N
+    cfg%dz = dz
+    cfg%numcb = 1
+    cfg%sc%temperature = 300.0_dp
+    cfg%sc%fermi_mode = 0
+
+    ! First: intrinsic (no doping) to get baseline
+    rho_doping = 0.0_dp
+
+    mu_intrinsic = find_fermi_level(eig_kpar, eigv_kpar, kpar_grid, &
+      & cfg, 8*N, num_subbands, nk, nz, dz, rho_doping)
+
+    ! Now: with n-type doping (donors push Fermi toward CB)
+    rho_doping = 1.0e18_dp  ! ND - NA > 0 everywhere
+
+    mu = find_fermi_level(eig_kpar, eigv_kpar, kpar_grid, &
+      & cfg, 8*N, num_subbands, nk, nz, dz, rho_doping)
+
+    ! With donors, Fermi level should be higher than intrinsic
+    @assertTrue(mu > mu_intrinsic, message="Doped Fermi above intrinsic Fermi")
+    ! Fermi should still be in gap
+    @assertTrue(mu > -0.5_dp, message="Fermi above VB top")
+    @assertTrue(mu < 0.5_dp, message="Fermi below CB bottom")
+  end subroutine test_find_fermi_level_with_doping
+
 end module test_sc_loop

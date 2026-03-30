@@ -152,6 +152,14 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# Stark shift verification (compares reference eigenvalues, no simulation)
+add_test(
+    NAME regression_stark_shift
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_stark_shift.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_qcse_gaas_algaas/eigenvalues.dat
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_qcse_gaas_algaas_ef/eigenvalues.dat
+)
+
 # Modulation-doped AlAs/GaAs/AlAs QW self-consistent (charge neutrality mode)
 add_test(
     NAME regression_sc_mod_doped_gaas_algaas
