@@ -108,3 +108,19 @@ set_tests_properties(
     regression_gfactor_cb regression_bulk_inas
     PROPERTIES LABELS "regression"
 )
+
+# SC GaAs/AlAs QW self-consistent calculation
+add_test(
+    NAME regression_sc_gaas_alas_qw
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_sc_loop.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/sc_gaas_alas_qw.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_gaas_alas_qw
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_sc_gaas_alas_qw
+    PROPERTIES LABELS "regression"
+)
