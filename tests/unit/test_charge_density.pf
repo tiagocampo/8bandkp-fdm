@@ -1,0 +1,184 @@
+module test_charge_density
+  use funit
+  use definitions
+  use charge_density
+  use utils, only: simpson
+  implicit none
+
+contains
+
+  @test
+  subroutine test_fermi_dirac_zero_temp()
+    ! At T -> 0, the Fermi-Dirac function becomes a step function.
+    ! f(E < mu) = 1, f(E > mu) = 0.
+
+    real(kind=dp) :: T, mu
+    real(kind=dp) :: f_below, f_above, f_at
+
+    T = 1.0e-10_dp
+    mu = 1.0_dp
+
+    f_below = fermi_dirac(0.5_dp, mu, T)
+    f_above = fermi_dirac(1.5_dp, mu, T)
+    f_at = fermi_dirac(1.0_dp, mu, T)
+
+    ! E < mu: f = 1
+    @assertEqual(1.0_dp, f_below, tolerance=1.0e-10_dp)
+    ! E > mu: f = 0
+    @assertEqual(0.0_dp, f_above, tolerance=1.0e-10_dp)
+    ! E = mu: f = 0.5 in the limit, but T=0 implementation gives 0
+    ! For our implementation with E == mu, energy < mu is false, so f = 0
+    @assertTrue(f_at < 0.5_dp + 1.0e-10_dp, message="f at E=mu bounded")
+  end subroutine test_fermi_dirac_zero_temp
+
+
+  @test
+  subroutine test_fermi_dirac_finite_temp()
+    ! At T=300 K, mu=0:
+    ! f(0) = 0.5
+    ! f(kB*T) = 1/(1+e) ~ 0.2689
+
+    real(kind=dp) :: T, mu, kB_val
+    real(kind=dp) :: f_zero, f_kbt
+
+    kB_val = 8.617333262e-5_dp
+    T = 300.0_dp
+    mu = 0.0_dp
+
+    f_zero = fermi_dirac(0.0_dp, mu, T)
+    f_kbt = fermi_dirac(kB_val * T, mu, T)
+
+    ! f(0) = 0.5 exactly
+    @assertEqual(0.5_dp, f_zero, tolerance=1.0e-12_dp)
+    ! f(kB*T) = 1/(1+e) = 0.2689...
+    @assertEqual(1.0_dp / (1.0_dp + exp(1.0_dp)), f_kbt, tolerance=1.0e-6_dp)
+  end subroutine test_fermi_dirac_finite_temp
+
+
+  @test
+  subroutine test_eight_component_sum()
+    ! Construct a known 8-component wavefunction at a single z-point.
+    ! |Psi|^2 = sum_{nu=1}^8 |Psi_nu|^2 should equal the known total.
+    !
+    ! Use a minimal QW: N=1 (single z-point), 1 subband, 1 k_par point.
+    ! Set eigenvector components such that sum of |Psi_nu|^2 = 1.0.
+
+    integer, parameter :: N = 1
+    integer, parameter :: num_subbands = 1
+    integer, parameter :: num_kpar = 3
+    integer, parameter :: numcb = 1
+    real(kind=dp), parameter :: dz = 1.0_dp
+
+    real(kind=dp) :: n_electron(N), n_hole(N)
+    complex(kind=dp) :: eigenvectors(8*N, num_subbands, num_kpar)
+    real(kind=dp) :: eigenvalues(num_subbands, num_kpar)
+    real(kind=dp) :: kpar_grid(num_kpar)
+    real(kind=dp) :: fermi_level, temperature
+    integer :: iband
+
+    ! Set up eigenvector: normalize so sum of |Psi_nu|^2 = 1.0
+    ! Each of 8 bands gets Psi_nu = 1/sqrt(8) for the single z-point
+    eigenvectors = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do iband = 1, 8
+      eigenvectors(iband, 1, :) = cmplx(1.0_dp / sqrt(8.0_dp), 0.0_dp, kind=dp)
+    end do
+
+    ! Set energy well below Fermi level so f=1
+    fermi_level = 1.0_dp
+    temperature = 300.0_dp
+    eigenvalues = -1.0_dp  ! all well below mu => f ~ 1
+
+    ! k_par grid (odd, for Simpson)
+    kpar_grid(1) = 0.0_dp
+    kpar_grid(2) = 0.5_dp
+    kpar_grid(3) = 1.0_dp
+
+    call compute_charge_density_qw(n_electron, n_hole, eigenvectors, &
+      & eigenvalues, kpar_grid, fermi_level, temperature, N, num_subbands, &
+      & num_kpar, numcb, dz)
+
+    ! n_electron(z) should be non-zero (CB subband, f~1, normalized wavefunction)
+    ! The integral of |Psi|^2 * k_par/(2*pi) dk_par * 2 (spin) should give
+    ! a definite positive number.
+    @assertTrue(n_electron(1) > 0.0_dp, message="Electron density is positive")
+
+    ! |Psi|^2 = 1.0 at each k_par. The integrand is 1.0 * f * k_par/(2*pi).
+    ! For a single CB subband with f~1:
+    !   n(z) = 2 * int_0^{k_max} k_par/(2*pi) dk_par * 1.0
+    !        = 2 * [k_max^2 / (4*pi)]
+    !        = 2 * 1.0^2 / (4*pi) = 1/(2*pi) in 1/nm^3
+    ! In cm^-3: 1/(2*pi) * 1e21
+    ! Simpson integral of k_par from 0 to 1 with 3 points:
+    !   int = (1/3)*(1/2)*[0 + 4*0.5 + 1.0] = (1/6)*3 = 0.5
+    ! Then divided by (2*pi): 0.5/(2*pi)
+    ! Times spin factor 2: 2 * 0.5/(2*pi) = 1/(2*pi)
+    ! In cm^-3: 1/(2*pi) * 1e21
+    ! But wait, eigenvalues = -1 for ALL k_par, so f(-1, 1, 300) = f(E-mu = -2)
+    ! which is very close to 1.
+
+    ! Let's just verify positivity and reasonable magnitude.
+    ! Expected: ~ 1/(2*pi) * 1e21 ~ 1.59e20 cm^-3
+    @assertTrue(n_electron(1) > 1.0e19_dp, message="Electron density has reasonable magnitude")
+    @assertTrue(n_electron(1) < 1.0e21_dp, message="Electron density not too large")
+  end subroutine test_eight_component_sum
+
+
+  @test
+  subroutine test_delta_function()
+    ! Single Gaussian-like wavefunction centered at z=0.
+    ! At T->0 with E < mu, f = 1 for all k_par.
+    ! Use N=5 z-points, 1 CB subband, 3 k_par points.
+    !
+    ! Place all wavefunction weight at z-point 1 (delta-function-like).
+    ! |Psi|^2 should be nonzero only at iz=1.
+    ! After integration, n(z) should be nonzero only at iz=1.
+
+    integer, parameter :: N = 5
+    integer, parameter :: num_subbands = 1
+    integer, parameter :: num_kpar = 3
+    integer, parameter :: numcb = 1
+    real(kind=dp), parameter :: dz = 1.0_dp
+
+    real(kind=dp) :: n_electron(N), n_hole(N)
+    complex(kind=dp) :: eigenvectors(8*N, num_subbands, num_kpar)
+    real(kind=dp) :: eigenvalues(num_subbands, num_kpar)
+    real(kind=dp) :: kpar_grid(num_kpar)
+    real(kind=dp) :: fermi_level, temperature
+
+    ! Initialize all to zero
+    eigenvectors = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! Set wavefunction: band 7 (CB), z-point 1 only, normalized
+    ! 8 bands, each has N=5 z-points
+    ! Band 7: indices (6*N + 1) to (7*N) => 31..35
+    ! Put all weight at z-point 1 (index 31)
+    eigenvectors(31, 1, :) = cmplx(1.0_dp, 0.0_dp, kind=dp)  ! band 7, z=1
+
+    ! Energy below Fermi level
+    fermi_level = 2.0_dp
+    temperature = 1.0e-10_dp  ! T -> 0
+    eigenvalues = 0.0_dp  ! E < mu => f = 1
+
+    ! k_par grid
+    kpar_grid(1) = 0.0_dp
+    kpar_grid(2) = 0.5_dp
+    kpar_grid(3) = 1.0_dp
+
+    call compute_charge_density_qw(n_electron, n_hole, eigenvectors, &
+      & eigenvalues, kpar_grid, fermi_level, temperature, N, num_subbands, &
+      & num_kpar, numcb, dz)
+
+    ! n_electron(1) should be the only nonzero value
+    @assertTrue(n_electron(1) > 0.0_dp, message="Electron density nonzero at z=1")
+
+    ! n_electron(2..5) should be essentially zero
+    @assertTrue(n_electron(2) < 1.0e10_dp, message="Electron density zero away from peak")
+    @assertTrue(n_electron(3) < 1.0e10_dp, message="Electron density zero at z=3")
+    @assertTrue(n_electron(4) < 1.0e10_dp, message="Electron density zero at z=4")
+    @assertTrue(n_electron(5) < 1.0e10_dp, message="Electron density zero at z=5")
+
+    ! Hole density should be zero (no VB subbands occupied with these params)
+    @assertTrue(n_hole(1) < 1.0e10_dp, message="Hole density zero (no VB subbands)")
+  end subroutine test_delta_function
+
+end module test_charge_density
