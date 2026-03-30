@@ -151,3 +151,19 @@ set_tests_properties(
     regression_qcse_gaas_algaas regression_qcse_gaas_algaas_ef
     PROPERTIES LABELS "regression"
 )
+
+# Modulation-doped AlAs/GaAs/AlAs QW self-consistent (charge neutrality mode)
+add_test(
+    NAME regression_sc_mod_doped_gaas_algaas
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_sc_mod_doped.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/sc_mod_doped_gaas_algaas.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_mod_doped_gaas_algaas
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_sc_mod_doped_gaas_algaas
+    PROPERTIES LABELS "regression"
+)

@@ -219,7 +219,8 @@ contains
         rho(iz) = e * (n_hole(iz) - n_electron(iz) + rho_doping(iz)) / 1.0e21_dp
       end do
 
-      call solve_poisson(phi_poisson, rho, epsilon, dz_val, nz, &
+      ! Convert dz from Angstrom to nm for Poisson solver (rho in C/nm^3, e0 in C/(V*nm))
+      call solve_poisson(phi_poisson, rho, epsilon, dz_val * 0.1_dp, nz, &
         & cfg%sc%bc_left, cfg%sc%bc_right, cfg%sc%bc_type)
 
       ! Step 6: Mix potential
