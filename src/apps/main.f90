@@ -19,7 +19,7 @@ program kpfdm
   type(wavevector), allocatable, dimension(:) :: smallk
 
   ! iteration consts
-  integer :: i, k, ii, jj, lin, col
+  integer :: i, k, ii, jj
 
   ! hamiltonian and LAPACK/BLAS
   integer :: info, ILAENV, NB, lwork, N, M, il, iuu, vl, vu
@@ -74,13 +74,13 @@ program kpfdm
 
   ! For quantum well, check if requested bands are within limits
   if (cfg%confDir == 'z') then
-    if (cfg%numcb > 2*cfg%fdStep) then
-      print *, "Warning: requesting more conduction bands than available. Limiting to ", 2*cfg%fdStep
-      cfg%numcb = 2*cfg%fdStep
+    if (cfg%numcb > NUM_CB_STATES*cfg%fdStep) then
+      print *, "Warning: requesting more conduction bands than available. Limiting to ", NUM_CB_STATES*cfg%fdStep
+      cfg%numcb = NUM_CB_STATES*cfg%fdStep
     end if
-    if (cfg%numvb > 6*cfg%fdStep) then
-      print *, "Warning: requesting more valence bands than available. Limiting to ", 6*cfg%fdStep
-      cfg%numvb = 6*cfg%fdStep
+    if (cfg%numvb > NUM_VB_STATES*cfg%fdStep) then
+      print *, "Warning: requesting more valence bands than available. Limiting to ", NUM_VB_STATES*cfg%fdStep
+      cfg%numvb = NUM_VB_STATES*cfg%fdStep
     end if
     cfg%evnum = cfg%numcb + cfg%numvb
   end if
@@ -93,8 +93,8 @@ program kpfdm
   else
     ! For quantum well, select the right range of states
     ! We want the highest numvb valence states and lowest numcb conduction states
-    il = 6*cfg%fdStep - cfg%numvb + 1  ! Start from highest valence band
-    iuu = 6*cfg%fdStep + cfg%numcb     ! Up to highest conduction band
+    il = NUM_VB_STATES*cfg%fdStep - cfg%numvb + 1  ! Start from highest valence band
+    iuu = NUM_VB_STATES*cfg%fdStep + cfg%numcb     ! Up to highest conduction band
     print *, "Computing states from index", il, "to", iuu
   end if
 
@@ -234,6 +234,8 @@ program kpfdm
   if (allocated(smallk)) deallocate(smallk)
   if (allocated(HT)) deallocate(HT)
   if (allocated(HTmp)) deallocate(HTmp)
+  if (allocated(eig)) deallocate(eig)
+  if (allocated(eigv)) deallocate(eigv)
   if (allocated(work)) deallocate(work)
   if (allocated(iwork)) deallocate(iwork)
   if (allocated(rwork)) deallocate(rwork)

@@ -1,0 +1,53 @@
+module test_defs
+  use funit
+  use definitions
+  implicit none
+
+contains
+
+  @test
+  subroutine test_kronij_same()
+    @assertEqual(1, kronij(3, 3))
+    @assertEqual(1, kronij(1, 1))
+    @assertEqual(1, kronij(0, 0))
+  end subroutine test_kronij_same
+
+  @test
+  subroutine test_kronij_different()
+    @assertEqual(0, kronij(1, 2))
+    @assertEqual(0, kronij(3, 1))
+    @assertEqual(0, kronij(-1, 1))
+  end subroutine test_kronij_different
+
+  @test
+  subroutine test_pi_constant()
+    real(kind=dp) :: expected_pi
+    expected_pi = acos(-1.0_dp)
+    @assertEqual(expected_pi, pi_dp, tolerance=1.0e-14_dp)
+  end subroutine test_pi_constant
+
+  @test
+  subroutine test_imaginary_unit()
+    complex(kind=dp) :: result
+    result = IU * IU
+    @assertEqual(-1.0_dp, real(result, kind=dp), tolerance=1.0e-14_dp)
+    @assertEqual(0.0_dp, aimag(result), tolerance=1.0e-14_dp)
+  end subroutine test_imaginary_unit
+
+  @test
+  subroutine test_unit_complex()
+    @assertEqual(0.0_dp, real(ZERO, kind=dp), tolerance=1.0e-14_dp)
+    @assertEqual(0.0_dp, aimag(ZERO), tolerance=1.0e-14_dp)
+    @assertEqual(1.0_dp, real(UM, kind=dp), tolerance=1.0e-14_dp)
+    @assertEqual(0.0_dp, aimag(UM), tolerance=1.0e-14_dp)
+  end subroutine test_unit_complex
+
+  @test
+  subroutine test_sqrt_constants()
+    @assertEqual(sqrt(3.0_dp), SQR3, tolerance=1.0e-14_dp)
+    @assertEqual(sqrt(2.0_dp), SQR2, tolerance=1.0e-14_dp)
+    @assertEqual(1.0_dp/SQR3, RQS3, tolerance=1.0e-14_dp)
+    @assertEqual(1.0_dp/SQR2, RQS2, tolerance=1.0e-14_dp)
+  end subroutine test_sqrt_constants
+
+end module test_defs

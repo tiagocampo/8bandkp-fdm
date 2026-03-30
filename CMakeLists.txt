@@ -1,63 +1,38 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.15)
 project(8bandkp-fdm Fortran)
 
-# Set default build type to Release
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
-endif()
+# --- Find dependencies ---
+# Intel MKL (oneAPI provides MKLConfig.cmake)
+# Defaults: LP64 interface + sequential threading (matching original Makefile)
+set(MKL_INTERFACE "lp64" CACHE STRING "MKL interface: lp64 or ilp64")
+set(MKL_THREADING "sequential" CACHE STRING "MKL threading: sequential, intel_thread, etc.")
+find_package(MKL CONFIG REQUIRED)
 
-# Enable compile commands generation
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# FFTW3
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+find_package(FFTW3 REQUIRED)
 
-# Add cmake modules path
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-
-# Build options
-option(BUILD_TESTING "Build tests" OFF)
-option(ENABLE_OPENMP "Enable OpenMP support" ON)
-option(USE_MKL "Use Intel MKL" ON)
-
-# Compiler flags
+# --- Fortran compiler flags (gfortran) ---
 if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
-    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -ffree-line-length-none -fimplicit-none -fno-second-underscore")
-    set(CMAKE_Fortran_FLAGS_DEBUG "-g -fbacktrace -fbounds-check -fcheck=all -Wall -Wextra -Wconversion -Wno-compare-reals")
-    set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -mtune=native -march=native -flto -funroll-loops -Wall -Wextra -Wconversion -Wno-compare-reals")
-elseif(CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
-    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -implicitnone")
-    set(CMAKE_Fortran_FLAGS_DEBUG "-g -traceback -check all -warn all")
-    set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -xHost -ipo -warn all")
+    set(CMAKE_Fortran_FLAGS "-ffree-line-length-none -fno-second-underscore -ffree-form -fimplicit-none -m64")
+    set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -flto -funroll-loops -mtune=native -march=native")
+    set(CMAKE_Fortran_FLAGS_DEBUG "-g -fbacktrace -fbounds-check -fcheck=all")
 endif()
 
-# OpenMP
-if(ENABLE_OPENMP)
-    find_package(OpenMP REQUIRED)
-    set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${OpenMP_Fortran_FLAGS}")
+# Default to Release build if not specified
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# MKL
-if(USE_MKL)
-    find_package(MKL REQUIRED)
-    include_directories(${MKL_INCLUDE_DIRS})
-endif()
-
-# Create build directory for modules
+# --- Centralize .mod files ---
 set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 
-# Add subdirectories
+# --- Build the project ---
 add_subdirectory(src)
 
-# Install targets
-install(TARGETS bandStructure gfactorCalculation
-        RUNTIME DESTINATION bin)
-
-# Install example files
-install(FILES bulk.example gfactor.example quantumwell.example
-        DESTINATION share/${PROJECT_NAME}/examples)
-
-# Package configuration
-include(CPack)
-set(CPACK_PACKAGE_VERSION_MAJOR "2")
-set(CPACK_PACKAGE_VERSION_MINOR "0")
-set(CPACK_PACKAGE_VERSION_PATCH "0")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "8-band k·p method implementation using finite differences")
-set(CPACK_PACKAGE_VENDOR "Your Institution") 
+# --- Testing ---
+option(BUILD_TESTING "Build tests (requires pFUnit for unit tests)" OFF)
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

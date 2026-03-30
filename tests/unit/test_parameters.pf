@@ -1,0 +1,89 @@
+module test_parameters
+  use funit
+  use definitions
+  use parameters
+  implicit none
+
+contains
+
+  @test
+  subroutine test_gaas_parameters()
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "GaAs"
+    call paramDatabase(material, 1, params)
+
+    ! Check key GaAs parameters
+    @assertEqual(0.067_dp, params(1)%meff, tolerance=1.0e-12_dp)
+    @assertEqual(1.519_dp, params(1)%Eg, tolerance=1.0e-12_dp)
+    @assertEqual(0.341_dp, params(1)%deltaSO, tolerance=1.0e-12_dp)
+    @assertEqual(6.98_dp, params(1)%gamma1, tolerance=1.0e-12_dp)
+    @assertEqual(2.06_dp, params(1)%gamma2, tolerance=1.0e-12_dp)
+    @assertEqual(2.93_dp, params(1)%gamma3, tolerance=1.0e-12_dp)
+    @assertEqual(28.8_dp, params(1)%EP, tolerance=1.0e-12_dp)
+  end subroutine test_gaas_parameters
+
+  @test
+  subroutine test_inas_parameters()
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "InAs"
+    call paramDatabase(material, 1, params)
+
+    @assertEqual(0.417_dp, params(1)%Eg, tolerance=1.0e-12_dp)
+    @assertEqual(0.39_dp, params(1)%deltaSO, tolerance=1.0e-12_dp)
+    @assertEqual(20.0_dp, params(1)%gamma1, tolerance=1.0e-12_dp)
+    @assertEqual(8.5_dp, params(1)%gamma2, tolerance=1.0e-12_dp)
+  end subroutine test_inas_parameters
+
+  @test
+  subroutine test_ec_ev_consistency()
+    ! EC should equal EV + Eg for all materials
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "GaAs"
+    call paramDatabase(material, 1, params)
+    @assertEqual(params(1)%EV + params(1)%Eg, params(1)%EC, tolerance=1.0e-8_dp)
+
+    material(1) = "InAs"
+    call paramDatabase(material, 1, params)
+    @assertEqual(params(1)%EV + params(1)%Eg, params(1)%EC, tolerance=1.0e-6_dp)
+
+    material(1) = "AlSb"
+    call paramDatabase(material, 1, params)
+    @assertEqual(params(1)%EV + params(1)%Eg, params(1)%EC, tolerance=1.0e-6_dp)
+  end subroutine test_ec_ev_consistency
+
+  @test
+  subroutine test_p_from_ep()
+    ! P = sqrt(EP * const) for all materials
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "GaAs"
+    call paramDatabase(material, 1, params)
+    @assertEqual(sqrt(params(1)%EP * const), params(1)%P, tolerance=1.0e-10_dp)
+  end subroutine test_p_from_ep
+
+  @test
+  subroutine test_multi_material()
+    type(paramStruct) :: params(3)
+    character(len=255) :: material(3)
+
+    material(1) = "AlSb"
+    material(2) = "GaSb"
+    material(3) = "InAs"
+    call paramDatabase(material, 3, params)
+
+    ! AlSb Eg = 2.386
+    @assertEqual(2.386_dp, params(1)%Eg, tolerance=1.0e-12_dp)
+    ! GaSb Eg = 0.812
+    @assertEqual(0.812_dp, params(2)%Eg, tolerance=1.0e-12_dp)
+    ! InAs Eg = 0.417
+    @assertEqual(0.417_dp, params(3)%Eg, tolerance=1.0e-12_dp)
+  end subroutine test_multi_material
+
+end module test_parameters

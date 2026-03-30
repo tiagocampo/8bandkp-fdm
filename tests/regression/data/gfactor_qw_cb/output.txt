@@ -1,0 +1,82 @@
+ waveVector:k0
+ waveVectorMax:  0.10000000000000001     
+ waveVectorStep:           0
+ confinement:           1
+ FDstep:         101
+ FDorder:           2
+ numLayers:           3
+ material1:AlSbW  -250.00000000000000        250.00000000000000     
+ material2:GaSbW  -135.00000000000000        135.00000000000000     
+ material3:InAsW  -35.000000000000000        35.000000000000000     
+ numcb:          32
+ numvb:          32
+ ExternalField:           0 EF
+ EFParams:   5.0000000000000001E-004
+ whichBand:           0
+ bandIdx:           1
+  
+ Material: AlSbW
+ Parameters
+ EP :   18.800000000000001     
+ P  :   8.4633126963860317     
+ A  :   8.3333333333333339     
+ gamma1 :   4.1500000000000004     
+ gamma2 :   1.0100000000000000     
+ gamma3 :   1.7100000000000000     
+  
+ Material: GaSbW
+ Parameters
+ EP :   22.370000000000001     
+ P  :   9.2319714890256126     
+ A  :   24.390243902439025     
+ gamma1 :   13.400000000000000     
+ gamma2 :   4.7000000000000002     
+ gamma3 :   5.7000000000000002     
+  
+ Material: InAsW
+ Parameters
+ EP :   22.199999999999999     
+ P  :   9.1968255736641069     
+ A  :   43.668122270742359     
+ gamma1 :   20.399999999999999     
+ gamma2 :   8.3000000000000007     
+ gamma3 :   9.0999999999999996     
+  
+   5.0000000000000000     
+ adjusting numcb and numvb to get all states
+ gfactor for conduction band
+ sigma
+   0.0000   -0.0000   0.9235    0.0002
+   0.9235   -0.0002  -0.0000   -0.0000
+  
+   0.0000   -0.0000   0.0002   -0.9235
+   0.0002    0.9235  -0.0000    0.0000
+  
+  -0.8486    0.0000   0.0000   -0.0000
+   0.0000    0.0000   0.8486   -0.0000
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=  -6.5225602696727947E-016
+ WARNING: near-zero energy denominator, n=           2 m=           2 l=           1 denom=   6.5225602696727947E-016
+ Total skipped contributions:           2
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=  -6.5225602696727947E-016
+ WARNING: near-zero energy denominator, n=           2 m=           2 l=           1 denom=   6.5225602696727947E-016
+ Total skipped contributions:           4
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=  -6.5225602696727947E-016
+ Total skipped contributions:           6
+ tensor
+   0.0000    0.0000   8.1136    0.0016
+   8.1136   -0.0016  -0.0000   -0.0000
+  
+   0.0000   -0.0000   0.0016   -8.1136
+   0.0016    8.1136  -0.0000   -0.0000
+  
+  -5.6693   -0.0000   0.0000   -0.0000
+   0.0000    0.0000   5.6693   -0.0000
+ gx
+       (-16.227137758561639,-2.72993652181440422E-016)
+  -16.227137758561632     
+ gy
+       (-16.227137758561639,-2.02841751421996836E-016)
+  -16.227137758561636     
+ gz
+       (-11.338623860395668,-8.29906384175981112E-016)
+  -11.338623860395694     

@@ -7,7 +7,6 @@ program gfactor
   use OMP_lib
   use outputFunctions
   use gfactorFunctions
-  !use mkl_spblas
   use utils
   use input_parser
 
@@ -22,7 +21,7 @@ program gfactor
   type(wavevector), allocatable, dimension(:) :: smallk
 
   ! iteration consts
-  integer :: i, k, j, ii, jj, lin, col
+  integer :: i, j, k
 
   ! hamiltonian and LAPACK/BLAS
   integer :: info, ILAENV, NB, lwork, N, M, il, iuu, vl, vu, lrwork, liwork
@@ -36,13 +35,10 @@ program gfactor
   ! gfactor
   complex(kind=dp), allocatable, dimension(:,:) :: cb_state, vb_state
   real(kind=dp), allocatable, dimension(:) :: cb_value, vb_value
-  integer :: whichBand, bandIdx, whichG
+  integer :: whichBand, bandIdx
   complex(kind=dp), allocatable, dimension(:,:,:) :: tensor
   complex(kind=dp) :: aa, bb, cc, dd
   real(kind=dp) :: gfac(2,3)
-
-  complex(kind=dp) :: res
-  real(kind=dp) :: lim
 
   ! file handling
   integer(kind=4) :: iounit
@@ -75,8 +71,8 @@ program gfactor
   end select
 
   print *, 'adjusting numcb and numvb to get all states'
-  cfg%numcb = 2*cfg%fdStep
-  cfg%numvb = 6*cfg%fdStep
+  cfg%numcb = NUM_CB_STATES*cfg%fdStep
+  cfg%numvb = NUM_VB_STATES*cfg%fdStep
 
   cfg%evnum = cfg%numcb + cfg%numvb
 
@@ -87,12 +83,6 @@ program gfactor
   NB = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
   NB = MAX(NB,N)
   ABSTOL = DLAMCH('P')
-
-  ! For g-factor calculation, we only need one k-point
-  if (cfg%waveVector /= 'k0') stop 'g-factor calculation requires only k=0'
-
-  ! Initialize k for workspace query
-  k = 1
 
   ! Allocate arrays
   if (allocated(eig)) deallocate(eig)
@@ -139,14 +129,7 @@ program gfactor
     allocate(iwork(liwork))
   end if
 
-  ! Actual diagonalization (initial, to verify)
-  if (cfg%numLayers == 1) then
-    call zheev('V', 'U', N, HT, N, eig(:,1), work, lwork, rwork, info)
-  else
-    call zheevd('V', 'U', N, HT, N, eig(:,1), work, lwork, rwork, lrwork, iwork, liwork, info)
-  end if
-
-  ! Print profile for QW mode (write to unit 101 to preserve original behavior)
+  ! Print profile for QW mode
   if (cfg%confDir == 'z') then
     do i = 1, cfg%fdStep, 1
       write(101,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
@@ -191,10 +174,8 @@ program gfactor
   allocate(cb_value(cfg%numcb))
   allocate(vb_value(cfg%numvb))
 
-  do i = 1, N
-    cb_state(i,1:cfg%numcb) = HT(i,cfg%numvb+1:cfg%numvb+cfg%numcb)
-    vb_state(i,1:cfg%numvb) = HT(i,cfg%numvb:1:-1)
-  end do
+  cb_state(:,:) = HT(:, cfg%numvb+1:cfg%numvb+cfg%numcb)
+  vb_state(:,:) = HT(:, cfg%numvb:1:-1)
 
   cb_value(:) = eig(cfg%numvb+1:cfg%numvb+cfg%numcb,1)
   vb_value(:) = eig(cfg%numvb:1:-1,1)
@@ -268,6 +249,7 @@ program gfactor
 
   if (allocated(smallk)) deallocate(smallk)
   if (allocated(HT)) deallocate(HT)
+  if (allocated(eig)) deallocate(eig)
   if (allocated(work)) deallocate(work)
   if (allocated(iwork)) deallocate(iwork)
   if (allocated(rwork)) deallocate(rwork)
@@ -275,6 +257,7 @@ program gfactor
   if (allocated(vb_state)) deallocate(vb_state)
   if (allocated(cb_value)) deallocate(cb_value)
   if (allocated(vb_value)) deallocate(vb_value)
+  if (allocated(tensor)) deallocate(tensor)
 
 
 end program gfactor

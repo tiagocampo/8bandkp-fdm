@@ -41,15 +41,16 @@ The project is organized into the following directories:
 
 * `io/`: Input/Output operations
   - `outputFunctions.f90`: File I/O and data output
+  - `input_parser.f90`: Input configuration parser
 
 * `apps/`: Main applications
   - `main.f90`: Band structure calculation program
   - `main_gfactor.f90`: g-factor calculation program
 
 ### Tests (`tests/`)
-* `unit/`: Unit tests for individual components
-* `integration/`: Integration tests for combined functionality
-* `regression/`: Regression tests for verified results
+* `unit/`: pFUnit unit tests for individual modules (defs, FD, utils, parameters, Hamiltonian)
+* `integration/`: Shell scripts for full-executable regression tests
+* `regression/`: Reference configs, golden data, and `compare_output.py`
 
 ### Documentation (`docs/`)
 * `api/`: API documentation and code reference
@@ -92,40 +93,50 @@ The project is organized into the following directories:
 
 ### Compilation steps
 
-You can build the project using either Make or CMake:
-
-#### Using Make (Legacy method)
- * modify Makefile to reflect either intel mkl library or standard lapack and blas by selecting appropriate LDFLAGS
- * make all
-
 #### Using CMake (Recommended)
 ```bash
-# Create and enter build directory
-mkdir build && cd build
+# Configure (requires Intel MKL)
+cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl
 
-# Configure with CMake
-cmake ..                    # Default Release build
-# OR
-cmake -DCMAKE_BUILD_TYPE=Debug ..  # Debug build with extra checks
+# Build
+cmake --build build
 
-# Build the project
-make                       # Or 'make -j$(nproc)' for parallel build
+# Executables are at build/src/bandStructure and build/src/gfactorCalculation
+```
 
-# Optional: Install the executables
-sudo make install         # Installs to default system location
-# OR
-cmake -DCMAKE_INSTALL_PREFIX=/custom/path .. && make install  # Custom install location
+#### Using Make (thin CMake wrapper)
+```bash
+make all       # Configure + build both executables
+make run       # Build and run bandStructure
+make gfactor   # Build and run gfactorCalculation
+make clean     # Remove build/ directory
+```
+
+#### Running Tests
+```bash
+# Configure with tests enabled (pFUnit optional — regression tests work without it)
+cmake -G Ninja -B build \
+    -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
+    -DBUILD_TESTING=ON \
+    -DPFUNIT_DIR=$HOME/.local/pfunit/PFUNIT-<ver>/cmake
+
+cmake --build build
+
+ctest --test-dir build              # all tests
+ctest --test-dir build -L unit      # pFUnit unit tests only
+ctest --test-dir build -L regression  # regression tests only
+ctest --test-dir build -V           # verbose output
+```
+
+pFUnit can be installed from source:
+```bash
+git clone https://github.com/Goddard-Fortran-Ecosystem/pFUnit
+cd pFUnit && mkdir build && cd build
+cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/.local/pfunit && make install
 ```
 
 CMake build options:
 * BUILD_TESTING: Enable/disable tests (default: OFF)
-* ENABLE_OPENMP: Enable/disable OpenMP support (default: ON)
-* USE_MKL: Use Intel MKL instead of standard LAPACK/BLAS (default: ON)
-
-Example with all options:
-```bash
-cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DENABLE_OPENMP=ON -DUSE_MKL=ON ..
-```
 
 This will generate two executable files:
  * bandStructure: for electronic band structure calculations
