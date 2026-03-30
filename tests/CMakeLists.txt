@@ -124,3 +124,30 @@ set_tests_properties(
     regression_sc_gaas_alas_qw
     PROPERTIES LABELS "regression"
 )
+
+# QCSE GaAs/AlGaAs QW without electric field (Harrison benchmark)
+add_test(
+    NAME regression_qcse_gaas_algaas
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qcse_no_ef.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/sc_qcse_gaas_algaas.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_qcse_gaas_algaas
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# QCSE GaAs/AlGaAs QW with electric field -70 kV/cm (Stark shift validation)
+add_test(
+    NAME regression_qcse_gaas_algaas_ef
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qcse_with_ef.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/sc_qcse_gaas_algaas_ef.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_qcse_gaas_algaas_ef
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_qcse_gaas_algaas regression_qcse_gaas_algaas_ef
+    PROPERTIES LABELS "regression"
+)
