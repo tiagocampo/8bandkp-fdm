@@ -628,7 +628,7 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
   end if
 
   tensor(1:2,1:2,1:3) = -cmplx(0.0_dp, 1.0_dp, kind=dp)*tensor(1:2,1:2,1:3)/hbar2O2m0
-  tensor(1:2,1:2,1:3) = tensor(1:2,1:2,1:3) - (2.00231_dp/2.0_dp)*sigma(1:2,1:2,1:3)
+  tensor(1:2,1:2,1:3) = tensor(1:2,1:2,1:3) - (g_free/2.0_dp)*sigma(1:2,1:2,1:3)
 
 
 end subroutine gfactorCalculation

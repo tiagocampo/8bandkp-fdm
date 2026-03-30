@@ -68,11 +68,11 @@ contains
   subroutine insertCOO_cmplx(v, r, c, vvalue, i, j, next, nnz)
 
       complex ( kind = dp ), intent(inout) :: v(:)
-      integer ( kind = 4 ), intent(inout) :: r(:), c(:), next
+      integer, intent(inout) :: r(:), c(:), next
       complex ( kind = dp ), intent(in) :: vvalue
-      integer ( kind = 4 ), intent(in) :: i, j, nnz
+      integer, intent(in) :: i, j, nnz
 
-      if ( vvalue /= cmplx(0.0_dp, 0.0_dp, kind=dp) .and. abs(vvalue) >= 10E-10 ) then
+      if ( vvalue /= cmplx(0.0_dp, 0.0_dp, kind=dp) .and. abs(vvalue) >= 1.0e-10_dp ) then
 
           if (nnz < next ) THEN
             print *, nnz, next
@@ -90,13 +90,13 @@ contains
 
   subroutine finalizeCOO_cmplx(v, r, c, nnz)
       complex ( kind = dp ), intent(inout), allocatable :: v(:)
-      integer ( kind = 4 ), intent(inout), allocatable :: r(:), c(:)
-      integer ( kind = 4 ), intent(inout) :: nnz
+      integer, intent(inout), allocatable :: r(:), c(:)
+      integer, intent(inout) :: nnz
 
-      integer ( kind = 4 ), allocatable :: idx(:)
-      integer ( kind = 4 ) :: i, nnz_final
+      integer, allocatable :: idx(:)
+      integer :: i, nnz_final
       complex ( kind = dp ), allocatable :: v_sorted(:)
-      integer ( kind = 4 ), allocatable :: r_sorted(:), c_sorted(:)
+      integer, allocatable :: r_sorted(:), c_sorted(:)
 
       ! Nothing to do for empty or single-element arrays
       if (nnz <= 1) return
@@ -147,12 +147,12 @@ contains
   end subroutine finalizeCOO_cmplx
 
   subroutine index_sort_by_rc(idx, r, c, n)
-      integer ( kind = 4 ), intent(inout) :: idx(:)
-      integer ( kind = 4 ), intent(in) :: r(:), c(:)
-      integer ( kind = 4 ), intent(in) :: n
+      integer, intent(inout) :: idx(:)
+      integer, intent(in) :: r(:), c(:)
+      integer, intent(in) :: n
 
-      integer ( kind = 4 ) :: i, j, key_idx
-      integer ( kind = 4 ) :: key_r, key_c
+      integer :: i, j, key_idx
+      integer :: key_r, key_c
 
       ! Insertion sort of idx by (r(idx), c(idx)) pairs
       do i = 2, n

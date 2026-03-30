@@ -82,56 +82,56 @@ module finitedifferences
 
         if (stencil == 2) then
           if (length .lt. 3) stop 'for stencil 2, n should be 3 or more'
-          vector(hf-1) = 1
-          vector(hf) = -2
-          vector(hf+1) = 1
+          vector(hf-1) = 1.0_dp
+          vector(hf) = -2.0_dp
+          vector(hf+1) = 1.0_dp
         endif
 
         if (stencil == 4) then
           if (length .lt. 5) stop 'for stencil 4, n should be 5 or more'
-          vector(hf-2) = -1./12.
-          vector(hf-1) = 4./3.
-          vector(hf) = -5./2.
-          vector(hf+1) = 4./3.
-          vector(hf+2) = -1./12.
+          vector(hf-2) = -1.0_dp/12.0_dp
+          vector(hf-1) = 4.0_dp/3.0_dp
+          vector(hf) = -5.0_dp/2.0_dp
+          vector(hf+1) = 4.0_dp/3.0_dp
+          vector(hf+2) = -1.0_dp/12.0_dp
         endif
 
         if (stencil == 6) then
           if (length .lt. 7) stop 'for stencil 6, n should be 7 or more'
-          vector(hf-3) = 1./90.
-          vector(hf-2) = -3/20.
-          vector(hf-1) = 3./2.
-          vector(hf) = -49./18.
-          vector(hf+1) = 3./2.
-          vector(hf+2) = -3/20.
-          vector(hf+3) = 1./90.
+          vector(hf-3) = 1.0_dp/90.0_dp
+          vector(hf-2) = -3.0_dp/20.0_dp
+          vector(hf-1) = 3.0_dp/2.0_dp
+          vector(hf) = -49.0_dp/18.0_dp
+          vector(hf+1) = 3.0_dp/2.0_dp
+          vector(hf+2) = -3.0_dp/20.0_dp
+          vector(hf+3) = 1.0_dp/90.0_dp
         endif
 
         if (stencil == 8) then
           if (length .lt. 9) stop 'for stencil 8, n should be 9 or more'
-          vector(hf-4) = -1./560.
-          vector(hf-3) = 8./315.
-          vector(hf-2) = -1./5.
-          vector(hf-1) = 8./5.
-          vector(hf) = -205./72.
-          vector(hf+1) = 8./5.
-          vector(hf+2) = -1./5.
-          vector(hf+3) = 8./315.
-          vector(hf+4) = -1./560.
+          vector(hf-4) = -1.0_dp/560.0_dp
+          vector(hf-3) = 8.0_dp/315.0_dp
+          vector(hf-2) = -1.0_dp/5.0_dp
+          vector(hf-1) = 8.0_dp/5.0_dp
+          vector(hf) = -205.0_dp/72.0_dp
+          vector(hf+1) = 8.0_dp/5.0_dp
+          vector(hf+2) = -1.0_dp/5.0_dp
+          vector(hf+3) = 8.0_dp/315.0_dp
+          vector(hf+4) = -1.0_dp/560.0_dp
         endif
 
         if (stencil == 10) then
           if (length .lt. 11) stop 'for stencil 10, n should be 11 or more'
-          vector(hf-5) = 8./25200.
-          vector(hf-4) = -125./25200.
-          vector(hf-3) = 1000./25200.
-          vector(hf-2) = -6000./25200.
-          vector(hf-1) = 42000./25200.
-          vector(hf) = -73766./25200.
-          vector(hf+1) = 42000./25200.
-          vector(hf+2) = -6000./25200.
-          vector(hf+3) = 1000./25200.
-          vector(hf+4) = -125./25200.
+          vector(hf-5) = 8.0_dp/25200.0_dp
+          vector(hf-4) = -125.0_dp/25200.0_dp
+          vector(hf-3) = 1000.0_dp/25200.0_dp
+          vector(hf-2) = -6000.0_dp/25200.0_dp
+          vector(hf-1) = 42000.0_dp/25200.0_dp
+          vector(hf) = -73766.0_dp/25200.0_dp
+          vector(hf+1) = 42000.0_dp/25200.0_dp
+          vector(hf+2) = -6000.0_dp/25200.0_dp
+          vector(hf+3) = 1000.0_dp/25200.0_dp
+          vector(hf+4) = -125.0_dp/25200.0_dp
           vector(hf+5) = 8.0_dp/25200.0_dp
         endif
 

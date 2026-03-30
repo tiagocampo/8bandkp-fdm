@@ -22,6 +22,13 @@ module definitions
   real(kind=dp), parameter :: tolerance=1e-7
   logical, parameter :: renormalization = .False.
 
+  ! Band structure constants (8-band basis: 2 CB + 6 VB per k-point)
+  integer, parameter :: NUM_CB_STATES = 2
+  integer, parameter :: NUM_VB_STATES = 6
+
+  ! Free electron g-factor (CODATA)
+  real(kind=dp), parameter :: g_free = 2.00231_dp
+
   complex(kind=dp), parameter :: IU = cmplx(0.0_dp, 1.0_dp, kind=dp)
   real(kind=dp), parameter :: SQR3 = dsqrt(3.0_dp)
   real(kind=dp), parameter :: SQR2 = dsqrt(2.0_dp)
