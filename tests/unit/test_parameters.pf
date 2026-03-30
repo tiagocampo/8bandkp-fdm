@@ -86,4 +86,26 @@ contains
     @assertEqual(0.417_dp, params(3)%Eg, tolerance=1.0e-12_dp)
   end subroutine test_multi_material
 
+  @test
+  subroutine test_dielectric_constants()
+    ! Verify eps0 values against Vurgaftman 2001 Table III
+    type(paramStruct) :: params(4)
+    character(len=255) :: material(4)
+
+    material(1) = "GaAs"
+    material(2) = "InAs"
+    material(3) = "AlSb"
+    material(4) = "InSb"
+    call paramDatabase(material, 4, params)
+
+    ! GaAs eps0 = 12.90 (Vurgaftman 2001)
+    @assertEqual(12.90_dp, params(1)%eps0, tolerance=1.0e-12_dp)
+    ! InAs eps0 = 15.15 (Vurgaftman 2001)
+    @assertEqual(15.15_dp, params(2)%eps0, tolerance=1.0e-12_dp)
+    ! AlSb eps0 = 12.04 (Vurgaftman 2001)
+    @assertEqual(12.04_dp, params(3)%eps0, tolerance=1.0e-12_dp)
+    ! InSb eps0 = 16.80 (Vurgaftman 2001)
+    @assertEqual(16.80_dp, params(4)%eps0, tolerance=1.0e-12_dp)
+  end subroutine test_dielectric_constants
+
 end module test_parameters

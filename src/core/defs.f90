@@ -48,6 +48,7 @@ module definitions
   type paramStruct
 
     real(kind=dp) :: meff, gamma1, gamma2, gamma3, P, A, deltaSO, EP, Eg, EV, EC
+    real(kind=dp) :: eps0  ! static dielectric constant (unitless)
 
   end type paramStruct
 
