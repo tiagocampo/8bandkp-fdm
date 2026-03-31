@@ -124,6 +124,30 @@ contains
   end subroutine test_coo_insert_and_sort
 
   @test
+  subroutine test_simpson_real_quadratic()
+    ! Integral of f(x) = x^2 from 0 to 1 is exactly 1/3
+    real(kind=dp), allocatable :: f(:)
+    real(kind=dp) :: result, a, b, dx
+    integer :: i, N
+
+    N = 11
+    a = 0.0_dp
+    b = 1.0_dp
+    dx = (b - a) / (N - 1)
+
+    allocate(f(N))
+    do i = 1, N
+      f(i) = (a + (i-1)*dx)**2
+    end do
+
+    result = simpson_real(f, a, b)
+    @assertEqual(1.0_dp/3.0_dp, result, tolerance=1.0e-10_dp)
+
+    deallocate(f)
+  end subroutine test_simpson_real_quadratic
+
+
+  @test
   subroutine test_coo_duplicate_merge()
     ! Insert same (row,col) twice — should merge
     integer(kind=4), parameter :: nnz = 10
