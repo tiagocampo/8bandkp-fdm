@@ -15,6 +15,7 @@ Author: Tiago de Campos
    - Winkler, R. Spin-orbit coupling effects in two-dimensional electron and hole systems; Physics and Astronomy online Library 191; Springer, 2003
    - Tadjine, A; Niquet, Y.-M.; Delerue, C. Universal behavior of electron g-factors in semiconductor nanostructures. Physical Review B 2017, 95, 235437
  * Supports external electric field (non-self-consistent calculation)
+ * Self-consistent Schrödinger-Poisson solver with DIIS acceleration (bulk and QW, with/without electric field)
  * Parallel processing support through OpenMP
  * High-performance linear algebra operations using LAPACK/MKL
  * Selective eigenvalue computation for improved performance
@@ -38,6 +39,9 @@ The project is organized into the following directories:
 * `physics/`: Physics calculations and models
   - `hamiltonianConstructor.f90`: k·p Hamiltonian construction
   - `gfactor_functions.f90`: g-factor calculations
+  - `poisson.f90`: Poisson solver (box-integration FD, Thomas algorithm)
+  - `charge_density.f90`: Charge density from k.p eigenstates with k_∥ sampling
+  - `sc_loop.f90`: Self-consistent Schrödinger-Poisson iteration driver
 
 * `io/`: Input/Output operations
   - `outputFunctions.f90`: File I/O and data output
@@ -75,6 +79,14 @@ The project is organized into the following directories:
  * Band structure calculations along arbitrary k-vector directions
  * g-factor calculations for spin-related properties
  * External electric field effects
+ * Self-consistent Schrödinger-Poisson calculations:
+   - Iterative SP loop with linear + DIIS/Pulay mixing
+   - Explicit k_∥ sampling for charge density (handles nonparabolicity)
+   - Per-layer doping specification (n-type and p-type)
+   - Fermi level via charge neutrality or fixed value
+   - Box-integration Poisson solver with variable dielectric
+   - Dirichlet-Dirichlet and Dirichlet-Neumann boundary conditions
+   - Works for both bulk and QW, with and without external field
  * Efficient sparse matrix techniques
  * OpenMP parallelization for improved performance
  * Selective eigenvalue computation:
@@ -125,6 +137,7 @@ cmake --build build
 ctest --test-dir build              # all tests
 ctest --test-dir build -L unit      # pFUnit unit tests only
 ctest --test-dir build -L regression  # regression tests only
+ctest --test-dir build -L sc          # self-consistent Poisson tests only
 ctest --test-dir build -V           # verbose output
 ```
 
@@ -161,6 +174,8 @@ This will generate two executable files:
     * For quantum wells: maximum 6 × fdstep
  * ExternalField: 0/1 and type (EF for electric field)
  * EFParams: field strength parameter
+ * SC: self-consistency enable flag (0/1) and parameters
+ * doping: per-layer donor (ND) and acceptor (NA) concentrations
 
 ### Output files
 

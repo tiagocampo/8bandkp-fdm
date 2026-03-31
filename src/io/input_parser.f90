@@ -207,6 +207,81 @@ contains
         cfg%bandIdx= 1
       end if
 
+    ! --- SC parameters (backward compatible: uses defaults if missing) ---
+    read(data_unit, *, iostat=status) label, cfg%sc%enabled
+    if (status == 0 .and. cfg%sc%enabled == 1) then
+      print *, trim(label), cfg%sc%enabled
+
+      read(data_unit, *, iostat=status) label, cfg%sc%max_iterations
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%max_iterations
+
+      read(data_unit, *, iostat=status) label, cfg%sc%tolerance
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%tolerance
+
+      read(data_unit, *, iostat=status) label, cfg%sc%mixing_alpha
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%mixing_alpha
+
+      read(data_unit, *, iostat=status) label, cfg%sc%diis_history
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%diis_history
+
+      read(data_unit, *, iostat=status) label, cfg%sc%temperature
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%temperature
+
+      read(data_unit, *, iostat=status) label, cfg%sc%fermi_mode
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%fermi_mode
+
+      read(data_unit, *, iostat=status) label, cfg%sc%fermi_level
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%fermi_level
+
+      read(data_unit, *, iostat=status) label, cfg%sc%num_kpar
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%num_kpar
+
+      read(data_unit, *, iostat=status) label, cfg%sc%kpar_max
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%kpar_max
+
+      read(data_unit, *, iostat=status) label, cfg%sc%bc_type
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%bc_type
+
+      read(data_unit, *, iostat=status) label, cfg%sc%bc_left
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%bc_left
+
+      read(data_unit, *, iostat=status) label, cfg%sc%bc_right
+      if (status /= 0) goto 100
+      print *, trim(label), cfg%sc%bc_right
+
+      ! Read doping per layer (ND NA for each layer)
+      allocate(cfg%doping(cfg%numLayers))
+      do i = 1, cfg%numLayers
+        read(data_unit, *, iostat=status) label, cfg%doping(i)%ND, cfg%doping(i)%NA
+        if (status /= 0) then
+          cfg%doping(i)%ND = 0.0_dp
+          cfg%doping(i)%NA = 0.0_dp
+          status = 0
+          exit
+        end if
+        print *, trim(label), cfg%doping(i)%ND, cfg%doping(i)%NA
+      end do
+
+    else if (status == 0) then
+      ! SC=0, skip remaining SC lines
+      print *, trim(label), cfg%sc%enabled
+    else
+      ! Could not read SC flag — use defaults (SC off)
+      status = 0
+    end if
+100 continue
+
     print *, ' '
 
     !----------------------------------------------------------------------------

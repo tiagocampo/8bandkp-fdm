@@ -48,8 +48,30 @@ module definitions
   type paramStruct
 
     real(kind=dp) :: meff, gamma1, gamma2, gamma3, P, A, deltaSO, EP, Eg, EV, EC
+    real(kind=dp) :: eps0  ! static dielectric constant (unitless)
 
   end type paramStruct
+
+  type doping_spec
+    real(kind=dp) :: ND = 0.0_dp    ! donor concentration (cm^-3)
+    real(kind=dp) :: NA = 0.0_dp    ! acceptor concentration (cm^-3)
+  end type doping_spec
+
+  type sc_config
+    integer       :: enabled = 0              ! 0=off, 1=on
+    integer       :: max_iterations = 100     ! iteration cap
+    real(kind=dp) :: tolerance = 1.0e-6_dp    ! convergence |Delta Phi|_inf in eV
+    real(kind=dp) :: mixing_alpha = 0.3_dp    ! linear mixing parameter
+    integer       :: diis_history = 7         ! DIIS history length
+    real(kind=dp) :: temperature = 300.0_dp   ! Kelvin
+    integer       :: fermi_mode = 0           ! 0=charge_neutrality, 1=fixed
+    real(kind=dp) :: fermi_level = 0.0_dp     ! fixed mu (eV)
+    integer       :: num_kpar = 201           ! k_par sampling points (odd for Simpson)
+    real(kind=dp) :: kpar_max = 0.0_dp        ! max k_par (1/AA), 0=auto
+    character(len=2) :: bc_type = 'DD'        ! 'DD' or 'DN'
+    real(kind=dp) :: bc_left = 0.0_dp         ! left BC potential (eV)
+    real(kind=dp) :: bc_right = 0.0_dp        ! right BC potential (eV)
+  end type sc_config
 
   type simulation_config
     integer :: confinement = 0
@@ -78,6 +100,8 @@ module definitions
     integer, allocatable :: intEndPos(:)
     character(len=255), allocatable :: materialN(:)
     type(paramStruct), allocatable :: params(:)
+    type(doping_spec), allocatable :: doping(:)   ! per-layer doping
+    type(sc_config)                :: sc           ! SC parameters
   end type simulation_config
 
   type group

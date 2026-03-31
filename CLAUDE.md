@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Fortran 90 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning. GPL v3.0, authored by Tiago de Campos.
+Fortran 90 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning. Includes self-consistent Schrödinger-Poisson solver with DIIS acceleration. GPL v3.0, authored by Tiago de Campos.
 
 ## Build Commands
 
@@ -40,7 +40,7 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all 9 tests (5 unit + 4 regression)
+ctest --test-dir build                    # all 13 tests (8 unit + 5 regression)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
 ctest --test-dir build -V                 # verbose output
@@ -68,10 +68,10 @@ src/
   core/       defs.f90, parameters.f90, utils.f90
   math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90
   io/         outputFunctions.f90, input_parser.f90
-  physics/    hamiltonianConstructor.f90, gfactor_functions.f90
+  physics/    hamiltonianConstructor.f90, gfactor_functions.f90, poisson.f90, charge_density.f90, sc_loop.f90
   apps/       main.f90, main_gfactor.f90
 tests/
-  unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian)
+  unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_poisson, test_charge_density, test_sc_loop)
   integration/  shell scripts for full-executable tests
   regression/   configs/, data/, compare_output.py
 cmake/        FindFFTW3.cmake
@@ -96,6 +96,9 @@ defs.f90                      (kinds, constants, derived types — no deps)
             <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices)
                  <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian)
                       <- gfactor_functions.f90  (Lowdin partitioning, spin/momentum matrix elements)
+                 <- poisson.f90           (box-integration Poisson solver, Thomas algorithm)
+                 <- charge_density.f90    (n(z), p(z) from k.p eigenstates + k_∥ sampling)
+                      <- sc_loop.f90           (self-consistent SP loop, linear + DIIS mixing)
   <- outputFunctions.f90      (eigenvalue/eigenfunction file I/O)
   <- input_parser.f90         (shared input.cfg parser → simulation_config type)
 ```
@@ -110,10 +113,13 @@ defs.f90                      (kinds, constants, derived types — no deps)
 - **Sparse vs dense**: g-factor uses MKL SpBLAS for large QW; band structure uses dense LAPACK (`zheevx`)
 - **Foreman renormalization**: disabled by default (`renormalization = .False.` in defs.f90)
 - **W-variant materials** (GaAsW, InAsW, etc.): use Winkler's parameter set with InSb as EV reference. Non-W materials use Vurgaftman parameters. EC = EV + Eg convention for all materials with EV defined
+- **Self-consistent SP**: iterative Schrödinger-Poisson loop wraps the eigenvalue solve. Modifies `profile` array before Hamiltonian construction (same interface as `externalFieldSetup_electricField`). Linear mixing warm-up + DIIS/Pulay acceleration. Works for bulk (Fermi level finder) and QW (full SP). Per-layer doping (`doping_spec`), charge neutrality or fixed Fermi level, box-integration Poisson with variable dielectric. Design doc: `docs/plans/2026-03-29-self-consistent-sp-design.md`
 
 ### Input file (`input.cfg`)
 
 Label-value format with comments (`!`). Key fields: `waveVector` (kx/ky/kz/k0), `waveVectorMax`, `waveVectorStep`, `confinement` (0/1), `FDstep`, `FDorder` (default 2), `numLayers`, `materialN` (name + z-range), `numcb`/`numvb`, `ExternalField` + `EFParams`.
+
+SC additional fields: `SC` (enable flag), `SC_max_iter`, `SC_tolerance`, `SC_mixing`, `SC_diis`, `SC_temperature`, `SC_fermi_mode` (0=charge_neutrality, 1=fixed), `SC_fermi_level`, `SC_num_kpar`, `SC_kpar_max`, `SC_bc` (DD/DN), `SC_bc_left`, `SC_bc_right`. Per-layer `doping: ND NA` lines.
 
 g-factor additional fields: `whichBand` (0=CB, 1=VB) and `bandIdx` (subband index, default 1).
 
@@ -135,4 +141,4 @@ g-factor additional fields: `whichBand` (0=CB, 1=VB) and `bandIdx` (subband inde
 - **NEVER** modify material parameters in `parameters.f90` without verifying against published references (Vurgaftman 2001, Winkler 2003)
 - **NEVER** change the basis ordering (bands 1-4 valence, 5-6 split-off, 7-8 conduction) — it is hardcoded throughout
 - **NEVER** commit `input.cfg` with personal test configs — use `tests/regression/configs/` for test configs
-- **Require approval** for: changes to `defs.f90` derived types, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`
+- **Require approval** for: changes to `defs.f90` derived types, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`, Poisson solver in `poisson.f90`, SC loop convergence logic in `sc_loop.f90`
