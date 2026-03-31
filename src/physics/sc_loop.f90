@@ -24,6 +24,15 @@ module sc_loop
   public :: build_epsilon
   public :: build_doping_charge
 
+  ! Unit conversion constants
+  real(kind=dp), parameter :: ANGSTROM_TO_NM = 0.1_dp    ! 1 Angstrom = 0.1 nm
+  real(kind=dp), parameter :: CM3_TO_PER_NM3 = 1.0e-21_dp  ! 1 cm^-3 -> 1/nm^3 (1 cm^3 = 10^21 nm^3)
+
+  ! Fermi bisection parameters
+  integer, parameter :: MAX_FERMI_BISECT = 60
+  real(kind=dp), parameter :: FERMI_TOL = 1.0e-8_dp
+  real(kind=dp), parameter :: FERMI_BOUND_PAD = 2.0_dp  ! eV padding for bisection bounds
+
   ! LAPACK/MKL external declarations
   integer :: ilaenv
   real(kind=dp) :: dlamch
@@ -217,12 +226,14 @@ contains
         & nz, num_subbands, nk_actual, cfg%numcb, dz_val)
 
       ! Step 5: Build total charge and solve Poisson
+      ! Convert density from cm^-3 to C/nm^3: rho = e * n * 1e-21 (1 cm^3 = 10^21 nm^3)
       do iz = 1, nz
-        rho(iz) = e * (n_hole(iz) - n_electron(iz) + rho_doping(iz)) / 1.0e21_dp
+        rho(iz) = e * (n_hole(iz) - n_electron(iz) + rho_doping(iz)) * CM3_TO_PER_NM3
       end do
 
-      ! Convert dz from Angstrom to nm for Poisson solver (rho in C/nm^3, e0 in C/(V*nm))
-      call solve_poisson(phi_poisson, rho, epsilon, dz_val * 0.1_dp, nz, &
+      ! dz_val in Angstrom; Poisson solver uses nm (rho in C/nm^3, e0 in C/(V*nm))
+      ! 1 Angstrom = 0.1 nm
+      call solve_poisson(phi_poisson, rho, epsilon, dz_val * ANGSTROM_TO_NM, nz, &
         & cfg%sc%bc_left, cfg%sc%bc_right, cfg%sc%bc_type)
 
       ! Step 6: Mix potential
@@ -405,8 +416,6 @@ contains
     real(kind=dp) :: mu_lo, mu_hi, mu_mid
     real(kind=dp), allocatable :: n_elec(:), n_hole(:)
     real(kind=dp) :: charge_excess, target_charge
-    real(kind=dp), parameter :: fermi_tol = 1.0e-8_dp
-    integer, parameter :: max_bisect = 60
     integer :: ib, iz
 
     allocate(n_elec(nz), n_hole(nz))
@@ -416,10 +425,10 @@ contains
       target_charge = target_charge + rho_doping(iz) * dz_val
     end do
 
-    mu_lo = minval(eig_kpar) - 2.0_dp
-    mu_hi = maxval(eig_kpar) + 2.0_dp
+    mu_lo = minval(eig_kpar) - FERMI_BOUND_PAD
+    mu_hi = maxval(eig_kpar) + FERMI_BOUND_PAD
 
-    do ib = 1, max_bisect
+    do ib = 1, MAX_FERMI_BISECT
       mu_mid = 0.5_dp * (mu_lo + mu_hi)
 
       call compute_charge_density_qw(n_elec, n_hole, eigv_kpar, &
@@ -438,7 +447,7 @@ contains
         mu_lo = mu_mid
       end if
 
-      if (abs(mu_hi - mu_lo) < fermi_tol) exit
+      if (abs(mu_hi - mu_lo) < FERMI_TOL) exit
     end do
 
     mu = 0.5_dp * (mu_lo + mu_hi)
