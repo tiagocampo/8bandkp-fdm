@@ -284,4 +284,25 @@ contains
     @assertTrue(mu < 0.5_dp, message="Fermi below CB bottom")
   end subroutine test_find_fermi_level_with_doping
 
+  @test
+  subroutine test_apply_potential_to_profile()
+    ! Verify profile = profile_base - phi for all 3 columns
+    integer, parameter :: nz = 5
+    real(kind=dp) :: profile(nz, 3), profile_base(nz, 3), phi(nz)
+    integer :: iz
+
+    do iz = 1, nz
+      profile_base(iz, :) = real(iz, kind=dp) * 10.0_dp
+      phi(iz) = real(iz, kind=dp)
+    end do
+
+    call apply_potential_to_profile(profile, profile_base, phi, nz)
+
+    do iz = 1, nz
+      @assertEqual(profile_base(iz, 1) - phi(iz), profile(iz, 1), tolerance=1.0e-12_dp)
+      @assertEqual(profile_base(iz, 2) - phi(iz), profile(iz, 2), tolerance=1.0e-12_dp)
+      @assertEqual(profile_base(iz, 3) - phi(iz), profile(iz, 3), tolerance=1.0e-12_dp)
+    end do
+  end subroutine test_apply_potential_to_profile
+
 end module test_sc_loop

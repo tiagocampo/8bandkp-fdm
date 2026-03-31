@@ -23,6 +23,7 @@ module sc_loop
   public :: find_fermi_level
   public :: build_epsilon
   public :: build_doping_charge
+  public :: apply_potential_to_profile
 
   ! Unit conversion constants
   real(kind=dp), parameter :: ANGSTROM_TO_NM = 0.1_dp    ! 1 Angstrom = 0.1 nm
@@ -189,11 +190,7 @@ contains
     do iter = 1, niter
 
       ! Step 1: Apply current potential to profile
-      do iz = 1, nz
-        profile(iz, 1) = profile_base(iz, 1) - phi_old(iz)
-        profile(iz, 2) = profile_base(iz, 2) - phi_old(iz)
-        profile(iz, 3) = profile_base(iz, 3) - phi_old(iz)
-      end do
+      call apply_potential_to_profile(profile, profile_base, phi_old, nz)
 
       ! Step 2: Solve eigenproblem at each k_par
       do k_idx = 1, nk_actual
@@ -273,11 +270,7 @@ contains
     end if
 
     ! Final update: apply converged potential to profile
-    do iz = 1, nz
-      profile(iz, 1) = profile_base(iz, 1) - phi_old(iz)
-      profile(iz, 2) = profile_base(iz, 2) - phi_old(iz)
-      profile(iz, 3) = profile_base(iz, 3) - phi_old(iz)
-    end do
+    call apply_potential_to_profile(profile, profile_base, phi_old, nz)
 
     ! Copy final eigenvalues at k_par=0 back to eig
     eig(:, 1) = eig_kpar(:, 1)
@@ -455,6 +448,25 @@ contains
     deallocate(n_elec, n_hole)
 
   end function find_fermi_level
+
+
+  ! ------------------------------------------------------------------
+  ! Apply electrostatic potential to all 3 profile columns
+  ! ------------------------------------------------------------------
+  subroutine apply_potential_to_profile(profile, profile_base, phi, nz)
+    real(kind=dp), intent(inout) :: profile(nz, 3)
+    real(kind=dp), intent(in)    :: profile_base(nz, 3)
+    real(kind=dp), intent(in)    :: phi(nz)
+    integer, intent(in)          :: nz
+
+    integer :: iz
+
+    do iz = 1, nz
+      profile(iz, 1) = profile_base(iz, 1) - phi(iz)
+      profile(iz, 2) = profile_base(iz, 2) - phi(iz)
+      profile(iz, 3) = profile_base(iz, 3) - phi(iz)
+    end do
+  end subroutine apply_potential_to_profile
 
 
   ! ------------------------------------------------------------------
