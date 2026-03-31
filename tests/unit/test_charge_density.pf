@@ -185,8 +185,11 @@ contains
   subroutine test_bulk_charge_density()
     ! Bulk charge density with 8 subbands, 3 k-points.
     ! CB subbands (s=7,8) at E=1.0, VB subbands (s=1..6) at E=-1.0.
-    ! Fermi level at 0.5: CB states are above mu (f~0), VB states below (f~1).
-    ! Holes = (1-f) for VB => ~1, electrons = f for CB => ~0.
+    ! Fermi level at -2.0: both VB and CB states above mu.
+    ! For VB at E=-1.0: f(-1.0, -2.0, 300) ≈ 1/(1+exp(38.7)) ≈ 0
+    !   => holes = (1-f) ≈ 1 (VB empty => lots of holes)
+    ! For CB at E=+1.0: f(1.0, -2.0, 300) ≈ 1/(1+exp(116)) ≈ 0
+    !   => electrons = f ≈ 0
 
     integer, parameter :: num_subbands = 8
     integer, parameter :: num_k = 3
@@ -203,7 +206,7 @@ contains
     eigenvalues(7, :) = 1.0_dp
     eigenvalues(8, :) = 1.0_dp
 
-    fermi_level = 0.0_dp
+    fermi_level = -2.0_dp
     temperature = 300.0_dp
 
     k_grid(1) = 0.0_dp
@@ -213,11 +216,11 @@ contains
     call compute_charge_density_bulk(n_electron, n_hole, eigenvalues, &
       & k_grid, fermi_level, temperature, num_subbands, num_k)
 
-    ! Holes should be significant (VB fully occupied, 1-f ~ 1)
-    ! Electrons should be small (CB above Fermi level, f ~ 0)
+    ! Holes should be significant (VB empty, 1-f ~ 1)
+    ! Electrons should be negligible (CB far above Fermi level)
     @assertTrue(n_hole > 1.0e18_dp, message="Bulk hole density significant")
     @assertTrue(n_electron < 1.0e10_dp, message="Bulk electron density negligible")
-    @assertTrue(n_hole > n_electron, message="More holes than electrons in intrinsic")
+    @assertTrue(n_hole > n_electron, message="More holes than electrons")
   end subroutine test_bulk_charge_density
 
 end module test_charge_density

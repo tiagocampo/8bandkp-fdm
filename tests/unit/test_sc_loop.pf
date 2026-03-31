@@ -305,4 +305,36 @@ contains
     end do
   end subroutine test_apply_potential_to_profile
 
+
+  @test
+  subroutine test_map_layer_to_grid()
+    ! 3-layer structure: layer 1 = z(1..4), layer 2 = z(5..7), layer 3 = z(8..10)
+    ! map_layer_to_grid should return the correct layer index for each grid point.
+
+    integer, parameter :: nz = 10
+    integer, allocatable :: layer_index(:)
+    type(simulation_config) :: cfg
+    integer :: iz
+
+    cfg%numLayers = 3
+    allocate(cfg%intStartPos(3), cfg%intEndPos(3))
+    cfg%intStartPos(1) = 1;  cfg%intEndPos(1) = 4
+    cfg%intStartPos(2) = 5;  cfg%intEndPos(2) = 7
+    cfg%intStartPos(3) = 8;  cfg%intEndPos(3) = 10
+
+    call map_layer_to_grid(layer_index, cfg, nz)
+
+    do iz = 1, 4
+      @assertEqual(1, layer_index(iz), message="Layer 1 mapping")
+    end do
+    do iz = 5, 7
+      @assertEqual(2, layer_index(iz), message="Layer 2 mapping")
+    end do
+    do iz = 8, 10
+      @assertEqual(3, layer_index(iz), message="Layer 3 mapping")
+    end do
+
+    deallocate(cfg%intStartPos, cfg%intEndPos)
+  end subroutine test_map_layer_to_grid
+
 end module test_sc_loop

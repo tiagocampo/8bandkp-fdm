@@ -128,50 +128,22 @@ contains
     do j = 1, numcb_local
       s = sort_idx(j)  ! original subband index
 
-      ! Compute |Psi_s(z, k_par)|^2 for all z and k_par
-      psi2_z = 0.0_dp
-      do idx = 1, nk
-        do band_start = 1, 8
-          do iz = 1, N
-            psi2_z(iz, idx) = psi2_z(iz, idx) &
-              & + abs(eigenvectors((band_start - 1)*N + iz, s, idx))**2
-          end do
-        end do
-      end do
+      call compute_psi2(psi2_z, eigenvectors, s, N, nk, num_subbands)
 
-      ! Integrate over k_par at each z
-      do iz = 1, N
-        do idx = 1, nk
-          k_par = kpar_grid(idx)
-          occ = fermi_dirac(eigenvalues_kpar(s, idx), fermi_level, temperature)
-          integrand(idx) = psi2_z(iz, idx) * occ * k_par / (2.0_dp * pi_dp)
-        end do
-        n_electron(iz) = n_electron(iz) + 2.0_dp * simpson_real(integrand, 0.0_dp, k_max)
-      end do
+      call accumulate_band_density(n_electron, psi2_z, eigenvalues_kpar, &
+        & kpar_grid, integrand, fermi_level, temperature, s, N, nk, &
+        & num_subbands, k_max, is_cb=.true.)
     end do
 
     ! --- Hole density: VB subbands (lowest numvb eigenvalues) ---
     do j = numcb_local + 1, num_subbands
       s = sort_idx(j)  ! original subband index
 
-      psi2_z = 0.0_dp
-      do idx = 1, nk
-        do band_start = 1, 8
-          do iz = 1, N
-            psi2_z(iz, idx) = psi2_z(iz, idx) &
-              & + abs(eigenvectors((band_start - 1)*N + iz, s, idx))**2
-          end do
-        end do
-      end do
+      call compute_psi2(psi2_z, eigenvectors, s, N, nk, num_subbands)
 
-      do iz = 1, N
-        do idx = 1, nk
-          k_par = kpar_grid(idx)
-          occ = 1.0_dp - fermi_dirac(eigenvalues_kpar(s, idx), fermi_level, temperature)
-          integrand(idx) = psi2_z(iz, idx) * occ * k_par / (2.0_dp * pi_dp)
-        end do
-        n_hole(iz) = n_hole(iz) + 2.0_dp * simpson_real(integrand, 0.0_dp, k_max)
-      end do
+      call accumulate_band_density(n_hole, psi2_z, eigenvalues_kpar, &
+        & kpar_grid, integrand, fermi_level, temperature, s, N, nk, &
+        & num_subbands, k_max, is_cb=.false.)
     end do
 
     ! --- Convert 1/AA^3 to cm^-3 ---
@@ -263,5 +235,60 @@ contains
       idx(j + 1) = key_idx
     end do
   end subroutine sort_descending
+
+
+  ! ------------------------------------------------------------------
+  ! Compute |Psi_s(z, k_par)|^2 summed over all 8 band components
+  ! ------------------------------------------------------------------
+  subroutine compute_psi2(psi2_z, eigenvectors, s, N, nk, num_subbands)
+    real(kind=dp), intent(out)   :: psi2_z(N, nk)
+    complex(kind=dp), intent(in) :: eigenvectors(8*N, num_subbands, nk)
+    integer, intent(in)          :: s, N, nk, num_subbands
+
+    integer :: idx, band_start, iz
+
+    psi2_z = 0.0_dp
+    do idx = 1, nk
+      do band_start = 1, 8
+        do iz = 1, N
+          psi2_z(iz, idx) = psi2_z(iz, idx) &
+            & + abs(eigenvectors((band_start - 1)*N + iz, s, idx))**2
+        end do
+      end do
+    end do
+
+  end subroutine compute_psi2
+
+
+  ! ------------------------------------------------------------------
+  ! Accumulate band density at each z via k_par integration
+  ! ------------------------------------------------------------------
+  subroutine accumulate_band_density(n_density, psi2_z, eigenvalues_kpar, &
+      & kpar_grid, integrand, fermi_level, temperature, s, N, nk, num_subbands, &
+      & k_max, is_cb)
+    real(kind=dp), intent(inout) :: n_density(N)
+    real(kind=dp), intent(in)    :: psi2_z(N, nk)
+    integer, intent(in)          :: num_subbands
+    real(kind=dp), intent(in)    :: eigenvalues_kpar(num_subbands, nk)
+    real(kind=dp), intent(in)    :: kpar_grid(nk)
+    real(kind=dp), intent(inout) :: integrand(nk)
+    real(kind=dp), intent(in)    :: fermi_level, temperature, k_max
+    integer, intent(in)          :: s, N, nk
+    logical, intent(in)          :: is_cb
+
+    integer :: iz, idx
+    real(kind=dp) :: k_par, occ
+
+    do iz = 1, N
+      do idx = 1, nk
+        k_par = kpar_grid(idx)
+        occ = fermi_dirac(eigenvalues_kpar(s, idx), fermi_level, temperature)
+        if (.not. is_cb) occ = 1.0_dp - occ
+        integrand(idx) = psi2_z(iz, idx) * occ * k_par / (2.0_dp * pi_dp)
+      end do
+      n_density(iz) = n_density(iz) + 2.0_dp * simpson_real(integrand, 0.0_dp, k_max)
+    end do
+
+  end subroutine accumulate_band_density
 
 end module charge_density

@@ -24,6 +24,7 @@ module sc_loop
   public :: build_epsilon
   public :: build_doping_charge
   public :: apply_potential_to_profile
+  public :: map_layer_to_grid
 
   ! Unit conversion constants
   real(kind=dp), parameter :: ANGSTROM_TO_NM = 0.1_dp    ! 1 Angstrom = 0.1 nm
@@ -86,6 +87,12 @@ contains
     ! Doping charge
     real(kind=dp), allocatable :: rho_doping(:)
 
+    ! Pre-allocated work arrays for Fermi bisection
+    real(kind=dp), allocatable :: fermi_ne(:), fermi_nh(:)
+
+    ! BC type as integer
+    integer :: bc_type_int
+
     ! Local variables
     real(kind=dp) :: dz_val, kpar_max_val
     integer :: iz, nz
@@ -123,6 +130,7 @@ contains
     allocate(rho_doping(nz))
     allocate(phi_history(nz, cfg%sc%diis_history))
     allocate(res_history(nz, cfg%sc%diis_history))
+    allocate(fermi_ne(nz), fermi_nh(nz))
 
     phi_history = 0.0_dp
     res_history = 0.0_dp
@@ -133,6 +141,9 @@ contains
     ! Build dielectric and doping arrays
     call build_epsilon(epsilon, cfg, nz)
     call build_doping_charge(rho_doping, cfg, nz)
+
+    ! Convert BC string to integer constant once
+    bc_type_int = bc_from_string(cfg%sc%bc_type)
 
     ! Initialize potential
     phi_old = 0.0_dp
@@ -214,7 +225,8 @@ contains
       ! Step 3: Find Fermi level (if charge neutrality mode)
       if (cfg%sc%fermi_mode == 0) then
         fermi_level = find_fermi_level(eig_kpar, eigv_kpar, kpar_grid, &
-          & cfg, N, num_subbands, nk_actual, nz, dz_val, rho_doping)
+          & cfg, N, num_subbands, nk_actual, nz, dz_val, rho_doping, &
+          & fermi_ne, fermi_nh)
       end if
 
       ! Step 4: Compute charge density
@@ -231,7 +243,7 @@ contains
       ! dz_val in Angstrom; Poisson solver uses nm (rho in C/nm^3, e0 in C/(V*nm))
       ! 1 Angstrom = 0.1 nm
       call solve_poisson(phi_poisson, rho, epsilon, dz_val * ANGSTROM_TO_NM, nz, &
-        & cfg%sc%bc_left, cfg%sc%bc_right, cfg%sc%bc_type)
+        & cfg%sc%bc_left, cfg%sc%bc_right, bc_type_int)
 
       ! Step 6: Mix potential
       if (iter <= cfg%sc%diis_history .or. cfg%sc%diis_history < 2) then
@@ -280,6 +292,7 @@ contains
     deallocate(rho, epsilon, n_electron, n_hole)
     deallocate(profile_base, rho_doping)
     deallocate(phi_history, res_history)
+    deallocate(fermi_ne, fermi_nh)
     deallocate(rwork, iwork, ifail_arr, work)
     deallocate(eig_kpar, eigv_kpar)
 
@@ -396,7 +409,8 @@ contains
   ! Fermi level bisection for charge neutrality
   ! ------------------------------------------------------------------
   function find_fermi_level(eig_kpar, eigv_kpar, kpar_grid, &
-      & cfg, N, num_subbands, nk_actual, nz, dz_val, rho_doping) result(mu)
+      & cfg, N, num_subbands, nk_actual, nz, dz_val, rho_doping, &
+      & work_ne, work_nh) result(mu)
 
     real(kind=dp) :: mu
     real(kind=dp), intent(in) :: eig_kpar(num_subbands, nk_actual)
@@ -405,13 +419,51 @@ contains
     type(simulation_config), intent(in) :: cfg
     integer, intent(in) :: N, num_subbands, nk_actual, nz
     real(kind=dp), intent(in) :: dz_val, rho_doping(nz)
+    real(kind=dp), intent(inout), optional :: work_ne(nz), work_nh(nz)
 
     real(kind=dp) :: mu_lo, mu_hi, mu_mid
     real(kind=dp), allocatable :: n_elec(:), n_hole(:)
     real(kind=dp) :: charge_excess, target_charge
+    logical :: local_alloc
     integer :: ib, iz
 
-    allocate(n_elec(nz), n_hole(nz))
+    local_alloc = .false.
+    if (present(work_ne) .and. present(work_nh)) then
+      ! Use pre-allocated work arrays from caller
+      call fermi_bisect(eig_kpar, eigv_kpar, kpar_grid, cfg, N, &
+        & num_subbands, nk_actual, nz, dz_val, rho_doping, &
+        & work_ne, work_nh, mu)
+    else
+      ! Allocate locally (backward compatible)
+      allocate(n_elec(nz), n_hole(nz))
+      call fermi_bisect(eig_kpar, eigv_kpar, kpar_grid, cfg, N, &
+        & num_subbands, nk_actual, nz, dz_val, rho_doping, &
+        & n_elec, n_hole, mu)
+      deallocate(n_elec, n_hole)
+    end if
+
+  end function find_fermi_level
+
+
+  ! ------------------------------------------------------------------
+  ! Core Fermi level bisection (uses provided work arrays)
+  ! ------------------------------------------------------------------
+  subroutine fermi_bisect(eig_kpar, eigv_kpar, kpar_grid, &
+      & cfg, N, num_subbands, nk_actual, nz, dz_val, rho_doping, &
+      & n_elec, n_hole, mu)
+
+    real(kind=dp), intent(in) :: eig_kpar(num_subbands, nk_actual)
+    complex(kind=dp), intent(in) :: eigv_kpar(N, num_subbands, nk_actual)
+    real(kind=dp), intent(in) :: kpar_grid(nk_actual)
+    type(simulation_config), intent(in) :: cfg
+    integer, intent(in) :: N, num_subbands, nk_actual, nz
+    real(kind=dp), intent(in) :: dz_val, rho_doping(nz)
+    real(kind=dp), intent(inout) :: n_elec(nz), n_hole(nz)
+    real(kind=dp), intent(out) :: mu
+
+    real(kind=dp) :: mu_lo, mu_hi, mu_mid
+    real(kind=dp) :: charge_excess, target_charge
+    integer :: ib, iz
 
     target_charge = 0.0_dp
     do iz = 1, nz
@@ -445,9 +497,7 @@ contains
 
     mu = 0.5_dp * (mu_lo + mu_hi)
 
-    deallocate(n_elec, n_hole)
-
-  end function find_fermi_level
+  end subroutine fermi_bisect
 
 
   ! ------------------------------------------------------------------
@@ -458,9 +508,7 @@ contains
     real(kind=dp), intent(in)    :: profile_base(nz, 3)
     real(kind=dp), intent(in)    :: phi(nz)
     integer, intent(in)          :: nz
-
     integer :: iz
-
     do iz = 1, nz
       profile(iz, 1) = profile_base(iz, 1) - phi(iz)
       profile(iz, 2) = profile_base(iz, 2) - phi(iz)
@@ -476,23 +524,19 @@ contains
     real(kind=dp), intent(out) :: epsilon(nz)
     type(simulation_config), intent(in) :: cfg
     integer, intent(in) :: nz
-
     integer :: iz, ilayer
-
+    integer, allocatable :: layer_index(:)
+    call map_layer_to_grid(layer_index, cfg, nz)
     epsilon = 12.90_dp
-
     do iz = 1, nz
-      do ilayer = 1, cfg%numLayers
-        if (iz >= cfg%intStartPos(ilayer) .and. &
-          & iz <= cfg%intEndPos(ilayer)) then
-          if (cfg%params(ilayer)%eps0 > 0.0_dp) then
-            epsilon(iz) = cfg%params(ilayer)%eps0
-          end if
-          exit
+      ilayer = layer_index(iz)
+      if (ilayer > 0) then
+        if (cfg%params(ilayer)%eps0 > 0.0_dp) then
+          epsilon(iz) = cfg%params(ilayer)%eps0
         end if
-      end do
+      end if
     end do
-
+    deallocate(layer_index)
   end subroutine build_epsilon
 
 
@@ -503,23 +547,38 @@ contains
     real(kind=dp), intent(out) :: rho_doping(nz)
     type(simulation_config), intent(in) :: cfg
     integer, intent(in) :: nz
-
     integer :: iz, ilayer
-
+    integer, allocatable :: layer_index(:)
     rho_doping = 0.0_dp
-
     if (.not. allocated(cfg%doping)) return
-
+    call map_layer_to_grid(layer_index, cfg, nz)
     do iz = 1, nz
-      do ilayer = 1, cfg%numLayers
-        if (iz >= cfg%intStartPos(ilayer) .and. &
-          & iz <= cfg%intEndPos(ilayer)) then
-          rho_doping(iz) = cfg%doping(ilayer)%ND - cfg%doping(ilayer)%NA
-          exit
+      ilayer = layer_index(iz)
+      if (ilayer > 0) then
+        rho_doping(iz) = cfg%doping(ilayer)%ND - cfg%doping(ilayer)%NA
+      end if
+    end do
+    deallocate(layer_index)
+  end subroutine build_doping_charge
+
+
+  ! ------------------------------------------------------------------
+  ! Map each grid point to its layer index (1-based, 0 = unmapped)
+  ! ------------------------------------------------------------------
+  subroutine map_layer_to_grid(layer_index, cfg, nz)
+    integer, allocatable, intent(out) :: layer_index(:)
+    type(simulation_config), intent(in) :: cfg
+    integer, intent(in) :: nz
+    integer :: iz, ilayer
+    allocate(layer_index(nz))
+    layer_index = 0
+    do ilayer = 1, cfg%numLayers
+      do iz = cfg%intStartPos(ilayer), cfg%intEndPos(ilayer)
+        if (iz >= 1 .and. iz <= nz) then
+          layer_index(iz) = ilayer
         end if
       end do
     end do
-
-  end subroutine build_doping_charge
+  end subroutine map_layer_to_grid
 
 end module sc_loop
