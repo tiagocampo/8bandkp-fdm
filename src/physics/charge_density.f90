@@ -11,16 +11,14 @@ module charge_density
   !   n = (2/(2*pi)^3) sum_{k,s in CB} f(E_s(k)-mu,T) * (4*pi*k^2 dk)
   !   (3D DOS with spherical shell volume)
 
-  use definitions, only: dp, pi_dp
-  use utils, only: simpson
+  use definitions, only: dp, pi_dp, kB_eV
+  use utils, only: simpson, simpson_real
   implicit none
 
   private
   public :: compute_charge_density_qw
   public :: compute_charge_density_bulk
   public :: fermi_dirac
-
-  real(kind=dp), parameter :: kB = 8.617333262e-5_dp  ! eV/K
 
 contains
 
@@ -43,7 +41,7 @@ contains
         f = 0.0_dp
       end if
     else
-      x = (energy - mu) / (kB * T)
+      x = (energy - mu) / (kB_eV * T)
       if (x > 500.0_dp) then
         f = 0.0_dp
       else if (x < -500.0_dp) then
@@ -91,7 +89,7 @@ contains
 
     ! Local arrays
     real(kind=dp), allocatable :: psi2_z(:,:)    ! |Psi|^2 at each z, k_par
-    complex(kind=dp), allocatable :: integrand(:) ! for Simpson
+    real(kind=dp), allocatable     :: integrand(:)  ! for Simpson (real-valued)
     real(kind=dp), allocatable :: sorted_evals(:)
     integer, allocatable :: sort_idx(:)
     real(kind=dp) :: occ, k_par, k_max
@@ -146,10 +144,9 @@ contains
         do idx = 1, nk
           k_par = kpar_grid(idx)
           occ = fermi_dirac(eigenvalues_kpar(s, idx), fermi_level, temperature)
-          integrand(idx) = cmplx(psi2_z(iz, idx) * occ * k_par / (2.0_dp * pi_dp), &
-            & 0.0_dp, kind=dp)
+          integrand(idx) = psi2_z(iz, idx) * occ * k_par / (2.0_dp * pi_dp)
         end do
-        n_electron(iz) = n_electron(iz) + 2.0_dp * real(simpson(integrand, 0.0_dp, k_max), kind=dp)
+        n_electron(iz) = n_electron(iz) + 2.0_dp * simpson_real(integrand, 0.0_dp, k_max)
       end do
     end do
 
@@ -171,10 +168,9 @@ contains
         do idx = 1, nk
           k_par = kpar_grid(idx)
           occ = 1.0_dp - fermi_dirac(eigenvalues_kpar(s, idx), fermi_level, temperature)
-          integrand(idx) = cmplx(psi2_z(iz, idx) * occ * k_par / (2.0_dp * pi_dp), &
-            & 0.0_dp, kind=dp)
+          integrand(idx) = psi2_z(iz, idx) * occ * k_par / (2.0_dp * pi_dp)
         end do
-        n_hole(iz) = n_hole(iz) + 2.0_dp * real(simpson(integrand, 0.0_dp, k_max), kind=dp)
+        n_hole(iz) = n_hole(iz) + 2.0_dp * simpson_real(integrand, 0.0_dp, k_max)
       end do
     end do
 

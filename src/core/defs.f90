@@ -19,6 +19,7 @@ module definitions
   real(kind=dp), parameter :: e = 1.602176565_dp*1E-19
   real(kind=dp), parameter :: hbar2O2m0 = (hbar)**2 / (2.*m0) !eV AA**2
   real(kind=dp), parameter :: e0 = 8.854187817_dp*1E-12*(1E-9) ! C V-1 nm-1
+  real(kind=dp), parameter :: kB_eV = 8.617333262e-5_dp        ! Boltzmann constant (eV/K)
   real(kind=dp), parameter :: tolerance=1e-7
   logical, parameter :: renormalization = .False.
 
