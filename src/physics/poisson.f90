@@ -3,13 +3,19 @@ module poisson
   ! Solves: d/dz[eps(z) dPhi/dz] = -rho(z) / e0
   !
   ! Uses the Thomas algorithm (O(N)) for the resulting tridiagonal system.
-  ! Supports Dirichlet-Dirichlet ('DD') and Dirichlet-Neumann ('DN') BCs.
+  ! Supports Dirichlet-Dirichlet and Dirichlet-Neumann BCs via integer constants.
 
   use definitions, only: dp, e0
   implicit none
 
   private
   public :: solve_poisson
+  public :: bc_from_string
+  public :: BC_DD, BC_DN
+
+  ! Boundary condition integer constants
+  integer, parameter :: BC_DD = 1   ! Dirichlet-Dirichlet
+  integer, parameter :: BC_DN = 2   ! Dirichlet-Neumann
 
 contains
 
@@ -29,7 +35,7 @@ contains
     !   N          - number of grid points (>= 3)
     !   bc_left    - left boundary value (V)
     !   bc_right   - right boundary value (V), used only for DD
-    !   bc_type    - 'DD' (Dirichlet-Dirichlet) or 'DN' (Dirichlet-Neumann)
+    !   bc_type    - BC_DD (Dirichlet-Dirichlet) or BC_DN (Dirichlet-Neumann)
     !
     ! Output:
     !   phi(N)     - electrostatic potential (V)
@@ -41,7 +47,7 @@ contains
     integer, intent(in)          :: N
     real(kind=dp), intent(in)    :: bc_left
     real(kind=dp), intent(in)    :: bc_right
-    character(len=2), intent(in) :: bc_type
+    integer, intent(in)          :: bc_type
 
     ! Tridiagonal bands: a = main diagonal, b = upper, c = lower
     real(kind=dp), allocatable :: a(:), b(:), c(:), rhs(:)
@@ -68,24 +74,19 @@ contains
     end do
 
     ! --- Boundary conditions ---
-    select case (trim(bc_type))
-    case ('DD')
-      ! Left: Dirichlet  Phi_1 = bc_left
-      a(1)   = 1.0_dp
-      b(1)   = 0.0_dp
-      rhs(1) = bc_left
+    ! Left BC: Dirichlet Phi_1 = bc_left (common to DD and DN)
+    a(1)   = 1.0_dp
+    b(1)   = 0.0_dp
+    rhs(1) = bc_left
 
+    select case (bc_type)
+    case (BC_DD)
       ! Right: Dirichlet  Phi_N = bc_right
       a(N)   = 1.0_dp
       c(N)   = 0.0_dp
       rhs(N) = bc_right
 
-    case ('DN')
-      ! Left: Dirichlet  Phi_1 = bc_left
-      a(1)   = 1.0_dp
-      b(1)   = 0.0_dp
-      rhs(1) = bc_left
-
+    case (BC_DN)
       ! Right: Neumann  dPhi/dz = 0  =>  Phi_N - Phi_{N-1} = 0
       a(N)   = 1.0_dp
       c(N)   = -1.0_dp
@@ -146,5 +147,24 @@ contains
     end do
 
   end subroutine thomas_solve
+
+
+  ! ------------------------------------------------------------------
+  ! Convert string BC type to integer constant (boundary conversion)
+  ! ------------------------------------------------------------------
+  function bc_from_string(bc_str) result(bc)
+    character(len=*), intent(in) :: bc_str
+    integer :: bc
+
+    select case (trim(adjustl(bc_str)))
+    case ('DD')
+      bc = BC_DD
+    case ('DN')
+      bc = BC_DN
+    case default
+      bc = 0
+    end select
+
+  end function bc_from_string
 
 end module poisson

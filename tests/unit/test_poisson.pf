@@ -30,7 +30,7 @@ contains
     rho = rho_val
     epsilon = eps_val
 
-    call solve_poisson(phi, rho, epsilon, dz, N, 0.0_dp, 0.0_dp, 'DD')
+    call solve_poisson(phi, rho, epsilon, dz, N, 0.0_dp, 0.0_dp, BC_DD)
 
     ! Check against analytical solution
     max_err = 0.0_dp
@@ -75,7 +75,7 @@ contains
       end if
     end do
 
-    call solve_poisson(phi, rho, epsilon, dz, N, 1.0_dp, 0.0_dp, 'DD')
+    call solve_poisson(phi, rho, epsilon, dz, N, 1.0_dp, 0.0_dp, BC_DD)
 
     ! D at the interface half-point (between 50 and 51):
     ! eps_{50+1/2} = (eps_50 + eps_51) / 2
@@ -109,7 +109,7 @@ contains
     rho = 0.0_dp
     epsilon = 12.90_dp
 
-    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 1.0_dp, 0.0_dp, 'DN')
+    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 1.0_dp, 0.0_dp, BC_DN)
 
     max_err = 0.0_dp
     do i = 1, N
@@ -137,7 +137,7 @@ contains
     rho2 = 0.0_dp
     eps2 = 1.0_dp
 
-    call solve_poisson(phi2, rho2, eps2, 1.0_dp, N2, 1.0_dp, 21.0_dp, 'DD')
+    call solve_poisson(phi2, rho2, eps2, 1.0_dp, N2, 1.0_dp, 21.0_dp, BC_DD)
 
     max_err2 = 0.0_dp
     do i = 1, N2
@@ -160,7 +160,7 @@ contains
     rho = 1.0_dp
     epsilon = 1.0_dp
 
-    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 0.0_dp, 0.0_dp, 'XX')
+    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 0.0_dp, 0.0_dp, 0)  ! invalid BC
 
     max_val = 0.0_dp
     do i = 1, N
@@ -183,7 +183,7 @@ contains
     rho = 1.0_dp
     epsilon = 1.0_dp
 
-    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 0.0_dp, 0.0_dp, 'DD')
+    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 0.0_dp, 0.0_dp, BC_DD)
 
     max_val = 0.0_dp
     do i = 1, N

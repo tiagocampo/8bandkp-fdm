@@ -178,7 +178,7 @@ complex(kind=dp) function simpson(f,a,b)
   real(kind=dp), intent(in) :: a, b
 
   real(kind=dp) :: h
-  integer :: num, i, j, N
+  integer :: num, i, N
   real(kind=dp), allocatable :: sc(:)
 
   if (size(f) < 3) then
@@ -208,6 +208,41 @@ complex(kind=dp) function simpson(f,a,b)
   deallocate(sc)
 
 end function simpson
+
+
+real(kind=dp) function simpson_real(f, a, b)
+  ! Real-valued Simpson 1/3 composite rule (avoids complex arithmetic overhead).
+
+  real(kind=dp), intent(in) :: f(:)
+  real(kind=dp), intent(in) :: a, b
+
+  real(kind=dp) :: h, weighted_sum
+  integer :: num, i
+
+  if (size(f) < 3) then
+    print *, 'Error: simpson_real requires at least 3 points, got', size(f)
+    stop
+  end if
+
+  if (mod(size(f), 2) == 0) then
+    print *, 'Error: simpson_real requires odd number of points.'
+    stop
+  end if
+
+  num = size(f)
+  h = (b - a) / (num - 1) / 3.0_dp
+
+  weighted_sum = f(1) + f(num)
+  do i = 2, num - 1, 2
+    weighted_sum = weighted_sum + 4.0_dp * f(i)
+  end do
+  do i = 3, num - 1, 2
+    weighted_sum = weighted_sum + 2.0_dp * f(i)
+  end do
+
+  simpson_real = h * weighted_sum
+
+end function simpson_real
 
 
 end module utils
