@@ -310,6 +310,9 @@ contains
       cfg%dz = cfg%z(2) - cfg%z(1)
     end if
 
+    ! Initialize the unified spatial grid from legacy fields
+    call init_grid_from_config(cfg)
+
     ! Close input file
     close(data_unit)
 

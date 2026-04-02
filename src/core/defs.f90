@@ -74,6 +74,43 @@ module definitions
     real(kind=dp) :: bc_right = 0.0_dp        ! right BC potential (eV)
   end type sc_config
 
+  ! ------------------------------------------------------------------
+  ! Unified spatial grid for bulk (ndim=0), QW (ndim=1), wire (ndim=2).
+  !
+  ! Bulk:   ny=1, nz=1, dy=dz=0, no coordinate arrays.
+  ! QW:     ny=1, nz=fdStep, dz>0, z(:) holds 1D grid.
+  ! Wire:   ny>1, nz>1, dy>0, dz>0, coords(:,:) holds 2D grid.
+  !
+  ! Cut-cell fields are only allocated for wire mode (ndim=2).  For QW
+  ! and bulk they remain unallocated; code can test associated() or
+  ! treat them as unity when unallocated.
+  ! ------------------------------------------------------------------
+  type spatial_grid
+    integer :: ndim = 0                ! 0=bulk, 1=QW, 2=wire
+    integer :: ny = 1                  ! grid points in y (wire axis)
+    integer :: nz = 1                  ! grid points in z (growth axis)
+    real(kind=dp) :: dy = 0.0_dp       ! grid spacing in y (AA)
+    real(kind=dp) :: dz = 0.0_dp       ! grid spacing in z (AA)
+
+    ! 1D coordinate arrays (allocated for ndim >= 1)
+    real(kind=dp), allocatable :: y(:)       ! (ny)
+    real(kind=dp), allocatable :: z(:)       ! (nz)
+
+    ! Flattened 2D coordinate array (allocated for ndim == 2)
+    ! coords(1,:) = y, coords(2,:) = z,  column-major: (j-1)*ny + i
+    real(kind=dp), allocatable :: coords(:,:)    ! (2, ny*nz)
+
+    ! Material index at each grid point (1-based layer index)
+    integer, allocatable  :: material_id(:)      ! (ny*nz)
+
+    ! Cut-cell immersed boundary fields (ndim == 2 only)
+    real(kind=dp), allocatable :: cell_volume(:)       ! (ny*nz) fractional vol [0,1]
+    real(kind=dp), allocatable :: face_fraction_y(:,:) ! (ny*nz, 2) left/right y-face
+    real(kind=dp), allocatable :: face_fraction_z(:,:) ! (ny*nz, 2) bottom/top z-face
+    ! Nearest active neighbor for each ghost/inactive point
+    integer, allocatable  :: ghost_map(:,:)            ! (ny*nz, 4) N S W E
+  end type spatial_grid
+
   type simulation_config
     integer :: confinement = 0
     integer :: fdStep = 1
@@ -103,6 +140,7 @@ module definitions
     type(paramStruct), allocatable :: params(:)
     type(doping_spec), allocatable :: doping(:)   ! per-layer doping
     type(sc_config)                :: sc           ! SC parameters
+    type(spatial_grid)             :: grid         ! unified spatial grid
   end type simulation_config
 
   type group
@@ -118,6 +156,68 @@ module definitions
     integer :: kronij
     kronij = merge(1, 0, i == j)
   end function
+
+  ! ------------------------------------------------------------------
+  ! Return total number of spatial grid points (ny * nz).
+  ! Works for all ndim: bulk returns 1, QW returns nz, wire returns ny*nz.
+  ! ------------------------------------------------------------------
+  pure function grid_ngrid(grid) result(n)
+    type(spatial_grid), intent(in) :: grid
+    integer :: n
+    n = grid%ny * grid%nz
+  end function
+
+  ! ------------------------------------------------------------------
+  ! Initialize a spatial_grid from the legacy QW fields already set in
+  ! simulation_config.  This bridges the old and new representations
+  ! during the incremental refactoring (Phase 0).
+  !
+  ! For bulk (confinement=0): ndim=0, ny=nz=1.
+  ! For QW  (confinement=1): ndim=1, ny=1, nz=fdStep, z(:) copied.
+  ! ------------------------------------------------------------------
+  subroutine init_grid_from_config(cfg)
+    type(simulation_config), intent(inout) :: cfg
+
+    integer :: i
+
+    select case (cfg%confinement)
+    case (0)
+      ! Bulk: single point, no spatial extent
+      cfg%grid%ndim = 0
+      cfg%grid%ny   = 1
+      cfg%grid%nz   = 1
+      cfg%grid%dy   = 0.0_dp
+      cfg%grid%dz   = 0.0_dp
+      ! No coordinate arrays allocated for bulk
+
+    case (1)
+      ! QW: 1D confinement along z
+      cfg%grid%ndim = 1
+      cfg%grid%ny   = 1
+      cfg%grid%nz   = cfg%fdStep
+      cfg%grid%dy   = 0.0_dp
+      cfg%grid%dz   = cfg%dz
+
+      ! Copy z-coordinate array from legacy field
+      if (allocated(cfg%z)) then
+        cfg%grid%z = cfg%z
+      end if
+
+      ! Build material_id from intStartPos/intEndPos
+      if (allocated(cfg%intStartPos) .and. allocated(cfg%intEndPos)) then
+        allocate(cfg%grid%material_id(cfg%fdStep))
+        cfg%grid%material_id = 0
+        do i = 1, cfg%numLayers
+          cfg%grid%material_id(cfg%intStartPos(i):cfg%intEndPos(i)) = i
+        end do
+      end if
+
+      ! No cut-cell fields for QW
+      ! No coords(:,:) or y(:) for QW (ny=1)
+
+    end select
+
+  end subroutine init_grid_from_config
 
   subroutine tick(t)
       integer, intent(OUT) :: t
