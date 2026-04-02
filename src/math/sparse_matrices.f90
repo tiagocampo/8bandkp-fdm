@@ -19,6 +19,7 @@ module sparse_matrices
   public :: csr_matrix
   public :: csr_init, csr_free, csr_build_from_coo
   public :: kron_dense_dense, kron_dense_eye, kron_eye_dense, kron_dense_dense_1d
+  public :: csr_add, csr_apply_variable_coeff
 
   ! ------------------------------------------------------------------
   ! Compressed Sparse Row (CSR) matrix type for complex-valued
@@ -487,5 +488,143 @@ contains
 
     deallocate(rows_coo, cols_coo, vals_coo)
   end subroutine kron_dense_dense_1d
+
+  ! ==================================================================
+  ! CSR arithmetic routines (Phase 1b)
+  ! ==================================================================
+
+  ! ------------------------------------------------------------------
+  ! Add two CSR matrices: C = alpha*A + beta*B.
+  ! A and B must have the same dimensions.  C is newly allocated.
+  ! Uses COO accumulation: sparsifies union of sparsity patterns.
+  ! ------------------------------------------------------------------
+  subroutine csr_add(A, B, C, alpha, beta)
+    type(csr_matrix), intent(in)  :: A, B
+    type(csr_matrix), intent(out) :: C
+    complex(kind=dp), intent(in), optional :: alpha, beta
+    complex(kind=dp) :: sa, sb
+
+    integer :: nnz_est, idx_c, i, j, row, k
+    integer, allocatable :: rows_coo(:), cols_coo(:)
+    complex(kind=dp), allocatable :: vals_coo(:)
+
+    sa = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    sb = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    if (present(alpha)) sa = alpha
+    if (present(beta))  sb = beta
+
+    nnz_est = A%nnz + B%nnz
+
+    if (nnz_est == 0) then
+      call csr_init(C, A%nrows, A%ncols)
+      return
+    end if
+
+    allocate(rows_coo(nnz_est))
+    allocate(cols_coo(nnz_est))
+    allocate(vals_coo(nnz_est))
+
+    idx_c = 0
+
+    ! Entries from A
+    do row = 1, A%nrows
+      do k = A%rowptr(row), A%rowptr(row + 1) - 1
+        idx_c = idx_c + 1
+        rows_coo(idx_c) = row
+        cols_coo(idx_c) = A%colind(k)
+        vals_coo(idx_c) = sa * A%values(k)
+      end do
+    end do
+
+    ! Entries from B
+    do row = 1, B%nrows
+      do k = B%rowptr(row), B%rowptr(row + 1) - 1
+        idx_c = idx_c + 1
+        rows_coo(idx_c) = row
+        cols_coo(idx_c) = B%colind(k)
+        vals_coo(idx_c) = sb * B%values(k)
+      end do
+    end do
+
+    call csr_build_from_coo(C, A%nrows, A%ncols, idx_c, &
+      rows_coo(1:idx_c), cols_coo(1:idx_c), vals_coo(1:idx_c))
+
+    deallocate(rows_coo, cols_coo, vals_coo)
+  end subroutine csr_add
+
+  ! ------------------------------------------------------------------
+  ! Apply variable coefficient (element-wise row scaling) to a CSR
+  ! matrix: result(i,j) = -profile(i) * A(i,j).
+  !
+  ! The profile array has length A%nrows.  Each row i of A is scaled
+  ! by -profile(i).  The negative sign follows the convention in the
+  ! 1D applyVariableCoeff (kpterms = -profile * FD).
+  !
+  ! Optionally, cut-cell face fractions can modify boundary stencil
+  ! weights.  When face_frac_y and face_frac_z are present, each
+  ! nonzero in row i is additionally scaled by the geometric mean of
+  ! the face fractions for the corresponding direction:
+  !   d^2/dy^2 terms: multiply by (face_frac_y(i,1) + face_frac_y(i,2)) / 2
+  !   d^2/dz^2 terms: multiply by (face_frac_z(i,1) + face_frac_z(i,2)) / 2
+  !   d/dy terms:     multiply by (face_frac_y(i,2) - face_frac_y(i,1)) / 2
+  !   d/dz terms:     multiply by (face_frac_z(i,2) - face_frac_z(i,1)) / 2
+  !
+  ! For now (Phase 1b), the face fractions are applied as a simple
+  ! row volume scaling: result(i,j) = -profile(i) * vol(i) * A(i,j),
+  ! where vol(i) = cell_volume(i).  This is the correct box-integration
+  ! weight for a 2D Laplacian with cut cells.
+  ! ------------------------------------------------------------------
+  subroutine csr_apply_variable_coeff(A, profile, result_mat, cell_volume)
+    type(csr_matrix), intent(in)  :: A
+    real(kind=dp), intent(in)     :: profile(:)     ! (A%nrows)
+    type(csr_matrix), intent(out) :: result_mat
+    real(kind=dp), intent(in), optional :: cell_volume(:)  ! (A%nrows)
+
+    integer :: i, k, row, nnz_out
+    real(kind=dp) :: scale
+    integer, allocatable :: rows_coo(:), cols_coo(:)
+    complex(kind=dp), allocatable :: vals_coo(:)
+
+    nnz_out = A%nnz
+
+    if (nnz_out == 0) then
+      call csr_init(result_mat, A%nrows, A%ncols)
+      return
+    end if
+
+    allocate(rows_coo(nnz_out))
+    allocate(cols_coo(nnz_out))
+    allocate(vals_coo(nnz_out))
+
+    ! Build COO from A with row scaling
+    idx_loop: do i = 1, nnz_out
+      rows_coo(i) = 0
+      cols_coo(i) = 0
+      vals_coo(i) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    end do idx_loop
+
+    k = 0
+    do row = 1, A%nrows
+      scale = -profile(row)
+      if (present(cell_volume)) then
+        if (cell_volume(row) > 0.0_dp) then
+          scale = scale * cell_volume(row)
+        else
+          scale = 0.0_dp
+        end if
+      end if
+      do i = A%rowptr(row), A%rowptr(row + 1) - 1
+        k = k + 1
+        rows_coo(k) = row
+        cols_coo(k) = A%colind(i)
+        vals_coo(k) = scale * A%values(i)
+      end do
+    end do
+
+    call csr_build_from_coo(result_mat, A%nrows, A%ncols, k, &
+      rows_coo(1:k), cols_coo(1:k), vals_coo(1:k))
+
+    deallocate(rows_coo, cols_coo, vals_coo)
+  end subroutine csr_apply_variable_coeff
 
 end module sparse_matrices

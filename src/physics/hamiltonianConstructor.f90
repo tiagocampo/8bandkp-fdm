@@ -2,6 +2,7 @@ module hamiltonianConstructor
 
   use definitions
   use finitedifferences
+  use sparse_matrices
   use utils
   use mkl_spblas
 
@@ -285,6 +286,242 @@ module hamiltonianConstructor
       end if
 
     end subroutine confinementInitialization_cfg
+
+    !---------------------------------------------------------------------------
+    !> 2D confinement initialization for quantum wire mode (ndim=2).
+    !>
+    !> Builds kpterms_2d (11 CSR matrices) from 1D FD operators and
+    !> Kronecker products, then applies position-dependent material
+    !> parameters from the spatial_grid.
+    !>
+    !> kpterms_2d indices:
+    !>   1: gamma1 (diagonal only)
+    !>   2: gamma2 (diagonal only)
+    !>   3: gamma3 (diagonal only)
+    !>   4: P      (diagonal only)
+    !>   5: A * (d^2/dy^2 + d^2/dz^2)   -- 2nd derivative, conduction band kinetic
+    !>   6: P * (d/dy + d/dz)            -- 1st derivative, momentum coupling
+    !>   7: (gamma1 - 2*gamma2) * Laplacian -- Q term kinetic
+    !>   8: (gamma1 + 2*gamma2) * Laplacian -- T term kinetic
+    !>   9: gamma3 * (d/dy + d/dz)       -- S term, linear-k coupling
+    !>  10: A (diagonal only, k^2 coefficient for CB)
+    !>  11: gamma3 * d^2/dydz             -- cross-derivative (NEW for 2D)
+    !>
+    !> Also builds profile_2d(Ngrid, 3) with band edges:
+    !>   profile_2d(:,1) = EV
+    !>   profile_2d(:,2) = EV - DeltaSO
+    !>   profile_2d(:,3) = EC
+    !---------------------------------------------------------------------------
+    subroutine confinementInitialization_2d(grid, params, regions, &
+        profile_2d, kpterms_2d, FDorder)
+
+      type(spatial_grid), intent(in)    :: grid
+      type(paramStruct), intent(in)     :: params(:)     ! size = numRegions
+      type(region_spec), intent(in)     :: regions(:)    ! size = numRegions
+      real(kind=dp), allocatable, intent(out) :: profile_2d(:,:)
+      type(csr_matrix), allocatable, intent(out) :: kpterms_2d(:)
+      integer, intent(in), optional     :: FDorder
+
+      integer :: order, ny, nz, ngrid, ij, mid
+      real(kind=dp) :: dy, dz
+
+      ! 1D FD matrices (real, dense)
+      real(kind=dp), allocatable :: D2y(:,:), D1y(:,:)
+      real(kind=dp), allocatable :: D2z(:,:), D1z(:,:)
+      real(kind=dp), allocatable :: Iy(:,:), Iz(:,:)
+
+      ! Complex versions for Kron product routines
+      complex(kind=dp), allocatable :: cD2y(:,:), cD1y(:,:)
+      complex(kind=dp), allocatable :: cD2z(:,:), cD1z(:,:)
+      complex(kind=dp), allocatable :: cIy(:,:), cIz(:,:)
+
+      ! CSR work matrices
+      type(csr_matrix) :: kron_D2y_Inz, kron_Iny_D2z, laplacian_2d
+      type(csr_matrix) :: kron_D1y_Inz, kron_Iny_D1z, grad_2d
+      type(csr_matrix) :: kron_D1y_D1z  ! cross-derivative
+      type(csr_matrix) :: diag_csr, scaled_diag
+
+      ! Material profiles on the 2D grid
+      real(kind=dp), allocatable :: prof_gamma1(:), prof_gamma2(:)
+      real(kind=dp), allocatable :: prof_gamma3(:), prof_P(:), prof_A(:)
+      real(kind=dp), allocatable :: prof_gm12g2(:), prof_gp12g2(:)
+
+      ! Resolve FD order (default 2)
+      if (present(FDorder)) then
+        order = FDorder
+      else
+        order = 2
+      end if
+
+      ny    = grid%ny
+      nz    = grid%nz
+      ngrid = ny * nz
+      dy    = grid%dy
+      dz    = grid%dz
+
+      ! Validate grid
+      if (ny < 3 .or. nz < 3) then
+        print *, "ERROR: confinementInitialization_2d requires ny>=3, nz>=3"
+        stop 1
+      end if
+
+      ! ====================================================================
+      ! 1. Build 1D FD operators
+      ! ====================================================================
+      call buildFD2ndDerivMatrix(ny, dy, order, D2y)
+      call buildFD1stDerivMatrix(ny, dy, order, D1y)
+      call buildFD2ndDerivMatrix(nz, dz, order, D2z)
+      call buildFD1stDerivMatrix(nz, dz, order, D1z)
+
+      ! Identity matrices
+      call Identity(ny, Iy)
+      call Identity(nz, Iz)
+
+      ! Convert real matrices to complex for Kron routines
+      allocate(cD2y(ny, ny)); cD2y = cmplx(D2y, 0.0_dp, kind=dp)
+      allocate(cD1y(ny, ny)); cD1y = cmplx(D1y, 0.0_dp, kind=dp)
+      allocate(cD2z(nz, nz)); cD2z = cmplx(D2z, 0.0_dp, kind=dp)
+      allocate(cD1z(nz, nz)); cD1z = cmplx(D1z, 0.0_dp, kind=dp)
+      allocate(cIy(ny, ny));   cIy  = cmplx(Iy,  0.0_dp, kind=dp)
+      allocate(cIz(nz, nz));   cIz  = cmplx(Iz,  0.0_dp, kind=dp)
+
+      ! ====================================================================
+      ! 2. Build 2D FD operators via Kronecker products
+      ! ====================================================================
+
+      ! Laplacian: D2y x Iz + Iy x D2z
+      call kron_dense_dense(cD2y, ny, ny, cIz, nz, nz, kron_D2y_Inz)
+      call kron_eye_dense(ny, cD2z, nz, nz, kron_Iny_D2z)
+      call csr_add(kron_D2y_Inz, kron_Iny_D2z, laplacian_2d)
+
+      ! Gradient: D1y x Iz + Iy x D1z
+      call kron_dense_dense(cD1y, ny, ny, cIz, nz, nz, kron_D1y_Inz)
+      call kron_eye_dense(ny, cD1z, nz, nz, kron_Iny_D1z)
+      call csr_add(kron_D1y_Inz, kron_Iny_D1z, grad_2d)
+
+      ! Cross-derivative: D1y x D1z
+      call kron_dense_dense(cD1y, ny, ny, cD1z, nz, nz, kron_D1y_D1z)
+
+      ! Free intermediate Kronecker products
+      call csr_free(kron_D2y_Inz)
+      call csr_free(kron_Iny_D2z)
+      call csr_free(kron_D1y_Inz)
+      call csr_free(kron_Iny_D1z)
+
+      ! ====================================================================
+      ! 3. Build material profiles on the 2D grid
+      ! ====================================================================
+      allocate(prof_gamma1(ngrid)); prof_gamma1 = 0.0_dp
+      allocate(prof_gamma2(ngrid)); prof_gamma2 = 0.0_dp
+      allocate(prof_gamma3(ngrid)); prof_gamma3 = 0.0_dp
+      allocate(prof_P(ngrid));      prof_P      = 0.0_dp
+      allocate(prof_A(ngrid));      prof_A      = 0.0_dp
+      allocate(prof_gm12g2(ngrid)); prof_gm12g2 = 0.0_dp
+      allocate(prof_gp12g2(ngrid)); prof_gp12g2 = 0.0_dp
+
+      if (allocated(profile_2d)) deallocate(profile_2d)
+      allocate(profile_2d(ngrid, 3))
+      profile_2d = 0.0_dp
+
+      do ij = 1, ngrid
+        mid = grid%material_id(ij)
+        if (mid < 1 .or. mid > size(params)) then
+          ! Inactive cell or outside domain -- leave zeros
+          cycle
+        end if
+
+        if (params(mid)%EV == 0.0_dp .and. params(mid)%EC == 0.0_dp) then
+          print *, "ERROR: Region '", trim(regions(mid)%material), &
+            "' has EV=0 and EC=0. Band offsets are required."
+          stop 1
+        end if
+
+        ! Band-edge profile
+        profile_2d(ij, 1) = params(mid)%EV
+        profile_2d(ij, 2) = params(mid)%EV - params(mid)%DeltaSO
+        profile_2d(ij, 3) = params(mid)%EC
+
+        ! Material parameter profiles
+        prof_gamma1(ij) = params(mid)%gamma1
+        prof_gamma2(ij) = params(mid)%gamma2
+        prof_gamma3(ij) = params(mid)%gamma3
+        prof_P(ij)      = params(mid)%P
+        prof_A(ij)      = params(mid)%A
+        prof_gm12g2(ij) = params(mid)%gamma1 - 2.0_dp * params(mid)%gamma2
+        prof_gp12g2(ij) = params(mid)%gamma1 + 2.0_dp * params(mid)%gamma2
+      end do
+
+      ! ====================================================================
+      ! 4. Build kpterms_2d (11 CSR matrices)
+      ! ====================================================================
+      if (allocated(kpterms_2d)) deallocate(kpterms_2d)
+      allocate(kpterms_2d(11))
+
+      ! Terms 1-4: diagonal-only (gamma1, gamma2, gamma3, P)
+      ! Build a diagonal CSR from the profile and store directly
+      call build_diagonal_csr(ngrid, prof_gamma1, kpterms_2d(1))
+      call build_diagonal_csr(ngrid, prof_gamma2, kpterms_2d(2))
+      call build_diagonal_csr(ngrid, prof_gamma3, kpterms_2d(3))
+      call build_diagonal_csr(ngrid, prof_P, kpterms_2d(4))
+
+      ! Term 5: A * Laplacian
+      call csr_apply_variable_coeff(laplacian_2d, prof_A, kpterms_2d(5))
+
+      ! Term 6: P * Gradient
+      call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6))
+
+      ! Term 7: (gamma1 - 2*gamma2) * Laplacian
+      call csr_apply_variable_coeff(laplacian_2d, prof_gm12g2, kpterms_2d(7))
+
+      ! Term 8: (gamma1 + 2*gamma2) * Laplacian
+      call csr_apply_variable_coeff(laplacian_2d, prof_gp12g2, kpterms_2d(8))
+
+      ! Term 9: gamma3 * Gradient
+      call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9))
+
+      ! Term 10: A (diagonal only)
+      call build_diagonal_csr(ngrid, prof_A, kpterms_2d(10))
+
+      ! Term 11: gamma3 * Cross-derivative (NEW)
+      call csr_apply_variable_coeff(kron_D1y_D1z, prof_gamma3, kpterms_2d(11))
+
+      ! ====================================================================
+      ! 5. Cleanup
+      ! ====================================================================
+      call csr_free(laplacian_2d)
+      call csr_free(grad_2d)
+      call csr_free(kron_D1y_D1z)
+
+      deallocate(D2y, D1y, D2z, D1z, Iy, Iz)
+      deallocate(cD2y, cD1y, cD2z, cD1z, cIy, cIz)
+      deallocate(prof_gamma1, prof_gamma2, prof_gamma3)
+      deallocate(prof_P, prof_A, prof_gm12g2, prof_gp12g2)
+
+    end subroutine confinementInitialization_2d
+
+    !---------------------------------------------------------------------------
+    !> Build a diagonal CSR matrix from a real profile vector.
+    !> mat(i,i) = cmplx(profile(i), 0.0_dp).
+    !---------------------------------------------------------------------------
+    subroutine build_diagonal_csr(n, profile, mat)
+      integer, intent(in) :: n
+      real(kind=dp), intent(in) :: profile(n)
+      type(csr_matrix), intent(out) :: mat
+
+      integer :: i
+      integer, allocatable :: rows(:), cols(:)
+      complex(kind=dp), allocatable :: vals(:)
+
+      allocate(rows(n), cols(n), vals(n))
+      do i = 1, n
+        rows(i) = i
+        cols(i) = i
+        vals(i) = cmplx(profile(i), 0.0_dp, kind=dp)
+      end do
+
+      call csr_build_from_coo(mat, n, n, n, rows, cols, vals)
+      deallocate(rows, cols, vals)
+    end subroutine build_diagonal_csr
 
     !---------------------------------------------------------------------------
     !> Apply variable coefficient to FD matrix and store in kpterms.

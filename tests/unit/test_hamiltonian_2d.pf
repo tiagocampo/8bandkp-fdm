@@ -1,0 +1,534 @@
+module test_hamiltonian_2d
+  use funit
+  use definitions
+  use parameters
+  use sparse_matrices
+  use geometry
+  use finitedifferences
+  use hamiltonianConstructor
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! Kronecker product identity test
+  ! ==================================================================
+
+  @test
+  subroutine test_kron_identity_size()
+    ! kron(I_n, I_n) should give N^2 x N^2 identity
+    integer, parameter :: n = 4
+    type(csr_matrix) :: C
+    complex(kind=dp) :: eye(n, n)
+    integer :: i
+
+    eye = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, n
+      eye(i, i) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    end do
+
+    call kron_dense_dense(eye, n, n, eye, n, n, C)
+
+    @assertEqual(n * n, C%nrows)
+    @assertEqual(n * n, C%ncols)
+    @assertEqual(n * n, C%nnz)
+    call csr_free(C)
+  end subroutine test_kron_identity_size
+
+  ! ==================================================================
+  ! 2D Laplacian sparsity and symmetry test
+  ! ==================================================================
+
+  @test
+  subroutine test_laplacian_2d_sparsity()
+    ! Verify the 2D Laplacian via Kronecker products has correct
+    ! dimensions and reasonable sparsity for a uniform grid.
+    ! Note: boundary rows use one-sided stencils which break exact symmetry,
+    ! so we check interior symmetry only.
+    integer, parameter :: ny = 5, nz = 5
+    real(kind=dp), parameter :: dy = 1.0_dp, dz = 1.0_dp
+    integer :: ngrid
+    real(kind=dp), allocatable :: D2y(:,:), D2z(:,:), Iy_mat(:,:), Iz_mat(:,:)
+    complex(kind=dp), allocatable :: cD2y(:,:), cD2z(:,:), cIy(:,:), cIz(:,:)
+    type(csr_matrix) :: kron_a, kron_b, lap
+
+    ngrid = ny * nz
+
+    call buildFD2ndDerivMatrix(ny, dy, 2, D2y)
+    call buildFD2ndDerivMatrix(nz, dz, 2, D2z)
+    call Identity(ny, Iy_mat)
+    call Identity(nz, Iz_mat)
+
+    allocate(cD2y(ny,ny)); cD2y = cmplx(D2y, 0.0_dp, kind=dp)
+    allocate(cD2z(nz,nz)); cD2z = cmplx(D2z, 0.0_dp, kind=dp)
+    allocate(cIy(ny,ny));   cIy = cmplx(Iy_mat, 0.0_dp, kind=dp)
+    allocate(cIz(nz,nz));   cIz = cmplx(Iz_mat, 0.0_dp, kind=dp)
+
+    ! Laplacian = D2y x Iz + Iy x D2z
+    call kron_dense_dense(cD2y, ny, ny, cIz, nz, nz, kron_a)
+    call kron_eye_dense(ny, cD2z, nz, nz, kron_b)
+    call csr_add(kron_a, kron_b, lap)
+
+    @assertEqual(ngrid, lap%nrows)
+    @assertEqual(ngrid, lap%ncols)
+    @assertTrue(lap%nnz > 0, message="Laplacian has nonzeros")
+    @assertTrue(lap%nnz <= 2 * 3 * ngrid, message="Laplacian sparsity bounded")
+
+    ! Interior rows of 2D Laplacian should be symmetric
+    call assert_csr_interior_symmetric(lap, ny, nz, "2D Laplacian interior")
+
+    call csr_free(kron_a)
+    call csr_free(kron_b)
+    call csr_free(lap)
+    deallocate(D2y, D2z, Iy_mat, Iz_mat, cD2y, cD2z, cIy, cIz)
+  end subroutine test_laplacian_2d_sparsity
+
+  ! ==================================================================
+  ! Cross-derivative sparse pattern test
+  ! ==================================================================
+
+  @test
+  subroutine test_cross_derivative_pattern()
+    ! d^2/dydz = D1y x D1z.  Verify correct dimensions and nonzeros.
+    integer, parameter :: ny = 4, nz = 5
+    real(kind=dp), parameter :: dy = 1.0_dp, dz = 2.0_dp
+    real(kind=dp), allocatable :: D1y(:,:), D1z(:,:)
+    complex(kind=dp), allocatable :: cD1y(:,:), cD1z(:,:)
+    type(csr_matrix) :: cross
+
+    call buildFD1stDerivMatrix(ny, dy, 2, D1y)
+    call buildFD1stDerivMatrix(nz, dz, 2, D1z)
+
+    allocate(cD1y(ny,ny)); cD1y = cmplx(D1y, 0.0_dp, kind=dp)
+    allocate(cD1z(nz,nz)); cD1z = cmplx(D1z, 0.0_dp, kind=dp)
+
+    call kron_dense_dense(cD1y, ny, ny, cD1z, nz, nz, cross)
+
+    @assertEqual(ny * nz, cross%nrows)
+    @assertEqual(ny * nz, cross%ncols)
+    @assertTrue(cross%nnz > 0, message="Cross derivative has nonzeros")
+
+    call csr_free(cross)
+    deallocate(D1y, D1z, cD1y, cD1z)
+  end subroutine test_cross_derivative_pattern
+
+  ! ==================================================================
+  ! kpterms_2d sparsity pattern test
+  ! ==================================================================
+
+  @test
+  subroutine test_kpterms_2d_sparsity()
+    ! Build kpterms_2d for a simple GaAs rectangle and check sparsity.
+    integer, parameter :: ny = 4, nz = 4
+    real(kind=dp), parameter :: dy = 5.0_dp, dz = 5.0_dp
+    integer :: ngrid, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    integer :: mat2d(ny, nz)
+
+    ngrid = ny * nz
+    mat2d = 1  ! single material
+
+    call grid_init_rect(grid, ny, nz, dy, dz, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    ! Check array size
+    @assertEqual(11, size(kpterms_2d))
+
+    ! Check all matrices have correct dimensions
+    do ij = 1, 11
+      @assertEqual(ngrid, kpterms_2d(ij)%nrows)
+      @assertEqual(ngrid, kpterms_2d(ij)%ncols)
+    end do
+
+    ! Diagonal terms (1-4, 10) should have exactly ngrid nonzeros
+    @assertEqual(ngrid, kpterms_2d(1)%nnz)
+    @assertEqual(ngrid, kpterms_2d(2)%nnz)
+    @assertEqual(ngrid, kpterms_2d(3)%nnz)
+    @assertEqual(ngrid, kpterms_2d(4)%nnz)
+    @assertEqual(ngrid, kpterms_2d(10)%nnz)
+
+    ! Laplacian-based terms (5, 7, 8) should have NNZ > ngrid
+    @assertTrue(kpterms_2d(5)%nnz > ngrid, message="Term 5 has off-diagonal")
+    @assertTrue(kpterms_2d(7)%nnz > ngrid, message="Term 7 has off-diagonal")
+    @assertTrue(kpterms_2d(8)%nnz > ngrid, message="Term 8 has off-diagonal")
+
+    ! Cross-derivative (11) should have nonzeros
+    @assertTrue(kpterms_2d(11)%nnz > 0, message="Term 11 has entries")
+
+    ! Check profile dimensions
+    @assertEqual(ngrid, size(profile_2d, 1))
+    @assertEqual(3, size(profile_2d, 2))
+
+    ! Profile should be non-zero for active cells
+    @assertTrue(profile_2d(1, 1) /= 0.0_dp, message="EV non-zero")
+    @assertTrue(profile_2d(1, 3) /= 0.0_dp, message="EC non-zero")
+
+    ! Cleanup
+    do ij = 1, 11
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_kpterms_2d_sparsity
+
+  ! ==================================================================
+  ! Hermiticity test (interior only)
+  ! ==================================================================
+
+  @test
+  subroutine test_kpterms_2d_hermitian()
+    ! For a uniform material profile, Laplacian-based terms should be Hermitian
+    ! (symmetric + real) in the interior.
+    integer, parameter :: nny = 5, nnz = 5
+    real(kind=dp), parameter :: dy = 1.0_dp, dz = 1.0_dp
+    integer :: ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    integer :: mat2d(nny, nnz)
+
+    mat2d = 1  ! single material
+
+    call grid_init_rect(grid, nny, nnz, dy, dz, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    ! Term 5: A * Laplacian -- should be Hermitian for uniform profile
+    ! (interior rows only; boundary rows use one-sided stencils)
+    call assert_csr_interior_hermitian(kpterms_2d(5), nny, nnz, "Term 5 (A*Laplacian)")
+
+    ! Term 7: (gamma1-2gamma2) * Laplacian
+    call assert_csr_interior_hermitian(kpterms_2d(7), nny, nnz, "Term 7 (Q*Laplacian)")
+
+    ! Term 8: (gamma1+2gamma2) * Laplacian
+    call assert_csr_interior_hermitian(kpterms_2d(8), nny, nnz, "Term 8 (T*Laplacian)")
+
+    do ij = 1, 11
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_kpterms_2d_hermitian
+
+  ! ==================================================================
+  ! Profile construction test
+  ! ==================================================================
+
+  @test
+  subroutine test_profile_2d_band_edges()
+    ! Verify profile_2d contains correct band-edge values for GaAs.
+    integer, parameter :: nny = 3, nnz = 3
+    real(kind=dp), parameter :: dy = 5.0_dp, dz = 5.0_dp
+    integer :: ngrid, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    integer :: mat2d(nny, nnz)
+    real(kind=dp) :: expected_EV, expected_EC, expected_DeltaSO
+
+    ngrid = nny * nnz
+    mat2d = 1
+
+    call grid_init_rect(grid, nny, nnz, dy, dz, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    expected_EV = params(1)%EV
+    expected_EC = params(1)%EC
+    expected_DeltaSO = params(1)%DeltaSO
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    ! All cells should have the same GaAs band edges
+    do ij = 1, ngrid
+      @assertEqual(expected_EV, profile_2d(ij, 1), tolerance=1.0e-14_dp)
+      @assertEqual(expected_EV - expected_DeltaSO, profile_2d(ij, 2), tolerance=1.0e-14_dp)
+      @assertEqual(expected_EC, profile_2d(ij, 3), tolerance=1.0e-14_dp)
+    end do
+
+    do ij = 1, 11
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_profile_2d_band_edges
+
+  ! ==================================================================
+  ! CSR add test
+  ! ==================================================================
+
+  @test
+  subroutine test_csr_add_basic()
+    ! Test that csr_add correctly merges two diagonal matrices.
+    integer, parameter :: n = 3
+    type(csr_matrix) :: A, B, C
+    complex(kind=dp) :: val_A(3), val_B(3)
+    integer :: rows(3), cols(3)
+    complex(kind=dp), allocatable :: dense(:,:)
+
+    rows = [1, 2, 3]
+    cols = [1, 2, 3]
+    val_A = [cmplx(1.0_dp,0,dp), cmplx(2.0_dp,0,dp), cmplx(3.0_dp,0,dp)]
+    val_B = [cmplx(4.0_dp,0,dp), cmplx(5.0_dp,0,dp), cmplx(6.0_dp,0,dp)]
+
+    call csr_build_from_coo(A, n, n, 3, rows, cols, val_A)
+    call csr_build_from_coo(B, n, n, 3, rows, cols, val_B)
+    call csr_add(A, B, C)
+
+    @assertEqual(n, C%nrows)
+    @assertEqual(n, C%nnz)
+
+    allocate(dense(n, n))
+    call csr_to_dense(C, dense)
+
+    @assertEqual(cmplx(5.0_dp,0,dp), dense(1,1), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(7.0_dp,0,dp), dense(2,2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(9.0_dp,0,dp), dense(3,3), tolerance=1.0e-14_dp)
+
+    call csr_free(A)
+    call csr_free(B)
+    call csr_free(C)
+    deallocate(dense)
+  end subroutine test_csr_add_basic
+
+  ! ==================================================================
+  ! CSR variable coefficient test
+  ! ==================================================================
+
+  @test
+  subroutine test_csr_apply_variable_coeff()
+    ! Test row scaling: result(i,j) = -profile(i) * A(i,j)
+    integer, parameter :: n = 3
+    type(csr_matrix) :: A, result_mat
+    complex(kind=dp) :: vals(7)
+    integer :: rows(7), cols(7)
+    real(kind=dp) :: profile(3)
+    complex(kind=dp), allocatable :: dense(:,:)
+
+    rows = [1, 1, 2, 2, 2, 3, 3]
+    cols = [1, 2, 1, 2, 3, 2, 3]
+    vals = [cmplx(1.0_dp,0,dp), cmplx(2.0_dp,0,dp), cmplx(3.0_dp,0,dp), cmplx(4.0_dp,0,dp), cmplx(5.0_dp,0,dp), cmplx(6.0_dp,0,dp), cmplx(7.0_dp,0,dp)]
+
+    call csr_build_from_coo(A, n, n, 7, rows, cols, vals)
+    profile = [10.0_dp, 20.0_dp, 30.0_dp]
+    call csr_apply_variable_coeff(A, profile, result_mat)
+
+    allocate(dense(n, n))
+    call csr_to_dense(result_mat, dense)
+
+    @assertEqual(cmplx(-10.0_dp,0,dp), dense(1,1), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-20.0_dp,0,dp), dense(1,2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-60.0_dp,0,dp), dense(2,1), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-80.0_dp,0,dp), dense(2,2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-100.0_dp,0,dp), dense(2,3), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-180.0_dp,0,dp), dense(3,2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-210.0_dp,0,dp), dense(3,3), tolerance=1.0e-14_dp)
+
+    call csr_free(A)
+    call csr_free(result_mat)
+    deallocate(dense)
+  end subroutine test_csr_apply_variable_coeff
+
+  ! ==================================================================
+  ! 2D Laplacian eigenvalue sanity test
+  ! ==================================================================
+
+  @test
+  subroutine test_laplacian_2d_eigenvalue_sanity()
+    ! Build kpterms_2d and verify term 5 diagonal is correct sign/magnitude.
+    ! For uniform GaAs with A > 0 and csr_apply_variable_coeff scaling by -A,
+    ! the diagonal of term 5 should be positive (negative Laplacian times -A).
+    integer, parameter :: nny = 7, nnz = 7
+    real(kind=dp), parameter :: dy = 1.0_dp, dz = 1.0_dp
+    integer :: ngrid, ij, diag_idx
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    integer :: mat2d(nny, nnz)
+    real(kind=dp) :: diag_val, expected_diag
+    real(kind=dp) :: gaas_A
+
+    ngrid = nny * nnz
+    mat2d = 1
+
+    call grid_init_rect(grid, nny, nnz, dy, dz, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    gaas_A = params(1)%A
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    ! For interior point, the 2nd derivative FD stencil gives -2/h^2 on diagonal.
+    ! csr_apply_variable_coeff scales by -profile, so:
+    ! diagonal = -A * (-2/dy^2 + -2/dz^2) = A * (2/dy^2 + 2/dz^2)
+    ! Pick an interior point (e.g. row at center of grid)
+    diag_idx = (nnz/2 - 1) * nny + nny/2  ! interior grid point
+    diag_val = 0.0_dp
+    do ij = kpterms_2d(5)%rowptr(diag_idx), kpterms_2d(5)%rowptr(diag_idx+1) - 1
+      if (kpterms_2d(5)%colind(ij) == diag_idx) then
+        diag_val = real(kpterms_2d(5)%values(ij))
+        exit
+      end if
+    end do
+
+    expected_diag = gaas_A * (2.0_dp/dy**2 + 2.0_dp/dz**2)
+
+    @assertTrue(diag_val > 0.0_dp, message="Term 5 interior diagonal is positive")
+    @assertEqual(expected_diag, diag_val, tolerance=0.01_dp * expected_diag)
+
+    do ij = 1, 11
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_laplacian_2d_eigenvalue_sanity
+
+  ! ==================================================================
+  ! Helper subroutines
+  ! ==================================================================
+
+  subroutine csr_to_dense(mat, dense)
+    type(csr_matrix), intent(in) :: mat
+    complex(kind=dp), intent(out) :: dense(:,:)
+    integer :: row, k
+
+    dense = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do row = 1, mat%nrows
+      do k = mat%rowptr(row), mat%rowptr(row + 1) - 1
+        dense(row, mat%colind(k)) = mat%values(k)
+      end do
+    end do
+  end subroutine csr_to_dense
+
+  ! ------------------------------------------------------------------
+  ! Check symmetry for interior-interior pairs only.
+  ! Interior rows/cols are those whose (iy,iz) indices are at least
+  ! half_bw+1 away from boundaries.  Only pairs where BOTH ij and j
+  ! are interior are checked, because boundary stencils break symmetry
+  ! even when the interior row connects to a boundary column.
+  ! ------------------------------------------------------------------
+  subroutine assert_csr_interior_symmetric(mat, ny, nz, label)
+    type(csr_matrix), intent(in) :: mat
+    integer, intent(in) :: ny, nz
+    character(len=*), intent(in) :: label
+    complex(kind=dp), allocatable :: dense(:,:)
+    real(kind=dp) :: max_err
+    integer :: j, iy, iz, ij, jy, jz
+
+    allocate(dense(mat%nrows, mat%ncols))
+    call csr_to_dense(mat, dense)
+    max_err = 0.0_dp
+
+    do iz = 2, nz - 1
+      do iy = 2, ny - 1
+        ij = (iz - 1) * ny + iy
+        do jz = 2, nz - 1
+          do jy = 2, ny - 1
+            j = (jz - 1) * ny + jy
+            max_err = max(max_err, abs(dense(ij, j) - dense(j, ij)))
+          end do
+        end do
+      end do
+    end do
+
+    deallocate(dense)
+    @assertTrue(max_err < 1.0e-10_dp, message=trim(label) // " interior symmetric")
+  end subroutine assert_csr_interior_symmetric
+
+  ! ------------------------------------------------------------------
+  ! Check Hermiticity for interior-interior pairs only.
+  ! ------------------------------------------------------------------
+  subroutine assert_csr_interior_hermitian(mat, ny, nz, label)
+    type(csr_matrix), intent(in) :: mat
+    integer, intent(in) :: ny, nz
+    character(len=*), intent(in) :: label
+    complex(kind=dp), allocatable :: dense(:,:)
+    real(kind=dp) :: max_err
+    integer :: j, iy, iz, ij, jy, jz
+
+    allocate(dense(mat%nrows, mat%ncols))
+    call csr_to_dense(mat, dense)
+    max_err = 0.0_dp
+
+    do iz = 2, nz - 1
+      do iy = 2, ny - 1
+        ij = (iz - 1) * ny + iy
+        do jz = 2, nz - 1
+          do jy = 2, ny - 1
+            j = (jz - 1) * ny + jy
+            max_err = max(max_err, abs(dense(ij, j) - conjg(dense(j, ij))))
+          end do
+        end do
+      end do
+    end do
+
+    deallocate(dense)
+    @assertTrue(max_err < 1.0e-10_dp, message=trim(label) // " interior Hermitian")
+  end subroutine assert_csr_interior_hermitian
+
+  ! ------------------------------------------------------------------
+  subroutine assert_csr_hermitian(mat, label)
+    type(csr_matrix), intent(in) :: mat
+    character(len=*), intent(in) :: label
+    complex(kind=dp), allocatable :: dense(:,:)
+    real(kind=dp) :: max_err
+    integer :: i, j
+
+    allocate(dense(mat%nrows, mat%ncols))
+    call csr_to_dense(mat, dense)
+    max_err = 0.0_dp
+
+    do j = 1, mat%ncols
+      do i = 1, mat%nrows
+        max_err = max(max_err, abs(dense(i,j) - conjg(dense(j,i))))
+      end do
+    end do
+
+    deallocate(dense)
+    @assertTrue(max_err < 1.0e-10_dp, message=trim(label) // " Hermitian")
+  end subroutine assert_csr_hermitian
+
+end module test_hamiltonian_2d

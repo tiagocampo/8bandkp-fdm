@@ -6,6 +6,7 @@ set(COMMON_SOURCES
     math/mkl_spblas.f90
     math/mkl_sparse_handle.f90
     math/sparse_matrices.f90
+    math/geometry.f90
     math/finitedifferences.f90
     io/outputFunctions.f90
     io/input_parser.f90
@@ -38,6 +39,7 @@ set_source_files_properties(
     core/parameters.f90
     core/utils.f90
     math/sparse_matrices.f90
+    math/geometry.f90
     math/finitedifferences.f90
     io/outputFunctions.f90
     io/input_parser.f90
