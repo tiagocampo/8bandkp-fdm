@@ -1,0 +1,321 @@
+module test_geometry
+  use funit
+  use definitions
+  use geometry
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! Rectangle tests
+  ! ==================================================================
+
+  @test
+  subroutine test_rect_all_active()
+    type(spatial_grid) :: grid
+    integer, parameter :: ny = 4, nz = 5
+    real(kind=dp), parameter :: dy = 1.0_dp, dz = 2.0_dp
+    integer :: mat2d(ny, nz)
+    integer :: iy, iz, ij
+
+    mat2d = 1
+    call grid_init_rect(grid, ny, nz, dy, dz, mat2d)
+
+    @assertEqual(2, grid%ndim)
+    @assertEqual(ny, grid%ny)
+    @assertEqual(nz, grid%nz)
+    @assertTrue(allocated(grid%cell_volume))
+    @assertTrue(allocated(grid%face_fraction_y))
+    @assertTrue(allocated(grid%face_fraction_z))
+    @assertTrue(allocated(grid%ghost_map))
+
+    do iz = 1, nz
+      do iy = 1, ny
+        ij = (iz - 1) * ny + iy
+        @assertEqual(1.0_dp, grid%cell_volume(ij), tolerance=1.0e-14_dp)
+        @assertEqual(1.0_dp, grid%face_fraction_y(ij, 1), tolerance=1.0e-14_dp)
+        @assertEqual(1.0_dp, grid%face_fraction_y(ij, 2), tolerance=1.0e-14_dp)
+        @assertEqual(1.0_dp, grid%face_fraction_z(ij, 1), tolerance=1.0e-14_dp)
+        @assertEqual(1.0_dp, grid%face_fraction_z(ij, 2), tolerance=1.0e-14_dp)
+        @assertEqual(1, grid%material_id(ij))
+      end do
+    end do
+
+    call grid_free(grid)
+    @assertFalse(allocated(grid%cell_volume))
+  end subroutine test_rect_all_active
+
+  @test
+  subroutine test_rect_material_id()
+    type(spatial_grid) :: grid
+    integer, parameter :: ny = 3, nz = 3
+    integer :: mat2d(ny, nz)
+    integer :: ij
+
+    mat2d = reshape([1,1,1, 2,2,2, 3,3,3], [ny, nz])
+    call grid_init_rect(grid, ny, nz, 1.0_dp, 1.0_dp, mat2d)
+
+    ij = (1-1)*ny + 1
+    @assertEqual(1, grid%material_id(ij))
+    ij = (2-1)*ny + 1
+    @assertEqual(2, grid%material_id(ij))
+    ij = (3-1)*ny + 3
+    @assertEqual(3, grid%material_id(ij))
+
+    call grid_free(grid)
+  end subroutine test_rect_material_id
+
+  ! ==================================================================
+  ! Circle tests
+  ! ==================================================================
+
+  @test
+  subroutine test_circle_total_area()
+    type(spatial_grid) :: grid
+    integer, parameter :: ny = 100, nz = 100
+    real(kind=dp), parameter :: dy = 0.1_dp, dz = 0.1_dp
+    real(kind=dp), parameter :: cx = 5.0_dp, cz = 5.0_dp, radius = 4.0_dp
+    real(kind=dp) :: total_area, expected_area, rel_err
+    logical :: ok
+    integer :: mat2d(ny, nz), ij
+
+    mat2d = 1
+    call grid_init_circle(grid, ny, nz, dy, dz, cx, cz, radius, mat2d)
+
+    total_area = 0.0_dp
+    do ij = 1, ny * nz
+      total_area = total_area + grid%cell_volume(ij)
+    end do
+    total_area = total_area * dy * dz
+
+    expected_area = pi_dp * radius**2
+    rel_err = abs(total_area - expected_area) / expected_area
+    ok = (rel_err < 0.01_dp)
+    @assertTrue(ok)
+
+    call grid_free(grid)
+  end subroutine test_circle_total_area
+
+  @test
+  subroutine test_circle_outside_zero()
+    type(spatial_grid) :: grid
+    integer, parameter :: ny = 20, nz = 20
+    real(kind=dp), parameter :: dy = 1.0_dp, dz = 1.0_dp
+    real(kind=dp), parameter :: cx = 10.0_dp, cz = 10.0_dp, radius = 3.0_dp
+    integer :: mat2d(ny, nz)
+    integer :: ij
+
+    mat2d = 1
+    call grid_init_circle(grid, ny, nz, dy, dz, cx, cz, radius, mat2d)
+
+    ij = (1-1)*ny + 1
+    @assertEqual(0.0_dp, grid%cell_volume(ij), tolerance=1.0e-14_dp)
+    @assertEqual(0, grid%material_id(ij))
+    @assertEqual(0.0_dp, grid%face_fraction_y(ij, 1), tolerance=1.0e-14_dp)
+    @assertEqual(0.0_dp, grid%face_fraction_z(ij, 1), tolerance=1.0e-14_dp)
+
+    call grid_free(grid)
+  end subroutine test_circle_outside_zero
+
+  @test
+  subroutine test_circle_center_inside()
+    type(spatial_grid) :: grid
+    integer, parameter :: ny = 20, nz = 20
+    real(kind=dp), parameter :: dy = 1.0_dp, dz = 1.0_dp
+    real(kind=dp), parameter :: cx = 10.0_dp, cz = 10.0_dp, radius = 8.0_dp
+    integer :: mat2d(ny, nz)
+    integer :: ij
+
+    mat2d = 1
+    call grid_init_circle(grid, ny, nz, dy, dz, cx, cz, radius, mat2d)
+
+    ! Cell iy=10,iz=10 spans y=[9,10], z=[9,10]; all corners within radius 8
+    ij = (10-1)*ny + 10
+    @assertEqual(1.0_dp, grid%cell_volume(ij), tolerance=1.0e-14_dp)
+    @assertEqual(1, grid%material_id(ij))
+
+    call grid_free(grid)
+  end subroutine test_circle_center_inside
+
+  ! ==================================================================
+  ! Hexagon tests
+  ! ==================================================================
+
+  @test
+  subroutine test_hexagon_total_area()
+    type(spatial_grid) :: grid
+    integer, parameter :: ny = 80, nz = 80
+    real(kind=dp), parameter :: dy = 0.1_dp, dz = 0.1_dp
+    real(kind=dp), parameter :: cx = 4.0_dp, cz = 4.0_dp
+    real(kind=dp), parameter :: side = 3.0_dp
+    real(kind=dp) :: total_area, expected_area, rel_err
+    logical :: ok
+    integer :: mat2d(ny, nz), ij
+
+    mat2d = 1
+    call grid_init_hexagon(grid, ny, nz, dy, dz, cx, cz, side, mat2d)
+
+    total_area = 0.0_dp
+    do ij = 1, ny * nz
+      total_area = total_area + grid%cell_volume(ij)
+    end do
+    total_area = total_area * dy * dz
+
+    expected_area = 1.5_dp * sqrt(3.0_dp) * side**2
+    rel_err = abs(total_area - expected_area) / expected_area
+    ok = (rel_err < 0.02_dp)
+    @assertTrue(ok)
+
+    call grid_free(grid)
+  end subroutine test_hexagon_total_area
+
+  ! ==================================================================
+  ! Polygon tests
+  ! ==================================================================
+
+  @test
+  subroutine test_polygon_triangle_area()
+    type(spatial_grid) :: grid
+    integer, parameter :: ny = 100, nz = 100
+    real(kind=dp), parameter :: dy = 0.1_dp, dz = 0.1_dp
+    real(kind=dp) :: vx(3), vz(3)
+    real(kind=dp) :: total_area, expected_area, rel_err
+    logical :: ok
+    integer :: mat2d(ny, nz), ij
+
+    vx = [2.0_dp, 8.0_dp, 2.0_dp]
+    vz = [2.0_dp, 2.0_dp, 8.0_dp]
+    expected_area = 0.5_dp * 6.0_dp * 6.0_dp
+
+    mat2d = 1
+    call grid_init_polygon(grid, ny, nz, dy, dz, 3, vx, vz, mat2d)
+
+    total_area = 0.0_dp
+    do ij = 1, ny * nz
+      total_area = total_area + grid%cell_volume(ij)
+    end do
+    total_area = total_area * dy * dz
+
+    rel_err = abs(total_area - expected_area) / expected_area
+    ok = (rel_err < 0.02_dp)
+    @assertTrue(ok)
+
+    call grid_free(grid)
+  end subroutine test_polygon_triangle_area
+
+  ! ==================================================================
+  ! Coordinate consistency tests
+  ! ==================================================================
+
+  @test
+  subroutine test_grid_coords_consistency()
+    type(spatial_grid) :: grid
+    integer, parameter :: ny = 5, nz = 7
+    real(kind=dp), parameter :: dy = 0.5_dp, dz = 1.0_dp
+    integer :: mat2d(ny, nz)
+    integer :: iy, iz, ij
+
+    mat2d = 1
+    call grid_init_rect(grid, ny, nz, dy, dz, mat2d)
+    call grid_build_coords(grid)
+
+    @assertTrue(allocated(grid%coords))
+    @assertEqual(2, size(grid%coords, 1))
+    @assertEqual(ny * nz, size(grid%coords, 2))
+
+    do iz = 1, nz
+      do iy = 1, ny
+        ij = (iz - 1) * ny + iy
+        @assertEqual((iy - 0.5_dp) * dy, grid%coords(1, ij), tolerance=1.0e-14_dp)
+        @assertEqual((iz - 0.5_dp) * dz, grid%coords(2, ij), tolerance=1.0e-14_dp)
+      end do
+    end do
+
+    call grid_free(grid)
+  end subroutine test_grid_coords_consistency
+
+  @test
+  subroutine test_grid_coord_arrays()
+    type(spatial_grid) :: grid
+    integer, parameter :: ny = 4, nz = 3
+    real(kind=dp), parameter :: dy = 2.0_dp, dz = 3.0_dp
+    integer :: mat2d(ny, nz)
+    integer :: i
+
+    mat2d = 1
+    call grid_init_rect(grid, ny, nz, dy, dz, mat2d)
+
+    @assertTrue(allocated(grid%y))
+    @assertTrue(allocated(grid%z))
+    @assertEqual(ny, size(grid%y))
+    @assertEqual(nz, size(grid%z))
+
+    do i = 1, ny
+      @assertEqual((i - 0.5_dp) * dy, grid%y(i), tolerance=1.0e-14_dp)
+    end do
+    do i = 1, nz
+      @assertEqual((i - 0.5_dp) * dz, grid%z(i), tolerance=1.0e-14_dp)
+    end do
+
+    call grid_free(grid)
+  end subroutine test_grid_coord_arrays
+
+  ! ==================================================================
+  ! Ghost map tests
+  ! ==================================================================
+
+  @test
+  subroutine test_rect_ghost_map()
+    type(spatial_grid) :: grid
+    integer, parameter :: ny = 3, nz = 3
+    integer :: mat2d(ny, nz)
+    integer :: ij
+
+    mat2d = 1
+    call grid_init_rect(grid, ny, nz, 1.0_dp, 1.0_dp, mat2d)
+
+    ! Interior cell (2,2): neighbors should be immediate
+    ij = (2-1)*ny + 2
+    ! N (+z): (2,3) -> ij = (3-1)*3 + 2 = 8
+    @assertEqual(8, grid%ghost_map(ij, 1))
+    ! S (-z): (2,1) -> ij = (1-1)*3 + 2 = 2
+    @assertEqual(2, grid%ghost_map(ij, 2))
+    ! W (-y): (1,2) -> ij = (2-1)*3 + 1 = 4
+    @assertEqual(4, grid%ghost_map(ij, 3))
+    ! E (+y): (3,2) -> ij = (2-1)*3 + 3 = 6
+    @assertEqual(6, grid%ghost_map(ij, 4))
+
+    ! Boundary cell (1,1): S and W should map to self
+    ij = (1-1)*ny + 1
+    @assertEqual(ij, grid%ghost_map(ij, 2))
+    @assertEqual(ij, grid%ghost_map(ij, 3))
+
+    call grid_free(grid)
+  end subroutine test_rect_ghost_map
+
+  ! ==================================================================
+  ! Grid free tests
+  ! ==================================================================
+
+  @test
+  subroutine test_grid_free_resets()
+    type(spatial_grid) :: grid
+    integer :: mat2d(2, 2)
+
+    mat2d = 1
+    call grid_init_rect(grid, 2, 2, 1.0_dp, 1.0_dp, mat2d)
+    call grid_free(grid)
+
+    @assertEqual(0, grid%ndim)
+    @assertEqual(1, grid%ny)
+    @assertEqual(1, grid%nz)
+    @assertEqual(0.0_dp, grid%dy)
+    @assertEqual(0.0_dp, grid%dz)
+    @assertFalse(allocated(grid%y))
+    @assertFalse(allocated(grid%z))
+    @assertFalse(allocated(grid%coords))
+    @assertFalse(allocated(grid%cell_volume))
+    @assertFalse(allocated(grid%ghost_map))
+  end subroutine test_grid_free_resets
+
+end module test_geometry
