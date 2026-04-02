@@ -7,6 +7,11 @@ module hamiltonianConstructor
 
   implicit none
 
+  interface confinementInitialization
+    module procedure confinementInitialization_raw
+    module procedure confinementInitialization_cfg
+  end interface confinementInitialization
+
   contains
 
     subroutine build_kpterm_block(kpterms, profile_vec, central, forward, &
@@ -65,7 +70,7 @@ module hamiltonianConstructor
 
     end subroutine externalFieldSetup_electricField
 
-    subroutine confinementInitialization(z, startPos, endPos, material, nlayers,&
+    subroutine confinementInitialization_raw(z, startPos, endPos, material, nlayers,&
       & params, confDir, profile, kpterms, FDorder)
 
       real(kind = dp), intent(in), dimension(:) :: z
@@ -228,7 +233,58 @@ module hamiltonianConstructor
       if (allocated(D2)) deallocate(D2)
       if (allocated(D1)) deallocate(D1)
 
-    end subroutine confinementInitialization
+    end subroutine confinementInitialization_raw
+
+    !---------------------------------------------------------------------------
+    !> Cfg-based wrapper: extracts spatial_grid fields from simulation_config
+    !> and delegates to confinementInitialization_raw.
+    !>
+    !> For QW (ndim=1), uses cfg%grid%z(:) for coordinates and
+    !> grid_ngrid(cfg%grid) for the spatial DOF count.  Falls back to the
+    !> legacy cfg fields (z, intStartPos, intEndPos) when the grid has not
+    !> been initialised yet (grid%ndim == 0 and confinement == 1).
+    !---------------------------------------------------------------------------
+    subroutine confinementInitialization_cfg(cfg, profile, kpterms)
+
+      type(simulation_config), intent(inout) :: cfg
+      real(kind=dp), intent(inout), allocatable :: profile(:,:)
+      real(kind=dp), intent(inout), allocatable :: kpterms(:,:,:)
+
+      integer :: nz
+
+      ! Determine spatial DOF count from the grid when available,
+      ! otherwise from the legacy fdStep field.
+      if (cfg%grid%ndim >= 1) then
+        nz = grid_ngrid(cfg%grid)
+      else
+        nz = cfg%fdStep
+      end if
+
+      ! Allocate kpterms if not already allocated (caller may pre-allocate)
+      if (.not. allocated(kpterms)) then
+        allocate(kpterms(nz, nz, 10))
+        kpterms = 0.0_dp
+      end if
+
+      ! Dispatch to the raw routine using the appropriate coordinate source
+      if (cfg%grid%ndim >= 1 .and. allocated(cfg%grid%z)) then
+        ! New path: use spatial_grid coordinates
+        call confinementInitialization_raw(cfg%grid%z, cfg%intStartPos, &
+          & cfg%intEndPos, cfg%materialN, cfg%numLayers, cfg%params, &
+          & cfg%confDir, profile, kpterms, cfg%FDorder)
+      else
+        ! Legacy path: use cfg%z (backward compat before init_grid_from_config)
+        call confinementInitialization_raw(cfg%z, cfg%intStartPos, &
+          & cfg%intEndPos, cfg%materialN, cfg%numLayers, cfg%params, &
+          & cfg%confDir, profile, kpterms, cfg%FDorder)
+      end if
+
+      ! Populate cfg%dz from the grid when available
+      if (cfg%grid%ndim >= 1 .and. cfg%grid%dz > 0.0_dp) then
+        cfg%dz = cfg%grid%dz
+      end if
+
+    end subroutine confinementInitialization_cfg
 
     !---------------------------------------------------------------------------
     !> Apply variable coefficient to FD matrix and store in kpterms.

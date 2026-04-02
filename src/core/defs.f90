@@ -75,6 +75,32 @@ module definitions
   end type sc_config
 
   ! ------------------------------------------------------------------
+  ! Wire geometry specification for confinement=2.
+  ! shape: 'rectangle', 'circle', 'hexagon', 'polygon'
+  ! For circle/hexagon: wire_radius is the defining size.
+  ! For rectangle: wire_width (y), wire_height (z).
+  ! For polygon: wire_polygon_nverts + wire_polygon_verts(:,:).
+  ! ------------------------------------------------------------------
+  type wire_geometry
+    character(len=16)  :: shape = 'rectangle'
+    real(kind=dp)      :: radius = 0.0_dp     ! AA (circle/hexagon)
+    real(kind=dp)      :: width  = 0.0_dp     ! AA (rectangle, y-extent)
+    real(kind=dp)      :: height = 0.0_dp     ! AA (rectangle, z-extent)
+    integer            :: nverts = 0           ! polygon vertex count
+    real(kind=dp), allocatable :: verts(:,:)  ! (2, nverts) y,z vertices
+  end type wire_geometry
+
+  ! ------------------------------------------------------------------
+  ! Region specification for wire mode (replaces layer for 2D).
+  ! Each region has a material name and a radial extent (inner, outer).
+  ! ------------------------------------------------------------------
+  type region_spec
+    character(len=255) :: material = ''
+    real(kind=dp)      :: inner   = 0.0_dp   ! inner radius/distance (AA)
+    real(kind=dp)      :: outer   = 0.0_dp   ! outer radius/distance (AA)
+  end type region_spec
+
+  ! ------------------------------------------------------------------
   ! Unified spatial grid for bulk (ndim=0), QW (ndim=1), wire (ndim=2).
   !
   ! Bulk:   ny=1, nz=1, dy=dz=0, no coordinate arrays.
@@ -141,6 +167,15 @@ module definitions
     type(doping_spec), allocatable :: doping(:)   ! per-layer doping
     type(sc_config)                :: sc           ! SC parameters
     type(spatial_grid)             :: grid         ! unified spatial grid
+
+    ! ---- Wire-specific fields (confinement=2) ----
+    integer            :: wire_ny = 0            ! grid points in y
+    integer            :: wire_nz = 0            ! grid points in z
+    real(kind=dp)      :: wire_dy = 0.0_dp      ! grid spacing y (AA)
+    real(kind=dp)      :: wire_dz = 0.0_dp      ! grid spacing z (AA)
+    type(wire_geometry) :: wire_geom             ! shape + dimensions
+    integer            :: numRegions = 0         ! number of material regions
+    type(region_spec), allocatable :: regions(:) ! region specifications
   end type simulation_config
 
   type group
@@ -168,17 +203,20 @@ module definitions
   end function
 
   ! ------------------------------------------------------------------
-  ! Initialize a spatial_grid from the legacy QW fields already set in
-  ! simulation_config.  This bridges the old and new representations
-  ! during the incremental refactoring (Phase 0).
+  ! Initialize a spatial_grid from the fields already set in
+  ! simulation_config.  This is the primary grid initialization path.
   !
   ! For bulk (confinement=0): ndim=0, ny=nz=1.
   ! For QW  (confinement=1): ndim=1, ny=1, nz=fdStep, z(:) copied.
+  ! For wire(confinement=2): ndim=2, ny=wire_ny, nz=wire_nz,
+  !   build 2D coordinate grid, material_id from regions, cut-cell
+  !   fractions (placeholder = 1.0; actual computation in Phase 1).
   ! ------------------------------------------------------------------
   subroutine init_grid_from_config(cfg)
     type(simulation_config), intent(inout) :: cfg
 
-    integer :: i
+    integer :: i, j, ngrid, iy, iz, idx
+    real(kind=dp) :: yval, zval
 
     select case (cfg%confinement)
     case (0)
@@ -214,6 +252,70 @@ module definitions
 
       ! No cut-cell fields for QW
       ! No coords(:,:) or y(:) for QW (ny=1)
+
+    case (2)
+      ! Wire: 2D confinement in y-z plane
+      cfg%grid%ndim = 2
+      cfg%grid%ny   = cfg%wire_ny
+      cfg%grid%nz   = cfg%wire_nz
+      cfg%grid%dy   = cfg%wire_dy
+      cfg%grid%dz   = cfg%wire_dz
+
+      ngrid = cfg%wire_ny * cfg%wire_nz
+
+      ! Build 1D coordinate arrays
+      allocate(cfg%grid%y(cfg%wire_ny))
+      allocate(cfg%grid%z(cfg%wire_nz))
+      do iy = 1, cfg%wire_ny
+        cfg%grid%y(iy) = (iy - 1) * cfg%wire_dy
+      end do
+      do iz = 1, cfg%wire_nz
+        cfg%grid%z(iz) = (iz - 1) * cfg%wire_dz
+      end do
+
+      ! Build flattened 2D coordinate array: coords(2, ny*nz)
+      allocate(cfg%grid%coords(2, ngrid))
+      idx = 0
+      do iz = 1, cfg%wire_nz
+        do iy = 1, cfg%wire_ny
+          idx = idx + 1
+          cfg%grid%coords(1, idx) = cfg%grid%y(iy)
+          cfg%grid%coords(2, idx) = cfg%grid%z(iz)
+        end do
+      end do
+
+      ! Build material_id from regions
+      ! For each grid point, assign the region whose radial extent
+      ! contains the point.  Points outside all regions get id=0.
+      allocate(cfg%grid%material_id(ngrid))
+      cfg%grid%material_id = 0
+      if (cfg%numRegions > 0) then
+        do idx = 1, ngrid
+          yval = cfg%grid%coords(1, idx)
+          zval = cfg%grid%coords(2, idx)
+          do i = 1, cfg%numRegions
+            if (cfg%regions(i)%inner <= yval .and. yval <= cfg%regions(i)%outer) then
+              cfg%grid%material_id(idx) = i
+              exit
+            end if
+          end do
+        end do
+      end if
+
+      ! Cut-cell fractions: placeholder = 1.0 everywhere.
+      ! Actual computation deferred to geometry module (Phase 1).
+      allocate(cfg%grid%cell_volume(ngrid))
+      allocate(cfg%grid%face_fraction_y(ngrid, 2))
+      allocate(cfg%grid%face_fraction_z(ngrid, 2))
+      cfg%grid%cell_volume = 1.0_dp
+      cfg%grid%face_fraction_y = 1.0_dp
+      cfg%grid%face_fraction_z = 1.0_dp
+
+      ! Ghost map: placeholder (all self-referencing).
+      allocate(cfg%grid%ghost_map(ngrid, 4))
+      do idx = 1, ngrid
+        cfg%grid%ghost_map(idx, :) = idx
+      end do
 
     end select
 
