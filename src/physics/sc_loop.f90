@@ -59,7 +59,7 @@ contains
 
     ! SC loop variables
     integer :: iter, niter, info
-    integer :: num_subbands, num_kpar, nk_actual
+    integer :: num_subbands, nk_actual
     real(kind=dp) :: delta_phi, fermi_level
 
     ! Potential arrays
@@ -75,7 +75,7 @@ contains
     complex(kind=dp), allocatable :: work(:), eigv_kpar(:,:,:)
     integer, allocatable :: iwork(:), ifail_arr(:)
     integer :: M_out, lwork, k_idx
-    real(kind=dp) :: abstol, vl, vu
+    real(kind=dp) :: abstol
     integer :: NB_val
 
     ! DIIS history
@@ -105,9 +105,8 @@ contains
     niter = cfg%sc%max_iterations
 
     ! Build k_par grid (ensure odd for Simpson)
-    num_kpar = cfg%sc%num_kpar
-    if (mod(num_kpar, 2) == 0) num_kpar = num_kpar - 1
-    nk_actual = num_kpar
+    nk_actual = cfg%sc%num_kpar
+    if (mod(nk_actual, 2) == 0) nk_actual = nk_actual - 1
 
     ! Auto-determine kpar_max if not set
     kpar_max_val = cfg%sc%kpar_max
@@ -158,8 +157,6 @@ contains
     end if
 
     ! Eigensolver setup
-    vl = 0.0_dp
-    vu = 0.0_dp
     NB_val = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
     NB_val = max(NB_val, N)
     abstol = DLAMCH('P')
@@ -176,7 +173,7 @@ contains
     ! Initial workspace query via zheevx
     allocate(work(1))
     lwork = -1
-    call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M_out, &
+    call zheevx('V', 'I', 'U', N, HT, N, 0.0_dp, 0.0_dp, il, iuu, abstol, M_out, &
       & eig_kpar(:,1), HT, N, work, lwork, rwork, iwork, ifail_arr, info)
     if (info /= 0) then
       print *, 'Error: zheevx workspace query failed in SC loop, info =', info
@@ -211,7 +208,7 @@ contains
 
         call ZB8bandQW(HT, wv, profile, kpterms)
 
-        call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, &
+        call zheevx('V', 'I', 'U', N, HT, N, 0.0_dp, 0.0_dp, il, iuu, abstol, &
           & M_out, eig_kpar(:, k_idx), HT, N, work, lwork, rwork, &
           & iwork, ifail_arr, info)
         if (info /= 0) then
@@ -232,7 +229,7 @@ contains
       ! Step 4: Compute charge density
       call compute_charge_density_qw(n_electron, n_hole, eigv_kpar, &
         & eig_kpar, kpar_grid, fermi_level, cfg%sc%temperature, &
-        & nz, num_subbands, nk_actual, cfg%numcb, dz_val)
+        & nz, num_subbands, nk_actual, cfg%numcb)
 
       ! Step 5: Build total charge and solve Poisson
       ! Convert density from cm^-3 to C/nm^3: rho = e * n * 1e-21 (1 cm^3 = 10^21 nm^3)
@@ -421,13 +418,8 @@ contains
     real(kind=dp), intent(in) :: dz_val, rho_doping(nz)
     real(kind=dp), intent(inout), optional :: work_ne(nz), work_nh(nz)
 
-    real(kind=dp) :: mu_lo, mu_hi, mu_mid
     real(kind=dp), allocatable :: n_elec(:), n_hole(:)
-    real(kind=dp) :: charge_excess, target_charge
-    logical :: local_alloc
-    integer :: ib, iz
 
-    local_alloc = .false.
     if (present(work_ne) .and. present(work_nh)) then
       ! Use pre-allocated work arrays from caller
       call fermi_bisect(eig_kpar, eigv_kpar, kpar_grid, cfg, N, &
@@ -478,7 +470,7 @@ contains
 
       call compute_charge_density_qw(n_elec, n_hole, eigv_kpar, &
         & eig_kpar, kpar_grid, mu_mid, cfg%sc%temperature, &
-        & nz, num_subbands, nk_actual, cfg%numcb, dz_val)
+        & nz, num_subbands, nk_actual, cfg%numcb)
 
       charge_excess = 0.0_dp
       do iz = 1, nz

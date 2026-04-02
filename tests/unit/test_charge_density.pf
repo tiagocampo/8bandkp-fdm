@@ -95,7 +95,7 @@ contains
 
     call compute_charge_density_qw(n_electron, n_hole, eigenvectors, &
       & eigenvalues, kpar_grid, fermi_level, temperature, N, num_subbands, &
-      & num_kpar, numcb, dz)
+      & num_kpar, numcb)
 
     ! n_electron(z) should be non-zero (CB subband, f~1, normalized wavefunction)
     ! The integral of |Psi|^2 * k_par/(2*pi) dk_par * 2 (spin) should give
@@ -165,7 +165,7 @@ contains
 
     call compute_charge_density_qw(n_electron, n_hole, eigenvectors, &
       & eigenvalues, kpar_grid, fermi_level, temperature, N, num_subbands, &
-      & num_kpar, numcb, dz)
+      & num_kpar, numcb)
 
     ! n_electron(1) should be the only nonzero value
     @assertTrue(n_electron(1) > 0.0_dp, message="Electron density nonzero at z=1")

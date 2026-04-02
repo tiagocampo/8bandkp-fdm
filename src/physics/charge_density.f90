@@ -58,7 +58,7 @@ contains
   ! ------------------------------------------------------------------
   subroutine compute_charge_density_qw(n_electron, n_hole, eigenvectors, &
       & eigenvalues_kpar, kpar_grid, fermi_level, temperature, N, num_subbands, &
-      & num_kpar, numcb, dz)
+      & num_kpar, numcb)
     ! Compute position-dependent electron and hole densities for a QW.
     !
     ! For each subband s and each k_par point:
@@ -85,16 +85,15 @@ contains
     integer, intent(in)          :: num_subbands
     integer, intent(in)          :: num_kpar
     integer, intent(in)          :: numcb
-    real(kind=dp), intent(in)    :: dz
 
     ! Local arrays
     real(kind=dp), allocatable :: psi2_z(:,:)    ! |Psi|^2 at each z, k_par
     real(kind=dp), allocatable     :: integrand(:)  ! for Simpson (real-valued)
     real(kind=dp), allocatable :: sorted_evals(:)
     integer, allocatable :: sort_idx(:)
-    real(kind=dp) :: occ, k_par, k_max
+    real(kind=dp) :: k_max
     integer :: nk, s, iz, j, band_start, idx
-    integer :: numcb_local, numvb_local
+    integer :: numcb_local
 
     ! Ensure odd number of k_par points for Simpson
     nk = num_kpar
@@ -105,7 +104,7 @@ contains
     n_electron = 0.0_dp
     n_hole = 0.0_dp
 
-    ! --- Classify subbands at k_par = 1 (index 1) ---
+    ! --- Classify subbands at first k_par point (k_par = 0) ---
     ! Sort eigenvalues at k_par=1 by descending value; top numcb are CB
     allocate(sorted_evals(num_subbands))
     allocate(sort_idx(num_subbands))
@@ -119,7 +118,6 @@ contains
     call sort_descending(sorted_evals, sort_idx, num_subbands)
 
     numcb_local = min(numcb, num_subbands)
-    numvb_local = num_subbands - numcb_local
 
     allocate(psi2_z(N, nk))
     allocate(integrand(nk))
@@ -277,15 +275,17 @@ contains
     logical, intent(in)          :: is_cb
 
     integer :: iz, idx
-    real(kind=dp) :: k_par, occ
+    real(kind=dp) :: occ(nk)
+
+    ! Pre-compute weighted occupation (independent of z)
+    do idx = 1, nk
+      occ(idx) = fermi_dirac(eigenvalues_kpar(s, idx), fermi_level, temperature)
+      if (.not. is_cb) occ(idx) = 1.0_dp - occ(idx)
+      occ(idx) = occ(idx) * kpar_grid(idx) / (2.0_dp * pi_dp)
+    end do
 
     do iz = 1, N
-      do idx = 1, nk
-        k_par = kpar_grid(idx)
-        occ = fermi_dirac(eigenvalues_kpar(s, idx), fermi_level, temperature)
-        if (.not. is_cb) occ = 1.0_dp - occ
-        integrand(idx) = psi2_z(iz, idx) * occ * k_par / (2.0_dp * pi_dp)
-      end do
+      integrand(1:nk) = psi2_z(iz, 1:nk) * occ(1:nk)
       n_density(iz) = n_density(iz) + 2.0_dp * simpson_real(integrand, 0.0_dp, k_max)
     end do
 

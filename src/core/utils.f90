@@ -178,7 +178,7 @@ complex(kind=dp) function simpson(f,a,b)
   real(kind=dp), intent(in) :: a, b
 
   real(kind=dp) :: h
-  integer :: num, i, j, N
+  integer :: num, i, N
   real(kind=dp), allocatable :: sc(:)
 
   if (size(f) < 3) then
@@ -216,9 +216,8 @@ real(kind=dp) function simpson_real(f, a, b)
   real(kind=dp), intent(in) :: f(:)
   real(kind=dp), intent(in) :: a, b
 
-  real(kind=dp) :: h
-  integer :: num, i, N
-  real(kind=dp), allocatable :: sc(:)
+  real(kind=dp) :: h, weighted_sum
+  integer :: num, i
 
   if (size(f) < 3) then
     print *, 'Error: simpson_real requires at least 3 points, got', size(f)
@@ -231,19 +230,17 @@ real(kind=dp) function simpson_real(f, a, b)
   end if
 
   num = size(f)
-  h = (b - a) / (num - 1)
-  h = h / 3.0_dp
+  h = (b - a) / (num - 1) / 3.0_dp
 
-  N = num
-  allocate(sc(num))
+  weighted_sum = f(1) + f(num)
+  do i = 2, num - 1, 2
+    weighted_sum = weighted_sum + 4.0_dp * f(i)
+  end do
+  do i = 3, num - 1, 2
+    weighted_sum = weighted_sum + 2.0_dp * f(i)
+  end do
 
-  sc = 1.0_dp
-  forall(i=2:N-1:2) sc(i) = 4.0_dp
-  forall(i=3:N-1:2) sc(i) = 2.0_dp
-
-  simpson_real = h * sum(sc * f)
-
-  deallocate(sc)
+  simpson_real = h * weighted_sum
 
 end function simpson_real
 

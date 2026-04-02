@@ -74,24 +74,19 @@ contains
     end do
 
     ! --- Boundary conditions ---
+    ! Left BC: Dirichlet Phi_1 = bc_left (common to DD and DN)
+    a(1)   = 1.0_dp
+    b(1)   = 0.0_dp
+    rhs(1) = bc_left
+
     select case (bc_type)
     case (BC_DD)
-      ! Left: Dirichlet  Phi_1 = bc_left
-      a(1)   = 1.0_dp
-      b(1)   = 0.0_dp
-      rhs(1) = bc_left
-
       ! Right: Dirichlet  Phi_N = bc_right
       a(N)   = 1.0_dp
       c(N)   = 0.0_dp
       rhs(N) = bc_right
 
     case (BC_DN)
-      ! Left: Dirichlet  Phi_1 = bc_left
-      a(1)   = 1.0_dp
-      b(1)   = 0.0_dp
-      rhs(1) = bc_left
-
       ! Right: Neumann  dPhi/dz = 0  =>  Phi_N - Phi_{N-1} = 0
       a(N)   = 1.0_dp
       c(N)   = -1.0_dp
