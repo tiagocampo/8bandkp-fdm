@@ -19,7 +19,7 @@ module sparse_matrices
   public :: csr_matrix
   public :: csr_init, csr_free, csr_build_from_coo
   public :: kron_dense_dense, kron_dense_eye, kron_eye_dense, kron_dense_dense_1d
-  public :: csr_add, csr_apply_variable_coeff
+  public :: csr_add, csr_scale, csr_apply_variable_coeff
 
   ! ------------------------------------------------------------------
   ! Compressed Sparse Row (CSR) matrix type for complex-valued
@@ -91,8 +91,8 @@ contains
   !   mat -- CSR matrix with entries sorted by (row, col) and
   !          duplicate entries merged by summation.
   !
-  ! Uses insertion sort + in-place merge (same strategy as the
-  ! existing finalizeCOO_cmplx in utils.f90).
+  ! Uses bottom-up merge sort O(N log N) to sort COO triplets by
+  ! (row, col), then merges duplicates by summation.
   ! ------------------------------------------------------------------
   subroutine csr_build_from_coo(mat, nrows, ncols, nnz_in, rows, cols, vals)
     type(csr_matrix), intent(out) :: mat
@@ -102,7 +102,7 @@ contains
 
     integer, allocatable :: idx(:), r_sorted(:), c_sorted(:)
     complex(kind=dp), allocatable :: v_sorted(:)
-    integer :: i, j, nnz_final, row, key_idx, key_r, key_c
+    integer :: i, nnz_final, row
 
     mat%nrows = nrows
     mat%ncols = ncols
@@ -116,26 +116,14 @@ contains
       return
     end if
 
-    ! Build index array and sort by (row, col)
+      ! Build index array and sort by (row, col)
     allocate(idx(nnz_in))
     do i = 1, nnz_in
       idx(i) = i
     end do
 
-    ! Insertion sort of idx by (rows(idx), cols(idx))
-    do i = 2, nnz_in
-      key_idx = idx(i)
-      key_r = rows(key_idx)
-      key_c = cols(key_idx)
-      j = i - 1
-      do while (j >= 1)
-        if (rows(idx(j)) < key_r) exit
-        if (rows(idx(j)) == key_r .and. cols(idx(j)) <= key_c) exit
-        idx(j+1) = idx(j)
-        j = j - 1
-      end do
-      idx(j+1) = key_idx
-    end do
+    ! Merge sort of idx by (rows(idx), cols(idx))
+    call merge_sort_coo(nnz_in, idx, rows, cols)
 
     ! Apply permutation and merge duplicates
     allocate(v_sorted(nnz_in))
@@ -186,6 +174,85 @@ contains
 
     deallocate(idx, v_sorted, r_sorted, c_sorted)
   end subroutine csr_build_from_coo
+
+  ! ==================================================================
+  ! Private sort helper
+  ! ==================================================================
+
+  ! ------------------------------------------------------------------
+  ! Bottom-up merge sort of index array idx by key (rows(idx), cols(idx)).
+  !
+  ! Stable sort: equal keys preserve their original relative order,
+  ! which is required for correct duplicate merging afterwards.
+  !
+  ! Uses a workspace array of the same size as idx for the merge step.
+  ! Complexity: O(N log N) where N = nnz.
+  ! ------------------------------------------------------------------
+  subroutine merge_sort_coo(nnz, idx, rows, cols)
+    integer, intent(in)    :: nnz
+    integer, intent(inout) :: idx(nnz)
+    integer, intent(in)    :: rows(nnz)
+    integer, intent(in)    :: cols(nnz)
+
+    integer, allocatable :: work(:)
+    integer :: width, start, mid, finish, i, j, k
+
+    if (nnz <= 1) return
+
+    allocate(work(nnz))
+
+    ! Bottom-up merge sort: merge sub-arrays of doubling width
+    width = 1
+    do while (width < nnz)
+      ! Merge pairs of adjacent runs [start:mid] and [mid+1:finish]
+      start = 1
+      do while (start <= nnz)
+        mid = min(start + width - 1, nnz)
+        finish = min(start + 2*width - 1, nnz)
+
+        if (mid < finish) then
+          ! Merge idx(start:mid) and idx(mid+1:finish) into work
+          i = start
+          j = mid + 1
+          k = start
+          do while (i <= mid .and. j <= finish)
+            if (rows(idx(i)) < rows(idx(j))) then
+              work(k) = idx(i); i = i + 1
+            else if (rows(idx(i)) > rows(idx(j))) then
+              work(k) = idx(j); j = j + 1
+            else
+              ! Same row -- compare columns
+              if (cols(idx(i)) <= cols(idx(j))) then
+                work(k) = idx(i); i = i + 1
+              else
+                work(k) = idx(j); j = j + 1
+              end if
+            end if
+            k = k + 1
+          end do
+
+          ! Copy remaining elements from left run
+          do while (i <= mid)
+            work(k) = idx(i); i = i + 1; k = k + 1
+          end do
+
+          ! Copy remaining elements from right run
+          do while (j <= finish)
+            work(k) = idx(j); j = j + 1; k = k + 1
+          end do
+
+          ! Copy back from work to idx
+          idx(start:finish) = work(start:finish)
+        end if
+
+        start = start + 2*width
+      end do
+
+      width = width * 2
+    end do
+
+    deallocate(work)
+  end subroutine merge_sort_coo
 
   ! ==================================================================
   ! Kronecker product routines (Phase 0c)
@@ -504,9 +571,15 @@ contains
     complex(kind=dp), intent(in), optional :: alpha, beta
     complex(kind=dp) :: sa, sb
 
-    integer :: nnz_est, idx_c, i, j, row, k
+    integer :: nnz_est, idx_c, i, row, k
     integer, allocatable :: rows_coo(:), cols_coo(:)
     complex(kind=dp), allocatable :: vals_coo(:)
+
+    ! Guard against self-aliasing: C must not be the same as A or B
+    if (loc(C) == loc(A) .or. loc(C) == loc(B)) then
+      print *, 'ERROR: csr_add self-aliasing detected'
+      stop 1
+    end if
 
     sa = cmplx(1.0_dp, 0.0_dp, kind=dp)
     sb = cmplx(1.0_dp, 0.0_dp, kind=dp)
@@ -553,6 +626,28 @@ contains
   end subroutine csr_add
 
   ! ------------------------------------------------------------------
+  ! Scale a CSR matrix by a complex scalar: result = scale * A.
+  ! Copies A's structure and multiplies all values by scale.
+  ! ------------------------------------------------------------------
+  subroutine csr_scale(A, result_mat, scale)
+    type(csr_matrix), intent(in)  :: A
+    type(csr_matrix), intent(out) :: result_mat
+    complex(kind=dp), intent(in)  :: scale
+
+    result_mat%nrows = A%nrows
+    result_mat%ncols = A%ncols
+    result_mat%nnz   = A%nnz
+
+    allocate(result_mat%rowptr(A%nrows + 1))
+    allocate(result_mat%colind(A%nnz))
+    allocate(result_mat%values(A%nnz))
+
+    result_mat%rowptr = A%rowptr
+    result_mat%colind = A%colind
+    result_mat%values = A%values * scale
+  end subroutine csr_scale
+
+  ! ------------------------------------------------------------------
   ! Apply variable coefficient (element-wise row scaling) to a CSR
   ! matrix: result(i,j) = -profile(i) * A(i,j).
   !
@@ -564,10 +659,10 @@ contains
   ! weights.  When face_frac_y and face_frac_z are present, each
   ! nonzero in row i is additionally scaled by the geometric mean of
   ! the face fractions for the corresponding direction:
+  !   d^2/dx^2 terms: multiply by (face_frac_x(i,1) + face_frac_x(i,2)) / 2
   !   d^2/dy^2 terms: multiply by (face_frac_y(i,1) + face_frac_y(i,2)) / 2
-  !   d^2/dz^2 terms: multiply by (face_frac_z(i,1) + face_frac_z(i,2)) / 2
+  !   d/dx terms:     multiply by (face_frac_x(i,2) - face_frac_x(i,1)) / 2
   !   d/dy terms:     multiply by (face_frac_y(i,2) - face_frac_y(i,1)) / 2
-  !   d/dz terms:     multiply by (face_frac_z(i,2) - face_frac_z(i,1)) / 2
   !
   ! For now (Phase 1b), the face fractions are applied as a simple
   ! row volume scaling: result(i,j) = -profile(i) * vol(i) * A(i,j),
@@ -597,12 +692,6 @@ contains
     allocate(vals_coo(nnz_out))
 
     ! Build COO from A with row scaling
-    idx_loop: do i = 1, nnz_out
-      rows_coo(i) = 0
-      cols_coo(i) = 0
-      vals_coo(i) = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    end do idx_loop
-
     k = 0
     do row = 1, A%nrows
       scale = -profile(row)

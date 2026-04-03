@@ -170,10 +170,18 @@ contains
       cfg%intEndPos = cfg%intEndPos + 1
 
     else if (cfg%confinement == 2) then
-      ! ---- Wire mode (2D confinement in y-z plane) ----
-      cfg%confDir = 'y'  ! wire axis along x, confinement in y and z
+      ! ---- Wire mode (2D confinement in x-y plane) ----
+      cfg%confDir = 'z'  ! wire axis along z, confinement in x and y
+
+
 
       ! Wire grid parameters
+      read(data_unit, *, iostat=status) label, cfg%wire_nx
+      if (status /= 0) then
+        print *, 'Error: Failed to read wire_nx from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%wire_nx
       read(data_unit, *, iostat=status) label, cfg%wire_ny
       if (status /= 0) then
         print *, 'Error: Failed to read wire_ny from input.cfg'
@@ -181,12 +189,12 @@ contains
       end if
       print *, trim(label), cfg%wire_ny
 
-      read(data_unit, *, iostat=status) label, cfg%wire_nz
+      read(data_unit, *, iostat=status) label, cfg%wire_dx
       if (status /= 0) then
-        print *, 'Error: Failed to read wire_nz from input.cfg'
+        print *, 'Error: Failed to read wire_dx from input.cfg'
         stop 1
       end if
-      print *, trim(label), cfg%wire_nz
+      print *, trim(label), cfg%wire_dx
 
       read(data_unit, *, iostat=status) label, cfg%wire_dy
       if (status /= 0) then
@@ -194,13 +202,6 @@ contains
         stop 1
       end if
       print *, trim(label), cfg%wire_dy
-
-      read(data_unit, *, iostat=status) label, cfg%wire_dz
-      if (status /= 0) then
-        print *, 'Error: Failed to read wire_dz from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%wire_dz
 
       ! Wire shape
       read(data_unit, *, iostat=status) label, cfg%wire_geom%shape
@@ -303,43 +304,43 @@ contains
       end do
 
       ! Wire mode grid validation
+      if (cfg%wire_nx < 3) then
+        print *, 'Error: wire_nx must be >= 3, got:', cfg%wire_nx
+        stop 1
+      end if
       if (cfg%wire_ny < 3) then
         print *, 'Error: wire_ny must be >= 3, got:', cfg%wire_ny
         stop 1
       end if
-      if (cfg%wire_nz < 3) then
-        print *, 'Error: wire_nz must be >= 3, got:', cfg%wire_nz
+      if (cfg%wire_dx <= 0.0_dp) then
+        print *, 'Error: wire_dx must be > 0, got:', cfg%wire_dx
         stop 1
       end if
       if (cfg%wire_dy <= 0.0_dp) then
         print *, 'Error: wire_dy must be > 0, got:', cfg%wire_dy
         stop 1
       end if
-      if (cfg%wire_dz <= 0.0_dp) then
-        print *, 'Error: wire_dz must be > 0, got:', cfg%wire_dz
+      ! FD order validation for wire grid
+      if (cfg%wire_nx < cfg%FDorder + 1) then
+        print *, 'Error: wire_nx must be >= FDorder + 1'
+        print *, '  wire_nx=', cfg%wire_nx, ' FDorder=', cfg%FDorder
         stop 1
       end if
-      ! FD order validation for wire grid
       if (cfg%wire_ny < cfg%FDorder + 1) then
         print *, 'Error: wire_ny must be >= FDorder + 1'
         print *, '  wire_ny=', cfg%wire_ny, ' FDorder=', cfg%FDorder
         stop 1
       end if
-      if (cfg%wire_nz < cfg%FDorder + 1) then
-        print *, 'Error: wire_nz must be >= FDorder + 1'
-        print *, '  wire_nz=', cfg%wire_nz, ' FDorder=', cfg%FDorder
-        stop 1
-      end if
 
-      ! Set fdStep to wire_nz for backward compat (used by array sizing in callers)
-      cfg%fdStep = cfg%wire_nz
-      cfg%dz = cfg%wire_dz
+      ! Set fdStep to wire_ny for backward compat (used by array sizing in callers)
+      cfg%fdStep = cfg%wire_ny
+      cfg%dz = cfg%wire_dy
 
       ! Allocate dummy startPos/endPos for routines that expect them
       allocate(cfg%startPos(1))
       allocate(cfg%endPos(1))
       cfg%startPos(1) = 0.0_dp
-      cfg%endPos(1) = real(cfg%wire_nz - 1, kind=dp) * cfg%wire_dz
+      cfg%endPos(1) = real(cfg%wire_ny - 1, kind=dp) * cfg%wire_dy
 
     end if
 
@@ -476,8 +477,8 @@ contains
       call init_wire_from_config(cfg)
     end if
 
-    ! Confinement initialization for QW mode
-    if (cfg%confDir == 'z') then
+    ! Confinement initialization for QW mode (not wire)
+    if (cfg%confDir == 'z' .and. cfg%confinement == 1) then
       allocate(kpterms(grid_ngrid(cfg%grid), grid_ngrid(cfg%grid), 10))
       kpterms = 0.0_dp
       call confinementInitialization(cfg, profile, kpterms)

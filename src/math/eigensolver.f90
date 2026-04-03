@@ -6,7 +6,7 @@ module eigensolver
 
   private
   public :: eigensolver_config, eigensolver_result
-  public :: solve_sparse_evp, solve_feast, solve_arpack
+  public :: solve_sparse_evp, solve_feast, solve_dense_lapack
   public :: auto_compute_energy_window, eigensolver_result_free
 
   ! ------------------------------------------------------------------
@@ -49,7 +49,7 @@ contains
     case ('FEAST')
       call solve_feast(H_csr, config, result)
     case ('ARPACK')
-      call solve_arpack(H_csr, config, result)
+      call solve_dense_lapack(H_csr, config, result)
     case default
       print *, 'Error: unknown eigensolver method "', trim(config%method), '"'
       result%converged = .false.
@@ -182,7 +182,7 @@ contains
   ! eigenvalues.  Used as ARPACK placeholder until proper ARPACK
   ! linking is set up.
   ! ==================================================================
-  subroutine solve_arpack(H_csr, config, result)
+  subroutine solve_dense_lapack(H_csr, config, result)
     type(csr_matrix), intent(in)          :: H_csr
     type(eigensolver_config), intent(in)  :: config
     type(eigensolver_result), intent(out) :: result
@@ -250,7 +250,7 @@ contains
     end if
 
     deallocate(A, W, Z, work, rwork, iwork, ifail)
-  end subroutine solve_arpack
+  end subroutine solve_dense_lapack
 
   ! ==================================================================
   ! Gershgorin energy window estimation.

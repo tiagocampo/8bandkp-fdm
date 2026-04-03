@@ -113,7 +113,7 @@ contains
   subroutine test_feast_tridiagonal_laplacian()
     integer, parameter :: n = 20
     real(kind=dp), parameter :: grid_dx = 1.0_dp
-    real(kind=dp), parameter :: pi = 3.14159265358979323846264338327950288_dp
+    real(kind=dp), parameter :: pi = pi_dp  ! use module constant
     type(csr_matrix) :: Hmat
     type(eigensolver_config) :: cfg
     type(eigensolver_result) :: res
@@ -125,7 +125,7 @@ contains
     ! First verify with ARPACK dense solver that the matrix is correct
     cfg%method = 'ARPACK'
     cfg%nev = 3
-    call solve_arpack(Hmat, cfg, res)
+    call solve_dense_lapack(Hmat, cfg, res)
 
     @assertTrue(res%converged)
     @assertEqual(3, res%nev_found)
@@ -293,7 +293,7 @@ contains
     cfg%method = 'ARPACK'
     cfg%nev = 3
 
-    call solve_arpack(H, cfg, res)
+    call solve_dense_lapack(H, cfg, res)
 
     @assertTrue(res%converged)
     @assertEqual(3, res%nev_found)

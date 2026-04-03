@@ -13,30 +13,30 @@ contains
   @test
   subroutine test_rect_all_active()
     type(spatial_grid) :: grid
-    integer, parameter :: ny = 4, nz = 5
-    real(kind=dp), parameter :: dy = 1.0_dp, dz = 2.0_dp
-    integer :: mat2d(ny, nz)
-    integer :: iy, iz, ij
+    integer, parameter :: nx = 4, ny = 5
+    real(kind=dp), parameter :: dx = 1.0_dp, dy = 2.0_dp
+    integer :: mat2d(nx, ny)
+    integer :: ix, iy, ij
 
     mat2d = 1
-    call grid_init_rect(grid, ny, nz, dy, dz, mat2d)
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
 
     @assertEqual(2, grid%ndim)
+    @assertEqual(nx, grid%nx)
     @assertEqual(ny, grid%ny)
-    @assertEqual(nz, grid%nz)
     @assertTrue(allocated(grid%cell_volume))
+    @assertTrue(allocated(grid%face_fraction_x))
     @assertTrue(allocated(grid%face_fraction_y))
-    @assertTrue(allocated(grid%face_fraction_z))
     @assertTrue(allocated(grid%ghost_map))
 
-    do iz = 1, nz
-      do iy = 1, ny
-        ij = (iz - 1) * ny + iy
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
         @assertEqual(1.0_dp, grid%cell_volume(ij), tolerance=1.0e-14_dp)
+        @assertEqual(1.0_dp, grid%face_fraction_x(ij, 1), tolerance=1.0e-14_dp)
+        @assertEqual(1.0_dp, grid%face_fraction_x(ij, 2), tolerance=1.0e-14_dp)
         @assertEqual(1.0_dp, grid%face_fraction_y(ij, 1), tolerance=1.0e-14_dp)
         @assertEqual(1.0_dp, grid%face_fraction_y(ij, 2), tolerance=1.0e-14_dp)
-        @assertEqual(1.0_dp, grid%face_fraction_z(ij, 1), tolerance=1.0e-14_dp)
-        @assertEqual(1.0_dp, grid%face_fraction_z(ij, 2), tolerance=1.0e-14_dp)
         @assertEqual(1, grid%material_id(ij))
       end do
     end do
@@ -48,18 +48,18 @@ contains
   @test
   subroutine test_rect_material_id()
     type(spatial_grid) :: grid
-    integer, parameter :: ny = 3, nz = 3
-    integer :: mat2d(ny, nz)
+    integer, parameter :: nx = 3, ny = 3
+    integer :: mat2d(nx, ny)
     integer :: ij
 
-    mat2d = reshape([1,1,1, 2,2,2, 3,3,3], [ny, nz])
-    call grid_init_rect(grid, ny, nz, 1.0_dp, 1.0_dp, mat2d)
+    mat2d = reshape([1,1,1, 2,2,2, 3,3,3], [nx, ny])
+    call grid_init_rect(grid, nx, ny, 1.0_dp, 1.0_dp, mat2d)
 
-    ij = (1-1)*ny + 1
+    ij = (1-1)*nx + 1
     @assertEqual(1, grid%material_id(ij))
-    ij = (2-1)*ny + 1
+    ij = (2-1)*nx + 1
     @assertEqual(2, grid%material_id(ij))
-    ij = (3-1)*ny + 3
+    ij = (3-1)*nx + 3
     @assertEqual(3, grid%material_id(ij))
 
     call grid_free(grid)
@@ -72,21 +72,21 @@ contains
   @test
   subroutine test_circle_total_area()
     type(spatial_grid) :: grid
-    integer, parameter :: ny = 100, nz = 100
-    real(kind=dp), parameter :: dy = 0.1_dp, dz = 0.1_dp
-    real(kind=dp), parameter :: cx = 5.0_dp, cz = 5.0_dp, radius = 4.0_dp
+    integer, parameter :: nx = 100, ny = 100
+    real(kind=dp), parameter :: dx = 0.1_dp, dy = 0.1_dp
+    real(kind=dp), parameter :: cx = 5.0_dp, cy = 5.0_dp, radius = 4.0_dp
     real(kind=dp) :: total_area, expected_area, rel_err
     logical :: ok
-    integer :: mat2d(ny, nz), ij
+    integer :: mat2d(nx, ny), ij
 
     mat2d = 1
-    call grid_init_circle(grid, ny, nz, dy, dz, cx, cz, radius, mat2d)
+    call grid_init_circle(grid, nx, ny, dx, dy, cx, cy, radius, mat2d)
 
     total_area = 0.0_dp
-    do ij = 1, ny * nz
+    do ij = 1, nx * ny
       total_area = total_area + grid%cell_volume(ij)
     end do
-    total_area = total_area * dy * dz
+    total_area = total_area * dx * dy
 
     expected_area = pi_dp * radius**2
     rel_err = abs(total_area - expected_area) / expected_area
@@ -99,20 +99,20 @@ contains
   @test
   subroutine test_circle_outside_zero()
     type(spatial_grid) :: grid
-    integer, parameter :: ny = 20, nz = 20
-    real(kind=dp), parameter :: dy = 1.0_dp, dz = 1.0_dp
-    real(kind=dp), parameter :: cx = 10.0_dp, cz = 10.0_dp, radius = 3.0_dp
-    integer :: mat2d(ny, nz)
+    integer, parameter :: nx = 20, ny = 20
+    real(kind=dp), parameter :: dx = 1.0_dp, dy = 1.0_dp
+    real(kind=dp), parameter :: cx = 10.0_dp, cy = 10.0_dp, radius = 3.0_dp
+    integer :: mat2d(nx, ny)
     integer :: ij
 
     mat2d = 1
-    call grid_init_circle(grid, ny, nz, dy, dz, cx, cz, radius, mat2d)
+    call grid_init_circle(grid, nx, ny, dx, dy, cx, cy, radius, mat2d)
 
-    ij = (1-1)*ny + 1
+    ij = (1-1)*nx + 1
     @assertEqual(0.0_dp, grid%cell_volume(ij), tolerance=1.0e-14_dp)
     @assertEqual(0, grid%material_id(ij))
+    @assertEqual(0.0_dp, grid%face_fraction_x(ij, 1), tolerance=1.0e-14_dp)
     @assertEqual(0.0_dp, grid%face_fraction_y(ij, 1), tolerance=1.0e-14_dp)
-    @assertEqual(0.0_dp, grid%face_fraction_z(ij, 1), tolerance=1.0e-14_dp)
 
     call grid_free(grid)
   end subroutine test_circle_outside_zero
@@ -120,17 +120,17 @@ contains
   @test
   subroutine test_circle_center_inside()
     type(spatial_grid) :: grid
-    integer, parameter :: ny = 20, nz = 20
-    real(kind=dp), parameter :: dy = 1.0_dp, dz = 1.0_dp
-    real(kind=dp), parameter :: cx = 10.0_dp, cz = 10.0_dp, radius = 8.0_dp
-    integer :: mat2d(ny, nz)
+    integer, parameter :: nx = 20, ny = 20
+    real(kind=dp), parameter :: dx = 1.0_dp, dy = 1.0_dp
+    real(kind=dp), parameter :: cx = 10.0_dp, cy = 10.0_dp, radius = 8.0_dp
+    integer :: mat2d(nx, ny)
     integer :: ij
 
     mat2d = 1
-    call grid_init_circle(grid, ny, nz, dy, dz, cx, cz, radius, mat2d)
+    call grid_init_circle(grid, nx, ny, dx, dy, cx, cy, radius, mat2d)
 
-    ! Cell iy=10,iz=10 spans y=[9,10], z=[9,10]; all corners within radius 8
-    ij = (10-1)*ny + 10
+    ! Cell ix=10,iy=10 spans x=[9,10], y=[9,10]; all corners within radius 8
+    ij = (10-1)*nx + 10
     @assertEqual(1.0_dp, grid%cell_volume(ij), tolerance=1.0e-14_dp)
     @assertEqual(1, grid%material_id(ij))
 
@@ -144,22 +144,22 @@ contains
   @test
   subroutine test_hexagon_total_area()
     type(spatial_grid) :: grid
-    integer, parameter :: ny = 80, nz = 80
-    real(kind=dp), parameter :: dy = 0.1_dp, dz = 0.1_dp
-    real(kind=dp), parameter :: cx = 4.0_dp, cz = 4.0_dp
+    integer, parameter :: nx = 80, ny = 80
+    real(kind=dp), parameter :: dx = 0.1_dp, dy = 0.1_dp
+    real(kind=dp), parameter :: cx = 4.0_dp, cy = 4.0_dp
     real(kind=dp), parameter :: side = 3.0_dp
     real(kind=dp) :: total_area, expected_area, rel_err
     logical :: ok
-    integer :: mat2d(ny, nz), ij
+    integer :: mat2d(nx, ny), ij
 
     mat2d = 1
-    call grid_init_hexagon(grid, ny, nz, dy, dz, cx, cz, side, mat2d)
+    call grid_init_hexagon(grid, nx, ny, dx, dy, cx, cy, side, mat2d)
 
     total_area = 0.0_dp
-    do ij = 1, ny * nz
+    do ij = 1, nx * ny
       total_area = total_area + grid%cell_volume(ij)
     end do
-    total_area = total_area * dy * dz
+    total_area = total_area * dx * dy
 
     expected_area = 1.5_dp * sqrt(3.0_dp) * side**2
     rel_err = abs(total_area - expected_area) / expected_area
@@ -176,25 +176,25 @@ contains
   @test
   subroutine test_polygon_triangle_area()
     type(spatial_grid) :: grid
-    integer, parameter :: ny = 100, nz = 100
-    real(kind=dp), parameter :: dy = 0.1_dp, dz = 0.1_dp
-    real(kind=dp) :: vx(3), vz(3)
+    integer, parameter :: nx = 100, ny = 100
+    real(kind=dp), parameter :: dx = 0.1_dp, dy = 0.1_dp
+    real(kind=dp) :: vx(3), vy(3)
     real(kind=dp) :: total_area, expected_area, rel_err
     logical :: ok
-    integer :: mat2d(ny, nz), ij
+    integer :: mat2d(nx, ny), ij
 
     vx = [2.0_dp, 8.0_dp, 2.0_dp]
-    vz = [2.0_dp, 2.0_dp, 8.0_dp]
+    vy = [2.0_dp, 2.0_dp, 8.0_dp]
     expected_area = 0.5_dp * 6.0_dp * 6.0_dp
 
     mat2d = 1
-    call grid_init_polygon(grid, ny, nz, dy, dz, 3, vx, vz, mat2d)
+    call grid_init_polygon(grid, nx, ny, dx, dy, 3, vx, vy, mat2d)
 
     total_area = 0.0_dp
-    do ij = 1, ny * nz
+    do ij = 1, nx * ny
       total_area = total_area + grid%cell_volume(ij)
     end do
-    total_area = total_area * dy * dz
+    total_area = total_area * dx * dy
 
     rel_err = abs(total_area - expected_area) / expected_area
     ok = (rel_err < 0.02_dp)
@@ -210,24 +210,24 @@ contains
   @test
   subroutine test_grid_coords_consistency()
     type(spatial_grid) :: grid
-    integer, parameter :: ny = 5, nz = 7
-    real(kind=dp), parameter :: dy = 0.5_dp, dz = 1.0_dp
-    integer :: mat2d(ny, nz)
-    integer :: iy, iz, ij
+    integer, parameter :: nx = 5, ny = 7
+    real(kind=dp), parameter :: dx = 0.5_dp, dy = 1.0_dp
+    integer :: mat2d(nx, ny)
+    integer :: ix, iy, ij
 
     mat2d = 1
-    call grid_init_rect(grid, ny, nz, dy, dz, mat2d)
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
     call grid_build_coords(grid)
 
     @assertTrue(allocated(grid%coords))
     @assertEqual(2, size(grid%coords, 1))
-    @assertEqual(ny * nz, size(grid%coords, 2))
+    @assertEqual(nx * ny, size(grid%coords, 2))
 
-    do iz = 1, nz
-      do iy = 1, ny
-        ij = (iz - 1) * ny + iy
-        @assertEqual((iy - 0.5_dp) * dy, grid%coords(1, ij), tolerance=1.0e-14_dp)
-        @assertEqual((iz - 0.5_dp) * dz, grid%coords(2, ij), tolerance=1.0e-14_dp)
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        @assertEqual((ix - 0.5_dp) * dx, grid%coords(1, ij), tolerance=1.0e-14_dp)
+        @assertEqual((iy - 0.5_dp) * dy, grid%coords(2, ij), tolerance=1.0e-14_dp)
       end do
     end do
 
@@ -237,24 +237,24 @@ contains
   @test
   subroutine test_grid_coord_arrays()
     type(spatial_grid) :: grid
-    integer, parameter :: ny = 4, nz = 3
-    real(kind=dp), parameter :: dy = 2.0_dp, dz = 3.0_dp
-    integer :: mat2d(ny, nz)
+    integer, parameter :: nx = 4, ny = 3
+    real(kind=dp), parameter :: dx = 2.0_dp, dy = 3.0_dp
+    integer :: mat2d(nx, ny)
     integer :: i
 
     mat2d = 1
-    call grid_init_rect(grid, ny, nz, dy, dz, mat2d)
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
 
-    @assertTrue(allocated(grid%y))
+    @assertTrue(allocated(grid%x))
     @assertTrue(allocated(grid%z))
-    @assertEqual(ny, size(grid%y))
-    @assertEqual(nz, size(grid%z))
+    @assertEqual(nx, size(grid%x))
+    @assertEqual(ny, size(grid%z))
 
-    do i = 1, ny
-      @assertEqual((i - 0.5_dp) * dy, grid%y(i), tolerance=1.0e-14_dp)
+    do i = 1, nx
+      @assertEqual((i - 0.5_dp) * dx, grid%x(i), tolerance=1.0e-14_dp)
     end do
-    do i = 1, nz
-      @assertEqual((i - 0.5_dp) * dz, grid%z(i), tolerance=1.0e-14_dp)
+    do i = 1, ny
+      @assertEqual((i - 0.5_dp) * dy, grid%z(i), tolerance=1.0e-14_dp)
     end do
 
     call grid_free(grid)
@@ -267,26 +267,26 @@ contains
   @test
   subroutine test_rect_ghost_map()
     type(spatial_grid) :: grid
-    integer, parameter :: ny = 3, nz = 3
-    integer :: mat2d(ny, nz)
+    integer, parameter :: nx = 3, ny = 3
+    integer :: mat2d(nx, ny)
     integer :: ij
 
     mat2d = 1
-    call grid_init_rect(grid, ny, nz, 1.0_dp, 1.0_dp, mat2d)
+    call grid_init_rect(grid, nx, ny, 1.0_dp, 1.0_dp, mat2d)
 
     ! Interior cell (2,2): neighbors should be immediate
-    ij = (2-1)*ny + 2
-    ! N (+z): (2,3) -> ij = (3-1)*3 + 2 = 8
+    ij = (2-1)*nx + 2
+    ! N (+y): (2,3) -> ij = (3-1)*3 + 2 = 8
     @assertEqual(8, grid%ghost_map(ij, 1))
-    ! S (-z): (2,1) -> ij = (1-1)*3 + 2 = 2
+    ! S (-y): (2,1) -> ij = (1-1)*3 + 2 = 2
     @assertEqual(2, grid%ghost_map(ij, 2))
-    ! W (-y): (1,2) -> ij = (2-1)*3 + 1 = 4
+    ! W (-x): (1,2) -> ij = (2-1)*3 + 1 = 4
     @assertEqual(4, grid%ghost_map(ij, 3))
-    ! E (+y): (3,2) -> ij = (2-1)*3 + 3 = 6
+    ! E (+x): (3,2) -> ij = (2-1)*3 + 3 = 6
     @assertEqual(6, grid%ghost_map(ij, 4))
 
     ! Boundary cell (1,1): S and W should map to self
-    ij = (1-1)*ny + 1
+    ij = (1-1)*nx + 1
     @assertEqual(ij, grid%ghost_map(ij, 2))
     @assertEqual(ij, grid%ghost_map(ij, 3))
 
@@ -307,11 +307,11 @@ contains
     call grid_free(grid)
 
     @assertEqual(0, grid%ndim)
+    @assertEqual(1, grid%nx)
     @assertEqual(1, grid%ny)
-    @assertEqual(1, grid%nz)
+    @assertEqual(0.0_dp, grid%dx)
     @assertEqual(0.0_dp, grid%dy)
-    @assertEqual(0.0_dp, grid%dz)
-    @assertFalse(allocated(grid%y))
+    @assertFalse(allocated(grid%x))
     @assertFalse(allocated(grid%z))
     @assertFalse(allocated(grid%coords))
     @assertFalse(allocated(grid%cell_volume))
@@ -327,21 +327,21 @@ contains
     ! Rectangle wire with single region: all cells active, material_id=1.
     type(simulation_config) :: cfg
     integer :: ij, ngrid
-    real(kind=dp) :: yval, zval
+    real(kind=dp) :: xval, yval
 
     cfg%confinement = 2
+    cfg%wire_nx = 5
     cfg%wire_ny = 5
-    cfg%wire_nz = 5
+    cfg%wire_dx = 2.0_dp
     cfg%wire_dy = 2.0_dp
-    cfg%wire_dz = 2.0_dp
     cfg%FDorder = 2
 
     ! Set grid dimensions (as init_grid_from_config would do)
     cfg%grid%ndim = 2
+    cfg%grid%nx   = 5
     cfg%grid%ny   = 5
-    cfg%grid%nz   = 5
+    cfg%grid%dx   = 2.0_dp
     cfg%grid%dy   = 2.0_dp
-    cfg%grid%dz   = 2.0_dp
 
     cfg%wire_geom%shape = 'rectangle'
 
@@ -364,18 +364,18 @@ contains
 
     do ij = 1, ngrid
       @assertEqual(1.0_dp, cfg%grid%cell_volume(ij), tolerance=1.0e-14_dp)
+      @assertEqual(1.0_dp, cfg%grid%face_fraction_x(ij, 1), tolerance=1.0e-14_dp)
+      @assertEqual(1.0_dp, cfg%grid%face_fraction_x(ij, 2), tolerance=1.0e-14_dp)
       @assertEqual(1.0_dp, cfg%grid%face_fraction_y(ij, 1), tolerance=1.0e-14_dp)
       @assertEqual(1.0_dp, cfg%grid%face_fraction_y(ij, 2), tolerance=1.0e-14_dp)
-      @assertEqual(1.0_dp, cfg%grid%face_fraction_z(ij, 1), tolerance=1.0e-14_dp)
-      @assertEqual(1.0_dp, cfg%grid%face_fraction_z(ij, 2), tolerance=1.0e-14_dp)
       @assertEqual(1, cfg%grid%material_id(ij))
     end do
 
-    ! Coords should be cell-centered: y(1) = 0.5*dy = 1.0, z(1) = 0.5*dz = 1.0
-    yval = cfg%grid%coords(1, 1)
-    zval = cfg%grid%coords(2, 1)
+    ! Coords should be cell-centered: x(1) = 0.5*dx = 1.0, y(1) = 0.5*dy = 1.0
+    xval = cfg%grid%coords(1, 1)
+    yval = cfg%grid%coords(2, 1)
+    @assertEqual(1.0_dp, xval, tolerance=1.0e-14_dp)
     @assertEqual(1.0_dp, yval, tolerance=1.0e-14_dp)
-    @assertEqual(1.0_dp, zval, tolerance=1.0e-14_dp)
 
     call grid_free(cfg%grid)
     deallocate(cfg%regions)
@@ -384,23 +384,23 @@ contains
   @test
   subroutine test_wire_rect_two_regions()
     ! Rectangle wire with core (region 1, r<=4) and shell (region 2, r>4).
-    ! Grid: 10x10, dy=dz=1. Grid center at (5,5).
+    ! Grid: 10x10, dx=dy=1. Grid center at (5,5).
     type(simulation_config) :: cfg
-    integer :: iy, iz, ij
-    real(kind=dp) :: cy, cz, dist
+    integer :: ix, iy, ij
+    real(kind=dp) :: cx, cy, dist
 
     cfg%confinement = 2
+    cfg%wire_nx = 10
     cfg%wire_ny = 10
-    cfg%wire_nz = 10
+    cfg%wire_dx = 1.0_dp
     cfg%wire_dy = 1.0_dp
-    cfg%wire_dz = 1.0_dp
     cfg%FDorder = 2
 
     cfg%grid%ndim = 2
+    cfg%grid%nx   = 10
     cfg%grid%ny   = 10
-    cfg%grid%nz   = 10
+    cfg%grid%dx   = 1.0_dp
     cfg%grid%dy   = 1.0_dp
-    cfg%grid%dz   = 1.0_dp
 
     cfg%wire_geom%shape = 'rectangle'
 
@@ -417,15 +417,15 @@ contains
     call init_wire_from_config(cfg)
 
     ! Grid center is at (5, 5)
+    cx = 5.0_dp
     cy = 5.0_dp
-    cz = 5.0_dp
 
     ! Verify material_id is based on 2D distance from center
-    do iz = 1, 10
-      do iy = 1, 10
-        ij = (iz - 1) * 10 + iy
-        dist = sqrt(((iy - 0.5_dp) * 1.0_dp - cy)**2 + &
-                    ((iz - 0.5_dp) * 1.0_dp - cz)**2)
+    do iy = 1, 10
+      do ix = 1, 10
+        ij = (iy - 1) * 10 + ix
+        dist = sqrt(((ix - 0.5_dp) * 1.0_dp - cx)**2 + &
+                    ((iy - 0.5_dp) * 1.0_dp - cy)**2)
         if (dist <= 4.0_dp) then
           @assertEqual(1, cfg%grid%material_id(ij))
         else

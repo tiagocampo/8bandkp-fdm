@@ -78,16 +78,16 @@ module definitions
   ! Wire geometry specification for confinement=2.
   ! shape: 'rectangle', 'circle', 'hexagon', 'polygon'
   ! For circle/hexagon: wire_radius is the defining size.
-  ! For rectangle: wire_width (y), wire_height (z).
+  ! For rectangle: wire_width (x), wire_height (y).
   ! For polygon: wire_polygon_nverts + wire_polygon_verts(:,:).
   ! ------------------------------------------------------------------
   type wire_geometry
     character(len=16)  :: shape = 'rectangle'
     real(kind=dp)      :: radius = 0.0_dp     ! AA (circle/hexagon)
-    real(kind=dp)      :: width  = 0.0_dp     ! AA (rectangle, y-extent)
-    real(kind=dp)      :: height = 0.0_dp     ! AA (rectangle, z-extent)
+    real(kind=dp)      :: width  = 0.0_dp     ! AA (rectangle, x-extent)
+    real(kind=dp)      :: height = 0.0_dp     ! AA (rectangle, y-extent)
     integer            :: nverts = 0           ! polygon vertex count
-    real(kind=dp), allocatable :: verts(:,:)  ! (2, nverts) y,z vertices
+    real(kind=dp), allocatable :: verts(:,:)  ! (2, nverts) x,y vertices
   end type wire_geometry
 
   ! ------------------------------------------------------------------
@@ -103,9 +103,13 @@ module definitions
   ! ------------------------------------------------------------------
   ! Unified spatial grid for bulk (ndim=0), QW (ndim=1), wire (ndim=2).
   !
-  ! Bulk:   ny=1, nz=1, dy=dz=0, no coordinate arrays.
-  ! QW:     ny=1, nz=fdStep, dz>0, z(:) holds 1D grid.
-  ! Wire:   ny>1, nz>1, dy>0, dz>0, coords(:,:) holds 2D grid.
+  ! Bulk:   nx=1, ny=1, dx=dy=0, no coordinate arrays.
+  ! QW:     nx=1, ny=fdStep, dy>0, z(:) holds 1D grid.
+  ! Wire:   nx>1, ny>1, dx>0, dy>0, coords(:,:) holds 2D grid.
+  !
+  ! For wire mode (confinement=2): nx and ny are the grid points in
+  ! the x and y confinement directions respectively. The free
+  ! propagation direction is z (kz sweep).
   !
   ! Cut-cell fields are only allocated for wire mode (ndim=2).  For QW
   ! and bulk they remain unallocated; code can test associated() or
@@ -113,28 +117,29 @@ module definitions
   ! ------------------------------------------------------------------
   type spatial_grid
     integer :: ndim = 0                ! 0=bulk, 1=QW, 2=wire
-    integer :: ny = 1                  ! grid points in y (wire axis)
-    integer :: nz = 1                  ! grid points in z (growth axis)
+    integer :: nx = 1                  ! grid points in x (confinement, wire mode)
+    integer :: ny = 1                  ! grid points in y (confinement for wire, z-confinement for QW)
+    real(kind=dp) :: dx = 0.0_dp       ! grid spacing in x (AA)
     real(kind=dp) :: dy = 0.0_dp       ! grid spacing in y (AA)
-    real(kind=dp) :: dz = 0.0_dp       ! grid spacing in z (AA)
 
     ! 1D coordinate arrays (allocated for ndim >= 1)
-    real(kind=dp), allocatable :: y(:)       ! (ny)
-    real(kind=dp), allocatable :: z(:)       ! (nz)
+    real(kind=dp), allocatable :: x(:)       ! (nx) x-coordinates for wire
+    real(kind=dp), allocatable :: z(:)       ! (ny) y-coords for wire, z-coords for QW
 
     ! Flattened 2D coordinate array (allocated for ndim == 2)
-    ! coords(1,:) = y, coords(2,:) = z,  column-major: (j-1)*ny + i
-    real(kind=dp), allocatable :: coords(:,:)    ! (2, ny*nz)
+    ! coords(1,:) = x, coords(2,:) = y (stored in z(:) array)
+    ! column-major: flat_idx = (iy-1)*nx + ix
+    real(kind=dp), allocatable :: coords(:,:)    ! (2, nx*ny)
 
     ! Material index at each grid point (1-based layer index)
-    integer, allocatable  :: material_id(:)      ! (ny*nz)
+    integer, allocatable  :: material_id(:)      ! (nx*ny)
 
     ! Cut-cell immersed boundary fields (ndim == 2 only)
-    real(kind=dp), allocatable :: cell_volume(:)       ! (ny*nz) fractional vol [0,1]
-    real(kind=dp), allocatable :: face_fraction_y(:,:) ! (ny*nz, 2) left/right y-face
-    real(kind=dp), allocatable :: face_fraction_z(:,:) ! (ny*nz, 2) bottom/top z-face
+    real(kind=dp), allocatable :: cell_volume(:)       ! (nx*ny) fractional vol [0,1]
+    real(kind=dp), allocatable :: face_fraction_x(:,:) ! (nx*ny, 2) left/right face in x-direction
+    real(kind=dp), allocatable :: face_fraction_y(:,:) ! (nx*ny, 2) bottom/top face in y-direction
     ! Nearest active neighbor for each ghost/inactive point
-    integer, allocatable  :: ghost_map(:,:)            ! (ny*nz, 4) N S W E
+    integer, allocatable  :: ghost_map(:,:)            ! (nx*ny, 4) N S W E
   end type spatial_grid
 
   type simulation_config
@@ -169,10 +174,10 @@ module definitions
     type(spatial_grid)             :: grid         ! unified spatial grid
 
     ! ---- Wire-specific fields (confinement=2) ----
+    integer            :: wire_nx = 0            ! grid points in x
     integer            :: wire_ny = 0            ! grid points in y
-    integer            :: wire_nz = 0            ! grid points in z
+    real(kind=dp)      :: wire_dx = 0.0_dp      ! grid spacing x (AA)
     real(kind=dp)      :: wire_dy = 0.0_dp      ! grid spacing y (AA)
-    real(kind=dp)      :: wire_dz = 0.0_dp      ! grid spacing z (AA)
     type(wire_geometry) :: wire_geom             ! shape + dimensions
     integer            :: numRegions = 0         ! number of material regions
     type(region_spec), allocatable :: regions(:) ! region specifications
@@ -193,22 +198,22 @@ module definitions
   end function
 
   ! ------------------------------------------------------------------
-  ! Return total number of spatial grid points (ny * nz).
-  ! Works for all ndim: bulk returns 1, QW returns nz, wire returns ny*nz.
+  ! Return total number of spatial grid points (nx * ny).
+  ! Works for all ndim: bulk returns 1, QW returns ny, wire returns nx*ny.
   ! ------------------------------------------------------------------
   pure function grid_ngrid(grid) result(n)
     type(spatial_grid), intent(in) :: grid
     integer :: n
-    n = grid%ny * grid%nz
+    n = grid%nx * grid%ny
   end function
 
   ! ------------------------------------------------------------------
   ! Initialize a spatial_grid from the fields already set in
   ! simulation_config.  This is the primary grid initialization path.
   !
-  ! For bulk (confinement=0): ndim=0, ny=nz=1.
-  ! For QW  (confinement=1): ndim=1, ny=1, nz=fdStep, z(:) copied.
-  ! For wire(confinement=2): ndim=2, ny=wire_ny, nz=wire_nz,
+  ! For bulk (confinement=0): ndim=0, nx=ny=1.
+  ! For QW  (confinement=1): ndim=1, nx=1, ny=fdStep, z(:) copied.
+  ! For wire(confinement=2): ndim=2, nx=wire_nx, ny=wire_ny,
   !   set grid dimensions only.  Coordinate arrays, material_id,
   !   cut-cell fields and ghost_map are populated by
   !   init_wire_from_config() in the geometry module.
@@ -222,19 +227,19 @@ module definitions
     case (0)
       ! Bulk: single point, no spatial extent
       cfg%grid%ndim = 0
+      cfg%grid%nx   = 1
       cfg%grid%ny   = 1
-      cfg%grid%nz   = 1
+      cfg%grid%dx   = 0.0_dp
       cfg%grid%dy   = 0.0_dp
-      cfg%grid%dz   = 0.0_dp
       ! No coordinate arrays allocated for bulk
 
     case (1)
       ! QW: 1D confinement along z
       cfg%grid%ndim = 1
-      cfg%grid%ny   = 1
-      cfg%grid%nz   = cfg%fdStep
-      cfg%grid%dy   = 0.0_dp
-      cfg%grid%dz   = cfg%dz
+      cfg%grid%nx   = 1
+      cfg%grid%ny   = cfg%fdStep
+      cfg%grid%dx   = 0.0_dp
+      cfg%grid%dy   = cfg%dz
 
       ! Copy z-coordinate array from legacy field
       if (allocated(cfg%z)) then
@@ -251,18 +256,18 @@ module definitions
       end if
 
       ! No cut-cell fields for QW
-      ! No coords(:,:) or y(:) for QW (ny=1)
+      ! No coords(:,:) or x(:) for QW (nx=1)
 
     case (2)
-      ! Wire: 2D confinement in y-z plane.
+      ! Wire: 2D confinement in x-y plane.
       ! Set grid dimensions only; coordinate arrays, material_id,
       ! cut-cell fields, and ghost_map are populated by
       ! init_wire_from_config() in the geometry module.
       cfg%grid%ndim = 2
+      cfg%grid%nx   = cfg%wire_nx
       cfg%grid%ny   = cfg%wire_ny
-      cfg%grid%nz   = cfg%wire_nz
+      cfg%grid%dx   = cfg%wire_dx
       cfg%grid%dy   = cfg%wire_dy
-      cfg%grid%dz   = cfg%wire_dz
 
     end select
 

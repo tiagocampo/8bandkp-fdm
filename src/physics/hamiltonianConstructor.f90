@@ -96,7 +96,6 @@ module hamiltonianConstructor
 
       N = size(z, dim=1)
       delta = abs(z(2) - z(1))
-      print *, delta
 
       ! Resolve FD order (default 2 for backward compatibility)
       if (present(FDorder)) then
@@ -251,19 +250,19 @@ module hamiltonianConstructor
       real(kind=dp), intent(inout), allocatable :: profile(:,:)
       real(kind=dp), intent(inout), allocatable :: kpterms(:,:,:)
 
-      integer :: nz
+      integer :: ny
 
       ! Determine spatial DOF count from the grid when available,
       ! otherwise from the legacy fdStep field.
       if (cfg%grid%ndim >= 1) then
-        nz = grid_ngrid(cfg%grid)
+        ny = grid_ngrid(cfg%grid)
       else
-        nz = cfg%fdStep
+        ny = cfg%fdStep
       end if
 
       ! Allocate kpterms if not already allocated (caller may pre-allocate)
       if (.not. allocated(kpterms)) then
-        allocate(kpterms(nz, nz, 10))
+        allocate(kpterms(ny, ny, 10))
         kpterms = 0.0_dp
       end if
 
@@ -281,8 +280,8 @@ module hamiltonianConstructor
       end if
 
       ! Populate cfg%dz from the grid when available
-      if (cfg%grid%ndim >= 1 .and. cfg%grid%dz > 0.0_dp) then
-        cfg%dz = cfg%grid%dz
+      if (cfg%grid%ndim >= 1 .and. cfg%grid%dy > 0.0_dp) then
+        cfg%dz = cfg%grid%dy
       end if
 
     end subroutine confinementInitialization_cfg
@@ -299,13 +298,13 @@ module hamiltonianConstructor
     !>   2: gamma2 (diagonal only)
     !>   3: gamma3 (diagonal only)
     !>   4: P      (diagonal only)
-    !>   5: A * (d^2/dy^2 + d^2/dz^2)   -- 2nd derivative, conduction band kinetic
-    !>   6: P * (d/dy + d/dz)            -- 1st derivative, momentum coupling
+    !>   5: A * (d^2/dx^2 + d^2/dy^2)   -- 2nd derivative, conduction band kinetic
+    !>   6: P * (d/dx + d/dy)            -- 1st derivative, momentum coupling
     !>   7: (gamma1 - 2*gamma2) * Laplacian -- Q term kinetic
     !>   8: (gamma1 + 2*gamma2) * Laplacian -- T term kinetic
-    !>   9: gamma3 * (d/dy + d/dz)       -- S term, linear-k coupling
+    !>   9: gamma3 * (d/dx + d/dy)       -- S term, linear-k coupling
     !>  10: A (diagonal only, k^2 coefficient for CB)
-    !>  11: gamma3 * d^2/dydz             -- cross-derivative (NEW for 2D)
+    !>  11: gamma3 * d^2/dxdy             -- cross-derivative (NEW for 2D)
     !>
     !> Also builds profile_2d(Ngrid, 3) with band edges:
     !>   profile_2d(:,1) = EV
@@ -322,23 +321,23 @@ module hamiltonianConstructor
       type(csr_matrix), allocatable, intent(out) :: kpterms_2d(:)
       integer, intent(in), optional     :: FDorder
 
-      integer :: order, ny, nz, ngrid, ij, mid
-      real(kind=dp) :: dy, dz
+      integer :: order, nx, ny, ngrid, ij, mid
+      real(kind=dp) :: dx, dy
 
       ! 1D FD matrices (real, dense)
+      real(kind=dp), allocatable :: D2x(:,:), D1x(:,:)
       real(kind=dp), allocatable :: D2y(:,:), D1y(:,:)
-      real(kind=dp), allocatable :: D2z(:,:), D1z(:,:)
-      real(kind=dp), allocatable :: Iy(:,:), Iz(:,:)
+      real(kind=dp), allocatable :: Ix(:,:), Iy(:,:)
 
       ! Complex versions for Kron product routines
+      complex(kind=dp), allocatable :: cD2x(:,:), cD1x(:,:)
       complex(kind=dp), allocatable :: cD2y(:,:), cD1y(:,:)
-      complex(kind=dp), allocatable :: cD2z(:,:), cD1z(:,:)
-      complex(kind=dp), allocatable :: cIy(:,:), cIz(:,:)
+      complex(kind=dp), allocatable :: cIx(:,:), cIy(:,:)
 
       ! CSR work matrices
-      type(csr_matrix) :: kron_D2y_Inz, kron_Iny_D2z, laplacian_2d
-      type(csr_matrix) :: kron_D1y_Inz, kron_Iny_D1z, grad_2d
-      type(csr_matrix) :: kron_D1y_D1z  ! cross-derivative
+      type(csr_matrix) :: kron_D2x_Iny, kron_Ix_D2y, laplacian_2d
+      type(csr_matrix) :: kron_D1x_Iny, kron_Ix_D1y, grad_2d
+      type(csr_matrix) :: kron_D1x_D1y  ! cross-derivative
       type(csr_matrix) :: diag_csr, scaled_diag
 
       ! Material profiles on the 2D grid
@@ -353,60 +352,60 @@ module hamiltonianConstructor
         order = 2
       end if
 
+      nx    = grid%nx
       ny    = grid%ny
-      nz    = grid%nz
-      ngrid = ny * nz
+      ngrid = nx * ny
+      dx    = grid%dx
       dy    = grid%dy
-      dz    = grid%dz
 
       ! Validate grid
-      if (ny < 3 .or. nz < 3) then
-        print *, "ERROR: confinementInitialization_2d requires ny>=3, nz>=3"
+      if (nx < 3 .or. ny < 3) then
+        print *, "ERROR: confinementInitialization_2d requires nx>=3, ny>=3"
         stop 1
       end if
 
       ! ====================================================================
       ! 1. Build 1D FD operators
       ! ====================================================================
+      call buildFD2ndDerivMatrix(nx, dx, order, D2x)
+      call buildFD1stDerivMatrix(nx, dx, order, D1x)
       call buildFD2ndDerivMatrix(ny, dy, order, D2y)
       call buildFD1stDerivMatrix(ny, dy, order, D1y)
-      call buildFD2ndDerivMatrix(nz, dz, order, D2z)
-      call buildFD1stDerivMatrix(nz, dz, order, D1z)
 
       ! Identity matrices
+      call Identity(nx, Ix)
       call Identity(ny, Iy)
-      call Identity(nz, Iz)
 
       ! Convert real matrices to complex for Kron routines
+      allocate(cD2x(nx, nx)); cD2x = cmplx(D2x, 0.0_dp, kind=dp)
+      allocate(cD1x(nx, nx)); cD1x = cmplx(D1x, 0.0_dp, kind=dp)
       allocate(cD2y(ny, ny)); cD2y = cmplx(D2y, 0.0_dp, kind=dp)
       allocate(cD1y(ny, ny)); cD1y = cmplx(D1y, 0.0_dp, kind=dp)
-      allocate(cD2z(nz, nz)); cD2z = cmplx(D2z, 0.0_dp, kind=dp)
-      allocate(cD1z(nz, nz)); cD1z = cmplx(D1z, 0.0_dp, kind=dp)
+      allocate(cIx(nx, nx));   cIx  = cmplx(Ix,  0.0_dp, kind=dp)
       allocate(cIy(ny, ny));   cIy  = cmplx(Iy,  0.0_dp, kind=dp)
-      allocate(cIz(nz, nz));   cIz  = cmplx(Iz,  0.0_dp, kind=dp)
 
       ! ====================================================================
       ! 2. Build 2D FD operators via Kronecker products
       ! ====================================================================
 
-      ! Laplacian: D2y x Iz + Iy x D2z
-      call kron_dense_dense(cD2y, ny, ny, cIz, nz, nz, kron_D2y_Inz)
-      call kron_eye_dense(ny, cD2z, nz, nz, kron_Iny_D2z)
-      call csr_add(kron_D2y_Inz, kron_Iny_D2z, laplacian_2d)
+      ! Laplacian: D2x x Iy + Ix x D2y
+      call kron_dense_dense(cD2x, nx, nx, cIy, ny, ny, kron_D2x_Iny)
+      call kron_eye_dense(nx, cD2y, ny, ny, kron_Ix_D2y)
+      call csr_add(kron_D2x_Iny, kron_Ix_D2y, laplacian_2d)
 
-      ! Gradient: D1y x Iz + Iy x D1z
-      call kron_dense_dense(cD1y, ny, ny, cIz, nz, nz, kron_D1y_Inz)
-      call kron_eye_dense(ny, cD1z, nz, nz, kron_Iny_D1z)
-      call csr_add(kron_D1y_Inz, kron_Iny_D1z, grad_2d)
+      ! Gradient: D1x x Iy + Ix x D1y
+      call kron_dense_dense(cD1x, nx, nx, cIy, ny, ny, kron_D1x_Iny)
+      call kron_eye_dense(nx, cD1y, ny, ny, kron_Ix_D1y)
+      call csr_add(kron_D1x_Iny, kron_Ix_D1y, grad_2d)
 
-      ! Cross-derivative: D1y x D1z
-      call kron_dense_dense(cD1y, ny, ny, cD1z, nz, nz, kron_D1y_D1z)
+      ! Cross-derivative: D1x x D1y
+      call kron_dense_dense(cD1x, nx, nx, cD1y, ny, ny, kron_D1x_D1y)
 
       ! Free intermediate Kronecker products
-      call csr_free(kron_D2y_Inz)
-      call csr_free(kron_Iny_D2z)
-      call csr_free(kron_D1y_Inz)
-      call csr_free(kron_Iny_D1z)
+      call csr_free(kron_D2x_Iny)
+      call csr_free(kron_Ix_D2y)
+      call csr_free(kron_D1x_Iny)
+      call csr_free(kron_Ix_D1y)
 
       ! ====================================================================
       ! 3. Build material profiles on the 2D grid
@@ -483,17 +482,17 @@ module hamiltonianConstructor
       call build_diagonal_csr(ngrid, prof_A, kpterms_2d(10))
 
       ! Term 11: gamma3 * Cross-derivative (NEW)
-      call csr_apply_variable_coeff(kron_D1y_D1z, prof_gamma3, kpterms_2d(11))
+      call csr_apply_variable_coeff(kron_D1x_D1y, prof_gamma3, kpterms_2d(11))
 
       ! ====================================================================
       ! 5. Cleanup
       ! ====================================================================
       call csr_free(laplacian_2d)
       call csr_free(grad_2d)
-      call csr_free(kron_D1y_D1z)
+      call csr_free(kron_D1x_D1y)
 
-      deallocate(D2y, D1y, D2z, D1z, Iy, Iz)
-      deallocate(cD2y, cD1y, cD2z, cD1z, cIy, cIz)
+      deallocate(D2x, D1x, D2y, D1y, Ix, Iy)
+      deallocate(cD2x, cD1x, cD2y, cD1y, cIx, cIy)
       deallocate(prof_gamma1, prof_gamma2, prof_gamma3)
       deallocate(prof_P, prof_A, prof_gm12g2, prof_gp12g2)
 
@@ -914,26 +913,26 @@ module hamiltonianConstructor
     !>
     !> Algorithm:
     !>   1. Build the 10 kp-term CSR matrices (Q, T, S, SC, R, RC, PZ, PP, PM, A)
-    !>      as combinations of kpterms_2d operators and kx-dependent scalars.
+    !>      as combinations of kpterms_2d operators and kz-dependent scalars.
     !>   2. Iterate over the 8x8 block topology, inserting all nonzeros of
     !>      each nonzero block as COO triplets with appropriate row/col offsets.
     !>   3. Add band-offset profile to diagonal blocks.
     !>   4. Finalize COO -> CSR via csr_build_from_coo.
     !>
-    !> The wire has kx as free wavevector (along the wire axis), with
-    !> confinement in y-z.  The kpterms_2d operators encode d/dy, d/dz,
-    !> d^2/dy^2, d^2/dz^2, and cross derivatives on the 2D grid.
+    !> The wire has kz as free wavevector (along the wire axis), with
+    !> confinement in x-y.  The kpterms_2d operators encode d/dx, d/dy,
+    !> d^2/dx^2, d^2/dy^2, and cross derivatives on the 2D grid.
     !---------------------------------------------------------------------------
-    subroutine ZB8bandGeneralized(HT_csr, kx, profile_2d, kpterms_2d, cfg)
+    subroutine ZB8bandGeneralized(HT_csr, kz, profile_2d, kpterms_2d, cfg)
 
       type(csr_matrix), intent(inout)         :: HT_csr
-      real(kind=dp), intent(in)               :: kx
+      real(kind=dp), intent(in)               :: kz
       real(kind=dp), intent(in)               :: profile_2d(:,:)
       type(csr_matrix), intent(in)            :: kpterms_2d(:)
       type(simulation_config), intent(in)     :: cfg
 
       integer :: N, Ntot, alpha, beta, nnz_est
-      real(kind=dp) :: kx2
+      real(kind=dp) :: kz2
 
       ! CSR work matrices for the kp terms
       type(csr_matrix) :: blk_Q, blk_T, blk_S, blk_SC
@@ -948,41 +947,41 @@ module hamiltonianConstructor
 
       N = grid_ngrid(cfg%grid)
       Ntot = 8 * N
-      kx2 = kx * kx
+      kz2 = kz * kz
 
       ! ==================================================================
       ! Build kp-term CSR matrices (size N x N each)
       ! ==================================================================
 
-      ! Q = -((gamma1+gamma2)*kx^2*I + kpterms_2d(7))
-      call build_kp_term_Q(kx2, kpterms_2d, blk_Q)
+      ! Q = -((gamma1+gamma2)*kz^2*I + kpterms_2d(7))
+      call build_kp_term_Q(kz2, kpterms_2d, blk_Q)
 
-      ! T = -(gamma1-gamma2)*kx^2*I - kpterms_2d(8)
-      call build_kp_term_T(kx2, kpterms_2d, blk_T)
+      ! T = -(gamma1-gamma2)*kz^2*I - kpterms_2d(8)
+      call build_kp_term_T(kz2, kpterms_2d, blk_T)
 
-      ! S = 2*sqrt(3)*kx*kpterms_2d(9)  (wire: kminus = kx since ky is spatial)
-      call build_kp_term_S(kx, kpterms_2d, blk_S)
+      ! S = 2*sqrt(3)*kz*kpterms_2d(9)  (wire: kminus = kz since kx,ky are spatial)
+      call build_kp_term_S(kz, kpterms_2d, blk_S)
 
-      ! SC = 2*sqrt(3)*kx*kpterms_2d(9)  (wire: kplus = kx since ky is spatial)
-      call build_kp_term_SC(kx, kpterms_2d, blk_SC)
+      ! SC = 2*sqrt(3)*kz*kpterms_2d(9)  (wire: kplus = kz since kx,ky are spatial)
+      call build_kp_term_SC(kz, kpterms_2d, blk_SC)
 
-      ! R = -sqrt(3)*gamma2*kx^2*I (diagonal only, ky^2 absorbed into 2D ops)
-      call build_kp_term_R(kx2, kpterms_2d, blk_R)
+      ! R = -sqrt(3)*gamma2*kz^2*I (diagonal only, kx^2,ky^2 absorbed into 2D ops)
+      call build_kp_term_R(kz2, kpterms_2d, blk_R)
 
       ! RC = conjg(R) = R (real diagonal)
-      call build_kp_term_RC(kx2, kpterms_2d, blk_RC)
+      call build_kp_term_RC(kz2, kpterms_2d, blk_RC)
 
       ! PZ = -IU * kpterms_2d(6)  (P * gradient * (-IU))
       call build_kp_term_PZ(kpterms_2d, blk_PZ)
 
-      ! PP = kpterms_2d(4) * kx * RQS2  (diagonal)
-      call build_kp_term_PP(kx, kpterms_2d, blk_PP)
+      ! PP = kpterms_2d(4) * kz * RQS2  (diagonal)
+      call build_kp_term_PP(kz, kpterms_2d, blk_PP)
 
-      ! PM = kpterms_2d(4) * kx * RQS2  (same as PP for wire)
-      call build_kp_term_PM(kx, kpterms_2d, blk_PM)
+      ! PM = kpterms_2d(4) * kz * RQS2  (same as PP for wire)
+      call build_kp_term_PM(kz, kpterms_2d, blk_PM)
 
-      ! A = kpterms_2d(5) + kx^2 * kpterms_2d(10)
-      call build_kp_term_A(kx2, kpterms_2d, blk_A)
+      ! A = kpterms_2d(5) + kz^2 * kpterms_2d(10)
+      call build_kp_term_A(kz2, kpterms_2d, blk_A)
 
       ! ==================================================================
       ! Estimate COO capacity and allocate
@@ -1226,20 +1225,20 @@ module hamiltonianConstructor
 
     ! ==================================================================
     ! Helper: Build kp-term Q for wire
-    ! Q = -((gamma1+gamma2)*kx^2*I + kpterms_2d(7))
+    ! Q = -((gamma1+gamma2)*kz^2*I + kpterms_2d(7))
     ! kpterms_2d(1) = gamma1 diag, kpterms_2d(2) = gamma2 diag
     ! kpterms_2d(7) = -(gamma1-2gamma2)*Laplacian
     ! ==================================================================
-    subroutine build_kp_term_Q(kx2, kpterms_2d, blk)
-      real(kind=dp), intent(in) :: kx2
+    subroutine build_kp_term_Q(kz2, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      type(csr_matrix) :: diag_sum, kx2_diag
+      type(csr_matrix) :: diag_sum, kz2_diag
 
-      ! gamma1 + gamma2 diagonal, scaled by kx^2
+      ! gamma1 + gamma2 diagonal, scaled by kz^2
       call csr_add(kpterms_2d(1), kpterms_2d(2), diag_sum, &
-        cmplx(kx2, 0.0_dp, kind=dp), cmplx(kx2, 0.0_dp, kind=dp))
+        cmplx(kz2, 0.0_dp, kind=dp), cmplx(kz2, 0.0_dp, kind=dp))
       ! Add kpterms_2d(7)
       call csr_add(diag_sum, kpterms_2d(7), blk, UM, UM)
       call csr_free(diag_sum)
@@ -1249,18 +1248,18 @@ module hamiltonianConstructor
 
     ! ==================================================================
     ! Helper: Build kp-term T for wire
-    ! T = -((gamma1-gamma2)*kx^2*I + kpterms_2d(8))
+    ! T = -((gamma1-gamma2)*kz^2*I + kpterms_2d(8))
     ! ==================================================================
-    subroutine build_kp_term_T(kx2, kpterms_2d, blk)
-      real(kind=dp), intent(in) :: kx2
+    subroutine build_kp_term_T(kz2, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
       type(csr_matrix) :: diag_sum
 
-      ! (gamma1 - gamma2)*kx^2 diagonal
+      ! (gamma1 - gamma2)*kz^2 diagonal
       call csr_add(kpterms_2d(1), kpterms_2d(2), diag_sum, &
-        cmplx(kx2, 0.0_dp, kind=dp), cmplx(-kx2, 0.0_dp, kind=dp))
+        cmplx(kz2, 0.0_dp, kind=dp), cmplx(-kz2, 0.0_dp, kind=dp))
       ! Add kpterms_2d(8) and negate
       call csr_add(diag_sum, kpterms_2d(8), blk, UM, UM)
       call csr_free(diag_sum)
@@ -1269,121 +1268,118 @@ module hamiltonianConstructor
 
     ! ==================================================================
     ! Helper: Build kp-term S for wire
-    ! S = 2*sqrt(3) * kx * kpterms_2d(9)
+    ! S = 2*sqrt(3) * kz * kpterms_2d(9)
     ! (In QW: S = 2*sqrt(3)*kminus*kpterms(9) with kminus = kx-i*ky.
-    !  For wire, ky is spatial so kminus = kx.)
+    !  For wire, kx,ky are spatial so kminus = kz.)
     ! ==================================================================
-    subroutine build_kp_term_S(kx, kpterms_2d, blk)
-      real(kind=dp), intent(in) :: kx
+    subroutine build_kp_term_S(kz, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_add(kpterms_2d(9), kpterms_2d(9), blk, &
-        cmplx(0.0_dp, 0.0_dp, kind=dp), &
-        cmplx(2.0_dp * SQR3 * kx, 0.0_dp, kind=dp))
-      ! This gives 0*A + (2*sqrt(3)*kx)*B = scalar * kpterms_2d(9)
+      call csr_scale(kpterms_2d(9), blk, &
+        cmplx(2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
     end subroutine build_kp_term_S
 
     ! ==================================================================
     ! Helper: Build kp-term SC for wire
-    ! SC = 2*sqrt(3) * kx * kpterms_2d(9)  (same as S for wire)
+    ! SC = -S = -2*sqrt(3) * kz * kpterms_2d(9)
+    !
+    ! In QW: SC(jj,ii) = 2*sqrt(3)*kplus*kpterms(ii,jj,9), where
+    ! kplus = kx+i*ky is the conjugate of kminus.  For diagonal kpterms,
+    ! SC = conjg(S).  For wire, kpterms_2d(9) = -gamma3*grad_2d is
+    ! antisymmetric, so SC = S^H = S^T = -S.
     ! ==================================================================
-    subroutine build_kp_term_SC(kx, kpterms_2d, blk)
-      real(kind=dp), intent(in) :: kx
+    subroutine build_kp_term_SC(kz, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_add(kpterms_2d(9), kpterms_2d(9), blk, &
-        cmplx(0.0_dp, 0.0_dp, kind=dp), &
-        cmplx(2.0_dp * SQR3 * kx, 0.0_dp, kind=dp))
+      call csr_scale(kpterms_2d(9), blk, &
+        cmplx(-2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
     end subroutine build_kp_term_SC
 
     ! ==================================================================
     ! Helper: Build kp-term R for wire (diagonal only)
-    ! R = -sqrt(3) * gamma2 * kx^2 * I
-    ! (ky^2 contribution absorbed into 2D operators)
+    ! R = -sqrt(3) * gamma2 * kz^2 * I
+    ! (kx^2,ky^2 contribution absorbed into 2D operators)
     ! ==================================================================
-    subroutine build_kp_term_R(kx2, kpterms_2d, blk)
-      real(kind=dp), intent(in) :: kx2
+    subroutine build_kp_term_R(kz2, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      ! Scale gamma2 diagonal by -sqrt(3)*kx^2
-      call csr_add(kpterms_2d(2), kpterms_2d(2), blk, &
-        cmplx(-SQR3 * kx2, 0.0_dp, kind=dp), &
-        cmplx(0.0_dp, 0.0_dp, kind=dp))
+      ! Scale gamma2 diagonal by -sqrt(3)*kz^2
+      call csr_scale(kpterms_2d(2), blk, &
+        cmplx(-SQR3 * kz2, 0.0_dp, kind=dp))
     end subroutine build_kp_term_R
 
     ! ==================================================================
     ! Helper: Build kp-term RC for wire
     ! RC = R (real, so conjugate is same)
     ! ==================================================================
-    subroutine build_kp_term_RC(kx2, kpterms_2d, blk)
-      real(kind=dp), intent(in) :: kx2
+    subroutine build_kp_term_RC(kz2, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_add(kpterms_2d(2), kpterms_2d(2), blk, &
-        cmplx(-SQR3 * kx2, 0.0_dp, kind=dp), &
-        cmplx(0.0_dp, 0.0_dp, kind=dp))
+      call csr_scale(kpterms_2d(2), blk, &
+        cmplx(-SQR3 * kz2, 0.0_dp, kind=dp))
     end subroutine build_kp_term_RC
 
     ! ==================================================================
     ! Helper: Build kp-term PZ for wire
     ! PZ = -IU * kpterms_2d(6)
-    ! kpterms_2d(6) = -P*(d/dy + d/dz) (already negative from coeff application)
+    ! kpterms_2d(6) = -P*(d/dx + d/dy) (already negative from coeff application)
     ! So PZ = -IU * (-P*grad) = IU * P*grad
     ! ==================================================================
     subroutine build_kp_term_PZ(kpterms_2d, blk)
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_add(kpterms_2d(6), kpterms_2d(6), blk, &
-        -IU, cmplx(0.0_dp, 0.0_dp, kind=dp))
+      call csr_scale(kpterms_2d(6), blk, -IU)
     end subroutine build_kp_term_PZ
 
     ! ==================================================================
     ! Helper: Build kp-term PP for wire (diagonal only)
-    ! PP = P * kx / sqrt(2)  (kplus = kx for wire)
+    ! PP = P * kz / sqrt(2)  (kplus = kz for wire)
     ! kpterms_2d(4) = P diagonal
     ! ==================================================================
-    subroutine build_kp_term_PP(kx, kpterms_2d, blk)
-      real(kind=dp), intent(in) :: kx
+    subroutine build_kp_term_PP(kz, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_add(kpterms_2d(4), kpterms_2d(4), blk, &
-        cmplx(kx * RQS2, 0.0_dp, kind=dp), &
-        cmplx(0.0_dp, 0.0_dp, kind=dp))
+      call csr_scale(kpterms_2d(4), blk, &
+        cmplx(kz * RQS2, 0.0_dp, kind=dp))
     end subroutine build_kp_term_PP
 
     ! ==================================================================
     ! Helper: Build kp-term PM for wire (diagonal only)
-    ! PM = P * kx / sqrt(2)  (kminus = kx for wire)
+    ! PM = P * kz / sqrt(2)  (kminus = kz for wire)
     ! ==================================================================
-    subroutine build_kp_term_PM(kx, kpterms_2d, blk)
-      real(kind=dp), intent(in) :: kx
+    subroutine build_kp_term_PM(kz, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_add(kpterms_2d(4), kpterms_2d(4), blk, &
-        cmplx(kx * RQS2, 0.0_dp, kind=dp), &
-        cmplx(0.0_dp, 0.0_dp, kind=dp))
+      call csr_scale(kpterms_2d(4), blk, &
+        cmplx(kz * RQS2, 0.0_dp, kind=dp))
     end subroutine build_kp_term_PM
 
     ! ==================================================================
     ! Helper: Build kp-term A for wire
-    ! A = kpterms_2d(5) + kx^2 * kpterms_2d(10)
+    ! A = kpterms_2d(5) + kz^2 * kpterms_2d(10)
     ! kpterms_2d(5) = -A*Laplacian
     ! kpterms_2d(10) = A diagonal
     ! ==================================================================
-    subroutine build_kp_term_A(kx2, kpterms_2d, blk)
-      real(kind=dp), intent(in) :: kx2
+    subroutine build_kp_term_A(kz2, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
       call csr_add(kpterms_2d(5), kpterms_2d(10), blk, &
-        UM, cmplx(kx2, 0.0_dp, kind=dp))
+        UM, cmplx(kz2, 0.0_dp, kind=dp))
     end subroutine build_kp_term_A
 
     ! ==================================================================
@@ -1496,17 +1492,6 @@ module hamiltonianConstructor
         mat%values(k) = -mat%values(k)
       end do
     end subroutine negate_csr
-
-    ! ==================================================================
-    ! Helper: scale_add_diag_csr -- not used, placeholder removed
-    ! ==================================================================
-    subroutine scale_add_diag_csr(identity, kp1, kp2, kx2, result)
-      type(csr_matrix), intent(in) :: identity, kp1, kp2
-      real(kind=dp), intent(in) :: kx2
-      type(csr_matrix), intent(out) :: result
-      ! Unused placeholder -- actual logic in build_kp_term_Q
-      call csr_init(result, identity%nrows, identity%ncols)
-    end subroutine scale_add_diag_csr
 
 
 end module hamiltonianConstructor
