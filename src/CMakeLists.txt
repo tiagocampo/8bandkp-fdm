@@ -8,6 +8,8 @@ set(COMMON_SOURCES
     math/sparse_matrices.f90
     math/geometry.f90
     math/finitedifferences.f90
+    math/eigensolver.f90
+    math/feast_call.f90
     io/outputFunctions.f90
     io/input_parser.f90
     physics/hamiltonianConstructor.f90
@@ -41,6 +43,8 @@ set_source_files_properties(
     math/sparse_matrices.f90
     math/geometry.f90
     math/finitedifferences.f90
+    math/eigensolver.f90
+    math/feast_call.f90
     io/outputFunctions.f90
     io/input_parser.f90
     physics/hamiltonianConstructor.f90

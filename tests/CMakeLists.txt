@@ -64,6 +64,12 @@ if(PFUNIT_FOUND)
         LINK_LIBRARIES 8bandkp_common
         LABELS "unit"
     )
+
+    add_pfunit_ctest(test_eigensolver
+        TEST_SOURCES unit/test_eigensolver.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
 else()
     message(STATUS "pFUnit not found — unit tests disabled. Install pFUnit and set -DPFUNIT_DIR to enable.")
 endif()
