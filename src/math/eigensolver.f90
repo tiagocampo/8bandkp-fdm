@@ -154,6 +154,8 @@ contains
 
     if (info < 0) then
       print *, 'FEAST error: info =', info
+    else if (info == 2) then
+      print *, 'FEAST warning: max iterations reached, results may be inaccurate.'
     else if (info == 3) then
       print *, 'FEAST warning: subspace too small, increase feast_m0. info =', info
     end if
