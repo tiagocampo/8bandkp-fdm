@@ -8,6 +8,8 @@ program kpfdm
   use outputFunctions
   use input_parser
   use sc_loop
+  use sparse_matrices
+  use eigensolver
 
   implicit none
 
@@ -33,6 +35,15 @@ program kpfdm
 
   ! file handling
   integer(kind=4) :: iounit
+
+  ! --- Wire mode variables ---
+  real(kind=dp), allocatable       :: profile_2d(:,:)
+  type(csr_matrix), allocatable    :: kpterms_2d(:)
+  type(csr_matrix)                 :: HT_csr
+  type(eigensolver_config)         :: eigen_cfg
+  type(eigensolver_result)         :: eigen_res
+  real(kind=dp), allocatable       :: eig_wire(:,:)
+  integer                          :: Ngrid, Ntot, nev_wire
 
   ! Shared setup: read input, initialize materials, confinement, external field
   call read_and_setup(cfg, profile, kpterms)
@@ -60,6 +71,110 @@ program kpfdm
       stop "no such direction"
 
   end select
+
+  ! ====================================================================
+  ! Wire mode (confinement=2): separate sparse path using FEAST
+  ! ====================================================================
+  if (cfg%confinement == 2) then
+
+    ! Initialize 2D confinement operators (sparse CSR kpterms)
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+      & profile_2d, kpterms_2d, cfg%FDorder)
+
+    Ngrid = grid_ngrid(cfg%grid)
+    Ntot  = 8 * Ngrid
+
+    ! Number of eigenvalues to request from FEAST
+    nev_wire = cfg%numcb + cfg%numvb
+    if (nev_wire > Ntot) then
+      print *, "Warning: requesting more bands than matrix size. Clamping."
+      nev_wire = Ntot
+    end if
+
+    print *, ''
+    print *, '=== Wire mode (2D confinement) ==='
+    print *, '  Grid: ny=', cfg%grid%ny, ' nz=', cfg%grid%nz, ' Ngrid=', Ngrid
+    print *, '  Matrix size: ', Ntot, 'x', Ntot
+    print *, '  Requesting ', nev_wire, ' eigenvalues per k-point'
+    print *, '  kx sweep: ', cfg%waveVectorStep, ' points, kx_max=', cfg%waveVectorMax
+    print *, ''
+
+    ! Set up eigensolver configuration (FEAST with energy window)
+    eigen_cfg%method   = 'FEAST'
+    eigen_cfg%nev      = nev_wire
+    eigen_cfg%emin     = -1.0_dp   ! placeholder, set by auto_compute_energy_window
+    eigen_cfg%emax     =  1.0_dp   ! placeholder
+    eigen_cfg%max_iter = 100
+    eigen_cfg%tol      = 1.0e-10_dp
+    eigen_cfg%feast_m0 = 0         ! auto: 2*nev
+
+    ! Allocate storage for eigenvalues across k-points
+    allocate(eig_wire(nev_wire, cfg%waveVectorStep))
+    eig_wire = 0.0_dp
+
+    ! kx sweep loop
+    do k = 1, cfg%waveVectorStep
+
+      print *, 'k-point ', k, '/', cfg%waveVectorStep, &
+        & ' kx=', smallk(k)%kx
+
+      ! Build sparse Hamiltonian at this kx
+      call ZB8bandGeneralized(HT_csr, smallk(k)%kx, profile_2d, &
+        & kpterms_2d, cfg)
+
+      ! Auto-compute energy window from Gershgorin bounds on first k-point
+      if (k == 1) then
+        call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
+        print *, '  Auto energy window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
+      end if
+
+      ! Solve sparse eigenvalue problem
+      call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
+
+      if (.not. eigen_res%converged) then
+        print *, '  WARNING: FEAST did not converge at k-point ', k
+      end if
+
+      print *, '  Found ', eigen_res%nev_found, ' eigenvalues (requested ', &
+        & nev_wire, ') iterations=', eigen_res%iterations
+
+      ! Store eigenvalues (pad with zero if fewer found than requested)
+      if (eigen_res%nev_found > 0) then
+        do i = 1, min(eigen_res%nev_found, nev_wire)
+          eig_wire(i, k) = eigen_res%eigenvalues(i)
+        end do
+      end if
+
+      ! Clean up result and Hamiltonian for this k-point
+      call eigensolver_result_free(eigen_res)
+      call csr_free(HT_csr)
+
+    end do
+
+    ! Write eigenvalues to file
+    call writeEigenvalues(smallk, eig_wire, cfg%waveVectorStep)
+    print *, ''
+    print *, 'Wire band structure written to output/eigenvalues.dat'
+
+    ! Clean up wire mode allocations
+    if (allocated(eig_wire))    deallocate(eig_wire)
+    if (allocated(profile_2d))  deallocate(profile_2d)
+    if (allocated(kpterms_2d)) then
+      do i = 1, size(kpterms_2d)
+        call csr_free(kpterms_2d(i))
+      end do
+      deallocate(kpterms_2d)
+    end if
+
+    ! Clean up common allocations and exit
+    if (allocated(smallk)) deallocate(smallk)
+    stop
+
+  end if
+
+  ! ====================================================================
+  ! Bulk / QW mode (confinement=0 or 1): dense LAPACK path
+  ! ====================================================================
 
   ! Set matrix dimensions and eigenvalue range
   N = cfg%fdStep * 8
