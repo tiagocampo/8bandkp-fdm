@@ -318,4 +318,129 @@ contains
     @assertFalse(allocated(grid%ghost_map))
   end subroutine test_grid_free_resets
 
+  ! ==================================================================
+  ! init_wire_from_config integration tests
+  ! ==================================================================
+
+  @test
+  subroutine test_wire_rect_single_material()
+    ! Rectangle wire with single region: all cells active, material_id=1.
+    type(simulation_config) :: cfg
+    integer :: ij, ngrid
+    real(kind=dp) :: yval, zval
+
+    cfg%confinement = 2
+    cfg%wire_ny = 5
+    cfg%wire_nz = 5
+    cfg%wire_dy = 2.0_dp
+    cfg%wire_dz = 2.0_dp
+    cfg%FDorder = 2
+
+    ! Set grid dimensions (as init_grid_from_config would do)
+    cfg%grid%ndim = 2
+    cfg%grid%ny   = 5
+    cfg%grid%nz   = 5
+    cfg%grid%dy   = 2.0_dp
+    cfg%grid%dz   = 2.0_dp
+
+    cfg%wire_geom%shape = 'rectangle'
+
+    ! Single region covering entire wire
+    cfg%numRegions = 1
+    allocate(cfg%regions(1))
+    cfg%regions(1)%material = 'GaAs'
+    cfg%regions(1)%inner = 0.0_dp
+    cfg%regions(1)%outer = 100.0_dp  ! larger than any distance
+
+    call init_wire_from_config(cfg)
+
+    ngrid = 5 * 5
+
+    ! All cells should be active (rectangle, fully inside)
+    @assertTrue(allocated(cfg%grid%cell_volume))
+    @assertTrue(allocated(cfg%grid%material_id))
+    @assertTrue(allocated(cfg%grid%ghost_map))
+    @assertTrue(allocated(cfg%grid%coords))
+
+    do ij = 1, ngrid
+      @assertEqual(1.0_dp, cfg%grid%cell_volume(ij), tolerance=1.0e-14_dp)
+      @assertEqual(1.0_dp, cfg%grid%face_fraction_y(ij, 1), tolerance=1.0e-14_dp)
+      @assertEqual(1.0_dp, cfg%grid%face_fraction_y(ij, 2), tolerance=1.0e-14_dp)
+      @assertEqual(1.0_dp, cfg%grid%face_fraction_z(ij, 1), tolerance=1.0e-14_dp)
+      @assertEqual(1.0_dp, cfg%grid%face_fraction_z(ij, 2), tolerance=1.0e-14_dp)
+      @assertEqual(1, cfg%grid%material_id(ij))
+    end do
+
+    ! Coords should be cell-centered: y(1) = 0.5*dy = 1.0, z(1) = 0.5*dz = 1.0
+    yval = cfg%grid%coords(1, 1)
+    zval = cfg%grid%coords(2, 1)
+    @assertEqual(1.0_dp, yval, tolerance=1.0e-14_dp)
+    @assertEqual(1.0_dp, zval, tolerance=1.0e-14_dp)
+
+    call grid_free(cfg%grid)
+    deallocate(cfg%regions)
+  end subroutine test_wire_rect_single_material
+
+  @test
+  subroutine test_wire_rect_two_regions()
+    ! Rectangle wire with core (region 1, r<=4) and shell (region 2, r>4).
+    ! Grid: 10x10, dy=dz=1. Grid center at (5,5).
+    type(simulation_config) :: cfg
+    integer :: iy, iz, ij
+    real(kind=dp) :: cy, cz, dist
+
+    cfg%confinement = 2
+    cfg%wire_ny = 10
+    cfg%wire_nz = 10
+    cfg%wire_dy = 1.0_dp
+    cfg%wire_dz = 1.0_dp
+    cfg%FDorder = 2
+
+    cfg%grid%ndim = 2
+    cfg%grid%ny   = 10
+    cfg%grid%nz   = 10
+    cfg%grid%dy   = 1.0_dp
+    cfg%grid%dz   = 1.0_dp
+
+    cfg%wire_geom%shape = 'rectangle'
+
+    ! Two concentric regions
+    cfg%numRegions = 2
+    allocate(cfg%regions(2))
+    cfg%regions(1)%material = 'InAs'
+    cfg%regions(1)%inner = 0.0_dp
+    cfg%regions(1)%outer = 4.0_dp    ! core: r <= 4
+    cfg%regions(2)%material = 'GaSb'
+    cfg%regions(2)%inner = 4.0_dp
+    cfg%regions(2)%outer = 100.0_dp  ! shell: r > 4
+
+    call init_wire_from_config(cfg)
+
+    ! Grid center is at (5, 5)
+    cy = 5.0_dp
+    cz = 5.0_dp
+
+    ! Verify material_id is based on 2D distance from center
+    do iz = 1, 10
+      do iy = 1, 10
+        ij = (iz - 1) * 10 + iy
+        dist = sqrt(((iy - 0.5_dp) * 1.0_dp - cy)**2 + &
+                    ((iz - 0.5_dp) * 1.0_dp - cz)**2)
+        if (dist <= 4.0_dp) then
+          @assertEqual(1, cfg%grid%material_id(ij))
+        else
+          @assertEqual(2, cfg%grid%material_id(ij))
+        end if
+      end do
+    end do
+
+    ! All cells should have volume=1 (rectangle)
+    do ij = 1, 100
+      @assertEqual(1.0_dp, cfg%grid%cell_volume(ij), tolerance=1.0e-14_dp)
+    end do
+
+    call grid_free(cfg%grid)
+    deallocate(cfg%regions)
+  end subroutine test_wire_rect_two_regions
+
 end module test_geometry

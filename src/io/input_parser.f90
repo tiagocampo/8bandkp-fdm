@@ -2,6 +2,7 @@ module input_parser
 
   use definitions
   use parameters
+  use geometry
   use hamiltonianConstructor
   use outputFunctions
 
@@ -469,6 +470,11 @@ contains
 
     ! Initialize the unified spatial grid from config fields
     call init_grid_from_config(cfg)
+
+    ! For wire mode, initialize geometry (cut-cells, ghost map, material_id)
+    if (cfg%confinement == 2) then
+      call init_wire_from_config(cfg)
+    end if
 
     ! Confinement initialization for QW mode
     if (cfg%confDir == 'z') then

@@ -28,6 +28,7 @@ module geometry
   private
   public :: grid_init_rect, grid_init_circle, grid_init_hexagon
   public :: grid_init_polygon, grid_build_coords, grid_free
+  public :: init_wire_from_config
 
   ! Number of sub-sample points per cell edge for marching-squares integration
   integer, parameter :: MS_N = 16
@@ -711,6 +712,88 @@ contains
     end do
     frac = real(n_inside, kind=dp) / real(ns, kind=dp)
   end function segment_polygon_fraction
+
+  ! ==================================================================
+  ! High-level wire initialization from simulation_config
+  ! ==================================================================
+
+  ! ------------------------------------------------------------------
+  ! Initialize wire geometry from a simulation_config.
+  !
+  ! Expects cfg%grid%ndim/ny/nz/dy/dz to already be set (done by
+  ! init_grid_from_config).  This routine:
+  !   1. Computes the grid center (midpoint of the y-z domain)
+  !   2. Builds material_id_2d(ny, nz) from regions using 2D distance
+  !   3. Dispatches to the appropriate grid_init_* routine
+  !   4. Builds the flattened coords(:,:) array
+  ! ------------------------------------------------------------------
+  subroutine init_wire_from_config(cfg)
+    use definitions, only: simulation_config, region_spec, dp
+    type(simulation_config), intent(inout) :: cfg
+
+    integer :: ny, nz, iy, iz, i, ngrid
+    real(kind=dp) :: dy, dz, cx, cz, dist
+    integer, allocatable :: mat2d(:,:)
+
+    ny = cfg%grid%ny
+    nz = cfg%grid%nz
+    dy = cfg%grid%dy
+    dz = cfg%grid%dz
+    ngrid = ny * nz
+
+    ! Grid center (center of the domain [0, ny*dy] x [0, nz*dz])
+    cx = 0.5_dp * real(ny, kind=dp) * dy
+    cz = 0.5_dp * real(nz, kind=dp) * dz
+
+    ! Build material_id_2d from regions using 2D distance from center
+    allocate(mat2d(ny, nz))
+    mat2d = 0
+    if (cfg%numRegions > 0) then
+      do iz = 1, nz
+        do iy = 1, ny
+          ! Cell-centered coordinate
+          dist = sqrt(((iy - 0.5_dp) * dy - cx)**2 + &
+                      ((iz - 0.5_dp) * dz - cz)**2)
+          do i = 1, cfg%numRegions
+            if (cfg%regions(i)%inner <= dist .and. dist <= cfg%regions(i)%outer) then
+              mat2d(iy, iz) = i
+              exit
+            end if
+          end do
+        end do
+      end do
+    end if
+
+    ! Dispatch to the appropriate geometry initializer
+    select case (trim(cfg%wire_geom%shape))
+    case ('rectangle')
+      call grid_init_rect(cfg%grid, ny, nz, dy, dz, mat2d)
+
+    case ('circle')
+      call grid_init_circle(cfg%grid, ny, nz, dy, dz, &
+        cx, cz, cfg%wire_geom%radius, mat2d)
+
+    case ('hexagon')
+      call grid_init_hexagon(cfg%grid, ny, nz, dy, dz, &
+        cx, cz, cfg%wire_geom%radius, mat2d)
+
+    case ('polygon')
+      call grid_init_polygon(cfg%grid, ny, nz, dy, dz, &
+        cfg%wire_geom%nverts, &
+        cfg%wire_geom%verts(1, 1:cfg%wire_geom%nverts), &
+        cfg%wire_geom%verts(2, 1:cfg%wire_geom%nverts), mat2d)
+
+    case default
+      print *, 'Error: Unknown wire shape in init_wire_from_config: ', &
+        trim(cfg%wire_geom%shape)
+      stop 1
+    end select
+
+    ! Build the flattened coords(:,:) array for downstream use
+    call grid_build_coords(cfg%grid)
+
+    deallocate(mat2d)
+  end subroutine init_wire_from_config
 
   ! ==================================================================
   ! Utility routines
