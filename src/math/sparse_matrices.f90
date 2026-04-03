@@ -19,6 +19,7 @@ module sparse_matrices
   public :: csr_matrix
   public :: csr_init, csr_free, csr_build_from_coo
   public :: kron_dense_dense, kron_dense_eye, kron_eye_dense, kron_dense_dense_1d
+  public :: csr_set_values_from_coo, csr_build_from_coo_cached
   public :: csr_add, csr_scale, csr_apply_variable_coeff
 
   ! ------------------------------------------------------------------
@@ -174,6 +175,135 @@ contains
 
     deallocate(idx, v_sorted, r_sorted, c_sorted)
   end subroutine csr_build_from_coo
+
+  ! ------------------------------------------------------------------
+  ! Build a CSR matrix from COO triplets AND save the COO-to-CSR
+  ! mapping for subsequent fast value updates.
+  !
+  ! Same as csr_build_from_coo but additionally produces coo_to_csr
+  ! array: for each input COO index i (1..nnz_in), coo_to_csr(i) gives
+  ! the final CSR position after sort and duplicate merging.  Multiple
+  ! COO entries that merge into the same CSR position share the same
+  ! mapping value.
+  !
+  ! Use the saved mapping with csr_set_values_from_coo for O(NNZ) value
+  ! updates on subsequent k-points (no sort needed).
+  ! ------------------------------------------------------------------
+  subroutine csr_build_from_coo_cached(mat, nrows, ncols, nnz_in, rows, cols, &
+      vals, coo_to_csr)
+    type(csr_matrix), intent(out) :: mat
+    integer, intent(in) :: nrows, ncols, nnz_in
+    integer, intent(in) :: rows(nnz_in), cols(nnz_in)
+    complex(kind=dp), intent(in) :: vals(nnz_in)
+    integer, intent(out), allocatable :: coo_to_csr(:)
+
+    integer, allocatable :: idx(:), r_sorted(:), c_sorted(:)
+    complex(kind=dp), allocatable :: v_sorted(:)
+    integer :: i, nnz_final, row
+
+    mat%nrows = nrows
+    mat%ncols = ncols
+
+    if (nnz_in == 0) then
+      mat%nnz = 0
+      allocate(mat%rowptr(nrows + 1))
+      mat%rowptr = 1
+      allocate(mat%values(0))
+      allocate(mat%colind(0))
+      allocate(coo_to_csr(0))
+      return
+    end if
+
+    ! Build index array and sort by (row, col)
+    allocate(idx(nnz_in))
+    do i = 1, nnz_in
+      idx(i) = i
+    end do
+    call merge_sort_coo(nnz_in, idx, rows, cols)
+
+    ! Apply permutation and merge duplicates, tracking the mapping
+    allocate(v_sorted(nnz_in))
+    allocate(r_sorted(nnz_in))
+    allocate(c_sorted(nnz_in))
+    allocate(coo_to_csr(nnz_in))
+
+    v_sorted(1) = vals(idx(1))
+    r_sorted(1) = rows(idx(1))
+    c_sorted(1) = cols(idx(1))
+    coo_to_csr(idx(1)) = 1
+    nnz_final = 1
+
+    do i = 2, nnz_in
+      if (r_sorted(nnz_final) == rows(idx(i)) .and. &
+          c_sorted(nnz_final) == cols(idx(i))) then
+        ! Merge duplicate -- map to same CSR position
+        v_sorted(nnz_final) = v_sorted(nnz_final) + vals(idx(i))
+        coo_to_csr(idx(i)) = nnz_final
+      else
+        nnz_final = nnz_final + 1
+        r_sorted(nnz_final) = rows(idx(i))
+        c_sorted(nnz_final) = cols(idx(i))
+        v_sorted(nnz_final) = vals(idx(i))
+        coo_to_csr(idx(i)) = nnz_final
+      end if
+    end do
+
+    ! Build CSR arrays
+    mat%nnz = nnz_final
+    allocate(mat%values(nnz_final))
+    allocate(mat%colind(nnz_final))
+    allocate(mat%rowptr(nrows + 1))
+
+    mat%values(1:nnz_final) = v_sorted(1:nnz_final)
+    mat%colind(1:nnz_final) = c_sorted(1:nnz_final)
+
+    ! Build rowptr
+    mat%rowptr = nnz_final + 1  ! sentinel
+    do i = 1, nnz_final
+      row = r_sorted(i)
+      if (mat%rowptr(row) > i) mat%rowptr(row) = i
+    end do
+    mat%rowptr(nrows + 1) = nnz_final + 1
+
+    ! Fill any empty rows
+    do row = nrows, 1, -1
+      if (mat%rowptr(row) == nnz_final + 1) then
+        mat%rowptr(row) = mat%rowptr(row + 1)
+      end if
+    end do
+
+    deallocate(idx, v_sorted, r_sorted, c_sorted)
+  end subroutine csr_build_from_coo_cached
+
+  ! ------------------------------------------------------------------
+  ! Fast value update of an existing CSR matrix using a cached mapping.
+  !
+  ! Given new COO values and the coo_to_csr mapping saved by
+  ! csr_build_from_coo_cached, this routine accumulates values into
+  ! mat%values in O(NNZ_in) time with no sorting.
+  !
+  ! The CSR structure (rowptr, colind) is NOT modified.  The caller
+  ! must ensure the same COO sparsity pattern as the original build.
+  ! ------------------------------------------------------------------
+  subroutine csr_set_values_from_coo(mat, nnz_in, coo_to_csr, vals)
+    type(csr_matrix), intent(inout) :: mat
+    integer, intent(in) :: nnz_in
+    integer, intent(in) :: coo_to_csr(nnz_in)
+    complex(kind=dp), intent(in) :: vals(nnz_in)
+
+    integer :: i, csr_pos
+
+    ! Zero out all values first (they will be re-accumulated)
+    mat%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! Accumulate each COO entry into its mapped CSR position
+    do i = 1, nnz_in
+      csr_pos = coo_to_csr(i)
+      if (csr_pos >= 1 .and. csr_pos <= mat%nnz) then
+        mat%values(csr_pos) = mat%values(csr_pos) + vals(i)
+      end if
+    end do
+  end subroutine csr_set_values_from_coo
 
   ! ==================================================================
   ! Private sort helper

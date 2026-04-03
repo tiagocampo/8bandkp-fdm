@@ -13,6 +13,29 @@ module hamiltonianConstructor
     module procedure confinementInitialization_cfg
   end interface confinementInitialization
 
+  ! ------------------------------------------------------------------
+  ! Cache for the COO sparsity structure of the wire Hamiltonian.
+  !
+  ! Stores the mapping from unsorted COO indices to sorted+merged CSR
+  ! positions so that subsequent k-points can skip the O(NNZ log NNZ)
+  ! sort and just update values in O(NNZ) time.
+  !
+  ! coo_to_csr(i) gives the CSR position (1..nnz_final) that COO entry i
+  ! maps to after sort and duplicate merging.  For duplicate COO entries
+  ! that merge into the same CSR position, all their indices map to the
+  ! same CSR position.
+  !
+  ! The nnz of each kp-term block is kz-independent, so this mapping is
+  ! fixed across all k-points in a kz sweep.
+  ! ------------------------------------------------------------------
+  type :: wire_coo_cache
+    integer, allocatable          :: coo_to_csr(:)   ! (coo_nnz_in) mapping
+    integer                       :: coo_nnz_in = 0  ! input COO count
+    logical                       :: initialized = .false.
+  end type wire_coo_cache
+
+  public :: wire_coo_cache, wire_coo_cache_free
+
   contains
 
     subroutine build_kpterm_block(kpterms, profile_vec, central, forward, &
@@ -923,13 +946,14 @@ module hamiltonianConstructor
     !> confinement in x-y.  The kpterms_2d operators encode d/dx, d/dy,
     !> d^2/dx^2, d^2/dy^2, and cross derivatives on the 2D grid.
     !---------------------------------------------------------------------------
-    subroutine ZB8bandGeneralized(HT_csr, kz, profile_2d, kpterms_2d, cfg)
+    subroutine ZB8bandGeneralized(HT_csr, kz, profile_2d, kpterms_2d, cfg, coo_cache)
 
       type(csr_matrix), intent(inout)         :: HT_csr
       real(kind=dp), intent(in)               :: kz
       real(kind=dp), intent(in)               :: profile_2d(:,:)
       type(csr_matrix), intent(in)            :: kpterms_2d(:)
       type(simulation_config), intent(in)     :: cfg
+      type(wire_coo_cache), intent(inout), optional :: coo_cache
 
       integer :: N, Ntot, alpha, beta, nnz_est
       real(kind=dp) :: kz2
@@ -1199,13 +1223,29 @@ module hamiltonianConstructor
         coo_idx, profile_2d, N)
 
       ! ==================================================================
-      ! Build final CSR from COO
+      ! Build final CSR from COO, or update values if cache is available
       ! ==================================================================
-      if (coo_idx > 0) then
-        call csr_build_from_coo(HT_csr, Ntot, Ntot, coo_idx, &
-          coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx))
+      if (present(coo_cache)) then
+        if (coo_cache%initialized) then
+          ! Reuse existing CSR structure: O(NNZ) value update only
+          call csr_set_values_from_coo(HT_csr, coo_idx, &
+            coo_cache%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
+        else
+          ! First call: full build + save COO-to-CSR mapping to cache
+          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
+            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
+            coo_cache%coo_to_csr)
+          coo_cache%coo_nnz_in = coo_idx
+          coo_cache%initialized = .true.
+        end if
       else
-        call csr_init(HT_csr, Ntot, Ntot)
+        ! No cache: always do full build (backward compatible)
+        if (coo_idx > 0) then
+          call csr_build_from_coo(HT_csr, Ntot, Ntot, coo_idx, &
+            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx))
+        else
+          call csr_init(HT_csr, Ntot, Ntot)
+        end if
       end if
 
       ! ==================================================================
@@ -1495,6 +1535,17 @@ module hamiltonianConstructor
         mat%values(k) = -mat%values(k)
       end do
     end subroutine negate_csr
+
+    ! ==================================================================
+    ! Free the COO cache for symbolic assembly reuse.
+    ! ==================================================================
+    subroutine wire_coo_cache_free(cache)
+      type(wire_coo_cache), intent(inout) :: cache
+
+      if (allocated(cache%coo_to_csr)) deallocate(cache%coo_to_csr)
+      cache%coo_nnz_in = 0
+      cache%initialized = .false.
+    end subroutine wire_coo_cache_free
 
 
 end module hamiltonianConstructor

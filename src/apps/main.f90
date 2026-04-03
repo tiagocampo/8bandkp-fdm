@@ -40,6 +40,7 @@ program kpfdm
   real(kind=dp), allocatable       :: profile_2d(:,:)
   type(csr_matrix), allocatable    :: kpterms_2d(:)
   type(csr_matrix)                 :: HT_csr
+  type(wire_coo_cache)             :: coo_cache
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   real(kind=dp), allocatable       :: eig_wire(:,:)
@@ -118,9 +119,10 @@ program kpfdm
       print *, 'k-point ', k, '/', cfg%waveVectorStep, &
         & ' kz=', smallk(k)%kz
 
-      ! Build sparse Hamiltonian at this kx
+      ! Build sparse Hamiltonian at this kz (reuses COO structure
+      ! from first k-point for subsequent k-points)
       call ZB8bandGeneralized(HT_csr, smallk(k)%kz, profile_2d, &
-        & kpterms_2d, cfg)
+        & kpterms_2d, cfg, coo_cache)
 
       ! Auto-compute energy window from Gershgorin bounds on first k-point
       if (k == 1) then
@@ -153,11 +155,14 @@ program kpfdm
         print *, '  Wrote ', eigen_res%nev_found, ' 2D wavefunctions to output/wf_k', k, '_*.dat'
       end if
 
-      ! Clean up result and Hamiltonian for this k-point
+      ! Clean up eigensolver result for this k-point
       call eigensolver_result_free(eigen_res)
-      call csr_free(HT_csr)
 
     end do
+
+    ! Free Hamiltonian CSR and COO cache (kept alive across k-points)
+    call csr_free(HT_csr)
+    call wire_coo_cache_free(coo_cache)
 
     ! Write eigenvalues to file
     call writeEigenvalues(smallk, eig_wire, cfg%waveVectorStep)
