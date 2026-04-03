@@ -236,7 +236,7 @@ module outputFunctions
     !
     ! Each eigenvector has 8*Ngrid complex entries.  The probability
     ! density at grid point (iy, iz) is summed over all 8 bands:
-    !   |psi(y,z)|^2 = sum_{band=1}^{8} |vec((band-1)*Ngrid + (iz-1)*ny + iy)|^2
+    !   |psi(y,z)|^2 = sum_{band=1}^{8} |vec((band-1)*Ngrid + (iy-1)*grid%nz + iz)|^2
     !
     ! Output format (one file per eigenstate per k-point):
     !   y  z  |psi|^2     (three columns, ny*nz rows)
@@ -276,7 +276,7 @@ module outputFunctions
           do iy = 1, grid%ny
             prob = 0.0_dp
             do band = 1, 8
-              flat_idx = (band - 1) * Ngrid + (iz - 1) * grid%ny + iy
+              flat_idx = (band - 1) * Ngrid + (iy - 1) * grid%nz + iz
               prob = prob + abs(eigenvectors(flat_idx, n))**2
             end do
             write(unit=iounit, fmt='(3(g14.6,1x))', iostat=ios) &
