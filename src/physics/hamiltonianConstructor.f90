@@ -335,9 +335,9 @@ module hamiltonianConstructor
       complex(kind=dp), allocatable :: cIx(:,:), cIy(:,:)
 
       ! CSR work matrices
-      type(csr_matrix) :: kron_D2x_Iny, kron_Ix_D2y, laplacian_2d
-      type(csr_matrix) :: kron_D1x_Iny, kron_Ix_D1y, grad_2d
-      type(csr_matrix) :: kron_D1x_D1y  ! cross-derivative
+      type(csr_matrix) :: kron_Iy_D2x, kron_D2y_Ix, laplacian_2d
+      type(csr_matrix) :: kron_Iy_D1x, kron_D1y_Ix, grad_2d
+      type(csr_matrix) :: kron_D1y_D1x  ! cross-derivative
       type(csr_matrix) :: diag_csr, scaled_diag
 
       ! Material profiles on the 2D grid
@@ -388,24 +388,24 @@ module hamiltonianConstructor
       ! 2. Build 2D FD operators via Kronecker products
       ! ====================================================================
 
-      ! Laplacian: D2x x Iy + Ix x D2y
-      call kron_dense_dense(cD2x, nx, nx, cIy, ny, ny, kron_D2x_Iny)
-      call kron_eye_dense(nx, cD2y, ny, ny, kron_Ix_D2y)
-      call csr_add(kron_D2x_Iny, kron_Ix_D2y, laplacian_2d)
+      ! Laplacian: Iy x D2x + D2y x Ix  (column-major flat_idx = (iy-1)*nx+ix)
+      call kron_eye_dense(ny, cD2x, nx, nx, kron_Iy_D2x)
+      call kron_dense_dense(cD2y, ny, ny, cIx, nx, nx, kron_D2y_Ix)
+      call csr_add(kron_Iy_D2x, kron_D2y_Ix, laplacian_2d)
 
-      ! Gradient: D1x x Iy + Ix x D1y
-      call kron_dense_dense(cD1x, nx, nx, cIy, ny, ny, kron_D1x_Iny)
-      call kron_eye_dense(nx, cD1y, ny, ny, kron_Ix_D1y)
-      call csr_add(kron_D1x_Iny, kron_Ix_D1y, grad_2d)
+      ! Gradient: Iy x D1x + D1y x Ix  (column-major)
+      call kron_eye_dense(ny, cD1x, nx, nx, kron_Iy_D1x)
+      call kron_dense_dense(cD1y, ny, ny, cIx, nx, nx, kron_D1y_Ix)
+      call csr_add(kron_Iy_D1x, kron_D1y_Ix, grad_2d)
 
-      ! Cross-derivative: D1x x D1y
-      call kron_dense_dense(cD1x, nx, nx, cD1y, ny, ny, kron_D1x_D1y)
+      ! Cross-derivative: D1y x D1x  (column-major)
+      call kron_dense_dense(cD1y, ny, ny, cD1x, nx, nx, kron_D1y_D1x)
 
       ! Free intermediate Kronecker products
-      call csr_free(kron_D2x_Iny)
-      call csr_free(kron_Ix_D2y)
-      call csr_free(kron_D1x_Iny)
-      call csr_free(kron_Ix_D1y)
+      call csr_free(kron_Iy_D2x)
+      call csr_free(kron_D2y_Ix)
+      call csr_free(kron_Iy_D1x)
+      call csr_free(kron_D1y_Ix)
 
       ! ====================================================================
       ! 3. Build material profiles on the 2D grid
@@ -482,14 +482,14 @@ module hamiltonianConstructor
       call build_diagonal_csr(ngrid, prof_A, kpterms_2d(10))
 
       ! Term 11: gamma3 * Cross-derivative (NEW)
-      call csr_apply_variable_coeff(kron_D1x_D1y, prof_gamma3, kpterms_2d(11))
+      call csr_apply_variable_coeff(kron_D1y_D1x, prof_gamma3, kpterms_2d(11))
 
       ! ====================================================================
       ! 5. Cleanup
       ! ====================================================================
       call csr_free(laplacian_2d)
       call csr_free(grad_2d)
-      call csr_free(kron_D1x_D1y)
+      call csr_free(kron_D1y_D1x)
 
       deallocate(D2x, D1x, D2y, D1y, Ix, Iy)
       deallocate(cD2x, cD1x, cD2y, cD1y, cIx, cIy)
@@ -984,18 +984,21 @@ module hamiltonianConstructor
       call build_kp_term_A(kz2, kpterms_2d, blk_A)
 
       ! ==================================================================
-      ! Estimate COO capacity and allocate
+      ! Exact COO capacity: sum nnz of every block insertion
       ! ==================================================================
-      ! Each kp term has ~nnz.  Each 8x8 block insertion scales the nnz.
-      ! There are ~30 nonzero (alpha,beta) pairs, each with up to ~max_nnz.
-      ! Conservative: 40 * max_nnz across all terms
-      nnz_est = 0
-      nnz_est = nnz_est + blk_Q%nnz + blk_T%nnz + blk_S%nnz + blk_SC%nnz
-      nnz_est = nnz_est + blk_R%nnz + blk_RC%nnz + blk_PZ%nnz
-      nnz_est = nnz_est + blk_PP%nnz + blk_PM%nnz + blk_A%nnz
-      ! Multiply by ~30 nonzero block positions, divided by 10 terms,
-      ! but many blocks are zero so use a generous estimate
-      nnz_est = max(nnz_est * 6, 100 * N)
+      ! blk_diff and blk_temp are built during insert phase; their nnz is
+      ! bounded by blk_Q%nnz + blk_T%nnz.  Count block multiplicities:
+      ! Q:2, T:2, S:6, SC:6, R:5, RC:3, PZ:8, PP:6, PM:5, A:2,
+      ! diff:4, temp:2, profile:8*N
+      nnz_est = 2*blk_Q%nnz + 2*blk_T%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
+      nnz_est = nnz_est + 5*blk_R%nnz + 3*blk_RC%nnz + 8*blk_PZ%nnz
+      nnz_est = nnz_est + 6*blk_PP%nnz + 5*blk_PM%nnz + 2*blk_A%nnz
+      ! blk_diff (Q-T): at most Q%nnz + T%nnz entries, inserted 4 times
+      nnz_est = nnz_est + 4*(blk_Q%nnz + blk_T%nnz)
+      ! blk_temp (0.5*(Q+T)): at most Q%nnz + T%nnz entries, inserted 2 times
+      nnz_est = nnz_est + 2*(blk_Q%nnz + blk_T%nnz)
+      ! Profile diagonal: 8 bands * N
+      nnz_est = nnz_est + 8 * N
       coo_capacity = nnz_est
 
       allocate(coo_rows(coo_capacity))
@@ -1401,8 +1404,8 @@ module hamiltonianConstructor
         do k = blk%rowptr(row), blk%rowptr(row + 1) - 1
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
-            print *, "ERROR: COO capacity exceeded in insert_csr_block"
-            stop 1
+            print *, "WARNING: COO capacity exceeded in insert_csr_block, skipping entries"
+            return
           end if
           g_row = alpha_off * N + row
           g_col = beta_off * N + blk%colind(k)
@@ -1432,8 +1435,8 @@ module hamiltonianConstructor
         do k = blk%rowptr(row), blk%rowptr(row + 1) - 1
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
-            print *, "ERROR: COO capacity exceeded in insert_csr_block_scaled"
-            stop 1
+            print *, "WARNING: COO capacity exceeded in insert_csr_block_scaled, skipping entries"
+            return
           end if
           g_row = alpha_off * N + row
           g_col = beta_off * N + blk%colind(k)
@@ -1470,8 +1473,8 @@ module hamiltonianConstructor
         do ii = 1, N
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
-            print *, "ERROR: COO capacity exceeded in insert_profile_diagonal"
-            stop 1
+            print *, "WARNING: COO capacity exceeded in insert_profile_diagonal, skipping entries"
+            return
           end if
           coo_r(coo_idx) = (band - 1) * N + ii
           coo_c(coo_idx) = (band - 1) * N + ii

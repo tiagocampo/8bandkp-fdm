@@ -93,10 +93,10 @@ program kpfdm
 
     print *, ''
     print *, '=== Wire mode (2D confinement) ==='
-    print *, '  Grid: ny=', cfg%grid%ny, ' nz=', cfg%grid%nz, ' Ngrid=', Ngrid
+    print *, '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, ' Ngrid=', Ngrid
     print *, '  Matrix size: ', Ntot, 'x', Ntot
     print *, '  Requesting ', nev_wire, ' eigenvalues per k-point'
-    print *, '  kx sweep: ', cfg%waveVectorStep, ' points, kx_max=', cfg%waveVectorMax
+    print *, '  kz sweep: ', cfg%waveVectorStep, ' points, kz_max=', cfg%waveVectorMax
     print *, ''
 
     ! Set up eigensolver configuration (FEAST with energy window)
@@ -112,14 +112,14 @@ program kpfdm
     allocate(eig_wire(nev_wire, cfg%waveVectorStep))
     eig_wire = 0.0_dp
 
-    ! kx sweep loop
+    ! kz sweep loop
     do k = 1, cfg%waveVectorStep
 
       print *, 'k-point ', k, '/', cfg%waveVectorStep, &
-        & ' kx=', smallk(k)%kx
+        & ' kz=', smallk(k)%kz
 
       ! Build sparse Hamiltonian at this kx
-      call ZB8bandGeneralized(HT_csr, smallk(k)%kx, profile_2d, &
+      call ZB8bandGeneralized(HT_csr, smallk(k)%kz, profile_2d, &
         & kpterms_2d, cfg)
 
       ! Auto-compute energy window from Gershgorin bounds on first k-point

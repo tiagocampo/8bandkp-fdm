@@ -50,7 +50,7 @@ contains
     integer :: ngrid
     real(kind=dp), allocatable :: D2x(:,:), D2y(:,:), Ix_mat(:,:), Iy_mat(:,:)
     complex(kind=dp), allocatable :: cD2x(:,:), cD2y(:,:), cIx(:,:), cIy(:,:)
-    type(csr_matrix) :: kron_a, kron_b, lap
+    type(csr_matrix) :: kron_Iy_D2x, kron_D2y_Ix, lap
 
     ngrid = nx * ny
 
@@ -64,10 +64,10 @@ contains
     allocate(cIx(nx,nx));   cIx = cmplx(Ix_mat, 0.0_dp, kind=dp)
     allocate(cIy(ny,ny));   cIy = cmplx(Iy_mat, 0.0_dp, kind=dp)
 
-    ! Laplacian = D2x x Iy + Ix x D2y
-    call kron_dense_dense(cD2x, nx, nx, cIy, ny, ny, kron_a)
-    call kron_eye_dense(nx, cD2y, ny, ny, kron_b)
-    call csr_add(kron_a, kron_b, lap)
+    ! Laplacian = Iy x D2x + D2y x Ix  (column-major)
+    call kron_eye_dense(ny, cD2x, nx, nx, kron_Iy_D2x)
+    call kron_dense_dense(cD2y, ny, ny, cIx, nx, nx, kron_D2y_Ix)
+    call csr_add(kron_Iy_D2x, kron_D2y_Ix, lap)
 
     @assertEqual(ngrid, lap%nrows)
     @assertEqual(ngrid, lap%ncols)
@@ -77,8 +77,8 @@ contains
     ! Interior rows of 2D Laplacian should be symmetric
     call assert_csr_interior_symmetric(lap, nx, ny, "2D Laplacian interior")
 
-    call csr_free(kron_a)
-    call csr_free(kron_b)
+    call csr_free(kron_Iy_D2x)
+    call csr_free(kron_D2y_Ix)
     call csr_free(lap)
     deallocate(D2x, D2y, Ix_mat, Iy_mat, cD2x, cD2y, cIx, cIy)
   end subroutine test_laplacian_2d_sparsity
@@ -94,7 +94,7 @@ contains
     real(kind=dp), parameter :: dx = 1.0_dp, dy = 2.0_dp
     real(kind=dp), allocatable :: D1x(:,:), D1y(:,:)
     complex(kind=dp), allocatable :: cD1x(:,:), cD1y(:,:)
-    type(csr_matrix) :: cross
+    type(csr_matrix) :: kron_D1y_D1x
 
     call buildFD1stDerivMatrix(nx, dx, 2, D1x)
     call buildFD1stDerivMatrix(ny, dy, 2, D1y)
@@ -102,13 +102,13 @@ contains
     allocate(cD1x(nx,nx)); cD1x = cmplx(D1x, 0.0_dp, kind=dp)
     allocate(cD1y(ny,ny)); cD1y = cmplx(D1y, 0.0_dp, kind=dp)
 
-    call kron_dense_dense(cD1x, nx, nx, cD1y, ny, ny, cross)
+    call kron_dense_dense(cD1y, ny, ny, cD1x, nx, nx, kron_D1y_D1x)  ! cross-derivative: D1y x D1x (column-major)
 
-    @assertEqual(nx * ny, cross%nrows)
-    @assertEqual(nx * ny, cross%ncols)
-    @assertTrue(cross%nnz > 0, message="Cross derivative has nonzeros")
+    @assertEqual(nx * ny, kron_D1y_D1x%nrows)
+    @assertEqual(nx * ny, kron_D1y_D1x%ncols)
+    @assertTrue(kron_D1y_D1x%nnz > 0, message="Cross derivative has nonzeros")
 
-    call csr_free(cross)
+    call csr_free(kron_D1y_D1x)
     deallocate(D1x, D1y, cD1x, cD1y)
   end subroutine test_cross_derivative_pattern
 
@@ -591,58 +591,30 @@ contains
 
     ! Check Hermiticity (interior only — boundary stencils break exact Hermiticity)
     block
-      complex(kind=dp), allocatable :: Hd(:,:), PZd(:,:)
+      complex(kind=dp), allocatable :: Hd(:,:)
       real(kind=dp) :: herr
-      integer :: i, j, hi, hj, bi, bj, si, sj
-      integer :: six, siy, sjx, sjy
+      integer :: i, j
+      integer :: si, sj, six, siy, sjx, sjy
       logical :: i_interior, j_interior
-      type(csr_matrix) :: PZ_blk
-
-      ! Check PZ matrix directly
-      call build_kp_term_PZ(kpterms_2d, PZ_blk)
-      allocate(PZd(ngrid, ngrid))
-      PZd = cmplx(0.0_dp, 0.0_dp, kind=dp)
-      call csr_to_dense(PZ_blk, PZd)
-      print *, 'PZ(1,1)=', PZd(1,1), ' (should be ~0 or pure imaginary)'
-      print *, 'PZ(7,7)=', PZd(7,7), ' (should be 0 for interior)'
-      print *, 'PZ(7,8)=', PZd(7,8), ' PZ(8,7)=', PZd(8,7)
-      print *, 'PZ is nx*ny=', PZ_blk%nrows, 'x', PZ_blk%ncols
-      call csr_free(PZ_blk)
-      deallocate(PZd)
 
       allocate(Hd(H_csr%nrows, H_csr%ncols))
       call csr_to_dense(H_csr, Hd)
       herr = 0.0_dp
       do j = 1, H_csr%ncols
-        bj = (j-1)/ngrid + 1
         sj = mod(j-1, ngrid) + 1
         sjx = mod(sj-1, nx) + 1
         sjy = (sj-1)/nx + 1
         j_interior = (sjx > 1 .and. sjx < nx .and. sjy > 1 .and. sjy < ny)
         do i = 1, H_csr%nrows
-          bi = (i-1)/ngrid + 1
           si = mod(i-1, ngrid) + 1
           six = mod(si-1, nx) + 1
           siy = (si-1)/nx + 1
           i_interior = (six > 1 .and. six < nx .and. siy > 1 .and. siy < ny)
           if (i_interior .and. j_interior) then
-            if (abs(Hd(i,j) - conjg(Hd(j,i))) > herr) then
-              herr = abs(Hd(i,j) - conjg(Hd(j,i)))
-              hi = i; hj = j
-            end if
+            herr = max(herr, abs(Hd(i,j) - conjg(Hd(j,i))))
           end if
         end do
       end do
-      if (herr > 1.0e-10_dp) then
-        bi = (hi-1)/ngrid + 1; bj = (hj-1)/ngrid + 1
-        si = mod(hi-1, ngrid) + 1; sj = mod(hj-1, ngrid) + 1
-        print *, 'Max interior Hermiticity error:', herr
-        print *, 'At (i,j)=', hi, hj
-        print *, 'Block (a,b)=', bi, bj
-        print *, 'Spatial (si,sj)=', si, sj
-        print *, 'H(i,j)=', Hd(hi,hj)
-        print *, 'H(j,i)=', Hd(hj,hi)
-      end if
       deallocate(Hd)
       @assertTrue(herr < 1.0e-10_dp, message="Interior wire Hamiltonian (nx=4,ny=6) Hermitian")
     end block
