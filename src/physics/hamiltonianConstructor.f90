@@ -486,25 +486,45 @@ module hamiltonianConstructor
       call build_diagonal_csr(ngrid, prof_gamma3, kpterms_2d(3))
       call build_diagonal_csr(ngrid, prof_P, kpterms_2d(4))
 
-      ! Term 5: A * Laplacian
-      call csr_apply_variable_coeff(laplacian_2d, prof_A, kpterms_2d(5))
-
-      ! Term 6: P * Gradient
-      call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6))
-
-      ! Term 7: (gamma1 - 2*gamma2) * Laplacian
-      call csr_apply_variable_coeff(laplacian_2d, prof_gm12g2, kpterms_2d(7))
-
-      ! Term 8: (gamma1 + 2*gamma2) * Laplacian
-      call csr_apply_variable_coeff(laplacian_2d, prof_gp12g2, kpterms_2d(8))
-
-      ! Term 9: gamma3 * Gradient
-      call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9))
+      ! Apply cut-cell face fractions to differential operators.
+      ! For rectangular grids all face fractions are 1.0 (no-op).
+      ! Terms 5,7,8: Laplacian;  Terms 6,9: Gradient.
+      ! Term 11 (cross-derivative) mixes x/y connections so face fractions
+      ! are not applied (they remain 1.0 by default).
+      if (allocated(grid%face_fraction_x) .and. allocated(grid%face_fraction_y)) then
+        ! Term 5: A * Laplacian
+        call csr_apply_variable_coeff(laplacian_2d, prof_A, kpterms_2d(5), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 6: P * Gradient
+        call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 7: (gamma1 - 2*gamma2) * Laplacian
+        call csr_apply_variable_coeff(laplacian_2d, prof_gm12g2, kpterms_2d(7), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 8: (gamma1 + 2*gamma2) * Laplacian
+        call csr_apply_variable_coeff(laplacian_2d, prof_gp12g2, kpterms_2d(8), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 9: gamma3 * Gradient
+        call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+      else
+        ! No face fractions (rectangular grid or QW mode): standard path
+        call csr_apply_variable_coeff(laplacian_2d, prof_A, kpterms_2d(5))
+        call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6))
+        call csr_apply_variable_coeff(laplacian_2d, prof_gm12g2, kpterms_2d(7))
+        call csr_apply_variable_coeff(laplacian_2d, prof_gp12g2, kpterms_2d(8))
+        call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9))
+      end if
 
       ! Term 10: A (diagonal only)
       call build_diagonal_csr(ngrid, prof_A, kpterms_2d(10))
 
-      ! Term 11: gamma3 * Cross-derivative (NEW)
+      ! Term 11: gamma3 * Cross-derivative
       call csr_apply_variable_coeff(kron_D1y_D1x, prof_gamma3, kpterms_2d(11))
 
       ! ====================================================================

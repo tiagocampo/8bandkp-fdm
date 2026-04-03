@@ -364,6 +364,87 @@ contains
   end subroutine test_csr_apply_variable_coeff
 
   ! ==================================================================
+  ! CSR variable coefficient with face fraction weighting
+  ! ==================================================================
+
+  @test
+  subroutine test_csr_apply_variable_coeff_face_frac()
+    ! Build a small CSR matrix manually to test face fraction weighting.
+    !
+    ! 2D grid with nx=3, ny=3, ngrid=9, column-major flat index:
+    !   ij = (iy-1)*nx + ix
+    !   ix=1,iy=1 -> ij=1    ix=2,iy=1 -> ij=2    ix=3,iy=1 -> ij=3
+    !   ix=1,iy=2 -> ij=4    ix=2,iy=2 -> ij=5    ix=3,iy=2 -> ij=6
+    !   ix=1,iy=3 -> ij=7    ix=2,iy=3 -> ij=8    ix=3,iy=3 -> ij=9
+    !
+    ! We build a 5-entry CSR row for row 5 (center, ix=2, iy=2):
+    !   (5,2): offset -3 -> y-direction
+    !   (5,4): offset -1 -> x-direction
+    !   (5,5): diagonal
+    !   (5,6): offset +1 -> x-direction
+    !   (5,8): offset +3 -> y-direction
+    !
+    ! With face_frac_x(5,:)=[0.5, 0.5], face_frac_y(5,:)=[0.8, 0.8]:
+    !   x-avg = 0.5, y-avg = 0.8, diag-avg = (0.5+0.8)/2 = 0.65
+    !   Profile = 1.0 -> scale = -1
+    !   Result: (5,2)=-1*0.8=-0.8, (5,4)=-1*0.5=-0.5,
+    !           (5,5)=-1*0.65=-0.65, (5,6)=-0.5, (5,8)=-0.8
+    !
+    ! All other rows have face fractions = 1.0 (no extra scaling).
+    integer, parameter :: ngrid = 9, nx = 3
+    type(csr_matrix) :: A, result_mat
+    complex(kind=dp) :: vals(5)
+    integer :: rows(5), cols(5)
+    real(kind=dp) :: profile(ngrid)
+    real(kind=dp) :: ffx(ngrid, 2), ffy(ngrid, 2)
+    complex(kind=dp), allocatable :: dense(:,:)
+
+    ! Build a CSR matrix with only the 5 entries for row 5
+    rows = [5, 5, 5, 5, 5]
+    cols = [2, 4, 5, 6, 8]
+    vals = [cmplx(1.0_dp,0,dp), cmplx(1.0_dp,0,dp), cmplx(1.0_dp,0,dp), &
+            cmplx(1.0_dp,0,dp), cmplx(1.0_dp,0,dp)]
+
+    call csr_build_from_coo(A, ngrid, ngrid, 5, rows, cols, vals)
+
+    ! Profile = 1 -> scale = -1
+    profile = 1.0_dp
+
+    ! Face fractions: all 1.0 except row 5
+    ffx = 1.0_dp
+    ffy = 1.0_dp
+    ffx(5, 1) = 0.5_dp;  ffx(5, 2) = 0.5_dp
+    ffy(5, 1) = 0.8_dp;  ffy(5, 2) = 0.8_dp
+
+    call csr_apply_variable_coeff(A, profile, result_mat, &
+      face_frac_x=ffx, face_frac_y=ffy, grid_nx=nx)
+
+    allocate(dense(ngrid, ngrid))
+    dense = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call csr_to_dense(result_mat, dense)
+
+    ! Row 5 checks:
+    ! col 2: y-direction, avg(ffy)=0.8 -> -1*0.8 = -0.8
+    @assertEqual(cmplx(-0.8_dp,0,dp), dense(5,2), tolerance=1.0e-14_dp)
+    ! col 4: x-direction, avg(ffx)=0.5 -> -1*0.5 = -0.5
+    @assertEqual(cmplx(-0.5_dp,0,dp), dense(5,4), tolerance=1.0e-14_dp)
+    ! col 5: diagonal, avg(0.5,0.8)=0.65 -> -1*0.65 = -0.65
+    @assertEqual(cmplx(-0.65_dp,0,dp), dense(5,5), tolerance=1.0e-14_dp)
+    ! col 6: x-direction -> -0.5
+    @assertEqual(cmplx(-0.5_dp,0,dp), dense(5,6), tolerance=1.0e-14_dp)
+    ! col 8: y-direction -> -0.8
+    @assertEqual(cmplx(-0.8_dp,0,dp), dense(5,8), tolerance=1.0e-14_dp)
+
+    ! All other rows should be zero (no entries in A)
+    @assertEqual(cmplx(0.0_dp,0,dp), dense(1,1), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(0.0_dp,0,dp), dense(3,3), tolerance=1.0e-14_dp)
+
+    call csr_free(A)
+    call csr_free(result_mat)
+    deallocate(dense)
+  end subroutine test_csr_apply_variable_coeff_face_frac
+
+  ! ==================================================================
   ! 2D Laplacian eigenvalue sanity test
   ! ==================================================================
 

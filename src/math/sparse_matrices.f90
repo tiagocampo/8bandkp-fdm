@@ -779,34 +779,48 @@ contains
 
   ! ------------------------------------------------------------------
   ! Apply variable coefficient (element-wise row scaling) to a CSR
-  ! matrix: result(i,j) = -profile(i) * A(i,j).
+  ! matrix: result(i,j) = -profile(i) * w(i,j) * A(i,j).
   !
   ! The profile array has length A%nrows.  Each row i of A is scaled
   ! by -profile(i).  The negative sign follows the convention in the
   ! 1D applyVariableCoeff (kpterms = -profile * FD).
   !
-  ! Optionally, cut-cell face fractions can modify boundary stencil
-  ! weights.  When face_frac_y and face_frac_z are present, each
-  ! nonzero in row i is additionally scaled by the geometric mean of
-  ! the face fractions for the corresponding direction:
-  !   d^2/dx^2 terms: multiply by (face_frac_x(i,1) + face_frac_x(i,2)) / 2
-  !   d^2/dy^2 terms: multiply by (face_frac_y(i,1) + face_frac_y(i,2)) / 2
-  !   d/dx terms:     multiply by (face_frac_x(i,2) - face_frac_x(i,1)) / 2
-  !   d/dy terms:     multiply by (face_frac_y(i,2) - face_frac_y(i,1)) / 2
+  ! Optional cell_volume: each row is additionally scaled by
+  ! cell_volume(i), giving the box-integration weight for a 2D
+  ! Laplacian with cut cells.  Zero-volume rows produce zero entries.
   !
-  ! For now (Phase 1b), the face fractions are applied as a simple
-  ! row volume scaling: result(i,j) = -profile(i) * vol(i) * A(i,j),
-  ! where vol(i) = cell_volume(i).  This is the correct box-integration
-  ! weight for a 2D Laplacian with cut cells.
+  ! Optional face fractions (face_frac_x, face_frac_y, grid_nx):
+  ! When all three are present, each nonzero is further scaled by the
+  ! face fraction corresponding to its connection direction.  This
+  ! implements the cut-cell box-integration weighting from the design
+  ! doc (section 3.4):
+  !
+  !   For a 2D grid with column-major flat index ij = (iy-1)*nx + ix:
+  !     - x-direction connections (col offset +/- 1, not +/- nx):
+  !       scaled by (face_frac_x(row,1) + face_frac_x(row,2)) / 2
+  !     - y-direction connections (col offset multiple of +/- nx):
+  !       scaled by (face_frac_y(row,1) + face_frac_y(row,2)) / 2
+  !     - diagonal (row == col): average of x and y face fractions
+  !
+  ! For rectangular wires, all face fractions are 1.0 so the extra
+  ! weighting is a no-op.  Only non-rectangular cross-sections
+  ! (circle, hexagon, polygon) produce fractional values at boundary
+  ! cells.
   ! ------------------------------------------------------------------
-  subroutine csr_apply_variable_coeff(A, profile, result_mat, cell_volume)
+  subroutine csr_apply_variable_coeff(A, profile, result_mat, cell_volume, &
+      face_frac_x, face_frac_y, grid_nx)
     type(csr_matrix), intent(in)  :: A
     real(kind=dp), intent(in)     :: profile(:)     ! (A%nrows)
     type(csr_matrix), intent(out) :: result_mat
     real(kind=dp), intent(in), optional :: cell_volume(:)  ! (A%nrows)
+    real(kind=dp), intent(in), optional :: face_frac_x(:,:)  ! (ngrid, 2)
+    real(kind=dp), intent(in), optional :: face_frac_y(:,:)  ! (ngrid, 2)
+    integer, intent(in), optional :: grid_nx
 
-    integer :: i, k, row, nnz_out
-    real(kind=dp) :: scale
+    integer :: i, k, row, col, nnz_out, nx_grid
+    integer :: col_offset, abs_offset, row_band, col_band
+    real(kind=dp) :: scale, ff_scale
+    logical :: use_face_frac
     integer, allocatable :: rows_coo(:), cols_coo(:)
     complex(kind=dp), allocatable :: vals_coo(:)
 
@@ -817,11 +831,18 @@ contains
       return
     end if
 
+    ! Determine whether to apply face fraction weighting
+    use_face_frac = present(face_frac_x) .and. present(face_frac_y) .and. &
+                    present(grid_nx)
+    if (use_face_frac) then
+      nx_grid = grid_nx
+    end if
+
     allocate(rows_coo(nnz_out))
     allocate(cols_coo(nnz_out))
     allocate(vals_coo(nnz_out))
 
-    ! Build COO from A with row scaling
+    ! Build COO from A with row scaling and optional face-fraction weighting
     k = 0
     do row = 1, A%nrows
       scale = -profile(row)
@@ -833,10 +854,43 @@ contains
         end if
       end if
       do i = A%rowptr(row), A%rowptr(row + 1) - 1
+        col = A%colind(i)
+        ff_scale = 1.0_dp
+
+        if (use_face_frac .and. scale /= 0.0_dp) then
+          col_offset = col - row
+          if (col_offset == 0) then
+            ! Diagonal: average of x and y face fractions
+            ff_scale = 0.5_dp * &
+              ((face_frac_x(row, 1) + face_frac_x(row, 2)) * 0.5_dp + &
+               (face_frac_y(row, 1) + face_frac_y(row, 2)) * 0.5_dp)
+          else
+            abs_offset = abs(col_offset)
+            ! Check if the offset is consistent with y-direction (multiple of nx)
+            ! or x-direction (small offset within same row band).
+            ! y-connections: offset is exactly +/- nx (2nd deriv) or
+            !   offset is a multiple of nx for higher-order stencils.
+            ! x-connections: offset is small and row/column share the same
+            !   y-band (both in range [(iy-1)*nx+1, iy*nx]).
+            row_band = (row - 1) / nx_grid   ! 0-based y-index
+            col_band = (col - 1) / nx_grid
+            if (row_band == col_band) then
+              ! Same y-band: x-direction connection
+              ff_scale = (face_frac_x(row, 1) + face_frac_x(row, 2)) * 0.5_dp
+            else if (abs_offset == nx_grid .or. &
+                     mod(abs_offset, nx_grid) == 0) then
+              ! Different y-band: y-direction connection
+              ff_scale = (face_frac_y(row, 1) + face_frac_y(row, 2)) * 0.5_dp
+            end if
+            ! For offsets that don't match either pattern (cross-derivatives),
+            ! ff_scale remains 1.0 -- face fractions don't apply.
+          end if
+        end if
+
         k = k + 1
         rows_coo(k) = row
-        cols_coo(k) = A%colind(i)
-        vals_coo(k) = scale * A%values(i)
+        cols_coo(k) = col
+        vals_coo(k) = scale * ff_scale * A%values(i)
       end do
     end do
 
