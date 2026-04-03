@@ -193,3 +193,19 @@ set_tests_properties(
     regression_sc_mod_doped_gaas_algaas
     PROPERTIES LABELS "regression"
 )
+
+# Wire GaAs rectangular wire band structure
+add_test(
+    NAME regression_wire_gaas_rectangle
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_bandstructure.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_gaas_rectangle.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/wire_gaas_rectangle
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_wire_gaas_rectangle
+    PROPERTIES LABELS "regression"
+)

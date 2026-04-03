@@ -1242,11 +1242,8 @@ module hamiltonianConstructor
         cmplx(kx2, 0.0_dp, kind=dp), cmplx(kx2, 0.0_dp, kind=dp))
       ! Add kpterms_2d(7)
       call csr_add(diag_sum, kpterms_2d(7), blk, UM, UM)
-      ! Negate
       call csr_free(diag_sum)
-      call csr_add(blk, blk, blk, cmplx(-1.0_dp, 0.0_dp, kind=dp), &
-        cmplx(0.0_dp, 0.0_dp, kind=dp))
-      ! This creates 2*(-blk) + 0 -- simpler: just negate by building fresh
+      ! Negate
       call negate_csr(blk)
     end subroutine build_kp_term_Q
 
