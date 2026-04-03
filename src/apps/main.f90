@@ -167,8 +167,11 @@ program kpfdm
     end if
 
     ! Clean up common allocations and exit
-    if (allocated(smallk)) deallocate(smallk)
-    stop
+    if (allocated(smallk))  deallocate(smallk)
+    if (allocated(profile)) deallocate(profile)
+    if (allocated(kpterms)) deallocate(kpterms)
+
+    stop  ! wire mode complete
 
   end if
 
