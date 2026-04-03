@@ -6,7 +6,7 @@ module outputFunctions
   implicit NONE
 
   private
-  public :: writeEigenfunctions, writeEigenvalues, get_unit
+  public :: writeEigenfunctions, writeEigenfunctions2d, writeEigenvalues, get_unit
 
   character(len=*), parameter :: OUTPUT_DIR = 'output'
 
@@ -230,5 +230,65 @@ module outputFunctions
         end do
       end if
     end subroutine
+
+    ! ==================================================================
+    ! Write 2D probability density |psi(y,z)|^2 for wire eigenstates.
+    !
+    ! Each eigenvector has 8*Ngrid complex entries.  The probability
+    ! density at grid point (iy, iz) is summed over all 8 bands:
+    !   |psi(y,z)|^2 = sum_{band=1}^{8} |vec((band-1)*Ngrid + (iz-1)*ny + iy)|^2
+    !
+    ! Output format (one file per eigenstate per k-point):
+    !   y  z  |psi|^2     (three columns, ny*nz rows)
+    ! Directly plottable with gnuplot: splot 'file' using 1:2:3
+    ! ==================================================================
+    subroutine writeEigenfunctions2d(grid, eigenvalues, eigenvectors, k_index, nev)
+
+      type(spatial_grid), intent(in)  :: grid
+      real(kind=dp), intent(in)       :: eigenvalues(:)
+      complex(kind=dp), intent(in)    :: eigenvectors(:,:)
+      integer, intent(in)             :: k_index
+      integer, intent(in)             :: nev
+
+      integer(kind=4) :: iounit, ios
+      character(len=255) :: filename
+      integer :: n, band, iy, iz, Ngrid, flat_idx, nev_actual
+      real(kind=dp) :: prob
+
+      ! Ensure output directory exists
+      call ensure_output_dir()
+
+      Ngrid = grid%ny * grid%nz
+      if (Ngrid == 0) return
+
+      nev_actual = min(nev, size(eigenvectors, 2))
+
+      do n = 1, nev_actual
+        write(filename,'(a,i0.5,a,i0.5,a)') OUTPUT_DIR//'/wf_k', k_index, '_n', n, '.dat'
+        call get_unit(iounit)
+        open(unit=iounit, file=filename, status='replace', action='write')
+
+        ! Header with eigenvalue
+        write(iounit, '(a,g14.6)') '# E = ', eigenvalues(n)
+
+        ! Write probability density grid: y  z  |psi|^2
+        do iz = 1, grid%nz
+          do iy = 1, grid%ny
+            prob = 0.0_dp
+            do band = 1, 8
+              flat_idx = (band - 1) * Ngrid + (iz - 1) * grid%ny + iy
+              prob = prob + abs(eigenvectors(flat_idx, n))**2
+            end do
+            write(unit=iounit, fmt='(3(g14.6,1x))', iostat=ios) &
+              & grid%y(iy), grid%z(iz), prob
+          end do
+          ! Blank line between z-rows for gnuplot splot
+          write(iounit, '(a)', iostat=ios) ''
+        end do
+
+        close(iounit)
+      end do
+
+    end subroutine writeEigenfunctions2d
 
 end module outputFunctions

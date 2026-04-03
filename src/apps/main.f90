@@ -145,6 +145,14 @@ program kpfdm
         end do
       end if
 
+      ! Write 2D eigenfunctions at select k-points (start, middle, end)
+      if (eigen_res%nev_found > 0 .and. &
+        & (k == 1 .or. k == cfg%waveVectorStep/2 .or. k == cfg%waveVectorStep)) then
+        call writeEigenfunctions2d(cfg%grid, eigen_res%eigenvalues, &
+          & eigen_res%eigenvectors, k, eigen_res%nev_found)
+        print *, '  Wrote ', eigen_res%nev_found, ' 2D wavefunctions to output/wf_k', k, '_*.dat'
+      end if
+
       ! Clean up result and Hamiltonian for this k-point
       call eigensolver_result_free(eigen_res)
       call csr_free(HT_csr)
