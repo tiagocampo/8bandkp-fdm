@@ -540,7 +540,7 @@ contains
   ! ------------------------------------------------------------------
   subroutine self_consistent_loop_wire(profile_2d, cfg, kpterms_2d, grid, &
       & coo_cache, eigen_cfg, eig_wire, eigv_wire, phi_out, n_electron_out, &
-      & n_hole_out)
+      & n_hole_out, converged_out)
 
     real(kind=dp), allocatable, intent(inout) :: profile_2d(:,:)
     type(simulation_config), intent(in) :: cfg
@@ -553,6 +553,7 @@ contains
     real(kind=dp), allocatable, intent(out), optional :: phi_out(:,:)
     real(kind=dp), allocatable, intent(out), optional :: n_electron_out(:,:)
     real(kind=dp), allocatable, intent(out), optional :: n_hole_out(:,:)
+    logical, intent(out), optional :: converged_out
 
     ! SC loop variables
     integer :: iter, niter, k_idx
@@ -833,6 +834,8 @@ contains
         end do
       end do
     end if
+
+    if (present(converged_out)) converged_out = sc_converged
 
     ! --- Cleanup ---
     if (allocated(HT_csr_sc%values)) call csr_free(HT_csr_sc)

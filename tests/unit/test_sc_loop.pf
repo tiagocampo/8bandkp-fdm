@@ -689,7 +689,7 @@ contains
     real(kind=dp), allocatable :: eig_wire(:,:)
     complex(kind=dp), allocatable :: eigv_wire(:,:,:)
     real(kind=dp) :: max_diff
-    logical :: profile_changed, eigenvalues_ordered
+    logical :: profile_changed, eigenvalues_ordered, sc_converged
 
     ngrid = nx * ny
     ntot = 8 * ngrid
@@ -763,13 +763,17 @@ contains
 
     ! ---- Step 7: Run SC loop ----
     call self_consistent_loop_wire(profile_2d, cfg, kpterms_2d, grid, &
-      & coo_cache, eigen_cfg, eig_wire, eigv_wire)
+      & coo_cache, eigen_cfg, eig_wire, eigv_wire, &
+      & converged_out=sc_converged)
 
     ! ---- Assertions ----
 
-    ! 1. Eigenvalues at k=0 are non-zero and ordered (ascending)
+    ! 0. SC loop converged
+    @assertTrue(sc_converged, message='Wire SC loop should converge within max_iterations')
+
+    ! 1. Eigenvalues at k=0 are non-zero and ordered (non-decreasing, allowing degeneracy)
     do ij = 2, num_subbands
-      eigenvalues_ordered = (eig_wire(ij, 1) - eig_wire(ij-1, 1)) > -1.0e-12_dp
+      eigenvalues_ordered = (eig_wire(ij, 1) - eig_wire(ij-1, 1)) >= 0.0_dp
       @assertTrue(eigenvalues_ordered, message="Eigenvalues ordered ascending at k=0")
     end do
     @assertTrue(abs(eig_wire(1, 1)) > 0.0_dp, message="Eigenvalues are non-zero")
