@@ -492,4 +492,154 @@ contains
     end do
   end subroutine test_apply_potential_to_profile_2d
 
+
+  @test
+  subroutine test_find_fermi_level_wire()
+    ! 5 eigenvalues at known energies, 3 kx-points, 3x3 grid.
+    ! CB at E=0.8, 1.0, 1.2 eV (numcb=3); VB at E=-0.5, -0.3 eV.
+    ! At T=4K the Fermi function is step-like.
+    ! With no doping, Fermi level should be in the gap between -0.3 and 0.8.
+    ! Charge neutrality should hold within tolerance.
+
+    integer, parameter :: nx = 3, ny = 3
+    integer, parameter :: Ngrid = nx * ny
+    integer, parameter :: N = 8 * Ngrid       ! Hamiltonian dimension
+    integer, parameter :: num_subbands = 5     ! 2 VB + 3 CB
+    integer, parameter :: nk = 3              ! kx-points (odd for Simpson)
+    real(kind=dp), parameter :: dx = 2.0_dp   ! Angstrom
+    real(kind=dp), parameter :: dy = 2.0_dp   ! Angstrom
+
+    real(kind=dp) :: eig_kx(num_subbands, nk)
+    complex(kind=dp) :: eigv_kx(N, num_subbands, nk)
+    real(kind=dp) :: kx_grid(nk)
+    type(simulation_config) :: cfg
+    real(kind=dp) :: rho_doping_2d(nx, ny)
+    real(kind=dp) :: work_ne(Ngrid), work_nh(Ngrid)
+    real(kind=dp) :: dA, mu
+    integer :: s, ik
+
+    ! Eigenvalues: subbands 1-2 = VB, 3-5 = CB (sorted descending at kx=0
+    ! by compute_charge_density_wire). Place them so the sort puts the
+    ! highest 3 as CB (numcb=3):
+    !   Subband 1: E = 1.2 eV  (CB)
+    !   Subband 2: E = 1.0 eV  (CB)
+    !   Subband 3: E = 0.8 eV  (CB)
+    !   Subband 4: E = -0.3 eV (VB)
+    !   Subband 5: E = -0.5 eV (VB)
+    ! All kx-points have the same eigenvalues (flat dispersion).
+    eig_kx(1, :) = 1.2_dp
+    eig_kx(2, :) = 1.0_dp
+    eig_kx(3, :) = 0.8_dp
+    eig_kx(4, :) = -0.3_dp
+    eig_kx(5, :) = -0.5_dp
+
+    ! Eigenvectors: uniform, properly normalised.
+    ! |Psi|^2 summed over 8 bands at each grid point = 1/Ngrid.
+    eigv_kx = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do s = 1, num_subbands
+      do ik = 1, nk
+        eigv_kx(1:N, s, ik) = cmplx(1.0_dp / sqrt(real(N, kind=dp)), &
+          & 0.0_dp, kind=dp)
+      end do
+    end do
+
+    ! kx grid: 0.0, 0.05, 0.1  (1/Angstrom)
+    kx_grid(1) = 0.0_dp
+    kx_grid(2) = 0.05_dp
+    kx_grid(3) = 0.1_dp
+
+    ! Config: numcb=3, T=4K (step-like), charge-neutrality mode
+    cfg%numcb = 3
+    cfg%sc%temperature = 4.0_dp
+    cfg%sc%fermi_mode = 0
+
+    ! Area element: AA^2 -> cm^2
+    dA = dx * dy * 1.0e-16_dp
+
+    ! No doping
+    rho_doping_2d = 0.0_dp
+    work_ne = 0.0_dp
+    work_nh = 0.0_dp
+
+    mu = find_fermi_level_wire(eig_kx, eigv_kx, kx_grid, &
+      & cfg, N, num_subbands, nk, Ngrid, dA, &
+      & rho_doping_2d, work_ne, work_nh, nx, ny)
+
+    ! Fermi level should be in the band gap
+    @assertTrue(mu > -0.3_dp, message="Fermi above VB top (-0.3 eV)")
+    @assertTrue(mu < 0.8_dp, message="Fermi below CB bottom (0.8 eV)")
+
+  end subroutine test_find_fermi_level_wire
+
+
+  @test
+  subroutine test_find_fermi_level_wire_with_doping()
+    ! Same setup as test_find_fermi_level_wire but with n-type doping.
+    ! Positive rho_doping means net donors (ND - NA > 0).
+    ! With donors, Fermi level should shift toward CB (higher than intrinsic).
+
+    integer, parameter :: nx = 3, ny = 3
+    integer, parameter :: Ngrid = nx * ny
+    integer, parameter :: N = 8 * Ngrid
+    integer, parameter :: num_subbands = 5
+    integer, parameter :: nk = 3
+    real(kind=dp), parameter :: dx = 2.0_dp
+    real(kind=dp), parameter :: dy = 2.0_dp
+
+    real(kind=dp) :: eig_kx(num_subbands, nk)
+    complex(kind=dp) :: eigv_kx(N, num_subbands, nk)
+    real(kind=dp) :: kx_grid(nk)
+    type(simulation_config) :: cfg
+    real(kind=dp) :: rho_doping_2d(nx, ny)
+    real(kind=dp) :: work_ne(Ngrid), work_nh(Ngrid)
+    real(kind=dp) :: dA, mu_intrinsic, mu
+
+    ! Same eigenvalues as intrinsic test
+    eig_kx(1, :) = 1.2_dp
+    eig_kx(2, :) = 1.0_dp
+    eig_kx(3, :) = 0.8_dp
+    eig_kx(4, :) = -0.3_dp
+    eig_kx(5, :) = -0.5_dp
+
+    ! Uniform normalised eigenvectors
+    eigv_kx = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    eigv_kx(1:N, :, :) = cmplx(1.0_dp / sqrt(real(N, kind=dp)), &
+      & 0.0_dp, kind=dp)
+
+    kx_grid(1) = 0.0_dp
+    kx_grid(2) = 0.05_dp
+    kx_grid(3) = 0.1_dp
+
+    cfg%numcb = 3
+    cfg%sc%temperature = 300.0_dp
+    cfg%sc%fermi_mode = 0
+
+    dA = dx * dy * 1.0e-16_dp
+
+    ! First: intrinsic (no doping)
+    rho_doping_2d = 0.0_dp
+    work_ne = 0.0_dp
+    work_nh = 0.0_dp
+
+    mu_intrinsic = find_fermi_level_wire(eig_kx, eigv_kx, kx_grid, &
+      & cfg, N, num_subbands, nk, Ngrid, dA, &
+      & rho_doping_2d, work_ne, work_nh, nx, ny)
+
+    ! Now: with n-type doping
+    rho_doping_2d = 1.0e18_dp
+    work_ne = 0.0_dp
+    work_nh = 0.0_dp
+
+    mu = find_fermi_level_wire(eig_kx, eigv_kx, kx_grid, &
+      & cfg, N, num_subbands, nk, Ngrid, dA, &
+      & rho_doping_2d, work_ne, work_nh, nx, ny)
+
+    ! With donors, Fermi level should be higher than intrinsic
+    @assertTrue(mu > mu_intrinsic, message="Doped Fermi above intrinsic Fermi")
+    ! Should still be in gap
+    @assertTrue(mu > -0.3_dp, message="Fermi above VB top")
+    @assertTrue(mu < 0.8_dp, message="Fermi below CB bottom")
+
+  end subroutine test_find_fermi_level_wire_with_doping
+
 end module test_sc_loop

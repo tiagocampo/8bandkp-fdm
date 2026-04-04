@@ -32,6 +32,7 @@ module sc_loop
   public :: apply_potential_to_profile
   public :: apply_potential_to_profile_2d
   public :: self_consistent_loop_wire
+  public :: find_fermi_level_wire
   public :: map_layer_to_grid
 
   ! Unit conversion constants
