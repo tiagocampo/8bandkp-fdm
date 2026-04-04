@@ -1,0 +1,448 @@
+# Chapter 08: Quantum Wire Band Structure (2D Confinement)
+
+## 1. Theory
+
+### 1.1 From quantum well to quantum wire: adding a second confinement direction
+
+In Chapter 02 we studied the quantum well, where confinement along one direction ($z$) produces a 2D electron gas with free propagation in the $x$-$y$ plane. A quantum wire goes one step further: confinement in **two** spatial directions ($x$ and $y$), leaving only the wire axis $z$ as a free propagation direction. The wavevector along $z$, denoted $k_z$, remains a good quantum number.
+
+The envelope function ansatz for the wire is:
+
+$$\Psi(\mathbf{r}) = \sum_{n=1}^{8} F_n(x, y) \, e^{i k_z z} \, |u_n\rangle$$
+
+where $F_n(x, y)$ are 2D envelope functions defined on the wire cross-section. Both $k_x$ and $k_y$ are replaced by spatial derivative operators:
+
+$$k_x \longrightarrow -i \frac{\partial}{\partial x}, \qquad k_y \longrightarrow -i \frac{\partial}{\partial y}$$
+
+while $k_z$ remains a scalar parameter that is swept to obtain the subband dispersion $E_n(k_z)$.
+
+The physical consequences of 2D confinement are profound:
+- The continuous 2D subband structure of a quantum well collapses into **1D subbands** (modes), each with its own $E_n(k_z)$ dispersion
+- The density of states develops van Hove singularities at subband edges
+- Valley degeneracies and symmetry properties depend on the wire cross-section geometry
+- Spin-orbit coupling can be strongly enhanced relative to the quantum well case
+
+### 1.2 The 2D finite difference grid
+
+The wire cross-section is discretized on a Cartesian grid of $N_x \times N_y$ points with uniform spacings $\Delta x$ and $\Delta y$. The total number of spatial grid points is:
+
+$$N_{\text{grid}} = N_x \times N_y$$
+
+Grid coordinates are cell-centered:
+
+$$x(i) = \left(i - \tfrac{1}{2}\right) \Delta x, \qquad y(j) = \left(j - \tfrac{1}{2}\right) \Delta y$$
+
+Each grid point is assigned a material index (and hence a set of k.p parameters) based on which region of the wire cross-section it belongs to. For a simple rectangular wire of GaAs embedded in AlGaAs cladding, the interior points receive GaAs parameters while the exterior points receive AlGaAs parameters. For non-rectangular shapes (circles, hexagons, arbitrary polygons), a cut-cell immersed boundary method handles partial cells at the interface.
+
+The 2D grid is stored in a flattened column-major ordering:
+
+$$\text{flat\_idx}(i_x, i_y) = (i_y - 1) \cdot N_x + i_x$$
+
+This convention is used throughout the code for indexing into the sparse matrix data structures.
+
+### 1.3 Kronecker product structure of the 2D Hamiltonian
+
+The key mathematical insight for building the wire Hamiltonian efficiently is that 2D finite difference operators factor into Kronecker products of 1D operators. Consider the 2D Laplacian:
+
+$$\nabla^2_{2D} = \frac{\partial^2}{\partial x^2} + \frac{\partial^2}{\partial y^2}$$
+
+Discretized on the $N_x \times N_y$ grid with column-major flattening, this becomes:
+
+$$\mathbf{L}_{2D} = I_{N_y} \otimes D^{(2)}_x + D^{(2)}_y \otimes I_{N_x}$$
+
+where $D^{(2)}_x$ is the $N_x \times N_x$ second-derivative matrix in the $x$-direction, $D^{(2)}_y$ is the $N_y \times N_y$ second-derivative matrix in the $y$-direction, and $I_{N}$ denotes the $N \times N$ identity matrix. Similarly, the 2D gradient operator:
+
+$$\boldsymbol{\nabla}_{2D} = \frac{\partial}{\partial x} + \frac{\partial}{\partial y}$$
+
+factors as:
+
+$$\mathbf{G}_{2D} = I_{N_y} \otimes D^{(1)}_x + D^{(1)}_y \otimes I_{N_x}$$
+
+and the cross-derivative $d^2/dx\,dy$ as:
+
+$$\mathbf{X}_{2D} = D^{(1)}_y \otimes D^{(1)}_x$$
+
+These Kronecker products are the building blocks from which all k.p terms in the wire Hamiltonian are constructed.
+
+### 1.4 The kpterms_2d operators: 15 CSR matrices
+
+Analogous to the 1D `kpterms(N, N, 10)` array used for quantum wells (Chapter 02), the wire mode precomputes 15 sparse CSR matrices `kpterms_2d(1:15)`, each of size $N_{\text{grid}} \times N_{\text{grid}}$. The position dependence of material parameters is baked into these operators during initialization.
+
+| Index | Content | Derivative structure |
+|-------|---------|---------------------|
+| 1 | $\gamma_1(x,y)$ | Diagonal |
+| 2 | $\gamma_2(x,y)$ | Diagonal |
+| 3 | $\gamma_3(x,y)$ | Diagonal |
+| 4 | $P(x,y)$ | Diagonal |
+| 5 | $A(x,y) \cdot \nabla^2_{2D}$ | Laplacian |
+| 6 | $P(x,y) \cdot \boldsymbol{\nabla}_{2D}$ | Gradient |
+| 7 | $(\gamma_1 - 2\gamma_2)(x,y) \cdot \nabla^2_{2D}$ | Laplacian |
+| 8 | $(\gamma_1 + 2\gamma_2)(x,y) \cdot \nabla^2_{2D}$ | Laplacian |
+| 9 | $\gamma_3(x,y) \cdot \boldsymbol{\nabla}_{2D}$ | Gradient |
+| 10 | $A(x,y)$ | Diagonal |
+| 11 | $\gamma_3(x,y) \cdot \partial^2/\partial x\partial y$ | Cross-derivative |
+| 12 | $P(x,y) \cdot \partial/\partial x$ | x-gradient only |
+| 13 | $P(x,y) \cdot \partial/\partial y$ | y-gradient only |
+| 14 | $\gamma_3(x,y) \cdot \partial/\partial x$ | x-gradient only |
+| 15 | $\gamma_3(x,y) \cdot \partial/\partial y$ | y-gradient only |
+
+Terms 1--4 and 10 are diagonal CSR matrices containing the spatially-varying material parameters. Terms 5--9 use the 2D Laplacian and gradient operators. Term 11 is the cross-derivative that appears when both $k_x$ and $k_y$ are spatial operators. Terms 12--15 are separate $x$ and $y$ gradient operators used exclusively for g-factor perturbation calculations in specific directions.
+
+### 1.5 The wire Hamiltonian: $8 N_{\text{grid}} \times 8 N_{\text{grid}}$ sparse matrix
+
+The full wire Hamiltonian has the same $8 \times 8$ block topology as the bulk and QW Hamiltonians, but now each block is an $N_{\text{grid}} \times N_{\text{grid}}$ sparse matrix:
+
+$$H_{\text{wire}}(k_z) = \begin{pmatrix}
+H_{11} & H_{12} & \cdots & H_{18} \\
+H_{21} & H_{22} & \cdots & H_{28} \\
+\vdots & & \ddots & \vdots \\
+H_{81} & H_{82} & \cdots & H_{88}
+\end{pmatrix}$$
+
+The k.p blocks are built from the `kpterms_2d` operators combined with $k_z$-dependent scalar multipliers. For example, in the wire the Q term becomes:
+
+$$Q = -\left[(\gamma_1 + \gamma_2) k_z^2 I + \text{kpterms\_2d}(7)\right]$$
+
+where `kpterms_2d(7)` already contains the 2D kinetic operator $-(\gamma_1 - 2\gamma_2) \cdot \nabla^2_{2D}$. The factor $k_z^2$ is a scalar (the free propagation direction), while the spatial derivatives in $x$ and $y$ are encoded in the sparse operator.
+
+The band-offset profile is stored as `profile_2d(Ngrid, 3)`:
+- `profile_2d(:, 1)` = $E_V(x,y)$ applied to valence bands 1--4
+- `profile_2d(:, 2)` = $E_V(x,y) - \Delta_{\text{SO}}(x,y)$ applied to split-off bands 5--6
+- `profile_2d(:, 3)` = $E_C(x,y)$ applied to conduction bands 7--8
+
+These diagonal potentials are added to the appropriate diagonal blocks of the Hamiltonian.
+
+### 1.6 Cut-cell immersed boundary for non-rectangular wires
+
+For wires with curved or non-axis-aligned boundaries (circles, hexagons, arbitrary polygons), the code uses a cut-cell immersed boundary method. Rather than snapping the boundary to the nearest grid point, the method computes fractional cell volumes and face areas for cells that are intersected by the wire boundary:
+
+- **Cell volume** $\alpha_{ij} \in [0, 1]$: fraction of cell $(i_x, i_y)$ inside the wire
+- **Face fractions** $\beta_{ij}^{x,\pm}, \beta_{ij}^{y,\pm} \in [0, 1]$: fraction of each cell face inside the wire
+
+These fractions modify the box-integration stencil to correctly weight the kinetic energy operator at boundary cells. For fully interior cells, all fractions are 1 (no modification). For rectangular wires, every active cell has full volume and face fractions, so the cut-cell machinery reduces to the standard FD scheme.
+
+The cut-cell approach is essential for circular and hexagonal wires, where the staircase approximation of a simple boundary snapping would introduce significant errors in the subband energies and wavefunction shapes, particularly for narrow wires.
+
+### 1.7 Sparse storage: COO to CSR conversion
+
+The wire Hamiltonian is extremely sparse. For a grid of $N_x = N_y = 50$ (2500 grid points) with second-order FD, the Hamiltonian dimension is $8 \times 2500 = 20{,}000$, but the number of nonzeros is only $O(8^2 \times N_{\text{grid}} \times \text{stencil width}) \approx 10^6$, giving a sparsity of about 99.75%.
+
+The code builds the Hamiltonian in COO (Coordinate) format by iterating over all nonzero entries in the $8 \times 8$ block structure. Each block insertion adds entries as (row, column, value) triplets with appropriate global offsets:
+
+$$\text{row}_{\text{global}} = (\alpha - 1) \cdot N_{\text{grid}} + \text{row}_{\text{local}}, \qquad \text{col}_{\text{global}} = (\beta - 1) \cdot N_{\text{grid}} + \text{col}_{\text{local}}$$
+
+The COO triplets are then converted to CSR (Compressed Sparse Row) format via merge sort and duplicate merging. This conversion is done once for the first $k_z$ point, and a COO-to-CSR index mapping is cached so that subsequent $k_z$ points can update the values in $O(\text{NNZ})$ time without resorting.
+
+### 1.8 G-factor for wire: Lowdin partitioning in 2D
+
+The Landau g-factor for a wire subband is computed using second-order Lowdin partitioning, extending the formalism from the quantum well case (Chapter 05) to the 2D geometry. The g-factor tensor is:
+
+$$g_{ij} = g_{\text{free}} \, \delta_{ij} - \frac{2}{m_0} \sum_{l \in \text{remote}} \frac{\langle 0 | p_i | l \rangle \langle l | p_j | 0 \rangle + \langle 0 | p_j | l \rangle \langle l | p_i | 0 \rangle}{E_l - E_0}$$
+
+where $|0\rangle$ is the target subband state and the sum runs over remote subbands. For wire mode, the spatial integrals are 2D integrals over the wire cross-section:
+
+$$\langle n | \hat{O} | m \rangle = \sum_{i_x, i_y} F_n^*(i_x, i_y) \, \hat{O}[F_m](i_x, i_y) \, \Delta x \, \Delta y$$
+
+where $\hat{O}$ is the perturbation Hamiltonian in the appropriate direction. The perturbation Hamiltonian $\partial H / \partial k_i$ is built by calling `ZB8bandGeneralized` with the appropriate `g` flag (`g1` for $x$, `g2` for $y$, `g3` for $z$), which uses the separate directional gradient operators `kpterms_2d(12:15)`.
+
+### 1.9 Optical transitions in wire geometry
+
+Inter-subband optical transitions are computed from the momentum matrix elements between conduction and valence band states. For each CB-VB pair, the transition energy is:
+
+$$\Delta E = E_{\text{CB}}^{(i)} - E_{\text{VB}}^{(j)}$$
+
+and the oscillator strength along direction $\hat{d}$ is:
+
+$$f_d = \frac{2}{m_0} \frac{|\langle \psi_{\text{CB}}^{(i)} | p_d | \psi_{\text{VB}}^{(j)} \rangle|^2}{\Delta E}$$
+
+For the wire, the momentum matrix elements are computed using `compute_pele_2d`, which evaluates $\langle \text{state}_a | H_{\text{pert},d} | \text{state}_b \rangle$ over the 2D grid with the appropriate $dx \cdot dy$ integration weight. The three polarization directions ($x$, $y$, $z$) give distinct selection rules determined by the wire symmetry.
+
+---
+
+## 2. In the Code
+
+### 2.1 Wire geometry types: `wire_geometry` and `region_spec`
+
+The wire cross-section is specified by the `wire_geometry` type (defined in `src/core/defs.f90`):
+
+```fortran
+type wire_geometry
+  character(len=16)  :: shape = 'rectangle'   ! rectangle, circle, hexagon, polygon
+  real(kind=dp)      :: radius = 0.0_dp        ! for circle/hexagon
+  real(kind=dp)      :: width  = 0.0_dp        ! for rectangle (x-extent)
+  real(kind=dp)      :: height = 0.0_dp        ! for rectangle (y-extent)
+  integer            :: nverts = 0             ! for polygon
+  real(kind=dp), allocatable :: verts(:,:)     ! (2, nverts) vertices
+end type wire_geometry
+```
+
+Material regions are specified by `region_spec`:
+
+```fortran
+type region_spec
+  character(len=255) :: material = ''   ! material name
+  real(kind=dp)      :: inner   = 0.0_dp  ! inner distance from center (AA)
+  real(kind=dp)      :: outer   = 0.0_dp  ! outer distance from center (AA)
+end type region_spec
+```
+
+Regions are concentric: a core-shell wire has region 1 (core, inner=0 to radius_core) and region 2 (shell, radius_core to radius_shell). The material assignment at each grid point is based on the distance from the grid center.
+
+### 2.2 Spatial grid: `spatial_grid`
+
+The unified `spatial_grid` type handles all confinement modes. For wire mode (`ndim=2`):
+
+```fortran
+type spatial_grid
+  integer :: ndim = 2           ! 2 for wire
+  integer :: nx                 ! grid points in x
+  integer :: ny                 ! grid points in y
+  real(kind=dp) :: dx, dy       ! grid spacings (AA)
+  real(kind=dp), allocatable :: x(:)       ! (nx) cell-centered x-coords
+  real(kind=dp), allocatable :: z(:)       ! (ny) cell-centered y-coords
+  real(kind=dp), allocatable :: coords(:,:)    ! (2, nx*ny) flattened
+  integer, allocatable  :: material_id(:)      ! (nx*ny) per-point material
+  real(kind=dp), allocatable :: cell_volume(:)       ! (nx*ny) fractional volume
+  real(kind=dp), allocatable :: face_fraction_x(:,:) ! (nx*ny, 2) left/right
+  real(kind=dp), allocatable :: face_fraction_y(:,:) ! (nx*ny, 2) bottom/top
+  integer, allocatable  :: ghost_map(:,:)            ! (nx*ny, 4) N S W E
+end type spatial_grid
+```
+
+The function `grid_ngrid(grid)` returns `nx * ny`. The `ghost_map` maps inactive cells (outside the wire) to their nearest active neighbor in each direction, enabling proper boundary treatment.
+
+### 2.3 Geometry initialization: `geometry.f90`
+
+The `geometry` module (`src/math/geometry.f90`) provides the cut-cell initialization routines:
+
+- **`grid_init_rect`** -- rectangular wire, all fractions = 1 (trivial)
+- **`grid_init_circle`** -- circular wire, analytical chord intersection for faces, marching-squares sub-sampling for volumes
+- **`grid_init_hexagon`** -- regular hexagon, Sutherland-Hodgman polygon clipping
+- **`grid_init_polygon`** -- arbitrary polygon, Sutherland-Hodgman clipping
+- **`init_wire_from_config`** -- high-level dispatcher that reads the shape from `cfg%wire_geom`, builds the `material_id_2d` array from regions, and calls the appropriate `grid_init_*` routine
+
+The Sutherland-Hodgman algorithm clips each Cartesian cell against the convex polygon boundary, computing the intersection area via the shoelace formula. For circles, an analytical chord-length formula gives the face fractions directly.
+
+### 2.4 2D confinement initialization: `confinementInitialization_2d`
+
+This subroutine in `src/physics/hamiltonianConstructor.f90` builds the 15 `kpterms_2d` CSR matrices. The algorithm proceeds in five stages:
+
+1. **Build 1D FD operators:** `buildFD2ndDerivMatrix` and `buildFD1stDerivMatrix` from `src/math/finitedifferences.f90` produce real dense matrices $D^{(2)}_x$, $D^{(1)}_x$, $D^{(2)}_y$, $D^{(1)}_y$ of sizes $N_x \times N_x$ and $N_y \times N_y$.
+
+2. **Build 2D operators via Kronecker products:** Using routines from `src/math/sparse_matrices.f90`:
+   - `kron_eye_dense` computes $I_{N_y} \otimes D_x$ (places $D_x$ at each diagonal block)
+   - `kron_dense_dense` computes $D_y \otimes I_{N_x}$ (scales identity by $D_y$)
+   - `csr_add` sums the results to form the 2D Laplacian, gradient, and cross-derivative operators
+
+3. **Build material profiles:** For each grid point, the material index `grid%material_id(ij)` selects the k.p parameters from the appropriate region. The profiles `prof_gamma1`, `prof_gamma2`, etc., are 1D arrays of length $N_{\text{grid}}$.
+
+4. **Apply variable coefficients:** `csr_apply_variable_coeff` multiplies each row of the FD operator by the corresponding material parameter value (and optionally the cut-cell volume and face fractions). This produces the position-dependent k.p operators.
+
+5. **Cleanup:** Intermediate Kronecker products are freed, leaving only the 15 `kpterms_2d` matrices.
+
+### 2.5 Hamiltonian assembly: `ZB8bandGeneralized`
+
+This is the central routine for wire mode, producing a sparse CSR Hamiltonian of dimension $8 N_{\text{grid}} \times 8 N_{\text{grid}}$. It accepts the current $k_z$ value, the `profile_2d` and `kpterms_2d` arrays, and an optional `wire_coo_cache` for accelerated $k_z$ sweeps.
+
+The assembly algorithm:
+
+1. **Build k.p term blocks:** Ten helper routines (`build_kp_term_Q`, `build_kp_term_T`, etc.) combine `kpterms_2d` with $k_z$-dependent scalars using `csr_add` and `csr_scale`. For example, `build_kp_term_A` computes $A = \text{kpterms\_2d}(5) + k_z^2 \cdot \text{kpterms\_2d}(10)$.
+
+2. **Insert into COO arrays:** Each nonzero block in the $8 \times 8$ topology is inserted with the appropriate global row/col offset and complex prefactor. The routine `insert_csr_block_scaled` handles the offset arithmetic. A total of about 50--60 block insertions cover all nonzero entries in the 8-band Hamiltonian topology.
+
+3. **Add band-offset profile:** The diagonal entries receive the band-edge potentials from `profile_2d`.
+
+4. **Convert COO to CSR:** On the first call, `csr_build_from_coo_cached` sorts, merges duplicates, and saves the COO-to-CSR mapping. On subsequent calls, `csr_set_values_from_coo` reuses the cached mapping for $O(\text{NNZ})$ value updates.
+
+The optional `g` parameter enables perturbation mode for g-factor calculations:
+- `g='g1'` builds only the $x$-direction perturbation (uses `kpterms_2d(12,14)`)
+- `g='g2'` builds only the $y$-direction perturbation (uses `kpterms_2d(13,15)`)
+- `g='g3'` builds only the $z$-direction perturbation (uses $k_z$-linear terms)
+
+### 2.6 Eigensolver: `eigensolver.f90`
+
+The sparse eigenvalue problem is dispatched through `solve_sparse_evp` in `src/math/eigensolver.f90`. Two backends are available:
+
+- **FEAST** (MKL `zfeast_hcsrev`): contour-integral eigensolver that finds all eigenvalues within a user-specified energy window $[E_{\min}, E_{\max}]$. This is the preferred solver for large wire Hamiltonians because it avoids computing the full spectrum.
+- **Dense LAPACK fallback** (`zheevx`): converts the CSR matrix to dense and solves for the $n$ smallest eigenvalues. Used when FEAST is not available. The `auto_compute_energy_window` routine provides Gershgorin bounds for the energy window.
+
+### 2.7 Sparse matrix infrastructure: `sparse_matrices.f90`
+
+The `csr_matrix` type stores the Hamiltonian in compressed sparse row format:
+
+```fortran
+type :: csr_matrix
+  integer :: nrows, ncols, nnz
+  complex(kind=dp), allocatable :: values(:)   ! (nnz)
+  integer, allocatable          :: colind(:)   ! (nnz)
+  integer, allocatable          :: rowptr(:)   ! (nrows+1)
+end type csr_matrix
+```
+
+Key routines in `src/math/sparse_matrices.f90`:
+- `csr_build_from_coo` -- merge sort + duplicate merging, $O(\text{NNZ} \log \text{NNZ})$
+- `csr_build_from_coo_cached` -- same, but saves the mapping for fast reuse
+- `csr_set_values_from_coo` -- $O(\text{NNZ})$ value update using cached mapping
+- `csr_add`, `csr_scale` -- CSR arithmetic
+- `csr_apply_variable_coeff` -- row-wise scaling with optional cut-cell face fractions
+- `kron_dense_dense`, `kron_dense_eye`, `kron_eye_dense` -- Kronecker products producing CSR output
+- `csr_spmv` -- sparse matrix-vector multiply with OpenMP parallelization
+
+### 2.8 Wire g-factor: `gfactorCalculation_wire`
+
+Defined in `src/physics/gfactor_functions.f90`, this routine follows the same Lowdin partitioning formalism as the QW g-factor but uses 2D spatial integration:
+
+- `sigmaElem_2d` computes the spin matrix element $\langle \psi_a | \sigma_d | \psi_b \rangle$ over the 2D grid with weight $\Delta x \cdot \Delta y$
+- `pMatrixEleCalc_2d` builds the perturbation Hamiltonian for a given direction using `ZB8bandGeneralized` with the appropriate `g` flag, then evaluates $\langle \text{state}_a | H_{\text{pert}} | \text{state}_b \rangle$
+- `compute_optical_matrix_wire` computes inter-subband optical transitions (energies, momentum matrix elements, oscillator strengths) for all CB-VB pairs
+
+### 2.9 Input parsing for wire mode
+
+When `confinement = 2`, the input parser (`src/io/input_parser.f90`) reads the following wire-specific fields after the common parameters:
+
+```
+wire_nx:       <integer>      ! grid points in x (>= 3)
+wire_ny:       <integer>      ! grid points in y (>= 3)
+wire_dx:       <real>         ! grid spacing in x (AA)
+wire_dy:       <real>         ! grid spacing in y (AA)
+wire_shape:    <string>       ! rectangle, circle, hexagon, or polygon
+wire_width:    <real>         ! (rectangle) x-extent (AA)
+wire_height:   <real>         ! (rectangle) y-extent (AA)
+numRegions:    <integer>      ! number of material regions
+region:        <material> <inner> <outer>   ! one line per region
+```
+
+For circle and hexagon shapes, `wire_radius` replaces `wire_width`/`wire_height`. For polygon, `wire_polygon` specifies the vertex count followed by `wire_vertex` lines with $x, y$ coordinates.
+
+The parser validates that `wire_nx >= FDorder + 1` and `wire_ny >= FDorder + 1`, builds the `regions` array, and sets up backward-compatible fields (`fdStep`, `dz`) for routines shared between QW and wire modes.
+
+---
+
+## 3. Computed Example
+
+### 3.1 Input configuration: GaAs rectangular wire
+
+The following example is adapted from the regression test config `tests/regression/configs/wire_gaas_rectangle.cfg`:
+
+```
+waveVector: kz
+waveVectorMax: 0.1
+waveVectorStep: 5
+confinement:  2
+FDstep: 1
+FDorder: 2
+numLayers:  1
+wire_nx: 11
+wire_ny: 11
+wire_dx: 2.0
+wire_dy: 2.0
+wire_shape: rectangle
+wire_width: 22.0
+wire_height: 22.0
+numRegions: 1
+region: GaAs  0.0  100.0
+numcb: 4
+numvb: 4
+ExternalField: 0  EF
+EFParams: 0.0005
+whichBand: 0
+bandIdx: 1
+SC: 0
+```
+
+### 3.2 Structure walkthrough
+
+This input defines a single-material GaAs rectangular wire with cross-section $22 \times 22$ A, discretized on an $11 \times 11$ grid with $\Delta x = \Delta y = 2$ A. The wire axis is along $z$ (set by `waveVector: kz`), and the dispersion is computed for 5 equally spaced $k_z$ points from 0 to 0.1 A$^{-1}$.
+
+The single region `GaAs 0.0 100.0` means all grid points within distance 100 A from the grid center receive GaAs parameters. Since the grid extends only to $(5.5 \times 2) = 11$ A from center, all 121 points are GaAs. This is a homogeneous wire: there is no potential confinement from band offsets, only the hard-wall boundary at the grid edges. In a production calculation, one would use at least two regions (e.g., GaAs core + AlGaAs barrier) to create a realistic confinement potential.
+
+The Hamiltonian dimension is $8 \times 121 = 968$, which is small enough for the dense LAPACK fallback but demonstrates the full wire assembly pipeline. For larger grids (e.g., $50 \times 50 = 2500$ points, dimension 20,000), the FEAST sparse solver becomes essential.
+
+### 3.3 Running the example
+
+```bash
+# Copy the regression config to input.cfg
+# (use Write tool, not cp, due to cp -i alias in the shell)
+# Then run:
+./build/src/bandStructure
+```
+
+The program reads `input.cfg`, initializes the wire grid via `init_wire_from_config`, builds `profile_2d` and `kpterms_2d` via `confinementInitialization_2d`, then sweeps over 5 $k_z$ points. At each point, `ZB8bandGeneralized` assembles the sparse Hamiltonian and the eigensolver computes the 4 lowest (CB) and 4 highest (VB) eigenvalues.
+
+### 3.4 Expected physics and output
+
+The band structure output `E(k_z)` (Figure: `wire_subbands.png`) shows:
+- Several 1D subbands with parabolic dispersion near $k_z = 0$
+- The subband spacing depends on the wire width and the GaAs effective mass
+- For a 22 A square wire, the confinement energy of the lowest subband is on the order of a few hundred meV
+
+The charge density plot (Figure: `wire_density_2d.png`) shows the $|F_n(x,y)|^2$ probability density of each subband integrated over the wire cross-section. The ground state has $s$-like symmetry (no nodes), the first excited state has $p$-like symmetry with a nodal line, etc.
+
+The g-factor calculation (Figure: `wire_gfactor.png`) shows the anisotropic g-factor tensor components $g_{xx}$, $g_{yy}$, $g_{zz}$ for the lowest conduction subband. In a square wire, $g_{xx} = g_{yy}$ by symmetry, while $g_{zz}$ (along the wire axis) differs due to the distinct confinement geometry.
+
+Optical transition strengths (Figure: `wire_optical.png`) show the oscillator strengths for the lowest CB-VB transitions, with polarization selection rules determined by the wire symmetry.
+
+---
+
+## 4. Discussion
+
+### 4.1 Grid resolution and convergence
+
+The wire mode introduces two independent grid resolution parameters, $N_x$ and $N_y$, with spacings $\Delta x$ and $\Delta y$. Convergence requires both to be fine enough to resolve the envelope function oscillations within the wire. The grid spacing should satisfy $\Delta x, \Delta y \ll \lambda_{\text{envelope}} / 2$, where $\lambda_{\text{envelope}}$ is the shortest characteristic length scale of the confined wavefunction.
+
+For second-order FD, the energy error scales as $O(\Delta x^2 + \Delta y^2)$. Higher-order schemes (`FDorder = 4, 6, ...`) improve convergence but increase the stencil width, which increases the number of nonzeros per row in the sparse matrices. The memory and compute cost scales roughly as $O(N_{\text{grid}} \times \text{FDorder}^2 \times 64)$ for the full 8-band Hamiltonian.
+
+A practical guideline: for typical III-V semiconductor wires with cross-section dimensions of 10--50 nm, $N_x = N_y = 40\text{--}80$ with `FDorder = 2` gives sub-meV convergence for the lowest subbands. For tight confinement or high-accuracy g-factors, `FDorder = 4` with finer grids is recommended.
+
+### 4.2 Memory scaling
+
+The wire Hamiltonian dimension is $8 N_{\text{grid}}$, where $N_{\text{grid}} = N_x \times N_y$. The number of nonzeros scales as $O(8^2 \times N_{\text{grid}} \times w)$ where $w$ is the stencil width (e.g., $w = 5$ for 2nd-order 2D Laplacian). For a $50 \times 50$ grid with second-order FD:
+
+- $N_{\text{grid}} = 2500$, matrix dimension = 20,000
+- NNZ per block $\approx 2500 \times 5 = 12{,}500$
+- Total NNZ $\approx 64 \times 12{,}500 + \text{profile diagonal} \approx 800{,}000$
+- Memory for CSR: $\sim$25 MB (complex*16 values + integer indices)
+
+This fits comfortably in RAM on any modern workstation. For grids up to $200 \times 200$ ($N_{\text{grid}} = 40{,}000$, dimension 320,000), the memory requirement is still manageable ($\sim$4 GB), but the eigenvalue solve becomes the bottleneck. The FEAST solver with an appropriate energy window is essential for such sizes.
+
+### 4.3 COO cache: accelerating $k_z$ sweeps
+
+The COO-to-CSR mapping is cached in the `wire_coo_cache` type. On the first $k_z$ point, the full sort-merge-build pipeline runs once ($O(\text{NNZ} \log \text{NNZ})$). On all subsequent points, only the values are updated in $O(\text{NNZ})$ time, because the sparsity pattern (which entries exist) is independent of $k_z$ -- only the numerical values change.
+
+This optimization reduces the Hamiltonian assembly cost for large $k_z$ sweeps by a factor of $\sim \log(\text{NNZ})$, which is significant for production calculations with hundreds of $k_z$ points.
+
+### 4.4 Boundary conditions and wire shape
+
+The FD discretization imposes hard-wall (Dirichlet) boundary conditions at the grid edges: the envelope function is zero at the boundary. For rectangular wires, this is physically correct when the barrier material has a large band offset. For non-rectangular shapes, the cut-cell immersed boundary handles the smooth boundary correctly, but the outer grid boundary still imposes hard walls. The simulation domain must be large enough that the wavefunction decays to negligible amplitude before reaching the outer boundary.
+
+For core-shell wires (e.g., InAs core with GaAs shell), multiple regions with different band offsets create a more realistic confinement profile. The inner/outer distances in the `region_spec` type define concentric annular regions.
+
+### 4.5 Comparison with quantum well mode
+
+| Aspect | QW (`confinement=1`) | Wire (`confinement=2`) |
+|--------|----------------------|----------------------|
+| Confinement directions | 1 ($z$) | 2 ($x$ and $y$) |
+| Free directions | 2 ($x$, $y$) | 1 ($z$) |
+| Matrix size | $8N \times 8N$ | $8 N_{\text{grid}} \times 8 N_{\text{grid}}$ |
+| $k$-space dimension | 2D ($k_x, k_y$) | 1D ($k_z$) |
+| Storage | Dense | Sparse CSR |
+| Eigenvalue solver | `zheevx` (dense) | FEAST or dense fallback |
+| k.p term storage | `kpterms(N,N,10)` dense | `kpterms_2d(15)` CSR |
+| Material mapping | 1D layers | 2D regions with cut-cell |
+| Subband structure | 2D sheets $E(k_\parallel)$ | 1D modes $E(k_z)$ |
+
+### 4.6 Limitations and tips
+
+**Current limitations:**
+- The free propagation direction is fixed to $z$ (`confDir = 'z'`)
+- The grid is uniform (no adaptive mesh refinement)
+- Self-consistent Schrodinger-Poisson for wires uses the 2D Poisson solver `solve_poisson_2d` with box integration and cut-cell support
+- Strain is handled by the strain solver module (`src/physics/strain_solver.f90`) but is not yet integrated into the wire pipeline
+
+**Tips for production calculations:**
+- Start with a coarse grid ($N_x = N_y = 20$) to verify the geometry and subband ordering, then refine
+- Use `FDorder = 2` for initial exploration; switch to `FDorder = 4` for final results
+- For the FEAST solver, set the energy window tightly around the expected subband energies to minimize computational cost; `auto_compute_energy_window` provides Gershgorin bounds as a starting point
+- For g-factor calculations, use at least `FDorder = 4` and $N_x, N_y \geq 40$ for converged results, since g-factors are sensitive to the wavefunction shape near interfaces
+- The COO cache is automatically enabled for $k_z$ sweeps; no user configuration is needed
+- When using non-rectangular shapes, verify that `cell_volume` and `face_fraction` arrays are correct by checking that the total active area matches the analytical cross-section area
