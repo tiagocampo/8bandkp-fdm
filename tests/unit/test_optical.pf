@@ -1,0 +1,162 @@
+module test_optical
+  use funit
+  use definitions
+  use parameters
+  use sparse_matrices
+  use geometry
+  use finitedifferences
+  use hamiltonianConstructor
+  use eigensolver
+  use gfactorFunctions
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! Basic optical matrix element test for wire mode.
+  !
+  ! Builds a small GaAs wire grid, constructs the 8-band Hamiltonian,
+  ! solves for eigenvalues/eigenvectors via FEAST, then computes
+  ! inter-subband optical matrix elements and verifies:
+  !   1. The subroutine runs without error
+  !   2. Transition energies are positive (CB above VB)
+  !   3. Matrix elements |p_dir|^2 are non-negative
+  !   4. Oscillator strengths are non-negative
+  ! ==================================================================
+
+  @test
+  subroutine test_optical_matrix_wire_basic()
+    integer, parameter :: nx = 7, ny = 7
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ntot, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    integer :: mat2d(nx, ny)
+    type(simulation_config) :: cfg
+    type(csr_matrix) :: H_csr
+    type(wire_coo_cache) :: coo_cache
+    type(eigensolver_config) :: eigen_cfg
+    type(eigensolver_result) :: eigen_res
+    integer :: numcb, numvb, nev_wire, N
+    real(kind=dp), allocatable :: cb_value(:), vb_value(:)
+    complex(kind=dp), allocatable :: cb_state(:,:), vb_state(:,:)
+
+    type(optical_transition), allocatable :: transitions(:)
+    integer :: num_trans, it
+    logical :: all_positive_energy, all_nonneg_melem
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+    mat2d = 1  ! single material GaAs
+
+    ! Build grid
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    ! Setup materials
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    ! Build kpterms_2d
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    ! Minimal config for ZB8bandGeneralized
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    ! Build full Hamiltonian at kz=0
+    call ZB8bandGeneralized(H_csr, 0.0_dp, profile_2d, kpterms_2d, cfg, coo_cache)
+
+    ! Solve for eigenvalues
+    numcb = 2
+    numvb = 6
+    nev_wire = numcb + numvb
+
+    eigen_cfg%method   = 'FEAST'
+    eigen_cfg%nev      = nev_wire
+    eigen_cfg%max_iter = 100
+    eigen_cfg%tol      = 1.0e-10_dp
+    eigen_cfg%feast_m0 = 4 * nev_wire  ! generous subspace
+
+    call auto_compute_energy_window(H_csr, eigen_cfg%emin, eigen_cfg%emax)
+    call solve_sparse_evp(H_csr, eigen_cfg, eigen_res)
+
+    @assertTrue(eigen_res%nev_found >= nev_wire, message="FEAST found enough eigenvalues")
+
+    N = ntot
+
+    ! Extract CB/VB states
+    allocate(cb_value(numcb))
+    allocate(vb_value(numvb))
+    allocate(cb_state(N, numcb))
+    allocate(vb_state(N, numvb))
+
+    cb_value(:) = eigen_res%eigenvalues(numvb+1:numvb+numcb)
+    vb_value(:) = eigen_res%eigenvalues(numvb:1:-1)
+
+    cb_state(:,:) = eigen_res%eigenvectors(:, numvb+1:numvb+numcb)
+    vb_state(:,:) = eigen_res%eigenvectors(:, numvb:1:-1)
+
+    ! Compute optical matrix elements
+    call compute_optical_matrix_wire(transitions, num_trans, &
+      & cb_state, vb_state, cb_value, vb_value, numcb, numvb, &
+      & profile_2d, kpterms_2d, cfg)
+
+    ! Check number of transitions
+    @assertEqual(numcb * numvb, num_trans)
+
+    ! Check all transition data
+    all_positive_energy = .true.
+    all_nonneg_melem = .true.
+    do it = 1, num_trans
+      ! Transition energies should be positive (CB above VB)
+      if (transitions(it)%energy <= 0.0_dp) then
+        all_positive_energy = .false.
+      end if
+      ! Matrix elements should be non-negative (they are |p|^2)
+      if (transitions(it)%px < 0.0_dp .or. &
+          transitions(it)%py < 0.0_dp .or. &
+          transitions(it)%pz < 0.0_dp) then
+        all_nonneg_melem = .false.
+      end if
+      ! Oscillator strength should be non-negative and finite
+      if (transitions(it)%oscillator_strength < 0.0_dp .or. &
+          transitions(it)%oscillator_strength /= transitions(it)%oscillator_strength) then
+        all_nonneg_melem = .false.
+      end if
+    end do
+
+    @assertTrue(all_positive_energy, message="All transition energies positive")
+    @assertTrue(all_nonneg_melem, message="All matrix elements non-negative")
+
+    ! At least some matrix elements should be non-zero (inter-band transitions)
+    block
+      real(kind=dp) :: total_p
+      total_p = 0.0_dp
+      do it = 1, num_trans
+        total_p = total_p + transitions(it)%px + transitions(it)%py + transitions(it)%pz
+      end do
+      @assertTrue(total_p > 0.0_dp, message="Some optical matrix elements are non-zero")
+    end block
+
+    ! Cleanup
+    deallocate(transitions, cb_state, vb_state, cb_value, vb_value)
+    call csr_free(H_csr)
+    call wire_coo_cache_free(coo_cache)
+    call eigensolver_result_free(eigen_res)
+    do ij = 1, 15
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_optical_matrix_wire_basic
+
+end module test_optical

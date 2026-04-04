@@ -161,6 +161,13 @@ module definitions
     logical          :: piezoelectric = .false.
   end type strain_config
 
+  type :: optical_transition
+    integer :: cb_idx, vb_idx     ! band indices
+    real(kind=dp) :: energy       ! transition energy (eV)
+    real(kind=dp) :: px, py, pz   ! |<i|dH/dk_x|j>|^2, etc. (dH/dk units)
+    real(kind=dp) :: oscillator_strength  ! dimensionless, = sum|p|^2 / (hbar2O2m0 * dE)
+  end type
+
   type simulation_config
     integer :: confinement = 0
     integer :: fdStep = 1

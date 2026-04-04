@@ -198,6 +198,33 @@ program gfactor
       & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg, &
       & profile_2d, kpterms_2d)
 
+    ! Compute optical transitions
+    block
+      type(optical_transition), allocatable :: transitions(:)
+      integer :: num_trans, it
+
+      call compute_optical_matrix_wire(transitions, num_trans, &
+        cb_state, vb_state, cb_value, vb_value, cfg%numcb, cfg%numvb, &
+        profile_2d, kpterms_2d, cfg)
+
+      ! Write to file
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
+      write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
+      do it = 1, num_trans
+        write(iounit, '(2(I4,1x),5(g14.6,1x))') &
+          transitions(it)%cb_idx, transitions(it)%vb_idx, &
+          transitions(it)%energy, transitions(it)%px, &
+          transitions(it)%py, transitions(it)%pz, &
+          transitions(it)%oscillator_strength
+      end do
+      close(iounit)
+      print *, '  Optical transitions written to output/optical_transitions.dat'
+
+      deallocate(transitions)
+    end block
+
     ! Free wire-specific resources
     call csr_free(HT_csr)
     call wire_coo_cache_free(coo_cache)

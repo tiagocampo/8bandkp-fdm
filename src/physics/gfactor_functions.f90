@@ -1063,4 +1063,83 @@ subroutine gfactorCalculation_wire(tensor, whichBand, bandIdx, numcb, numvb, &
 end subroutine gfactorCalculation_wire
 
 
+! ----------------------------------------------------------------------
+! compute_optical_matrix_wire: Compute inter-subband optical transitions.
+!
+! For each CB-VB pair, computes the transition energy, momentum matrix
+! elements |<psi_CB|p_dir|psi_VB>|^2 in x, y, z directions, and the
+! oscillator strength f = (2/m0) * sum(|p|^2) / dE.
+! Uses compute_pele_2d for momentum matrix elements.
+! ----------------------------------------------------------------------
+subroutine compute_optical_matrix_wire(transitions, num_trans, &
+  & cb_state, vb_state, cb_value, vb_value, numcb, numvb, &
+  & profile_2d, kpterms_2d, cfg)
+
+  type(optical_transition), allocatable, intent(out) :: transitions(:)
+  integer, intent(out) :: num_trans
+  complex(kind=dp), intent(in), dimension(:,:) :: cb_state, vb_state
+  real(kind=dp), intent(in), dimension(:) :: cb_value, vb_value
+  integer, intent(in) :: numcb, numvb
+  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
+  type(csr_matrix), intent(in) :: kpterms_2d(:)
+  type(simulation_config), intent(in) :: cfg
+
+  integer :: i, j, dir, idx
+  real(kind=dp) :: dE, sum_p
+  complex(kind=dp) :: Pele
+
+  num_trans = numcb * numvb
+  allocate(transitions(num_trans))
+
+  idx = 0
+  do i = 1, numcb
+    do j = 1, numvb
+      idx = idx + 1
+
+      ! Transition energy
+      dE = cb_value(i) - vb_value(j)
+      transitions(idx)%cb_idx = i
+      transitions(idx)%vb_idx = j
+      transitions(idx)%energy = dE
+
+      ! Momentum matrix elements in each direction
+      transitions(idx)%px = 0.0_dp
+      transitions(idx)%py = 0.0_dp
+      transitions(idx)%pz = 0.0_dp
+
+      if (dE > 0.0_dp) then
+        do dir = 1, 3
+          Pele = ZERO
+          call compute_pele_2d(Pele, dir, cb_state(:,i), vb_state(:,j), &
+            & profile_2d, kpterms_2d, cfg)
+
+          select case(dir)
+          case(1)
+            transitions(idx)%px = real(Pele * conjg(Pele), kind=dp)
+          case(2)
+            transitions(idx)%py = real(Pele * conjg(Pele), kind=dp)
+          case(3)
+            transitions(idx)%pz = real(Pele * conjg(Pele), kind=dp)
+          end select
+        end do
+      end if
+
+      ! Oscillator strength: f = sum(|dH/dk|^2) / (hbar^2/(2*m0) * dE)
+      ! This converts from dH/dk units to canonical momentum: f = (2/m0)*|p|^2/dE
+      sum_p = transitions(idx)%px + transitions(idx)%py + transitions(idx)%pz
+      if (dE > tolerance) then
+        transitions(idx)%oscillator_strength = sum_p / (hbar2O2m0 * dE)
+      else
+        transitions(idx)%oscillator_strength = 0.0_dp
+        if (dE > 0.0_dp .and. dE <= tolerance) then
+          print *, 'WARNING: near-zero transition energy, cb=', i, 'vb=', j, 'dE=', dE
+        end if
+      end if
+
+    end do
+  end do
+
+end subroutine compute_optical_matrix_wire
+
+
 end module gfactorFunctions

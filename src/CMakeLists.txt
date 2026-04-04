@@ -15,6 +15,7 @@ set(COMMON_SOURCES
     physics/poisson.f90
     physics/sc_loop.f90
     physics/strain_solver.f90
+    physics/gfactor_functions.f90
 )
 
 # Create library of common code
@@ -61,7 +62,6 @@ target_link_libraries(bandStructure PRIVATE 8bandkp_common OpenMP::OpenMP_Fortra
 
 # G-factor calculation executable
 add_executable(gfactorCalculation
-    physics/gfactor_functions.f90
     apps/main_gfactor.f90
 )
 target_link_libraries(gfactorCalculation PRIVATE 8bandkp_common OpenMP::OpenMP_Fortran)
