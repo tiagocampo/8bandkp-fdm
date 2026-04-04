@@ -623,5 +623,444 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
 
 end subroutine gfactorCalculation
 
+! ======================================================================
+! Wire mode g-factor routines (confinement=2)
+! ======================================================================
+
+! ----------------------------------------------------------------------
+! sigmaElem_2d: Compute <state1|sigma_dir|state2> for wire (2D grid).
+!
+! Loops over all Ngrid = nx*ny grid points, extracts 8-band components
+! using column-major flat index (iy-1)*nx + ix, applies the appropriate
+! SIGMA matrix via zgemv, and sums contributions weighted by dx*dy.
+! No Simpson integration needed -- uniform 2D grid uses simple summation.
+! ----------------------------------------------------------------------
+complex(kind=dp) function sigmaElem_2d(state1, state2, dir, grid)
+
+  complex(kind=dp), intent(in), dimension(:) :: state1, state2
+  character(len=1), intent(in) :: dir
+  type(spatial_grid), intent(in) :: grid
+
+  complex(kind=dp) :: aux_v(8), aux1_v(8), Y(8)
+  complex(kind=dp) :: alpha, beta
+  complex(kind=dp) :: zdotc
+
+  integer :: ix, iy, ngrid, band, flat_idx
+  complex(kind=dp) :: contrib
+
+  complex(kind=dp) :: SIGMA_X(8,8), SIGMA_Y(8,8), SIGMA_Z(8,8)
+
+  ! Spin matrices (same as sigmaElem)
+  SIGMA_X(1,:) = (/ ZERO, -IU*RQS3, ZERO, ZERO, UM*SQR2o3, ZERO, ZERO, ZERO /)
+  SIGMA_X(2,:) = (/ IU*RQS3, ZERO, -IU*2.0_dp/3.0_dp, ZERO, ZERO, -UM*SQR2/3.0_dp, ZERO, ZERO /)
+  SIGMA_X(3,:) = (/ ZERO, 2.0_dp*IU/3.0_dp, ZERO, -IU*RQS3, UM*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
+  SIGMA_X(4,:) = (/ ZERO, ZERO, IU*RQS3, ZERO, ZERO, -UM*SQR2o3, ZERO, ZERO /)
+  SIGMA_X(5,:) = (/ UM*SQR2o3, ZERO, UM*SQR2/3.0_dp, ZERO, ZERO, -IU/3.0_dp, ZERO, ZERO /)
+  SIGMA_X(6,:) = (/ ZERO, -UM*SQR2/3.0_dp, ZERO, -UM*SQR2o3, IU/3.0_dp, ZERO, ZERO, ZERO /)
+  SIGMA_X(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM /)
+  SIGMA_X(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
+
+  SIGMA_Y(1,:) = (/ ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO, ZERO /)
+  SIGMA_Y(2,:) = (/ UM*RQS3, ZERO, UM*2.0_dp/3.0_dp, ZERO, ZERO, -IU*SQR2/3.0_dp, ZERO, ZERO /)
+  SIGMA_Y(3,:) = (/ ZERO, UM*2.0_dp/3.0_dp, ZERO, UM*RQS3, -IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
+  SIGMA_Y(4,:) = (/ ZERO, ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO /)
+  SIGMA_Y(5,:) = (/ -IU*SQR2o3, ZERO, IU*SQR2/3.0_dp, ZERO, ZERO, UM/3.0_dp, ZERO, ZERO /)
+  SIGMA_Y(6,:) = (/ ZERO, IU*SQR2/3.0_dp, ZERO, -IU*SQR2o3, UM/3.0_dp, ZERO, ZERO, ZERO /)
+  SIGMA_Y(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, IU /)
+  SIGMA_Y(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -IU, ZERO /)
+
+  SIGMA_Z(1,:) = (/ UM, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO /)
+  SIGMA_Z(2,:) = (/ ZERO, UM/3.0_dp, ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
+  SIGMA_Z(3,:) = (/ ZERO, ZERO, -UM/3.0_dp, ZERO, ZERO, 2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO /)
+  SIGMA_Z(4,:) = (/ ZERO, ZERO, ZERO, -UM, ZERO, ZERO, ZERO, ZERO /)
+  SIGMA_Z(5,:) = (/ ZERO, 2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, -UM/3.0_dp, ZERO, ZERO, ZERO /)
+  SIGMA_Z(6,:) = (/ ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, UM/3.0_dp, ZERO, ZERO /)
+  SIGMA_Z(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
+  SIGMA_Z(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -UM /)
+
+  alpha = cmplx(1.0_dp, 0.0_dp, kind=dp)
+  beta = cmplx(0.0_dp, 0.0_dp, kind=dp)
+  sigmaElem_2d = ZERO
+
+  ngrid = grid%nx * grid%ny
+
+  do iy = 1, grid%ny
+    do ix = 1, grid%nx
+      flat_idx = (iy - 1) * grid%nx + ix
+
+      ! Extract 8-band components for both states at this grid point
+      aux_v  = [( state2((band-1)*ngrid + flat_idx), band=1,8 )]
+      aux1_v = [( state1((band-1)*ngrid + flat_idx), band=1,8 )]
+
+      Y = ZERO
+      if (dir == 'x') then
+        call zgemv('N',8,8,alpha,SIGMA_X,8,aux_v,1,beta,Y,1)
+      elseif (dir == 'y') then
+        call zgemv('N',8,8,alpha,SIGMA_Y,8,aux_v,1,beta,Y,1)
+      elseif (dir == 'z') then
+        call zgemv('N',8,8,alpha,SIGMA_Z,8,aux_v,1,beta,Y,1)
+      end if
+
+      contrib = zdotc(8, aux1_v, 1, Y, 1)
+      sigmaElem_2d = sigmaElem_2d + contrib
+    end do
+  end do
+
+  ! Integrate with dx*dy (uniform grid)
+  sigmaElem_2d = sigmaElem_2d * cmplx(grid%dx * grid%dy, 0.0_dp, kind=dp)
+
+end function sigmaElem_2d
+
+
+! ----------------------------------------------------------------------
+! pMatrixEleCalc_2d: Compute <state1|H_pert_d|state2> for wire mode.
+!
+! Builds a wire perturbation Hamiltonian in CSR format using
+! ZB8bandGeneralized with g='g' at unit kz, then uses CSR SpMV
+! to compute the matrix element.
+! ----------------------------------------------------------------------
+subroutine pMatrixEleCalc_2d(Pele, direction, state1, state2, &
+  & profile_2d, kpterms_2d, cfg)
+
+  complex(kind=dp), intent(inout) :: Pele
+  integer, intent(in) :: direction
+  complex(kind=dp), intent(in), dimension(:) :: state1, state2
+  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
+  type(csr_matrix), intent(in) :: kpterms_2d(:)
+  type(simulation_config), intent(in) :: cfg
+
+  type(csr_matrix) :: HT_csr
+  complex(kind=dp), allocatable :: Y(:)
+  complex(kind=dp) :: alpha, beta, zdotc
+  integer :: dimax
+
+  real(kind=dp) :: kz_pert
+
+  dimax = size(state1, 1)
+
+  ! Set unit perturbation in the specified direction.
+  ! For wire mode, directions 1 (x) and 2 (y) are confinement directions
+  ! with separate d/dx and d/dy gradient operators. Direction 3 (z) is the
+  ! free wire axis with kz perturbation.
+  kz_pert = 0.0_dp
+  select case(direction)
+  case(1)
+    call ZB8bandGeneralized(HT_csr, kz_pert, profile_2d, kpterms_2d, cfg, g='g1')
+  case(2)
+    call ZB8bandGeneralized(HT_csr, kz_pert, profile_2d, kpterms_2d, cfg, g='g2')
+  case(3)
+    kz_pert = 1.0_dp
+    call ZB8bandGeneralized(HT_csr, kz_pert, profile_2d, kpterms_2d, cfg, g='g3')
+  case default
+    print *, 'Error: pMatrixEleCalc_2d: direction must be 1, 2, or 3, got:', direction
+    stop 1
+  end select
+
+  ! SpMV: Y = HT_csr * state2
+  allocate(Y(dimax))
+  Y = cmplx(0.0_dp, 0.0_dp, kind=dp)
+  alpha = cmplx(1.0_dp, 0.0_dp, kind=dp)
+  beta = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+  call csr_spmv(HT_csr, state2, Y, alpha, beta)
+
+  ! Matrix element: <state1|Y>
+  Pele = zdotc(dimax, state1, 1, Y, 1)
+
+  deallocate(Y)
+  call csr_free(HT_csr)
+
+end subroutine pMatrixEleCalc_2d
+
+
+! ----------------------------------------------------------------------
+! compute_pele_2d: Dispatcher for wire mode p-matrix elements.
+! Calls pMatrixEleCalc_2d for the specified direction.
+! ----------------------------------------------------------------------
+subroutine compute_pele_2d(Pele, direction, state_a, state_b, &
+  & profile_2d, kpterms_2d, cfg)
+
+  complex(kind=dp), intent(inout) :: Pele
+  integer, intent(in) :: direction
+  complex(kind=dp), intent(in), dimension(:) :: state_a, state_b
+  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
+  type(csr_matrix), intent(in) :: kpterms_2d(:)
+  type(simulation_config), intent(in) :: cfg
+
+  call pMatrixEleCalc_2d(Pele, direction, state_a, state_b, &
+    profile_2d, kpterms_2d, cfg)
+
+end subroutine compute_pele_2d
+
+
+! ----------------------------------------------------------------------
+! gfactorCalculation_wire: Compute g-factor tensor for wire (2D).
+!
+! Same Lowdin partitioning formula as gfactorCalculation, but using
+! sigmaElem_2d for spatial integration and compute_pele_2d for
+! momentum matrix elements.  Works with 2D sparse wire Hamiltonians.
+! ----------------------------------------------------------------------
+subroutine gfactorCalculation_wire(tensor, whichBand, bandIdx, numcb, numvb, &
+  & cb_state, vb_state, cb_value, vb_value, cfg, profile_2d, kpterms_2d)
+
+  implicit none
+
+  complex(kind=dp), intent(inout), dimension(:,:,:) :: tensor
+  integer, intent(in) :: whichBand
+  integer, intent(in) :: bandIdx
+  integer, intent(in) :: numcb, numvb
+  complex(kind=dp), intent(in), dimension(:,:) :: cb_state, vb_state
+  real(kind=dp), intent(in), dimension(:) :: cb_value, vb_value
+  type(simulation_config), intent(in) :: cfg
+  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
+  type(csr_matrix), intent(in) :: kpterms_2d(:)
+
+  integer :: d, i, j, k, n, m, l, ii, jj
+  integer :: mod1, mod2
+  integer :: skip_count
+  real(kind=dp) :: denom
+  integer :: dimax, ngrid
+
+  complex(kind=dp) :: Pele1, Pele2, Pele3, Pele4
+  complex(kind=dp) :: sigma(2,2,3)
+
+  dimax = size(cb_state, 1)
+  ngrid = cfg%grid%nx * cfg%grid%ny
+
+  Pele1 = ZERO
+  Pele2 = ZERO
+  Pele3 = ZERO
+  Pele4 = ZERO
+
+  sigma = ZERO
+
+  if (whichBand == 0) then
+
+    print *, 'gfactor (wire) for conduction band'
+
+    ! Sigma matrix between CB Kramers doublet
+    ii = 0
+    do n = bandIdx, bandIdx+1
+      ii = ii + 1
+      jj = 0
+      do m = bandIdx, bandIdx+1
+        jj = jj + 1
+        sigma(ii,jj,1) = sigmaElem_2d(cb_state(:,n), cb_state(:,m), 'x', cfg%grid)
+        sigma(ii,jj,2) = sigmaElem_2d(cb_state(:,n), cb_state(:,m), 'y', cfg%grid)
+        sigma(ii,jj,3) = sigmaElem_2d(cb_state(:,n), cb_state(:,m), 'z', cfg%grid)
+      end do
+    end do
+    print *, 'sigma'
+    do i = 1, 2
+      write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,1), j=1,2)
+    end do
+    print *, ' '
+    do i = 1, 2
+      write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,2), j=1,2)
+    end do
+    print *, ' '
+    do i = 1, 2
+      write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,3), j=1,2)
+    end do
+
+    skip_count = 0
+    do d = 1, 3
+      ! Select direction pair for tensor component d
+      if (d == 1) then
+        mod1 = 2; mod2 = 3
+      elseif (d == 2) then
+        mod1 = 3; mod2 = 1
+      elseif (d == 3) then
+        mod1 = 1; mod2 = 2
+      end if
+
+      ! Sum over VB intermediates
+      ii = 0
+      do n = bandIdx, bandIdx+1
+        ii = ii + 1
+        jj = 0
+        do m = bandIdx, bandIdx+1
+          jj = jj + 1
+
+          do l = 1, numvb
+            Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
+
+            call compute_pele_2d(Pele1, mod1, cb_state(:,n), vb_state(:,l), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele2, mod2, vb_state(:,l), cb_state(:,m), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele3, mod2, cb_state(:,n), vb_state(:,l), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele4, mod1, vb_state(:,l), cb_state(:,m), &
+              profile_2d, kpterms_2d, cfg)
+
+            denom = (cb_value(n) - vb_value(l)) + (cb_value(m) - vb_value(l))
+            if (abs(denom) > tolerance) then
+              tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
+            else
+              skip_count = skip_count + 1
+              if (skip_count <= 5) then
+                print *, 'WARNING: near-zero energy denominator, n=', n, 'm=', m, 'l=', l, 'denom=', denom
+              end if
+            end if
+          end do
+
+        end do
+      end do
+
+      ! Sum over CB intermediates (exclude self)
+      ii = 0
+      do n = bandIdx, bandIdx+1
+        ii = ii + 1
+        jj = 0
+        do m = bandIdx, bandIdx+1
+          jj = jj + 1
+          do l = 1, numcb
+            if (l == n .or. l == m) cycle
+
+            Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
+
+            call compute_pele_2d(Pele1, mod1, cb_state(:,n), cb_state(:,l), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele2, mod2, cb_state(:,l), cb_state(:,m), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele3, mod2, cb_state(:,n), cb_state(:,l), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele4, mod1, cb_state(:,l), cb_state(:,m), &
+              profile_2d, kpterms_2d, cfg)
+
+            denom = (cb_value(n) - cb_value(l)) + (cb_value(m) - cb_value(l))
+            if (abs(denom) > tolerance) then
+              tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
+            else
+              skip_count = skip_count + 1
+              if (skip_count <= 5) then
+                print *, 'WARNING: near-zero energy denominator, n=', n, 'm=', m, 'l=', l, 'denom=', denom
+              end if
+            end if
+          end do
+        end do
+      end do
+
+      if (skip_count > 0) print *, 'Total skipped contributions:', skip_count
+    end do
+
+  else if (whichBand == 1) then
+
+    print *, 'gfactor (wire) for valence band'
+
+    ! Sigma matrix between VB doublet (Kramers partners)
+    ii = 0
+    do n = bandIdx, bandIdx+1
+      ii = ii + 1
+      jj = 0
+      do m = bandIdx, bandIdx+1
+        jj = jj + 1
+        sigma(ii,jj,1) = sigmaElem_2d(vb_state(:,n), vb_state(:,m), 'x', cfg%grid)
+        sigma(ii,jj,2) = sigmaElem_2d(vb_state(:,n), vb_state(:,m), 'y', cfg%grid)
+        sigma(ii,jj,3) = sigmaElem_2d(vb_state(:,n), vb_state(:,m), 'z', cfg%grid)
+      end do
+    end do
+    print *, 'sigma'
+    do i = 1, 2
+      write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,1), j=1,2)
+    end do
+    print *, ' '
+    do i = 1, 2
+      write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,2), j=1,2)
+    end do
+    print *, ' '
+    do i = 1, 2
+      write(*,'(2(f9.4,1x,f9.4))') (sigma(i,j,3), j=1,2)
+    end do
+
+    skip_count = 0
+    do d = 1, 3
+      if (d == 1) then
+        mod1 = 2; mod2 = 3
+      elseif (d == 2) then
+        mod1 = 3; mod2 = 1
+      elseif (d == 3) then
+        mod1 = 1; mod2 = 2
+      end if
+
+      ! VB doublet (n,m) with CB intermediates (l)
+      ii = 0
+      do n = bandIdx, bandIdx+1
+        ii = ii + 1
+        jj = 0
+        do m = bandIdx, bandIdx+1
+          jj = jj + 1
+
+          do l = 1, numcb
+            Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
+
+            call compute_pele_2d(Pele1, mod1, vb_state(:,n), cb_state(:,l), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele2, mod2, cb_state(:,l), vb_state(:,m), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele3, mod2, vb_state(:,n), cb_state(:,l), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele4, mod1, cb_state(:,l), vb_state(:,m), &
+              profile_2d, kpterms_2d, cfg)
+
+            denom = (vb_value(n) - cb_value(l)) + (vb_value(m) - cb_value(l))
+            if (abs(denom) > tolerance) then
+              tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
+            else
+              skip_count = skip_count + 1
+              if (skip_count <= 5) then
+                print *, 'WARNING: near-zero energy denominator, n=', n, 'm=', m, 'l=', l, 'denom=', denom
+              end if
+            end if
+          end do
+
+        end do
+      end do
+
+      ! VB doublet (n,m) with VB intermediates (l), skip self-term
+      ii = 0
+      do n = bandIdx, bandIdx+1
+        ii = ii + 1
+        jj = 0
+        do m = bandIdx, bandIdx+1
+          jj = jj + 1
+          do l = 1, numvb
+            if (l == n .or. l == m) cycle
+
+            Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
+
+            call compute_pele_2d(Pele1, mod1, vb_state(:,n), vb_state(:,l), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele2, mod2, vb_state(:,l), vb_state(:,m), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele3, mod2, vb_state(:,n), vb_state(:,l), &
+              profile_2d, kpterms_2d, cfg)
+            call compute_pele_2d(Pele4, mod1, vb_state(:,l), vb_state(:,m), &
+              profile_2d, kpterms_2d, cfg)
+
+            denom = (vb_value(n) - vb_value(l)) + (vb_value(m) - vb_value(l))
+            if (abs(denom) > tolerance) then
+              tensor(ii, jj, d) = tensor(ii, jj, d) + (Pele1*Pele2 - Pele3*Pele4) / denom
+            else
+              skip_count = skip_count + 1
+              if (skip_count <= 5) then
+                print *, 'WARNING: near-zero energy denominator, n=', n, 'm=', m, 'l=', l, 'denom=', denom
+              end if
+            end if
+          end do
+        end do
+      end do
+
+      if (skip_count > 0) print *, 'Total skipped contributions:', skip_count
+    end do
+
+  end if
+
+  tensor(1:2,1:2,1:3) = -cmplx(0.0_dp, 1.0_dp, kind=dp)*tensor(1:2,1:2,1:3)/hbar2O2m0
+  tensor(1:2,1:2,1:3) = tensor(1:2,1:2,1:3) - (g_free/2.0_dp)*sigma(1:2,1:2,1:3)
+
+end subroutine gfactorCalculation_wire
+
 
 end module gfactorFunctions
