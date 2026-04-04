@@ -285,7 +285,12 @@ program kpfdm
     call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
 
     if (.not. eigen_res%converged) then
-      print *, '  WARNING: FEAST did not converge at k-point 1'
+      if (eigen_res%nev_found < nev_wire) then
+        print *, '  ERROR: FEAST did not converge at k-point 1 and found only', &
+          eigen_res%nev_found, 'eigenvalues (need', nev_wire, ')'
+        stop 1
+      end if
+      print *, '  WARNING: FEAST subspace issue at k-point 1, but found enough eigenvalues'
     end if
     print *, '  Found ', eigen_res%nev_found, ' eigenvalues (requested ', &
       & nev_wire, ') iterations=', eigen_res%iterations
@@ -335,9 +340,14 @@ program kpfdm
           call solve_sparse_evp(HT_csr_loc, eigen_cfg, eigen_res_loc)
 
           if (.not. eigen_res_loc%converged) then
-            !$omp critical
-            print *, '  WARNING: FEAST did not converge at k-point ', k
-            !$omp end critical
+            if (eigen_res_loc%nev_found < nev_wire) then
+              !$omp critical
+              print *, '  ERROR: FEAST did not converge at k-point', k, &
+                'and found only', eigen_res_loc%nev_found, &
+                'eigenvalues (need', nev_wire, ')'
+              !$omp end critical
+              stop 1
+            end if
           end if
 
           ! Store eigenvalues (each thread writes to its own k column)
@@ -636,10 +646,10 @@ program kpfdm
                    ifail_loc, info_loc)
         if (info_loc /= 0) then
           !$omp critical
-          print *, "Diagonalization error at k=", k, " info=", info_loc
+          print *, "ERROR: diagonalization failed at k=", k, "info=", info_loc
           if (info_loc < 0) print *, "  Parameter ", -info_loc, " had illegal value"
           !$omp end critical
-          cycle
+          stop 1
         end if
 
         ! Store eigenvectors (HT_loc now holds them, zheevx overwrites input)

@@ -22,7 +22,10 @@ set(LINALG_BACKEND "MKL" CACHE STRING "BLAS/LAPACK backend: MKL, OPENBLAS, AOCL"
 # --- Fortran compiler flags (gfortran) ---
 if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
     set(CMAKE_Fortran_FLAGS "-ffree-line-length-none -fno-second-underscore -ffree-form -fimplicit-none -m64")
-    set(CMAKE_Fortran_FLAGS_RELEASE "-O3 -march=haswell -mtune=haswell -ftree-vectorize -fstack-arrays -ffast-math -fno-trapping-math -flto=auto -fuse-linker-plugin")
+    # NOTE: -ffast-math was replaced by its individual safe components.
+    # Kept: -fno-signed-zeros (~2%), -freciprocal-math (~3%), -fno-trapping-math
+    # Dropped: -ffinite-math-only (removes NaN/Inf guards), -funsafe-math-optimizations
+    set(CMAKE_Fortran_FLAGS_RELEASE "-O3 -march=haswell -mtune=haswell -ftree-vectorize -fstack-arrays -fno-signed-zeros -freciprocal-math -fno-trapping-math -flto=auto -fuse-linker-plugin")
     set(CMAKE_Fortran_FLAGS_DEBUG "-g -fbacktrace -fbounds-check -fcheck=all")
 endif()
 

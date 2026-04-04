@@ -12,7 +12,7 @@ program gfactor
   use sparse_matrices
   use eigensolver
   use strain_solver
-  use linalg, only: ilaenv, dlamch
+  use linalg, only: ilaenv, dlamch, mkl_set_num_threads_local
 
   implicit NONE
 
@@ -55,6 +55,11 @@ program gfactor
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   integer                          :: Ngrid, Ntot, nev_wire
+
+  ! Ensure MKL routines run single-threaded (sequential) regardless of
+  ! MKL_THREADING setting.  Prevents thread oversubscription when
+  ! MKL_THREADING=intel_thread.
+  info = mkl_set_num_threads_local(1)
 
   ! Shared setup: read input, initialize materials, confinement, external field
   call read_and_setup(cfg, profile, kpterms)

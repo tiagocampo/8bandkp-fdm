@@ -321,15 +321,13 @@ contains
       perm, nrhs, iparm, msglvl, rhs, sol, error)
 
     if (error /= 0) then
-      print *, 'ERROR: PARDISO 2D Poisson failed with error = ', error
-      print *, '  Setting potential to zero.'
-      phi = 0.0_dp
+      print *, 'ERROR: 2D Poisson solve failed (PARDISO error=', error, '). Aborting.'
       ! Release PARDISO memory
       phase = -1
       call pardiso(pt, maxfct, mnum, mtype, phase, ntotal, a_csr, ia, ja, &
         perm, nrhs, iparm, msglvl, rhs, sol, error)
       deallocate(ia, ja, a_csr, rhs, sol, perm)
-      return
+      stop 1
     end if
 
     ! Phase -1: Release memory

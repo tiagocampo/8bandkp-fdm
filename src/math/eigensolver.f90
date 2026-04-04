@@ -163,7 +163,8 @@ contains
     else if (info == 2) then
       print *, 'FEAST warning: max iterations reached, results may be inaccurate.'
     else if (info == 3) then
-      print *, 'FEAST warning: subspace too small, increase feast_m0. info =', info
+      print *, '  WARNING: FEAST subspace too small (info=3). Missing eigenvalues.'
+      print *, '  Increase feast_m0 or narrow the energy window.'
     end if
 
     if (M > 0 .and. M <= M0 .and. info >= 0) then

@@ -591,14 +591,13 @@ contains
       perm, nrhs, iparm, msglvl, rhs, sol, error)
 
     if (error /= 0) then
-      print *, 'ERROR: PARDISO failed with error = ', error
-      print *, '  Strain PDE solve failed. Setting strain to zero.'
+      print *, 'ERROR: Strain PDE solve failed (PARDISO error=', error, '). Aborting.'
       ! Release PARDISO internal memory before cleanup
       phase = -1
       call pardiso(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
         perm, nrhs, iparm, msglvl, rhs, sol, error)
       deallocate(ia, ja, a_csr, rhs, sol, perm)
-      return
+      stop 1
     end if
 
     ! Phase -1: Release memory
