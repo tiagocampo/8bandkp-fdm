@@ -357,25 +357,25 @@ contains
 
         ! Cross-derivative coupling (C12+C44) at corners
         if (ix < nx .and. iy < ny) then
-          c12p44_avg_en = 0.25_dp * (c12p44_c + c12p44_n) * &
+          c12p44_avg_en = 0.5_dp * (c12p44_c + c12p44_n) * &
                           sqrt(ff_x(wire_flat_idx(nx, ix, iy+1)) * ffx_c)
         else
           c12p44_avg_en = 0.0_dp
         end if
         if (ix > 1 .and. iy < ny) then
-          c12p44_avg_wn = 0.25_dp * (c12p44_c + c12p44_n) * &
+          c12p44_avg_wn = 0.5_dp * (c12p44_c + c12p44_n) * &
                           sqrt(ff_x(wire_flat_idx(nx, ix-1, iy+1)) * ffx_c)
         else
           c12p44_avg_wn = 0.0_dp
         end if
         if (ix < nx .and. iy > 1) then
-          c12p44_avg_es = 0.25_dp * (c12p44_c + c12p44_s) * &
+          c12p44_avg_es = 0.5_dp * (c12p44_c + c12p44_s) * &
                           sqrt(ff_x(wire_flat_idx(nx, ix, iy-1)) * ffx_c)
         else
           c12p44_avg_es = 0.0_dp
         end if
         if (ix > 1 .and. iy > 1) then
-          c12p44_avg_ws = 0.25_dp * (c12p44_c + c12p44_s) * &
+          c12p44_avg_ws = 0.5_dp * (c12p44_c + c12p44_s) * &
                           sqrt(ff_x(wire_flat_idx(nx, ix-1, iy-1)) * ffx_c)
         else
           c12p44_avg_ws = 0.0_dp
@@ -429,25 +429,25 @@ contains
         if (ix < nx .and. iy < ny) then
           call add_coo_entry(coo_rows, coo_cols, coo_vals, nnz_est, coo_idx, &
             dof, ngrid + wire_flat_idx(nx, ix+1, iy+1), &
-            c12p44_avg_en / (dx * dy))
+            c12p44_avg_en / (4.0_dp * dx * dy))
         end if
         ! Northwest (ix-1, iy+1): uz coupling (-c12p44/(4*dx*dy))
         if (ix > 1 .and. iy < ny) then
           call add_coo_entry(coo_rows, coo_cols, coo_vals, nnz_est, coo_idx, &
             dof, ngrid + wire_flat_idx(nx, ix-1, iy+1), &
-            -c12p44_avg_wn / (dx * dy))
+            -c12p44_avg_wn / (4.0_dp * dx * dy))
         end if
         ! Southeast (ix+1, iy-1): uz coupling (-c12p44/(4*dx*dy))
         if (ix < nx .and. iy > 1) then
           call add_coo_entry(coo_rows, coo_cols, coo_vals, nnz_est, coo_idx, &
             dof, ngrid + wire_flat_idx(nx, ix+1, iy-1), &
-            -c12p44_avg_es / (dx * dy))
+            -c12p44_avg_es / (4.0_dp * dx * dy))
         end if
         ! Southwest (ix-1, iy-1): uz coupling (+c12p44/(4*dx*dy))
         if (ix > 1 .and. iy > 1) then
           call add_coo_entry(coo_rows, coo_cols, coo_vals, nnz_est, coo_idx, &
             dof, ngrid + wire_flat_idx(nx, ix-1, iy-1), &
-            c12p44_avg_ws / (dx * dy))
+            c12p44_avg_ws / (4.0_dp * dx * dy))
         end if
 
         ! RHS for u_y equation: source from gradient of C12*eps_xx
@@ -506,25 +506,25 @@ contains
         if (ix < nx .and. iy < ny) then
           call add_coo_entry(coo_rows, coo_cols, coo_vals, nnz_est, coo_idx, &
             dof, wire_flat_idx(nx, ix+1, iy+1), &
-            c12p44_avg_en / (dx * dy))
+            c12p44_avg_en / (4.0_dp * dx * dy))
         end if
         ! Northwest (ix-1, iy+1)
         if (ix > 1 .and. iy < ny) then
           call add_coo_entry(coo_rows, coo_cols, coo_vals, nnz_est, coo_idx, &
             dof, wire_flat_idx(nx, ix-1, iy+1), &
-            -c12p44_avg_wn / (dx * dy))
+            -c12p44_avg_wn / (4.0_dp * dx * dy))
         end if
         ! Southeast (ix+1, iy-1)
         if (ix < nx .and. iy > 1) then
           call add_coo_entry(coo_rows, coo_cols, coo_vals, nnz_est, coo_idx, &
             dof, wire_flat_idx(nx, ix+1, iy-1), &
-            -c12p44_avg_es / (dx * dy))
+            -c12p44_avg_es / (4.0_dp * dx * dy))
         end if
         ! Southwest (ix-1, iy-1)
         if (ix > 1 .and. iy > 1) then
           call add_coo_entry(coo_rows, coo_cols, coo_vals, nnz_est, coo_idx, &
             dof, wire_flat_idx(nx, ix-1, iy-1), &
-            c12p44_avg_ws / (dx * dy))
+            c12p44_avg_ws / (4.0_dp * dx * dy))
         end if
 
         ! RHS for u_z equation: -d(C12*eps_xx)/dz
