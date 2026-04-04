@@ -272,15 +272,16 @@ module parameters
             params(i)%EV      = -1.27_dp
             params(i)%EC      = 1.08_dp
             params(i)%eps0    = 11.11_dp
-            ! Strain parameters (Vurgaftman 2001)
+            ! Strain parameters (Vurgaftman 2001 Table XII/XIII)
+            ! av uses positive sign convention: P_eps = -av*Tr(eps)
             params(i)%C11   = 1405.0_dp
             params(i)%C12   = 620.3_dp
             params(i)%C44   = 703.3_dp
             params(i)%a0    = 5.4505_dp
-            params(i)%ac    = -7.14_dp
-            params(i)%av    = 1.70_dp
-            params(i)%b_dp  = -1.7_dp
-            params(i)%d_dp  = -4.0_dp
+            params(i)%ac    = -8.2_dp
+            params(i)%av    = 1.7_dp
+            params(i)%b_dp  = -1.6_dp
+            params(i)%d_dp  = -4.6_dp
 
           case ("AlP")
 
@@ -294,15 +295,17 @@ module parameters
             params(i)%EV      = -1.74_dp
             params(i)%EC      = 0.78_dp
             params(i)%eps0    = 9.02_dp
-            ! Strain parameters (Vurgaftman 2001)
-            params(i)%C11   = 1321.0_dp
+            ! Strain parameters (Vurgaftman 2001 Table XII/XIII)
+            ! av uses positive sign convention: P_eps = -av*Tr(eps)
+            ! Note: many AlP values are estimated (Vurgaftman 2001)
+            params(i)%C11   = 1330.0_dp
             params(i)%C12   = 630.3_dp
             params(i)%C44   = 615.2_dp
-            params(i)%a0    = 5.4510_dp
-            params(i)%ac    = -5.54_dp
-            params(i)%av    = 1.50_dp
+            params(i)%a0    = 5.4672_dp
+            params(i)%ac    = -5.7_dp
+            params(i)%av    = 3.0_dp
             params(i)%b_dp  = -1.5_dp
-            params(i)%d_dp  = -3.0_dp
+            params(i)%d_dp  = -4.6_dp
 
           case ("InP")
 
@@ -316,15 +319,16 @@ module parameters
             params(i)%EV      = -0.70_dp
             params(i)%EC      = 0.7236_dp
             params(i)%eps0    = 12.61_dp
-            ! Strain parameters (Vurgaftman 2001)
+            ! Strain parameters (Vurgaftman 2001 Table XII/XIII)
+            ! av uses positive sign convention: P_eps = -av*Tr(eps)
             params(i)%C11   = 1011.0_dp
             params(i)%C12   = 561.0_dp
             params(i)%C44   = 456.0_dp
             params(i)%a0    = 5.8687_dp
-            params(i)%ac    = -6.35_dp
-            params(i)%av    = 1.70_dp
+            params(i)%ac    = -6.0_dp
+            params(i)%av    = 0.6_dp
             params(i)%b_dp  = -2.0_dp
-            params(i)%d_dp  = -5.6_dp
+            params(i)%d_dp  = -5.0_dp
 
           case ("InPW")
 
@@ -446,14 +450,15 @@ module parameters
             params(i)%EV      = 0
             params(i)%EC      = 0.235
             params(i)%eps0    = 16.80_dp
-            ! Strain parameters (Vurgaftman 2001)
+            ! Strain parameters (Vurgaftman 2001 Table XII/XIII)
+            ! av uses positive sign convention: P_eps = -av*Tr(eps)
             params(i)%C11   = 684.7_dp
-            params(i)%C12   = 378.1_dp
-            params(i)%C44   = 310.6_dp
+            params(i)%C12   = 373.5_dp
+            params(i)%C44   = 311.1_dp
             params(i)%a0    = 6.4794_dp
             params(i)%ac    = -6.94_dp
             params(i)%av    = 0.36_dp
-            params(i)%b_dp  = -1.3_dp
+            params(i)%b_dp  = -2.0_dp
             params(i)%d_dp  = -4.7_dp
 
           case ("InSbW")
@@ -468,14 +473,14 @@ module parameters
             params(i)%EV      = 0.0_dp
             params(i)%EC      = 0.237_dp
             params(i)%eps0    = 16.80_dp
-            ! Strain: same as InSb
+            ! Strain: same as InSb (Vurgaftman 2001)
             params(i)%C11   = 684.7_dp
-            params(i)%C12   = 378.1_dp
-            params(i)%C44   = 310.6_dp
+            params(i)%C12   = 373.5_dp
+            params(i)%C44   = 311.1_dp
             params(i)%a0    = 6.4794_dp
             params(i)%ac    = -6.94_dp
             params(i)%av    = 0.36_dp
-            params(i)%b_dp  = -1.3_dp
+            params(i)%b_dp  = -2.0_dp
             params(i)%d_dp  = -4.7_dp
 
           case ("Vacuum")
@@ -518,12 +523,12 @@ module parameters
             params(i)%eps0    = 16.635_dp
             ! Strain: Vegard interpolation InAs/InSb, x_As=0.10
             params(i)%C11   = 832.9_dp*0.10_dp + 684.7_dp*0.90_dp
-            params(i)%C12   = 452.6_dp*0.10_dp + 378.1_dp*0.90_dp
-            params(i)%C44   = 395.9_dp*0.10_dp + 310.6_dp*0.90_dp
+            params(i)%C12   = 452.6_dp*0.10_dp + 373.5_dp*0.90_dp
+            params(i)%C44   = 395.9_dp*0.10_dp + 311.1_dp*0.90_dp
             params(i)%a0    = 6.0583_dp*0.10_dp + 6.4794_dp*0.90_dp
             params(i)%ac    = -5.08_dp*0.10_dp + (-6.94_dp)*0.90_dp
             params(i)%av    = 1.00_dp*0.10_dp + 0.36_dp*0.90_dp
-            params(i)%b_dp  = -1.8_dp*0.10_dp + (-1.3_dp)*0.90_dp
+            params(i)%b_dp  = -1.8_dp*0.10_dp + (-2.0_dp)*0.90_dp
             params(i)%d_dp  = -3.6_dp*0.10_dp + (-4.7_dp)*0.90_dp
 
           case ("InAs20Sb80")
@@ -540,12 +545,12 @@ module parameters
             params(i)%eps0    = 16.47_dp
             ! Strain: Vegard interpolation InAs/InSb, x_As=0.20
             params(i)%C11   = 832.9_dp*0.20_dp + 684.7_dp*0.80_dp
-            params(i)%C12   = 452.6_dp*0.20_dp + 378.1_dp*0.80_dp
-            params(i)%C44   = 395.9_dp*0.20_dp + 310.6_dp*0.80_dp
+            params(i)%C12   = 452.6_dp*0.20_dp + 373.5_dp*0.80_dp
+            params(i)%C44   = 395.9_dp*0.20_dp + 311.1_dp*0.80_dp
             params(i)%a0    = 6.0583_dp*0.20_dp + 6.4794_dp*0.80_dp
             params(i)%ac    = -5.08_dp*0.20_dp + (-6.94_dp)*0.80_dp
             params(i)%av    = 1.00_dp*0.20_dp + 0.36_dp*0.80_dp
-            params(i)%b_dp  = -1.8_dp*0.20_dp + (-1.3_dp)*0.80_dp
+            params(i)%b_dp  = -1.8_dp*0.20_dp + (-2.0_dp)*0.80_dp
             params(i)%d_dp  = -3.6_dp*0.20_dp + (-4.7_dp)*0.80_dp
 
           case ("InAs30Sb70")
@@ -562,12 +567,12 @@ module parameters
             params(i)%eps0    = 16.305_dp
             ! Strain: Vegard interpolation InAs/InSb, x_As=0.30
             params(i)%C11   = 832.9_dp*0.30_dp + 684.7_dp*0.70_dp
-            params(i)%C12   = 452.6_dp*0.30_dp + 378.1_dp*0.70_dp
-            params(i)%C44   = 395.9_dp*0.30_dp + 310.6_dp*0.70_dp
+            params(i)%C12   = 452.6_dp*0.30_dp + 373.5_dp*0.70_dp
+            params(i)%C44   = 395.9_dp*0.30_dp + 311.1_dp*0.70_dp
             params(i)%a0    = 6.0583_dp*0.30_dp + 6.4794_dp*0.70_dp
             params(i)%ac    = -5.08_dp*0.30_dp + (-6.94_dp)*0.70_dp
             params(i)%av    = 1.00_dp*0.30_dp + 0.36_dp*0.70_dp
-            params(i)%b_dp  = -1.8_dp*0.30_dp + (-1.3_dp)*0.70_dp
+            params(i)%b_dp  = -1.8_dp*0.30_dp + (-2.0_dp)*0.70_dp
             params(i)%d_dp  = -3.6_dp*0.30_dp + (-4.7_dp)*0.70_dp
 
           case ("InAs40Sb60")
@@ -584,12 +589,12 @@ module parameters
             params(i)%eps0    = 16.14_dp
             ! Strain: Vegard interpolation InAs/InSb, x_As=0.40
             params(i)%C11   = 832.9_dp*0.40_dp + 684.7_dp*0.60_dp
-            params(i)%C12   = 452.6_dp*0.40_dp + 378.1_dp*0.60_dp
-            params(i)%C44   = 395.9_dp*0.40_dp + 310.6_dp*0.60_dp
+            params(i)%C12   = 452.6_dp*0.40_dp + 373.5_dp*0.60_dp
+            params(i)%C44   = 395.9_dp*0.40_dp + 311.1_dp*0.60_dp
             params(i)%a0    = 6.0583_dp*0.40_dp + 6.4794_dp*0.60_dp
             params(i)%ac    = -5.08_dp*0.40_dp + (-6.94_dp)*0.60_dp
             params(i)%av    = 1.00_dp*0.40_dp + 0.36_dp*0.60_dp
-            params(i)%b_dp  = -1.8_dp*0.40_dp + (-1.3_dp)*0.60_dp
+            params(i)%b_dp  = -1.8_dp*0.40_dp + (-2.0_dp)*0.60_dp
             params(i)%d_dp  = -3.6_dp*0.40_dp + (-4.7_dp)*0.60_dp
 
           case ("InAs50Sb50")
@@ -606,12 +611,12 @@ module parameters
             params(i)%eps0    = 15.975_dp
             ! Strain: Vegard interpolation InAs/InSb, x_As=0.50
             params(i)%C11   = 832.9_dp*0.50_dp + 684.7_dp*0.50_dp
-            params(i)%C12   = 452.6_dp*0.50_dp + 378.1_dp*0.50_dp
-            params(i)%C44   = 395.9_dp*0.50_dp + 310.6_dp*0.50_dp
+            params(i)%C12   = 452.6_dp*0.50_dp + 373.5_dp*0.50_dp
+            params(i)%C44   = 395.9_dp*0.50_dp + 311.1_dp*0.50_dp
             params(i)%a0    = 6.0583_dp*0.50_dp + 6.4794_dp*0.50_dp
             params(i)%ac    = -5.08_dp*0.50_dp + (-6.94_dp)*0.50_dp
             params(i)%av    = 1.00_dp*0.50_dp + 0.36_dp*0.50_dp
-            params(i)%b_dp  = -1.8_dp*0.50_dp + (-1.3_dp)*0.50_dp
+            params(i)%b_dp  = -1.8_dp*0.50_dp + (-2.0_dp)*0.50_dp
             params(i)%d_dp  = -3.6_dp*0.50_dp + (-4.7_dp)*0.50_dp
 
           case ("InAs60Sb40")
@@ -628,12 +633,12 @@ module parameters
             params(i)%eps0    = 15.81_dp
             ! Strain: Vegard interpolation InAs/InSb, x_As=0.60
             params(i)%C11   = 832.9_dp*0.60_dp + 684.7_dp*0.40_dp
-            params(i)%C12   = 452.6_dp*0.60_dp + 378.1_dp*0.40_dp
-            params(i)%C44   = 395.9_dp*0.60_dp + 310.6_dp*0.40_dp
+            params(i)%C12   = 452.6_dp*0.60_dp + 373.5_dp*0.40_dp
+            params(i)%C44   = 395.9_dp*0.60_dp + 311.1_dp*0.40_dp
             params(i)%a0    = 6.0583_dp*0.60_dp + 6.4794_dp*0.40_dp
             params(i)%ac    = -5.08_dp*0.60_dp + (-6.94_dp)*0.40_dp
             params(i)%av    = 1.00_dp*0.60_dp + 0.36_dp*0.40_dp
-            params(i)%b_dp  = -1.8_dp*0.60_dp + (-1.3_dp)*0.40_dp
+            params(i)%b_dp  = -1.8_dp*0.60_dp + (-2.0_dp)*0.40_dp
             params(i)%d_dp  = -3.6_dp*0.60_dp + (-4.7_dp)*0.40_dp
 
           case ("InAs70Sb30")
@@ -650,12 +655,12 @@ module parameters
             params(i)%eps0    = 15.645_dp
             ! Strain: Vegard interpolation InAs/InSb, x_As=0.70
             params(i)%C11   = 832.9_dp*0.70_dp + 684.7_dp*0.30_dp
-            params(i)%C12   = 452.6_dp*0.70_dp + 378.1_dp*0.30_dp
-            params(i)%C44   = 395.9_dp*0.70_dp + 310.6_dp*0.30_dp
+            params(i)%C12   = 452.6_dp*0.70_dp + 373.5_dp*0.30_dp
+            params(i)%C44   = 395.9_dp*0.70_dp + 311.1_dp*0.30_dp
             params(i)%a0    = 6.0583_dp*0.70_dp + 6.4794_dp*0.30_dp
             params(i)%ac    = -5.08_dp*0.70_dp + (-6.94_dp)*0.30_dp
             params(i)%av    = 1.00_dp*0.70_dp + 0.36_dp*0.30_dp
-            params(i)%b_dp  = -1.8_dp*0.70_dp + (-1.3_dp)*0.30_dp
+            params(i)%b_dp  = -1.8_dp*0.70_dp + (-2.0_dp)*0.30_dp
             params(i)%d_dp  = -3.6_dp*0.70_dp + (-4.7_dp)*0.30_dp
 
           case ("InAs80Sb20")
@@ -672,12 +677,12 @@ module parameters
             params(i)%eps0    = 15.48_dp
             ! Strain: Vegard interpolation InAs/InSb, x_As=0.80
             params(i)%C11   = 832.9_dp*0.80_dp + 684.7_dp*0.20_dp
-            params(i)%C12   = 452.6_dp*0.80_dp + 378.1_dp*0.20_dp
-            params(i)%C44   = 395.9_dp*0.80_dp + 310.6_dp*0.20_dp
+            params(i)%C12   = 452.6_dp*0.80_dp + 373.5_dp*0.20_dp
+            params(i)%C44   = 395.9_dp*0.80_dp + 311.1_dp*0.20_dp
             params(i)%a0    = 6.0583_dp*0.80_dp + 6.4794_dp*0.20_dp
             params(i)%ac    = -5.08_dp*0.80_dp + (-6.94_dp)*0.20_dp
             params(i)%av    = 1.00_dp*0.80_dp + 0.36_dp*0.20_dp
-            params(i)%b_dp  = -1.8_dp*0.80_dp + (-1.3_dp)*0.20_dp
+            params(i)%b_dp  = -1.8_dp*0.80_dp + (-2.0_dp)*0.20_dp
             params(i)%d_dp  = -3.6_dp*0.80_dp + (-4.7_dp)*0.20_dp
 
           case ("InAs90Sb10")
@@ -694,12 +699,12 @@ module parameters
             params(i)%eps0    = 15.315_dp
             ! Strain: Vegard interpolation InAs/InSb, x_As=0.90
             params(i)%C11   = 832.9_dp*0.90_dp + 684.7_dp*0.10_dp
-            params(i)%C12   = 452.6_dp*0.90_dp + 378.1_dp*0.10_dp
-            params(i)%C44   = 395.9_dp*0.90_dp + 310.6_dp*0.10_dp
+            params(i)%C12   = 452.6_dp*0.90_dp + 373.5_dp*0.10_dp
+            params(i)%C44   = 395.9_dp*0.90_dp + 311.1_dp*0.10_dp
             params(i)%a0    = 6.0583_dp*0.90_dp + 6.4794_dp*0.10_dp
             params(i)%ac    = -5.08_dp*0.90_dp + (-6.94_dp)*0.10_dp
             params(i)%av    = 1.00_dp*0.90_dp + 0.36_dp*0.10_dp
-            params(i)%b_dp  = -1.8_dp*0.90_dp + (-1.3_dp)*0.10_dp
+            params(i)%b_dp  = -1.8_dp*0.90_dp + (-2.0_dp)*0.10_dp
             params(i)%d_dp  = -3.6_dp*0.90_dp + (-4.7_dp)*0.10_dp
 
           case ("Al63In37Sb")
@@ -716,12 +721,12 @@ module parameters
             params(i)%eps0    = 13.8012_dp
             ! Strain: Vegard interpolation AlSb/InSb, x_Al=0.63
             params(i)%C11   = 876.5_dp*0.63_dp + 684.7_dp*0.37_dp
-            params(i)%C12   = 434.1_dp*0.63_dp + 378.1_dp*0.37_dp
-            params(i)%C44   = 407.6_dp*0.63_dp + 310.6_dp*0.37_dp
+            params(i)%C12   = 434.1_dp*0.63_dp + 373.5_dp*0.37_dp
+            params(i)%C44   = 407.6_dp*0.63_dp + 311.1_dp*0.37_dp
             params(i)%a0    = 6.1355_dp*0.63_dp + 6.4794_dp*0.37_dp
             params(i)%ac    = -4.5_dp*0.63_dp + (-6.94_dp)*0.37_dp
             params(i)%av    = 1.4_dp*0.63_dp + 0.36_dp*0.37_dp
-            params(i)%b_dp  = -1.35_dp*0.63_dp + (-1.3_dp)*0.37_dp
+            params(i)%b_dp  = -1.35_dp*0.63_dp + (-2.0_dp)*0.37_dp
             params(i)%d_dp  = -4.3_dp*0.63_dp + (-4.7_dp)*0.37_dp
 
           case default

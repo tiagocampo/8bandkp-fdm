@@ -190,4 +190,32 @@ contains
     @assertEqual(0.0_dp, params(1)%d_dp, tolerance=1.0e-12_dp)
   end subroutine test_strain_defaults_zero
 
+  @test
+  subroutine test_strain_insb_corrected()
+    ! Verify InSb values match Vurgaftman 2001 Table XII/XIII
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "InSb"
+    call paramDatabase(material, 1, params)
+
+    @assertEqual(373.5_dp, params(1)%C12, tolerance=1.0e-12_dp)
+    @assertEqual(311.1_dp, params(1)%C44, tolerance=1.0e-12_dp)
+    @assertEqual(-2.0_dp, params(1)%b_dp, tolerance=1.0e-12_dp)
+  end subroutine test_strain_insb_corrected
+
+  @test
+  subroutine test_alloy_strain_interpolation()
+    ! Verify Vegard interpolation for Al20Ga80As
+    ! C11 = 1221*0.8 + 1250*0.2 = 1226.8
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "Al20Ga80As"
+    call paramDatabase(material, 1, params)
+
+    @assertEqual(1226.8_dp, params(1)%C11, tolerance=1.0e-10_dp)
+    @assertEqual(5.65482_dp, params(1)%a0, tolerance=1.0e-10_dp)
+  end subroutine test_alloy_strain_interpolation
+
 end module test_parameters

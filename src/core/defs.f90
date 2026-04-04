@@ -51,7 +51,9 @@ module definitions
     real(kind=dp) :: meff, gamma1, gamma2, gamma3, P, A, deltaSO, EP, Eg, EV, EC
     real(kind=dp) :: eps0  ! static dielectric constant (unitless)
 
-    ! Elastic constants and strain parameters
+    ! Elastic constants and strain parameters (Vurgaftman 2001, Winkler 2003)
+    ! av uses positive sign convention: P_eps = -av*Tr(eps)
+    ! (opposite sign to Vurgaftman Table XIII)
     real(kind=dp) :: C11   = 0.0_dp    ! elastic constant (GPa)
     real(kind=dp) :: C12   = 0.0_dp    ! elastic constant (GPa)
     real(kind=dp) :: C44   = 0.0_dp    ! elastic constant (GPa)
