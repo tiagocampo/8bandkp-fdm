@@ -16,6 +16,7 @@ set(COMMON_SOURCES
     physics/charge_density.f90
     physics/poisson.f90
     physics/sc_loop.f90
+    physics/strain_solver.f90
 )
 
 # Create library of common code
@@ -51,6 +52,7 @@ set_source_files_properties(
     physics/charge_density.f90
     physics/poisson.f90
     physics/sc_loop.f90
+    physics/strain_solver.f90
     physics/gfactor_functions.f90
     apps/main.f90
     apps/main_gfactor.f90
