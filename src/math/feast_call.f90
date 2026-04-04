@@ -6,6 +6,8 @@
 ! to ensure gfortran passes bare data pointers with no copy-in/copy-out,
 ! matching the MKL C ABI that zfeast_hcsrev expects.
 
+#ifdef USE_MKL_FEAST
+
 subroutine feastinit_call(fpm)
   implicit none
   integer, intent(inout) :: fpm(128)
@@ -35,3 +37,5 @@ subroutine feast_solve_hermitian_csr(uplo, n, nnz, val, rowptr, colind, &
                      fpm, epsout, loop, emin, emax, m0, &
                      e, x, m, res, info)
 end subroutine feast_solve_hermitian_csr
+
+#endif /* USE_MKL_FEAST */

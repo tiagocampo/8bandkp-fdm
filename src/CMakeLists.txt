@@ -3,8 +3,6 @@ set(COMMON_SOURCES
     core/defs.f90
     core/parameters.f90
     core/utils.f90
-    math/mkl_spblas.f90
-    math/mkl_sparse_handle.f90
     math/sparse_matrices.f90
     math/geometry.f90
     math/finitedifferences.f90
@@ -30,11 +28,8 @@ target_include_directories(8bandkp_common PUBLIC
     ${CMAKE_Fortran_MODULE_DIRECTORY}
 )
 
-# Special compile flags for mkl_spblas.f90 (vendor MKL interface)
-set_source_files_properties(math/mkl_spblas.f90
-    PROPERTIES
-    COMPILE_FLAGS "-w -fcray-pointer"
-)
+# Enable MKL FEAST eigensolver (available when building with Intel MKL)
+target_compile_definitions(8bandkp_common PUBLIC USE_MKL_FEAST)
 
 # Preprocessor for files with #ifdef/#include
 set_source_files_properties(

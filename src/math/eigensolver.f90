@@ -46,10 +46,16 @@ contains
     type(eigensolver_result), intent(out) :: result
 
     select case (trim(config%method))
+#ifdef USE_MKL_FEAST
     case ('FEAST')
       call solve_feast(H_csr, config, result)
     case ('ARPACK')
       call solve_dense_lapack(H_csr, config, result)
+#else
+    case ('FEAST', 'ARPACK')
+      ! FEAST unavailable: fall back to dense LAPACK
+      call solve_dense_lapack(H_csr, config, result)
+#endif
     case default
       print *, 'Error: unknown eigensolver method "', trim(config%method), '"'
       result%converged = .false.
@@ -57,6 +63,7 @@ contains
     end select
   end subroutine solve_sparse_evp
 
+#ifdef USE_MKL_FEAST
   ! ==================================================================
   ! MKL FEAST wrapper for complex Hermitian CSR matrix.
   !
@@ -174,6 +181,7 @@ contains
 
     deallocate(E, X, res)
   end subroutine solve_feast
+#endif /* USE_MKL_FEAST */
 
   ! ==================================================================
   ! Dense fallback using LAPACK zheevx.

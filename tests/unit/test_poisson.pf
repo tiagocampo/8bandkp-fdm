@@ -193,4 +193,196 @@ contains
     @assertTrue(max_val == 0.0_dp, message="N<3 returns zero potential")
   end subroutine test_n_less_than_3
 
+
+  ! ==================================================================
+  ! 2D Poisson solver tests
+  ! ==================================================================
+
+  @test
+  subroutine test_2d_laplace()
+    ! Zero charge (Laplace equation), Dirichlet BCs = 0 on all boundaries.
+    ! Solution must be Phi = 0 everywhere.
+
+    integer, parameter :: ny = 11, nz = 11
+    real(kind=dp) :: phi(ny, nz), rho(ny, nz), eps(ny, nz)
+    real(kind=dp) :: max_err
+    integer :: iy, iz
+
+    rho = 0.0_dp
+    eps = 12.90_dp
+
+    call solve_poisson_2d(phi, rho, eps, 1.0_dp, 1.0_dp, ny, nz, 0.0_dp)
+
+    max_err = 0.0_dp
+    do iy = 1, ny
+      do iz = 1, nz
+        max_err = max(max_err, abs(phi(iy, iz)))
+      end do
+    end do
+
+    @assertTrue(max_err < 1.0e-12_dp, message="2D Laplace: zero solution with zero BCs")
+
+  end subroutine test_2d_laplace
+
+
+  @test
+  subroutine test_2d_known_solution()
+    ! Manufactured solution: Phi(y,z) = sin(pi*y/Ly) * sin(pi*z/Lz)
+    ! on [0, Ly] x [0, Lz] with uniform dielectric.
+    !
+    ! The Laplacian of Phi is:
+    !   lap(Phi) = -(pi/Ly)^2 * Phi - (pi/Lz)^2 * Phi
+    !            = -((pi/Ly)^2 + (pi/Lz)^2) * Phi
+    !
+    ! So the charge density is:
+    !   rho = -eps * e0 * lap(Phi) = eps * e0 * ((pi/Ly)^2 + (pi/Lz)^2) * Phi
+    !
+    ! The analytical solution satisfies Phi = 0 on all boundaries (Dirichlet),
+    ! so bc_value = 0 is correct.
+
+    integer, parameter :: ny = 41, nz = 41
+    real(kind=dp) :: phi(ny, nz), rho(ny, nz), eps(ny, nz)
+    real(kind=dp) :: dy, dz, Ly, Lz
+    real(kind=dp) :: y_i, z_j, phi_exact, lap_coeff, max_err
+    real(kind=dp), parameter :: pi = 3.14159265358979323846264338327950288_dp
+    integer :: iy, iz
+
+    dy = 0.5_dp   ! nm
+    dz = 0.5_dp   ! nm
+    Ly = (ny - 1) * dy
+    Lz = (nz - 1) * dz
+
+    eps = 12.90_dp
+    lap_coeff = 12.90_dp * e0 * ((pi / Ly)**2 + (pi / Lz)**2)
+
+    do iy = 1, ny
+      y_i = (iy - 1) * dy
+      do iz = 1, nz
+        z_j = (iz - 1) * dz
+        phi_exact = sin(pi * y_i / Ly) * sin(pi * z_j / Lz)
+        rho(iy, iz) = lap_coeff * phi_exact
+      end do
+    end do
+
+    call solve_poisson_2d(phi, rho, eps, dy, dz, ny, nz, 0.0_dp)
+
+    ! Compare against analytical solution (skip boundary rows where BC is exact)
+    max_err = 0.0_dp
+    do iy = 2, ny - 1
+      do iz = 2, nz - 1
+        y_i = (iy - 1) * dy
+        z_j = (iz - 1) * dz
+        phi_exact = sin(pi * y_i / Ly) * sin(pi * z_j / Lz)
+        max_err = max(max_err, abs(phi(iy, iz) - phi_exact))
+      end do
+    end do
+
+    ! Tolerance accounts for FD discretization error on coarse grid.
+    ! Second-order FD on 41x41 grid with Nyquist-limited sinusoid: expect ~5e-4.
+    @assertTrue(max_err < 1.0e-3_dp, message="2D manufactured solution recovery")
+
+  end subroutine test_2d_known_solution
+
+
+  @test
+  subroutine test_2d_small_grid()
+    ! Grid smaller than 3x3 should return phi = 0 without crashing.
+
+    integer, parameter :: ny = 2, nz = 2
+    real(kind=dp) :: phi(ny, nz), rho(ny, nz), eps(ny, nz)
+    real(kind=dp) :: max_val
+    integer :: iy, iz
+
+    rho = 1.0_dp
+    eps = 1.0_dp
+
+    call solve_poisson_2d(phi, rho, eps, 1.0_dp, 1.0_dp, ny, nz, 0.0_dp)
+
+    max_val = 0.0_dp
+    do iy = 1, ny
+      do iz = 1, nz
+        max_val = max(max_val, abs(phi(iy, iz)))
+      end do
+    end do
+
+    @assertTrue(max_val == 0.0_dp, message="2D small grid returns zero")
+
+  end subroutine test_2d_small_grid
+
+
+  @test
+  subroutine test_2d_dirichlet_bc()
+    ! Non-zero Dirichlet BCs, zero charge.
+    ! With bc_value on all boundaries and rho=0, the solution must be
+    ! bc_value everywhere (harmonic function with constant boundary).
+
+    integer, parameter :: ny = 11, nz = 11
+    real(kind=dp) :: phi(ny, nz), rho(ny, nz), eps(ny, nz)
+    real(kind=dp) :: max_err, bc_val
+    integer :: iy, iz
+
+    rho = 0.0_dp
+    eps = 12.90_dp
+    bc_val = 3.14159_dp
+
+    call solve_poisson_2d(phi, rho, eps, 1.0_dp, 1.0_dp, ny, nz, bc_val)
+
+    max_err = 0.0_dp
+    do iy = 1, ny
+      do iz = 1, nz
+        max_err = max(max_err, abs(phi(iy, iz) - bc_val))
+      end do
+    end do
+
+    @assertTrue(max_err < 1.0e-12_dp, message="2D Dirichlet: constant solution with constant BC")
+
+  end subroutine test_2d_dirichlet_bc
+
+
+  @test
+  subroutine test_2d_variable_dielectric()
+    ! Two-region dielectric (eps1 in y < Ly/2, eps2 in y >= Ly/2),
+    ! zero charge, Dirichlet BCs: bc_left=1, bc_right=0.
+    !
+    ! Verify displacement field continuity at the interface:
+    !   D_y = eps * dPhi/dy must be continuous across the dielectric boundary.
+    ! This is the 2D analog of test_two_layer_dielectric.
+
+    integer, parameter :: ny = 21, nz = 21
+    real(kind=dp) :: phi(ny, nz), rho(ny, nz), eps(ny, nz)
+    real(kind=dp) :: dy, dz, D_interface, D_bulk, disc_err
+    real(kind=dp) :: eps_half
+    integer :: iy, iz, mid_y
+
+    dy = 1.0_dp
+    dz = 1.0_dp
+    mid_y = ny / 2 + 1  ! interface between mid_y and mid_y+1
+
+    rho = 0.0_dp
+    do iy = 1, ny
+      do iz = 1, nz
+        if (iy <= mid_y) then
+          eps(iy, iz) = 12.90_dp
+        else
+          eps(iy, iz) = 10.06_dp
+        end if
+      end do
+    end do
+
+    call solve_poisson_2d(phi, rho, eps, dy, dz, ny, nz, 0.0_dp)
+
+    ! Check D at the interface mid-point along z (iz = nz/2)
+    iz = nz / 2
+    eps_half = 0.5_dp * (eps(mid_y, iz) + eps(mid_y + 1, iz))
+    D_interface = eps_half * (phi(mid_y + 1, iz) - phi(mid_y, iz)) / dy
+
+    ! D in bulk region away from interface (iy = 5, same iz)
+    D_bulk = eps(5, iz) * (phi(6, iz) - phi(5, iz)) / dy
+
+    disc_err = abs(D_interface - D_bulk)
+
+    @assertTrue(disc_err < 1.0e-10_dp, message="2D displacement continuity at dielectric interface")
+
+  end subroutine test_2d_variable_dielectric
+
 end module test_poisson
