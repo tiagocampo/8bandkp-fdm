@@ -387,7 +387,7 @@ contains
   subroutine test_strain_wire_biaxial()
     ! Wire plane-strain PDE: InAs square core in GaAs substrate.
     ! Uses grid_init_rect for a fully-active rectangular grid.
-    ! 40x40 grid, 200x200 A domain. InAs square core: central 40x40 A region.
+    ! 60x60 grid, 300x300 A domain. InAs square core: central 40x40 A region.
     ! a0_ref = GaAs a0 (substrate). InAs a0 > GaAs a0 => hydrostatic tension in core.
     !
     ! grid_init_rect is used because the strain solver's PARDISO backend
@@ -396,8 +396,8 @@ contains
     ! A square core avoids staircase-interface artifacts present with
     ! circular geometry on a Cartesian grid.
 
-    integer, parameter :: nx = 40, ny = 40
-    real(kind=dp), parameter :: Lx = 200.0_dp, Ly = 200.0_dp
+    integer, parameter :: nx = 60, ny = 60
+    real(kind=dp), parameter :: Lx = 300.0_dp, Ly = 300.0_dp
     real(kind=dp), parameter :: core_half = 20.0_dp  ! half-width of square core
 
     type(spatial_grid) :: grid
@@ -556,7 +556,7 @@ contains
     end do
     @assertTrue(n_boundary_active > 0, message="Found GaAs boundary points")
     ! Strain at boundary should be less than in core (decay with distance)
-    @assertTrue(boundary_strain < 0.8_dp * max_strain, message="Strain decays toward boundary")
+    @assertTrue(boundary_strain < 0.3_dp * max_strain, message="Strain decays toward boundary")
 
     call strain_result_free(strain_out)
     call grid_free(grid)
