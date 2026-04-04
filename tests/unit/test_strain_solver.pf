@@ -1,0 +1,384 @@
+module test_strain_solver
+  use funit
+  use definitions
+  use parameters
+  use strain_solver
+  implicit none
+
+contains
+
+  @test
+  subroutine test_biaxial_strain_qw()
+    ! QW biaxial strain: InAs well embedded in GaAs substrate.
+    ! Reference lattice constant = GaAs a0 = 5.65325 AA.
+    ! At InAs points: eps_0 = (6.0583 - 5.65325) / 5.65325
+    ! eps_xx = eps_yy = eps_0, eps_zz = -2*C12/C11 * eps_0, eps_yz = 0.
+
+    integer, parameter :: ny = 10
+    real(kind=dp), parameter :: dy = 1.0_dp
+
+    type(spatial_grid) :: grid
+    type(paramStruct) :: params(2)
+    character(len=255) :: materials(2)
+    type(strain_config) :: strain_cfg
+    type(strain_result) :: strain_out
+    real(kind=dp) :: a0_ref, eps_0_expected, eps_zz_expected
+    real(kind=dp) :: max_err
+    integer :: ij
+
+    ! Two materials: 1=GaAs, 2=InAs
+    materials(1) = "GaAs"
+    materials(2) = "InAs"
+    call paramDatabase(materials, 2, params)
+
+    a0_ref = params(1)%a0  ! GaAs lattice constant
+
+    ! Set up QW grid (ndim=1): nx=1, ny=10
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = ny
+    grid%dx = 0.0_dp
+    grid%dy = dy
+    allocate(grid%z(ny))
+    do ij = 1, ny
+      grid%z(ij) = (ij - 1) * dy
+    end do
+    allocate(grid%material_id(ny))
+
+    ! material_id: 1,1,1,1,2,2,2,2,1,1 (InAs embedded in GaAs)
+    grid%material_id = [1, 1, 1, 1, 2, 2, 2, 2, 1, 1]
+
+    ! Enable strain
+    strain_cfg%enabled = .true.
+
+    call compute_strain(grid, params, grid%material_id, strain_cfg, a0_ref, &
+      strain_out)
+
+    ! Expected strain at InAs points
+    eps_0_expected = (params(2)%a0 - a0_ref) / a0_ref
+    eps_zz_expected = -2.0_dp * params(2)%C12 / params(2)%C11 * eps_0_expected
+
+    ! Check InAs points (5..8): eps_xx = eps_yy = eps_0, eps_zz correct, eps_yz = 0
+    do ij = 5, 8
+      @assertEqual(eps_0_expected, strain_out%eps_xx(ij), tolerance=1.0e-12_dp)
+      @assertEqual(eps_0_expected, strain_out%eps_yy(ij), tolerance=1.0e-12_dp)
+      @assertEqual(eps_zz_expected, strain_out%eps_zz(ij), tolerance=1.0e-10_dp)
+      @assertEqual(0.0_dp, strain_out%eps_yz(ij), tolerance=1.0e-15_dp)
+    end do
+
+    ! Check GaAs points (1..4 and 9..10): all zero (lattice-matched)
+    max_err = 0.0_dp
+    do ij = 1, 4
+      max_err = max(max_err, abs(strain_out%eps_xx(ij)))
+      max_err = max(max_err, abs(strain_out%eps_yy(ij)))
+      max_err = max(max_err, abs(strain_out%eps_zz(ij)))
+      max_err = max(max_err, abs(strain_out%eps_yz(ij)))
+    end do
+    do ij = 9, 10
+      max_err = max(max_err, abs(strain_out%eps_xx(ij)))
+      max_err = max(max_err, abs(strain_out%eps_yy(ij)))
+      max_err = max(max_err, abs(strain_out%eps_zz(ij)))
+      max_err = max(max_err, abs(strain_out%eps_yz(ij)))
+    end do
+    @assertTrue(max_err < 1.0e-15_dp, message="GaAs points have zero strain")
+
+    call strain_result_free(strain_out)
+    deallocate(grid%z, grid%material_id)
+
+  end subroutine test_biaxial_strain_qw
+
+
+  @test
+  subroutine test_hydrostatic_pressure()
+    ! Uniform GaAs grid, but a0_ref slightly different from GaAs a0.
+    ! This simulates hydrostatic pressure.
+    ! Tr(eps) = eps_xx + eps_yy + eps_zz
+    ! For biaxial: eps_xx = eps_yy = eps_0, eps_zz = -2*C12/C11 * eps_0
+    ! Tr(eps) = 2*eps_0 - 2*C12/C11 * eps_0 = 2*eps_0*(1 - C12/C11)
+    ! delta_Ec = ac * Tr(eps)
+
+    integer, parameter :: ny = 5
+    real(kind=dp), parameter :: dy = 1.0_dp
+
+    type(spatial_grid) :: grid
+    type(paramStruct) :: params(1)
+    character(len=255) :: materials(1)
+    type(strain_config) :: strain_cfg
+    type(strain_result) :: strain_out
+    real(kind=dp) :: a0_ref, eps_0, Tr_eps, delta_Ec_expected
+    real(kind=dp) :: profile_2d(ny, 3)
+    integer :: ij
+
+    materials(1) = "GaAs"
+    call paramDatabase(materials, 1, params)
+
+    ! Use a0_ref slightly different from GaAs to induce strain
+    a0_ref = 5.60_dp  ! smaller than GaAs a0 = 5.65325
+
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = ny
+    grid%dx = 0.0_dp
+    grid%dy = dy
+    allocate(grid%z(ny))
+    do ij = 1, ny
+      grid%z(ij) = (ij - 1) * dy
+    end do
+    allocate(grid%material_id(ny))
+    grid%material_id = 1  ! all GaAs
+
+    strain_cfg%enabled = .true.
+
+    call compute_strain(grid, params, grid%material_id, strain_cfg, a0_ref, &
+      strain_out)
+
+    ! Verify eps_xx = eps_yy = eps_0 = (a0_GaAs - a0_ref)/a0_ref
+    eps_0 = (params(1)%a0 - a0_ref) / a0_ref
+    do ij = 1, ny
+      @assertEqual(eps_0, strain_out%eps_xx(ij), tolerance=1.0e-12_dp)
+      @assertEqual(eps_0, strain_out%eps_yy(ij), tolerance=1.0e-12_dp)
+    end do
+
+    ! Now test apply_pikus_bir: set profile_2d to zero, verify delta_Ec shift
+    profile_2d = 0.0_dp
+
+    call apply_pikus_bir(strain_out, params, grid%material_id, grid, profile_2d)
+
+    ! delta_Ec = ac * Tr(eps) at each point
+    do ij = 1, ny
+      Tr_eps = strain_out%eps_xx(ij) + strain_out%eps_yy(ij) + strain_out%eps_zz(ij)
+      delta_Ec_expected = params(1)%ac * Tr_eps
+      @assertEqual(delta_Ec_expected, profile_2d(ij, 3), tolerance=1.0e-10_dp)
+    end do
+
+    call strain_result_free(strain_out)
+    deallocate(grid%z, grid%material_id)
+
+  end subroutine test_hydrostatic_pressure
+
+
+  @test
+  subroutine test_pikus_bir_diagonal()
+    ! Create synthetic strain_result with known eps values.
+    ! Verify apply_pikus_bir produces correct band edge shifts.
+    ! Using GaAs parameters: ac=-7.17, av=1.16, b_dp=-2.0
+    !
+    ! P_eps = -av * (eps_xx + eps_yy + eps_zz)
+    ! Q_eps = b_dp/2 * (eps_zz - 0.5*(eps_yy + eps_xx))
+    ! delta_Ec  = ac * Tr_eps
+    ! delta_EHH = -P_eps + Q_eps
+    ! delta_ESO = -P_eps
+
+    integer, parameter :: ny = 3
+    type(spatial_grid) :: grid
+    type(paramStruct) :: params(1)
+    character(len=255) :: materials(1)
+    type(strain_result) :: strain_out
+    real(kind=dp) :: profile_2d(ny, 3)
+    real(kind=dp) :: eps_xx_val, eps_yy_val, eps_zz_val
+    real(kind=dp) :: Tr_eps, P_eps, Q_eps
+    real(kind=dp) :: delta_Ec_exp, delta_EHH_exp, delta_ESO_exp
+    integer :: ij
+
+    materials(1) = "GaAs"
+    call paramDatabase(materials, 1, params)
+
+    ! Set up minimal grid
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = ny
+    grid%dx = 0.0_dp
+    grid%dy = 1.0_dp
+    allocate(grid%z(ny))
+    allocate(grid%material_id(ny))
+    grid%material_id = 1
+
+    ! Allocate strain arrays manually with known values
+    allocate(strain_out%eps_xx(ny), strain_out%eps_yy(ny))
+    allocate(strain_out%eps_zz(ny), strain_out%eps_yz(ny))
+
+    ! Set known strain values (typical biaxial strain)
+    eps_xx_val = 0.01_dp
+    eps_yy_val = 0.01_dp
+    eps_zz_val = -0.005_dp  ! Poisson contraction
+
+    strain_out%eps_xx = eps_xx_val
+    strain_out%eps_yy = eps_yy_val
+    strain_out%eps_zz = eps_zz_val
+    strain_out%eps_yz = 0.0_dp
+
+    ! Expected Pikus-Bir shifts
+    Tr_eps = eps_xx_val + eps_yy_val + eps_zz_val
+    P_eps = -params(1)%av * Tr_eps
+    Q_eps = params(1)%b_dp * 0.5_dp * (eps_zz_val - &
+      0.5_dp * (eps_yy_val + eps_xx_val))
+    delta_Ec_exp  = params(1)%ac * Tr_eps
+    delta_EHH_exp = -P_eps + Q_eps
+    delta_ESO_exp = -P_eps
+
+    ! Initialize profile_2d to zero
+    profile_2d = 0.0_dp
+
+    call apply_pikus_bir(strain_out, params, grid%material_id, grid, profile_2d)
+
+    ! Verify shifts at all points
+    do ij = 1, ny
+      @assertEqual(delta_Ec_exp, profile_2d(ij, 3), tolerance=1.0e-12_dp)
+      @assertEqual(delta_EHH_exp, profile_2d(ij, 1), tolerance=1.0e-12_dp)
+      @assertEqual(delta_ESO_exp, profile_2d(ij, 2), tolerance=1.0e-12_dp)
+    end do
+
+    call strain_result_free(strain_out)
+    deallocate(grid%z, grid%material_id)
+
+  end subroutine test_pikus_bir_diagonal
+
+
+  @test
+  subroutine test_strain_disabled()
+    ! strain_config with enabled=.false.
+    ! compute_strain should allocate zero arrays and return immediately.
+
+    integer, parameter :: ny = 5
+    type(spatial_grid) :: grid
+    type(paramStruct) :: params(2)
+    character(len=255) :: materials(2)
+    type(strain_config) :: strain_cfg
+    type(strain_result) :: strain_out
+    real(kind=dp) :: a0_ref
+    real(kind=dp) :: profile_2d(ny, 3)
+    real(kind=dp) :: max_val
+    integer :: ij
+
+    materials(1) = "GaAs"
+    materials(2) = "InAs"
+    call paramDatabase(materials, 2, params)
+
+    a0_ref = params(1)%a0
+
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = ny
+    grid%dx = 0.0_dp
+    grid%dy = 1.0_dp
+    allocate(grid%z(ny))
+    allocate(grid%material_id(ny))
+    grid%material_id = [1, 2, 2, 2, 1]
+
+    ! Strain disabled
+    strain_cfg%enabled = .false.
+
+    call compute_strain(grid, params, grid%material_id, strain_cfg, a0_ref, &
+      strain_out)
+
+    ! All arrays should be zero
+    max_val = 0.0_dp
+    do ij = 1, ny
+      max_val = max(max_val, abs(strain_out%eps_xx(ij)))
+      max_val = max(max_val, abs(strain_out%eps_yy(ij)))
+      max_val = max(max_val, abs(strain_out%eps_zz(ij)))
+      max_val = max(max_val, abs(strain_out%eps_yz(ij)))
+    end do
+    @assertTrue(max_val == 0.0_dp, message="Disabled strain produces zero arrays")
+
+    ! apply_pikus_bir should also produce no change (early exit)
+    profile_2d = 1.0_dp  ! set to nonzero
+    call apply_pikus_bir(strain_out, params, grid%material_id, grid, profile_2d)
+
+    ! profile_2d should remain unchanged (strain arrays are all zero,
+    ! so the negligible-strain check in apply_pikus_bir will skip all points)
+    max_val = 0.0_dp
+    do ij = 1, ny
+      max_val = max(max_val, abs(profile_2d(ij, 1) - 1.0_dp))
+      max_val = max(max_val, abs(profile_2d(ij, 2) - 1.0_dp))
+      max_val = max(max_val, abs(profile_2d(ij, 3) - 1.0_dp))
+    end do
+    @assertTrue(max_val < 1.0e-15_dp, message="apply_pikus_bir no-op with zero strain")
+
+    call strain_result_free(strain_out)
+    deallocate(grid%z, grid%material_id)
+
+  end subroutine test_strain_disabled
+
+
+  @test
+  subroutine test_lattice_matched()
+    ! All materials have same a0 (all GaAs).
+    ! compute_strain should detect lattice-matched and return zero arrays.
+
+    integer, parameter :: ny = 8
+    type(spatial_grid) :: grid
+    type(paramStruct) :: params(1)
+    character(len=255) :: materials(1)
+    type(strain_config) :: strain_cfg
+    type(strain_result) :: strain_out
+    real(kind=dp) :: a0_ref
+    real(kind=dp) :: max_val
+    integer :: ij
+
+    materials(1) = "GaAs"
+    call paramDatabase(materials, 1, params)
+
+    a0_ref = params(1)%a0
+
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = ny
+    grid%dx = 0.0_dp
+    grid%dy = 1.0_dp
+    allocate(grid%z(ny))
+    allocate(grid%material_id(ny))
+    grid%material_id = 1  ! all GaAs
+
+    strain_cfg%enabled = .true.
+
+    call compute_strain(grid, params, grid%material_id, strain_cfg, a0_ref, &
+      strain_out)
+
+    ! All strain arrays should be zero
+    max_val = 0.0_dp
+    do ij = 1, ny
+      max_val = max(max_val, abs(strain_out%eps_xx(ij)))
+      max_val = max(max_val, abs(strain_out%eps_yy(ij)))
+      max_val = max(max_val, abs(strain_out%eps_zz(ij)))
+      max_val = max(max_val, abs(strain_out%eps_yz(ij)))
+    end do
+    @assertTrue(max_val == 0.0_dp, message="Lattice-matched produces zero strain")
+
+    call strain_result_free(strain_out)
+    deallocate(grid%z, grid%material_id)
+
+  end subroutine test_lattice_matched
+
+
+  @test
+  subroutine test_strain_result_free()
+    ! Allocate a strain_result, free it, verify deallocation.
+
+    type(strain_result) :: s
+    integer :: n
+
+    n = 5
+    allocate(s%eps_xx(n), s%eps_yy(n), s%eps_zz(n), s%eps_yz(n))
+    s%eps_xx = 0.1_dp
+    s%eps_yy = 0.2_dp
+    s%eps_zz = 0.3_dp
+    s%eps_yz = 0.0_dp
+
+    ! Verify allocated before free
+    @assertTrue(allocated(s%eps_xx), message="eps_xx allocated before free")
+    @assertTrue(allocated(s%eps_yy), message="eps_yy allocated before free")
+    @assertTrue(allocated(s%eps_zz), message="eps_zz allocated before free")
+    @assertTrue(allocated(s%eps_yz), message="eps_yz allocated before free")
+
+    call strain_result_free(s)
+
+    ! Verify deallocated after free
+    @assertFalse(allocated(s%eps_xx), message="eps_xx deallocated after free")
+    @assertFalse(allocated(s%eps_yy), message="eps_yy deallocated after free")
+    @assertFalse(allocated(s%eps_zz), message="eps_zz deallocated after free")
+    @assertFalse(allocated(s%eps_yz), message="eps_yz deallocated after free")
+
+  end subroutine test_strain_result_free
+
+end module test_strain_solver
