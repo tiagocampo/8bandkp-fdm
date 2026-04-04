@@ -4,7 +4,6 @@ module hamiltonianConstructor
   use finitedifferences
   use sparse_matrices
   use utils
-  use mkl_spblas
 
   implicit none
 
@@ -593,7 +592,7 @@ module hamiltonianConstructor
 
       !input/output
       complex(kind=dp), intent(inout), dimension(:,:) :: HT
-      type(sparse_matrix_T), intent(inout), optional :: HT_csr
+      type(csr_matrix), intent(inout), optional :: HT_csr
       type(wavevector), intent(in) :: wv
       real(kind = dp), intent(in), dimension(:,:) :: profile
       real(kind = dp), intent(in), dimension(:,:,:) :: kpterms

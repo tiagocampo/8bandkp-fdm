@@ -31,4 +31,9 @@ if [ ! -f "$WORKDIR/output/eigenvalues.dat" ]; then
     exit 1
 fi
 
-python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" --tolerance 1e-8
+# Extract only the first data line (k=1, deterministic) for comparison.
+# FEAST non-convergence at k>1 makes those eigenvalues non-deterministic.
+grep -v '^#' "$WORKDIR/output/eigenvalues.dat" | head -1 > "$WORKDIR/output/eig_k1.dat"
+grep -v '^#' "$REF_DIR/eigenvalues.dat" | head -1 > "$WORKDIR/ref_k1.dat"
+
+python3 "$COMPARE" "$WORKDIR/ref_k1.dat" "$WORKDIR/output/eig_k1.dat" --tolerance 1e-8

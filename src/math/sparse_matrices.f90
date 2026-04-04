@@ -17,7 +17,7 @@ module sparse_matrices
 
   private
   public :: csr_matrix
-  public :: csr_init, csr_free, csr_build_from_coo
+  public :: csr_init, csr_free, csr_clone_structure, csr_build_from_coo
   public :: kron_dense_dense, kron_dense_eye, kron_eye_dense, kron_dense_dense_1d
   public :: csr_set_values_from_coo, csr_build_from_coo_cached
   public :: csr_add, csr_scale, csr_apply_variable_coeff
@@ -65,6 +65,29 @@ contains
     allocate(mat%values(0))
     allocate(mat%colind(0))
   end subroutine csr_init
+
+  ! ------------------------------------------------------------------
+  ! Clone the sparsity structure (rowptr, colind) from src to dst.
+  ! dst%values is allocated with the same size but set to zero.
+  ! dst%nnz, nrows, ncols are copied from src.
+  ! ------------------------------------------------------------------
+  subroutine csr_clone_structure(src, dst)
+    type(csr_matrix), intent(in)  :: src
+    type(csr_matrix), intent(out) :: dst
+
+    dst%nrows = src%nrows
+    dst%ncols = src%ncols
+    dst%nnz   = src%nnz
+
+    allocate(dst%rowptr(size(src%rowptr)))
+    dst%rowptr = src%rowptr
+
+    allocate(dst%colind(src%nnz))
+    dst%colind = src%colind
+
+    allocate(dst%values(src%nnz))
+    dst%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
+  end subroutine csr_clone_structure
 
   ! ------------------------------------------------------------------
   ! Deallocate all arrays in a CSR matrix.

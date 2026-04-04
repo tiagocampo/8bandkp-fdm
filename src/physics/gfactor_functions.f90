@@ -2,7 +2,7 @@ module gfactorFunctions
 
   use definitions
   use hamiltonianConstructor
-  use mkl_spblas
+  use sparse_matrices, only: csr_matrix, csr_spmv
   use OMP_lib
 
   implicit none
@@ -37,7 +37,7 @@ subroutine compute_pele(Pele, direction, state_a, state_b, nlayers, params, &
   logical, intent(in) :: sparse_mode
   real(kind=dp), intent(in), optional, dimension(:,:) :: profile
   real(kind=dp), intent(in), optional, dimension(:,:,:) :: kpterms
-  type(sparse_matrix_T), intent(in), optional :: HT_csr_dir
+  type(csr_matrix), intent(in), optional :: HT_csr_dir
   complex(kind=dp), intent(in), optional, dimension(:,:) :: hkp_mat
   real(kind=dp), intent(in), optional :: startz, endz, dz
 
@@ -183,7 +183,7 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
   complex(kind=dp), intent(inout), optional, dimension(:) :: Ppartial
   real(kind = dp), intent(in), optional, dimension(:,:) :: profile
   real(kind = dp), intent(in), optional, dimension(:,:,:) :: kpterms
-  type(sparse_matrix_T), intent(in), optional :: HT_csr
+  type(csr_matrix), intent(in), optional :: HT_csr
   real(kind=dp), intent(in), optional :: startz, endz, dz
   complex(kind=dp), intent(in), optional, dimension(:,:) :: hkp_out
 
@@ -191,8 +191,6 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
   integer :: dimax
   complex(kind=dp), allocatable, dimension(:,:) :: hkp
 
-  type(matrix_descr) :: descrA
-  integer :: info
 
   complex(kind=dp) :: alpha, beta
   complex(kind=dp) :: zdotc
@@ -230,15 +228,9 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
 
 
     allocate(Y1(dimax))
-    !create matrix descriptor
-    descrA%TYPE =SPARSE_MATRIX_TYPE_GENERAL
+    Y1 = cmplx(0.0_dp, 0.0_dp, kind=dp)
 
-    info = mkl_sparse_z_mv (SPARSE_OPERATION_NON_TRANSPOSE, alpha, HT_csr, descrA, state2(:), beta, Y1)
-
-    if (info /= 0) then
-      print *, 'Error: mkl_sparse_z_mv failed with info =', info
-      stop 1
-    end if
+    call csr_spmv(HT_csr, state2, Y1, alpha, beta)
 
     Pele = zdotc(dimax,state1(:),1,Y1(:),1)
 
@@ -312,11 +304,9 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
   complex(kind=dp) :: zdotc
 
   type(wavevector), allocatable, dimension(:) :: smallk
-  type(sparse_matrix_T) :: HT_csr_mod1,HT_csr_mod2
+  type(csr_matrix) :: HT_csr_mod1,HT_csr_mod2
   complex(kind=dp), allocatable, dimension(:,:) :: hkp
   logical :: sparse
-  integer :: info
-  type(matrix_descr) :: descrA
 
   dimax = size(cb_state,1)
   fdStep = int(dimax/8)

@@ -33,6 +33,8 @@ program kpfdm
   complex(kind=dp), allocatable, dimension(:,:,:) :: eigv
   complex(kind=dp), allocatable, dimension(:,:) :: HT, HTmp
   integer, allocatable :: iwork(:), ifail(:)
+  integer :: mkl_set_num_threads_local
+  external :: zheevx, mkl_set_num_threads_local
 
   ! file handling
   integer(kind=4) :: iounit
@@ -133,54 +135,127 @@ program kpfdm
     allocate(eig_wire(nev_wire, cfg%waveVectorStep))
     eig_wire = 0.0_dp
 
-    ! kz sweep loop
-    do k = 1, cfg%waveVectorStep
+    ! ==================================================================
+    ! Wire kz sweep: serial k=1 (build COO cache) + OpenMP k=2..N
+    ! ==================================================================
 
-      print *, 'k-point ', k, '/', cfg%waveVectorStep, &
-        & ' kz=', smallk(k)%kz
+    ! --- Serial k=1: build COO cache, auto energy window, solve ---
+    print *, 'k-point 1/', cfg%waveVectorStep, ' kz=', smallk(1)%kz
 
-      ! Build sparse Hamiltonian at this kz (reuses COO structure
-      ! from first k-point for subsequent k-points)
-      call ZB8bandGeneralized(HT_csr, smallk(k)%kz, profile_2d, &
-        & kpterms_2d, cfg, coo_cache)
+    call ZB8bandGeneralized(HT_csr, smallk(1)%kz, profile_2d, &
+      & kpterms_2d, cfg, coo_cache)
 
-      ! Auto-compute energy window from Gershgorin bounds on first k-point
-      if (k == 1) then
-        call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
-        print *, '  Auto energy window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
-      end if
+    call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
+    print *, '  Auto energy window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
 
-      ! Solve sparse eigenvalue problem
-      call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
+    call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
 
-      if (.not. eigen_res%converged) then
-        print *, '  WARNING: FEAST did not converge at k-point ', k
-      end if
+    if (.not. eigen_res%converged) then
+      print *, '  WARNING: FEAST did not converge at k-point 1'
+    end if
+    print *, '  Found ', eigen_res%nev_found, ' eigenvalues (requested ', &
+      & nev_wire, ') iterations=', eigen_res%iterations
 
-      print *, '  Found ', eigen_res%nev_found, ' eigenvalues (requested ', &
-        & nev_wire, ') iterations=', eigen_res%iterations
+    if (eigen_res%nev_found > 0) then
+      do i = 1, min(eigen_res%nev_found, nev_wire)
+        eig_wire(i, 1) = eigen_res%eigenvalues(i)
+      end do
+    end if
 
-      ! Store eigenvalues (pad with zero if fewer found than requested)
-      if (eigen_res%nev_found > 0) then
-        do i = 1, min(eigen_res%nev_found, nev_wire)
-          eig_wire(i, k) = eigen_res%eigenvalues(i)
+    ! Write 2D eigenfunctions for k=1
+    if (eigen_res%nev_found > 0) then
+      call writeEigenfunctions2d(cfg%grid, eigen_res%eigenvalues, &
+        & eigen_res%eigenvectors, 1, eigen_res%nev_found)
+      print *, '  Wrote ', eigen_res%nev_found, ' 2D wavefunctions to output/wf_k1_*.dat'
+    end if
+
+    call eigensolver_result_free(eigen_res)
+
+    ! --- OpenMP parallel k=2..N ---
+    ! HT_csr (from k=1) provides the CSR sparsity template for each thread.
+    if (cfg%waveVectorStep > 1) then
+      ! Disable MKL internal threading so each OpenMP thread calls
+      ! FEAST in serial — avoids oversubscription.
+      info = mkl_set_num_threads_local(1)
+
+      print '(A,I0,A)', ' Wire kz-sweep: k=2..', cfg%waveVectorStep, &
+        & ' (OpenMP parallel)'
+
+      block
+        type(csr_matrix)          :: HT_csr_loc
+        type(eigensolver_result)  :: eigen_res_loc
+
+        !$omp parallel private(k, i, info, HT_csr_loc, eigen_res_loc)
+        ! Each thread constrains MKL to 1 thread locally
+        info = mkl_set_num_threads_local(1)
+
+        !$omp do schedule(static)
+        do k = 2, cfg%waveVectorStep
+          ! Clone CSR sparsity structure for this k-point
+          call csr_clone_structure(HT_csr, HT_csr_loc)
+          ! Build sparse Hamiltonian (reuses read-only COO cache from k=1)
+          call ZB8bandGeneralized(HT_csr_loc, smallk(k)%kz, profile_2d, &
+            & kpterms_2d, cfg, coo_cache)
+
+          ! Solve sparse eigenvalue problem
+          call solve_sparse_evp(HT_csr_loc, eigen_cfg, eigen_res_loc)
+
+          if (.not. eigen_res_loc%converged) then
+            !$omp critical
+            print *, '  WARNING: FEAST did not converge at k-point ', k
+            !$omp end critical
+          end if
+
+          ! Store eigenvalues (each thread writes to its own k column)
+          if (eigen_res_loc%nev_found > 0) then
+            do i = 1, min(eigen_res_loc%nev_found, nev_wire)
+              eig_wire(i, k) = eigen_res_loc%eigenvalues(i)
+            end do
+          end if
+
+          ! Clean up per-thread eigensolver result and CSR
+          call eigensolver_result_free(eigen_res_loc)
+          call csr_free(HT_csr_loc)
         end do
-      end if
+        !$omp end do
 
-      ! Write 2D eigenfunctions at select k-points (start, middle, end)
-      if (eigen_res%nev_found > 0 .and. &
-        & (k == 1 .or. k == cfg%waveVectorStep/2 .or. k == cfg%waveVectorStep)) then
-        call writeEigenfunctions2d(cfg%grid, eigen_res%eigenvalues, &
-          & eigen_res%eigenvectors, k, eigen_res%nev_found)
-        print *, '  Wrote ', eigen_res%nev_found, ' 2D wavefunctions to output/wf_k', k, '_*.dat'
-      end if
+        !$omp end parallel
+      end block
+    end if
 
-      ! Clean up eigensolver result for this k-point
-      call eigensolver_result_free(eigen_res)
+    ! --- Serial: write 2D eigenfunctions for middle and last k-points ---
+    ! (HT_csr still alive as CSR sparsity template)
+    block
+      type(csr_matrix)         :: HT_csr_wf
+      type(eigensolver_result) :: eigen_res_wf
+      integer :: k_wf
 
-    end do
+      do k_wf = 1, cfg%waveVectorStep
+        if (k_wf /= 1 .and. &
+          & k_wf /= cfg%waveVectorStep/2 .and. &
+          & k_wf /= cfg%waveVectorStep) cycle
+        ! k=1 already written above
+        if (k_wf == 1) cycle
 
-    ! Free Hamiltonian CSR and COO cache (kept alive across k-points)
+        ! Clone CSR structure from k=1 template
+        call csr_clone_structure(HT_csr, HT_csr_wf)
+        call ZB8bandGeneralized(HT_csr_wf, smallk(k_wf)%kz, profile_2d, &
+          & kpterms_2d, cfg, coo_cache)
+        call solve_sparse_evp(HT_csr_wf, eigen_cfg, eigen_res_wf)
+
+        if (eigen_res_wf%nev_found > 0) then
+          call writeEigenfunctions2d(cfg%grid, eigen_res_wf%eigenvalues, &
+            & eigen_res_wf%eigenvectors, k_wf, eigen_res_wf%nev_found)
+          print *, '  Wrote ', eigen_res_wf%nev_found, &
+            & ' 2D wavefunctions to output/wf_k', k_wf, '_*.dat'
+        end if
+
+        call eigensolver_result_free(eigen_res_wf)
+        call csr_free(HT_csr_wf)
+      end do
+    end block
+
+    ! Free Hamiltonian CSR and COO cache
     call csr_free(HT_csr)
     call wire_coo_cache_free(coo_cache)
 
@@ -327,91 +402,130 @@ program kpfdm
     print *, 'SC potential profile written to output/sc_potential_profile.dat'
   end if
 
-  do k = 1, cfg%waveVectorStep, 1
+  ! ====================================================================
+  ! Workspace query (serial, k=1) — determines lwork for zheevx
+  ! ====================================================================
+  if (cfg%confDir == 'n') then
+    ! BULK: 8x8 workspace query
+    call ZB8bandBulk(HT, smallk(1), cfg%params(1))
+    HTmp = HT(1:8,1:8)
+    if (allocated(work)) deallocate(work)
+    allocate(work(1))
+    lwork = -1
+    call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:cfg%evnum,1), &
+               HTmp, 8, work, lwork, rwork, iwork, ifail, info)
+    if (info /= 0) then
+      print *, 'Error: zheevx bulk workspace query failed, info =', info
+      stop 1
+    end if
+    lwork = int(real(work(1)))
+    if (allocated(work)) deallocate(work)
+    allocate(work(lwork))
+  else if (cfg%confDir == 'z') then
+    ! QW: NxN workspace query
+    call ZB8bandQW(HT, smallk(1), profile, kpterms)
+    if (allocated(work)) deallocate(work)
+    allocate(work(1))
+    lwork = -1
+    call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,1), &
+               HT, N, work, lwork, rwork, iwork, ifail, info)
+    if (info /= 0) then
+      print *, 'Error: zheevx QW workspace query failed, info =', info
+      stop 1
+    end if
+    lwork = int(real(work(1)))
+    if (allocated(work)) deallocate(work)
+    allocate(work(lwork))
+  end if
 
-    print *, smallk(k)%kx, smallk(k)%ky, smallk(k)%kz
-    if (cfg%confDir == 'n') then !BULK
-      call ZB8bandBulk(HT,smallk(k),cfg%params(1))
-      ! Copy to temporary array
+  ! ====================================================================
+  ! k-vector sweep: sequential for bulk, OpenMP parallel for QW
+  ! ====================================================================
+  if (cfg%confDir == 'n') then
+    ! --- BULK (8x8, trivially fast — no parallelization needed) ---
+    do k = 1, cfg%waveVectorStep
+      call ZB8bandBulk(HT, smallk(k), cfg%params(1))
       HTmp = HT(1:8,1:8)
 
-      ! Query optimal workspace
-      if (k == 1) then
-        if (allocated(work)) deallocate(work)
-        allocate(work(1))
-        lwork = -1
-        call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:cfg%evnum,k), &
-                   HTmp, 8, work, lwork, rwork, iwork, ifail, info)
-        if (info /= 0) then
-          print *, 'Error: zheevx bulk workspace query failed, info =', info
-          stop 1
-        end if
-        lwork = int(real(work(1)))
-        if (allocated(work)) deallocate(work)
-        allocate(work(lwork))
-      end if
-
-      ! Actual diagonalization - use zheevx for selected eigenvalues
       call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:cfg%evnum,k), &
                  HTmp, 8, work, lwork, rwork, iwork, ifail, info)
       if (info /= 0) then
         print *, "Diagonalization error in bulk calculation, info = ", info
-        if (info < 0) then
-          print *, "Parameter ", -info, " had illegal value"
-        end if
+        if (info < 0) print *, "Parameter ", -info, " had illegal value"
         stop "error diag"
       end if
 
-      ! For bulk, just copy the selected eigenvectors
       eigv(:,:,k) = HTmp(:,1:cfg%evnum)
+    end do
 
-    else if (cfg%confDir == 'z') then ! QUANTUM WELL
-      call ZB8bandQW(HT, smallk(k), profile, kpterms)
+    ! Write bulk eigenfunctions at start, middle, end k-points
+    do k = 1, cfg%waveVectorStep
+      if (k == 1 .or. k == int(cfg%waveVectorStep/2) .or. k == cfg%waveVectorStep) then
+        call writeEigenfunctions(8, min(cfg%evnum,8), eigv(:,1:min(cfg%evnum,8),k), &
+          & k, cfg%fdstep, cfg%z, .true.)
+      end if
+    end do
 
-      ! Query optimal workspace for full matrix
-      if (k == 1) then
-        if (allocated(work)) deallocate(work)
-        allocate(work(1))
-        lwork = -1
-        call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,k), &
-                   HT, N, work, lwork, rwork, iwork, ifail, info)
-        if (info /= 0) then
-          print *, 'Error: zheevx QW workspace query failed, info =', info
-          stop 1
+  else if (cfg%confDir == 'z') then
+    ! --- QUANTUM WELL (NxN, OpenMP parallel) ---
+    ! Disable MKL internal threading so each OpenMP thread calls
+    ! zheevx in serial — avoids oversubscription with intel_thread MKL.
+    ! mkl_set_num_threads_local returns previous setting (discarded).
+    info = mkl_set_num_threads_local(1)
+
+    print '(A,I0,A)', ' QW k-sweep: ', cfg%waveVectorStep, ' k-points (OpenMP parallel)'
+
+    block
+      ! Thread-private temporaries for the parallel region
+      complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
+      real(kind=dp), allocatable    :: rwork_loc(:)
+      integer, allocatable          :: iwork_loc(:), ifail_loc(:)
+      integer :: info_loc, M_loc
+
+      !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
+      ! Each thread allocates its own workspace
+      allocate(HT_loc(N, N))
+      allocate(work_loc(lwork))
+      allocate(rwork_loc(7*N))
+      allocate(iwork_loc(5*N))
+      allocate(ifail_loc(N))
+      HT_loc = (0.0_dp, 0.0_dp)
+
+      !$omp do schedule(static)
+      do k = 1, cfg%waveVectorStep
+        ! Build Hamiltonian for this k-point
+        call ZB8bandQW(HT_loc, smallk(k), profile, kpterms)
+
+        ! Diagonalize
+        call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
+                   eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
+                   ifail_loc, info_loc)
+        if (info_loc /= 0) then
+          !$omp critical
+          print *, "Diagonalization error at k=", k, " info=", info_loc
+          if (info_loc < 0) print *, "  Parameter ", -info_loc, " had illegal value"
+          !$omp end critical
+          cycle
         end if
-        lwork = int(real(work(1)))
-        if (allocated(work)) deallocate(work)
-        allocate(work(lwork))
+
+        ! Store eigenvectors (HT_loc now holds them, zheevx overwrites input)
+        eigv(:,:,k) = HT_loc(:, 1:iuu-il+1)
+      end do
+      !$omp end do
+
+      deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
+      !$omp end parallel
+    end block
+
+    ! Write QW eigenfunctions at start, middle, end k-points (serial)
+    do k = 1, cfg%waveVectorStep
+      if (k == 1 .or. k == int(cfg%waveVectorStep/2) .or. k == cfg%waveVectorStep) then
+        call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
+          & k, cfg%fdstep, cfg%z, .false.)
       end if
+    end do
 
-      ! Actual diagonalization of full matrix using zheevx
-      call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,k), &
-                 HT, N, work, lwork, rwork, iwork, ifail, info)
-      if (info /= 0) then
-        print *, "Diagonalization error in quantum well calculation, info = ", info
-        if (info < 0) then
-          print *, "Parameter ", -info, " had illegal value"
-        end if
-        stop "error diag"
-      end if
-
-      ! For quantum well, copy only the selected eigenvectors
-      eigv(:,:,k) = HT(:,1:iuu-il+1)
-    else
-      stop "verify confinement direction or something else"
-    end if
-
-    ! Write eigenfunctions only at k=0 or specific k-points
-    if (k == 1 .or. k == int(cfg%waveVectorStep/2) .or. k == cfg%waveVectorStep) then  ! Write at start, middle, and end k-points
-      if (cfg%confDir == 'n') then
-        call writeEigenfunctions(8, min(cfg%evnum,8), HTmp(:,1:min(cfg%evnum,8)), k, cfg%fdstep, cfg%z, .true.)
-      else
-        ! For quantum well, write only the requested number of states
-        call writeEigenfunctions(N, iuu-il+1, HT(:,1:iuu-il+1), k, cfg%fdstep, cfg%z, .false.)
-      end if
-    end if
-
-  end do
+  end if
   call writeEigenvalues(smallk, eig(:,:), cfg%waveVectorStep)
 
 
