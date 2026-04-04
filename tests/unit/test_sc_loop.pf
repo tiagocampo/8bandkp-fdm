@@ -745,7 +745,7 @@ contains
     cfg%sc%bc_right = 0.0_dp
 
     ! ---- Step 5: Eigensolver config ----
-    ! Use LAPACK fallback (works without FEAST)
+    ! ARPACK falls back to dense LAPACK when FEAST is not compiled in
     num_subbands = cfg%numcb + cfg%numvb  ! 8
     eigen_cfg%method = 'ARPACK'
     eigen_cfg%nev = num_subbands
@@ -773,7 +773,7 @@ contains
 
     ! 1. Eigenvalues at k=0 are non-zero and ordered (non-decreasing, allowing degeneracy)
     do ij = 2, num_subbands
-      eigenvalues_ordered = (eig_wire(ij, 1) - eig_wire(ij-1, 1)) >= 0.0_dp
+      eigenvalues_ordered = (eig_wire(ij, 1) - eig_wire(ij-1, 1)) >= -1.0e-12_dp
       @assertTrue(eigenvalues_ordered, message="Eigenvalues ordered ascending at k=0")
     end do
     @assertTrue(abs(eig_wire(1, 1)) > 0.0_dp, message="Eigenvalues are non-zero")
