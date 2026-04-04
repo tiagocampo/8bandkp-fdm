@@ -190,4 +190,94 @@ contains
     call csr_free(A)
   end subroutine test_spmv_alpha_complex
 
+  ! ==================================================================
+  ! Cached CSR build: same sparsity pattern, different values
+  ! ==================================================================
+
+  @test
+  subroutine test_csr_cached_values()
+    ! Build CSR from COO with cache, then rebuild with different values
+    ! using csr_set_values_from_coo.  Verify:
+    !   1. Same sparsity pattern (same nnz, rowptr, colind)
+    !   2. Cached values match a freshly built matrix
+    !   3. No out-of-range mappings
+
+    integer, parameter :: n = 4, nnz = 7
+    type(csr_matrix) :: A_cached, A_fresh
+    integer :: rows(nnz), cols(nnz)
+    complex(kind=dp) :: vals1(nnz), vals2(nnz)
+    integer, allocatable :: coo_to_csr(:)
+    integer :: i
+    real(kind=dp) :: max_val_err
+
+    ! Sparse pattern: a 4x4 tridiagonal + one off-band entry
+    rows = [1, 1, 2, 2, 3, 3, 4]
+    cols = [1, 2, 2, 3, 3, 4, 4]
+
+    ! First set of values
+    vals1 = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), &
+             cmplx(3.0_dp, 0, dp), cmplx(4.0_dp, 0, dp), &
+             cmplx(5.0_dp, 0, dp), cmplx(6.0_dp, 0, dp), &
+             cmplx(7.0_dp, 0, dp)]
+
+    ! Build with cache
+    call csr_build_from_coo_cached(A_cached, n, n, nnz, rows, cols, vals1, coo_to_csr)
+
+    ! Verify mapping is valid (all positions in range)
+    do i = 1, nnz
+      @assertTrue(coo_to_csr(i) >= 1 .and. coo_to_csr(i) <= A_cached%nnz, message="coo_to_csr mapping in range")
+    end do
+
+    ! Build fresh matrix with same pattern for comparison
+    call csr_build_from_coo(A_fresh, n, n, nnz, rows, cols, vals1)
+
+    ! Check 1: Same sparsity pattern
+    @assertEqual(A_fresh%nnz, A_cached%nnz, message="Same nnz")
+    do i = 1, n + 1
+      @assertEqual(A_fresh%rowptr(i), A_cached%rowptr(i), message="Same rowptr")
+    end do
+    do i = 1, A_fresh%nnz
+      @assertEqual(A_fresh%colind(i), A_cached%colind(i), message="Same colind")
+    end do
+
+    ! Check 2: Same values
+    max_val_err = 0.0_dp
+    do i = 1, A_fresh%nnz
+      max_val_err = max(max_val_err, abs(A_fresh%values(i) - A_cached%values(i)))
+    end do
+    @assertTrue(max_val_err < 1.0e-14_dp, message="Initial values match")
+
+    ! Now update with different values using the cached path
+    vals2 = [cmplx(10.0_dp, 1.0_dp, dp), cmplx(20.0_dp, 2.0_dp, dp), &
+             cmplx(30.0_dp, 3.0_dp, dp), cmplx(40.0_dp, 4.0_dp, dp), &
+             cmplx(50.0_dp, 5.0_dp, dp), cmplx(60.0_dp, 6.0_dp, dp), &
+             cmplx(70.0_dp, 7.0_dp, dp)]
+
+    call csr_set_values_from_coo(A_cached, nnz, coo_to_csr, vals2)
+
+    ! Rebuild fresh with same new values
+    call csr_free(A_fresh)
+    call csr_build_from_coo(A_fresh, n, n, nnz, rows, cols, vals2)
+
+    ! Check 3: Sparsity preserved (rowptr and colind unchanged)
+    do i = 1, n + 1
+      @assertEqual(A_fresh%rowptr(i), A_cached%rowptr(i), message="rowptr preserved")
+    end do
+    do i = 1, A_fresh%nnz
+      @assertEqual(A_fresh%colind(i), A_cached%colind(i), message="colind preserved")
+    end do
+
+    ! Check 4: Updated values match fresh build
+    max_val_err = 0.0_dp
+    do i = 1, A_fresh%nnz
+      max_val_err = max(max_val_err, abs(A_fresh%values(i) - A_cached%values(i)))
+    end do
+    @assertTrue(max_val_err < 1.0e-14_dp, message="Updated values match fresh build")
+
+    call csr_free(A_cached)
+    call csr_free(A_fresh)
+    deallocate(coo_to_csr)
+
+  end subroutine test_csr_cached_values
+
 end module test_csr_spmv
