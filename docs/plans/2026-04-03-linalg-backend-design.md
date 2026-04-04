@@ -50,6 +50,7 @@ No runtime dispatch. Single backend per build. This matches the approach used by
 
 - `csr_spmv` subroutine in `sparse_matrices.f90` — pure Fortran CSR SpMV with OpenMP parallelization
 - CMake `LINALG_BACKEND` option with auto-detection
+- `src/math/linalg.f90` — centralized LAPACK/FEAST interface blocks (Phase 1.5)
 
 ## Phase 1: CPU Portability, Parallelization & Performance — DONE
 
@@ -279,6 +280,51 @@ Speedups from: OpenMP k-sweep parallelization (main contributor), `-O3 -ffast-ma
 
 The codebase no longer has any Intel-copyrighted files. All MKL SpBLAS calls replaced with portable Fortran (`csr_spmv`, `csr_build_from_coo`). The only MKL dependency is now standard BLAS/LAPACK (dense eigensolvers) and FEAST (optional, guarded with `#ifdef USE_MKL_FEAST`). Switching to OpenBLAS or AOCL would require only CMake changes.
 
+## Phase 1.5: Centralized LAPACK Interface Module
+
+### Motivation
+
+GCC 15 emits a strict-aliasing note for `external` declarations at `main.f90:37`:
+```
+note: 'zheevx' was previously declared here
+note: code may be misoptimized unless '-fno-strict-aliasing' is used
+```
+This note persists even with `-fno-strict-aliasing` because it's emitted at the semantic analysis level, not the code-generation level. The root cause is that `external` declarations provide no type information, preventing the compiler from verifying argument types.
+
+### Current state
+
+Six `external` declarations across four files:
+
+| File | Line | Routines |
+|---|---|---|
+| `src/apps/main.f90` | 37 | `zheevx`, `mkl_set_num_threads_local` |
+| `src/physics/sc_loop.f90` | 48 | `ILAENV`, `DLAMCH`, `zheevx`, `dgesv` |
+| `src/math/eigensolver.f90` | 92-93 | `feastinit_call`, `feast_solve_hermitian_csr` |
+| `src/math/eigensolver.f90` | 204 | `zheevx` |
+| `src/math/feast_call.f90` | 14 | `feastinit` |
+| `src/math/feast_call.f90` | 34 | `zfeast_hcsrev` |
+
+### Plan
+
+Create `src/math/linalg.f90` with explicit `interface` blocks for:
+
+- `zheevx` — standard LAPACK hermitian eigensolver (used in main.f90, sc_loop.f90, eigensolver.f90)
+- `dgesv` — LAPACK general linear system solver (used in sc_loop.f90)
+- `ilaenv` — LAPACK block size query (used in sc_loop.f90)
+- `dlamch` — LAPACK machine constants (used in sc_loop.f90)
+- `feastinit` — FEAST initialization (used in feast_call.f90, guarded with `#ifdef USE_MKL_FEAST`)
+- `zfeast_hcsrev` — FEAST sparse hermitian eigensolver (used in feast_call.f90, guarded)
+- `mkl_set_num_threads_local` — MKL threading control (used in main.f90)
+
+Replace all `external ::` declarations with `use linalg, only: ...`.
+
+### Benefits
+
+- Eliminates the GCC 15 strict-aliasing note
+- Centralizes LAPACK/FEAST signatures — single source of truth
+- Enables compile-time argument type checking
+- Aligns with the portability goal: interface blocks work with any BLAS/LAPACK backend
+
 ## Phase 2: GPU Eigensolver (Deferred)
 
 ### When needed
@@ -334,6 +380,7 @@ All 23 tests (13 unit + 10 regression) pass after refactoring.
 | `src/physics/hamiltonianConstructor.f90` | Remove `use mkl_spblas`, use `csr_matrix` type |
 | `src/math/feast_call.f90` | Add `#ifdef USE_MKL_FEAST` guards |
 | `src/math/eigensolver.f90` | Handle missing FEAST gracefully |
+| `src/math/linalg.f90` | **Planned (Phase 1.5)**: Centralized LAPACK/FEAST interface blocks |
 | `CMakeLists.txt` | New flags, MKL threading=intel_thread, backend option, OpenMP, LTO |
 | `src/CMakeLists.txt` | Link OpenMP, update link libraries per backend |
 | `src/math/CMakeLists.txt` | Remove mkl_spblas.f90, mkl_sparse_handle.f90 |
