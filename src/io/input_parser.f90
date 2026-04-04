@@ -463,6 +463,32 @@ contains
     end if
 100 continue
 
+    ! --- Strain parameters (backward compatible: uses defaults if missing) ---
+    read(data_unit, *, iostat=status) label, cfg%strain%enabled
+    if (status == 0 .and. cfg%strain%enabled) then
+      print *, trim(label), cfg%strain%enabled
+
+      read(data_unit, *, iostat=status) label, cfg%strain%reference
+      if (status /= 0) goto 200
+      print *, trim(label), trim(cfg%strain%reference)
+
+      read(data_unit, *, iostat=status) label, cfg%strain%solver
+      if (status /= 0) goto 200
+      print *, trim(label), trim(cfg%strain%solver)
+
+      read(data_unit, *, iostat=status) label, cfg%strain%piezoelectric
+      if (status /= 0) goto 200
+      print *, trim(label), cfg%strain%piezoelectric
+
+    else if (status == 0) then
+      ! strain=.false., skip remaining strain lines
+      print *, trim(label), cfg%strain%enabled
+    else
+      ! Could not read strain flag -- use defaults (strain off)
+      status = 0
+    end if
+200 continue
+
     print *, ' '
 
     !----------------------------------------------------------------------------
