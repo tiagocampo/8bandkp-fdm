@@ -1,0 +1,379 @@
+module test_charge_density
+  use funit
+  use definitions
+  use charge_density
+  use utils, only: simpson
+  implicit none
+
+contains
+
+  !@test
+  subroutine test_fermi_dirac_zero_temp()
+    ! At T -> 0, the Fermi-Dirac function becomes a step function.
+    ! f(E < mu) = 1, f(E > mu) = 0.
+
+    real(kind=dp) :: T, mu
+    real(kind=dp) :: f_below, f_above, f_at
+
+    T = 1.0e-10_dp
+    mu = 1.0_dp
+
+    f_below = fermi_dirac(0.5_dp, mu, T)
+    f_above = fermi_dirac(1.5_dp, mu, T)
+    f_at = fermi_dirac(1.0_dp, mu, T)
+
+    ! E < mu: f = 1
+#line 26 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertEqual(1.0_dp, f_below, tolerance=1.0e-10_dp, &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 26) )
+  if (anyExceptions()) return
+#line 27 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+    ! E > mu: f = 0
+#line 28 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertEqual(0.0_dp, f_above, tolerance=1.0e-10_dp, &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 28) )
+  if (anyExceptions()) return
+#line 29 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+    ! E = mu: f = 0.5 in the limit, but T=0 implementation gives 0
+    ! For our implementation with E == mu, energy < mu is false, so f = 0
+#line 31 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(f_at < 0.5_dp + 1.0e-10_dp, message="f at E=mu bounded", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 31) )
+  if (anyExceptions()) return
+#line 32 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  end subroutine test_fermi_dirac_zero_temp
+
+
+  !@test
+  subroutine test_fermi_dirac_finite_temp()
+    ! At T=300 K, mu=0:
+    ! f(0) = 0.5
+    ! f(kB*T) = 1/(1+e) ~ 0.2689
+
+    real(kind=dp) :: T, mu, kB_val
+    real(kind=dp) :: f_zero, f_kbt
+
+    kB_val = 8.617333262e-5_dp
+    T = 300.0_dp
+    mu = 0.0_dp
+
+    f_zero = fermi_dirac(0.0_dp, mu, T)
+    f_kbt = fermi_dirac(kB_val * T, mu, T)
+
+    ! f(0) = 0.5 exactly
+#line 52 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertEqual(0.5_dp, f_zero, tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 52) )
+  if (anyExceptions()) return
+#line 53 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+    ! f(kB*T) = 1/(1+e) = 0.2689...
+#line 54 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertEqual(1.0_dp / (1.0_dp + exp(1.0_dp)), f_kbt, tolerance=1.0e-6_dp, &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 54) )
+  if (anyExceptions()) return
+#line 55 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  end subroutine test_fermi_dirac_finite_temp
+
+
+  !@test
+  subroutine test_eight_component_sum()
+    ! Construct a known 8-component wavefunction at a single z-point.
+    ! |Psi|^2 = sum_{nu=1}^8 |Psi_nu|^2 should equal the known total.
+    !
+    ! Use a minimal QW: N=1 (single z-point), 1 subband, 1 k_par point.
+    ! Set eigenvector components such that sum of |Psi_nu|^2 = 1.0.
+
+    integer, parameter :: N = 1
+    integer, parameter :: num_subbands = 1
+    integer, parameter :: num_kpar = 3
+    integer, parameter :: numcb = 1
+    real(kind=dp), parameter :: dz = 1.0_dp
+
+    real(kind=dp) :: n_electron(N), n_hole(N)
+    complex(kind=dp) :: eigenvectors(8*N, num_subbands, num_kpar)
+    real(kind=dp) :: eigenvalues(num_subbands, num_kpar)
+    real(kind=dp) :: kpar_grid(num_kpar)
+    real(kind=dp) :: fermi_level, temperature
+    integer :: iband
+
+    ! Set up eigenvector: normalize so sum of |Psi_nu|^2 = 1.0
+    ! Each of 8 bands gets Psi_nu = 1/sqrt(8) for the single z-point
+    eigenvectors = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do iband = 1, 8
+      eigenvectors(iband, 1, :) = cmplx(1.0_dp / sqrt(8.0_dp), 0.0_dp, kind=dp)
+    end do
+
+    ! Set energy well below Fermi level so f=1
+    fermi_level = 1.0_dp
+    temperature = 300.0_dp
+    eigenvalues = -1.0_dp  ! all well below mu => f ~ 1
+
+    ! k_par grid (odd, for Simpson)
+    kpar_grid(1) = 0.0_dp
+    kpar_grid(2) = 0.5_dp
+    kpar_grid(3) = 1.0_dp
+
+    call compute_charge_density_qw(n_electron, n_hole, eigenvectors, &
+      & eigenvalues, kpar_grid, fermi_level, temperature, N, num_subbands, &
+      & num_kpar, numcb)
+
+    ! n_electron(z) should be non-zero (CB subband, f~1, normalized wavefunction)
+    ! The integral of |Psi|^2 * k_par/(2*pi) dk_par * 2 (spin) should give
+    ! a definite positive number.
+#line 103 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_electron(1) > 0.0_dp, message="Electron density is positive", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 103) )
+  if (anyExceptions()) return
+#line 104 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+
+    ! |Psi|^2 = 1.0 at each k_par. The integrand is 1.0 * f * k_par/(2*pi).
+    ! For a single CB subband with f~1:
+    !   n(z) = 2 * int_0^{k_max} k_par/(2*pi) dk_par * 1.0
+    !        = 2 * [k_max^2 / (4*pi)]
+    !        = 2 * 1.0^2 / (4*pi) = 1/(2*pi) in 1/nm^3
+    ! In cm^-3: 1/(2*pi) * 1e21
+    ! Simpson integral of k_par from 0 to 1 with 3 points:
+    !   int = (1/3)*(1/2)*[0 + 4*0.5 + 1.0] = (1/6)*3 = 0.5
+    ! Then divided by (2*pi): 0.5/(2*pi)
+    ! Times spin factor 2: 2 * 0.5/(2*pi) = 1/(2*pi)
+    ! In cm^-3: 1/(2*pi) * 1e21
+    ! But wait, eigenvalues = -1 for ALL k_par, so f(-1, 1, 300) = f(E-mu = -2)
+    ! which is very close to 1.
+
+    ! Expected: ~ 1/(2*pi) * 1e24 ~ 1.59e23 cm^-3 (conversion from 1/AA^3)
+#line 120 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_electron(1) > 5.0e22_dp, message="Electron density lower bound", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 120) )
+  if (anyExceptions()) return
+#line 121 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+#line 121 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_electron(1) < 5.0e23_dp, message="Electron density upper bound", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 121) )
+  if (anyExceptions()) return
+#line 122 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  end subroutine test_eight_component_sum
+
+
+  !@test
+  subroutine test_delta_function()
+    ! Single Gaussian-like wavefunction centered at z=0.
+    ! At T->0 with E < mu, f = 1 for all k_par.
+    ! Use N=5 z-points, 1 CB subband, 3 k_par points.
+    !
+    ! Place all wavefunction weight at z-point 1 (delta-function-like).
+    ! |Psi|^2 should be nonzero only at iz=1.
+    ! After integration, n(z) should be nonzero only at iz=1.
+
+    integer, parameter :: N = 5
+    integer, parameter :: num_subbands = 1
+    integer, parameter :: num_kpar = 3
+    integer, parameter :: numcb = 1
+    real(kind=dp), parameter :: dz = 1.0_dp
+
+    real(kind=dp) :: n_electron(N), n_hole(N)
+    complex(kind=dp) :: eigenvectors(8*N, num_subbands, num_kpar)
+    real(kind=dp) :: eigenvalues(num_subbands, num_kpar)
+    real(kind=dp) :: kpar_grid(num_kpar)
+    real(kind=dp) :: fermi_level, temperature
+
+    ! Initialize all to zero
+    eigenvectors = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! Set wavefunction: band 7 (CB), z-point 1 only, normalized
+    ! 8 bands, each has N=5 z-points
+    ! Band 7: indices (6*N + 1) to (7*N) => 31..35
+    ! Put all weight at z-point 1 (index 31)
+    eigenvectors(31, 1, :) = cmplx(1.0_dp, 0.0_dp, kind=dp)  ! band 7, z=1
+
+    ! Energy below Fermi level
+    fermi_level = 2.0_dp
+    temperature = 1.0e-10_dp  ! T -> 0
+    eigenvalues = 0.0_dp  ! E < mu => f = 1
+
+    ! k_par grid
+    kpar_grid(1) = 0.0_dp
+    kpar_grid(2) = 0.5_dp
+    kpar_grid(3) = 1.0_dp
+
+    call compute_charge_density_qw(n_electron, n_hole, eigenvectors, &
+      & eigenvalues, kpar_grid, fermi_level, temperature, N, num_subbands, &
+      & num_kpar, numcb)
+
+    ! n_electron(1) should be the only nonzero value
+#line 171 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_electron(1) > 0.0_dp, message="Electron density nonzero at z=1", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 171) )
+  if (anyExceptions()) return
+#line 172 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+
+    ! n_electron(2..5) should be essentially zero
+#line 174 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_electron(2) < 1.0e6_dp, message="Electron density zero away from peak", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 174) )
+  if (anyExceptions()) return
+#line 175 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+#line 175 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_electron(3) < 1.0e6_dp, message="Electron density zero at z=3", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 175) )
+  if (anyExceptions()) return
+#line 176 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+#line 176 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_electron(4) < 1.0e6_dp, message="Electron density zero at z=4", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 176) )
+  if (anyExceptions()) return
+#line 177 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+#line 177 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_electron(5) < 1.0e6_dp, message="Electron density zero at z=5", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 177) )
+  if (anyExceptions()) return
+#line 178 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+
+    ! Hole density should be zero (no VB subbands occupied with these params)
+#line 180 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_hole(1) < 1.0e6_dp, message="Hole density zero (no VB subbands)", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 180) )
+  if (anyExceptions()) return
+#line 181 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  end subroutine test_delta_function
+
+
+  !@test
+  subroutine test_bulk_charge_density()
+    ! Bulk charge density with 8 subbands, 3 k-points.
+    ! CB subbands (s=7,8) at E=1.0, VB subbands (s=1..6) at E=-1.0.
+    ! Fermi level at -2.0: both VB and CB states above mu.
+    ! For VB at E=-1.0: f(-1.0, -2.0, 300) ≈ 1/(1+exp(38.7)) ≈ 0
+    !   => holes = (1-f) ≈ 1 (VB empty => lots of holes)
+    ! For CB at E=+1.0: f(1.0, -2.0, 300) ≈ 1/(1+exp(116)) ≈ 0
+    !   => electrons = f ≈ 0
+
+    integer, parameter :: num_subbands = 8
+    integer, parameter :: num_k = 3
+    real(kind=dp) :: n_electron, n_hole
+    real(kind=dp) :: eigenvalues(num_subbands, num_k)
+    real(kind=dp) :: k_grid(num_k)
+    real(kind=dp) :: fermi_level, temperature
+    integer :: s
+
+    ! VB subbands at E=-1.0, CB subbands at E=+1.0
+    do s = 1, 6
+      eigenvalues(s, :) = -1.0_dp
+    end do
+    eigenvalues(7, :) = 1.0_dp
+    eigenvalues(8, :) = 1.0_dp
+
+    fermi_level = -2.0_dp
+    temperature = 300.0_dp
+
+    k_grid(1) = 0.0_dp
+    k_grid(2) = 0.1_dp
+    k_grid(3) = 0.2_dp
+
+    call compute_charge_density_bulk(n_electron, n_hole, eigenvalues, &
+      & k_grid, fermi_level, temperature, num_subbands, num_k)
+
+    ! Holes should be significant (VB empty, 1-f ~ 1)
+    ! Electrons should be negligible (CB far above Fermi level)
+#line 221 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_hole > 1.0e18_dp, message="Bulk hole density significant", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 221) )
+  if (anyExceptions()) return
+#line 222 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+#line 222 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_electron < 1.0e10_dp, message="Bulk electron density negligible", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 222) )
+  if (anyExceptions()) return
+#line 223 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+#line 223 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  call assertTrue(n_hole > n_electron, message="More holes than electrons", &
+ & location=SourceLocation( &
+ & 'test_charge_density.pf', &
+ & 223) )
+  if (anyExceptions()) return
+#line 224 "/data/8bandkp-fdm/tests/unit/test_charge_density.pf"
+  end subroutine test_bulk_charge_density
+
+end module test_charge_density
+
+module Wraptest_charge_density
+   use FUnit
+   use test_charge_density
+   implicit none
+   private
+
+contains
+
+
+end module Wraptest_charge_density
+
+function test_charge_density_suite() result(suite)
+   use FUnit
+   use test_charge_density
+   use Wraptest_charge_density
+   implicit none
+   type (TestSuite) :: suite
+
+   class (Test), allocatable :: t
+
+   suite = TestSuite('test_charge_density_suite')
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_fermi_dirac_zero_temp', &
+      test_fermi_dirac_zero_temp))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_fermi_dirac_finite_temp', &
+      test_fermi_dirac_finite_temp))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_eight_component_sum', &
+      test_eight_component_sum))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_delta_function', &
+      test_delta_function))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_bulk_charge_density', &
+      test_bulk_charge_density))
+   call suite%addTest(t)
+
+
+end function test_charge_density_suite
+

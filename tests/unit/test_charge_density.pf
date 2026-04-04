@@ -223,4 +223,169 @@ contains
     @assertTrue(n_hole > n_electron, message="More holes than electrons")
   end subroutine test_bulk_charge_density
 
+  @test
+  subroutine test_wire_normalization()
+    ! Wire with Ny=Nz=5 (Ngrid=25), 2 subbands, 3 kx points.
+    ! All eigenvalues well below Fermi level (fully occupied).
+    ! Normalized eigenstates: sum of |Psi_nu|^2 over all grid points = 1.
+    !
+    ! For 1 CB subband with f~1:
+    !   n(y,z) = 2 * int dkx/(2*pi) * |Psi|^2
+    !   With Simpson over kx from 0 to kx_max:
+    !     int_0^{kx_max} dkx = kx_max  (analytically)
+    !   So n at each grid point = 2 * kx_max / (2*pi) * |Psi(p)|^2
+    !
+    ! Total integrated charge = sum_p n(p) * dA
+    ! With normalized states (sum_p |Psi|^2 = 1) and dA not needed since
+    ! we just sum n(p):
+    !   sum_p n(p) = 2 * numcb * int dkx/(2*pi)
+    !
+    ! With kx_max=1.0, Simpson with 3 points gives exact integral = 1.0.
+    ! So sum_p n(p) = 2 * numcb * 1.0 / (2*pi)
+    ! In 1/AA^3: = numcb / pi
+    ! In cm^-3: = numcb/pi * 1e24
+
+    integer, parameter :: Ny = 5, Nz = 5
+    integer, parameter :: Ngrid = Ny * Nz   ! 25
+    integer, parameter :: num_subbands = 2
+    integer, parameter :: num_kx = 3
+    integer, parameter :: numcb = 1
+
+    real(kind=dp) :: n_electron(Ngrid), n_hole(Ngrid)
+    complex(kind=dp) :: eigenvectors(8*Ngrid, num_subbands, num_kx)
+    real(kind=dp) :: eigenvalues(num_subbands, num_kx)
+    real(kind=dp) :: kx_grid(num_kx)
+    real(kind=dp) :: fermi_level, temperature
+    real(kind=dp) :: total_charge, expected
+    real(kind=dp) :: norm_factor
+    integer :: iband, p
+
+    ! Set up normalized eigenvectors for CB subband (s=1):
+    ! |Psi_nu(p)|^2 = 1/(8*Ngrid) so sum = 1.0
+    eigenvectors = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    norm_factor = 1.0_dp / sqrt(8.0_dp * real(Ngrid, kind=dp))
+    do iband = 1, 8
+      do p = 1, Ngrid
+        eigenvectors((iband - 1)*Ngrid + p, 1, :) = &
+          & cmplx(norm_factor, 0.0_dp, kind=dp)
+      end do
+    end do
+    ! VB subband (s=2): same normalization
+    do iband = 1, 8
+      do p = 1, Ngrid
+        eigenvectors((iband - 1)*Ngrid + p, 2, :) = &
+          & cmplx(norm_factor, 0.0_dp, kind=dp)
+      end do
+    end do
+
+    ! Eigenvalues: CB subband has higher energy, VB has lower.
+    ! Sorted descending: highest numcb=1 -> CB (s=2, E=+1.0), rest -> VB (s=1, E=-5.0)
+    ! Fermi level at 0.0:
+    !   CB at E=+1.0: f(1.0, 0.0, 300) ~ 1/(1+exp(38.7)) ~ 0 => no electrons
+    !   VB at E=-5.0: f(-5.0, 0.0, 300) ~ 1 => holes = 1-f ~ 0
+    ! That's wrong. Let's set Fermi at +2.0:
+    !   CB at E=+1.0: f(1.0, 2.0, 300) ~ 1/(1+exp(-38.7)) ~ 1 => electrons present
+    !   VB at E=-5.0: f(-5.0, 2.0, 300) ~ 1/(1+exp(-257)) ~ 1 => holes = 1-f ~ 0
+    ! Still wrong for holes. For holes we need VB states ABOVE Fermi.
+    ! Let's use a Fermi level between CB and VB mid-gap, and verify electrons only.
+
+    ! Setup: subband 2 is CB (E=+1.0), subband 1 is VB (E=-1.0)
+    ! Fermi at +3.0 so CB is occupied (f~1) and VB is fully occupied (f~1 => holes~0)
+    fermi_level = 3.0_dp
+    temperature = 300.0_dp
+    eigenvalues(1, :) = -1.0_dp   ! Lower energy -> VB after sorting
+    eigenvalues(2, :) =  1.0_dp   ! Higher energy -> CB after sorting
+
+    ! kx grid
+    kx_grid(1) = 0.0_dp
+    kx_grid(2) = 0.5_dp
+    kx_grid(3) = 1.0_dp
+
+    call compute_charge_density_wire(n_electron, n_hole, eigenvectors, &
+      & eigenvalues, kx_grid, fermi_level, temperature, Ny, Nz, num_subbands, &
+      & num_kx, numcb)
+
+    ! Total electron charge: sum over all grid points
+    total_charge = sum(n_electron)
+
+    ! Expected: 2 * int_0^1 dkx/(2*pi) * sum_p |Psi|^2
+    ! Simpson integral of 1 from 0 to 1 with 3 points = 1.0
+    ! weight = 1/(2*pi), spin factor = 2
+    ! sum_p |Psi_s|^2 = 8*Ngrid * (1/(8*Ngrid)) = 1.0 for each subband
+    ! For 1 CB subband with f~1:
+    !   n_total = 2 * 1.0/(2*pi) * 1.0 * 1e24 = 1/pi * 1e24
+    expected = numcb * 1.0e24_dp / pi_dp
+
+    ! Allow 1% tolerance for Simpson vs analytic
+    @assertEqual(expected, total_charge, tolerance=0.01_dp * expected)
+
+    ! Electron density should be positive at all points
+    @assertTrue(all(n_electron > 0.0_dp), message="All electron density values positive")
+
+    ! Hole density: VB at E=-1.0, Fermi at +3.0 => f~1 => holes = 1-f ~ 0
+    ! So hole density should be negligible
+    @assertTrue(all(n_hole < 1.0e10_dp), message="Hole density negligible (VB full)")
+
+  end subroutine test_wire_normalization
+
+
+  @test
+  subroutine test_wire_localized_state()
+    ! Wire with localized eigenstate: all weight at one grid point.
+    ! n_electron should be nonzero only at that grid point.
+
+    integer, parameter :: Ny = 3, Nz = 3
+    integer, parameter :: Ngrid = Ny * Nz   ! 9
+    integer, parameter :: num_subbands = 1
+    integer, parameter :: num_kx = 3
+    integer, parameter :: numcb = 1
+
+    real(kind=dp) :: n_electron(Ngrid), n_hole(Ngrid)
+    complex(kind=dp) :: eigenvectors(8*Ngrid, num_subbands, num_kx)
+    real(kind=dp) :: eigenvalues(num_subbands, num_kx)
+    real(kind=dp) :: kx_grid(num_kx)
+    real(kind=dp) :: fermi_level, temperature
+    integer :: iband
+
+    ! All zero
+    eigenvectors = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! Put all weight at grid point p=5 (center of 3x3), band 7
+    ! Band 7 starts at index (7-1)*Ngrid + 1 = 55
+    do iband = 1, num_kx
+      eigenvectors(6*Ngrid + 5, 1, iband) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    end do
+
+    ! Energy below Fermi level => f = 1
+    fermi_level = 2.0_dp
+    temperature = 1.0e-10_dp
+    eigenvalues = 0.0_dp
+
+    kx_grid(1) = 0.0_dp
+    kx_grid(2) = 0.5_dp
+    kx_grid(3) = 1.0_dp
+
+    call compute_charge_density_wire(n_electron, n_hole, eigenvectors, &
+      & eigenvalues, kx_grid, fermi_level, temperature, Ny, Nz, num_subbands, &
+      & num_kx, numcb)
+
+    ! Only grid point 5 should have nonzero electron density
+    @assertTrue(n_electron(5) > 0.0_dp, message="Localized state nonzero at p=5")
+
+    ! All other points should be zero
+    @assertTrue(n_electron(1) < 1.0e6_dp, message="Density zero at p=1")
+    @assertTrue(n_electron(2) < 1.0e6_dp, message="Density zero at p=2")
+    @assertTrue(n_electron(3) < 1.0e6_dp, message="Density zero at p=3")
+    @assertTrue(n_electron(4) < 1.0e6_dp, message="Density zero at p=4")
+    @assertTrue(n_electron(6) < 1.0e6_dp, message="Density zero at p=6")
+    @assertTrue(n_electron(7) < 1.0e6_dp, message="Density zero at p=7")
+    @assertTrue(n_electron(8) < 1.0e6_dp, message="Density zero at p=8")
+    @assertTrue(n_electron(9) < 1.0e6_dp, message="Density zero at p=9")
+
+    ! Hole density should be zero (no VB subbands)
+    @assertTrue(all(n_hole < 1.0e6_dp), message="Hole density zero (no VB)")
+
+  end subroutine test_wire_localized_state
+
+
 end module test_charge_density
