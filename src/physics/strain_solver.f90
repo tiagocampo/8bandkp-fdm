@@ -565,11 +565,11 @@ contains
     nrhs = 1
     error = 0
 
-    ! Matrix type: real symmetric indefinite (mtype=11 for safety,
-    !   though mtype=2 is real symmetric positive definite).
-    ! The strain stiffness matrix is symmetric positive semi-definite.
-    ! Use mtype=2 (real symmetric positive definite).
-    mtype = 2
+    ! Matrix type: real symmetric indefinite
+    ! The strain stiffness matrix is positive semi-definite (null space
+    ! from rigid-body translation with all-Neumann BCs).
+    ! Use mtype=-2 (real symmetric indefinite) with Bunch-Kaufman pivoting.
+    mtype = -2
     msglvl = 0  ! no output
 
     ! Set default iparm values
@@ -593,6 +593,10 @@ contains
     if (error /= 0) then
       print *, 'ERROR: PARDISO failed with error = ', error
       print *, '  Strain PDE solve failed. Setting strain to zero.'
+      ! Release PARDISO internal memory before cleanup
+      phase = -1
+      call pardiso(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
+        perm, nrhs, iparm, msglvl, rhs, sol, error)
       deallocate(ia, ja, a_csr, rhs, sol, perm)
       return
     end if
@@ -722,13 +726,13 @@ contains
 
     ngrid = grid_ngrid(grid)
 
+    ! Early exit if no strain data
+    if (.not. allocated(strain_out%eps_xx)) return
+    if (size(strain_out%eps_xx) < ngrid) return
+
     do ij = 1, ngrid
       mid = material_id(ij)
       if (mid < 1 .or. mid > size(params)) cycle
-
-      ! Skip if no strain at this point
-      if (.not. allocated(strain_out%eps_xx)) return
-      if (ij > size(strain_out%eps_xx)) return
 
       Tr_eps = strain_out%eps_xx(ij) + strain_out%eps_yy(ij) + strain_out%eps_zz(ij)
 
@@ -785,8 +789,8 @@ contains
   end function wire_flat_idx
 
   ! ------------------------------------------------------------------
-  ! Add a COO entry, accumulating duplicates by summation.
-  ! Searches existing entries for (row, col) match and accumulates.
+  ! Add a COO entry (no duplicate search -- stencil produces no dupes).
+  ! Duplicates are handled during COO-to-CSR merge sort.
   ! ------------------------------------------------------------------
   subroutine add_coo_entry(rows, cols, vals, capacity, idx, row, col, val)
     integer, intent(inout) :: rows(:), cols(:)
@@ -795,19 +799,9 @@ contains
     integer, intent(inout) :: idx
     integer, intent(in) :: row, col
     real(kind=dp), intent(in) :: val
-    integer :: k
 
     if (abs(val) < 1.0e-30_dp) return
 
-    ! Check for existing entry with same (row, col)
-    do k = 1, idx
-      if (rows(k) == row .and. cols(k) == col) then
-        vals(k) = vals(k) + val
-        return
-      end if
-    end do
-
-    ! No existing entry: add new
     idx = idx + 1
     if (idx > capacity) then
       print *, 'ERROR: COO capacity exceeded in strain solver'
