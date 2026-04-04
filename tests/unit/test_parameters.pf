@@ -108,4 +108,114 @@ contains
     @assertEqual(16.80_dp, params(4)%eps0, tolerance=1.0e-12_dp)
   end subroutine test_dielectric_constants
 
+  @test
+  subroutine test_strain_elastic_constants()
+    ! Verify elastic constants from Vurgaftman 2001 Table XII
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "GaAs"
+    call paramDatabase(material, 1, params)
+
+    @assertEqual(1221.0_dp, params(1)%C11, tolerance=1.0e-12_dp)
+    @assertEqual(566.0_dp, params(1)%C12, tolerance=1.0e-12_dp)
+    @assertEqual(599.0_dp, params(1)%C44, tolerance=1.0e-12_dp)
+  end subroutine test_strain_elastic_constants
+
+  @test
+  subroutine test_strain_lattice_constants()
+    ! Verify lattice constants from Vurgaftman 2001 Table I
+    type(paramStruct) :: params(2)
+    character(len=255) :: material(2)
+
+    material(1) = "GaAs"
+    material(2) = "InSb"
+    call paramDatabase(material, 2, params)
+
+    @assertEqual(5.65325_dp, params(1)%a0, tolerance=1.0e-12_dp)
+    @assertEqual(6.4794_dp, params(2)%a0, tolerance=1.0e-12_dp)
+  end subroutine test_strain_lattice_constants
+
+  @test
+  subroutine test_strain_deformation_potentials()
+    ! Verify deformation potentials from Vurgaftman 2001 Table XIII
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "InAs"
+    call paramDatabase(material, 1, params)
+
+    @assertEqual(-5.08_dp, params(1)%ac, tolerance=1.0e-12_dp)
+    @assertEqual(1.00_dp, params(1)%av, tolerance=1.0e-12_dp)
+    @assertEqual(-1.8_dp, params(1)%b_dp, tolerance=1.0e-12_dp)
+    @assertEqual(-3.6_dp, params(1)%d_dp, tolerance=1.0e-12_dp)
+  end subroutine test_strain_deformation_potentials
+
+  @test
+  subroutine test_strain_w_variant_same_as_base()
+    ! W-variant materials should have same elastic/strain params as base
+    type(paramStruct) :: params(2)
+    character(len=255) :: material(2)
+
+    material(1) = "GaAs"
+    material(2) = "GaAsW"
+    call paramDatabase(material, 2, params)
+
+    @assertEqual(params(1)%C11, params(2)%C11, tolerance=1.0e-12_dp)
+    @assertEqual(params(1)%C12, params(2)%C12, tolerance=1.0e-12_dp)
+    @assertEqual(params(1)%C44, params(2)%C44, tolerance=1.0e-12_dp)
+    @assertEqual(params(1)%a0, params(2)%a0, tolerance=1.0e-12_dp)
+    @assertEqual(params(1)%ac, params(2)%ac, tolerance=1.0e-12_dp)
+    @assertEqual(params(1)%av, params(2)%av, tolerance=1.0e-12_dp)
+    @assertEqual(params(1)%b_dp, params(2)%b_dp, tolerance=1.0e-12_dp)
+    @assertEqual(params(1)%d_dp, params(2)%d_dp, tolerance=1.0e-12_dp)
+  end subroutine test_strain_w_variant_same_as_base
+
+  @test
+  subroutine test_strain_defaults_zero()
+    ! Vacuum should have zero strain parameters (default)
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "Vacuum"
+    call paramDatabase(material, 1, params)
+
+    @assertEqual(0.0_dp, params(1)%C11, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, params(1)%C12, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, params(1)%C44, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, params(1)%a0, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, params(1)%ac, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, params(1)%av, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, params(1)%b_dp, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, params(1)%d_dp, tolerance=1.0e-12_dp)
+  end subroutine test_strain_defaults_zero
+
+  @test
+  subroutine test_strain_insb_corrected()
+    ! Verify InSb values match Vurgaftman 2001 Table XII/XIII
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "InSb"
+    call paramDatabase(material, 1, params)
+
+    @assertEqual(373.5_dp, params(1)%C12, tolerance=1.0e-12_dp)
+    @assertEqual(311.1_dp, params(1)%C44, tolerance=1.0e-12_dp)
+    @assertEqual(-2.0_dp, params(1)%b_dp, tolerance=1.0e-12_dp)
+  end subroutine test_strain_insb_corrected
+
+  @test
+  subroutine test_alloy_strain_interpolation()
+    ! Verify Vegard interpolation for Al20Ga80As
+    ! C11 = 1221*0.8 + 1250*0.2 = 1226.8
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+
+    material(1) = "Al20Ga80As"
+    call paramDatabase(material, 1, params)
+
+    @assertEqual(1226.8_dp, params(1)%C11, tolerance=1.0e-10_dp)
+    @assertEqual(5.65482_dp, params(1)%a0, tolerance=1.0e-10_dp)
+  end subroutine test_alloy_strain_interpolation
+
 end module test_parameters

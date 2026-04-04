@@ -1,7 +1,7 @@
 module utils
 
 use definitions
-use mkl_spblas
+use sparse_matrices, only: csr_matrix, csr_build_from_coo
 
 implicit none
 
@@ -10,15 +10,14 @@ contains
   subroutine dnscsr_z_mkl(nzmax, N, dns, csr)
 
 
-    type(sparse_matrix_T), intent(out) :: csr
+    type(csr_matrix), intent(out) :: csr
     integer, intent(inout) :: nzmax
     integer, intent(in) :: N
     complex(kind=dp), intent(in), dimension(:,:) :: dns
 
-    integer :: ierr, info, next, i, j, nnz_count
+    integer :: next, i, j, nnz_count
     complex(kind=dp), allocatable, dimension(:) :: Aa_a, A_a
     integer, allocatable, dimension(:) :: Aa_ia, Aa_ja, A_ia, A_ja
-    type(sparse_matrix_T) :: HT_coo
 
 
     allocate(Aa_a(nzmax))
@@ -52,14 +51,7 @@ contains
 
     nzmax = ubound(A_a, 1)
 
-    info = mkl_sparse_z_create_coo (HT_coo, SPARSE_INDEX_BASE_ONE, N, &
-    & N, ubound(A_a, dim=1), A_ia, A_ja, A_a)
-
-    if (info /= 0) stop 'error creating HT_coo'
-
-    info = mkl_sparse_convert_csr (HT_coo, SPARSE_OPERATION_NON_TRANSPOSE, csr)
-
-    if (info /= 0) stop 'error converting HT_coo to HT_csr'
+    call csr_build_from_coo(csr, N, N, nzmax, A_ia, A_ja, A_a)
 
     deallocate(A_a, A_ia, A_ja)
 

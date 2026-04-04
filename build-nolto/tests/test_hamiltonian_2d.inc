@@ -1,0 +1,1 @@
+ADD_TEST_SUITE(test_hamiltonian_2d_suite)

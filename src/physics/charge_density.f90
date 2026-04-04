@@ -18,6 +18,7 @@ module charge_density
   private
   public :: compute_charge_density_qw
   public :: compute_charge_density_bulk
+  public :: compute_charge_density_wire
   public :: fermi_dirac
 
 contains
@@ -290,5 +291,164 @@ contains
     end do
 
   end subroutine accumulate_band_density
+
+  ! ------------------------------------------------------------------
+  ! Wire charge density (2D confinement in y-z plane, free along x)
+  ! ------------------------------------------------------------------
+  subroutine compute_charge_density_wire(n_electron, n_hole, eigenvectors, &
+      & eigenvalues_kx, kx_grid, fermi_level, temperature, Ny, Nz, num_subbands, &
+      & num_kx, numcb)
+    ! Compute 2D electron and hole densities for a quantum wire.
+    !
+    ! n(y,z) = 2 * sum_s int dk_x/(2*pi) * |Psi_s(y,z)|^2 * f(E_s(k_x)-EF,T)
+    !
+    ! s sums over CB subbands for electrons, VB subbands for holes.
+    ! |Psi_s(y,z)|^2 = sum_{nu=1}^{8} |Psi_s^nu(y,z)|^2
+    ! Factor 2 is spin degeneracy.
+    !
+    ! Output arrays are flattened (Ny*Nz), in cm^-3.
+
+    integer, intent(in)          :: Ny, Nz
+    real(kind=dp), intent(out)   :: n_electron(Ny*Nz)
+    real(kind=dp), intent(out)   :: n_hole(Ny*Nz)
+    complex(kind=dp), intent(in) :: eigenvectors(8*Ny*Nz, num_subbands, num_kx)
+    real(kind=dp), intent(in)    :: eigenvalues_kx(num_subbands, num_kx)
+    real(kind=dp), intent(in)    :: kx_grid(num_kx)
+    real(kind=dp), intent(in)    :: fermi_level
+    real(kind=dp), intent(in)    :: temperature
+    integer, intent(in)          :: num_subbands
+    integer, intent(in)          :: num_kx
+    integer, intent(in)          :: numcb
+
+    integer :: Ngrid
+    real(kind=dp), allocatable :: psi2(:,:)       ! |Psi|^2 at each grid pt, kx
+    real(kind=dp), allocatable :: integrand(:)     ! for Simpson
+    real(kind=dp), allocatable :: sorted_evals(:)
+    integer, allocatable :: sort_idx(:)
+    real(kind=dp) :: kx_max
+    integer :: nk, s, p, j
+    integer :: numcb_local
+
+    Ngrid = Ny * Nz
+
+    ! Use odd number of kx points for Simpson
+    nk = num_kx
+    if (mod(nk, 2) == 0) nk = nk - 1
+
+    kx_max = kx_grid(nk)
+
+    n_electron = 0.0_dp
+    n_hole = 0.0_dp
+
+    ! --- Classify subbands at kx=0 (first point) ---
+    allocate(sorted_evals(num_subbands))
+    allocate(sort_idx(num_subbands))
+
+    do s = 1, num_subbands
+      sorted_evals(s) = eigenvalues_kx(s, 1)
+      sort_idx(s) = s
+    end do
+
+    call sort_descending(sorted_evals, sort_idx, num_subbands)
+
+    numcb_local = min(numcb, num_subbands)
+
+    allocate(psi2(Ngrid, nk))
+    allocate(integrand(nk))
+
+    ! --- Electron density: CB subbands ---
+    do j = 1, numcb_local
+      s = sort_idx(j)
+
+      call compute_psi2_wire(psi2, eigenvectors, s, Ngrid, nk, num_subbands)
+
+      call accumulate_wire_band_density(n_electron, psi2, eigenvalues_kx, &
+        & kx_grid, integrand, fermi_level, temperature, s, Ngrid, nk, &
+        & num_subbands, kx_max, is_cb=.true.)
+    end do
+
+    ! --- Hole density: VB subbands ---
+    do j = numcb_local + 1, num_subbands
+      s = sort_idx(j)
+
+      call compute_psi2_wire(psi2, eigenvectors, s, Ngrid, nk, num_subbands)
+
+      call accumulate_wire_band_density(n_hole, psi2, eigenvalues_kx, &
+        & kx_grid, integrand, fermi_level, temperature, s, Ngrid, nk, &
+        & num_subbands, kx_max, is_cb=.false.)
+    end do
+
+    ! --- Convert 1/AA^3 to cm^-3 ---
+    n_electron = n_electron * 1.0e24_dp
+    n_hole = n_hole * 1.0e24_dp
+
+    deallocate(psi2, integrand, sorted_evals, sort_idx)
+
+  end subroutine compute_charge_density_wire
+
+
+  ! ------------------------------------------------------------------
+  ! Compute |Psi_s(y,z)|^2 summed over all 8 band components (wire)
+  ! ------------------------------------------------------------------
+  subroutine compute_psi2_wire(psi2, eigenvectors, s, Ngrid, nk, num_subbands)
+    ! For a wire, eigenvectors are (8*Ngrid, num_subbands, nk).
+    ! Component nu at flat grid point p is at index (nu-1)*Ngrid + p.
+
+    real(kind=dp), intent(out)   :: psi2(Ngrid, nk)
+    complex(kind=dp), intent(in) :: eigenvectors(8*Ngrid, num_subbands, nk)
+    integer, intent(in)          :: s, Ngrid, nk, num_subbands
+
+    integer :: idx, band_start, p
+
+    psi2 = 0.0_dp
+    do idx = 1, nk
+      do band_start = 1, 8
+        do p = 1, Ngrid
+          psi2(p, idx) = psi2(p, idx) &
+            & + abs(eigenvectors((band_start - 1)*Ngrid + p, s, idx))**2
+        end do
+      end do
+    end do
+
+  end subroutine compute_psi2_wire
+
+
+  ! ------------------------------------------------------------------
+  ! Accumulate wire band density via 1D k_x integration
+  ! ------------------------------------------------------------------
+  subroutine accumulate_wire_band_density(n_density, psi2, eigenvalues_kx, &
+      & kx_grid, integrand, fermi_level, temperature, s, Ngrid, nk, &
+      & num_subbands, kx_max, is_cb)
+    ! Integrate |Psi_s|^2 * f * 1/(2*pi) over k_x using Simpson's rule.
+    ! Weight is 1/(2*pi) (1D integral, no k_par factor).
+
+    integer, intent(in)          :: Ngrid
+    real(kind=dp), intent(inout) :: n_density(Ngrid)
+    real(kind=dp), intent(in)    :: psi2(Ngrid, nk)
+    integer, intent(in)          :: num_subbands
+    real(kind=dp), intent(in)    :: eigenvalues_kx(num_subbands, nk)
+    real(kind=dp), intent(in)    :: kx_grid(nk)
+    real(kind=dp), intent(inout) :: integrand(nk)
+    real(kind=dp), intent(in)    :: fermi_level, temperature, kx_max
+    integer, intent(in)          :: s, nk
+    logical, intent(in)          :: is_cb
+
+    integer :: p, idx
+    real(kind=dp) :: occ(nk)
+
+    ! Pre-compute weighted occupation (independent of spatial point)
+    do idx = 1, nk
+      occ(idx) = fermi_dirac(eigenvalues_kx(s, idx), fermi_level, temperature)
+      if (.not. is_cb) occ(idx) = 1.0_dp - occ(idx)
+      occ(idx) = occ(idx) / (2.0_dp * pi_dp)
+    end do
+
+    do p = 1, Ngrid
+      integrand(1:nk) = psi2(p, 1:nk) * occ(1:nk)
+      n_density(p) = n_density(p) + 2.0_dp * simpson_real(integrand, 0.0_dp, kx_max)
+    end do
+
+  end subroutine accumulate_wire_band_density
+
 
 end module charge_density

@@ -14,6 +14,10 @@ module sc_loop
   use hamiltonianConstructor
   use charge_density
   use poisson
+  use eigensolver, only: eigensolver_config, eigensolver_result, &
+    & solve_sparse_evp, eigensolver_result_free
+  use sparse_matrices, only: csr_matrix, csr_clone_structure, csr_free
+  use linalg, only: zheevx, dgesv, ilaenv, dlamch
   implicit none
 
   private
@@ -23,7 +27,12 @@ module sc_loop
   public :: find_fermi_level
   public :: build_epsilon
   public :: build_doping_charge
+  public :: build_epsilon_2d
+  public :: build_doping_charge_2d
   public :: apply_potential_to_profile
+  public :: apply_potential_to_profile_2d
+  public :: self_consistent_loop_wire
+  public :: find_fermi_level_wire
   public :: map_layer_to_grid
 
   ! Unit conversion constants
@@ -34,11 +43,6 @@ module sc_loop
   integer, parameter :: MAX_FERMI_BISECT = 60
   real(kind=dp), parameter :: FERMI_TOL = 1.0e-8_dp
   real(kind=dp), parameter :: FERMI_BOUND_PAD = 2.0_dp  ! eV padding for bisection bounds
-
-  ! LAPACK/MKL external declarations
-  integer :: ilaenv
-  real(kind=dp) :: dlamch
-  external :: ILAENV, DLAMCH, zheevx, dgesv
 
 contains
 
@@ -350,6 +354,7 @@ contains
     call dgesv(m+1, 1, B, m+1, ipiv, rhs, m+1, info)
 
     if (info /= 0) then
+      print *, '  DIIS: linear system solve failed (info=', info, '). Falling back to linear mix.'
       deallocate(B, rhs, coeffs, ipiv)
       call linear_mix(phi_new, phi_old, phi_poisson, N, alpha)
       return
@@ -510,6 +515,402 @@ contains
 
 
   ! ------------------------------------------------------------------
+  ! Apply electrostatic potential to 2D band profile (all 3 columns)
+  ! ------------------------------------------------------------------
+  subroutine apply_potential_to_profile_2d(profile_2d, profile_2d_base, phi, nx, ny)
+    real(kind=dp), intent(inout) :: profile_2d(:,:)
+    real(kind=dp), intent(in)    :: profile_2d_base(:,:)
+    real(kind=dp), intent(in)    :: phi(:,:)
+    integer, intent(in)          :: nx, ny
+    integer :: ix, iy, ij
+
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        profile_2d(ij, 1) = profile_2d_base(ij, 1) - phi(ix, iy)
+        profile_2d(ij, 2) = profile_2d_base(ij, 2) - phi(ix, iy)
+        profile_2d(ij, 3) = profile_2d_base(ij, 3) - phi(ix, iy)
+      end do
+    end do
+  end subroutine apply_potential_to_profile_2d
+
+
+  ! ------------------------------------------------------------------
+  ! Self-consistent loop for quantum wire (2D confinement)
+  ! ------------------------------------------------------------------
+  subroutine self_consistent_loop_wire(profile_2d, cfg, kpterms_2d, grid, &
+      & coo_cache, eigen_cfg, eig_wire, eigv_wire, phi_out, n_electron_out, &
+      & n_hole_out, converged_out)
+
+    real(kind=dp), allocatable, intent(inout) :: profile_2d(:,:)
+    type(simulation_config), intent(in) :: cfg
+    type(csr_matrix), intent(in)        :: kpterms_2d(:)
+    type(spatial_grid), intent(in)      :: grid
+    type(wire_coo_cache), intent(inout) :: coo_cache
+    type(eigensolver_config), intent(in) :: eigen_cfg
+    real(kind=dp), allocatable, intent(inout) :: eig_wire(:,:)
+    complex(kind=dp), allocatable, intent(inout) :: eigv_wire(:,:,:)
+    real(kind=dp), allocatable, intent(out), optional :: phi_out(:,:)
+    real(kind=dp), allocatable, intent(out), optional :: n_electron_out(:,:)
+    real(kind=dp), allocatable, intent(out), optional :: n_hole_out(:,:)
+    logical, intent(out), optional :: converged_out
+
+    ! SC loop variables
+    integer :: iter, niter, k_idx
+    integer :: num_subbands, nk_actual
+    integer :: ix, iy
+    real(kind=dp) :: delta_phi, fermi_level
+
+    ! Potential arrays
+    real(kind=dp), allocatable :: phi_old(:,:), phi_new(:,:), phi_poisson(:,:)
+    real(kind=dp), allocatable :: phi_old_flat(:), phi_new_flat(:), phi_poisson_flat(:)
+    real(kind=dp), allocatable :: rho_2d(:,:), rho_2d_flat(:)
+    real(kind=dp), allocatable :: epsilon_2d(:,:)
+    real(kind=dp), allocatable :: n_electron(:), n_hole(:)
+
+    ! kx grid for SC charge integration
+    real(kind=dp), allocatable :: kx_grid(:)
+
+    ! Eigensolver temporaries
+    type(csr_matrix)          :: HT_csr_sc
+    type(eigensolver_result)  :: eigen_res_sc
+    integer :: Ngrid, Ntot, nev_sc, i
+    integer :: num_subbands_actual
+
+    ! DIIS history (flat arrays)
+    real(kind=dp), allocatable :: phi_history(:,:), res_history(:,:)
+
+    ! Profile backup
+    real(kind=dp), allocatable :: profile_2d_base(:,:)
+
+    ! Doping charge
+    real(kind=dp), allocatable :: rho_doping_2d(:,:)
+
+    ! Work arrays for Fermi bisection
+    real(kind=dp), allocatable :: fermi_ne(:), fermi_nh(:)
+
+    ! Grid dimensions
+    integer :: nx, ny
+    real(kind=dp) :: dy_val, dx_val, kpar_max_val
+
+    logical :: sc_converged
+
+    nx = grid%nx
+    ny = grid%ny
+    Ngrid = nx * ny
+    Ntot = 8 * Ngrid
+    dy_val = grid%dy   ! AA
+    dx_val = grid%dx   ! AA — x-spacing of confinement plane
+    num_subbands = eigen_cfg%nev
+    niter = cfg%sc%max_iterations
+
+    ! Build kx grid (ensure odd for Simpson)
+    nk_actual = cfg%sc%num_kpar
+    if (mod(nk_actual, 2) == 0) nk_actual = nk_actual - 1
+
+    ! Auto-determine kpar_max if not set
+    kpar_max_val = cfg%sc%kpar_max
+    if (kpar_max_val < tolerance) then
+      kpar_max_val = cfg%waveVectorMax
+      if (kpar_max_val < tolerance) kpar_max_val = 0.5_dp
+    end if
+
+    allocate(kx_grid(nk_actual))
+    do i = 1, nk_actual
+      kx_grid(i) = real(i - 1, kind=dp) * kpar_max_val &
+        & / real(nk_actual - 1, kind=dp)
+    end do
+
+    ! Allocate working arrays
+    allocate(phi_old(nx, ny), phi_new(nx, ny), phi_poisson(nx, ny))
+    allocate(phi_old_flat(Ngrid), phi_new_flat(Ngrid), phi_poisson_flat(Ngrid))
+    allocate(rho_2d(nx, ny), rho_2d_flat(Ngrid))
+    allocate(epsilon_2d(nx, ny))
+    allocate(n_electron(Ngrid), n_hole(Ngrid))
+    allocate(profile_2d_base(Ngrid, 3))
+    allocate(phi_history(Ngrid, cfg%sc%diis_history))
+    allocate(res_history(Ngrid, cfg%sc%diis_history))
+    allocate(fermi_ne(Ngrid), fermi_nh(Ngrid))
+
+    ! Allocate eigensolver arrays for SC kx sweep
+    nev_sc = num_subbands
+    ! Reusable eigv array for charge density: (Ntot, nev_sc, nk_actual)
+    ! These are allocated externally (eigv_wire) and used for output
+
+    phi_history = 0.0_dp
+    res_history = 0.0_dp
+
+    ! Save initial profile as base
+    profile_2d_base = profile_2d
+
+    ! Build dielectric and doping arrays
+    call build_epsilon_2d(epsilon_2d, grid, cfg%params)
+
+    ! Build doping charge (returns allocated array)
+    if (allocated(cfg%doping)) then
+      call build_doping_charge_2d(rho_doping_2d, grid, cfg%doping)
+    else
+      allocate(rho_doping_2d(nx, ny))
+      rho_doping_2d = 0.0_dp
+    end if
+
+    ! Initialize potential
+    phi_old = 0.0_dp
+    phi_new = 0.0_dp
+    sc_converged = .false.
+
+    ! Fermi level
+    if (cfg%sc%fermi_mode == 1) then
+      fermi_level = cfg%sc%fermi_level
+    else
+      fermi_level = 0.0_dp
+    end if
+
+    ! --- Main SC loop ---
+    print *, '=== Wire Self-Consistent Loop Start ==='
+    print *, '  max_iterations:', niter
+    print *, '  tolerance:', cfg%sc%tolerance
+    print *, '  mixing_alpha:', cfg%sc%mixing_alpha
+    print *, '  diis_history:', cfg%sc%diis_history
+    print *, '  num_kx:', nk_actual
+    print *, '  kx_max:', kpar_max_val
+    print *, '  temperature:', cfg%sc%temperature
+    print *, '  grid: nx=', nx, ' ny=', ny, ' Ngrid=', Ngrid
+    print *, ''
+
+    do iter = 1, niter
+
+      ! Step 1: Apply current potential to profile
+      call apply_potential_to_profile_2d(profile_2d, profile_2d_base, phi_old, nx, ny)
+
+      ! Step 2: Solve eigenproblem at each kx
+      ! Build Hamiltonian at kx=0 (first kx point) — this initializes COO cache
+      call ZB8bandGeneralized(HT_csr_sc, kx_grid(1), profile_2d, &
+        & kpterms_2d, cfg, coo_cache)
+
+      do k_idx = 1, nk_actual
+        if (k_idx > 1) then
+          ! Rebuild with new kx (COO cache reuses CSR structure)
+          call ZB8bandGeneralized(HT_csr_sc, kx_grid(k_idx), profile_2d, &
+            & kpterms_2d, cfg, coo_cache)
+        end if
+
+        call solve_sparse_evp(HT_csr_sc, eigen_cfg, eigen_res_sc)
+
+        if (.not. eigen_res_sc%converged) then
+          print *, '  WARNING: eigensolver did not converge at kx=', kx_grid(k_idx)
+        end if
+
+        num_subbands_actual = min(eigen_res_sc%nev_found, nev_sc)
+
+        ! Store eigenvalues
+        if (num_subbands_actual > 0) then
+          do i = 1, num_subbands_actual
+            eig_wire(i, k_idx) = eigen_res_sc%eigenvalues(i)
+          end do
+          ! Pad with large values if fewer found
+          do i = num_subbands_actual + 1, nev_sc
+            eig_wire(i, k_idx) = 1.0e10_dp
+          end do
+          ! Store eigenvectors
+          eigv_wire(:, 1:num_subbands_actual, k_idx) = &
+            & eigen_res_sc%eigenvectors(:, 1:num_subbands_actual)
+          ! Zero out unused subbands
+          if (num_subbands_actual < nev_sc) then
+            eigv_wire(:, num_subbands_actual+1:nev_sc, k_idx) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+          end if
+        end if
+
+        call eigensolver_result_free(eigen_res_sc)
+      end do
+
+      ! Note: HT_csr_sc is kept alive across SC iterations so the COO cache
+      ! can update values in-place.  It is freed after the SC loop completes.
+
+      ! Step 3: Find Fermi level (if charge neutrality mode)
+      if (cfg%sc%fermi_mode == 0) then
+        fermi_level = find_fermi_level_wire(eig_wire, eigv_wire, kx_grid, &
+          & cfg, Ntot, nev_sc, nk_actual, Ngrid, dy_val * dx_val, &
+          & rho_doping_2d, fermi_ne, fermi_nh, nx, ny)
+      end if
+
+      ! Step 4: Compute charge density
+      call compute_charge_density_wire(n_electron, n_hole, eigv_wire, &
+        & eig_wire, kx_grid, fermi_level, cfg%sc%temperature, &
+        & ny, nx, nev_sc, nk_actual, cfg%numcb)
+      ! Note: compute_charge_density_wire takes (Ny, Nz) but for our wire
+      ! grid it's (ny, nx). The flattened array is the same size.
+
+      ! Step 5: Build total charge and solve Poisson
+      ! Convert from cm^-3 to C/nm^3: rho = e * (n_h - n_e + rho_doping) * CM3_TO_PER_NM3
+      do i = 1, Ngrid
+        rho_2d_flat(i) = e * (n_hole(i) - n_electron(i) &
+          & + rho_doping_2d(1 + mod(i-1, nx), 1 + (i-1)/nx)) * CM3_TO_PER_NM3
+      end do
+
+      ! Reshape flat rho to 2D for solve_poisson_2d
+      do i = 1, Ngrid
+        rho_2d(1 + mod(i-1, nx), 1 + (i-1)/nx) = rho_2d_flat(i)
+      end do
+
+      ! solve_poisson_2d uses e0 in C/(V*nm), rho in C/nm^3.
+      ! dy, dz in AA are converted to nm for consistent Poisson units.
+      call solve_poisson_2d(phi_poisson, rho_2d, epsilon_2d, &
+        & dy_val * ANGSTROM_TO_NM, dx_val * ANGSTROM_TO_NM, &
+        & nx, ny, cfg%sc%bc_left)
+
+      ! Step 6: Flatten phi for mixing
+      do i = 1, Ngrid
+        phi_old_flat(i) = phi_old(1 + mod(i-1, nx), 1 + (i-1)/nx)
+        phi_poisson_flat(i) = phi_poisson(1 + mod(i-1, nx), 1 + (i-1)/nx)
+      end do
+
+      ! Mix potential
+      if (iter <= cfg%sc%diis_history .or. cfg%sc%diis_history < 2) then
+        call linear_mix(phi_new_flat, phi_old_flat, phi_poisson_flat, &
+          & Ngrid, cfg%sc%mixing_alpha)
+      else
+        call diis_extrapolate(phi_new_flat, phi_old_flat, phi_poisson_flat, &
+          & Ngrid, phi_history, res_history, cfg%sc%diis_history, &
+          & cfg%sc%mixing_alpha, iter)
+      end if
+
+      ! Update DIIS history
+      call update_diis_history(phi_history, res_history, &
+        & phi_old_flat, phi_poisson_flat, Ngrid, cfg%sc%diis_history, iter)
+
+      ! Step 7: Check convergence
+      delta_phi = maxval(abs(phi_new_flat - phi_old_flat))
+
+      print '(A, I4, A, ES12.4, A, F10.4, A, ES12.4)', &
+        & '  iter:', iter, '  |dPhi|:', delta_phi, &
+        & '  mu:', fermi_level, '  max|rho|:', maxval(abs(rho_2d_flat))
+
+      if (delta_phi < cfg%sc%tolerance) then
+        print *, '=== Wire SC loop converged at iteration', iter, '==='
+        phi_old_flat = phi_new_flat
+        sc_converged = .true.
+        exit
+      end if
+
+      phi_old_flat = phi_new_flat
+
+      ! Reshape back to 2D for next iteration
+      do i = 1, Ngrid
+        phi_old(1 + mod(i-1, nx), 1 + (i-1)/nx) = phi_old_flat(i)
+      end do
+
+    end do
+
+    if (.not. sc_converged) then
+      print *, 'Warning: Wire SC loop did not converge after', niter, 'iterations'
+      print *, '  Final |dPhi|:', delta_phi
+    end if
+
+    ! Final update: apply converged potential to profile
+    do i = 1, Ngrid
+      phi_old(1 + mod(i-1, nx), 1 + (i-1)/nx) = phi_old_flat(i)
+    end do
+    call apply_potential_to_profile_2d(profile_2d, profile_2d_base, phi_old, nx, ny)
+
+    ! --- Copy converged diagnostics to optional output arrays ---
+    if (present(phi_out)) then
+      allocate(phi_out(nx, ny))
+      phi_out = phi_old
+    end if
+    if (present(n_electron_out)) then
+      allocate(n_electron_out(nx, ny))
+      do iy = 1, ny
+        do ix = 1, nx
+          n_electron_out(ix, iy) = n_electron((iy - 1) * nx + ix)
+        end do
+      end do
+    end if
+    if (present(n_hole_out)) then
+      allocate(n_hole_out(nx, ny))
+      do iy = 1, ny
+        do ix = 1, nx
+          n_hole_out(ix, iy) = n_hole((iy - 1) * nx + ix)
+        end do
+      end do
+    end if
+
+    if (present(converged_out)) converged_out = sc_converged
+
+    ! --- Cleanup ---
+    if (allocated(HT_csr_sc%values)) call csr_free(HT_csr_sc)
+    deallocate(kx_grid, phi_old, phi_new, phi_poisson)
+    deallocate(phi_old_flat, phi_new_flat, phi_poisson_flat)
+    deallocate(rho_2d, rho_2d_flat, epsilon_2d)
+    deallocate(n_electron, n_hole)
+    deallocate(profile_2d_base, rho_doping_2d)
+    deallocate(phi_history, res_history)
+    deallocate(fermi_ne, fermi_nh)
+
+  end subroutine self_consistent_loop_wire
+
+
+  ! ------------------------------------------------------------------
+  ! Fermi level bisection for wire (2D confinement)
+  ! ------------------------------------------------------------------
+  function find_fermi_level_wire(eig_kx, eigv_kx, kx_grid, &
+      & cfg, N, num_subbands, nk_actual, Ngrid, dA, rho_doping_2d, &
+      & work_ne, work_nh, nx, ny) result(mu)
+
+    real(kind=dp) :: mu
+    real(kind=dp), intent(in) :: eig_kx(num_subbands, nk_actual)
+    complex(kind=dp), intent(in) :: eigv_kx(N, num_subbands, nk_actual)
+    real(kind=dp), intent(in) :: kx_grid(nk_actual)
+    type(simulation_config), intent(in) :: cfg
+    integer, intent(in) :: N, num_subbands, nk_actual, Ngrid
+    real(kind=dp), intent(in) :: dA
+    real(kind=dp), intent(in) :: rho_doping_2d(nx, ny)
+    real(kind=dp), intent(inout) :: work_ne(Ngrid), work_nh(Ngrid)
+    integer, intent(in) :: nx, ny
+
+    real(kind=dp) :: mu_lo, mu_hi, mu_mid
+    real(kind=dp) :: charge_excess, target_charge
+    integer :: ib, p, ix, iy, ij
+
+    ! Target charge from doping (integrated over area, converted to linear density)
+    target_charge = 0.0_dp
+    do iy = 1, ny
+      do ix = 1, nx
+        target_charge = target_charge + rho_doping_2d(ix, iy) * dA
+      end do
+    end do
+
+    mu_lo = minval(eig_kx) - FERMI_BOUND_PAD
+    mu_hi = maxval(eig_kx) + FERMI_BOUND_PAD
+
+    do ib = 1, MAX_FERMI_BISECT
+      mu_mid = 0.5_dp * (mu_lo + mu_hi)
+
+      call compute_charge_density_wire(work_ne, work_nh, eigv_kx, &
+        & eig_kx, kx_grid, mu_mid, cfg%sc%temperature, &
+        & ny, nx, num_subbands, nk_actual, cfg%numcb)
+
+      charge_excess = 0.0_dp
+      do p = 1, Ngrid
+        charge_excess = charge_excess + (work_ne(p) - work_nh(p)) * dA
+      end do
+      charge_excess = charge_excess - target_charge
+
+      if (charge_excess > 0.0_dp) then
+        mu_hi = mu_mid
+      else
+        mu_lo = mu_mid
+      end if
+
+      if (abs(mu_hi - mu_lo) < FERMI_TOL) exit
+    end do
+
+    mu = 0.5_dp * (mu_lo + mu_hi)
+
+  end function find_fermi_level_wire
+
+
+  ! ------------------------------------------------------------------
   ! Build dielectric constant array from material parameters
   ! ------------------------------------------------------------------
   subroutine build_epsilon(epsilon, cfg, nz)
@@ -572,5 +973,68 @@ contains
       end do
     end do
   end subroutine map_layer_to_grid
+
+
+  ! ------------------------------------------------------------------
+  ! Build 2D dielectric constant array from wire grid material_id
+  ! Returns epsilon(nx, ny) reshaped from flat grid%material_id(:).
+  ! ------------------------------------------------------------------
+  subroutine build_epsilon_2d(epsilon, grid, params)
+    real(kind=dp), allocatable, intent(out) :: epsilon(:,:)
+    type(spatial_grid), intent(in) :: grid
+    type(paramStruct), intent(in)  :: params(:)
+
+    integer :: nx, ny, ix, iy, ij, mid
+    real(kind=dp) :: eps_val
+
+    nx = grid%nx
+    ny = grid%ny
+    allocate(epsilon(nx, ny))
+
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        mid = grid%material_id(ij)
+        if (mid > 0 .and. mid <= size(params)) then
+          eps_val = params(mid)%eps0
+          if (eps_val > 0.0_dp) then
+            epsilon(ix, iy) = eps_val
+          else
+            epsilon(ix, iy) = 12.90_dp
+          end if
+        else
+          epsilon(ix, iy) = 12.90_dp
+        end if
+      end do
+    end do
+  end subroutine build_epsilon_2d
+
+
+  ! ------------------------------------------------------------------
+  ! Build 2D doping charge density (ND - NA) in cm^-3 from wire grid.
+  ! Returns rho_doping(nx, ny) reshaped from flat grid%material_id(:).
+  ! ------------------------------------------------------------------
+  subroutine build_doping_charge_2d(rho_doping, grid, doping)
+    real(kind=dp), allocatable, intent(out) :: rho_doping(:,:)
+    type(spatial_grid), intent(in) :: grid
+    type(doping_spec), intent(in)  :: doping(:)
+
+    integer :: nx, ny, ix, iy, ij, mid
+
+    nx = grid%nx
+    ny = grid%ny
+    allocate(rho_doping(nx, ny))
+    rho_doping = 0.0_dp
+
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        mid = grid%material_id(ij)
+        if (mid > 0 .and. mid <= size(doping)) then
+          rho_doping(ix, iy) = doping(mid)%ND - doping(mid)%NA
+        end if
+      end do
+    end do
+  end subroutine build_doping_charge_2d
 
 end module sc_loop

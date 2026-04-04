@@ -6,7 +6,7 @@ module outputFunctions
   implicit NONE
 
   private
-  public :: writeEigenfunctions, writeEigenvalues, get_unit
+  public :: writeEigenfunctions, writeEigenfunctions2d, writeEigenvalues, get_unit, ensure_output_dir
 
   character(len=*), parameter :: OUTPUT_DIR = 'output'
 
@@ -118,11 +118,12 @@ module outputFunctions
 
     end subroutine writeEigenfunctions
 
-    subroutine writeEigenvalues(smallk, eig, wvStep)
+    subroutine writeEigenvalues(smallk, eig, wvStep, cfg)
 
       real(kind=dp), intent(in) :: eig(:,:)
       type(wavevector), intent(in) :: smallk(:)
       integer, intent(in) :: wvStep
+      type(simulation_config), intent(in), optional :: cfg
 
       integer (kind=4) :: iounit, ios
       character (len = 255) :: filename
@@ -137,10 +138,23 @@ module outputFunctions
       open(unit=iounit, file=filename, iostat=ios, status="replace", action="write")
       if ( ios /= 0 ) stop "Error opening file "
 
+      ! Write metadata header for wire mode
+      if (present(cfg)) then
+        if (cfg%confinement == 2) then
+          write(iounit, '(A,I0,A,I0)', advance='no') &
+            & '# confinement: ', cfg%confinement, &
+            & ' nx: ', cfg%grid%nx
+          write(iounit, '(A,I0,A,g14.6)', advance='no') &
+            & ' ny: ', cfg%grid%ny, ' dx: ', cfg%grid%dx
+          write(iounit, '(A,g14.6,A,A)') &
+            & ' dy: ', cfg%grid%dy, ' shape: ', trim(cfg%wire_geom%shape)
+        end if
+      end if
+
       write(iounit, *) '#k, values'
       do i = 1, wvStep, 1
         write(unit=iounit, fmt="(*(1x,g14.6))", iostat=ios) &
-        & smallk(i)%kx, eig(:,i)
+        & sqrt(smallk(i)%kx**2 + smallk(i)%ky**2 + smallk(i)%kz**2), eig(:,i)
         if ( ios /= 0 ) stop "Write error in file unit "
       end do
 
@@ -230,5 +244,100 @@ module outputFunctions
         end do
       end if
     end subroutine
+
+    ! ==================================================================
+    ! Write 2D probability density |psi(x,y)|^2 for wire eigenstates.
+    !
+    ! Each eigenvector has 8*Ngrid complex entries.  The probability
+    ! density at grid point (ix, iy) is summed over all 8 bands:
+    !   |psi(x,y)|^2 = sum_{band=1}^{8} |vec((band-1)*Ngrid + (iy-1)*grid%nx + ix)|^2
+    !
+    ! Output format (one file per eigenstate per k-point):
+    !   x  y  |psi|^2     (three columns, nx*ny rows)
+    ! Directly plottable with gnuplot: splot 'file' using 1:2:3
+    ! ==================================================================
+    subroutine writeEigenfunctions2d(grid, eigenvalues, eigenvectors, k_index, nev, write_parts)
+
+      type(spatial_grid), intent(in)  :: grid
+      real(kind=dp), intent(in)       :: eigenvalues(:)
+      complex(kind=dp), intent(in)    :: eigenvectors(:,:)
+      integer, intent(in)             :: k_index
+      integer, intent(in)             :: nev
+      logical, intent(in), optional   :: write_parts
+
+      integer(kind=4) :: iounit, ios
+      character(len=255) :: filename
+      integer :: n, band, ix, iy, Ngrid, flat_idx, nev_actual
+      real(kind=dp) :: prob
+      real(kind=dp), allocatable :: parts(:,:)
+      real(kind=dp) :: dA
+      logical :: do_parts
+
+      ! Ensure output directory exists
+      call ensure_output_dir()
+
+      Ngrid = grid%nx * grid%ny
+      if (Ngrid == 0) return
+
+      nev_actual = min(nev, size(eigenvectors, 2))
+      dA = grid%dx * grid%dy
+
+      do_parts = .false.
+      if (present(write_parts)) do_parts = write_parts
+
+      ! Compute band decomposition if requested
+      if (do_parts) then
+        allocate(parts(nev_actual, 8))
+        parts = 0.0_dp
+        do n = 1, nev_actual
+          do band = 1, 8
+            prob = 0.0_dp
+            do iy = 1, grid%ny
+              do ix = 1, grid%nx
+                flat_idx = (band - 1) * Ngrid + (iy - 1) * grid%nx + ix
+                prob = prob + abs(eigenvectors(flat_idx, n))**2
+              end do
+            end do
+            parts(n, band) = prob * dA
+          end do
+        end do
+
+        ! Write parts.dat
+        call get_unit(iounit)
+        open(unit=iounit, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
+        do n = 1, nev_actual
+          write(unit=iounit, fmt='(8(g14.6))', iostat=ios) (parts(n, band), band=1, 8)
+        end do
+        close(iounit)
+        deallocate(parts)
+      end if
+
+      do n = 1, nev_actual
+        write(filename,'(a,i0.5,a,i0.5,a)') OUTPUT_DIR//'/eigenfunctions_k_', k_index, '_ev_', n, '.dat'
+        call get_unit(iounit)
+        open(unit=iounit, file=filename, status='replace', action='write')
+
+        ! Header with eigenvalue
+        write(iounit, '(a,g14.6)') '# E = ', eigenvalues(n)
+
+        ! Write probability density grid: x  y  |psi|^2
+        do iy = 1, grid%ny
+          do ix = 1, grid%nx
+            prob = 0.0_dp
+            do band = 1, 8
+              flat_idx = (band - 1) * Ngrid + (iy - 1) * grid%nx + ix
+              prob = prob + abs(eigenvectors(flat_idx, n))**2
+            end do
+            write(unit=iounit, fmt='(3(g14.6,1x))', iostat=ios) &
+              & grid%x(ix), grid%z(iy), prob
+          end do
+          ! Blank line between y-rows for gnuplot splot
+          write(iounit, '(a)', iostat=ios) ''
+        end do
+
+        close(iounit)
+      end do
+
+    end subroutine writeEigenfunctions2d
 
 end module outputFunctions

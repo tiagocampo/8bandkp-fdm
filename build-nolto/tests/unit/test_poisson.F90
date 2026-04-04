@@ -1,0 +1,288 @@
+module test_poisson
+  use funit
+  use definitions
+  use poisson
+  implicit none
+
+contains
+
+  !@test
+  subroutine test_uniform_charge()
+    ! Uniform epsilon, uniform rho, DD with bc_left=bc_right=0.
+    ! Analytical: Phi(z) = -rho*z^2 / (2*eps*e0) + C1*z + C2
+    ! With Phi(0)=0 and Phi(L)=0, C2=0 and C1 = rho*L/(2*eps*e0).
+    ! Using N=101, dz=1.0 nm, eps=12.90, rho=1e18*e (converted to C/nm^3).
+
+    integer, parameter :: N = 101
+    real(kind=dp) :: dz, L, rho_val, eps_val
+    real(kind=dp) :: phi(N), rho(N), epsilon(N)
+    real(kind=dp) :: z_i, phi_analytical, max_err
+    integer :: i
+
+    dz = 1.0_dp           ! nm
+    L = (N - 1) * dz      ! total length = 100 nm
+    eps_val = 12.90_dp
+    rho_val = 1.0e18_dp * e  ! C/cm^3 -> need C/nm^3
+
+    ! Convert rho from C/cm^3 to C/nm^3:  1 cm = 1e7 nm, so 1 cm^3 = 1e21 nm^3
+    rho_val = rho_val / 1.0e21_dp
+
+    rho = rho_val
+    epsilon = eps_val
+
+    call solve_poisson(phi, rho, epsilon, dz, N, 0.0_dp, 0.0_dp, BC_DD)
+
+    ! Check against analytical solution
+    max_err = 0.0_dp
+    do i = 1, N
+      z_i = (i - 1) * dz
+      phi_analytical = -rho_val * z_i**2 / (2.0_dp * eps_val * e0) &
+                       + rho_val * L * z_i / (2.0_dp * eps_val * e0)
+      max_err = max(max_err, abs(phi(i) - phi_analytical))
+    end do
+
+#line 44 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+  call assertTrue(max_err < 1.0e-6_dp, message="Uniform charge: max error vs analytical", &
+ & location=SourceLocation( &
+ & 'test_poisson.pf', &
+ & 44) )
+  if (anyExceptions()) return
+#line 45 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+
+  end subroutine test_uniform_charge
+
+
+  !@test
+  subroutine test_two_layer_dielectric()
+    ! Two materials with different eps, zero charge, DD.
+    ! Verify displacement field D = eps * dPhi/dz is continuous across interface.
+    ! N=101, eps=12.90 for i<=50, eps=10.06 for i>50, bc_left=1.0, bc_right=0.0.
+    !
+    ! The box-integration scheme uses eps_{i+1/2} = (eps_i + eps_{i+1})/2 at
+    ! half-points, so the discrete D at the interface half-point 50.5 uses the
+    ! averaged eps. We check D there and compare with D away from the interface.
+
+    integer, parameter :: N = 101
+    real(kind=dp) :: dz
+    real(kind=dp) :: phi(N), rho(N), epsilon(N)
+    real(kind=dp) :: D_interface, D_bulk, disc_err
+    real(kind=dp) :: eps_half
+    integer :: i
+
+    dz = 1.0_dp
+
+    rho = 0.0_dp
+    epsilon = 0.0_dp
+    do i = 1, N
+      if (i <= 50) then
+        epsilon(i) = 12.90_dp
+      else
+        epsilon(i) = 10.06_dp
+      end if
+    end do
+
+    call solve_poisson(phi, rho, epsilon, dz, N, 1.0_dp, 0.0_dp, BC_DD)
+
+    ! D at the interface half-point (between 50 and 51):
+    ! eps_{50+1/2} = (eps_50 + eps_51) / 2
+    eps_half = 0.5_dp * (epsilon(50) + epsilon(51))
+    D_interface = eps_half * (phi(51) - phi(50)) / dz
+
+    ! D in the bulk (well away from interface), using points 20 and 21:
+    D_bulk = epsilon(20) * (phi(21) - phi(20)) / dz
+
+    ! For a zero-charge system, D must be constant throughout.
+    ! At the discrete level, this holds exactly for the box-integration scheme
+    ! because the finite-volume conservation guarantees div(D)=0 cell-by-cell.
+    disc_err = abs(D_interface - D_bulk)
+
+#line 93 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+  call assertTrue(disc_err < 1.0e-12_dp, message="Displacement continuity at interface", &
+ & location=SourceLocation( &
+ & 'test_poisson.pf', &
+ & 93) )
+  if (anyExceptions()) return
+#line 94 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+
+  end subroutine test_two_layer_dielectric
+
+
+  !@test
+  subroutine test_neumann_bc()
+    ! DN boundary with Neumann at right.
+    ! Uniform eps, zero rho, bc_left=1.0.
+    ! Solution should be Phi = 1.0 everywhere (constant, satisfies dPhi/dz=0 at right).
+
+    integer, parameter :: N = 101
+    real(kind=dp) :: phi(N), rho(N), epsilon(N)
+    real(kind=dp) :: max_err
+    integer :: i
+
+    rho = 0.0_dp
+    epsilon = 12.90_dp
+
+    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 1.0_dp, 0.0_dp, BC_DN)
+
+    max_err = 0.0_dp
+    do i = 1, N
+      max_err = max(max_err, abs(phi(i) - 1.0_dp))
+    end do
+
+#line 119 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+  call assertTrue(max_err < 1.0e-12_dp, message="Neumann BC: constant solution", &
+ & location=SourceLocation( &
+ & 'test_poisson.pf', &
+ & 119) )
+  if (anyExceptions()) return
+#line 120 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+
+  end subroutine test_neumann_bc
+
+
+  !@test
+  subroutine test_thomas_algorithm()
+    ! Verify Thomas algorithm via solve_poisson on a Laplace problem.
+    ! Linear potential Phi(z) = A*z + B satisfies d2Phi/dz2 = 0 (rho=0).
+    ! Test: Phi(z) = 2.0*z + 1.0 on [0, 10], N=11, dz=1.
+    ! bc_left = Phi(0) = 1.0, bc_right = Phi(10) = 21.0.
+    ! Thomas must return phi(i) = 2.0*(i-1) + 1.0.
+
+    integer, parameter :: N2 = 11
+    real(kind=dp) :: phi2(N2), rho2(N2), eps2(N2)
+    real(kind=dp) :: max_err2
+    integer :: i
+
+    rho2 = 0.0_dp
+    eps2 = 1.0_dp
+
+    call solve_poisson(phi2, rho2, eps2, 1.0_dp, N2, 1.0_dp, 21.0_dp, BC_DD)
+
+    max_err2 = 0.0_dp
+    do i = 1, N2
+      max_err2 = max(max_err2, abs(phi2(i) - (2.0_dp * (i - 1) + 1.0_dp)))
+    end do
+
+#line 147 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+  call assertTrue(max_err2 < 1.0e-12_dp, message="Thomas: linear potential recovery", &
+ & location=SourceLocation( &
+ & 'test_poisson.pf', &
+ & 147) )
+  if (anyExceptions()) return
+#line 148 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+
+  end subroutine test_thomas_algorithm
+
+  !@test
+  subroutine test_invalid_bc_type()
+    ! Unknown bc_type should return phi = 0 without crashing
+
+    integer, parameter :: N = 11
+    real(kind=dp) :: phi(N), rho(N), epsilon(N)
+    real(kind=dp) :: max_val
+    integer :: i
+
+    rho = 1.0_dp
+    epsilon = 1.0_dp
+
+    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 0.0_dp, 0.0_dp, 0)  ! invalid BC
+
+    max_val = 0.0_dp
+    do i = 1, N
+      max_val = max(max_val, abs(phi(i)))
+    end do
+
+#line 170 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+  call assertTrue(max_val == 0.0_dp, message="Invalid BC type returns zero potential", &
+ & location=SourceLocation( &
+ & 'test_poisson.pf', &
+ & 170) )
+  if (anyExceptions()) return
+#line 171 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+  end subroutine test_invalid_bc_type
+
+
+  !@test
+  subroutine test_n_less_than_3()
+    ! N < 3 should return phi = 0 without crashing
+
+    integer, parameter :: N = 2
+    real(kind=dp) :: phi(N), rho(N), epsilon(N)
+    real(kind=dp) :: max_val
+    integer :: i
+
+    rho = 1.0_dp
+    epsilon = 1.0_dp
+
+    call solve_poisson(phi, rho, epsilon, 1.0_dp, N, 0.0_dp, 0.0_dp, BC_DD)
+
+    max_val = 0.0_dp
+    do i = 1, N
+      max_val = max(max_val, abs(phi(i)))
+    end do
+
+#line 193 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+  call assertTrue(max_val == 0.0_dp, message="N<3 returns zero potential", &
+ & location=SourceLocation( &
+ & 'test_poisson.pf', &
+ & 193) )
+  if (anyExceptions()) return
+#line 194 "/data/8bandkp-fdm/tests/unit/test_poisson.pf"
+  end subroutine test_n_less_than_3
+
+end module test_poisson
+
+module Wraptest_poisson
+   use FUnit
+   use test_poisson
+   implicit none
+   private
+
+contains
+
+
+end module Wraptest_poisson
+
+function test_poisson_suite() result(suite)
+   use FUnit
+   use test_poisson
+   use Wraptest_poisson
+   implicit none
+   type (TestSuite) :: suite
+
+   class (Test), allocatable :: t
+
+   suite = TestSuite('test_poisson_suite')
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_uniform_charge', &
+      test_uniform_charge))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_two_layer_dielectric', &
+      test_two_layer_dielectric))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_neumann_bc', &
+      test_neumann_bc))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_thomas_algorithm', &
+      test_thomas_algorithm))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_invalid_bc_type', &
+      test_invalid_bc_type))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_n_less_than_3', &
+      test_n_less_than_3))
+   call suite%addTest(t)
+
+
+end function test_poisson_suite
+

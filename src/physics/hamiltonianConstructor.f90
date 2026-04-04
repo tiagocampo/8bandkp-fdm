@@ -2,10 +2,38 @@ module hamiltonianConstructor
 
   use definitions
   use finitedifferences
+  use sparse_matrices
   use utils
-  use mkl_spblas
 
   implicit none
+
+  interface confinementInitialization
+    module procedure confinementInitialization_raw
+    module procedure confinementInitialization_cfg
+  end interface confinementInitialization
+
+  ! ------------------------------------------------------------------
+  ! Cache for the COO sparsity structure of the wire Hamiltonian.
+  !
+  ! Stores the mapping from unsorted COO indices to sorted+merged CSR
+  ! positions so that subsequent k-points can skip the O(NNZ log NNZ)
+  ! sort and just update values in O(NNZ) time.
+  !
+  ! coo_to_csr(i) gives the CSR position (1..nnz_final) that COO entry i
+  ! maps to after sort and duplicate merging.  For duplicate COO entries
+  ! that merge into the same CSR position, all their indices map to the
+  ! same CSR position.
+  !
+  ! The nnz of each kp-term block is kz-independent, so this mapping is
+  ! fixed across all k-points in a kz sweep.
+  ! ------------------------------------------------------------------
+  type :: wire_coo_cache
+    integer, allocatable          :: coo_to_csr(:)   ! (coo_nnz_in) mapping
+    integer                       :: coo_nnz_in = 0  ! input COO count
+    logical                       :: initialized = .false.
+  end type wire_coo_cache
+
+  public :: wire_coo_cache, wire_coo_cache_free
 
   contains
 
@@ -65,7 +93,7 @@ module hamiltonianConstructor
 
     end subroutine externalFieldSetup_electricField
 
-    subroutine confinementInitialization(z, startPos, endPos, material, nlayers,&
+    subroutine confinementInitialization_raw(z, startPos, endPos, material, nlayers,&
       & params, confDir, profile, kpterms, FDorder)
 
       real(kind = dp), intent(in), dimension(:) :: z
@@ -90,7 +118,6 @@ module hamiltonianConstructor
 
       N = size(z, dim=1)
       delta = abs(z(2) - z(1))
-      print *, delta
 
       ! Resolve FD order (default 2 for backward compatibility)
       if (present(FDorder)) then
@@ -228,7 +255,347 @@ module hamiltonianConstructor
       if (allocated(D2)) deallocate(D2)
       if (allocated(D1)) deallocate(D1)
 
-    end subroutine confinementInitialization
+    end subroutine confinementInitialization_raw
+
+    !---------------------------------------------------------------------------
+    !> Cfg-based wrapper: extracts spatial_grid fields from simulation_config
+    !> and delegates to confinementInitialization_raw.
+    !>
+    !> For QW (ndim=1), uses cfg%grid%z(:) for coordinates and
+    !> grid_ngrid(cfg%grid) for the spatial DOF count.  Falls back to the
+    !> legacy cfg fields (z, intStartPos, intEndPos) when the grid has not
+    !> been initialised yet (grid%ndim == 0 and confinement == 1).
+    !---------------------------------------------------------------------------
+    subroutine confinementInitialization_cfg(cfg, profile, kpterms)
+
+      type(simulation_config), intent(inout) :: cfg
+      real(kind=dp), intent(inout), allocatable :: profile(:,:)
+      real(kind=dp), intent(inout), allocatable :: kpterms(:,:,:)
+
+      integer :: ny
+
+      ! Determine spatial DOF count from the grid when available,
+      ! otherwise from the legacy fdStep field.
+      if (cfg%grid%ndim >= 1) then
+        ny = grid_ngrid(cfg%grid)
+      else
+        ny = cfg%fdStep
+      end if
+
+      ! Allocate kpterms if not already allocated (caller may pre-allocate)
+      if (.not. allocated(kpterms)) then
+        allocate(kpterms(ny, ny, 10))
+        kpterms = 0.0_dp
+      end if
+
+      ! Dispatch to the raw routine using the appropriate coordinate source
+      if (cfg%grid%ndim >= 1 .and. allocated(cfg%grid%z)) then
+        ! New path: use spatial_grid coordinates
+        call confinementInitialization_raw(cfg%grid%z, cfg%intStartPos, &
+          & cfg%intEndPos, cfg%materialN, cfg%numLayers, cfg%params, &
+          & cfg%confDir, profile, kpterms, cfg%FDorder)
+      else
+        ! Legacy path: use cfg%z (backward compat before init_grid_from_config)
+        call confinementInitialization_raw(cfg%z, cfg%intStartPos, &
+          & cfg%intEndPos, cfg%materialN, cfg%numLayers, cfg%params, &
+          & cfg%confDir, profile, kpterms, cfg%FDorder)
+      end if
+
+      ! Populate cfg%dz from the grid when available
+      if (cfg%grid%ndim >= 1 .and. cfg%grid%dy > 0.0_dp) then
+        cfg%dz = cfg%grid%dy
+      end if
+
+    end subroutine confinementInitialization_cfg
+
+    !---------------------------------------------------------------------------
+    !> 2D confinement initialization for quantum wire mode (ndim=2).
+    !>
+    !> Builds kpterms_2d (11 CSR matrices) from 1D FD operators and
+    !> Kronecker products, then applies position-dependent material
+    !> parameters from the spatial_grid.
+    !>
+    !> kpterms_2d indices:
+    !>   1: gamma1 (diagonal only)
+    !>   2: gamma2 (diagonal only)
+    !>   3: gamma3 (diagonal only)
+    !>   4: P      (diagonal only)
+    !>   5: A * (d^2/dx^2 + d^2/dy^2)   -- 2nd derivative, conduction band kinetic
+    !>   6: P * (d/dx + d/dy)            -- 1st derivative, momentum coupling
+    !>   7: (gamma1 - 2*gamma2) * Laplacian -- Q term kinetic
+    !>   8: (gamma1 + 2*gamma2) * Laplacian -- T term kinetic
+    !>   9: gamma3 * (d/dx + d/dy)       -- S term, linear-k coupling
+    !>  10: A (diagonal only, k^2 coefficient for CB)
+    !>  11: gamma3 * d^2/dxdy             -- cross-derivative (NEW for 2D)
+    !>  12: P * d/dx   (x-gradient only, for g-factor perturbation)
+    !>  13: P * d/dy   (y-gradient only, for g-factor perturbation)
+    !>  14: gamma3 * d/dx  (x-gradient only, for g-factor perturbation)
+    !>  15: gamma3 * d/dy  (y-gradient only, for g-factor perturbation)
+    !>
+    !> Also builds profile_2d(Ngrid, 3) with band edges:
+    !>   profile_2d(:,1) = EV
+    !>   profile_2d(:,2) = EV - DeltaSO
+    !>   profile_2d(:,3) = EC
+    !---------------------------------------------------------------------------
+    subroutine confinementInitialization_2d(grid, params, regions, &
+        profile_2d, kpterms_2d, FDorder)
+
+      type(spatial_grid), intent(in)    :: grid
+      type(paramStruct), intent(in)     :: params(:)     ! size = numRegions
+      type(region_spec), intent(in)     :: regions(:)    ! size = numRegions
+      real(kind=dp), allocatable, intent(out) :: profile_2d(:,:)
+      type(csr_matrix), allocatable, intent(out) :: kpterms_2d(:)
+      integer, intent(in), optional     :: FDorder
+
+      integer :: order, nx, ny, ngrid, ij, mid
+      real(kind=dp) :: dx, dy
+
+      ! 1D FD matrices (real, dense)
+      real(kind=dp), allocatable :: D2x(:,:), D1x(:,:)
+      real(kind=dp), allocatable :: D2y(:,:), D1y(:,:)
+      real(kind=dp), allocatable :: Ix(:,:), Iy(:,:)
+
+      ! Complex versions for Kron product routines
+      complex(kind=dp), allocatable :: cD2x(:,:), cD1x(:,:)
+      complex(kind=dp), allocatable :: cD2y(:,:), cD1y(:,:)
+      complex(kind=dp), allocatable :: cIx(:,:), cIy(:,:)
+
+      ! CSR work matrices
+      type(csr_matrix) :: kron_Iy_D2x, kron_D2y_Ix, laplacian_2d
+      type(csr_matrix) :: kron_Iy_D1x, kron_D1y_Ix, grad_2d
+      type(csr_matrix) :: kron_D1y_D1x  ! cross-derivative
+      type(csr_matrix) :: diag_csr, scaled_diag
+
+      ! Material profiles on the 2D grid
+      real(kind=dp), allocatable :: prof_gamma1(:), prof_gamma2(:)
+      real(kind=dp), allocatable :: prof_gamma3(:), prof_P(:), prof_A(:)
+      real(kind=dp), allocatable :: prof_gm12g2(:), prof_gp12g2(:)
+
+      ! Resolve FD order (default 2)
+      if (present(FDorder)) then
+        order = FDorder
+      else
+        order = 2
+      end if
+
+      nx    = grid%nx
+      ny    = grid%ny
+      ngrid = nx * ny
+      dx    = grid%dx
+      dy    = grid%dy
+
+      ! Validate grid
+      if (nx < 3 .or. ny < 3) then
+        print *, "ERROR: confinementInitialization_2d requires nx>=3, ny>=3"
+        stop 1
+      end if
+
+      ! ====================================================================
+      ! 1. Build 1D FD operators
+      ! ====================================================================
+      call buildFD2ndDerivMatrix(nx, dx, order, D2x)
+      call buildFD1stDerivMatrix(nx, dx, order, D1x)
+      call buildFD2ndDerivMatrix(ny, dy, order, D2y)
+      call buildFD1stDerivMatrix(ny, dy, order, D1y)
+
+      ! Identity matrices
+      call Identity(nx, Ix)
+      call Identity(ny, Iy)
+
+      ! Convert real matrices to complex for Kron routines
+      allocate(cD2x(nx, nx)); cD2x = cmplx(D2x, 0.0_dp, kind=dp)
+      allocate(cD1x(nx, nx)); cD1x = cmplx(D1x, 0.0_dp, kind=dp)
+      allocate(cD2y(ny, ny)); cD2y = cmplx(D2y, 0.0_dp, kind=dp)
+      allocate(cD1y(ny, ny)); cD1y = cmplx(D1y, 0.0_dp, kind=dp)
+      allocate(cIx(nx, nx));   cIx  = cmplx(Ix,  0.0_dp, kind=dp)
+      allocate(cIy(ny, ny));   cIy  = cmplx(Iy,  0.0_dp, kind=dp)
+
+      ! ====================================================================
+      ! 2. Build 2D FD operators via Kronecker products
+      ! ====================================================================
+
+      ! Laplacian: Iy x D2x + D2y x Ix  (column-major flat_idx = (iy-1)*nx+ix)
+      call kron_eye_dense(ny, cD2x, nx, nx, kron_Iy_D2x)
+      call kron_dense_dense(cD2y, ny, ny, cIx, nx, nx, kron_D2y_Ix)
+      call csr_add(kron_Iy_D2x, kron_D2y_Ix, laplacian_2d)
+
+      ! Gradient: Iy x D1x + D1y x Ix  (column-major)
+      call kron_eye_dense(ny, cD1x, nx, nx, kron_Iy_D1x)
+      call kron_dense_dense(cD1y, ny, ny, cIx, nx, nx, kron_D1y_Ix)
+      call csr_add(kron_Iy_D1x, kron_D1y_Ix, grad_2d)
+
+      ! Cross-derivative: D1y x D1x  (column-major)
+      call kron_dense_dense(cD1y, ny, ny, cD1x, nx, nx, kron_D1y_D1x)
+
+      ! Free intermediate Kronecker products (keep kron_Iy_D1x, kron_D1y_Ix
+      ! for building kpterms_2d(12-15) below)
+      call csr_free(kron_Iy_D2x)
+      call csr_free(kron_D2y_Ix)
+
+      ! ====================================================================
+      ! 3. Build material profiles on the 2D grid
+      ! ====================================================================
+      allocate(prof_gamma1(ngrid)); prof_gamma1 = 0.0_dp
+      allocate(prof_gamma2(ngrid)); prof_gamma2 = 0.0_dp
+      allocate(prof_gamma3(ngrid)); prof_gamma3 = 0.0_dp
+      allocate(prof_P(ngrid));      prof_P      = 0.0_dp
+      allocate(prof_A(ngrid));      prof_A      = 0.0_dp
+      allocate(prof_gm12g2(ngrid)); prof_gm12g2 = 0.0_dp
+      allocate(prof_gp12g2(ngrid)); prof_gp12g2 = 0.0_dp
+
+      if (allocated(profile_2d)) deallocate(profile_2d)
+      allocate(profile_2d(ngrid, 3))
+      profile_2d = 0.0_dp
+
+      do ij = 1, ngrid
+        mid = grid%material_id(ij)
+        if (mid < 1 .or. mid > size(params)) then
+          ! Inactive cell or outside domain -- leave zeros
+          cycle
+        end if
+
+        if (params(mid)%EV == 0.0_dp .and. params(mid)%EC == 0.0_dp) then
+          print *, "ERROR: Region '", trim(regions(mid)%material), &
+            "' has EV=0 and EC=0. Band offsets are required."
+          stop 1
+        end if
+
+        ! Band-edge profile
+        profile_2d(ij, 1) = params(mid)%EV
+        profile_2d(ij, 2) = params(mid)%EV - params(mid)%DeltaSO
+        profile_2d(ij, 3) = params(mid)%EC
+
+        ! Material parameter profiles
+        prof_gamma1(ij) = params(mid)%gamma1
+        prof_gamma2(ij) = params(mid)%gamma2
+        prof_gamma3(ij) = params(mid)%gamma3
+        prof_P(ij)      = params(mid)%P
+        prof_A(ij)      = params(mid)%A
+        prof_gm12g2(ij) = params(mid)%gamma1 - 2.0_dp * params(mid)%gamma2
+        prof_gp12g2(ij) = params(mid)%gamma1 + 2.0_dp * params(mid)%gamma2
+      end do
+
+      ! ====================================================================
+      ! 4. Build kpterms_2d (15 CSR matrices)
+      ! ====================================================================
+      if (allocated(kpterms_2d)) deallocate(kpterms_2d)
+      allocate(kpterms_2d(15))
+
+      ! Terms 1-4: diagonal-only (gamma1, gamma2, gamma3, P)
+      ! Build a diagonal CSR from the profile and store directly
+      call build_diagonal_csr(ngrid, prof_gamma1, kpterms_2d(1))
+      call build_diagonal_csr(ngrid, prof_gamma2, kpterms_2d(2))
+      call build_diagonal_csr(ngrid, prof_gamma3, kpterms_2d(3))
+      call build_diagonal_csr(ngrid, prof_P, kpterms_2d(4))
+
+      ! Apply cut-cell face fractions to differential operators.
+      ! For rectangular grids all face fractions are 1.0 (no-op).
+      ! Terms 5,7,8: Laplacian;  Terms 6,9: Gradient.
+      ! Term 11 (cross-derivative) mixes x/y connections so face fractions
+      ! are not applied (they remain 1.0 by default).
+      if (allocated(grid%face_fraction_x) .and. allocated(grid%face_fraction_y)) then
+        ! Term 5: A * Laplacian
+        call csr_apply_variable_coeff(laplacian_2d, prof_A, kpterms_2d(5), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 6: P * Gradient
+        call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 7: (gamma1 - 2*gamma2) * Laplacian
+        call csr_apply_variable_coeff(laplacian_2d, prof_gm12g2, kpterms_2d(7), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 8: (gamma1 + 2*gamma2) * Laplacian
+        call csr_apply_variable_coeff(laplacian_2d, prof_gp12g2, kpterms_2d(8), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 9: gamma3 * Gradient
+        call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+      else
+        ! No face fractions (rectangular grid or QW mode): standard path
+        call csr_apply_variable_coeff(laplacian_2d, prof_A, kpterms_2d(5))
+        call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6))
+        call csr_apply_variable_coeff(laplacian_2d, prof_gm12g2, kpterms_2d(7))
+        call csr_apply_variable_coeff(laplacian_2d, prof_gp12g2, kpterms_2d(8))
+        call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9))
+      end if
+
+      ! Term 10: A (diagonal only)
+      call build_diagonal_csr(ngrid, prof_A, kpterms_2d(10))
+
+      ! Term 11: gamma3 * Cross-derivative
+      call csr_apply_variable_coeff(kron_D1y_D1x, prof_gamma3, kpterms_2d(11))
+
+      ! Terms 12-15: separate x/y gradient operators for g-factor perturbation.
+      ! These use the same kron products as grad_2d but split by direction.
+      ! kron_Iy_D1x = Iy x D1x (x-gradient), kron_D1y_Ix = D1y x Ix (y-gradient).
+      if (allocated(grid%face_fraction_x) .and. allocated(grid%face_fraction_y)) then
+        ! Term 12: P * d/dx (x-gradient only)
+        call csr_apply_variable_coeff(kron_Iy_D1x, prof_P, kpterms_2d(12), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 13: P * d/dy (y-gradient only)
+        call csr_apply_variable_coeff(kron_D1y_Ix, prof_P, kpterms_2d(13), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 14: gamma3 * d/dx (x-gradient only)
+        call csr_apply_variable_coeff(kron_Iy_D1x, prof_gamma3, kpterms_2d(14), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        ! Term 15: gamma3 * d/dy (y-gradient only)
+        call csr_apply_variable_coeff(kron_D1y_Ix, prof_gamma3, kpterms_2d(15), &
+          face_frac_x=grid%face_fraction_x, &
+          face_frac_y=grid%face_fraction_y, grid_nx=nx)
+      else
+        ! No face fractions (rectangular grid)
+        call csr_apply_variable_coeff(kron_Iy_D1x, prof_P, kpterms_2d(12))
+        call csr_apply_variable_coeff(kron_D1y_Ix, prof_P, kpterms_2d(13))
+        call csr_apply_variable_coeff(kron_Iy_D1x, prof_gamma3, kpterms_2d(14))
+        call csr_apply_variable_coeff(kron_D1y_Ix, prof_gamma3, kpterms_2d(15))
+      end if
+
+      ! ====================================================================
+      ! 5. Cleanup
+      ! ====================================================================
+      call csr_free(laplacian_2d)
+      call csr_free(grad_2d)
+      call csr_free(kron_D1y_D1x)
+      call csr_free(kron_Iy_D1x)
+      call csr_free(kron_D1y_Ix)
+
+      deallocate(D2x, D1x, D2y, D1y, Ix, Iy)
+      deallocate(cD2x, cD1x, cD2y, cD1y, cIx, cIy)
+      deallocate(prof_gamma1, prof_gamma2, prof_gamma3)
+      deallocate(prof_P, prof_A, prof_gm12g2, prof_gp12g2)
+
+    end subroutine confinementInitialization_2d
+
+    !---------------------------------------------------------------------------
+    !> Build a diagonal CSR matrix from a real profile vector.
+    !> mat(i,i) = cmplx(profile(i), 0.0_dp).
+    !---------------------------------------------------------------------------
+    subroutine build_diagonal_csr(n, profile, mat)
+      integer, intent(in) :: n
+      real(kind=dp), intent(in) :: profile(n)
+      type(csr_matrix), intent(out) :: mat
+
+      integer :: i
+      integer, allocatable :: rows(:), cols(:)
+      complex(kind=dp), allocatable :: vals(:)
+
+      allocate(rows(n), cols(n), vals(n))
+      do i = 1, n
+        rows(i) = i
+        cols(i) = i
+        vals(i) = cmplx(profile(i), 0.0_dp, kind=dp)
+      end do
+
+      call csr_build_from_coo(mat, n, n, n, rows, cols, vals)
+      deallocate(rows, cols, vals)
+    end subroutine build_diagonal_csr
 
     !---------------------------------------------------------------------------
     !> Apply variable coefficient to FD matrix and store in kpterms.
@@ -258,7 +625,7 @@ module hamiltonianConstructor
 
       !input/output
       complex(kind=dp), intent(inout), dimension(:,:) :: HT
-      type(sparse_matrix_T), intent(inout), optional :: HT_csr
+      type(csr_matrix), intent(inout), optional :: HT_csr
       type(wavevector), intent(in) :: wv
       real(kind = dp), intent(in), dimension(:,:) :: profile
       real(kind = dp), intent(in), dimension(:,:,:) :: kpterms
@@ -611,6 +978,896 @@ module hamiltonianConstructor
 
 
     end subroutine ZB8bandBulk
+
+    !---------------------------------------------------------------------------
+    !> Generalized 8-band zincblende Hamiltonian assembly for quantum wires
+    !> (ndim=2).  Builds a sparse CSR Hamiltonian of size 8*Ngrid x 8*Ngrid
+    !> from precomputed kpterms_2d CSR operators.
+    !>
+    !> For ndim < 2, delegates to the existing ZB8bandQW dense routine.
+    !>
+    !> Algorithm:
+    !>   1. Build the 10 kp-term CSR matrices (Q, T, S, SC, R, RC, PZ, PP, PM, A)
+    !>      as combinations of kpterms_2d operators and kz-dependent scalars.
+    !>   2. Iterate over the 8x8 block topology, inserting all nonzeros of
+    !>      each nonzero block as COO triplets with appropriate row/col offsets.
+    !>   3. Add band-offset profile to diagonal blocks.
+    !>   4. Finalize COO -> CSR via csr_build_from_coo.
+    !>
+    !> The wire has kz as free wavevector (along the wire axis), with
+    !> confinement in x-y.  The kpterms_2d operators encode d/dx, d/dy,
+    !> d^2/dx^2, d^2/dy^2, and cross derivatives on the 2D grid.
+    !---------------------------------------------------------------------------
+    subroutine ZB8bandGeneralized(HT_csr, kz, profile_2d, kpterms_2d, cfg, coo_cache, g)
+
+      type(csr_matrix), intent(inout)         :: HT_csr
+      real(kind=dp), intent(in)               :: kz
+      real(kind=dp), intent(in)               :: profile_2d(:,:)
+      type(csr_matrix), intent(in)            :: kpterms_2d(:)
+      type(simulation_config), intent(in)     :: cfg
+      type(wire_coo_cache), intent(inout), optional :: coo_cache
+      character(len=2), intent(in), optional  :: g
+
+      integer :: N, Ntot, alpha, beta, nnz_est
+      real(kind=dp) :: kz2
+      logical :: gmode
+      integer :: gmode_dir  ! 0=none, 1=x, 2=y, 3=z
+
+      ! CSR work matrices for the kp terms
+      type(csr_matrix) :: blk_Q, blk_T, blk_S, blk_SC
+      type(csr_matrix) :: blk_R, blk_RC
+      type(csr_matrix) :: blk_PZ, blk_PP, blk_PM, blk_A
+      type(csr_matrix) :: blk_temp, blk_temp2, blk_diff
+
+      ! COO assembly arrays
+      integer, allocatable :: coo_rows(:), coo_cols(:)
+      complex(kind=dp), allocatable :: coo_vals(:)
+      integer :: coo_idx, coo_capacity
+
+      N = grid_ngrid(cfg%grid)
+      Ntot = 8 * N
+      kz2 = kz * kz
+
+      gmode = .false.
+      gmode_dir = 0
+      if (present(g)) then
+        ! Backward compat: treat 'g ' (len=1 'g' padded) as g3
+        if (g == 'g1') gmode_dir = 1
+        if (g == 'g2') gmode_dir = 2
+        if (g == 'g3' .or. g == 'g ') gmode_dir = 3
+        gmode = (gmode_dir > 0)
+      end if
+
+      if (gmode_dir == 3) then
+        ! ==================================================================
+        ! g='g3' mode (z direction): kz-linear perturbation terms.
+        ! PP, PM, S, SC at unit kz.  All other blocks are zero.
+        ! No band-offset profile is added.
+        ! ==================================================================
+        call build_kp_term_PP(kz, kpterms_2d, blk_PP)
+        call build_kp_term_PM(kz, kpterms_2d, blk_PM)
+        call build_kp_term_S(kz, kpterms_2d, blk_S)
+        call build_kp_term_SC(kz, kpterms_2d, blk_SC)
+
+      else if (gmode_dir == 1) then
+        ! ==================================================================
+        ! g='g1' mode (x direction): perturbation via d/dx spatial gradient.
+        ! PZ uses kpterms_2d(12) = P * d/dx, S uses kpterms_2d(14) = gamma3 * d/dx.
+        ! No PP/PM (those are kz-dependent; kz=0 for x perturbation).
+        ! ==================================================================
+        ! PZ = -IU * kpterms_2d(12)  (same prefactor as normal mode PZ)
+        call csr_scale(kpterms_2d(12), blk_PZ, -IU)
+        ! S = 2*sqrt(3) * kpterms_2d(14)
+        call csr_scale(kpterms_2d(14), blk_S, &
+          cmplx(2.0_dp * SQR3, 0.0_dp, kind=dp))
+        ! SC = -S  (antisymmetric gradient)
+        call csr_scale(kpterms_2d(14), blk_SC, &
+          cmplx(-2.0_dp * SQR3, 0.0_dp, kind=dp))
+
+      else if (gmode_dir == 2) then
+        ! ==================================================================
+        ! g='g2' mode (y direction): perturbation via d/dy spatial gradient.
+        ! PZ uses kpterms_2d(13) = P * d/dy, S uses kpterms_2d(15) = gamma3 * d/dy.
+        ! No PP/PM (those are kz-dependent; kz=0 for y perturbation).
+        ! ==================================================================
+        ! PZ = -IU * kpterms_2d(13)
+        call csr_scale(kpterms_2d(13), blk_PZ, -IU)
+        ! S = 2*sqrt(3) * kpterms_2d(15)
+        call csr_scale(kpterms_2d(15), blk_S, &
+          cmplx(2.0_dp * SQR3, 0.0_dp, kind=dp))
+        ! SC = -S  (antisymmetric gradient)
+        call csr_scale(kpterms_2d(15), blk_SC, &
+          cmplx(-2.0_dp * SQR3, 0.0_dp, kind=dp))
+
+      else
+        ! ==================================================================
+        ! Build kp-term CSR matrices (size N x N each)
+        ! ==================================================================
+
+        ! Q = -((gamma1+gamma2)*kz^2*I + kpterms_2d(7))
+        call build_kp_term_Q(kz2, kpterms_2d, blk_Q)
+
+        ! T = -(gamma1-gamma2)*kz^2*I - kpterms_2d(8)
+        call build_kp_term_T(kz2, kpterms_2d, blk_T)
+
+        ! S = 2*sqrt(3)*kz*kpterms_2d(9)  (wire: kminus = kz since kx,ky are spatial)
+        call build_kp_term_S(kz, kpterms_2d, blk_S)
+
+        ! SC = 2*sqrt(3)*kz*kpterms_2d(9)  (wire: kplus = kz since kx,ky are spatial)
+        call build_kp_term_SC(kz, kpterms_2d, blk_SC)
+
+        ! R = -sqrt(3)*gamma2*kz^2*I (diagonal only, kx^2,ky^2 absorbed into 2D ops)
+        call build_kp_term_R(kz2, kpterms_2d, blk_R)
+
+        ! RC = conjg(R) = R (real diagonal)
+        call build_kp_term_RC(kz2, kpterms_2d, blk_RC)
+
+        ! PZ = -IU * kpterms_2d(6)  (P * gradient * (-IU))
+        call build_kp_term_PZ(kpterms_2d, blk_PZ)
+
+        ! PP = kpterms_2d(4) * kz * RQS2  (diagonal)
+        call build_kp_term_PP(kz, kpterms_2d, blk_PP)
+
+        ! PM = kpterms_2d(4) * kz * RQS2  (same as PP for wire)
+        call build_kp_term_PM(kz, kpterms_2d, blk_PM)
+
+        ! A = kpterms_2d(5) + kz^2 * kpterms_2d(10)
+        call build_kp_term_A(kz2, kpterms_2d, blk_A)
+      end if
+
+      ! ==================================================================
+      ! COO capacity estimation and block insertion
+      ! ==================================================================
+      if (gmode_dir == 3) then
+        ! ==================================================================
+        ! g='g3' mode (z direction): PP, PM, S, SC blocks only.
+        ! Same block topology as the original g='g' mode.
+        ! ==================================================================
+        ! PP:6, PM:5, S:6, SC:6
+        nnz_est = 6*blk_PP%nnz + 5*blk_PM%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
+        coo_capacity = nnz_est
+
+        allocate(coo_rows(coo_capacity))
+        allocate(coo_cols(coo_capacity))
+        allocate(coo_vals(coo_capacity))
+        coo_idx = 0
+
+        ! --- Row 1 (HH1) ---
+        ! (1,2): SC
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 1, blk_SC, N)
+        ! (1,5): -IU * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 4, blk_SC, N, -IU * RQS2)
+        ! (1,7): IU * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 6, blk_PP, N, IU)
+
+        ! --- Row 2 (HH2) ---
+        ! (2,1): S
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 0, blk_S, N)
+        ! (2,6): -IU * SQR3 * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 5, blk_SC, N, -IU * SQR3 * RQS2)
+        ! (2,8): -RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 7, blk_PP, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 3 (LH1) ---
+        ! (3,4): -SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        ! (3,5): IU * SQR3 * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 4, blk_S, N, IU * SQR3 * RQS2)
+        ! (3,7): IU * RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 6, blk_PM, N, IU * RQS3)
+
+        ! --- Row 4 (LH2) ---
+        ! (4,3): -S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        ! (4,6): IU * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 5, blk_S, N, IU * RQS2)
+        ! (4,8): -PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 7, blk_PM, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+
+        ! --- Row 5 (SO1) ---
+        ! (5,1): IU * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 0, blk_S, N, IU * RQS2)
+        ! (5,3): -IU * SQR3 * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 2, blk_SC, N, -IU * SQR3 * RQS2)
+        ! (5,8): IU * SQR2 * RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 7, blk_PP, N, IU * SQR2 * RQS3)
+
+        ! --- Row 6 (SO2) ---
+        ! (6,2): IU * SQR3 * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 1, blk_S, N, IU * SQR3 * RQS2)
+        ! (6,4): -IU * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 3, blk_SC, N, -IU * RQS2)
+        ! (6,7): SQR2 * RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 6, blk_PM, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 7 (CB1) ---
+        ! (7,1): -IU * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 0, blk_PM, N, -IU)
+        ! (7,3): -IU * RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 2, blk_PP, N, -IU * RQS3)
+        ! (7,6): SQR2 * RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 5, blk_PP, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 8 (CB2) ---
+        ! (8,2): -RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 1, blk_PM, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+        ! (8,4): -PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 3, blk_PP, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        ! (8,5): -IU * SQR2 * RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 4, blk_PM, N, -IU * SQR2 * RQS3)
+
+        ! No profile diagonal in g3 mode
+
+      else if (gmode_dir == 1 .or. gmode_dir == 2) then
+        ! ==================================================================
+        ! g='g1' or g='g2' mode (x or y direction): PZ, S, SC blocks only.
+        ! PZ uses the separate d/dx or d/dy operator (kpterms_2d(12) or (13)).
+        ! S/SC use the separate d/dx or d/dy operator (kpterms_2d(14) or (15)).
+        ! Block topology matches the normal mode's PZ and S/SC insertions.
+        ! PZ:8, S:6, SC:6
+        ! ==================================================================
+        nnz_est = 8*blk_PZ%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
+        coo_capacity = nnz_est
+
+        allocate(coo_rows(coo_capacity))
+        allocate(coo_cols(coo_capacity))
+        allocate(coo_vals(coo_capacity))
+        coo_idx = 0
+
+        ! --- S/SC blocks (same positions as normal mode S/SC) ---
+
+        ! --- Row 1 (HH1) ---
+        ! (1,2): SC
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 1, blk_SC, N)
+        ! (1,5): -IU * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 4, blk_SC, N, -IU * RQS2)
+
+        ! --- Row 2 (HH2) ---
+        ! (2,1): S
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 0, blk_S, N)
+        ! (2,6): -IU * SQR3 * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 5, blk_SC, N, -IU * SQR3 * RQS2)
+        ! (2,7): SQR2 * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 3 (LH1) ---
+        ! (3,4): -SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        ! (3,5): IU * SQR3 * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 4, blk_S, N, IU * SQR3 * RQS2)
+        ! (3,8): IU * SQR2 * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 7, blk_PZ, N, IU * SQR2 * RQS3)
+
+        ! --- Row 4 (LH2) ---
+        ! (4,3): -S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        ! (4,6): IU * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 5, blk_S, N, IU * RQS2)
+
+        ! --- Row 5 (SO1) ---
+        ! (5,1): IU * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 0, blk_S, N, IU * RQS2)
+        ! (5,3): -IU * SQR3 * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 2, blk_SC, N, -IU * SQR3 * RQS2)
+        ! (5,7): IU * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 6, blk_PZ, N, IU * RQS3)
+
+        ! --- Row 6 (SO2) ---
+        ! (6,2): IU * SQR3 * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 1, blk_S, N, IU * SQR3 * RQS2)
+        ! (6,4): -IU * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 3, blk_SC, N, -IU * RQS2)
+        ! (6,8): -RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 7 (CB1) ---
+        ! (7,2): SQR2 * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+        ! (7,5): -IU * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 4, blk_PZ, N, -IU * RQS3)
+
+        ! --- Row 8 (CB2) ---
+        ! (8,3): -IU * SQR2 * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 2, blk_PZ, N, -IU * SQR2 * RQS3)
+        ! (8,6): -RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+
+        ! No profile diagonal in g1/g2 mode
+
+      else
+        ! ==================================================================
+        ! Exact COO capacity: sum nnz of every block insertion
+        ! ==================================================================
+        ! blk_diff and blk_temp are built during insert phase; their nnz is
+        ! bounded by blk_Q%nnz + blk_T%nnz.  Count block multiplicities:
+        ! Q:2, T:2, S:6, SC:6, R:5, RC:3, PZ:8, PP:6, PM:5, A:2,
+        ! diff:4, temp:2, profile:8*N
+        nnz_est = 2*blk_Q%nnz + 2*blk_T%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
+        nnz_est = nnz_est + 5*blk_R%nnz + 3*blk_RC%nnz + 8*blk_PZ%nnz
+        nnz_est = nnz_est + 6*blk_PP%nnz + 5*blk_PM%nnz + 2*blk_A%nnz
+        ! blk_diff (Q-T): at most Q%nnz + T%nnz entries, inserted 4 times
+        nnz_est = nnz_est + 4*(blk_Q%nnz + blk_T%nnz)
+        ! blk_temp (0.5*(Q+T)): at most Q%nnz + T%nnz entries, inserted 2 times
+        nnz_est = nnz_est + 2*(blk_Q%nnz + blk_T%nnz)
+        ! Profile diagonal: 8 bands * N
+        nnz_est = nnz_est + 8 * N
+        coo_capacity = nnz_est
+
+        allocate(coo_rows(coo_capacity))
+        allocate(coo_cols(coo_capacity))
+        allocate(coo_vals(coo_capacity))
+        coo_idx = 0
+
+        ! ==================================================================
+        ! Insert 8x8 blocks into COO arrays
+        ! ==================================================================
+        ! The block topology follows ZB8bandQW exactly.
+        ! Block (alpha, beta) occupies rows [(alpha-1)*N+1 : alpha*N]
+        !                       cols [(beta-1)*N+1  : beta*N]
+
+        ! --- Row 1 (HH1) ---
+        ! (1,1): Q
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 0, blk_Q, N)
+        ! (1,2): SC
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 1, blk_SC, N)
+        ! (1,3): RC
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 2, blk_RC, N)
+        ! (1,5): -IU * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 4, blk_SC, N, -IU * RQS2)
+        ! (1,6): IU * SQR2 * RC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 5, blk_RC, N, IU * SQR2)
+        ! (1,7): IU * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 6, blk_PP, N, IU)
+
+        ! --- Row 2 (HH2) ---
+        ! (2,1): S
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 0, blk_S, N)
+        ! (2,2): T
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 1, blk_T, N)
+        ! (2,4): RC
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 3, blk_RC, N)
+        ! (2,5): IU * RQS2 * (Q - T)
+        call csr_add(blk_Q, blk_T, blk_diff, UM, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 4, blk_diff, N, IU * RQS2)
+        ! (2,6): -IU * SQR3 * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 5, blk_SC, N, -IU * SQR3 * RQS2)
+        ! (2,7): SQR2 * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+        ! (2,8): -RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 7, blk_PP, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 3 (LH1) ---
+        ! (3,1): R
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 0, blk_R, N)
+        ! (3,3): T
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 2, blk_T, N)
+        ! (3,4): -SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        ! (3,5): IU * SQR3 * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 4, blk_S, N, IU * SQR3 * RQS2)
+        ! (3,6): IU * RQS2 * (Q - T)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 5, blk_diff, N, IU * RQS2)
+        ! (3,7): IU * RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 6, blk_PM, N, IU * RQS3)
+        ! (3,8): IU * SQR2 * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 7, blk_PZ, N, IU * SQR2 * RQS3)
+
+        ! --- Row 4 (LH2) ---
+        ! (4,2): R
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 1, blk_R, N)
+        ! (4,3): -S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        ! (4,4): Q
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 3, blk_Q, N)
+        ! (4,5): IU * SQR2 * R
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 4, blk_R, N, IU * SQR2)
+        ! (4,6): IU * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 5, blk_S, N, IU * RQS2)
+        ! (4,8): -PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 7, blk_PM, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+
+        ! --- Row 5 (SO1) ---
+        ! (5,1): IU * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 0, blk_S, N, IU * RQS2)
+        ! (5,2): -IU * RQS2 * (Q - T)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 1, blk_diff, N, -IU * RQS2)
+        ! (5,3): -IU * SQR3 * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 2, blk_SC, N, -IU * SQR3 * RQS2)
+        ! (5,4): -IU * SQR2 * RC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 3, blk_RC, N, -IU * SQR2)
+        ! (5,5): 0.5*(Q + T)
+        call csr_add(blk_Q, blk_T, blk_temp, cmplx(0.5_dp, 0.0_dp, kind=dp), &
+          cmplx(0.5_dp, 0.0_dp, kind=dp))
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 4, blk_temp, N)
+        call csr_free(blk_temp)
+        ! (5,7): IU * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 6, blk_PZ, N, IU * RQS3)
+        ! (5,8): IU * SQR2 * RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 7, blk_PP, N, IU * SQR2 * RQS3)
+
+        ! --- Row 6 (SO2) ---
+        ! (6,1): -IU * SQR2 * R
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 0, blk_R, N, -IU * SQR2)
+        ! (6,2): IU * SQR3 * RQS2 * S
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 1, blk_S, N, IU * SQR3 * RQS2)
+        ! (6,3): -IU * RQS2 * (Q - T)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 2, blk_diff, N, -IU * RQS2)
+        ! (6,4): -IU * RQS2 * SC
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 3, blk_SC, N, -IU * RQS2)
+        ! (6,6): 0.5*(Q + T)
+        call csr_add(blk_Q, blk_T, blk_temp, cmplx(0.5_dp, 0.0_dp, kind=dp), &
+          cmplx(0.5_dp, 0.0_dp, kind=dp))
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 5, blk_temp, N)
+        call csr_free(blk_temp)
+        ! (6,7): SQR2 * RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 6, blk_PM, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+        ! (6,8): -RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 7 (CB1) ---
+        ! (7,1): -IU * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 0, blk_PM, N, -IU)
+        ! (7,2): SQR2 * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+        ! (7,3): -IU * RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 2, blk_PP, N, -IU * RQS3)
+        ! (7,5): -IU * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 4, blk_PZ, N, -IU * RQS3)
+        ! (7,6): SQR2 * RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 5, blk_PP, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+        ! (7,7): A
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 6, blk_A, N)
+
+        ! --- Row 8 (CB2) ---
+        ! (8,2): -RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 1, blk_PM, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+        ! (8,3): -IU * SQR2 * RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 2, blk_PZ, N, -IU * SQR2 * RQS3)
+        ! (8,4): -PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 3, blk_PP, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        ! (8,5): -IU * SQR2 * RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 4, blk_PM, N, -IU * SQR2 * RQS3)
+        ! (8,6): -RQS3 * PZ
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+        ! (8,8): A
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 7, blk_A, N)
+
+        ! ==================================================================
+        ! Add band-offset profile to diagonal blocks
+        ! ==================================================================
+        call insert_profile_diagonal(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, profile_2d, N)
+
+      end if
+
+      ! ==================================================================
+      ! Build final CSR from COO, or update values if cache is available
+      ! ==================================================================
+      if (present(coo_cache)) then
+        if (coo_cache%initialized) then
+          ! Reuse existing CSR structure: O(NNZ) value update only
+          call csr_set_values_from_coo(HT_csr, coo_idx, &
+            coo_cache%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
+        else
+          ! First call: full build + save COO-to-CSR mapping to cache
+          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
+            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
+            coo_cache%coo_to_csr)
+          coo_cache%coo_nnz_in = coo_idx
+          coo_cache%initialized = .true.
+        end if
+      else
+        ! No cache: always do full build (backward compatible)
+        if (coo_idx > 0) then
+          call csr_build_from_coo(HT_csr, Ntot, Ntot, coo_idx, &
+            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx))
+        else
+          call csr_init(HT_csr, Ntot, Ntot)
+        end if
+      end if
+
+      ! ==================================================================
+      ! Cleanup
+      ! ==================================================================
+      deallocate(coo_rows, coo_cols, coo_vals)
+      if (gmode_dir == 0) then
+        ! Normal mode: free all blocks
+        call csr_free(blk_Q)
+        call csr_free(blk_T)
+        call csr_free(blk_R)
+        call csr_free(blk_RC)
+        call csr_free(blk_PZ)
+        call csr_free(blk_A)
+        call csr_free(blk_diff)
+      else if (gmode_dir == 1 .or. gmode_dir == 2) then
+        ! g1/g2 mode: PZ, S, SC were built
+        call csr_free(blk_PZ)
+      end if
+      ! S, SC, PP, PM are always built except in g1/g2 mode for PP/PM.
+      ! csr_free on an uninitialized csr_matrix is safe (checks allocated).
+      call csr_free(blk_S)
+      call csr_free(blk_SC)
+      call csr_free(blk_PP)
+      call csr_free(blk_PM)
+
+    end subroutine ZB8bandGeneralized
+
+    ! ==================================================================
+    ! Helper: Build kp-term Q for wire
+    ! Q = -((gamma1+gamma2)*kz^2*I + kpterms_2d(7))
+    ! kpterms_2d(1) = gamma1 diag, kpterms_2d(2) = gamma2 diag
+    ! kpterms_2d(7) = -(gamma1-2gamma2)*Laplacian
+    ! ==================================================================
+    subroutine build_kp_term_Q(kz2, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz2
+      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(out) :: blk
+
+      type(csr_matrix) :: diag_sum, kz2_diag
+
+      ! gamma1 + gamma2 diagonal, scaled by kz^2
+      call csr_add(kpterms_2d(1), kpterms_2d(2), diag_sum, &
+        cmplx(kz2, 0.0_dp, kind=dp), cmplx(kz2, 0.0_dp, kind=dp))
+      ! Add kpterms_2d(7)
+      call csr_add(diag_sum, kpterms_2d(7), blk, UM, UM)
+      call csr_free(diag_sum)
+      ! Negate
+      call negate_csr(blk)
+    end subroutine build_kp_term_Q
+
+    ! ==================================================================
+    ! Helper: Build kp-term T for wire
+    ! T = -((gamma1-gamma2)*kz^2*I + kpterms_2d(8))
+    ! ==================================================================
+    subroutine build_kp_term_T(kz2, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz2
+      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(out) :: blk
+
+      type(csr_matrix) :: diag_sum
+
+      ! (gamma1 - gamma2)*kz^2 diagonal
+      call csr_add(kpterms_2d(1), kpterms_2d(2), diag_sum, &
+        cmplx(kz2, 0.0_dp, kind=dp), cmplx(-kz2, 0.0_dp, kind=dp))
+      ! Add kpterms_2d(8) and negate
+      call csr_add(diag_sum, kpterms_2d(8), blk, UM, UM)
+      call csr_free(diag_sum)
+      call negate_csr(blk)
+    end subroutine build_kp_term_T
+
+    ! ==================================================================
+    ! Helper: Build kp-term S for wire
+    ! S = 2*sqrt(3) * kz * kpterms_2d(9)
+    ! (In QW: S = 2*sqrt(3)*kminus*kpterms(9) with kminus = kx-i*ky.
+    !  For wire, kx,ky are spatial so kminus = kz.)
+    ! ==================================================================
+    subroutine build_kp_term_S(kz, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz
+      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(out) :: blk
+
+      call csr_scale(kpterms_2d(9), blk, &
+        cmplx(2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
+    end subroutine build_kp_term_S
+
+    ! ==================================================================
+    ! Helper: Build kp-term SC for wire
+    ! SC = -S = -2*sqrt(3) * kz * kpterms_2d(9)
+    !
+    ! In QW: SC(jj,ii) = 2*sqrt(3)*kplus*kpterms(ii,jj,9), where
+    ! kplus = kx+i*ky is the conjugate of kminus.  For diagonal kpterms,
+    ! SC = conjg(S).  For wire, kpterms_2d(9) = -gamma3*grad_2d is
+    ! antisymmetric, so SC = S^H = S^T = -S.
+    ! ==================================================================
+    subroutine build_kp_term_SC(kz, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz
+      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(out) :: blk
+
+      call csr_scale(kpterms_2d(9), blk, &
+        cmplx(-2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
+    end subroutine build_kp_term_SC
+
+    ! ==================================================================
+    ! Helper: Build kp-term R for wire (diagonal only)
+    ! R = -sqrt(3) * gamma2 * kz^2 * I
+    ! (kx^2,ky^2 contribution absorbed into 2D operators)
+    ! ==================================================================
+    subroutine build_kp_term_R(kz2, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz2
+      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(out) :: blk
+
+      ! Scale gamma2 diagonal by -sqrt(3)*kz^2
+      call csr_scale(kpterms_2d(2), blk, &
+        cmplx(-SQR3 * kz2, 0.0_dp, kind=dp))
+    end subroutine build_kp_term_R
+
+    ! ==================================================================
+    ! Helper: Build kp-term RC for wire
+    ! RC = R (real, so conjugate is same)
+    ! ==================================================================
+    subroutine build_kp_term_RC(kz2, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz2
+      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(out) :: blk
+
+      call csr_scale(kpterms_2d(2), blk, &
+        cmplx(-SQR3 * kz2, 0.0_dp, kind=dp))
+    end subroutine build_kp_term_RC
+
+    ! ==================================================================
+    ! Helper: Build kp-term PZ for wire
+    ! PZ = -IU * kpterms_2d(6)
+    ! kpterms_2d(6) = -P*(d/dx + d/dy) (already negative from coeff application)
+    ! So PZ = -IU * (-P*grad) = IU * P*grad
+    ! ==================================================================
+    subroutine build_kp_term_PZ(kpterms_2d, blk)
+      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(out) :: blk
+
+      call csr_scale(kpterms_2d(6), blk, -IU)
+    end subroutine build_kp_term_PZ
+
+    ! ==================================================================
+    ! Helper: Build kp-term PP for wire (diagonal only)
+    ! PP = P * kz / sqrt(2)  (kplus = kz for wire)
+    ! kpterms_2d(4) = P diagonal
+    ! ==================================================================
+    subroutine build_kp_term_PP(kz, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz
+      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(out) :: blk
+
+      call csr_scale(kpterms_2d(4), blk, &
+        cmplx(kz * RQS2, 0.0_dp, kind=dp))
+    end subroutine build_kp_term_PP
+
+    ! ==================================================================
+    ! Helper: Build kp-term PM for wire (diagonal only)
+    ! PM = P * kz / sqrt(2)  (kminus = kz for wire)
+    ! ==================================================================
+    subroutine build_kp_term_PM(kz, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz
+      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(out) :: blk
+
+      call csr_scale(kpterms_2d(4), blk, &
+        cmplx(kz * RQS2, 0.0_dp, kind=dp))
+    end subroutine build_kp_term_PM
+
+    ! ==================================================================
+    ! Helper: Build kp-term A for wire
+    ! A = kpterms_2d(5) + kz^2 * kpterms_2d(10)
+    ! kpterms_2d(5) = -A*Laplacian
+    ! kpterms_2d(10) = A diagonal
+    ! ==================================================================
+    subroutine build_kp_term_A(kz2, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz2
+      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(out) :: blk
+
+      call csr_add(kpterms_2d(5), kpterms_2d(10), blk, &
+        UM, cmplx(kz2, 0.0_dp, kind=dp))
+    end subroutine build_kp_term_A
+
+    ! ==================================================================
+    ! Helper: Insert all nonzeros of a CSR block into COO arrays
+    ! with row/col offset by (alpha_off*N, beta_off*N)
+    ! ==================================================================
+    subroutine insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
+        alpha_off, beta_off, blk, N)
+      integer, intent(inout) :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(in) :: coo_cap
+      integer, intent(inout) :: coo_idx
+      integer, intent(in) :: alpha_off, beta_off, N
+      type(csr_matrix), intent(in) :: blk
+
+      integer :: row, k, g_row, g_col
+
+      do row = 1, blk%nrows
+        do k = blk%rowptr(row), blk%rowptr(row + 1) - 1
+          coo_idx = coo_idx + 1
+          if (coo_idx > coo_cap) then
+            print *, "WARNING: COO capacity exceeded in insert_csr_block, skipping entries"
+            return
+          end if
+          g_row = alpha_off * N + row
+          g_col = beta_off * N + blk%colind(k)
+          coo_r(coo_idx) = g_row
+          coo_c(coo_idx) = g_col
+          coo_v(coo_idx) = blk%values(k)
+        end do
+      end do
+    end subroutine insert_csr_block
+
+    ! ==================================================================
+    ! Helper: Insert CSR block with complex scalar multiplier
+    ! ==================================================================
+    subroutine insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
+        alpha_off, beta_off, blk, N, scale)
+      integer, intent(inout) :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(in) :: coo_cap
+      integer, intent(inout) :: coo_idx
+      integer, intent(in) :: alpha_off, beta_off, N
+      type(csr_matrix), intent(in) :: blk
+      complex(kind=dp), intent(in) :: scale
+
+      integer :: row, k, g_row, g_col
+
+      do row = 1, blk%nrows
+        do k = blk%rowptr(row), blk%rowptr(row + 1) - 1
+          coo_idx = coo_idx + 1
+          if (coo_idx > coo_cap) then
+            print *, "WARNING: COO capacity exceeded in insert_csr_block_scaled, skipping entries"
+            return
+          end if
+          g_row = alpha_off * N + row
+          g_col = beta_off * N + blk%colind(k)
+          coo_r(coo_idx) = g_row
+          coo_c(coo_idx) = g_col
+          coo_v(coo_idx) = scale * blk%values(k)
+        end do
+      end do
+    end subroutine insert_csr_block_scaled
+
+    ! ==================================================================
+    ! Helper: Insert profile diagonal into COO arrays
+    ! Bands 1-4 get profile(:,1)=EV, bands 5-6 get profile(:,2)=EV-DeltaSO,
+    ! bands 7-8 get profile(:,3)=EC.
+    ! ==================================================================
+    subroutine insert_profile_diagonal(coo_r, coo_c, coo_v, coo_cap, &
+        coo_idx, profile_2d, N)
+      integer, intent(inout) :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(in) :: coo_cap
+      integer, intent(inout) :: coo_idx
+      real(kind=dp), intent(in) :: profile_2d(:,:)
+      integer, intent(in) :: N
+
+      integer :: ii, band
+      integer :: band_profile_col(8)
+
+      ! Map bands to profile columns
+      band_profile_col(1:4) = 1  ! EV
+      band_profile_col(5:6) = 2  ! EV - DeltaSO
+      band_profile_col(7:8) = 3  ! EC
+
+      do band = 1, 8
+        do ii = 1, N
+          coo_idx = coo_idx + 1
+          if (coo_idx > coo_cap) then
+            print *, "WARNING: COO capacity exceeded in insert_profile_diagonal, skipping entries"
+            return
+          end if
+          coo_r(coo_idx) = (band - 1) * N + ii
+          coo_c(coo_idx) = (band - 1) * N + ii
+          coo_v(coo_idx) = cmplx(profile_2d(ii, band_profile_col(band)), &
+            0.0_dp, kind=dp)
+        end do
+      end do
+    end subroutine insert_profile_diagonal
+
+    ! ==================================================================
+    ! Helper: Negate a CSR matrix in-place (multiply all values by -1)
+    ! ==================================================================
+    subroutine negate_csr(mat)
+      type(csr_matrix), intent(inout) :: mat
+      integer :: k
+
+      do k = 1, mat%nnz
+        mat%values(k) = -mat%values(k)
+      end do
+    end subroutine negate_csr
+
+    ! ==================================================================
+    ! Free the COO cache for symbolic assembly reuse.
+    ! ==================================================================
+    subroutine wire_coo_cache_free(cache)
+      type(wire_coo_cache), intent(inout) :: cache
+
+      if (allocated(cache%coo_to_csr)) deallocate(cache%coo_to_csr)
+      cache%coo_nnz_in = 0
+      cache%initialized = .false.
+    end subroutine wire_coo_cache_free
 
 
 end module hamiltonianConstructor

@@ -2,6 +2,7 @@ module input_parser
 
   use definitions
   use parameters
+  use geometry
   use hamiltonianConstructor
   use outputFunctions
 
@@ -77,6 +78,12 @@ contains
     end if
     print *, trim(label), cfg%numLayers
 
+    ! Validate confinement value
+    if (cfg%confinement < 0 .or. cfg%confinement > 2) then
+      print *, 'Error: confinement must be 0, 1, or 2, got:', cfg%confinement
+      stop 1
+    end if
+
     ! QW fdStep guard: ensure enough grid points for finite differences
     if (cfg%confinement == 1 .and. cfg%fdStep < 3) then
       print *, 'Error: QW mode requires fdStep >= 3, got:', cfg%fdStep
@@ -104,20 +111,19 @@ contains
       stop 1
     end if
 
-    allocate(cfg%params(cfg%numLayers))
-    allocate(cfg%materialN(cfg%numLayers))
-
     ! Validate input combinations
     if (cfg%confinement == 0 .and. cfg%numLayers /= 1) then
       print *, 'Error: bulk mode (confinement=0) requires nlayers=1'
       stop 1
     end if
-    if (cfg%confinement < 0 .or. cfg%confinement > 1) then
-      print *, 'Error: confinement must be 0 or 1, got:', cfg%confinement
-      stop 1
-    end if
 
-    if (cfg%confinement == 0 .and. cfg%numLayers == 1) then
+    ! --- Mode-specific material/geometry parsing ---
+
+    allocate(cfg%params(cfg%numLayers))
+    allocate(cfg%materialN(cfg%numLayers))
+
+    if (cfg%confinement == 0) then
+      ! ---- Bulk mode ----
       read(data_unit, *, iostat=status) label, cfg%materialN(1)
       if (status /= 0) then
         print *, 'Error: Failed to read material name from input.cfg'
@@ -131,10 +137,9 @@ contains
       allocate(cfg%endPos(1))
       cfg%startPos(1) = 0.0_dp
       cfg%endPos(1) = 1.0_dp
-    end if
 
-    if (cfg%confinement == 1) then
-
+    else if (cfg%confinement == 1) then
+      ! ---- QW mode (1D confinement along z) ----
       allocate(cfg%startPos(cfg%numLayers))
       allocate(cfg%endPos(cfg%numLayers))
       allocate(cfg%intStartPos(cfg%numLayers))
@@ -154,6 +159,7 @@ contains
 
       cfg%z = [ (cfg%startPos(1) + (i-1)*cfg%delta, i=1, cfg%fdStep) ]
 
+      cfg%dz = cfg%delta
       cfg%confDir = 'z'
 
       do i = 1, cfg%numLayers, 1
@@ -163,7 +169,182 @@ contains
       cfg%intStartPos = cfg%intStartPos + 1
       cfg%intEndPos = cfg%intEndPos + 1
 
+    else if (cfg%confinement == 2) then
+      ! ---- Wire mode (2D confinement in x-y plane) ----
+      cfg%confDir = 'z'  ! wire axis along z, confinement in x and y
+
+
+
+      ! Wire grid parameters
+      read(data_unit, *, iostat=status) label, cfg%wire_nx
+      if (status /= 0) then
+        print *, 'Error: Failed to read wire_nx from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%wire_nx
+      read(data_unit, *, iostat=status) label, cfg%wire_ny
+      if (status /= 0) then
+        print *, 'Error: Failed to read wire_ny from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%wire_ny
+
+      read(data_unit, *, iostat=status) label, cfg%wire_dx
+      if (status /= 0) then
+        print *, 'Error: Failed to read wire_dx from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%wire_dx
+
+      read(data_unit, *, iostat=status) label, cfg%wire_dy
+      if (status /= 0) then
+        print *, 'Error: Failed to read wire_dy from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%wire_dy
+
+      ! Wire shape
+      read(data_unit, *, iostat=status) label, cfg%wire_geom%shape
+      if (status /= 0) then
+        print *, 'Error: Failed to read wire_shape from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), trim(cfg%wire_geom%shape)
+
+      ! Shape-dependent dimensions
+      select case (trim(cfg%wire_geom%shape))
+      case ('circle', 'hexagon')
+        read(data_unit, *, iostat=status) label, cfg%wire_geom%radius
+        if (status /= 0) then
+          print *, 'Error: Failed to read wire_radius from input.cfg'
+          stop 1
+        end if
+        print *, trim(label), cfg%wire_geom%radius
+
+      case ('rectangle')
+        read(data_unit, *, iostat=status) label, cfg%wire_geom%width
+        if (status /= 0) then
+          print *, 'Error: Failed to read wire_width from input.cfg'
+          stop 1
+        end if
+        print *, trim(label), cfg%wire_geom%width
+
+        read(data_unit, *, iostat=status) label, cfg%wire_geom%height
+        if (status /= 0) then
+          print *, 'Error: Failed to read wire_height from input.cfg'
+          stop 1
+        end if
+        print *, trim(label), cfg%wire_geom%height
+
+      case ('polygon')
+        read(data_unit, *, iostat=status) label, cfg%wire_geom%nverts
+        if (status /= 0) then
+          print *, 'Error: Failed to read wire_polygon from input.cfg'
+          stop 1
+        end if
+        print *, trim(label), cfg%wire_geom%nverts
+
+        allocate(cfg%wire_geom%verts(2, cfg%wire_geom%nverts))
+        do i = 1, cfg%wire_geom%nverts
+          read(data_unit, *, iostat=status) label, &
+            & cfg%wire_geom%verts(1, i), cfg%wire_geom%verts(2, i)
+          if (status /= 0) then
+            print *, 'Error: Failed to read wire_vertex', i, 'from input.cfg'
+            stop 1
+          end if
+          print *, trim(label), cfg%wire_geom%verts(1, i), cfg%wire_geom%verts(2, i)
+        end do
+
+      case default
+        print *, 'Error: Unknown wire shape: ', trim(cfg%wire_geom%shape)
+        print *, '  Supported shapes: rectangle, circle, hexagon, polygon'
+        stop 1
+      end select
+
+      ! Number of material regions
+      read(data_unit, *, iostat=status) label, cfg%numRegions
+      if (status /= 0) then
+        print *, 'Error: Failed to read numRegions from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%numRegions
+
+      if (cfg%numRegions < 1) then
+        print *, 'Error: numRegions must be >= 1 for wire mode'
+        stop 1
+      end if
+
+      allocate(cfg%regions(cfg%numRegions))
+
+      ! Read region specifications: region = materialName inner outer
+      do i = 1, cfg%numRegions
+        read(data_unit, *, iostat=status) label, cfg%regions(i)%material, &
+          & cfg%regions(i)%inner, cfg%regions(i)%outer
+        if (status /= 0) then
+          print *, 'Error: Failed to read region', i, 'from input.cfg'
+          stop 1
+        end if
+        print *, trim(label), trim(cfg%regions(i)%material), &
+          & cfg%regions(i)%inner, cfg%regions(i)%outer
+        cfg%regions(i)%material = trim(cfg%regions(i)%material)
+      end do
+
+      ! Build materialN and params from regions for backward compat
+      ! (the paramDatabase call expects materialN array)
+      if (cfg%numLayers /= cfg%numRegions) then
+        ! Reallocate to match regions if numLayers was set differently
+        deallocate(cfg%params)
+        deallocate(cfg%materialN)
+        cfg%numLayers = cfg%numRegions
+        allocate(cfg%params(cfg%numRegions))
+        allocate(cfg%materialN(cfg%numRegions))
+      end if
+      do i = 1, cfg%numRegions
+        cfg%materialN(i) = cfg%regions(i)%material
+      end do
+
+      ! Wire mode grid validation
+      if (cfg%wire_nx < 3) then
+        print *, 'Error: wire_nx must be >= 3, got:', cfg%wire_nx
+        stop 1
+      end if
+      if (cfg%wire_ny < 3) then
+        print *, 'Error: wire_ny must be >= 3, got:', cfg%wire_ny
+        stop 1
+      end if
+      if (cfg%wire_dx <= 0.0_dp) then
+        print *, 'Error: wire_dx must be > 0, got:', cfg%wire_dx
+        stop 1
+      end if
+      if (cfg%wire_dy <= 0.0_dp) then
+        print *, 'Error: wire_dy must be > 0, got:', cfg%wire_dy
+        stop 1
+      end if
+      ! FD order validation for wire grid
+      if (cfg%wire_nx < cfg%FDorder + 1) then
+        print *, 'Error: wire_nx must be >= FDorder + 1'
+        print *, '  wire_nx=', cfg%wire_nx, ' FDorder=', cfg%FDorder
+        stop 1
+      end if
+      if (cfg%wire_ny < cfg%FDorder + 1) then
+        print *, 'Error: wire_ny must be >= FDorder + 1'
+        print *, '  wire_ny=', cfg%wire_ny, ' FDorder=', cfg%FDorder
+        stop 1
+      end if
+
+      ! Set fdStep to wire_ny for backward compat (used by array sizing in callers)
+      cfg%fdStep = cfg%wire_ny
+      cfg%dz = cfg%wire_dy
+
+      ! Allocate dummy startPos/endPos for routines that expect them
+      allocate(cfg%startPos(1))
+      allocate(cfg%endPos(1))
+      cfg%startPos(1) = 0.0_dp
+      cfg%endPos(1) = real(cfg%wire_ny - 1, kind=dp) * cfg%wire_dy
+
     end if
+
+    ! --- Common fields: numcb, numvb, external field, gfactor, SC ---
 
     read(data_unit, *, iostat=status) label, cfg%numcb
     if (status /= 0) then
@@ -277,10 +458,36 @@ contains
       ! SC=0, skip remaining SC lines
       print *, trim(label), cfg%sc%enabled
     else
-      ! Could not read SC flag — use defaults (SC off)
+      ! Could not read SC flag -- use defaults (SC off)
       status = 0
     end if
 100 continue
+
+    ! --- Strain parameters (backward compatible: uses defaults if missing) ---
+    read(data_unit, *, iostat=status) label, cfg%strain%enabled
+    if (status == 0 .and. cfg%strain%enabled) then
+      print *, trim(label), cfg%strain%enabled
+
+      read(data_unit, *, iostat=status) label, cfg%strain%reference
+      if (status /= 0) goto 200
+      print *, trim(label), trim(cfg%strain%reference)
+
+      read(data_unit, *, iostat=status) label, cfg%strain%solver
+      if (status /= 0) goto 200
+      print *, trim(label), trim(cfg%strain%solver)
+
+      read(data_unit, *, iostat=status) label, cfg%strain%piezoelectric
+      if (status /= 0) goto 200
+      print *, trim(label), cfg%strain%piezoelectric
+
+    else if (status == 0) then
+      ! strain=.false., skip remaining strain lines
+      print *, trim(label), cfg%strain%enabled
+    else
+      ! Could not read strain flag -- use defaults (strain off)
+      status = 0
+    end if
+200 continue
 
     print *, ' '
 
@@ -288,13 +495,19 @@ contains
     ! Material parameter setup
     call paramDatabase(cfg%materialN, cfg%numLayers, cfg%params)
 
-    ! Confinement initialization for QW mode
-    if (cfg%confDir == 'z') then
-      allocate(kpterms(cfg%fdStep, cfg%fdStep, 10))
+    ! Initialize the unified spatial grid from config fields
+    call init_grid_from_config(cfg)
+
+    ! For wire mode, initialize geometry (cut-cells, ghost map, material_id)
+    if (cfg%confinement == 2) then
+      call init_wire_from_config(cfg)
+    end if
+
+    ! Confinement initialization for QW mode (not wire)
+    if (cfg%confDir == 'z' .and. cfg%confinement == 1) then
+      allocate(kpterms(grid_ngrid(cfg%grid), grid_ngrid(cfg%grid), 10))
       kpterms = 0.0_dp
-      call confinementInitialization(cfg%z, cfg%intStartPos, cfg%intEndPos, &
-        & cfg%materialN, cfg%numLayers, cfg%params, cfg%confDir, profile, kpterms, &
-        & cfg%FDorder)
+      call confinementInitialization(cfg, profile, kpterms)
       ! Guard: electric field requires z(1) /= 0
       if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
         if (abs(cfg%z(1)) < tolerance) then
@@ -306,8 +519,6 @@ contains
       if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
         call externalFieldSetup_electricField(profile, cfg%Evalue, cfg%totalSize, cfg%z)
       end if
-      ! Compute dz for use by callers
-      cfg%dz = cfg%z(2) - cfg%z(1)
     end if
 
     ! Close input file

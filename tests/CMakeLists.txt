@@ -52,6 +52,42 @@ if(PFUNIT_FOUND)
         LINK_LIBRARIES 8bandkp_common
         LABELS "unit"
     )
+
+    add_pfunit_ctest(test_geometry
+        TEST_SOURCES unit/test_geometry.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_hamiltonian_2d
+        TEST_SOURCES unit/test_hamiltonian_2d.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_eigensolver
+        TEST_SOURCES unit/test_eigensolver.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_strain_solver
+        TEST_SOURCES unit/test_strain_solver.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_csr_spmv
+        TEST_SOURCES unit/test_csr_spmv.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_optical
+        TEST_SOURCES unit/test_optical.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
 else()
     message(STATUS "pFUnit not found — unit tests disabled. Install pFUnit and set -DPFUNIT_DIR to enable.")
 endif()
@@ -173,5 +209,21 @@ add_test(
 
 set_tests_properties(
     regression_sc_mod_doped_gaas_algaas
+    PROPERTIES LABELS "regression"
+)
+
+# Wire GaAs rectangular wire band structure
+add_test(
+    NAME regression_wire_gaas_rectangle
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_bandstructure.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_gaas_rectangle.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/wire_gaas_rectangle
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_wire_gaas_rectangle
     PROPERTIES LABELS "regression"
 )
