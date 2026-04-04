@@ -2,6 +2,10 @@ module eigensolver
 
   use definitions, only: dp
   use sparse_matrices, only: csr_matrix
+  use linalg, only: zheevx
+#ifdef USE_MKL_FEAST
+  use linalg, only: feastinit, zfeast_hcsrev
+#endif
   implicit none
 
   private
@@ -70,9 +74,8 @@ contains
   ! Uses zfeast_hcsrev which finds all eigenvalues in [emin, emax].
   ! CSR must use 1-based indexing.  UPLO='U' (upper triangle).
   !
-  ! The actual zfeast_hcsrev call is delegated to a non-module
-  ! wrapper (feast_call.f90) to avoid gfortran allocatable descriptor
-  ! issues when passing arrays to external routines from modules.
+  ! Explicit interface from linalg module provides proper type signatures
+  ! so gfortran generates correct calls without wrapper indirection.
   ! ==================================================================
   subroutine solve_feast(H_csr, config, result)
     type(csr_matrix), intent(in)          :: H_csr
@@ -88,10 +91,6 @@ contains
     complex(kind=dp), allocatable :: val_loc(:)
     integer, allocatable :: rowptr_loc(:), colind_loc(:)
 
-    ! Non-module wrappers declared as external
-    external :: feastinit_call
-    external :: feast_solve_hermitian_csr
-
     N = H_csr%nrows
     if (N <= 0) then
       result%converged = .false.
@@ -99,7 +98,7 @@ contains
       return
     end if
 
-    call feastinit_call(fpm)
+    call feastinit(fpm)
     fpm(4) = config%max_iter  ! max FEAST refinement iterations
 
     if (config%tol > 0.0_dp) then
@@ -149,10 +148,10 @@ contains
       end do
     end do
 
-    ! Call FEAST via non-module wrapper (avoids gfortran module issues)
-    call feast_solve_hermitian_csr('U', N, nnz, val_loc, rowptr_loc, colind_loc, &
-                                   fpm, epsout, loop, config%emin, config%emax, M0, &
-                                   E, X, M, res, info)
+    ! Call FEAST directly (explicit interface from linalg module)
+    call zfeast_hcsrev('U', N, val_loc, rowptr_loc, colind_loc, &
+                       fpm, epsout, loop, config%emin, config%emax, M0, &
+                       E, X, M, res, info)
 
     deallocate(val_loc, rowptr_loc, colind_loc)
 
@@ -200,8 +199,6 @@ contains
     real(kind=dp), allocatable :: rwork(:), W(:)
     integer, allocatable :: iwork(:), ifail(:)
     real(kind=dp) :: vl, vu, abstol
-
-    external :: zheevx
 
     N = H_csr%nrows
     if (N <= 0) then

@@ -12,6 +12,7 @@ program gfactor
   use sparse_matrices
   use eigensolver
   use strain_solver
+  use linalg, only: ilaenv, dlamch
 
   implicit NONE
 
@@ -27,8 +28,8 @@ program gfactor
   integer :: i, j, k
 
   ! hamiltonian and LAPACK/BLAS
-  integer :: info, ILAENV, NB, lwork, N, M, il, iuu, vl, vu, lrwork, liwork
-  real(kind=dp) :: abstol, dlamch
+  integer :: info, NB, lwork, N, M, il, iuu, vl, vu, lrwork, liwork
+  real(kind=dp) :: abstol
   real(kind=dp), allocatable :: eig(:,:), rwork(:)
   complex(kind=dp), allocatable :: work(:)
   complex(kind=dp), allocatable, dimension(:,:,:) :: eigv

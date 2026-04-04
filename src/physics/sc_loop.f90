@@ -17,6 +17,7 @@ module sc_loop
   use eigensolver, only: eigensolver_config, eigensolver_result, &
     & solve_sparse_evp, eigensolver_result_free
   use sparse_matrices, only: csr_matrix, csr_clone_structure, csr_free
+  use linalg, only: zheevx, dgesv, ilaenv, dlamch
   implicit none
 
   private
@@ -41,11 +42,6 @@ module sc_loop
   integer, parameter :: MAX_FERMI_BISECT = 60
   real(kind=dp), parameter :: FERMI_TOL = 1.0e-8_dp
   real(kind=dp), parameter :: FERMI_BOUND_PAD = 2.0_dp  ! eV padding for bisection bounds
-
-  ! LAPACK/MKL external declarations
-  integer :: ilaenv
-  real(kind=dp) :: dlamch
-  external :: ILAENV, DLAMCH, zheevx, dgesv
 
 contains
 

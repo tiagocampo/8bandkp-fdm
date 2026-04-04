@@ -11,6 +11,7 @@ program kpfdm
   use sparse_matrices
   use eigensolver
   use strain_solver
+  use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch
 
   implicit none
 
@@ -26,15 +27,13 @@ program kpfdm
   integer :: i, k, ii, jj
 
   ! hamiltonian and LAPACK/BLAS
-  integer :: info, ILAENV, NB, lwork, N, M, il, iuu, vl, vu
-  real(kind=dp) :: abstol, dlamch
+  integer :: info, NB, lwork, N, M, il, iuu
+  real(kind=dp) :: abstol, vl, vu
   real(kind=dp), allocatable :: eig(:,:), rwork(:)
   complex(kind=dp), allocatable :: work(:)
   complex(kind=dp), allocatable, dimension(:,:,:) :: eigv
   complex(kind=dp), allocatable, dimension(:,:) :: HT, HTmp
   integer, allocatable :: iwork(:), ifail(:)
-  integer :: mkl_set_num_threads_local
-  external :: zheevx, mkl_set_num_threads_local
 
   ! file handling
   integer(kind=4) :: iounit
