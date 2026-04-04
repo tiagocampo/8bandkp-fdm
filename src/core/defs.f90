@@ -51,6 +51,16 @@ module definitions
     real(kind=dp) :: meff, gamma1, gamma2, gamma3, P, A, deltaSO, EP, Eg, EV, EC
     real(kind=dp) :: eps0  ! static dielectric constant (unitless)
 
+    ! Elastic constants and strain parameters
+    real(kind=dp) :: C11   = 0.0_dp    ! elastic constant (GPa)
+    real(kind=dp) :: C12   = 0.0_dp    ! elastic constant (GPa)
+    real(kind=dp) :: C44   = 0.0_dp    ! elastic constant (GPa)
+    real(kind=dp) :: a0    = 0.0_dp    ! lattice constant (Angstrom)
+    real(kind=dp) :: ac    = 0.0_dp    ! CB hydrostatic deformation potential (eV)
+    real(kind=dp) :: av    = 0.0_dp    ! VB hydrostatic deformation potential (eV)
+    real(kind=dp) :: b_dp  = 0.0_dp    ! shear deformation potential, tetragonal (eV)
+    real(kind=dp) :: d_dp  = 0.0_dp    ! shear deformation potential, rhombohedral (eV)
+
   end type paramStruct
 
   type doping_spec
@@ -142,6 +152,13 @@ module definitions
     integer, allocatable  :: ghost_map(:,:)            ! (nx*ny, 4) N S W E
   end type spatial_grid
 
+  type strain_config
+    logical          :: enabled      = .false.
+    character(len=20) :: reference   = 'substrate'
+    character(len=20) :: solver      = 'pardiso'
+    logical          :: piezoelectric = .false.
+  end type strain_config
+
   type simulation_config
     integer :: confinement = 0
     integer :: fdStep = 1
@@ -172,6 +189,7 @@ module definitions
     type(doping_spec), allocatable :: doping(:)   ! per-layer doping
     type(sc_config)                :: sc           ! SC parameters
     type(spatial_grid)             :: grid         ! unified spatial grid
+    type(strain_config)            :: strain       ! strain solver parameters
 
     ! ---- Wire-specific fields (confinement=2) ----
     integer            :: wire_nx = 0            ! grid points in x
