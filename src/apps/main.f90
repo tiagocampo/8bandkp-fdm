@@ -136,6 +136,50 @@ program kpfdm
     eig_wire = 0.0_dp
 
     ! ==================================================================
+    ! Wire self-consistent Schrodinger-Poisson loop
+    ! ==================================================================
+    if (cfg%sc%enabled == 1) then
+      block
+        ! SC kx sweep arrays (separate from production kz sweep)
+        integer :: nk_sc, nev_sc
+        real(kind=dp), allocatable :: eig_sc(:,:)
+        complex(kind=dp), allocatable :: eigv_sc(:,:,:)
+        real(kind=dp), allocatable :: kx_grid_sc(:)
+        integer :: ik
+
+        nk_sc = cfg%sc%num_kpar
+        if (mod(nk_sc, 2) == 0) nk_sc = nk_sc - 1
+        nev_sc = nev_wire
+
+        allocate(eig_sc(nev_sc, nk_sc))
+        allocate(eigv_sc(Ntot, nev_sc, nk_sc))
+        allocate(kx_grid_sc(nk_sc))
+        eig_sc = 0.0_dp
+        eigv_sc = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+        ! Build kx grid for SC charge integration
+        do ik = 1, nk_sc
+          kx_grid_sc(ik) = real(ik - 1, kind=dp) * cfg%sc%kpar_max &
+            & / real(nk_sc - 1, kind=dp)
+        end do
+
+        print *, ''
+        print *, '=== Running wire self-consistent Schrodinger-Poisson loop ==='
+
+        call self_consistent_loop_wire(profile_2d, cfg, kpterms_2d, cfg%grid, &
+          & coo_cache, eigen_cfg, eig_sc, eigv_sc)
+
+        print *, '  Wire SC loop complete. profile_2d updated.'
+        print *, ''
+
+        deallocate(eig_sc, eigv_sc, kx_grid_sc)
+      end block
+
+      ! Reset COO cache — profile_2d changed, need fresh CSR structure
+      call wire_coo_cache_free(coo_cache)
+    end if
+
+    ! ==================================================================
     ! Wire kz sweep: serial k=1 (build COO cache) + OpenMP k=2..N
     ! ==================================================================
 

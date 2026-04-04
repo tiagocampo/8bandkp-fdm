@@ -2,7 +2,7 @@
 
 **Date**: 2026-04-02
 **Author**: Tiago de Campos
-**Status**: In Progress (Phases 0-2 complete)
+**Status**: In Progress (Phases 0-3 complete, Phase 4 building blocks done, linalg optimizations complete)
 
 ## 1. Overview
 
@@ -544,11 +544,11 @@ tests/
 
 ## 10. Implementation Progress
 
-### Completed: Phases 0-3 (23 commits on `feature/quantum-wire-2d`)
+### Completed: Phases 0-3 + Linalg Optimizations + Phase 4 building blocks
 
 **Branch:** `feature/quantum-wire-2d`
-**Tests:** 22/22 passing (12 unit + 10 regression)
-**Files changed:** 18, ~3,700 lines added
+**Tests:** 23/23 passing (13 unit + 10 regression)
+**Files changed:** 25+, ~5,200 lines added
 
 #### Phase 0: Foundation Refactoring -- DONE
 
@@ -628,9 +628,10 @@ All code review items resolved:
 | Unit: test_utils | 2 | Passing |
 | Unit: test_parameters | 13 | Passing (original + 5 strain + 2 alloy/InSb verification) |
 | Unit: test_hamiltonian | 1 | Passing |
-| Unit: test_poisson | 2 | Passing |
-| Unit: test_charge_density | 1 | Passing |
+| Unit: test_poisson | 7 | Passing (1D: 2 tests, 2D: 5 tests) |
+| Unit: test_charge_density | 3 | Passing (1D: 1 test, wire: 2 tests) |
 | Unit: test_sc_loop | 1 | Passing |
+| Unit: test_csr_spmv | 5 | Passing (identity, dense comparison, beta scaling, empty rows, complex alpha) |
 | Unit: test_geometry | ~12 | Passing |
 | Unit: test_hamiltonian_2d | 11 | Passing (kron, Laplacian, cross-deriv, kpterms, Hermiticity, profile, CSR ops, full H) |
 | Unit: test_eigensolver | ~8 | Passing (free electron, harmonic oscillator, CSR, FEAST) |
@@ -645,14 +646,36 @@ All code review items resolved:
 | Regression: stark_shift | 1 | Passing |
 | Regression: sc_mod_doped_gaas_algaas | 1 | Passing |
 | Regression: wire_gaas_rectangle | 1 | Passing |
+| **Total** | **~84** | **All passing** |
+
+#### Linalg Backend Optimization (2026-04-04)
+
+All Phase 1 steps from `docs/plans/2026-04-03-linalg-backend-design.md` completed:
+
+1. **OpenMP parallelization**: QW k-sweep and wire kz-sweep both parallelized with `!$omp parallel do schedule(static)`. Each thread gets private Hamiltonian + workspace. MKL set to 1 thread locally inside parallel regions.
+2. **`csr_spmv`**: Pure Fortran CSR SpMV with OpenMP row-parallel. Replaces `mkl_sparse_z_mv` in g-factor code.
+3. **MKL SpBLAS removal**: Deleted `mkl_spblas.f90` (1579 lines) and `mkl_sparse_handle.f90` (82 lines). All Intel-copyrighted code removed. `dnscsr_z_mkl` now uses `csr_build_from_coo`.
+4. **Compiler flags**: `-O3 -march=haswell -ffast-math -flto=auto` (was `-O2`). ~30% speedup from flags alone.
+5. **MKL threading**: Changed from `sequential` to `intel_thread`. OpenMP handles k-sweep parallelism, MKL threads disabled inside parallel regions.
+6. **FEAST guards**: `#ifdef USE_MKL_FEAST` wraps FEAST-specific code. Dense LAPACK fallback when FEAST unavailable.
+7. **Performance**: QW 2.7x overall, SC 3.9x, near-linear OpenMP scaling to 12 threads.
+
+#### Phase 4 Building Blocks (2026-04-04)
+
+- **4a. 2D Poisson solver** — DONE: `solve_poisson_2d` in `poisson.f90` using PARDISO (mtype=11, real unsymmetric). 5-point stencil with variable dielectric. 5 unit tests passing.
+- **4b. 2D charge density** — DONE: `compute_charge_density_wire` in `charge_density.f90`. 1D kx Simpson integration with weight 1/(2*pi). 2 unit tests passing.
+- **4c. Wire SC loop integration** — Remaining: new module combining eigensolver + 2D Poisson + 2D charge + DIIS
+- **4d. Per-region doping for wires** — Remaining: extend doping_spec to work with region_spec material mapping
 
 ### Remaining Phases
 
 | Phase | Description | Status |
 |---|---|---|
 | Phase 3 | Strain solver (plane-strain PDE + Pikus-Bir) | **DONE** |
-| Phase 4 | Self-consistent 2D Schrodinger-Poisson | Not started |
+| Linalg | CPU portability, OpenMP parallelization, MKL SpBLAS removal | **DONE** |
+| Phase 4 | Self-consistent 2D Schrodinger-Poisson | **In Progress** (4a-4b done, 4c-4d remaining) |
 | Phase 5 | G-factor + optical matrix elements | Not started |
+| Phase 6 | 2D I/O: field output, band decomposition, diagnostics | Not started |
 
 ## 11. Implementation Phasing
 
@@ -708,15 +731,15 @@ Goal: Strained lattice-mismatched wires.
 
 Tests: test_strain_solver (6 tests passing). Regression: wire_strained_inas_gaas DEFERRED to Phase 4.
 
-### Phase 4: Self-Consistent 2D SP
+### Phase 4: Self-Consistent 2D SP — In Progress
 
 Goal: Doped wires, gate-controlled carrier densities.
 
-- 4a. 2D Poisson solver (PARDISO)
-- 4b. 2D charge density
-- 4c. 2D SC loop (generalize arrays)
-- 4d. Per-region doping
-- 4e. Optional: FFTW spectral Poisson
+- 4a. 2D Poisson solver (PARDISO) — **DONE** (5 unit tests)
+- 4b. 2D charge density — **DONE** (2 unit tests)
+- 4c. Wire SC loop integration — Remaining
+- 4d. Per-region doping for wires — Remaining
+- 4e. Optional: FFTW spectral Poisson — Deferred
 
 Tests: test_poisson_2d, test_sc_loop_2d, regression: test_sc_wire.
 
@@ -731,12 +754,106 @@ Goal: Full optoelectronic characterization.
 
 Tests: regression: wire g-factor validation.
 
+### Phase 6: 2D Field Output and Diagnostics
+
+Goal: Parity with QW I/O by extending existing output interfaces. No new output subroutines — reuse `writeEigenfunctions`, `writeEigenfunctions2d`, `writeEigenvalues`, and inline writes in `main.f90` (same pattern as QW path).
+
+Currently the wire path in `main.f90` only writes `eigenvalues.dat` and 2D wavefunctions (`eigenfunctions_k_*_ev_*.dat`). The QW path also writes `potential_profile.dat`, `sc_potential_profile.dat`, and `parts.dat` — the wire equivalents are missing. Strain and SC loop results are computed in-memory but never persisted. The wire `writeEigenfunctions2d` currently uses `wf_k*_n*` naming — this must be changed to `eigenfunctions_k_*_ev_*` to match QW convention.
+
+#### 6a. Band edge profile output (`output/potential_profile.dat`)
+
+Write `profile_2d(Ngrid, 3)` as a 2D grid file — same filename as QW mode:
+```
+# x(A)  y(A)  EV  EV_DeltaSO  EC
+...
+```
+Written once after strain is applied (if enabled) and before the k-sweep. Directly plottable with `splot`. Reuses the same `output/potential_profile.dat` name as QW (modes never coexist in the same run).
+
+Implementation: inline write loop in `main.f90` wire path (same pattern as QW lines 361-367). No new subroutine — just reuse `ensure_output_dir` + `get_unit` + grid coordinate arrays.
+
+#### 6b. Strain tensor output (`output/strain.dat`)
+
+Write the 6 independent strain tensor components on the 2D grid:
+```
+# x(A)  y(A)  eps_xx  eps_yy  eps_zz  eps_xy  eps_xz  eps_yz
+...
+```
+Only written when `strain%enabled = .true.`. Reuses the same `output/strain.dat` name for both QW and wire (QW strain is trivial biaxial but still useful to persist). Mirrors Phase 3f (deferred).
+
+Implementation: inline write loop in `main.f90` wire path after `compute_strain`, before `apply_pikus_bir`. Access `strain_result%eps_xx` etc. directly — no new subroutine needed.
+
+#### 6c. 8-band decomposition (`output/parts.dat`)
+
+For each eigenstate, compute the probability in each of the 8 bands integrated over the 2D cross-section:
+```
+parts(n, band) = sum_{ix,iy} |psi_band(ix,iy)|^2 * dx * dy
+```
+Output: `nev` rows x 8 columns, one row per eigenstate. Reuses the same `output/parts.dat` name as QW.
+
+Implementation: extend `writeEigenfunctions2d` signature to optionally write `parts.dat`. Add an optional logical argument `write_parts` (default `.false.`). When `.true.`, compute and write band decomposition using the same eigenvector layout `(band-1)*Ngrid + (iy-1)*nx + ix` and `grid%dx * grid%dy`. The integration logic is the 2D analogue of the existing 1D `parts` block in `writeEigenfunctions` (lines 94-107). Written for the same k-points as wavefunctions (k=1, mid, last).
+
+#### 6d. SC convergence diagnostics
+
+When the wire SC loop (Phase 4) converges, write:
+
+- `output/sc_potential_profile.dat` — band edge profile after SC (same format as 6a, same filename as QW)
+- `output/sc_phi.dat` — electrostatic potential phi(x,y) on the grid
+- `output/sc_charge.dat` — electron density n(x,y) and hole density p(x,y)
+
+Format for phi and charge: `# x(A)  y(A)  value`, directly plottable.
+
+Implementation: inline writes in `main.f90` after SC loop convergence (same pattern as QW lines 396-402). The SC loop routine returns `phi`, `n_electron`, `n_hole` — these need to be passed up to `main.f90` for output (currently only `profile_2d`, `eig_wire`, `eigv_wire` are returned). No new subroutine — reuse `ensure_output_dir` + `get_unit`.
+
+#### 6e. Eigenvalue file header enrichment
+
+Add metadata header to `eigenvalues.dat` when in wire mode:
+```
+# confinement: 2  nx: 100  ny: 100  dx: 0.5  dy: 0.5  shape: hexagon
+# numcb: 4  numvb: 4  strain: T  SC: F
+# kx, E1, E2, ...
+```
+Non-breaking: existing regression tests match on numerical columns, not header lines starting with `#`.
+
+Implementation: extend `writeEigenvalues` with an optional `cfg` argument. When present and `cfg%confinement == 2`, write metadata header lines before the data. Otherwise, unchanged behavior.
+
+#### Module changes summary
+
+| File | Change |
+|---|---|
+| `outputFunctions.f90` | Rename `writeEigenfunctions2d` output from `wf_k*_n*` to `eigenfunctions_k_*_ev_*`; extend with optional `write_parts` arg; extend `writeEigenvalues` with optional `cfg` arg |
+| `main.f90` | Add inline writes in wire path after strain, after SC, during k-sweep (same pattern as QW) |
+| `sc_loop.f90` | Return phi/charge arrays from `self_consistent_loop_wire` (currently local) |
+
+#### Output file inventory (after Phase 6)
+
+All file names are shared between QW and wire — modes never run in the same invocation.
+
+| File | QW | Wire | Written by |
+|---|---|---|---|
+| `eigenvalues.dat` | Yes | Yes | `writeEigenvalues` (existing) |
+| `eigenfunctions_k_*_ev_*.dat` | Yes | Yes | `writeEigenfunctions` / `writeEigenfunctions2d` (2D format for wire) |
+| `parts.dat` | Yes | Yes | `writeEigenfunctions` / extended `writeEigenfunctions2d` |
+| `potential_profile.dat` | Yes | Yes | inline in `main.f90` |
+| `sc_potential_profile.dat` | Yes | Yes | inline in `main.f90` |
+| `strain.dat` | Yes | Yes | inline in `main.f90` |
+| `sc_phi.dat` | N/A | Yes | inline in `main.f90` |
+| `sc_charge.dat` | N/A | Yes | inline in `main.f90` |
+
+#### Testing
+
+- Unit: extend `test_hamiltonian_2d` or existing output tests to verify `writeEigenfunctions2d` with `write_parts=.true.` produces correct band decomposition for a known eigenvector
+- Regression: extend `wire_gaas_rectangle` test to check `potential_profile.dat` and `parts.dat` exist and have correct dimensions
+- Visual: gnuplot scripts for 2D field visualization (splot)
+
 ### Dependency graph
 
 ```
 Phase 0 --- Phase 1 --- Phase 2 --- Phase 3 --- Phase 4 --- Phase 5
 (types+FD)   (2D FD+     (eigenvalue  (strain)     (SC loop)    (g-factor,
              assembly)    solver)                                  optics)
+
+Phase 3 ---- Phase 6 (2D field output)
+Phase 4 ---/   (strain + SC results need persisting)
 
                    QW backward compatibility maintained throughout
 ```

@@ -457,4 +457,39 @@ contains
     deallocate(grid%material_id, rho_doping)
   end subroutine test_build_doping_charge_2d
 
+
+  @test
+  subroutine test_apply_potential_to_profile_2d()
+    integer, parameter :: nx = 3, ny = 3, ngrid = 9
+    real(kind=dp) :: profile_2d(ngrid, 3), profile_2d_base(ngrid, 3)
+    real(kind=dp) :: phi(nx, ny)
+    integer :: ix, iy, ij
+
+    ! Set base profile
+    do ij = 1, ngrid
+      profile_2d_base(ij, 1) = -5.0_dp
+      profile_2d_base(ij, 2) = -6.0_dp
+      profile_2d_base(ij, 3) = 1.0_dp
+    end do
+
+    ! Set phi to known values: phi(ix,iy) = ix + iy
+    do iy = 1, ny
+      do ix = 1, nx
+        phi(ix, iy) = real(ix + iy, kind=dp)
+      end do
+    end do
+
+    call apply_potential_to_profile_2d(profile_2d, profile_2d_base, phi, nx, ny)
+
+    ! Verify: profile_2d(ij, col) = base(ij, col) - phi(ix, iy)
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        @assertEqual(profile_2d_base(ij, 1) - phi(ix, iy), profile_2d(ij, 1), 1e-14_dp)
+        @assertEqual(profile_2d_base(ij, 2) - phi(ix, iy), profile_2d(ij, 2), 1e-14_dp)
+        @assertEqual(profile_2d_base(ij, 3) - phi(ix, iy), profile_2d(ij, 3), 1e-14_dp)
+      end do
+    end do
+  end subroutine test_apply_potential_to_profile_2d
+
 end module test_sc_loop
