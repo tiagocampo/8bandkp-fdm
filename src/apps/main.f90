@@ -168,6 +168,8 @@ program kpfdm
         complex(kind=dp), allocatable :: eigv_sc(:,:,:)
         real(kind=dp), allocatable :: kx_grid_sc(:)
         integer :: ik
+        ! SC diagnostics output arrays
+        real(kind=dp), allocatable :: sc_phi(:,:), sc_ne(:,:), sc_nh(:,:)
 
         nk_sc = cfg%sc%num_kpar
         if (mod(nk_sc, 2) == 0) nk_sc = nk_sc - 1
@@ -189,12 +191,61 @@ program kpfdm
         print *, '=== Running wire self-consistent Schrodinger-Poisson loop ==='
 
         call self_consistent_loop_wire(profile_2d, cfg, kpterms_2d, cfg%grid, &
-          & coo_cache, eigen_cfg, eig_sc, eigv_sc)
+          & coo_cache, eigen_cfg, eig_sc, eigv_sc, &
+          & phi_out=sc_phi, n_electron_out=sc_ne, n_hole_out=sc_nh)
 
         print *, '  Wire SC loop complete. profile_2d updated.'
         print *, ''
 
+        ! --- Write SC diagnostics ---
+        call ensure_output_dir()
+
+        ! sc_potential_profile.dat: band edge profile after SC
+        call get_unit(iounit)
+        open(unit=iounit, file='output/sc_potential_profile.dat', status='replace', action='write')
+        write(iounit, '(A)') '# x(A) y(A) EV EV_DeltaSO EC'
+        do jj = 1, cfg%grid%ny
+          do ii = 1, cfg%grid%nx
+            k = (jj - 1) * cfg%grid%nx + ii
+            write(unit=iounit, fmt='(5(g14.6,1x))') &
+              & cfg%grid%x(ii), cfg%grid%z(jj), &
+              & profile_2d(k, 1), profile_2d(k, 2), profile_2d(k, 3)
+          end do
+          write(iounit, '(A)') ''
+        end do
+        close(iounit)
+        print *, '  SC band edge profile written to output/sc_potential_profile.dat'
+
+        ! sc_phi.dat: electrostatic potential phi(x,y)
+        call get_unit(iounit)
+        open(unit=iounit, file='output/sc_phi.dat', status='replace', action='write')
+        write(iounit, '(A)') '# x(A) y(A) phi'
+        do jj = 1, cfg%grid%ny
+          do ii = 1, cfg%grid%nx
+            write(unit=iounit, fmt='(3(g14.6,1x))') &
+              & cfg%grid%x(ii), cfg%grid%z(jj), sc_phi(ii, jj)
+          end do
+          write(iounit, '(A)') ''
+        end do
+        close(iounit)
+        print *, '  SC electrostatic potential written to output/sc_phi.dat'
+
+        ! sc_charge.dat: electron and hole density
+        call get_unit(iounit)
+        open(unit=iounit, file='output/sc_charge.dat', status='replace', action='write')
+        write(iounit, '(A)') '# x(A) y(A) n_e n_h'
+        do jj = 1, cfg%grid%ny
+          do ii = 1, cfg%grid%nx
+            write(unit=iounit, fmt='(4(g14.6,1x))') &
+              & cfg%grid%x(ii), cfg%grid%z(jj), sc_ne(ii, jj), sc_nh(ii, jj)
+          end do
+          write(iounit, '(A)') ''
+        end do
+        close(iounit)
+        print *, '  SC charge density written to output/sc_charge.dat'
+
         deallocate(eig_sc, eigv_sc, kx_grid_sc)
+        deallocate(sc_phi, sc_ne, sc_nh)
       end block
 
       ! Reset COO cache — profile_2d changed, need fresh CSR structure

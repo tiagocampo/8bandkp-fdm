@@ -541,7 +541,8 @@ contains
   ! Self-consistent loop for quantum wire (2D confinement)
   ! ------------------------------------------------------------------
   subroutine self_consistent_loop_wire(profile_2d, cfg, kpterms_2d, grid, &
-      & coo_cache, eigen_cfg, eig_wire, eigv_wire)
+      & coo_cache, eigen_cfg, eig_wire, eigv_wire, phi_out, n_electron_out, &
+      & n_hole_out)
 
     real(kind=dp), allocatable, intent(inout) :: profile_2d(:,:)
     type(simulation_config), intent(in) :: cfg
@@ -551,10 +552,14 @@ contains
     type(eigensolver_config), intent(in) :: eigen_cfg
     real(kind=dp), allocatable, intent(inout) :: eig_wire(:,:)
     complex(kind=dp), allocatable, intent(inout) :: eigv_wire(:,:,:)
+    real(kind=dp), allocatable, intent(out), optional :: phi_out(:,:)
+    real(kind=dp), allocatable, intent(out), optional :: n_electron_out(:,:)
+    real(kind=dp), allocatable, intent(out), optional :: n_hole_out(:,:)
 
     ! SC loop variables
     integer :: iter, niter, k_idx
     integer :: num_subbands, nk_actual
+    integer :: ix, iy
     real(kind=dp) :: delta_phi, fermi_level
 
     ! Potential arrays
@@ -808,6 +813,28 @@ contains
       phi_old(1 + mod(i-1, nx), 1 + (i-1)/nx) = phi_old_flat(i)
     end do
     call apply_potential_to_profile_2d(profile_2d, profile_2d_base, phi_old, nx, ny)
+
+    ! --- Copy converged diagnostics to optional output arrays ---
+    if (present(phi_out)) then
+      allocate(phi_out(nx, ny))
+      phi_out = phi_old
+    end if
+    if (present(n_electron_out)) then
+      allocate(n_electron_out(nx, ny))
+      do iy = 1, ny
+        do ix = 1, nx
+          n_electron_out(ix, iy) = n_electron((iy - 1) * nx + ix)
+        end do
+      end do
+    end if
+    if (present(n_hole_out)) then
+      allocate(n_hole_out(nx, ny))
+      do iy = 1, ny
+        do ix = 1, nx
+          n_hole_out(ix, iy) = n_hole((iy - 1) * nx + ix)
+        end do
+      end do
+    end if
 
     ! --- Cleanup ---
     if (allocated(HT_csr_sc%values)) call csr_free(HT_csr_sc)
