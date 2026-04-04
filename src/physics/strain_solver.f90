@@ -582,11 +582,12 @@ contains
     nrhs = 1
     error = 0
 
-    ! Matrix type: real symmetric indefinite
-    ! The strain stiffness matrix is positive semi-definite (null space
-    ! from rigid-body translation with all-Neumann BCs).
-    ! Use mtype=-2 (real symmetric indefinite) with Bunch-Kaufman pivoting.
-    mtype = -2
+    ! Matrix type: real unsymmetric
+    ! The stiffness matrix has cross-derivative coupling terms (C12+C44)
+    ! whose face-fraction-weighted averages differ between (i,j) and (j,i)
+    ! entries at material interfaces, making the matrix nonsymmetric.
+    ! Use mtype=11 (real unsymmetric).
+    mtype = 11
     msglvl = 0  ! no output
 
     ! Set default iparm values

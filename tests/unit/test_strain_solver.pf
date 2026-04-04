@@ -3,6 +3,7 @@ module test_strain_solver
   use definitions
   use parameters
   use strain_solver
+  use geometry
   implicit none
 
 contains
@@ -380,5 +381,187 @@ contains
     @assertFalse(allocated(s%eps_yz), message="eps_yz deallocated after free")
 
   end subroutine test_strain_result_free
+
+
+  @test
+  subroutine test_strain_wire_biaxial()
+    ! Wire plane-strain PDE: InAs square core in GaAs substrate.
+    ! Uses grid_init_rect for a fully-active rectangular grid.
+    ! 40x40 grid, 200x200 A domain. InAs square core: central 40x40 A region.
+    ! a0_ref = GaAs a0 (substrate). InAs a0 > GaAs a0 => hydrostatic tension in core.
+    !
+    ! grid_init_rect is used because the strain solver's PARDISO backend
+    ! requires all matrix rows to be populated (no zero rows from inactive
+    ! cells). With rect, all cells are active (cell_volume=1).
+    ! A square core avoids staircase-interface artifacts present with
+    ! circular geometry on a Cartesian grid.
+
+    integer, parameter :: nx = 40, ny = 40
+    real(kind=dp), parameter :: Lx = 200.0_dp, Ly = 200.0_dp
+    real(kind=dp), parameter :: core_half = 20.0_dp  ! half-width of square core
+
+    type(spatial_grid) :: grid
+    type(paramStruct) :: params(2)
+    character(len=255) :: materials(2)
+    type(strain_config) :: strain_cfg
+    type(strain_result) :: strain_out
+    real(kind=dp) :: a0_ref
+    real(kind=dp) :: dx, dy, cx, cy, x_coord, y_coord
+    real(kind=dp) :: max_strain, boundary_strain, tr_eps
+    real(kind=dp) :: jump_max
+    integer :: ix, iy, ij, mid, ngrid
+    integer :: material_id_2d(nx, ny)
+    integer :: n_core_active, n_boundary_active
+
+    dx = Lx / real(nx, kind=dp)
+    dy = Ly / real(ny, kind=dp)
+    cx = 0.5_dp * Lx
+    cy = 0.5_dp * Ly
+    ngrid = nx * ny
+
+    ! Material 1 = InAs, Material 2 = GaAs
+    materials(1) = "InAs"
+    materials(2) = "GaAs"
+    call paramDatabase(materials, 2, params)
+
+    a0_ref = params(2)%a0  ! GaAs lattice constant = substrate reference
+
+    ! Build material_id_2d: InAs in central square, GaAs elsewhere
+    do iy = 1, ny
+      do ix = 1, nx
+        x_coord = (ix - 0.5_dp) * dx
+        y_coord = (iy - 0.5_dp) * dy
+        if (abs(x_coord - cx) <= core_half .and. abs(y_coord - cy) <= core_half) then
+          material_id_2d(ix, iy) = 1  ! InAs
+        else
+          material_id_2d(ix, iy) = 2  ! GaAs
+        end if
+      end do
+    end do
+
+    ! Initialize rectangular grid (all cells active, cell_volume=1)
+    call grid_init_rect(grid, nx, ny, dx, dy, material_id_2d)
+
+    ! Enable strain
+    strain_cfg%enabled = .true.
+
+    call compute_strain(grid, params, grid%material_id, strain_cfg, a0_ref, &
+      strain_out)
+
+    ! ================================================================
+    ! Assertion 1: eps_yy and eps_zz are non-zero at interior InAs points
+    ! ================================================================
+    max_strain = 0.0_dp
+    n_core_active = 0
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        if (grid%material_id(ij) /= 1) cycle  ! InAs only
+        x_coord = grid%x(ix)
+        y_coord = grid%z(iy)
+        ! Only deep interior (half the core size)
+        if (abs(x_coord - cx) > 0.5_dp * core_half .or. &
+            abs(y_coord - cy) > 0.5_dp * core_half) cycle
+        n_core_active = n_core_active + 1
+        max_strain = max(max_strain, abs(strain_out%eps_yy(ij)))
+        max_strain = max(max_strain, abs(strain_out%eps_zz(ij)))
+      end do
+    end do
+    @assertTrue(n_core_active > 0, message="Found active InAs core points")
+    @assertTrue(max_strain > 1.0e-6_dp, message="Strain is non-zero in InAs core")
+
+    ! ================================================================
+    ! Assertion 2: Tr(eps) > 0 in InAs core (hydrostatic tension)
+    ! InAs a0 > GaAs a0 => InAs wants to expand => tension in core.
+    ! ================================================================
+    tr_eps = 0.0_dp
+    n_core_active = 0
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        if (grid%material_id(ij) /= 1) cycle
+        x_coord = grid%x(ix)
+        y_coord = grid%z(iy)
+        if (abs(x_coord - cx) > 0.5_dp * core_half .or. &
+            abs(y_coord - cy) > 0.5_dp * core_half) cycle
+        n_core_active = n_core_active + 1
+        tr_eps = tr_eps + strain_out%eps_xx(ij) + strain_out%eps_yy(ij) &
+                 + strain_out%eps_zz(ij)
+      end do
+    end do
+    tr_eps = tr_eps / real(n_core_active, kind=dp)
+    @assertTrue(tr_eps > 0.0_dp, message="Hydrostatic tension (Tr>0) in InAs core")
+
+    ! ================================================================
+    ! Assertion 3: eps_yy and eps_zz are continuous across interface
+    ! With a square core aligned with the grid, the interface is a
+    ! straight line. Displacement continuity makes the strain (gradient
+    ! of displacement) approximately continuous, modulo finite-difference
+    ! discretization error at the material boundary.
+    ! ================================================================
+    jump_max = 0.0_dp
+    do iy = 2, ny - 1
+      do ix = 2, nx - 1
+        ij = (iy - 1) * nx + ix
+
+        ! Check right neighbor
+        if (ix < nx) then
+          mid = (iy - 1) * nx + (ix + 1)
+          if (grid%material_id(ij) /= grid%material_id(mid)) then
+            jump_max = max(jump_max, &
+              abs(strain_out%eps_yy(ij) - strain_out%eps_yy(mid)))
+            jump_max = max(jump_max, &
+              abs(strain_out%eps_zz(ij) - strain_out%eps_zz(mid)))
+          end if
+        end if
+
+        ! Check top neighbor
+        if (iy < ny) then
+          mid = iy * nx + ix
+          if (grid%material_id(ij) /= grid%material_id(mid)) then
+            jump_max = max(jump_max, &
+              abs(strain_out%eps_yy(ij) - strain_out%eps_yy(mid)))
+            jump_max = max(jump_max, &
+              abs(strain_out%eps_zz(ij) - strain_out%eps_zz(mid)))
+          end if
+        end if
+      end do
+    end do
+    ! Continuity: max jump at interface should be bounded.
+    ! Strain is computed from finite differences of displacement, and
+    ! the displacement field has a gradient discontinuity at the material
+    ! interface (different elastic constants), so the computed strain
+    ! will show a jump. Allow jump up to the core strain magnitude.
+    @assertTrue(jump_max < 1.0_dp * max_strain, message="eps_yy/eps_zz bounded across interface")
+
+    ! ================================================================
+    ! Assertion 4: Strain decays near the boundary of the domain.
+    ! GaAs cells far from the interface should have small strain.
+    ! ================================================================
+    boundary_strain = 0.0_dp
+    n_boundary_active = 0
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        if (grid%material_id(ij) /= 2) cycle  ! GaAs only
+        x_coord = grid%x(ix)
+        y_coord = grid%z(iy)
+        ! GaAs cells in the outer 30% of domain half-width
+        if (abs(x_coord - cx) < 0.7_dp * 0.5_dp * Lx .and. &
+            abs(y_coord - cy) < 0.7_dp * 0.5_dp * Ly) cycle
+        n_boundary_active = n_boundary_active + 1
+        boundary_strain = max(boundary_strain, abs(strain_out%eps_yy(ij)))
+        boundary_strain = max(boundary_strain, abs(strain_out%eps_zz(ij)))
+      end do
+    end do
+    @assertTrue(n_boundary_active > 0, message="Found GaAs boundary points")
+    ! Strain at boundary should be less than in core (decay with distance)
+    @assertTrue(boundary_strain < 0.8_dp * max_strain, message="Strain decays toward boundary")
+
+    call strain_result_free(strain_out)
+    call grid_free(grid)
+
+  end subroutine test_strain_wire_biaxial
+
 
 end module test_strain_solver
