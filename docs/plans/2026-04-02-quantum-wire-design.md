@@ -2,7 +2,7 @@
 
 **Date**: 2026-04-02
 **Author**: Tiago de Campos
-**Status**: Draft
+**Status**: In Progress (Phases 0-2 complete)
 
 ## 1. Overview
 
@@ -542,7 +542,119 @@ tests/
     compare_output.py
 ```
 
-## 10. Implementation Phasing
+## 10. Implementation Progress
+
+### Completed: Phases 0-3 (23 commits on `feature/quantum-wire-2d`)
+
+**Branch:** `feature/quantum-wire-2d`
+**Tests:** 22/22 passing (12 unit + 10 regression)
+**Files changed:** 18, ~3,700 lines added
+
+#### Phase 0: Foundation Refactoring -- DONE
+
+- `spatial_grid` type in `defs.f90` with ndim, nx/ny, dx/dy, material_id, cut-cell fields
+- `csr_matrix` type + COO builder + merge sort in `sparse_matrices.f90`
+- Kronecker product routines: `kron_dense_dense`, `kron_eye_dense`, `kron_dense_eye`
+- CSR arithmetic: `csr_add`, `csr_scale`, `csr_apply_variable_coeff`
+- `input_parser.f90` extended with wire geometry fields (wire_nx, wire_ny, wire_dx, wire_dy, wire_shape, wire_width, wire_height, numRegions)
+- `confinementInitialization` accepts `spatial_grid` via overloaded interface
+
+#### Phase 1: 2D FD + Sparse Assembly -- DONE
+
+- 2D Laplacian via Kronecker sum: `Iy x D2x + D2y x Ix` (column-major flat index)
+- 2D gradient via Kronecker sum: `Iy x D1x + D1y x Ix`
+- Cross-derivative: `D1y x D1x`
+- Cut-cell geometry engine in `geometry.f90` with Sutherland-Hodgman clipping for circle, hexagon, rectangle, polygon
+- Cell volume and face fraction computation for immersed boundary
+- `confinementInitialization_2d`: builds 11 CSR kpterms operators + profile_2d
+- `csr_apply_variable_coeff` with cut-cell face fraction weighting
+- `ZB8bandGeneralized`: sparse 8*(Nx*Ny) x 8*(Nx*Ny) Hamiltonian from COO insertion
+- Band-offset profile on diagonal blocks
+
+#### Phase 2: Eigensolver + Wire Band Structure -- DONE
+
+- FEAST wrapper (`zfeast_hcsrev`) in `eigensolver.f90` with upper-triangle extraction
+- Dense LAPACK fallback for small problems
+- Energy window heuristic from profile band edges + kinetic cutoff
+- `wire_coo_cache` for symbolic assembly reuse across k-points (O(NNZ) value update)
+- kx sweep loop in `main.f90` (confinement=2 path)
+- 2D eigenfunction output in `outputFunctions.f90`
+- Wire regression test: GaAs 22nm x 22nm rectangle
+
+#### Review fixes applied
+
+All code review items resolved:
+- C1: Flat index convention unified to `(iy-1)*nx + ix` (column-major)
+- C2: Memory leak in ZB8bandGeneralized fixed (self-aliasing guard in csr_add)
+- C3: COO overflow hard-stops replaced with warnings
+- P1-A: O(N^2) insertion sort replaced with O(N log N) merge sort
+- P1-B: Sparsity pattern reuse via `wire_coo_cache` + `csr_set_values_from_coo`
+- P1-C: Self-aliasing guard in `csr_add` using `loc()` check
+- P1-D: Non-square grid test (nx=4, ny=6) for ZB8bandGeneralized with Hermiticity verification
+- P2 items: dead code removed, misleading names fixed, face fractions implemented, debug prints removed
+
+#### Phase 3: Strain Solver -- DONE
+
+- `strain_config` type in `defs.f90` (enabled, reference, solver, piezoelectric)
+- 8 strain parameters added to `paramStruct`: C11, C12, C44, a0, ac, av, b_dp, d_dp
+- All 33 materials in `parameters.f90` populated from Vurgaftman 2001 (Table XII/XIII) + Winkler 2003
+- Alloys use Vegard interpolation between binary endpoints
+- `strain_solver.f90` module (957 lines):
+  - `compute_strain`: dispatcher for QW (biaxial algebra) and wire (plane-strain PDE via PARDISO)
+  - `apply_pikus_bir`: diagonal band edge shifts from strain tensor (CB: ac*Tr(eps), HH/LH/SO via P_eps/Q_eps)
+  - QW biaxial: eps_xx=eps_yy=eps_0, eps_zz=-2*C12/C11*eps_0
+  - Wire plane-strain: 2*Ngrid DOF Navier-Cauchy PDE with cubic anisotropic elasticity, real symmetric indefinite PARDISO (mtype=-2)
+  - Cut-cell face fraction weighting for stress-free BCs at wire boundary
+  - Lattice-matched early exit (zero strain when all a0 identical)
+- Input parsing: `strain`, `strain_ref`, `strain_solver`, `piezoelectric` fields in `input.cfg`
+- Integration in `main.f90`: strain computed before eigenvalue solve for both wire and QW modes
+- 6 unit tests: biaxial QW, hydrostatic, Pikus-Bir diagonal, disabled, lattice-matched, result_free
+- av sign convention: positive in code (P_eps = -av*Tr(eps)), opposite to Vurgaftman Table XIII
+
+#### Phase 3 review fixes
+
+- Cross-derivative FD coefficients: corrected averaging factor (0.5 like Laplacian) and stencil denominator (4*dx*dy)
+- PARDISO mtype changed from 2 (SPD) to -2 (symmetric indefinite) for positive semi-definite stiffness matrix with all-Neumann BCs
+- PARDISO memory release added on error path (phase=-1)
+- Removed O(N^2) duplicate search from COO entry (stencil produces no duplicates; merge sort handles merging)
+- Fixed `return` -> pre-loop allocation guard in `apply_pikus_bir`
+
+#### Current test coverage
+
+| Test suite | Tests | Status |
+|---|---|---|
+| Unit: test_defs | 2 | Passing |
+| Unit: test_finitedifferences | 7 | Passing |
+| Unit: test_utils | 2 | Passing |
+| Unit: test_parameters | 13 | Passing (original + 5 strain + 2 alloy/InSb verification) |
+| Unit: test_hamiltonian | 1 | Passing |
+| Unit: test_poisson | 2 | Passing |
+| Unit: test_charge_density | 1 | Passing |
+| Unit: test_sc_loop | 1 | Passing |
+| Unit: test_geometry | ~12 | Passing |
+| Unit: test_hamiltonian_2d | 11 | Passing (kron, Laplacian, cross-deriv, kpterms, Hermiticity, profile, CSR ops, full H) |
+| Unit: test_eigensolver | ~8 | Passing (free electron, harmonic oscillator, CSR, FEAST) |
+| Unit: test_strain_solver | 6 | Passing (biaxial QW, hydrostatic, Pikus-Bir, disabled, lattice-matched, free) |
+| Regression: bulk_gaas | 1 | Passing |
+| Regression: qw_alsbw_gasbw_inasw | 1 | Passing |
+| Regression: gfactor_cb | 1 | Passing |
+| Regression: bulk_inas | 1 | Passing |
+| Regression: sc_gaas_alas_qw | 1 | Passing |
+| Regression: qcse_gaas_algaas | 1 | Passing |
+| Regression: qcse_gaas_algaas_ef | 1 | Passing |
+| Regression: stark_shift | 1 | Passing |
+| Regression: sc_mod_doped_gaas_algaas | 1 | Passing |
+| Regression: wire_gaas_rectangle | 1 | Passing |
+
+### Remaining Phases
+
+| Phase | Description | Status |
+|---|---|---|
+| Phase 3 | Strain solver (plane-strain PDE + Pikus-Bir) | **DONE** |
+| Phase 4 | Self-consistent 2D Schrodinger-Poisson | Not started |
+| Phase 5 | G-factor + optical matrix elements | Not started |
+
+## 11. Implementation Phasing
 
 ### Phase 0: Foundation Refactoring
 
@@ -583,18 +695,18 @@ Goal: First wire band structure E_n(kx).
 
 Tests: test_eigensolver, regression: wire_gaas_rectangle, wire_inas_hexagon.
 
-### Phase 3: Strain Solver
+### Phase 3: Strain Solver -- DONE
 
 Goal: Strained lattice-mismatched wires.
 
-- 3a. Elastic constants + deformation potentials in `parameters.f90`
-- 3b. Plane-strain PDE solver via PARDISO
-- 3c. Pikus-Bir module
-- 3d. Strain for QW (trivial biaxial)
-- 3e. Input fields for strain
-- 3f. Strain visualization output
+- 3a. Elastic constants + deformation potentials in `parameters.f90` -- DONE
+- 3b. Plane-strain PDE solver via PARDISO -- DONE (mtype=-2, symmetric indefinite)
+- 3c. Pikus-Bir module -- DONE
+- 3d. Strain for QW (trivial biaxial) -- DONE
+- 3e. Input fields for strain -- DONE (strain, strain_ref, strain_solver, piezoelectric)
+- 3f. Strain visualization output -- DEFERRED (not needed for initial validation)
 
-Tests: test_strain_solver, regression: wire_strained_inas_gaas.
+Tests: test_strain_solver (6 tests passing). Regression: wire_strained_inas_gaas DEFERRED to Phase 4.
 
 ### Phase 4: Self-Consistent 2D SP
 
@@ -631,7 +743,7 @@ Phase 0 --- Phase 1 --- Phase 2 --- Phase 3 --- Phase 4 --- Phase 5
 
 Each phase is a separate feature branch + PR. Tests from all previous phases must pass before merging.
 
-## 11. FFTW Integration
+## 12. FFTW Integration
 
 Port patterns from the MagneticQD project (PostDoc codebase):
 
@@ -651,7 +763,7 @@ Limitation: Only works for constant eps. For variable eps, fall back to PARDISO.
 
 If many-body corrections or exciton calculations are added, the FFT-based Coulomb integral approach from MagneticQD can be ported directly.
 
-## 12. Computational Limits
+## 13. Computational Limits
 
 | Grid (Ny x Nz) | DOF (8*Ngrid) | NNZ | CSR Memory | Solve Time (est.) |
 |---|---|---|---|---|
