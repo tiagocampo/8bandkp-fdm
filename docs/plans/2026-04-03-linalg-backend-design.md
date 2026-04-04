@@ -1,4 +1,4 @@
-# Linalg Backend Portability & Performance Design
+# Linalg Backend Portability, Parallelization & Performance Design
 
 **Date**: 2026-04-03
 **Author**: Tiago de Campos
@@ -6,9 +6,10 @@
 
 ## Motivation
 
-1. **Portability**: The code currently requires Intel MKL for SpBLAS operations and FEAST eigensolver. The files `src/math/mkl_spblas.f90` and `src/math/mkl_sparse_handle.f90` are Intel-copyrighted interface headers that create a vendor lock-in.
-2. **Performance**: Current compiler flags (`-O2`) leave performance on the table for the Haswell-EP target (Xeon E5-2678 v3, AVX2, 12C/24T).
-3. **Future GPU**: AMD ROCm 7.2 is installed (rocSOLVER, rocSPARSE, hipSOLVER) but the RX 570 (gfx803/Polaris) is unsupported by ROCm 7.x user-space runtime. The GPU path is designed but deferred until hardware upgrade.
+1. **Single-threaded execution**: The code currently uses only 1 CPU core. MKL is explicitly set to `sequential` threading (`CMakeLists.txt` line 8). The k-vector sweep loops are embarrassingly parallel across k-points but run sequentially. On a 12-core/24-thread Xeon, this leaves >90% of compute resources idle.
+2. **Portability**: The code requires Intel MKL for SpBLAS operations and FEAST eigensolver. The files `src/math/mkl_spblas.f90` and `src/math/mkl_sparse_handle.f90` are Intel-copyrighted interface headers that create a vendor lock-in.
+3. **Compiler flags**: Current flags (`-O2`) leave performance on the table for the Haswell-EP target (Xeon E5-2678 v3, AVX2, 12C/24T).
+4. **Future GPU**: AMD ROCm 7.2 is installed (rocSOLVER, rocSPARSE, hipSOLVER) but the RX 570 (gfx803/Polaris) is unsupported by ROCm 7.x user-space runtime. The GPU path is designed but deferred until hardware upgrade.
 
 ## Architecture
 
@@ -50,9 +51,94 @@ No runtime dispatch. Single backend per build. This matches the approach used by
 - `csr_spmv` subroutine in `sparse_matrices.f90` — pure Fortran CSR SpMV with OpenMP parallelization
 - CMake `LINALG_BACKEND` option with auto-detection
 
-## Phase 1: CPU Portability & Performance (Current)
+## Phase 1: CPU Portability, Parallelization & Performance (Current)
 
-### Step 1: Add `csr_spmv` to `sparse_matrices.f90`
+Three parallel efforts within one phase, ordered by expected speedup:
+
+### Step 1: OpenMP parallelization of k-vector sweep (biggest win)
+
+**Observation**: The main computation loops are embarrassingly parallel across k-points. Each k-point builds an independent Hamiltonian and diagonalizes it independently. Currently these run sequentially on 1 core while 23 threads sit idle.
+
+**Target hardware**: Xeon E5-2678 v3, 12 cores / 24 threads (Haswell-EP, AVX2).
+
+#### 1a. QW k-vector sweep (`src/apps/main.f90`, line 330-414)
+
+```fortran
+! Before (sequential):
+do k = 1, cfg%waveVectorStep, 1
+  call ZB8bandQW(HT, smallk(k), profile, kpterms)
+  call zheevx(...)
+  eig(:,k) = ...
+  eigv(:,:,k) = ...
+end do
+
+! After (parallel):
+!$omp parallel private(k, HT, HTmp, work, lwork, info, M)
+allocate(HT(N,N), HTmp(8,8))
+allocate(work(1))  ! each thread gets own workspace
+!$omp do schedule(static)
+do k = 1, cfg%waveVectorStep, 1
+  call ZB8bandQW(HT, smallk(k), profile, kpterms)
+  call zheevx(...)
+  eig(:,k) = ...          ! no race: each k writes different column
+  eigv(:,:,k) = ...       ! no race: each k writes different slice
+end do
+!$omp end do
+deallocate(HT, HTmp, work)
+!$omp end parallel
+```
+
+**Key points**:
+- `HT`, `HTmp`, `work` must be thread-private (each thread builds its own Hamiltonian)
+- `eig` and `eigv` are safe: each k-index writes to a different column/slice
+- `profile` and `kpterms` are read-only — shared access is fine
+- `schedule(static)`: k-points have similar cost, static scheduling minimizes overhead
+- Eigenfunction writing (line 405-412) must be moved outside the parallel region or guarded with `!$omp single`
+
+**Expected speedup**: Near-linear up to 12 threads (~10-12x). Hyperthreading adds ~20-30% more (~12-15x total).
+
+#### 1b. Wire kz sweep (`src/apps/main.f90`, line 137-181)
+
+Same pattern: each kz is independent.
+
+```fortran
+!$omp parallel private(k, HT_csr, eigen_res, coo_cache_local)
+!$omp do schedule(static)
+do k = 1, cfg%waveVectorStep
+  call ZB8bandGeneralized(HT_csr, smallk(k)%kz, ...)
+  call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
+  eig_wire(:,k) = eigen_res%eigenvalues(:)
+  ! eigenfunction writing must be deferred (single-threaded I/O)
+end do
+!$omp end do
+!$omp end parallel
+```
+
+**Complication**: `coo_cache` is currently shared across k-points (reuses COO structure from first call). In parallel mode, each thread needs its own cache, or the cache must be pre-built once and shared as read-only. The latter is simpler — build the cache in a serial warm-up iteration, then share it.
+
+#### 1c. g-factor k-vector sweep (`src/apps/main_gfactor.f90`)
+
+The g-factor code also has a k-vector loop. Same pattern: parallelize with thread-private `HT`, `work`.
+
+**Note**: `use OMP_lib` is already imported in `main.f90` (line 7) but never used — the infrastructure is ready.
+
+#### 1d. Enable MKL multi-threading
+
+Currently `CMakeLists.txt` forces `MKL_THREADING=sequential`. Change to:
+
+```cmake
+set(MKL_THREADING "intel_thread" CACHE STRING "MKL threading: sequential, intel_thread")
+```
+
+This makes LAPACK calls (`zheevx`, `zheevd`) multi-threaded internally for large matrices. Combined with the k-vector OpenMP, this creates a two-level parallelism:
+- **Outer level**: OpenMP over k-points (12 threads)
+- **Inner level**: MKL threads for LAPACK diagonalization
+
+**Nesting strategy**: For QW with small N (N < 200), use all threads for k-parallelism and disable inner MKL threading. For large N (N > 200), use fewer outer threads and let MKL use the rest. Default: all k-parallel, disable MKL threading. The user can tune via `OMP_NUM_THREADS` and `MKL_NUM_THREADS`.
+
+**Recommendation**: Start with `MKL_NUM_THREADS=1` and `OMP_NUM_THREADS=24`. This gives near-linear scaling for the k-sweep. Only enable nested parallelism if profiling shows the diagonalization itself is the bottleneck.
+
+### Step 2: Add `csr_spmv` to `sparse_matrices.f90`
 
 Pure Fortran implementation of `y = alpha * A * x + beta * y` for CSR matrix:
 
@@ -76,7 +162,7 @@ subroutine csr_spmv(A, x, y, alpha, beta)
 end subroutine
 ```
 
-### Step 2: Refactor call sites (3 files)
+### Step 3: Refactor MKL SpBLAS call sites (3 files)
 
 **`src/core/utils.f90`** — `dnscsr_z_mkl`:
 - Remove `use mkl_spblas`
@@ -91,7 +177,7 @@ end subroutine
 - Remove `use mkl_spblas`
 - Change `HT_csr` argument type from `type(sparse_matrix_t)` to `type(csr_matrix)`
 
-### Step 3: Update CMakeLists.txt
+### Step 4: Update CMakeLists.txt
 
 **Compiler flags** (optimized for Haswell-EP):
 ```cmake
@@ -109,13 +195,23 @@ Key changes from current flags:
 - Removed `-funroll-loops`: can hurt on modern CPUs due to icache pressure
 - Explicit `-march=haswell` instead of `native` for reproducibility
 
-**Backend selection**:
+**OpenMP**:
+```cmake
+find_package(OpenMP REQUIRED)
+# Link both executables with OpenMP::OpenMP_Fortran
+```
+
+**MKL threading**:
+```cmake
+set(MKL_THREADING "intel_thread" CACHE STRING "MKL threading")
+```
+
+**Backend selection** (for future portability):
 ```cmake
 set(LINALG_BACKEND "MKL" CACHE STRING "BLAS/LAPACK backend: MKL, OPENBLAS, AOCL")
 
 if(LINALG_BACKEND STREQUAL "MKL")
     find_package(MKL CONFIG REQUIRED)
-    # MKL provides BLAS, LAPACK, FFTW wrappers
 elseif(LINALG_BACKEND STREQUAL "OPENBLAS")
     find_package(BLAS REQUIRED)
     find_package(LAPACK REQUIRED)
@@ -126,7 +222,7 @@ elseif(LINALG_BACKEND STREQUAL "AOCL")
 endif()
 ```
 
-### Step 4: Handle FEAST
+### Step 5: Handle FEAST
 
 When `LINALG_BACKEND != MKL`, FEAST is unavailable:
 - `feast_call.f90` guarded with preprocessor: `#ifdef USE_MKL_FEAST`
@@ -134,21 +230,15 @@ When `LINALG_BACKEND != MKL`, FEAST is unavailable:
 - Wire mode (confinement=2) uses dense fallback for smaller problems
 - Larger wire problems will need ARPACK-NG (future Phase 3)
 
-### Step 5: Delete Intel files
+### Step 6: Delete Intel files
 
 - Delete `src/math/mkl_spblas.f90`
 - Delete `src/math/mkl_sparse_handle.f90`
 - Remove from `src/math/CMakeLists.txt`
 
-### Step 6: Add OpenMP for SpMV
+### Step 7: SC loop OpenMP (optional, deferred)
 
-CMakeLists.txt adds:
-```cmake
-find_package(OpenMP REQUIRED)
-# Link targets with OpenMP::OpenMP_Fortran
-```
-
-The `csr_spmv` kernel parallelizes trivially over rows with `schedule(static)`.
+The self-consistent Schrodinger-Poisson loop (`sc_loop.f90`) iterates the diagonalization for convergence. Each iteration's k-vector sweep can be parallelized the same way. However, this interacts with the SC convergence logic and is deferred until Phase 1 is validated.
 
 ## Phase 2: GPU Eigensolver (Deferred)
 
@@ -177,26 +267,33 @@ supported GPUs (gfx906+, gfx1030+, etc.).
 ### Existing tests
 All 21 existing tests (11 unit + 10 regression) must pass after refactoring.
 
-### New test
+### New tests
 - `test_csr_spmv` unit test: verify `csr_spmv` against dense `zgemv` for known matrices
 
-### Performance benchmark
-- Time QW diagonalization (FDstep=100, 200) before/after flag changes
-- Time g-factor SpMV loop before/after MKL SpBLAS → csr_spmv migration
-- Verify eigenvalues match within machine precision
+### Numerical correctness
+- Eigenvalues must match reference data within machine precision (regression tests already cover this)
+- OpenMP parallelization preserves bit-exact results: each k-point is independent, no reductions or atomics needed
+
+### Performance benchmarks
+- **k-sweep scaling**: time QW (FDstep=200, 50 k-points) with 1, 2, 4, 8, 12, 24 threads. Expect near-linear scaling to 12 threads.
+- **Compiler flags**: time before/after flag changes (-O2 → -O3 + fast-math + LTO)
+- **MKL SpBLAS vs csr_spmv**: time g-factor SpMV loop before/after migration
+- **SC loop**: time full SC convergence before/after k-sweep parallelization
 
 ## Files Modified
 
 | File | Change |
 |---|---|
+| `src/apps/main.f90` | OpenMP k-vector sweep (QW + wire), thread-private HT/workspace |
+| `src/apps/main_gfactor.f90` | OpenMP k-vector sweep, thread-private HT/workspace |
 | `src/math/sparse_matrices.f90` | Add `csr_spmv` |
 | `src/core/utils.f90` | Remove `use mkl_spblas`, refactor `dnscsr_z_mkl` |
 | `src/physics/gfactor_functions.f90` | Remove `use mkl_spblas`, use `csr_spmv` |
 | `src/physics/hamiltonianConstructor.f90` | Remove `use mkl_spblas`, use `csr_matrix` type |
 | `src/math/feast_call.f90` | Add `#ifdef USE_MKL_FEAST` guards |
 | `src/math/eigensolver.f90` | Handle missing FEAST gracefully |
-| `CMakeLists.txt` | New flags, backend option, OpenMP |
-| `src/CMakeLists.txt` | Update link libraries per backend |
+| `CMakeLists.txt` | New flags, MKL threading=intel_thread, backend option, OpenMP, LTO |
+| `src/CMakeLists.txt` | Link OpenMP, update link libraries per backend |
 | `src/math/CMakeLists.txt` | Remove mkl_spblas.f90, mkl_sparse_handle.f90 |
 
 ## Files Deleted
