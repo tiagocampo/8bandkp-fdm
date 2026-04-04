@@ -325,6 +325,10 @@ contains
       csr_pos = coo_to_csr(i)
       if (csr_pos >= 1 .and. csr_pos <= mat%nnz) then
         mat%values(csr_pos) = mat%values(csr_pos) + vals(i)
+      else
+        print *, 'ERROR: csr_set_values_from_coo: csr_pos out of range:', csr_pos, &
+          ' (nnz=', mat%nnz, ', coo index=', i, ')'
+        stop 1
       end if
     end do
   end subroutine csr_set_values_from_coo
@@ -866,7 +870,16 @@ contains
     allocate(cols_coo(nnz_out))
     allocate(vals_coo(nnz_out))
 
-    ! Build COO from A with row scaling and optional face-fraction weighting
+    ! Two-pass approach when face fractions are active:
+    !   Pass 1: compute weighted off-diagonal entries, track diagonal position
+    !           and accumulate the negative sum for row-sum = 0.
+    !   Pass 2: set diagonal as negative sum of off-diagonals.
+    !
+    ! Without face fractions (or for interior cells where all ff = 1), the
+    ! result is identical to the original formula.  For boundary cells with
+    ! fractional face areas, the two-pass approach guarantees exact row-sum
+    ! conservation, which is required for box-integration accuracy.
+
     k = 0
     do row = 1, A%nrows
       scale = -profile(row)
@@ -877,25 +890,29 @@ contains
           scale = 0.0_dp
         end if
       end if
-      do i = A%rowptr(row), A%rowptr(row + 1) - 1
-        col = A%colind(i)
-        ff_scale = 1.0_dp
 
-        if (use_face_frac .and. scale /= 0.0_dp) then
-          col_offset = col - row
-          if (col_offset == 0) then
-            ! Diagonal: average of x and y face fractions
-            ff_scale = 0.5_dp * &
-              ((face_frac_x(row, 1) + face_frac_x(row, 2)) * 0.5_dp + &
-               (face_frac_y(row, 1) + face_frac_y(row, 2)) * 0.5_dp)
-          else
+      if (use_face_frac .and. scale /= 0.0_dp) then
+        ! --- Two-pass: first off-diagonals, then diagonal from row-sum ---
+        block
+          real(kind=dp) :: diag_sum
+          integer :: diag_k
+
+          diag_sum = 0.0_dp
+          diag_k = 0
+
+          ! Pass 1: off-diagonal entries
+          do i = A%rowptr(row), A%rowptr(row + 1) - 1
+            col = A%colind(i)
+            col_offset = col - row
+
+            if (col_offset == 0) then
+              ! Save diagonal position, skip for now
+              diag_k = k + 1
+              cycle
+            end if
+
             abs_offset = abs(col_offset)
-            ! Check if the offset is consistent with y-direction (multiple of nx)
-            ! or x-direction (small offset within same row band).
-            ! y-connections: offset is exactly +/- nx (2nd deriv) or
-            !   offset is a multiple of nx for higher-order stencils.
-            ! x-connections: offset is small and row/column share the same
-            !   y-band (both in range [(iy-1)*nx+1, iy*nx]).
+            ff_scale = 1.0_dp
             row_band = (row - 1) / nx_grid   ! 0-based y-index
             col_band = (col - 1) / nx_grid
             if (row_band == col_band) then
@@ -906,16 +923,32 @@ contains
               ! Different y-band: y-direction connection
               ff_scale = (face_frac_y(row, 1) + face_frac_y(row, 2)) * 0.5_dp
             end if
-            ! For offsets that don't match either pattern (cross-derivatives),
-            ! ff_scale remains 1.0 -- face fractions don't apply.
-          end if
-        end if
 
-        k = k + 1
-        rows_coo(k) = row
-        cols_coo(k) = col
-        vals_coo(k) = scale * ff_scale * A%values(i)
-      end do
+            k = k + 1
+            rows_coo(k) = row
+            cols_coo(k) = col
+            vals_coo(k) = scale * ff_scale * A%values(i)
+            diag_sum = diag_sum + real(vals_coo(k), kind=dp)
+          end do
+
+          ! Pass 2: set diagonal as negative sum of off-diagonals (row-sum = 0)
+          if (diag_k > 0) then
+            k = k + 1
+            rows_coo(k) = row
+            cols_coo(k) = row
+            vals_coo(k) = cmplx(-diag_sum, 0.0_dp, kind=dp)
+          end if
+        end block
+      else
+        ! --- No face fractions: original formula (diagonal gets same scale) ---
+        do i = A%rowptr(row), A%rowptr(row + 1) - 1
+          col = A%colind(i)
+          k = k + 1
+          rows_coo(k) = row
+          cols_coo(k) = col
+          vals_coo(k) = scale * A%values(i)
+        end do
+      end if
     end do
 
     call csr_build_from_coo(result_mat, A%nrows, A%ncols, k, &

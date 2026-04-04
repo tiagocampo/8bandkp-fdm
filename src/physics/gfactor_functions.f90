@@ -7,7 +7,60 @@ module gfactorFunctions
 
   implicit none
 
+  ! Module-level spin matrices (8-band basis).
+  ! Shared between sigmaElem (QW) and sigmaElem_2d (wire).
+  complex(kind=dp), save :: SIGMA_X(8,8), SIGMA_Y(8,8), SIGMA_Z(8,8)
+  logical, save :: spin_matrices_initialized = .false.
+
+  private :: init_spin_matrices, spin_matrices_initialized
+  private :: SIGMA_X, SIGMA_Y, SIGMA_Z
+
   contains
+
+  ! ------------------------------------------------------------------
+  ! Initialize spin matrices (called once, then cached).
+  !
+  ! Spin matrices in the 8-band zincblende basis.
+  ! Basis ordering: 1=|3/2,+3/2> (HH), 2=|3/2,+1/2> (LH), 3=|3/2,-1/2> (LH),
+  !   4=|3/2,-3/2> (HH), 5=|1/2,+1/2> (SO), 6=|1/2,-1/2> (SO),
+  !   7=|S,+1/2> (CB), 8=|S,-1/2> (CB)
+  ! Phase convention matches ZB8bandBulk in hamiltonianConstructor.f90.
+  ! CB block (bands 7-8) gives standard Pauli matrices.
+  ! VB-VB and VB-SO off-diagonal elements may differ from the Chuang & Chang
+  ! convention by factors of +/-i (Winkler, Table 2.3).
+  ! ------------------------------------------------------------------
+  subroutine init_spin_matrices()
+    if (spin_matrices_initialized) return
+
+    SIGMA_X(1,:) = (/ ZERO, -IU*RQS3, ZERO, ZERO, UM*SQR2o3, ZERO, ZERO, ZERO /)
+    SIGMA_X(2,:) = (/ IU*RQS3, ZERO, -IU*2.0_dp/3.0_dp, ZERO, ZERO, -UM*SQR2/3.0_dp, ZERO, ZERO /)
+    SIGMA_X(3,:) = (/ ZERO, 2.0_dp*IU/3.0_dp, ZERO, -IU*RQS3, UM*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_X(4,:) = (/ ZERO, ZERO, IU*RQS3, ZERO, ZERO, -UM*SQR2o3, ZERO, ZERO /)
+    SIGMA_X(5,:) = (/ UM*SQR2o3, ZERO, UM*SQR2/3.0_dp, ZERO, ZERO, -IU/3.0_dp, ZERO, ZERO /)
+    SIGMA_X(6,:) = (/ ZERO, -UM*SQR2/3.0_dp, ZERO, -UM*SQR2o3, IU/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_X(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM /)
+    SIGMA_X(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
+
+    SIGMA_Y(1,:) = (/ ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO, ZERO /)
+    SIGMA_Y(2,:) = (/ UM*RQS3, ZERO, UM*2.0_dp/3.0_dp, ZERO, ZERO, -IU*SQR2/3.0_dp, ZERO, ZERO /)
+    SIGMA_Y(3,:) = (/ ZERO, UM*2.0_dp/3.0_dp, ZERO, UM*RQS3, -IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_Y(4,:) = (/ ZERO, ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO /)
+    SIGMA_Y(5,:) = (/ -IU*SQR2o3, ZERO, IU*SQR2/3.0_dp, ZERO, ZERO, UM/3.0_dp, ZERO, ZERO /)
+    SIGMA_Y(6,:) = (/ ZERO, IU*SQR2/3.0_dp, ZERO, -IU*SQR2o3, UM/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_Y(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, IU /)
+    SIGMA_Y(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -IU, ZERO /)
+
+    SIGMA_Z(1,:) = (/ UM, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO /)
+    SIGMA_Z(2,:) = (/ ZERO, UM/3.0_dp, ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_Z(3,:) = (/ ZERO, ZERO, -UM/3.0_dp, ZERO, ZERO, 2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO /)
+    SIGMA_Z(4,:) = (/ ZERO, ZERO, ZERO, -UM, ZERO, ZERO, ZERO, ZERO /)
+    SIGMA_Z(5,:) = (/ ZERO, 2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, -UM/3.0_dp, ZERO, ZERO, ZERO /)
+    SIGMA_Z(6,:) = (/ ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, UM/3.0_dp, ZERO, ZERO /)
+    SIGMA_Z(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
+    SIGMA_Z(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -UM /)
+
+    spin_matrices_initialized = .true.
+  end subroutine init_spin_matrices
 
 subroutine set_perturbation_direction(d, smallk)
   integer, intent(in) :: d
@@ -67,49 +120,13 @@ complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, d
   complex(kind=dp), allocatable, dimension(:) :: v
   integer :: i, j
 
-  complex(kind=dp) :: SIGMA_X(8,8), SIGMA_Y(8,8), SIGMA_Z(8,8), alpha, beta
+  complex(kind=dp) :: alpha, beta
   complex(kind=dp) :: auxx(8,8), auxy(8,8), auxz(8,8), zdotc
 
   integer :: lin, col
 
-  ! Spin matrices in the 8-band zincblende basis.
-  ! Basis ordering: 1=|3/2,+3/2> (HH), 2=|3/2,+1/2> (LH), 3=|3/2,-1/2> (LH),
-  !   4=|3/2,-3/2> (HH), 5=|1/2,+1/2> (SO), 6=|1/2,-1/2> (SO),
-  !   7=|S,+1/2> (CB), 8=|S,-1/2> (CB)
-  ! Phase convention matches ZB8bandBulk in hamiltonianConstructor.f90.
-  ! CB block (bands 7-8) gives standard Pauli matrices.
-  ! VB-VB and VB-SO off-diagonal elements may differ from the Chuang & Chang
-  ! convention by factors of +/-i (Winkler, Table 2.3).
-  SIGMA_X(1,:) = (/ ZERO, -IU*RQS3, ZERO, ZERO, UM*SQR2o3, ZERO, ZERO, ZERO /)
-  SIGMA_X(2,:) = (/ IU*RQS3, ZERO, -IU*2.0_dp/3.0_dp, ZERO, ZERO, -UM*SQR2/3.0_dp, ZERO, ZERO /)
-  SIGMA_X(3,:) = (/ ZERO, 2.0_dp*IU/3.0_dp, ZERO, -IU*RQS3, UM*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_X(4,:) = (/ ZERO, ZERO, IU*RQS3, ZERO, ZERO, -UM*SQR2o3, ZERO, ZERO /)
-  SIGMA_X(5,:) = (/ UM*SQR2o3, ZERO, UM*SQR2/3.0_dp, ZERO, ZERO, -IU/3.0_dp, ZERO, ZERO /)
-  SIGMA_X(6,:) = (/ ZERO, -UM*SQR2/3.0_dp, ZERO, -UM*SQR2o3, IU/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_X(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM /)
-  SIGMA_X(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
-
-
-  SIGMA_Y(1,:) = (/ ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO, ZERO /)
-  SIGMA_Y(2,:) = (/ UM*RQS3, ZERO, UM*2.0_dp/3.0_dp, ZERO, ZERO, -IU*SQR2/3.0_dp, ZERO, ZERO /)
-  SIGMA_Y(3,:) = (/ ZERO, UM*2.0_dp/3.0_dp, ZERO, UM*RQS3, -IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_Y(4,:) = (/ ZERO, ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO /)
-  SIGMA_Y(5,:) = (/ -IU*SQR2o3, ZERO, IU*SQR2/3.0_dp, ZERO, ZERO, UM/3.0_dp, ZERO, ZERO /)
-  SIGMA_Y(6,:) = (/ ZERO, IU*SQR2/3.0_dp, ZERO, -IU*SQR2o3, UM/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_Y(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, IU /)
-  SIGMA_Y(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -IU, ZERO /)
-
-
-  SIGMA_Z(1,:) = (/ UM, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO /)
-  SIGMA_Z(2,:) = (/ ZERO, UM/3.0_dp, ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_Z(3,:) = (/ ZERO, ZERO, -UM/3.0_dp, ZERO, ZERO, 2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO /)
-  SIGMA_Z(4,:) = (/ ZERO, ZERO, ZERO, -UM, ZERO, ZERO, ZERO, ZERO /)
-  SIGMA_Z(5,:) = (/ ZERO, 2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, -UM/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_Z(6,:) = (/ ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, UM/3.0_dp, ZERO, ZERO /)
-  SIGMA_Z(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
-  SIGMA_Z(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -UM /)
-
-
+  ! Initialize module-level spin matrices on first use
+  call init_spin_matrices()
 
   allocate(v(fdstep))
   v = 0
@@ -648,35 +665,8 @@ complex(kind=dp) function sigmaElem_2d(state1, state2, dir, grid)
   integer :: ix, iy, ngrid, band, flat_idx
   complex(kind=dp) :: contrib
 
-  complex(kind=dp) :: SIGMA_X(8,8), SIGMA_Y(8,8), SIGMA_Z(8,8)
-
-  ! Spin matrices (same as sigmaElem)
-  SIGMA_X(1,:) = (/ ZERO, -IU*RQS3, ZERO, ZERO, UM*SQR2o3, ZERO, ZERO, ZERO /)
-  SIGMA_X(2,:) = (/ IU*RQS3, ZERO, -IU*2.0_dp/3.0_dp, ZERO, ZERO, -UM*SQR2/3.0_dp, ZERO, ZERO /)
-  SIGMA_X(3,:) = (/ ZERO, 2.0_dp*IU/3.0_dp, ZERO, -IU*RQS3, UM*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_X(4,:) = (/ ZERO, ZERO, IU*RQS3, ZERO, ZERO, -UM*SQR2o3, ZERO, ZERO /)
-  SIGMA_X(5,:) = (/ UM*SQR2o3, ZERO, UM*SQR2/3.0_dp, ZERO, ZERO, -IU/3.0_dp, ZERO, ZERO /)
-  SIGMA_X(6,:) = (/ ZERO, -UM*SQR2/3.0_dp, ZERO, -UM*SQR2o3, IU/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_X(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM /)
-  SIGMA_X(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
-
-  SIGMA_Y(1,:) = (/ ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO, ZERO /)
-  SIGMA_Y(2,:) = (/ UM*RQS3, ZERO, UM*2.0_dp/3.0_dp, ZERO, ZERO, -IU*SQR2/3.0_dp, ZERO, ZERO /)
-  SIGMA_Y(3,:) = (/ ZERO, UM*2.0_dp/3.0_dp, ZERO, UM*RQS3, -IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_Y(4,:) = (/ ZERO, ZERO, UM*RQS3, ZERO, ZERO, IU*SQR2o3, ZERO, ZERO /)
-  SIGMA_Y(5,:) = (/ -IU*SQR2o3, ZERO, IU*SQR2/3.0_dp, ZERO, ZERO, UM/3.0_dp, ZERO, ZERO /)
-  SIGMA_Y(6,:) = (/ ZERO, IU*SQR2/3.0_dp, ZERO, -IU*SQR2o3, UM/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_Y(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, IU /)
-  SIGMA_Y(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -IU, ZERO /)
-
-  SIGMA_Z(1,:) = (/ UM, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO /)
-  SIGMA_Z(2,:) = (/ ZERO, UM/3.0_dp, ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_Z(3,:) = (/ ZERO, ZERO, -UM/3.0_dp, ZERO, ZERO, 2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO /)
-  SIGMA_Z(4,:) = (/ ZERO, ZERO, ZERO, -UM, ZERO, ZERO, ZERO, ZERO /)
-  SIGMA_Z(5,:) = (/ ZERO, 2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, -UM/3.0_dp, ZERO, ZERO, ZERO /)
-  SIGMA_Z(6,:) = (/ ZERO, ZERO, -2.0_dp*IU*SQR2/3.0_dp, ZERO, ZERO, UM/3.0_dp, ZERO, ZERO /)
-  SIGMA_Z(7,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, UM, ZERO /)
-  SIGMA_Z(8,:) = (/ ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, -UM /)
+  ! Initialize module-level spin matrices on first use
+  call init_spin_matrices()
 
   alpha = cmplx(1.0_dp, 0.0_dp, kind=dp)
   beta = cmplx(0.0_dp, 0.0_dp, kind=dp)

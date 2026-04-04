@@ -58,6 +58,8 @@ contains
 #else
     case ('FEAST', 'ARPACK')
       ! FEAST unavailable: fall back to dense LAPACK
+      print *, 'WARNING: FEAST/ARPACK not available. Falling back to dense LAPACK.'
+      print *, '  Energy window [emin, emax] will be IGNORED.'
       call solve_dense_lapack(H_csr, config, result)
 #endif
     case default
@@ -300,8 +302,8 @@ contains
       end if
     end do
 
-    emin = rmin - 0.1_dp * abs(rmin)
-    emax = rmax + 0.1_dp * abs(rmax)
+    emin = rmin - max(0.1_dp * abs(rmin), 0.5_dp)
+    emax = rmax + max(0.1_dp * abs(rmax), 0.5_dp)
   end subroutine auto_compute_energy_window
 
   ! ==================================================================

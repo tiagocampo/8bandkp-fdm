@@ -293,7 +293,7 @@ contains
     deallocate(coo_rows, coo_cols, coo_vals)
 
     ! ================================================================
-    ! Solve with MKL PARDISO (real symmetric positive definite, mtype=2)
+    ! Solve with MKL PARDISO (real unsymmetric, mtype=11)
     ! ================================================================
     pt = 0
     iparm = 0

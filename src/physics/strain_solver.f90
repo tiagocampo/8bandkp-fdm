@@ -17,6 +17,9 @@ module strain_solver
 
   implicit none
 
+  ! Module-level flag to warn about invalid material_id only once
+  logical, save :: warned_invalid_mat = .false.
+
   private
   public :: strain_result
   public :: strain_result_free
@@ -127,7 +130,14 @@ contains
 
     do ij = 1, ngrid
       mid = material_id(ij)
-      if (mid < 1 .or. mid > size(params)) cycle
+      if (mid < 1 .or. mid > size(params)) then
+        if (.not. warned_invalid_mat) then
+          print *, 'WARNING: invalid material_id=', mid, &
+            ' at grid point', ij, '(range: 1..', size(params), '). Skipping.'
+          warned_invalid_mat = .true.
+        end if
+        cycle
+      end if
 
       a0_mat = params(mid)%a0
       if (a0_mat <= 0.0_dp) cycle
@@ -229,7 +239,14 @@ contains
     ! Fill elastic constants and axial strain at each grid point
     do ij = 1, ngrid
       mid = material_id(ij)
-      if (mid < 1 .or. mid > size(params)) cycle
+      if (mid < 1 .or. mid > size(params)) then
+        if (.not. warned_invalid_mat) then
+          print *, 'WARNING: invalid material_id=', mid, &
+            ' at grid point', ij, '(range: 1..', size(params), '). Skipping.'
+          warned_invalid_mat = .true.
+        end if
+        cycle
+      end if
 
       C11(ij) = params(mid)%C11
       C12(ij) = params(mid)%C12
@@ -731,7 +748,14 @@ contains
 
     do ij = 1, ngrid
       mid = material_id(ij)
-      if (mid < 1 .or. mid > size(params)) cycle
+      if (mid < 1 .or. mid > size(params)) then
+        if (.not. warned_invalid_mat) then
+          print *, 'WARNING: invalid material_id=', mid, &
+            ' at grid point', ij, '(range: 1..', size(params), '). Skipping.'
+          warned_invalid_mat = .true.
+        end if
+        cycle
+      end if
 
       Tr_eps = strain_out%eps_xx(ij) + strain_out%eps_yy(ij) + strain_out%eps_zz(ij)
 

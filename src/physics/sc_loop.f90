@@ -353,6 +353,7 @@ contains
     call dgesv(m+1, 1, B, m+1, ipiv, rhs, m+1, info)
 
     if (info /= 0) then
+      print *, '  DIIS: linear system solve failed (info=', info, '). Falling back to linear mix.'
       deallocate(B, rhs, coeffs, ipiv)
       call linear_mix(phi_new, phi_old, phi_poisson, N, alpha)
       return
@@ -588,7 +589,7 @@ contains
 
     ! Grid dimensions
     integer :: nx, ny
-    real(kind=dp) :: dy_val, dz_val, kpar_max_val
+    real(kind=dp) :: dy_val, dx_val, kpar_max_val
 
     logical :: sc_converged
 
@@ -597,7 +598,7 @@ contains
     Ngrid = nx * ny
     Ntot = 8 * Ngrid
     dy_val = grid%dy   ! AA
-    dz_val = grid%dx   ! AA (grid%dx for wire mode)
+    dx_val = grid%dx   ! AA — x-spacing of confinement plane
     num_subbands = eigen_cfg%nev
     niter = cfg%sc%max_iterations
 
@@ -727,7 +728,7 @@ contains
       ! Step 3: Find Fermi level (if charge neutrality mode)
       if (cfg%sc%fermi_mode == 0) then
         fermi_level = find_fermi_level_wire(eig_wire, eigv_wire, kx_grid, &
-          & cfg, Ntot, nev_sc, nk_actual, Ngrid, dy_val * dz_val, &
+          & cfg, Ntot, nev_sc, nk_actual, Ngrid, dy_val * dx_val, &
           & rho_doping_2d, fermi_ne, fermi_nh, nx, ny)
       end if
 
@@ -753,7 +754,7 @@ contains
       ! solve_poisson_2d uses e0 in C/(V*nm), rho in C/nm^3.
       ! dy, dz in AA are converted to nm for consistent Poisson units.
       call solve_poisson_2d(phi_poisson, rho_2d, epsilon_2d, &
-        & dy_val * ANGSTROM_TO_NM, dz_val * ANGSTROM_TO_NM, &
+        & dy_val * ANGSTROM_TO_NM, dx_val * ANGSTROM_TO_NM, &
         & nx, ny, cfg%sc%bc_left)
 
       ! Step 6: Flatten phi for mixing

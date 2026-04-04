@@ -391,10 +391,10 @@ contains
     !   (5,8): offset +3 -> y-direction
     !
     ! With face_frac_x(5,:)=[0.5, 0.5], face_frac_y(5,:)=[0.8, 0.8]:
-    !   x-avg = 0.5, y-avg = 0.8, diag-avg = (0.5+0.8)/2 = 0.65
+    !   x-avg = 0.5, y-avg = 0.8
     !   Profile = 1.0 -> scale = -1
-    !   Result: (5,2)=-1*0.8=-0.8, (5,4)=-1*0.5=-0.5,
-    !           (5,5)=-1*0.65=-0.65, (5,6)=-0.5, (5,8)=-0.8
+    !   Off-diagonal: (5,2)=-0.8, (5,4)=-0.5, (5,6)=-0.5, (5,8)=-0.8
+    !   Diagonal: negative sum of off-diags = -(-2.6) = 2.6 (row-sum = 0)
     !
     ! All other rows have face fractions = 1.0 (no extra scaling).
     integer, parameter :: ngrid = 9, nx = 3
@@ -434,8 +434,9 @@ contains
     @assertEqual(cmplx(-0.8_dp,0,dp), dense(5,2), tolerance=1.0e-14_dp)
     ! col 4: x-direction, avg(ffx)=0.5 -> -1*0.5 = -0.5
     @assertEqual(cmplx(-0.5_dp,0,dp), dense(5,4), tolerance=1.0e-14_dp)
-    ! col 5: diagonal, avg(0.5,0.8)=0.65 -> -1*0.65 = -0.65
-    @assertEqual(cmplx(-0.65_dp,0,dp), dense(5,5), tolerance=1.0e-14_dp)
+    ! col 5: diagonal = negative sum of off-diagonals (row-sum = 0)
+    !   off-diag sum = -0.8 + -0.5 + -0.5 + -0.8 = -2.6 -> diag = 2.6
+    @assertEqual(cmplx(2.6_dp,0,dp), dense(5,5), tolerance=1.0e-14_dp)
     ! col 6: x-direction -> -0.5
     @assertEqual(cmplx(-0.5_dp,0,dp), dense(5,6), tolerance=1.0e-14_dp)
     ! col 8: y-direction -> -0.8
