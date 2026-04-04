@@ -337,4 +337,124 @@ contains
     deallocate(cfg%intStartPos, cfg%intEndPos)
   end subroutine test_map_layer_to_grid
 
+
+  @test
+  subroutine test_build_epsilon_2d()
+    ! 4x4 wire grid with 2 regions:
+    !   Region 1 (eps=12.90): material_id = 1 for left half (ix=1,2)
+    !   Region 2 (eps=10.06): material_id = 2 for right half (ix=3,4)
+
+    integer, parameter :: nx = 4, ny = 4
+    integer :: ngrid
+    type(spatial_grid) :: grid
+    type(paramStruct) :: params(2)
+    real(kind=dp), allocatable :: epsilon(:,:)
+    integer :: ix, iy, ij
+
+    ngrid = nx * ny
+
+    ! Set up grid dimensions
+    grid%ndim = 2
+    grid%nx = nx
+    grid%ny = ny
+    grid%dx = 1.0_dp
+    grid%dy = 1.0_dp
+
+    ! Set up material_id: left half = region 1, right half = region 2
+    allocate(grid%material_id(ngrid))
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        if (ix <= 2) then
+          grid%material_id(ij) = 1
+        else
+          grid%material_id(ij) = 2
+        end if
+      end do
+    end do
+
+    ! Set material parameters
+    params(1)%eps0 = 12.90_dp   ! GaAs-like
+    params(2)%eps0 = 10.06_dp   ! AlAs-like
+
+    call build_epsilon_2d(epsilon, grid, params)
+
+    ! Verify left half has region 1 epsilon
+    do iy = 1, ny
+      do ix = 1, 2
+        @assertEqual(12.90_dp, epsilon(ix, iy), tolerance=1.0e-10_dp)
+      end do
+    end do
+
+    ! Verify right half has region 2 epsilon
+    do iy = 1, ny
+      do ix = 3, 4
+        @assertEqual(10.06_dp, epsilon(ix, iy), tolerance=1.0e-10_dp)
+      end do
+    end do
+
+    deallocate(grid%material_id, epsilon)
+  end subroutine test_build_epsilon_2d
+
+
+  @test
+  subroutine test_build_doping_charge_2d()
+    ! 4x4 wire grid with 2 regions:
+    !   Region 1: ND=1e18, NA=0 => net = +1e18 cm^-3
+    !   Region 2: ND=0, NA=5e17 => net = -5e17 cm^-3
+
+    integer, parameter :: nx = 4, ny = 4
+    integer :: ngrid
+    type(spatial_grid) :: grid
+    type(doping_spec) :: doping(2)
+    real(kind=dp), allocatable :: rho_doping(:,:)
+    integer :: ix, iy, ij
+
+    ngrid = nx * ny
+
+    ! Set up grid dimensions
+    grid%ndim = 2
+    grid%nx = nx
+    grid%ny = ny
+    grid%dx = 1.0_dp
+    grid%dy = 1.0_dp
+
+    ! Set up material_id: top half = region 1, bottom half = region 2
+    allocate(grid%material_id(ngrid))
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        if (iy <= 2) then
+          grid%material_id(ij) = 1
+        else
+          grid%material_id(ij) = 2
+        end if
+      end do
+    end do
+
+    ! Set doping specs
+    doping(1)%ND = 1.0e18_dp
+    doping(1)%NA = 0.0_dp
+    doping(2)%ND = 0.0_dp
+    doping(2)%NA = 5.0e17_dp
+
+    call build_doping_charge_2d(rho_doping, grid, doping)
+
+    ! Verify top half (region 1) has positive net doping
+    do iy = 1, 2
+      do ix = 1, nx
+        @assertEqual(1.0e18_dp, rho_doping(ix, iy), tolerance=1.0e-10_dp)
+      end do
+    end do
+
+    ! Verify bottom half (region 2) has negative net doping
+    do iy = 3, 4
+      do ix = 1, nx
+        @assertEqual(-5.0e17_dp, rho_doping(ix, iy), tolerance=1.0e-10_dp)
+      end do
+    end do
+
+    deallocate(grid%material_id, rho_doping)
+  end subroutine test_build_doping_charge_2d
+
 end module test_sc_loop

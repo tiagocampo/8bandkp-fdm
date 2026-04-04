@@ -23,6 +23,8 @@ module sc_loop
   public :: find_fermi_level
   public :: build_epsilon
   public :: build_doping_charge
+  public :: build_epsilon_2d
+  public :: build_doping_charge_2d
   public :: apply_potential_to_profile
   public :: map_layer_to_grid
 
@@ -572,5 +574,68 @@ contains
       end do
     end do
   end subroutine map_layer_to_grid
+
+
+  ! ------------------------------------------------------------------
+  ! Build 2D dielectric constant array from wire grid material_id
+  ! Returns epsilon(nx, ny) reshaped from flat grid%material_id(:).
+  ! ------------------------------------------------------------------
+  subroutine build_epsilon_2d(epsilon, grid, params)
+    real(kind=dp), allocatable, intent(out) :: epsilon(:,:)
+    type(spatial_grid), intent(in) :: grid
+    type(paramStruct), intent(in)  :: params(:)
+
+    integer :: nx, ny, ix, iy, ij, mid
+    real(kind=dp) :: eps_val
+
+    nx = grid%nx
+    ny = grid%ny
+    allocate(epsilon(nx, ny))
+
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        mid = grid%material_id(ij)
+        if (mid > 0 .and. mid <= size(params)) then
+          eps_val = params(mid)%eps0
+          if (eps_val > 0.0_dp) then
+            epsilon(ix, iy) = eps_val
+          else
+            epsilon(ix, iy) = 12.90_dp
+          end if
+        else
+          epsilon(ix, iy) = 12.90_dp
+        end if
+      end do
+    end do
+  end subroutine build_epsilon_2d
+
+
+  ! ------------------------------------------------------------------
+  ! Build 2D doping charge density (ND - NA) in cm^-3 from wire grid.
+  ! Returns rho_doping(nx, ny) reshaped from flat grid%material_id(:).
+  ! ------------------------------------------------------------------
+  subroutine build_doping_charge_2d(rho_doping, grid, doping)
+    real(kind=dp), allocatable, intent(out) :: rho_doping(:,:)
+    type(spatial_grid), intent(in) :: grid
+    type(doping_spec), intent(in)  :: doping(:)
+
+    integer :: nx, ny, ix, iy, ij, mid
+
+    nx = grid%nx
+    ny = grid%ny
+    allocate(rho_doping(nx, ny))
+    rho_doping = 0.0_dp
+
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        mid = grid%material_id(ij)
+        if (mid > 0 .and. mid <= size(doping)) then
+          rho_doping(ix, iy) = doping(mid)%ND - doping(mid)%NA
+        end if
+      end do
+    end do
+  end subroutine build_doping_charge_2d
 
 end module sc_loop
