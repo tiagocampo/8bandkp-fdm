@@ -2,6 +2,12 @@ module test_sc_loop
   use funit
   use definitions
   use sc_loop
+  use charge_density
+  use parameters
+  use geometry
+  use hamiltonianConstructor
+  use eigensolver
+  use sparse_matrices
   implicit none
 
 contains
@@ -516,7 +522,8 @@ contains
     real(kind=dp) :: rho_doping_2d(nx, ny)
     real(kind=dp) :: work_ne(Ngrid), work_nh(Ngrid)
     real(kind=dp) :: dA, mu
-    integer :: s, ik
+    real(kind=dp) :: charge_excess
+    integer :: s, ik, p
 
     ! Eigenvalues: subbands 1-2 = VB, 3-5 = CB (sorted descending at kx=0
     ! by compute_charge_density_wire). Place them so the sort puts the
@@ -568,6 +575,19 @@ contains
     ! Fermi level should be in the band gap
     @assertTrue(mu > -0.3_dp, message="Fermi above VB top (-0.3 eV)")
     @assertTrue(mu < 0.8_dp, message="Fermi below CB bottom (0.8 eV)")
+
+    ! Charge neutrality: recompute densities at the returned mu and verify
+    ! that total electron charge equals total hole charge (no doping).
+    call compute_charge_density_wire(work_ne, work_nh, eigv_kx, &
+      & eig_kx, kx_grid, mu, cfg%sc%temperature, &
+      & ny, nx, num_subbands, nk, cfg%numcb)
+
+    charge_excess = 0.0_dp
+    do p = 1, Ngrid
+      charge_excess = charge_excess + (work_ne(p) - work_nh(p)) * dA
+    end do
+
+    @assertTrue(abs(charge_excess) < 1.0e-6_dp, message="Charge neutrality holds")
 
   end subroutine test_find_fermi_level_wire
 
@@ -641,5 +661,141 @@ contains
     @assertTrue(mu < 0.8_dp, message="Fermi below CB bottom")
 
   end subroutine test_find_fermi_level_wire_with_doping
+
+
+  ! ==================================================================
+  ! Integration test: full wire SC loop convergence
+  !
+  ! 3x3 GaAs wire, uniform ND=1e18 cm^-3, 3 k-points, T=300K.
+  ! Exercises: grid -> kpterms -> Hamiltonian -> eigensolve ->
+  !            charge density -> Poisson -> mixing -> convergence.
+  ! ==================================================================
+  @test
+  subroutine test_sc_loop_wire_convergence()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp  ! Angstrom
+
+    integer :: ngrid, ntot, ij, num_subbands, nk_sc
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:), profile_2d_init(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(wire_coo_cache) :: coo_cache
+    type(eigensolver_config) :: eigen_cfg
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+    real(kind=dp), allocatable :: eig_wire(:,:)
+    complex(kind=dp), allocatable :: eigv_wire(:,:,:)
+    real(kind=dp) :: max_diff
+    logical :: profile_changed, eigenvalues_ordered
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+
+    ! ---- Step 1: Build grid ----
+    mat2d = 1  ! single material (GaAs)
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    ! ---- Step 2: Material parameters ----
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    ! ---- Step 3: Build kpterms_2d and profile_2d ----
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    ! Save a copy of initial profile for comparison
+    allocate(profile_2d_init(ngrid, 3))
+    profile_2d_init = profile_2d
+
+    ! ---- Step 4: Configure simulation ----
+    cfg%confinement = 2
+    cfg%grid = grid
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%waveVectorMax = 0.5_dp
+
+    ! Material parameters and doping
+    allocate(cfg%params(1))
+    cfg%params = params
+    allocate(cfg%doping(1))
+    cfg%doping(1)%ND = 1.0e18_dp
+    cfg%doping(1)%NA = 0.0_dp
+
+    ! Strain disabled
+    cfg%strain%enabled = .false.
+
+    ! SC parameters: loose tolerance, few iterations, linear mixing
+    cfg%sc%enabled = 1
+    cfg%sc%max_iterations = 10
+    cfg%sc%tolerance = 1.0e-4_dp
+    cfg%sc%mixing_alpha = 0.3_dp
+    cfg%sc%diis_history = 1   ! minimal DIIS history (linear mixing with diis_history < 2)
+    cfg%sc%temperature = 300.0_dp
+    cfg%sc%fermi_mode = 0    ! charge neutrality
+    cfg%sc%num_kpar = 3      ! 3 k-points (odd for Simpson)
+    cfg%sc%kpar_max = 0.1_dp  ! small k_max
+    cfg%sc%bc_left = 0.0_dp
+    cfg%sc%bc_right = 0.0_dp
+
+    ! ---- Step 5: Eigensolver config ----
+    ! Use LAPACK fallback (works without FEAST)
+    num_subbands = cfg%numcb + cfg%numvb  ! 8
+    eigen_cfg%method = 'ARPACK'
+    eigen_cfg%nev = num_subbands
+    eigen_cfg%emin = -5.0_dp
+    eigen_cfg%emax = 5.0_dp
+    eigen_cfg%max_iter = 100
+    eigen_cfg%tol = 1.0e-10_dp
+
+    ! ---- Step 6: Allocate eigensolver output arrays ----
+    nk_sc = 3  ! matches cfg%sc%num_kpar
+    allocate(eig_wire(num_subbands, nk_sc))
+    allocate(eigv_wire(ntot, num_subbands, nk_sc))
+    eig_wire = 0.0_dp
+    eigv_wire = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! ---- Step 7: Run SC loop ----
+    call self_consistent_loop_wire(profile_2d, cfg, kpterms_2d, grid, &
+      & coo_cache, eigen_cfg, eig_wire, eigv_wire)
+
+    ! ---- Assertions ----
+
+    ! 1. Eigenvalues at k=0 are non-zero and ordered (ascending)
+    do ij = 2, num_subbands
+      eigenvalues_ordered = (eig_wire(ij, 1) - eig_wire(ij-1, 1)) > -1.0e-12_dp
+      @assertTrue(eigenvalues_ordered, message="Eigenvalues ordered ascending at k=0")
+    end do
+    @assertTrue(abs(eig_wire(1, 1)) > 0.0_dp, message="Eigenvalues are non-zero")
+
+    ! 2. profile_2d was modified from initial values (SC loop applied potential)
+    max_diff = maxval(abs(profile_2d - profile_2d_init))
+    ! For a uniform GaAs wire with doping, the potential should shift band edges.
+    ! Even if the change is tiny (no heterostructure), the Poisson solve
+    ! with uniform doping should produce some potential.
+    ! We check that profile_2d differs from initial (the loop ran).
+    profile_changed = (max_diff > 0.0_dp)
+    @assertTrue(profile_changed, message="profile_2d was modified by SC loop")
+
+    ! ---- Cleanup ----
+    call wire_coo_cache_free(coo_cache)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, profile_2d_init)
+    deallocate(params, regions, material_names)
+    deallocate(eig_wire, eigv_wire)
+    deallocate(cfg%params, cfg%doping)
+    ! Do not call grid_free(grid): cfg%grid = grid created an independent
+    ! deep copy of the allocatable components.  Both grid and cfg%grid
+    ! will be auto-deallocated when they go out of scope.
+
+  end subroutine test_sc_loop_wire_convergence
 
 end module test_sc_loop
