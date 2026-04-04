@@ -6,7 +6,7 @@ module outputFunctions
   implicit NONE
 
   private
-  public :: writeEigenfunctions, writeEigenfunctions2d, writeEigenvalues, get_unit
+  public :: writeEigenfunctions, writeEigenfunctions2d, writeEigenvalues, get_unit, ensure_output_dir
 
   character(len=*), parameter :: OUTPUT_DIR = 'output'
 
@@ -118,11 +118,12 @@ module outputFunctions
 
     end subroutine writeEigenfunctions
 
-    subroutine writeEigenvalues(smallk, eig, wvStep)
+    subroutine writeEigenvalues(smallk, eig, wvStep, cfg)
 
       real(kind=dp), intent(in) :: eig(:,:)
       type(wavevector), intent(in) :: smallk(:)
       integer, intent(in) :: wvStep
+      type(simulation_config), intent(in), optional :: cfg
 
       integer (kind=4) :: iounit, ios
       character (len = 255) :: filename
@@ -136,6 +137,19 @@ module outputFunctions
 
       open(unit=iounit, file=filename, iostat=ios, status="replace", action="write")
       if ( ios /= 0 ) stop "Error opening file "
+
+      ! Write metadata header for wire mode
+      if (present(cfg)) then
+        if (cfg%confinement == 2) then
+          write(iounit, '(A,I0,A,I0)', advance='no') &
+            & '# confinement: ', cfg%confinement, &
+            & ' nx: ', cfg%grid%nx
+          write(iounit, '(A,I0,A,g14.6)', advance='no') &
+            & ' ny: ', cfg%grid%ny, ' dx: ', cfg%grid%dx
+          write(iounit, '(A,g14.6,A,A)') &
+            & ' dy: ', cfg%grid%dy, ' shape: ', trim(cfg%wire_geom%shape)
+        end if
+      end if
 
       write(iounit, *) '#k, values'
       do i = 1, wvStep, 1

@@ -96,6 +96,28 @@ program kpfdm
 
         call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
           cfg%strain, a0_ref, strain_out)
+
+        ! Write strain tensor to file (gnuplot splot format)
+        ! Note: eps_xy, eps_xz are zero for plane-strain formulation
+        call ensure_output_dir()
+        call get_unit(iounit)
+        open(unit=iounit, file='output/strain.dat', status='replace', action='write')
+        write(iounit, '(A)') '# x(A) y(A) eps_xx eps_yy eps_zz eps_xy eps_xz eps_yz'
+        do jj = 1, cfg%grid%ny
+          do ii = 1, cfg%grid%nx
+            k = (jj - 1) * cfg%grid%nx + ii
+            write(unit=iounit, fmt='(8(g14.6,1x))') &
+              & cfg%grid%x(ii), cfg%grid%z(jj), &
+              & strain_out%eps_xx(k), strain_out%eps_yy(k), &
+              & strain_out%eps_zz(k), 0.0_dp, 0.0_dp, &
+              & strain_out%eps_yz(k)
+          end do
+          ! Blank line between y-rows for gnuplot splot
+          write(iounit, '(A)') ''
+        end do
+        close(iounit)
+        print *, '  Wire strain tensor written to output/strain.dat'
+
         call apply_pikus_bir(strain_out, cfg%params, cfg%grid%material_id, &
           cfg%grid, profile_2d)
         call strain_result_free(strain_out)
@@ -178,6 +200,24 @@ program kpfdm
       ! Reset COO cache — profile_2d changed, need fresh CSR structure
       call wire_coo_cache_free(coo_cache)
     end if
+
+    ! --- Write 2D band edge profile (after strain + SC, before k-sweep) ---
+    call ensure_output_dir()
+    call get_unit(iounit)
+    open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
+    write(iounit, '(A)') '# x(A) y(A) EV EV_DeltaSO EC'
+    do jj = 1, cfg%grid%ny
+      do ii = 1, cfg%grid%nx
+        k = (jj - 1) * cfg%grid%nx + ii
+        write(unit=iounit, fmt='(5(g14.6,1x))') &
+          & cfg%grid%x(ii), cfg%grid%z(jj), &
+          & profile_2d(k, 1), profile_2d(k, 2), profile_2d(k, 3)
+      end do
+      ! Blank line between y-rows for gnuplot splot
+      write(iounit, '(A)') ''
+    end do
+    close(iounit)
+    print *, '  Wire band edge profile written to output/potential_profile.dat'
 
     ! ==================================================================
     ! Wire kz sweep: serial k=1 (build COO cache) + OpenMP k=2..N
@@ -304,7 +344,7 @@ program kpfdm
     call wire_coo_cache_free(coo_cache)
 
     ! Write eigenvalues to file
-    call writeEigenvalues(smallk, eig_wire, cfg%waveVectorStep)
+    call writeEigenvalues(smallk, eig_wire, cfg%waveVectorStep, cfg)
     print *, ''
     print *, 'Wire band structure written to output/eigenvalues.dat'
 
