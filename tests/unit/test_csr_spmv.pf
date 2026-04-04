@@ -1,0 +1,193 @@
+module test_csr_spmv
+  use funit
+  use definitions
+  use sparse_matrices
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! Identity SpMV: y = alpha * I * x
+  ! ==================================================================
+
+  @test
+  subroutine test_spmv_identity()
+    integer, parameter :: n = 3
+    type(csr_matrix) :: A
+    integer :: rows(3), cols(3)
+    complex(kind=dp) :: vals(3), x(n), y(n)
+
+    ! Build 3x3 identity matrix
+    rows = [1, 2, 3]
+    cols = [1, 2, 3]
+    vals = [cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp)]
+    call csr_build_from_coo(A, n, n, 3, rows, cols, vals)
+
+    x = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
+    y = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    call csr_spmv(A, x, y, cmplx(1.0_dp, 0, dp), cmplx(0.0_dp, 0, dp))
+
+    @assertEqual(cmplx(1.0_dp, 0, dp), y(1), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(2.0_dp, 0, dp), y(2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(3.0_dp, 0, dp), y(3), tolerance=1.0e-14_dp)
+
+    call csr_free(A)
+  end subroutine test_spmv_identity
+
+  ! ==================================================================
+  ! Dense comparison: random 5x5 matrix
+  ! ==================================================================
+
+  @test
+  subroutine test_spmv_dense_comparison()
+    integer, parameter :: n = 5
+    type(csr_matrix) :: A
+    complex(kind=dp) :: dense(n, n), x(n), y_spmv(n), y_dense(n)
+    integer :: rows_coo(n * n), cols_coo(n * n)
+    complex(kind=dp) :: vals_coo(n * n)
+    integer :: i, j, idx
+    real(kind=dp) :: re_part, im_part
+
+    ! Seed for reproducibility (intrinsic random_number)
+    dense = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! Build a dense random complex matrix using a simple LCG-like sequence
+    idx = 0
+    do j = 1, n
+      do i = 1, n
+        idx = idx + 1
+        ! Deterministic "random" values based on index
+        re_part = cos(dble(i * 7 + j * 13)) * 2.0_dp
+        im_part = sin(dble(i * 11 + j * 3)) * 1.5_dp
+        dense(i, j) = cmplx(re_part, im_part, kind=dp)
+        rows_coo(idx) = i
+        cols_coo(idx) = j
+        vals_coo(idx) = dense(i, j)
+      end do
+    end do
+
+    ! Build CSR from COO
+    call csr_build_from_coo(A, n, n, n * n, rows_coo, cols_coo, vals_coo)
+
+    ! Input vector
+    do i = 1, n
+      x(i) = cmplx(sin(dble(i * 17)), cos(dble(i * 23)), kind=dp)
+    end do
+
+    ! SpMV: y = 1.0 * A * x + 0.0 * y
+    y_spmv = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call csr_spmv(A, x, y_spmv, cmplx(1.0_dp, 0, dp), cmplx(0.0_dp, 0, dp))
+
+    ! Dense matvec: y = A * x
+    y_dense = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do j = 1, n
+      do i = 1, n
+        y_dense(i) = y_dense(i) + dense(i, j) * x(j)
+      end do
+    end do
+
+    ! Compare
+    do i = 1, n
+      @assertEqual(y_dense(i), y_spmv(i), tolerance=1.0e-12_dp)
+    end do
+
+    call csr_free(A)
+  end subroutine test_spmv_dense_comparison
+
+  ! ==================================================================
+  ! Beta scaling: y = A*x + 0.5*y_old
+  ! ==================================================================
+
+  @test
+  subroutine test_spmv_beta_scaling()
+    integer, parameter :: n = 3
+    type(csr_matrix) :: A
+    integer :: rows(3), cols(3)
+    complex(kind=dp) :: vals(3), x(n), y(n)
+
+    ! Build identity matrix
+    rows = [1, 2, 3]
+    cols = [1, 2, 3]
+    vals = [cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp)]
+    call csr_build_from_coo(A, n, n, 3, rows, cols, vals)
+
+    x = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
+    ! Pre-fill y with old values
+    y = [cmplx(10.0_dp, 0, dp), cmplx(20.0_dp, 0, dp), cmplx(30.0_dp, 0, dp)]
+
+    ! y = 1.0 * A * x + 0.5 * y  => y = [1+5, 2+10, 3+15] = [6, 12, 18]
+    call csr_spmv(A, x, y, cmplx(1.0_dp, 0, dp), cmplx(0.5_dp, 0, dp))
+
+    @assertEqual(cmplx(6.0_dp, 0, dp), y(1), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(12.0_dp, 0, dp), y(2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(18.0_dp, 0, dp), y(3), tolerance=1.0e-14_dp)
+
+    call csr_free(A)
+  end subroutine test_spmv_beta_scaling
+
+  ! ==================================================================
+  ! Empty rows: matrix with some all-zero rows
+  ! ==================================================================
+
+  @test
+  subroutine test_spmv_empty_rows()
+    integer, parameter :: n = 4
+    type(csr_matrix) :: A
+    ! Only rows 1 and 4 have entries; rows 2 and 3 are empty
+    integer :: rows(2), cols(2)
+    complex(kind=dp) :: vals(2), x(n), y(n)
+
+    rows = [1, 4]
+    cols = [3, 2]
+    vals = [cmplx(2.0_dp, 0, dp), cmplx(5.0_dp, 0, dp)]
+    call csr_build_from_coo(A, n, n, 2, rows, cols, vals)
+
+    x = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), &
+         cmplx(3.0_dp, 0, dp), cmplx(4.0_dp, 0, dp)]
+    y = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    call csr_spmv(A, x, y, cmplx(1.0_dp, 0, dp), cmplx(0.0_dp, 0, dp))
+
+    ! Row 1: 2.0 * x(3) = 6.0
+    @assertEqual(cmplx(6.0_dp, 0, dp), y(1), tolerance=1.0e-14_dp)
+    ! Rows 2 and 3: empty -> 0
+    @assertEqual(cmplx(0.0_dp, 0, dp), y(2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(0.0_dp, 0, dp), y(3), tolerance=1.0e-14_dp)
+    ! Row 4: 5.0 * x(2) = 10.0
+    @assertEqual(cmplx(10.0_dp, 0, dp), y(4), tolerance=1.0e-14_dp)
+
+    call csr_free(A)
+  end subroutine test_spmv_empty_rows
+
+  ! ==================================================================
+  ! Alpha scaling: y = (2+3i) * A * x
+  ! ==================================================================
+
+  @test
+  subroutine test_spmv_alpha_complex()
+    integer, parameter :: n = 2
+    type(csr_matrix) :: A
+    integer :: rows(3), cols(3)
+    complex(kind=dp) :: vals(3), x(n), y(n), alpha
+
+    ! 2x2 matrix: [1 2; 3 4]
+    rows = [1, 1, 2]
+    cols = [1, 2, 1]
+    vals = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
+    call csr_build_from_coo(A, n, n, 3, rows, cols, vals)
+
+    x = [cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp)]
+    y = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    alpha = cmplx(2.0_dp, 3.0_dp, kind=dp)
+
+    ! A*x = [3, 3], alpha*A*x = (2+3i)*[3, 3] = [6+9i, 6+9i]
+    call csr_spmv(A, x, y, alpha, cmplx(0.0_dp, 0, dp))
+
+    @assertEqual(cmplx(6.0_dp, 9.0_dp, dp), y(1), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(6.0_dp, 9.0_dp, dp), y(2), tolerance=1.0e-14_dp)
+
+    call csr_free(A)
+  end subroutine test_spmv_alpha_complex
+
+end module test_csr_spmv

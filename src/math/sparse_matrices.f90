@@ -21,6 +21,7 @@ module sparse_matrices
   public :: kron_dense_dense, kron_dense_eye, kron_eye_dense, kron_dense_dense_1d
   public :: csr_set_values_from_coo, csr_build_from_coo_cached
   public :: csr_add, csr_scale, csr_apply_variable_coeff
+  public :: csr_spmv
 
   ! ------------------------------------------------------------------
   ! Compressed Sparse Row (CSR) matrix type for complex-valued
@@ -899,5 +900,37 @@ contains
 
     deallocate(rows_coo, cols_coo, vals_coo)
   end subroutine csr_apply_variable_coeff
+
+  ! ==================================================================
+  ! CSR SpMV: y = alpha*A*x + beta*y
+  ! ==================================================================
+
+  ! ------------------------------------------------------------------
+  ! Sparse matrix-vector multiply: y = alpha * A * x + beta * y
+  !
+  ! A is a csr_matrix, x is a vector of length A%ncols, y is a vector
+  ! of length A%nrows.  Computes the standard CSR SpMV with optional
+  ! alpha/beta scaling.  OpenMP-parallelized over rows.
+  ! ------------------------------------------------------------------
+  subroutine csr_spmv(A, x, y, alpha, beta)
+    type(csr_matrix), intent(in)    :: A
+    complex(kind=dp), intent(in)    :: x(:)
+    complex(kind=dp), intent(inout) :: y(:)
+    complex(kind=dp), intent(in)    :: alpha, beta
+
+    integer :: row, k
+    complex(kind=dp) :: dot
+
+    !$omp parallel do private(row, k, dot) schedule(static)
+    do row = 1, A%nrows
+      dot = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      do k = A%rowptr(row), A%rowptr(row + 1) - 1
+        dot = dot + A%values(k) * x(A%colind(k))
+      end do
+      y(row) = alpha * dot + beta * y(row)
+    end do
+    !$omp end parallel do
+
+  end subroutine csr_spmv
 
 end module sparse_matrices
