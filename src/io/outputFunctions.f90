@@ -250,24 +250,28 @@ module outputFunctions
     !
     ! Each eigenvector has 8*Ngrid complex entries.  The probability
     ! density at grid point (ix, iy) is summed over all 8 bands:
-    !   |psi(x,y)|^2 = sum_{band=1}^{8} |vec((band-1)*Ngrid + (ix-1)*grid%ny + iy)|^2
+    !   |psi(x,y)|^2 = sum_{band=1}^{8} |vec((band-1)*Ngrid + (iy-1)*grid%nx + ix)|^2
     !
     ! Output format (one file per eigenstate per k-point):
     !   x  y  |psi|^2     (three columns, nx*ny rows)
     ! Directly plottable with gnuplot: splot 'file' using 1:2:3
     ! ==================================================================
-    subroutine writeEigenfunctions2d(grid, eigenvalues, eigenvectors, k_index, nev)
+    subroutine writeEigenfunctions2d(grid, eigenvalues, eigenvectors, k_index, nev, write_parts)
 
       type(spatial_grid), intent(in)  :: grid
       real(kind=dp), intent(in)       :: eigenvalues(:)
       complex(kind=dp), intent(in)    :: eigenvectors(:,:)
       integer, intent(in)             :: k_index
       integer, intent(in)             :: nev
+      logical, intent(in), optional   :: write_parts
 
       integer(kind=4) :: iounit, ios
       character(len=255) :: filename
       integer :: n, band, ix, iy, Ngrid, flat_idx, nev_actual
       real(kind=dp) :: prob
+      real(kind=dp), allocatable :: parts(:,:)
+      real(kind=dp) :: dA
+      logical :: do_parts
 
       ! Ensure output directory exists
       call ensure_output_dir()
@@ -276,9 +280,40 @@ module outputFunctions
       if (Ngrid == 0) return
 
       nev_actual = min(nev, size(eigenvectors, 2))
+      dA = grid%dx * grid%dy
+
+      do_parts = .false.
+      if (present(write_parts)) do_parts = write_parts
+
+      ! Compute band decomposition if requested
+      if (do_parts) then
+        allocate(parts(nev_actual, 8))
+        parts = 0.0_dp
+        do n = 1, nev_actual
+          do band = 1, 8
+            prob = 0.0_dp
+            do iy = 1, grid%ny
+              do ix = 1, grid%nx
+                flat_idx = (band - 1) * Ngrid + (iy - 1) * grid%nx + ix
+                prob = prob + abs(eigenvectors(flat_idx, n))**2
+              end do
+            end do
+            parts(n, band) = prob * dA
+          end do
+        end do
+
+        ! Write parts.dat
+        call get_unit(iounit)
+        open(unit=iounit, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
+        do n = 1, nev_actual
+          write(unit=iounit, fmt='(8(g14.6))', iostat=ios) (parts(n, band), band=1, 8)
+        end do
+        close(iounit)
+        deallocate(parts)
+      end if
 
       do n = 1, nev_actual
-        write(filename,'(a,i0.5,a,i0.5,a)') OUTPUT_DIR//'/wf_k', k_index, '_n', n, '.dat'
+        write(filename,'(a,i0.5,a,i0.5,a)') OUTPUT_DIR//'/eigenfunctions_k_', k_index, '_ev_', n, '.dat'
         call get_unit(iounit)
         open(unit=iounit, file=filename, status='replace', action='write')
 
@@ -290,7 +325,7 @@ module outputFunctions
           do ix = 1, grid%nx
             prob = 0.0_dp
             do band = 1, 8
-              flat_idx = (band - 1) * Ngrid + (ix - 1) * grid%ny + iy
+              flat_idx = (band - 1) * Ngrid + (iy - 1) * grid%nx + ix
               prob = prob + abs(eigenvectors(flat_idx, n))**2
             end do
             write(unit=iounit, fmt='(3(g14.6,1x))', iostat=ios) &

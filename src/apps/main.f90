@@ -297,11 +297,11 @@ program kpfdm
       end do
     end if
 
-    ! Write 2D eigenfunctions for k=1
+    ! Write 2D eigenfunctions for k=1 (with band decomposition)
     if (eigen_res%nev_found > 0) then
       call writeEigenfunctions2d(cfg%grid, eigen_res%eigenvalues, &
-        & eigen_res%eigenvectors, 1, eigen_res%nev_found)
-      print *, '  Wrote ', eigen_res%nev_found, ' 2D wavefunctions to output/wf_k1_*.dat'
+        & eigen_res%eigenvectors, 1, eigen_res%nev_found, write_parts=.true.)
+      print *, '  Wrote ', eigen_res%nev_found, ' 2D wavefunctions to output/eigenfunctions_k_00001_ev_*.dat'
     end if
 
     call eigensolver_result_free(eigen_res)
@@ -380,9 +380,9 @@ program kpfdm
 
         if (eigen_res_wf%nev_found > 0) then
           call writeEigenfunctions2d(cfg%grid, eigen_res_wf%eigenvalues, &
-            & eigen_res_wf%eigenvectors, k_wf, eigen_res_wf%nev_found)
+            & eigen_res_wf%eigenvectors, k_wf, eigen_res_wf%nev_found, write_parts=.true.)
           print *, '  Wrote ', eigen_res_wf%nev_found, &
-            & ' 2D wavefunctions to output/wf_k', k_wf, '_*.dat'
+            & ' 2D wavefunctions to output/eigenfunctions_k_', k_wf, '_ev_*.dat'
         end if
 
         call eigensolver_result_free(eigen_res_wf)
