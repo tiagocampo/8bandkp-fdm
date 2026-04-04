@@ -3,19 +3,26 @@ project(8bandkp-fdm Fortran)
 
 # --- Find dependencies ---
 # Intel MKL (oneAPI provides MKLConfig.cmake)
-# Defaults: LP64 interface + sequential threading (matching original Makefile)
+# Defaults: LP64 interface + intel_thread for internal MKL parallelism
+# Note: CMPLR_ROOT must point to Intel compiler for libiomp5 (e.g. /opt/intel/oneapi/compiler/2025.0)
 set(MKL_INTERFACE "lp64" CACHE STRING "MKL interface: lp64 or ilp64")
-set(MKL_THREADING "sequential" CACHE STRING "MKL threading: sequential, intel_thread, etc.")
+set(MKL_THREADING "intel_thread" CACHE STRING "MKL threading: sequential, intel_thread")
 find_package(MKL CONFIG REQUIRED)
 
 # FFTW3
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 find_package(FFTW3 REQUIRED)
 
+# OpenMP for parallel regions
+find_package(OpenMP REQUIRED)
+
+# BLAS/LAPACK backend selector (future portability)
+set(LINALG_BACKEND "MKL" CACHE STRING "BLAS/LAPACK backend: MKL, OPENBLAS, AOCL")
+
 # --- Fortran compiler flags (gfortran) ---
 if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
     set(CMAKE_Fortran_FLAGS "-ffree-line-length-none -fno-second-underscore -ffree-form -fimplicit-none -m64")
-    set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -flto -funroll-loops -mtune=native -march=native")
+    set(CMAKE_Fortran_FLAGS_RELEASE "-O3 -march=haswell -mtune=haswell -ftree-vectorize -fstack-arrays -ffast-math -fno-trapping-math -flto=auto -fuse-linker-plugin")
     set(CMAKE_Fortran_FLAGS_DEBUG "-g -fbacktrace -fbounds-check -fcheck=all")
 endif()
 

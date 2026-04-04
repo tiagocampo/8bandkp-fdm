@@ -62,14 +62,14 @@ set_source_files_properties(
 
 # Main band structure executable
 add_executable(bandStructure apps/main.f90)
-target_link_libraries(bandStructure PRIVATE 8bandkp_common)
+target_link_libraries(bandStructure PRIVATE 8bandkp_common OpenMP::OpenMP_Fortran)
 
 # G-factor calculation executable
 add_executable(gfactorCalculation
     physics/gfactor_functions.f90
     apps/main_gfactor.f90
 )
-target_link_libraries(gfactorCalculation PRIVATE 8bandkp_common)
+target_link_libraries(gfactorCalculation PRIVATE 8bandkp_common OpenMP::OpenMP_Fortran)
 
 # Set module output directory for all targets
 set_target_properties(8bandkp_common bandStructure gfactorCalculation
