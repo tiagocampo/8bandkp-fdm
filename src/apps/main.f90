@@ -10,6 +10,7 @@ program kpfdm
   use sc_loop
   use sparse_matrices
   use eigensolver
+  use strain_solver
 
   implicit none
 
@@ -81,6 +82,25 @@ program kpfdm
     ! Initialize 2D confinement operators (sparse CSR kpterms)
     call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
       & profile_2d, kpterms_2d, cfg%FDorder)
+
+    ! --- Compute strain if enabled (wire mode) ---
+    if (cfg%strain%enabled) then
+      block
+        type(strain_result) :: strain_out
+        real(kind=dp) :: a0_ref
+
+        ! Reference lattice constant from substrate (first material)
+        a0_ref = cfg%params(1)%a0
+
+        call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
+          cfg%strain, a0_ref, strain_out)
+        call apply_pikus_bir(strain_out, cfg%params, cfg%grid%material_id, &
+          cfg%grid, profile_2d)
+        call strain_result_free(strain_out)
+
+        print *, '  Wire strain calculation complete'
+      end block
+    end if
 
     Ngrid = grid_ngrid(cfg%grid)
     Ntot  = 8 * Ngrid
@@ -269,6 +289,25 @@ program kpfdm
       write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
     end do
     close(iounit)
+  end if
+
+  ! --- Compute strain if enabled (QW mode) ---
+  if (cfg%strain%enabled .and. cfg%confinement == 1) then
+    block
+      type(strain_result) :: strain_out_qw
+      real(kind=dp) :: a0_ref
+
+      ! Reference lattice constant from substrate (first material)
+      a0_ref = cfg%params(1)%a0
+
+      call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
+        cfg%strain, a0_ref, strain_out_qw)
+      call apply_pikus_bir(strain_out_qw, cfg%params, cfg%grid%material_id, &
+        cfg%grid, profile)
+      call strain_result_free(strain_out_qw)
+
+      print *, '  QW strain calculation complete'
+    end block
   end if
 
   ! --- Self-consistent loop (QW only) ---
