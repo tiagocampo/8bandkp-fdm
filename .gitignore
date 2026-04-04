@@ -1,5 +1,5 @@
 # Build directories
-build/
+build*/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
@@ -44,7 +44,11 @@ Thumbs.db
 *.old
 *.orig
 
+# Documentation (large/generated)
+docs/papers/
+docs/articles/
+
 # CMake generated files
 Makefile
 *.cmake
-Testing/ 
+Testing/
