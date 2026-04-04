@@ -409,7 +409,7 @@ contains
     real(kind=dp) :: dx, dy, cx, cy, x_coord, y_coord
     real(kind=dp) :: max_strain, boundary_strain, tr_eps
     real(kind=dp) :: jump_max
-    integer :: ix, iy, ij, mid, ngrid
+    integer :: ix, iy, ij, mid
     integer :: material_id_2d(nx, ny)
     integer :: n_core_active, n_boundary_active
 
@@ -417,8 +417,6 @@ contains
     dy = Ly / real(ny, kind=dp)
     cx = 0.5_dp * Lx
     cy = 0.5_dp * Ly
-    ngrid = nx * ny
-
     ! Material 1 = InAs, Material 2 = GaAs
     materials(1) = "InAs"
     materials(2) = "GaAs"
