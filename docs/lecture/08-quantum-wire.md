@@ -58,7 +58,7 @@ factors as:
 
 $$\mathbf{G}_{2D} = I_{N_y} \otimes D^{(1)}_x + D^{(1)}_y \otimes I_{N_x}$$
 
-and the cross-derivative $d^2/dx\,dy$ as:
+and the cross-derivative $\partial^2/\partial x \partial y$ as:
 
 $$\mathbf{X}_{2D} = D^{(1)}_y \otimes D^{(1)}_x$$
 
@@ -80,7 +80,7 @@ Analogous to the 1D `kpterms(N, N, 10)` array used for quantum wells (Chapter 02
 | 8 | $(\gamma_1 + 2\gamma_2)(x,y) \cdot \nabla^2_{2D}$ | Laplacian |
 | 9 | $\gamma_3(x,y) \cdot \boldsymbol{\nabla}_{2D}$ | Gradient |
 | 10 | $A(x,y)$ | Diagonal |
-| 11 | $\gamma_3(x,y) \cdot \partial^2/\partial x\partial y$ | Cross-derivative |
+| 11 | $\gamma_3(x,y) \cdot \partial^2/\partial x \partial y$ | Cross-derivative |
 | 12 | $P(x,y) \cdot \partial/\partial x$ | x-gradient only |
 | 13 | $P(x,y) \cdot \partial/\partial y$ | y-gradient only |
 | 14 | $\gamma_3(x,y) \cdot \partial/\partial x$ | x-gradient only |
@@ -99,9 +99,9 @@ H_{21} & H_{22} & \cdots & H_{28} \\
 H_{81} & H_{82} & \cdots & H_{88}
 \end{pmatrix}$$
 
-The k.p blocks are built from the `kpterms_2d` operators combined with $k_z$-dependent scalar multipliers. For example, in the wire the Q term becomes:
+The k.p blocks are built from the `kpterms_2d` operators combined with $k_z$-dependent scalar multipliers. For example, the Q term becomes:
 
-$$Q = -\left[(\gamma_1 + \gamma_2) k_z^2 I + \text{kpterms\_2d}(7)\right]$$
+$$Q = -\bigl[(\gamma_1 + \gamma_2)\, k_z^2\, I + \text{kpterms\_2d}(7)\bigr]$$
 
 where `kpterms_2d(7)` already contains the 2D kinetic operator $-(\gamma_1 - 2\gamma_2) \cdot \nabla^2_{2D}$. The factor $k_z^2$ is a scalar (the free propagation direction), while the spatial derivatives in $x$ and $y$ are encoded in the sparse operator.
 
@@ -155,7 +155,7 @@ and the oscillator strength along direction $\hat{d}$ is:
 
 $$f_d = \frac{2}{m_0} \frac{|\langle \psi_{\text{CB}}^{(i)} | p_d | \psi_{\text{VB}}^{(j)} \rangle|^2}{\Delta E}$$
 
-For the wire, the momentum matrix elements are computed using `compute_pele_2d`, which evaluates $\langle \text{state}_a | H_{\text{pert},d} | \text{state}_b \rangle$ over the 2D grid with the appropriate $dx \cdot dy$ integration weight. The three polarization directions ($x$, $y$, $z$) give distinct selection rules determined by the wire symmetry.
+For the wire, the momentum matrix elements are computed using `compute_pele_2d`, which evaluates $\langle \text{state}_a | H_{\text{pert},d} | \text{state}_b \rangle$ over the 2D grid with the appropriate $\Delta x \cdot \Delta y$ integration weight. The three polarization directions ($x$, $y$, $z$) give distinct selection rules determined by the wire symmetry.
 
 ---
 
@@ -180,9 +180,9 @@ Material regions are specified by `region_spec`:
 
 ```fortran
 type region_spec
-  character(len=255) :: material = ''   ! material name
-  real(kind=dp)      :: inner   = 0.0_dp  ! inner distance from center (AA)
-  real(kind=dp)      :: outer   = 0.0_dp  ! outer distance from center (AA)
+  character(len=255) :: material = ''         ! material name
+  real(kind=dp)      :: inner   = 0.0_dp      ! inner distance from center (AA)
+  real(kind=dp)      :: outer   = 0.0_dp      ! outer distance from center (AA)
 end type region_spec
 ```
 
@@ -371,7 +371,7 @@ The program reads `input.cfg`, initializes the wire grid via `init_wire_from_con
 
 ### 3.4 Expected physics and output
 
-The band structure output `E(k_z)` (Figure: `wire_subbands.png`) shows:
+The band structure output $E(k_z)$ (Figure: `wire_subbands.png`) shows:
 - Several 1D subbands with parabolic dispersion near $k_z = 0$
 - The subband spacing depends on the wire width and the GaAs effective mass
 - For a 22 A square wire, the confinement energy of the lowest subband is on the order of a few hundred meV
@@ -384,9 +384,103 @@ Optical transition strengths (Figure: `wire_optical.png`) show the oscillator st
 
 ---
 
-## 4. Discussion
+## 4. The 2D Poisson Solver
 
-### 4.1 Grid resolution and convergence
+### 4.1 Self-consistent Schrodinger-Poisson for wires
+
+When the wire is doped or placed in an external electric field, the electrostatic potential $\phi(x,y)$ must be determined self-consistently with the quantum mechanical charge density. The wire SC loop follows the same iterative scheme as the QW case (Chapter 07), but the Poisson equation is now two-dimensional:
+
+$$\frac{\partial}{\partial x}\left[\varepsilon(x,y)\frac{\partial \phi}{\partial x}\right] + \frac{\partial}{\partial y}\left[\varepsilon(x,y)\frac{\partial \phi}{\partial y}\right] = -\frac{\rho(x,y)}{\varepsilon_0}$$
+
+where $\varepsilon(x,y)$ is the position-dependent dielectric constant and $\rho(x,y)$ is the charge density computed from the k.p eigenstates.
+
+### 4.2 Box-integration discretization
+
+The 2D Poisson equation is discretized using box integration on the $N_x \times N_y$ grid, the same approach as the 1D case (Chapter 07) extended to two dimensions. The divergence theorem converts the continuous equation to a flux balance over each grid cell:
+
+$$\oint_{\partial \Omega_{ij}} \varepsilon \, \nabla\phi \cdot \hat{n} \, dl = -\frac{\rho_{ij} \, \Delta x \, \Delta y}{\varepsilon_0}$$
+
+For interior cells, the line integral becomes a sum over the four cell faces. Each face flux is approximated as the product of the average dielectric constant, the face fraction (from the cut-cell geometry), and the finite difference approximation to $\partial\phi/\partial x$ or $\partial\phi/\partial y$. For cut cells at the wire boundary, the face fractions correctly weight the flux through partial faces.
+
+The resulting sparse linear system is assembled in COO format, converted to CSR, and solved with the **MKL PARDISO** sparse direct solver (real unsymmetric, mtype=11). Dirichlet boundary conditions are imposed on all edges of the simulation domain.
+
+### 4.3 Charge density and SC iteration
+
+The charge density $\rho(x,y)$ is computed from the k.p eigenstates by integrating $|\psi(x,y)|^2$ weighted by the Fermi-Dirac occupation over all occupied subbands and $k_z$ values in the Brillouin zone:
+
+$$\rho(x,y) = -e \sum_n \int \frac{dk_z}{2\pi} \, |\psi_n(x,y)|^2 \, f\!\left(\frac{E_n(k_z) - E_F}{k_B T}\right)$$
+
+where the sum runs over all computed subbands and the integral over $k_z$ is discretized using a uniform grid with `SC_num_kpar` points up to `SC_kpar_max`. The `self_consistent_loop_wire` subroutine in `sc_loop.f90` orchestrates this iteration with optional DIIS (Pulay) acceleration for faster convergence, following the same mixing strategy as the QW case.
+
+---
+
+## 5. Published Example: SOC Effects in ZB InSb and WZ InAs Nanowires
+
+### 5.1 Reference
+
+**P. E. Faria Junior, T. Campos, J. Fabian, G. M. Sipahi**, "Spin-orbit coupling effects in zinc-blende and wurtzite InSb and InAs nanowires," *Phys. Rev. B* **97**, 245402 (2018). [arXiv:1802.06734](https://arxiv.org/abs/1802.06734)
+
+### 5.2 What the paper computes
+
+This study calculates the electronic subband structure, g-factors, and spin-orbit coupling parameters for two families of semiconductor nanowires:
+
+1. **Zinc-blende InSb nanowires** with cylindrical cross-section
+2. **Wurtzite InAs nanowires** with cylindrical cross-section
+
+Both are treated within the 8-band k.p framework, but with different Hamiltonian matrices reflecting the respective crystal symmetries. The key results include:
+
+- **Subband dispersions** $E_n(k_z)$ showing the characteristic avoided crossings due to spin-orbit coupling. The zinc-blende [001] axis and wurtzite [0001] axis both align with the wire growth direction, producing quantized transverse modes with distinct spin textures.
+- **Lande g-factors** for the lowest conduction subband as a function of wire radius. The paper demonstrates that narrow InSb wires exhibit g-factor values $|g| \gg 2$ (far from the free-electron value), with strong radius dependence. This enhancement arises from the band mixing between conduction and valence bands that is captured by the 8-band model but missed by simpler effective-mass approximations.
+- **Rashba and Dresselhaus spin-orbit fields** extracted from the subband structure. In zinc-blende nanowires, the bulk inversion asymmetry (Dresselhaus effect) and structural inversion asymmetry from electric fields (Rashba effect) combine to produce a total spin-orbit field that depends on both the wire radius and the applied field.
+- **Comparison between ZB and WZ crystal phases**, showing qualitatively different spin-orbit behavior: the wurtzite phase has an intrinsic Rashba-like spin splitting even without an external field, due to the built-in polar asymmetry along the c-axis.
+
+### 5.3 What this code can reproduce
+
+The zinc-blende InSb nanowire portion can be reproduced using the wire mode (`confinement=2`):
+
+- **Subband structure:** A circular InSb wire with the `circle` shape and InSb material parameters from `parameters.f90` gives $E_n(k_z)$ subbands that match the paper's Figure 1. The grid needs to be fine enough to resolve the cylindrical boundary; an $81 \times 81$ grid with `FDorder = 2` or a $41 \times 41$ grid with `FDorder = 4` is recommended.
+- **g-factor:** The `gfactorCalculation_wire` routine computes the full g-tensor for the lowest CB subband. The g-factor vs. radius trend in the paper's Figure 2 is reproduced by running a series of calculations with varying wire radius and plotting $g_{zz}$, $g_{xx}$, $g_{yy}$ against the radius.
+- **Electric field effects:** An applied electric field (via `ExternalField` + `EFParams`) breaks the cylindrical symmetry and introduces Rashba spin-orbit coupling. The field-dependent g-factor shifts reproduce the paper's Figure 3, which shows how the g-factor is tuned by a transverse electric field.
+
+Example configuration for a circular InSb wire (partial, needs `grid_init_circle` support):
+
+```
+confinement:  2
+wire_nx: 41
+wire_ny: 41
+wire_dx: 1.0
+wire_dy: 1.0
+wire_shape: circle
+wire_radius: 20.0
+numRegions: 1
+region: InSb  0.0  100.0
+numcb: 2
+numvb: 4
+waveVector: kz
+waveVectorMax: 0.05
+waveVectorStep: 11
+```
+
+### 5.4 What is missing for full reproduction
+
+Full reproduction of the paper requires capabilities not yet in the code:
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Circular wire geometry | Implemented in `geometry.f90` | `grid_init_circle` with analytical chord intersection |
+| InSb material parameters | Available in `parameters.f90` | Zinc-blende parameters from Vurgaftman 2001 |
+| Wire g-factor calculation | Implemented | `gfactorCalculation_wire` in `gfactor_functions.f90` |
+| Wurtzite 8-band Hamiltonian | **Not implemented** | Requires entirely new $8 \times 8$ Hamiltonian with wurtzite symmetry, different basis functions |
+| Wurtzite material parameters | **Not in `parameters.f90`** | Need InAs WZ parameters from DFT/experiment (Winkler 2003) |
+| Rashba parameter extraction | Not automated | Can be extracted manually from subband spin splittings at finite $k_z$ |
+
+The ZB InSb nanowire results (approximately half the paper) constitute a meaningful partial reproduction that validates the wire Hamiltonian assembly, sparse solver, cut-cell geometry, and g-factor machinery. The wurtzite InAs portion requires a major new feature (wurtzite Hamiltonian) that is noted as a future development priority.
+
+---
+
+## 6. Discussion
+
+### 6.1 Grid resolution and convergence
 
 The wire mode introduces two independent grid resolution parameters, $N_x$ and $N_y$, with spacings $\Delta x$ and $\Delta y$. Convergence requires both to be fine enough to resolve the envelope function oscillations within the wire. The grid spacing should satisfy $\Delta x, \Delta y \ll \lambda_{\text{envelope}} / 2$, where $\lambda_{\text{envelope}}$ is the shortest characteristic length scale of the confined wavefunction.
 
@@ -394,30 +488,30 @@ For second-order FD, the energy error scales as $O(\Delta x^2 + \Delta y^2)$. Hi
 
 A practical guideline: for typical III-V semiconductor wires with cross-section dimensions of 10--50 nm, $N_x = N_y = 40\text{--}80$ with `FDorder = 2` gives sub-meV convergence for the lowest subbands. For tight confinement or high-accuracy g-factors, `FDorder = 4` with finer grids is recommended.
 
-### 4.2 Memory scaling
+### 6.2 Memory scaling
 
 The wire Hamiltonian dimension is $8 N_{\text{grid}}$, where $N_{\text{grid}} = N_x \times N_y$. The number of nonzeros scales as $O(8^2 \times N_{\text{grid}} \times w)$ where $w$ is the stencil width (e.g., $w = 5$ for 2nd-order 2D Laplacian). For a $50 \times 50$ grid with second-order FD:
 
 - $N_{\text{grid}} = 2500$, matrix dimension = 20,000
 - NNZ per block $\approx 2500 \times 5 = 12{,}500$
 - Total NNZ $\approx 64 \times 12{,}500 + \text{profile diagonal} \approx 800{,}000$
-- Memory for CSR: $\sim$25 MB (complex*16 values + integer indices)
+- Memory for CSR: about 25 MB (complex*16 values + integer indices)
 
-This fits comfortably in RAM on any modern workstation. For grids up to $200 \times 200$ ($N_{\text{grid}} = 40{,}000$, dimension 320,000), the memory requirement is still manageable ($\sim$4 GB), but the eigenvalue solve becomes the bottleneck. The FEAST solver with an appropriate energy window is essential for such sizes.
+This fits comfortably in RAM on any modern workstation. For grids up to $200 \times 200$ ($N_{\text{grid}} = 40{,}000$, dimension 320,000), the memory requirement is still manageable (about 4 GB), but the eigenvalue solve becomes the bottleneck. The FEAST solver with an appropriate energy window is essential for such sizes.
 
-### 4.3 COO cache: accelerating $k_z$ sweeps
+### 6.3 COO cache: accelerating $k_z$ sweeps
 
 The COO-to-CSR mapping is cached in the `wire_coo_cache` type. On the first $k_z$ point, the full sort-merge-build pipeline runs once ($O(\text{NNZ} \log \text{NNZ})$). On all subsequent points, only the values are updated in $O(\text{NNZ})$ time, because the sparsity pattern (which entries exist) is independent of $k_z$ -- only the numerical values change.
 
-This optimization reduces the Hamiltonian assembly cost for large $k_z$ sweeps by a factor of $\sim \log(\text{NNZ})$, which is significant for production calculations with hundreds of $k_z$ points.
+This optimization reduces the Hamiltonian assembly cost for large $k_z$ sweeps by a factor of roughly $\log(\text{NNZ})$, which is significant for production calculations with hundreds of $k_z$ points.
 
-### 4.4 Boundary conditions and wire shape
+### 6.4 Boundary conditions and wire shape
 
 The FD discretization imposes hard-wall (Dirichlet) boundary conditions at the grid edges: the envelope function is zero at the boundary. For rectangular wires, this is physically correct when the barrier material has a large band offset. For non-rectangular shapes, the cut-cell immersed boundary handles the smooth boundary correctly, but the outer grid boundary still imposes hard walls. The simulation domain must be large enough that the wavefunction decays to negligible amplitude before reaching the outer boundary.
 
 For core-shell wires (e.g., InAs core with GaAs shell), multiple regions with different band offsets create a more realistic confinement profile. The inner/outer distances in the `region_spec` type define concentric annular regions.
 
-### 4.5 Comparison with quantum well mode
+### 6.5 Comparison with quantum well mode
 
 | Aspect | QW (`confinement=1`) | Wire (`confinement=2`) |
 |--------|----------------------|----------------------|
@@ -431,13 +525,13 @@ For core-shell wires (e.g., InAs core with GaAs shell), multiple regions with di
 | Material mapping | 1D layers | 2D regions with cut-cell |
 | Subband structure | 2D sheets $E(k_\parallel)$ | 1D modes $E(k_z)$ |
 
-### 4.6 Limitations and tips
+### 6.6 Limitations and tips
 
 **Current limitations:**
 - The free propagation direction is fixed to $z$ (`confDir = 'z'`)
 - The grid is uniform (no adaptive mesh refinement)
 - Self-consistent Schrodinger-Poisson for wires uses the 2D Poisson solver `solve_poisson_2d` with box integration and cut-cell support
-- Strain is handled by the strain solver module (`src/physics/strain_solver.f90`) but is not yet integrated into the wire pipeline
+- Strain is handled by the strain solver module (`src/physics/strain_solver.f90`) but is not yet fully integrated into the wire pipeline
 
 **Tips for production calculations:**
 - Start with a coarse grid ($N_x = N_y = 20$) to verify the geometry and subband ordering, then refine

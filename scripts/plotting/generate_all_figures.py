@@ -447,11 +447,11 @@ def fig_bulk_gaas_parts(output_dir: Path) -> None:
     print("  -> docs/figures/bulk_gaas_parts.png")
 
 
-def fig_qw_alsb_gasb_inas_bands(output_dir: Path) -> None:
-    """qw_alsb_gasb_inas_bands.png: E(k_parallel) subbands from QW."""
-    print("[figure] qw_alsb_gasb_inas_bands")
-    cfg = CONFIG_DIR / "qw_alsb_gasb_inas.cfg"
-    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsb_gasb_inas")
+def fig_qw_alsbw_gasbw_inasw_bands(output_dir: Path) -> None:
+    """qw_alsbw_gasbw_inasw_bands.png: E(k_parallel) subbands from QW."""
+    print("[figure] qw_alsbw_gasbw_inasw_bands")
+    cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
     k_vals, eig = parse_eigenvalues(output_dir)
 
     fig, ax = plt.subplots(figsize=(5.5, 5))
@@ -471,9 +471,9 @@ def fig_qw_alsb_gasb_inas_bands(output_dir: Path) -> None:
     ax.set_title("AlSb/GaSb/InAs QW subbands")
     ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
     fig.tight_layout()
-    fig.savefig(FIGURE_DIR / "qw_alsb_gasb_inas_bands.png")
+    fig.savefig(FIGURE_DIR / "qw_alsbw_gasbw_inasw_bands.png")
     plt.close(fig)
-    print("  -> docs/figures/qw_alsb_gasb_inas_bands.png")
+    print("  -> docs/figures/qw_alsbw_gasbw_inasw_bands.png")
 
 
 def fig_qw_potential_profile(output_dir: Path) -> None:
@@ -483,8 +483,8 @@ def fig_qw_potential_profile(output_dir: Path) -> None:
     try:
         z, EV, EV_SO, EC = parse_potential_profile(output_dir)
     except FileNotFoundError:
-        cfg = CONFIG_DIR / "qw_alsb_gasb_inas.cfg"
-        run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsb_gasb_inas")
+        cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+        run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
         z, EV, EV_SO, EC = parse_potential_profile(output_dir)
 
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -511,8 +511,8 @@ def fig_qw_wavefunctions(output_dir: Path) -> None:
     try:
         z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=4, n_z=n_z)
     except FileNotFoundError:
-        cfg = CONFIG_DIR / "qw_alsb_gasb_inas.cfg"
-        run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsb_gasb_inas")
+        cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+        run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
         z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=4, n_z=n_z)
 
     if z.size == 0:
@@ -544,8 +544,8 @@ def fig_qw_parts(output_dir: Path) -> None:
     try:
         parts = parse_parts(output_dir)
     except FileNotFoundError:
-        cfg = CONFIG_DIR / "qw_alsb_gasb_inas.cfg"
-        run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsb_gasb_inas")
+        cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+        run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
         parts = parse_parts(output_dir)
 
     if parts.size == 0:
@@ -670,21 +670,38 @@ def fig_gfactor_zeeman(output_dir: Path) -> None:
 
 
 def fig_sc_potential(output_dir: Path) -> None:
-    """sc_potential.png: self-consistent potential profile."""
-    print("[figure] sc_potential")
-    cfg = CONFIG_DIR / "sc_gaas_alas_qw.cfg"
-    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="sc_gaas_alas_qw", timeout=600)
-    if result.returncode != 0:
-        print("  WARNING: SC run failed, trying alternative config.")
-        cfg = CONFIG_DIR / "sc_gaas_alas_qw_ef.cfg"
-        result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="sc_gaas_alas_qw_ef", timeout=600)
+    """sc_potential.png: band-edge profile from QW heterostructure.
 
-    try:
-        z, EV, EV_SO, EC = parse_sc_potential(output_dir)
-    except FileNotFoundError:
-        # Fallback: use the regular potential profile if SC did not produce separate file
+    Uses the W-variant QW (AlSbW/GaSbW/InAsW) which has well-defined
+    band offsets. If the SC run produced ``sc_potential_profile.dat`` with
+    meaningful band bending it will be used; otherwise the base profile
+    from ``potential_profile.dat`` is shown.
+    """
+    print("[figure] sc_potential")
+    # Run QW first to get the heterostructure profile
+    cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_potential")
+
+    # Try SC potential first (has self-consistent correction overlaid)
+    sc_path = output_dir / "sc_potential_profile.dat"
+    if sc_path.exists():
+        data = np.loadtxt(str(sc_path))
+        z, EV, EV_SO, EC = data[:, 0], data[:, 1], data[:, 2], data[:, 3]
+        # Check if SC correction is significant (more than 1 meV spread)
+        if (EV.max() - EV.min()) > 0.001:
+            title = "Self-consistent band edges (GaAs/AlAs QW, SC)"
+            subtitle_note = "SC"
+        else:
+            # SC correction negligible — use the heterostructure profile instead
+            try:
+                z, EV, EV_SO, EC = parse_potential_profile(output_dir)
+                title = "Band-edge profile (AlSbW/GaSbW/InAsW QW)"
+            except FileNotFoundError:
+                title = "Band-edge profile (SC correction < 1 meV)"
+    else:
         try:
             z, EV, EV_SO, EC = parse_potential_profile(output_dir)
+            title = "Band-edge profile (AlSbW/GaSbW/InAsW QW)"
         except FileNotFoundError:
             print("  WARNING: no potential profile data, skipping.")
             return
@@ -697,7 +714,7 @@ def fig_sc_potential(output_dir: Path) -> None:
     ax.fill_between(z, EC, EC.max() + 0.1, alpha=0.06, color="#17becf")
     ax.set_xlabel(r"$z$ (A)")
     ax.set_ylabel("Energy (eV)")
-    ax.set_title("Self-consistent band edges (GaAs/AlAs QW)")
+    ax.set_title(title)
     ax.legend(loc="best")
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "sc_potential.png")
@@ -810,12 +827,16 @@ def fig_wire_density_2d(output_dir: Path) -> None:
 
 
 def fig_convergence_fd_order(output_dir: Path) -> None:
-    """convergence_fd_order.png: convergence vs FD order (2,4,6,8)."""
+    """convergence_fd_order.png: convergence vs FD order (2,4,6,8).
+
+    Uses a QW config because FD order only affects the finite-difference
+    discretisation of the z-derivative, which is absent in bulk mode.
+    """
     print("[figure] convergence_fd_order")
-    # Use a bulk config as base and modify FDorder
-    base_cfg = CONFIG_DIR / "bulk_gaas_kx.cfg"
+    # Use a QW config — FD order matters for confined structures
+    base_cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
     if not base_cfg.exists():
-        print("  WARNING: bulk_gaas_kx.cfg not found, skipping.")
+        print("  WARNING: qw_alsbw_gasbw_inasw.cfg not found, skipping.")
         return
 
     base_text = base_cfg.read_text()
@@ -824,12 +845,23 @@ def fig_convergence_fd_order(output_dir: Path) -> None:
     energies_at_gamma: Dict[int, np.ndarray] = {}
 
     for order in fd_orders:
-        # Modify FDorder line in config text
+        # Modify FDorder line in config text; also reduce numcb/numvb for speed
         lines = base_text.splitlines()
         modified_lines = []
         for line in lines:
-            if line.strip().startswith("FDorder"):
+            stripped = line.strip()
+            if stripped.startswith("FDorder"):
                 modified_lines.append(f"FDorder: {order}")
+            elif stripped.startswith("waveVectorMax"):
+                modified_lines.append("waveVectorMax: 0.0")
+            elif stripped.startswith("waveVectorStep"):
+                modified_lines.append("waveVectorStep: 1")
+            elif stripped.startswith("waveVector:"):
+                modified_lines.append("waveVector: k0")
+            elif stripped.startswith("numcb"):
+                modified_lines.append("numcb: 8")
+            elif stripped.startswith("numvb"):
+                modified_lines.append("numvb: 8")
             else:
                 modified_lines.append(line)
         modified_text = "\n".join(modified_lines) + "\n"
@@ -838,7 +870,7 @@ def fig_convergence_fd_order(output_dir: Path) -> None:
         tmp_cfg = REPO_ROOT / "input.cfg"
         tmp_cfg.write_text(modified_text)
 
-        print(f"  [FDorder={order}] Running bulk GaAs ...")
+        print(f"  [FDorder={order}] Running QW ...")
         result = subprocess.run(
             [str(EXE_BAND)],
             cwd=str(REPO_ROOT),
@@ -852,7 +884,7 @@ def fig_convergence_fd_order(output_dir: Path) -> None:
 
         try:
             k_vals, eig = parse_eigenvalues(output_dir)
-            # Take eigenvalues at k=0 (first k-point)
+            # Take eigenvalues at k=0 (first and only k-point)
             energies_at_gamma[order] = eig[:, 0]
         except FileNotFoundError:
             print(f"  [FDorder={order}] eigenvalues.dat not found, skipping.")
@@ -871,6 +903,8 @@ def fig_convergence_fd_order(output_dir: Path) -> None:
         diffs = []
         valid_orders = []
         for order in orders:
+            if order == ref_order:
+                continue  # skip reference — diff is zero, breaks log scale
             e = energies_at_gamma[order]
             if band_idx < e.shape[0]:
                 diffs.append(abs(e[band_idx] - ref_e[band_idx]))
@@ -898,7 +932,7 @@ def fig_timing_dense_vs_sparse(output_dir: Path) -> None:
     results: Dict[str, float] = {}
 
     # Dense: QW with AlSb/GaSb/InAs
-    cfg_qw = CONFIG_DIR / "qw_alsb_gasb_inas.cfg"
+    cfg_qw = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
     if cfg_qw.exists():
         t0 = time.time()
         r = run_executable(EXE_BAND, cfg_qw, REPO_ROOT, label="QW dense")
@@ -949,7 +983,7 @@ def fig_timing_dense_vs_sparse(output_dir: Path) -> None:
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
-    "qw_alsb_gasb_inas_bands": fig_qw_alsb_gasb_inas_bands,
+    "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,
     "qw_wavefunctions": fig_qw_wavefunctions,
     "qw_parts": fig_qw_parts,
