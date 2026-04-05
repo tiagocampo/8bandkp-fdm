@@ -678,33 +678,26 @@ def fig_sc_potential(output_dir: Path) -> None:
     from ``potential_profile.dat`` is shown.
     """
     print("[figure] sc_potential")
+
+    # Remove any stale sc_potential_profile.dat that may have been produced
+    # by a prior wire SC run (5-column 2D format). The QW run below will
+    # produce a fresh potential_profile.dat with 4-column 1D format.
+    sc_path = output_dir / "sc_potential_profile.dat"
+    if sc_path.exists():
+        sc_path.unlink()
+        print("  Removed stale sc_potential_profile.dat")
+
     # Run QW first to get the heterostructure profile
     cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
     run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_potential")
 
-    # Try SC potential first (has self-consistent correction overlaid)
-    sc_path = output_dir / "sc_potential_profile.dat"
-    if sc_path.exists():
-        data = np.loadtxt(str(sc_path))
-        z, EV, EV_SO, EC = data[:, 0], data[:, 1], data[:, 2], data[:, 3]
-        # Check if SC correction is significant (more than 1 meV spread)
-        if (EV.max() - EV.min()) > 0.001:
-            title = "Self-consistent band edges (GaAs/AlAs QW, SC)"
-            subtitle_note = "SC"
-        else:
-            # SC correction negligible — use the heterostructure profile instead
-            try:
-                z, EV, EV_SO, EC = parse_potential_profile(output_dir)
-                title = "Band-edge profile (AlSbW/GaSbW/InAsW QW)"
-            except FileNotFoundError:
-                title = "Band-edge profile (SC correction < 1 meV)"
-    else:
-        try:
-            z, EV, EV_SO, EC = parse_potential_profile(output_dir)
-            title = "Band-edge profile (AlSbW/GaSbW/InAsW QW)"
-        except FileNotFoundError:
-            print("  WARNING: no potential profile data, skipping.")
-            return
+    # potential_profile.dat should now be 4-column 1D (QW format)
+    try:
+        z, EV, EV_SO, EC = parse_potential_profile(output_dir)
+        title = "Band-edge profile (AlSbW/GaSbW/InAsW QW)"
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"  WARNING: could not parse potential profile ({exc}), skipping.")
+        return
 
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.plot(z, EV, color="#d62728", linewidth=1.5, label="$E_V$")
@@ -772,7 +765,7 @@ def fig_sc_convergence(output_dir: Path) -> None:
 
 
 def fig_wire_subbands(output_dir: Path) -> None:
-    """wire_subbands.png: E(k_z) wire subbands."""
+    """wire_subbands.png: valence subbands E(k_z) for GaAs rectangular wire."""
     print("[figure] wire_subbands")
     cfg = CONFIG_DIR / "wire_gaas_rectangle.cfg"
     run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_gaas", timeout=300)
@@ -782,42 +775,87 @@ def fig_wire_subbands(output_dir: Path) -> None:
         print("  WARNING: eigenvalues.dat not found for wire, skipping.")
         return
 
+    # GaAs valence band edge (all eigenvalues are deep VB states)
+    EV_GAAS = -0.80
+
     fig, ax = plt.subplots(figsize=(5, 4.5))
     n_bands = eig.shape[0]
+    vb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.9, n_bands))
     for i in range(n_bands):
-        e_mean = np.mean(eig[i])
-        color = "#17becf" if e_mean > 0 else "#d62728"
-        ax.plot(k_vals, eig[i], color=color, linewidth=0.9)
+        ax.plot(k_vals, eig[i], color=vb_colors[i], linewidth=0.9)
+    ax.axhline(EV_GAAS, color="grey", linewidth=0.8, linestyle="--",
+               label=f"$E_V$ = {EV_GAAS:.2f} eV")
     ax.set_xlabel(r"$k_z$ (1/A)")
     ax.set_ylabel(r"$E$ (eV)")
-    ax.set_title("GaAs rectangular wire subbands")
-    ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+    ax.set_title("GaAs rectangular wire valence subbands")
+    ax.legend(loc="best", fontsize=8)
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "wire_subbands.png")
     plt.close(fig)
     print("  -> docs/figures/wire_subbands.png")
 
 
-def fig_wire_density_2d(output_dir: Path) -> None:
-    """wire_density_2d.png: 2D |psi(x,y)|^2 colormap for wire."""
-    print("[figure] wire_density_2d")
-    # Uses output from wire run (re-run if needed)
+def _find_ev_idx_nearest_to_energy(output_dir: Path, target_eV: float) -> int:
+    """Return the eigenfunction index (1-based) whose eigenvalue at k=1 is
+    closest to *target_eV* by reading the comment header of each file."""
+    for ev_idx in range(1, 100):
+        fname = output_dir / f"eigenfunctions_k_00001_ev_{ev_idx:05d}.dat"
+        if not fname.exists():
+            break
+    n_ev = ev_idx - 1  # last existing index
+    if n_ev == 0:
+        return 1
+    # Read eigenvalues from eigenvalues.dat row 1 (k=1)
     try:
-        x, y, psi2 = parse_wire_eigenfunction_2d(output_dir, k_idx=1, ev_idx=1)
+        _, eig = parse_eigenvalues(output_dir)
+        e_at_k1 = eig[:, 0]  # first k-point
+    except (FileNotFoundError, IndexError):
+        return n_ev  # fall back to highest VB state
+    best_idx = int(np.argmin(np.abs(e_at_k1 - target_eV))) + 1  # 1-based
+    return best_idx
+
+
+def fig_wire_density_2d(output_dir: Path) -> None:
+    """wire_density_2d.png: 2D |psi(x,y)|^2 for the VB-edge state."""
+    print("[figure] wire_density_2d")
+
+    # GaAs valence band edge
+    EV_GAAS = -0.80
+
+    # Find eigenfunction closest to VB edge (not the deepest state)
+    ev_idx = _find_ev_idx_nearest_to_energy(output_dir, EV_GAAS)
+    print(f"  Using eigenfunction ev_idx={ev_idx} (closest to EV={EV_GAAS} eV)")
+
+    try:
+        x, y, psi2 = parse_wire_eigenfunction_2d(output_dir, k_idx=1, ev_idx=ev_idx)
     except FileNotFoundError:
         cfg = CONFIG_DIR / "wire_gaas_rectangle.cfg"
         run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_gaas", timeout=300)
-        x, y, psi2 = parse_wire_eigenfunction_2d(output_dir, k_idx=1, ev_idx=1)
+        ev_idx = _find_ev_idx_nearest_to_energy(output_dir, EV_GAAS)
+        x, y, psi2 = parse_wire_eigenfunction_2d(output_dir, k_idx=1, ev_idx=ev_idx)
 
     if x.size == 0:
         print("  WARNING: no wire eigenfunction data, skipping.")
         return
 
+    # Read the energy of the chosen state for the title
+    state_energy = ""
+    ev_file = output_dir / f"eigenfunctions_k_00001_ev_{ev_idx:05d}.dat"
+    if ev_file.exists():
+        with open(ev_file) as f:
+            for line in f:
+                if line.startswith("# E ="):
+                    state_energy = line.replace("# E =", "").strip()
+                    break
+
     fig, ax = plt.subplots(figsize=(5, 4.5))
     im = ax.pcolormesh(x, y, psi2, shading="auto", cmap="viridis")
     ax.set_xlabel(r"$x$ (A)")
     ax.set_ylabel(r"$y$ (A)")
-    ax.set_title(r"$|\psi(x,y)|^2$ lowest state")
+    title = r"$|\psi(x,y)|^2$ VB-edge state"
+    if state_energy:
+        title += f" (E = {state_energy} eV)"
+    ax.set_title(title)
     ax.set_aspect("equal")
     fig.colorbar(im, ax=ax, label=r"$|\psi|^2$")
     fig.tight_layout()
