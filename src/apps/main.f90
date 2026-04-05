@@ -46,7 +46,10 @@ program kpfdm
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   real(kind=dp), allocatable       :: eig_wire(:,:)
-  integer                          :: Ngrid, Ntot, nev_wire
+  integer                          :: Ngrid, Ntot, nev_wire, max_nev_found
+
+  ! --- QW SC charge density output ---
+  real(kind=dp), allocatable       :: sc_ne_qw(:), sc_nh_qw(:)
 
   ! Shared setup: read input, initialize materials, confinement, external field
   call read_and_setup(cfg, profile, kpterms)
@@ -143,18 +146,25 @@ program kpfdm
     print *, '  kz sweep: ', cfg%waveVectorStep, ' points, kz_max=', cfg%waveVectorMax
     print *, ''
 
-    ! Set up eigensolver configuration (FEAST with energy window)
-    eigen_cfg%method   = 'FEAST'
+    ! Set up eigensolver configuration
+    if (cfg%feast_m0 < 0) then
+      ! Negative feast_m0 signals: use dense LAPACK instead of FEAST
+      eigen_cfg%method = 'DENSE'
+    else
+      eigen_cfg%method = 'FEAST'
+    end if
     eigen_cfg%nev      = nev_wire
     eigen_cfg%emin     = -1.0_dp   ! placeholder, set by auto_compute_energy_window
     eigen_cfg%emax     =  1.0_dp   ! placeholder
     eigen_cfg%max_iter = 100
     eigen_cfg%tol      = 1.0e-10_dp
-    eigen_cfg%feast_m0 = 0         ! auto: 2*nev
+    eigen_cfg%feast_m0 = cfg%feast_m0  ! 0 means auto: 2*nev
 
     ! Allocate storage for eigenvalues across k-points
-    allocate(eig_wire(nev_wire, cfg%waveVectorStep))
+    ! Use Ntot as upper bound: range mode can return many eigenvalues
+    allocate(eig_wire(Ntot, cfg%waveVectorStep))
     eig_wire = 0.0_dp
+    max_nev_found = 0
 
     ! ==================================================================
     ! Wire self-consistent Schrodinger-Poisson loop
@@ -280,7 +290,14 @@ program kpfdm
       & kpterms_2d, cfg, coo_cache)
 
     call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
-    print *, '  Auto energy window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
+    ! Override with manual window if specified in config
+    if (cfg%feast_emin /= 0.0_dp .or. cfg%feast_emax /= 0.0_dp) then
+      eigen_cfg%emin = cfg%feast_emin
+      eigen_cfg%emax = cfg%feast_emax
+      print *, '  Manual energy window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
+    else
+      print *, '  Auto energy window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
+    end if
 
     call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
 
@@ -296,9 +313,10 @@ program kpfdm
       & nev_wire, ') iterations=', eigen_res%iterations
 
     if (eigen_res%nev_found > 0) then
-      do i = 1, min(eigen_res%nev_found, nev_wire)
+      do i = 1, min(eigen_res%nev_found, Ntot)
         eig_wire(i, 1) = eigen_res%eigenvalues(i)
       end do
+      max_nev_found = max(max_nev_found, eigen_res%nev_found)
     end if
 
     ! Write 2D eigenfunctions for k=1 (with band decomposition)
@@ -352,9 +370,12 @@ program kpfdm
 
           ! Store eigenvalues (each thread writes to its own k column)
           if (eigen_res_loc%nev_found > 0) then
-            do i = 1, min(eigen_res_loc%nev_found, nev_wire)
+            do i = 1, min(eigen_res_loc%nev_found, Ntot)
               eig_wire(i, k) = eigen_res_loc%eigenvalues(i)
             end do
+            !$omp critical
+            max_nev_found = max(max_nev_found, eigen_res_loc%nev_found)
+            !$omp end critical
           end if
 
           ! Clean up per-thread eigensolver result and CSR
@@ -403,8 +424,12 @@ program kpfdm
     call csr_free(HT_csr)
     call wire_coo_cache_free(coo_cache)
 
-    ! Write eigenvalues to file
-    call writeEigenvalues(smallk, eig_wire, cfg%waveVectorStep, cfg)
+    ! Write eigenvalues to file (only the rows actually populated)
+    if (max_nev_found > 0) then
+      call writeEigenvalues(smallk, eig_wire(1:max_nev_found, :), cfg%waveVectorStep, cfg)
+    else
+      call writeEigenvalues(smallk, eig_wire(1:nev_wire, :), cfg%waveVectorStep, cfg)
+    end if
     print *, ''
     print *, 'Wire band structure written to output/eigenvalues.dat'
 
@@ -534,7 +559,7 @@ program kpfdm
     print *, ''
     print *, '=== Running self-consistent Schrodinger-Poisson loop ==='
     call self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv, &
-      & smallk, N, il, iuu)
+      & smallk, N, il, iuu, n_electron_out=sc_ne_qw, n_hole_out=sc_nh_qw)
 
     ! Write updated profile after SC convergence
     call get_unit(iounit)
@@ -544,6 +569,20 @@ program kpfdm
     end do
     close(iounit)
     print *, 'SC potential profile written to output/sc_potential_profile.dat'
+
+    ! Write charge density
+    if (allocated(sc_ne_qw) .and. allocated(sc_nh_qw)) then
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/sc_charge.dat', status="replace", action="write")
+      write(iounit, '(A)') '# z(A) n_e(cm^-3) n_h(cm^-3)'
+      do i = 1, cfg%fdStep, 1
+        write(iounit, '(3(g14.6,1x))') cfg%z(i), sc_ne_qw(i), sc_nh_qw(i)
+      end do
+      close(iounit)
+      print *, 'SC charge density written to output/sc_charge.dat'
+      deallocate(sc_ne_qw, sc_nh_qw)
+    end if
   end if
 
   ! ====================================================================

@@ -414,19 +414,26 @@ def fig_bulk_gaas_bands(output_dir: Path) -> None:
 def fig_bulk_gaas_parts(output_dir: Path) -> None:
     """bulk_gaas_parts.png: band character at Gamma from bulk."""
     print("[figure] bulk_gaas_parts")
+    # Always re-run bulk to ensure correct output (shared output dir gets overwritten)
+    cfg = CONFIG_DIR / "bulk_gaas_kx.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="bulk_gaas_kx")
     parts = parse_parts(output_dir)
+
     if parts.size == 0:
-        # Re-run if needed (uses output from bulk_gaas_bands run)
-        cfg = CONFIG_DIR / "bulk_gaas_kx.cfg"
-        run_executable(EXE_BAND, cfg, REPO_ROOT, label="bulk_gaas_kx")
-        parts = parse_parts(output_dir)
+        print("  WARNING: no parts data, skipping.")
+        return
 
     n_ev = parts.shape[0]
+    # Normalize: each row should sum to 1 (band character fraction)
+    row_sums = parts.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1.0  # avoid division by zero
+    parts = parts / row_sums
+
     fig, ax = plt.subplots(figsize=(6, 4))
     bar_width = 0.8
     x = np.arange(n_ev)
     bottom = np.zeros(n_ev)
-    for b in range(8):
+    for b in range(min(8, parts.shape[1])):
         ax.bar(
             x,
             parts[:, b],
@@ -440,6 +447,7 @@ def fig_bulk_gaas_parts(output_dir: Path) -> None:
     ax.set_xlabel("Eigenstate index")
     ax.set_ylabel("Band character")
     ax.set_title("Bulk GaAs band decomposition at $\\Gamma$")
+    ax.set_ylim(0, 1.05)
     ax.legend(ncol=2, fontsize=7, loc="upper right")
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "bulk_gaas_parts.png")
@@ -506,14 +514,15 @@ def fig_qw_potential_profile(output_dir: Path) -> None:
 def fig_qw_wavefunctions(output_dir: Path) -> None:
     """qw_wavefunctions.png: |psi(z)|^2 per band for lowest CB states."""
     print("[figure] qw_wavefunctions")
-    # Use eigenfunctions from the QW run
+    # Always re-run the QW to ensure fresh data
+    cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
     n_z = 101  # FDstep from config
     try:
         z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=4, n_z=n_z)
     except FileNotFoundError:
-        cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
-        run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
-        z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=4, n_z=n_z)
+        print("  WARNING: no eigenfunction data found, skipping.")
+        return
 
     if z.size == 0:
         print("  WARNING: no wavefunction data found, skipping.")
@@ -528,10 +537,16 @@ def fig_qw_wavefunctions(output_dir: Path) -> None:
         psi2_total = np.sum(wf[idx] ** 2, axis=1)
         ax.plot(z, psi2_total, color="#17becf", linewidth=1.2)
         ax.fill_between(z, 0, psi2_total, alpha=0.15, color="#17becf")
-        ax.set_xlabel(r"$z$ (A)")
+        ax.set_xlabel(r"$z$ (\u00C5)")
         ax.set_title(f"State {idx + 1}")
+        # Zoom to region where wavefunction is non-negligible
+        nonzero = psi2_total > 0.01 * psi2_total.max()
+        if np.any(nonzero):
+            z_lo = z[nonzero][0] - 20
+            z_hi = z[nonzero][-1] + 20
+            ax.set_xlim(z_lo, z_hi)
     axes[0].set_ylabel(r"$|\psi(z)|^2$")
-    fig.suptitle("QW probability density (AlSb/GaSb/InAs, $k_{\\parallel}=0$)", fontsize=12)
+    fig.suptitle(r"QW probability density (AlSbW/GaSbW/InAsW, $k_{\parallel}=0$)", fontsize=12)
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "qw_wavefunctions.png")
     plt.close(fig)
@@ -551,6 +566,11 @@ def fig_qw_parts(output_dir: Path) -> None:
     if parts.size == 0:
         print("  WARNING: no parts data, skipping.")
         return
+
+    # Normalize: each row should sum to 1 (band character fraction)
+    row_sums = parts.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1.0
+    parts = parts / row_sums
 
     # Show up to 8 states (first few are usually CB)
     n_show = min(parts.shape[0], 8)
@@ -573,6 +593,7 @@ def fig_qw_parts(output_dir: Path) -> None:
     ax.set_xlabel("Eigenstate index")
     ax.set_ylabel("Band character")
     ax.set_title("QW band decomposition (AlSb/GaSb/InAs, $k_{\\parallel}=0$)")
+    ax.set_ylim(0, 1.05)
     ax.legend(loc="best")
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "qw_parts.png")
@@ -670,34 +691,40 @@ def fig_gfactor_zeeman(output_dir: Path) -> None:
 
 
 def fig_sc_potential(output_dir: Path) -> None:
-    """sc_potential.png: band-edge profile from QW heterostructure.
+    """sc_potential.png: band-edge profile with self-consistent band bending.
 
-    Uses the W-variant QW (AlSbW/GaSbW/InAsW) which has well-defined
-    band offsets. If the SC run produced ``sc_potential_profile.dat`` with
-    meaningful band bending it will be used; otherwise the base profile
-    from ``potential_profile.dat`` is shown.
+    Runs the SC GaAs/AlAs QW config.  If the SC loop produced
+    ``sc_potential_profile.dat`` (with the converged band-bent edges) it
+    is used; otherwise the flat-band ``potential_profile.dat`` is shown.
     """
     print("[figure] sc_potential")
 
     # Remove any stale sc_potential_profile.dat that may have been produced
-    # by a prior wire SC run (5-column 2D format). The QW run below will
+    # by a prior wire SC run (5-column 2D format).  The QW run below will
     # produce a fresh potential_profile.dat with 4-column 1D format.
     sc_path = output_dir / "sc_potential_profile.dat"
     if sc_path.exists():
         sc_path.unlink()
         print("  Removed stale sc_potential_profile.dat")
 
-    # Run QW first to get the heterostructure profile
-    cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
-    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_potential")
-
-    # potential_profile.dat should now be 4-column 1D (QW format)
-    try:
-        z, EV, EV_SO, EC = parse_potential_profile(output_dir)
-        title = "Band-edge profile (AlSbW/GaSbW/InAsW QW)"
-    except (FileNotFoundError, ValueError) as exc:
-        print(f"  WARNING: could not parse potential profile ({exc}), skipping.")
+    # Run SC config to get band bending from self-consistent calculation
+    cfg = CONFIG_DIR / "sc_gaas_alas_qw.cfg"
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="sc_gaas_alas_qw", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: SC run failed, skipping sc_potential figure.")
         return
+
+    # Try the SC-converged profile first; fall back to the flat-band profile
+    try:
+        z, EV, EV_SO, EC = parse_sc_potential(output_dir)
+        title = "SC band-edge profile (GaAs/AlAs QW)"
+    except FileNotFoundError:
+        try:
+            z, EV, EV_SO, EC = parse_potential_profile(output_dir)
+            title = "Band-edge profile (GaAs/AlAs QW, flat-band)"
+        except FileNotFoundError:
+            print("  WARNING: no potential profile data found, skipping.")
+            return
 
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.plot(z, EV, color="#d62728", linewidth=1.5, label="$E_V$")
@@ -705,7 +732,7 @@ def fig_sc_potential(output_dir: Path) -> None:
     ax.plot(z, EC, color="#17becf", linewidth=1.5, label="$E_C$")
     ax.fill_between(z, EV.min() - 0.1, EV, alpha=0.06, color="#d62728")
     ax.fill_between(z, EC, EC.max() + 0.1, alpha=0.06, color="#17becf")
-    ax.set_xlabel(r"$z$ (A)")
+    ax.set_xlabel(r"$z$ (\u00C5)")
     ax.set_ylabel("Energy (eV)")
     ax.set_title(title)
     ax.legend(loc="best")
@@ -718,11 +745,25 @@ def fig_sc_potential(output_dir: Path) -> None:
 def fig_sc_charge_density(output_dir: Path) -> None:
     """sc_charge_density.png: n(z) charge density from SC run."""
     print("[figure] sc_charge_density")
-    # Assumes SC run already happened (from fig_sc_potential)
+    # Clean stale 2D-format sc_charge.dat from wire runs
+    sc_charge = output_dir / "sc_charge.dat"
+    if sc_charge.exists():
+        sc_charge.unlink()
+    sc_path = output_dir / "sc_potential_profile.dat"
+    if sc_path.exists():
+        sc_path.unlink()
+
+    # Need fresh SC run (shared output dir gets overwritten by other configs)
+    cfg = CONFIG_DIR / "sc_gaas_alas_qw.cfg"
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="sc_charge", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: SC run failed, skipping sc_charge_density figure.")
+        return
+
     try:
         z, n_e, n_h = parse_sc_charge(output_dir, is_2d=False)
     except FileNotFoundError:
-        print("  WARNING: sc_charge.dat not found. Run SC first.")
+        print("  WARNING: sc_charge.dat not found after SC run, skipping.")
         return
 
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -765,7 +806,7 @@ def fig_sc_convergence(output_dir: Path) -> None:
 
 
 def fig_wire_subbands(output_dir: Path) -> None:
-    """wire_subbands.png: valence subbands E(k_z) for GaAs rectangular wire."""
+    """wire_subbands.png: E(k_z) dispersion for GaAs rectangular wire near the gap."""
     print("[figure] wire_subbands")
     cfg = CONFIG_DIR / "wire_gaas_rectangle.cfg"
     run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_gaas", timeout=300)
@@ -775,19 +816,58 @@ def fig_wire_subbands(output_dir: Path) -> None:
         print("  WARNING: eigenvalues.dat not found for wire, skipping.")
         return
 
-    # GaAs valence band edge (all eigenvalues are deep VB states)
-    EV_GAAS = -0.80
+    n_bands = eig.shape[0]
+    e0 = eig[:, 0]  # eigenvalues at k=0, sorted ascending
+
+    # Classify VB/CB by finding the largest gap in the eigenvalue spectrum.
+    # The band gap should be the largest gap between consecutive eigenvalues
+    # near the expected gap region (between -0.5 and 2.0 eV for GaAs).
+    gaps = np.diff(e0)
+    # Only consider gaps in the relevant energy range
+    gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.0)
+    if np.any(gap_mask):
+        gap_idx = np.argmax(gaps * gap_mask)  # largest gap in range
+        n_vb = gap_idx + 1
+        n_cb = n_bands - n_vb
+    else:
+        # Fallback: use config values
+        n_vb = min(16, n_bands)
+        n_cb = n_bands - n_vb
+
+    e_vb_max = e0[n_vb - 1] if n_vb > 0 else e0[0]
+    e_cb_min = e0[n_vb] if n_cb > 0 else e0[-1]
+
+    # Only plot a subset of bands near the gap (up to 10 VB + 10 CB)
+    max_plot_vb = min(n_vb, 10)
+    max_plot_cb = min(n_cb, 10)
+    plot_vb_start = n_vb - max_plot_vb  # highest VB states
+
+    print(f"  Classification: {n_vb} VB + {n_cb} CB ({n_bands} total)")
+    print(f"  VB max={e_vb_max:.4f}, CB min={e_cb_min:.4f}, "
+          f"gap={e_cb_min - e_vb_max:.4f} eV")
+    print(f"  Plotting {max_plot_vb} VB + {max_plot_cb} CB near the gap")
 
     fig, ax = plt.subplots(figsize=(5, 4.5))
-    n_bands = eig.shape[0]
-    vb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.9, n_bands))
-    for i in range(n_bands):
-        ax.plot(k_vals, eig[i], color=vb_colors[i], linewidth=0.9)
-    ax.axhline(EV_GAAS, color="grey", linewidth=0.8, linestyle="--",
-               label=f"$E_V$ = {EV_GAAS:.2f} eV")
-    ax.set_xlabel(r"$k_z$ (1/A)")
+    # VB subbands near the gap (red shades)
+    if max_plot_vb > 0:
+        vb_colors = plt.cm.Reds_r(np.linspace(0.3, 0.8, max_plot_vb))
+        for i, band_i in enumerate(range(plot_vb_start, n_vb)):
+            ax.plot(k_vals, eig[band_i], color=vb_colors[i], linewidth=0.7)
+
+    # CB subbands near the gap (blue shades)
+    if max_plot_cb > 0:
+        cb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.8, max_plot_cb))
+        for i in range(max_plot_cb):
+            band_i = n_vb + i
+            ax.plot(k_vals, eig[band_i], color=cb_colors[i], linewidth=0.7)
+
+    ax.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
+               label=f"VB top = {e_vb_max:.3f} eV")
+    ax.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
+               label=f"CB bottom = {e_cb_min:.3f} eV")
+    ax.set_xlabel(r"$k_z$ (1/\u00C5)")
     ax.set_ylabel(r"$E$ (eV)")
-    ax.set_title("GaAs rectangular wire valence subbands")
+    ax.set_title(f"GaAs rectangular wire subbands")
     ax.legend(loc="best", fontsize=8)
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "wire_subbands.png")
@@ -816,48 +896,76 @@ def _find_ev_idx_nearest_to_energy(output_dir: Path, target_eV: float) -> int:
 
 
 def fig_wire_density_2d(output_dir: Path) -> None:
-    """wire_density_2d.png: 2D |psi(x,y)|^2 for the VB-edge state."""
+    """wire_density_2d.png: 2D |psi(x,y)|^2 for CB-ground and VB-edge states."""
     print("[figure] wire_density_2d")
 
-    # GaAs valence band edge
-    EV_GAAS = -0.80
-
-    # Find eigenfunction closest to VB edge (not the deepest state)
-    ev_idx = _find_ev_idx_nearest_to_energy(output_dir, EV_GAAS)
-    print(f"  Using eigenfunction ev_idx={ev_idx} (closest to EV={EV_GAAS} eV)")
-
+    # Read eigenvalues to find VB max and CB min
     try:
-        x, y, psi2 = parse_wire_eigenfunction_2d(output_dir, k_idx=1, ev_idx=ev_idx)
+        _, eig = parse_eigenvalues(output_dir)
     except FileNotFoundError:
         cfg = CONFIG_DIR / "wire_gaas_rectangle.cfg"
         run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_gaas", timeout=300)
-        ev_idx = _find_ev_idx_nearest_to_energy(output_dir, EV_GAAS)
-        x, y, psi2 = parse_wire_eigenfunction_2d(output_dir, k_idx=1, ev_idx=ev_idx)
+        _, eig = parse_eigenvalues(output_dir)
 
-    if x.size == 0:
-        print("  WARNING: no wire eigenfunction data, skipping.")
-        return
+    e0 = eig[:, 0]
+    n_bands = eig.shape[0]
 
-    # Read the energy of the chosen state for the title
-    state_energy = ""
-    ev_file = output_dir / f"eigenfunctions_k_00001_ev_{ev_idx:05d}.dat"
-    if ev_file.exists():
-        with open(ev_file) as f:
-            for line in f:
-                if line.startswith("# E ="):
-                    state_energy = line.replace("# E =", "").strip()
-                    break
+    # Classify VB/CB by finding the largest gap in the eigenvalue spectrum
+    # (same approach as fig_wire_subbands). The dense LAPACK solver in range
+    # mode returns ALL eigenvalues in [emin, emax], not just numcb+numvb.
+    gaps = np.diff(e0)
+    gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.0)
+    if np.any(gap_mask):
+        gap_idx = np.argmax(gaps * gap_mask)
+        n_vb = gap_idx + 1
+        n_cb = n_bands - n_vb
+    else:
+        n_vb = min(16, n_bands)
+        n_cb = n_bands - n_vb
 
-    fig, ax = plt.subplots(figsize=(5, 4.5))
-    im = ax.pcolormesh(x, y, psi2, shading="auto", cmap="viridis")
-    ax.set_xlabel(r"$x$ (A)")
-    ax.set_ylabel(r"$y$ (A)")
-    title = r"$|\psi(x,y)|^2$ VB-edge state"
-    if state_energy:
-        title += f" (E = {state_energy} eV)"
-    ax.set_title(title)
-    ax.set_aspect("equal")
-    fig.colorbar(im, ax=ax, label=r"$|\psi|^2$")
+    e_vb_max = e0[n_vb - 1] if n_vb > 0 else e0[0]
+    e_cb_min = e0[n_vb] if n_cb > 0 else e0[-1]
+
+    # Plot two panels: VB-edge state (highest VB) and CB-ground state (lowest CB)
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+
+    for panel, (target_eV, label) in enumerate([
+        (e_vb_max, r"VB-edge $|\psi|^2$"),
+        (e_cb_min, r"CB-ground $|\psi|^2$")
+    ]):
+        ax = axes[panel]
+        ev_idx = _find_ev_idx_nearest_to_energy(output_dir, target_eV)
+        print(f"  Panel {panel+1}: ev_idx={ev_idx} (target E={target_eV:.4f} eV)")
+
+        try:
+            x, y, psi2 = parse_wire_eigenfunction_2d(output_dir, k_idx=1, ev_idx=ev_idx)
+        except FileNotFoundError:
+            ax.text(0.5, 0.5, "No data", transform=ax.transAxes, ha="center")
+            continue
+
+        if x.size == 0:
+            ax.text(0.5, 0.5, "No data", transform=ax.transAxes, ha="center")
+            continue
+
+        state_energy = ""
+        ev_file = output_dir / f"eigenfunctions_k_00001_ev_{ev_idx:05d}.dat"
+        if ev_file.exists():
+            with open(ev_file) as f:
+                for line in f:
+                    if line.startswith("# E ="):
+                        state_energy = line.replace("# E =", "").strip()
+                        break
+
+        im = ax.pcolormesh(x, y, psi2, shading="auto", cmap="viridis")
+        ax.set_xlabel(r"$x$ (\u00C5)")
+        ax.set_ylabel(r"$y$ (\u00C5)")
+        title = label
+        if state_energy:
+            title += f" (E = {state_energy} eV)"
+        ax.set_title(title)
+        ax.set_aspect("equal")
+        fig.colorbar(im, ax=ax, label=r"$|\psi|^2$")
+
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "wire_density_2d.png")
     plt.close(fig)

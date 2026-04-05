@@ -343,6 +343,10 @@ determine the optimal workspace size, then reused for all $\mathbf{k}$ points.
 
 ---
 
+![Bulk GaAs 8-band E(k) dispersion](../figures/bulk_gaas_bands.png)
+
+*Figure 1: Bulk GaAs 8-band E(k) dispersion along [100], computed with `bulk_gaas_kx.cfg`. The conduction band (cyan) curves upward with effective mass $m^* = 0.067\,m_0$. The heavy-hole and light-hole bands are degenerate at $\Gamma$ and split at finite $k$. The split-off bands are offset by $\Delta_{\text{SO}} = 0.341$ eV.*
+
 ## 3. Computed Example: Bulk GaAs along $k_x$
 
 ### 3.1 Input Configuration
@@ -410,6 +414,10 @@ After running `./build/src/bandStructure`, the program:
 
 3. Writes eigenfunctions at selected $\mathbf{k}$ points to files in
    `output/eigenfunctions/`.
+
+![Bulk GaAs band character at Gamma](../figures/bulk_gaas_parts.png)
+
+*Figure 2: Band decomposition at $\Gamma$ for bulk GaAs. Each eigenstate's character is resolved into HH, LH, SO, and CB contributions. At $k=0$, the degeneracies are exact: states 1-4 are purely valence, states 5-6 are split-off, and states 7-8 are conduction.*
 
 ### 3.3 Interpreting the Band Structure
 

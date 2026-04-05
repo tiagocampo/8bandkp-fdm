@@ -463,6 +463,33 @@ contains
     end if
 100 continue
 
+    ! --- FEAST eigensolver tuning (backward compatible: uses defaults if missing) ---
+    read(data_unit, *, iostat=status) label, cfg%feast_emin
+    if (status == 0) then
+      print *, trim(label), cfg%feast_emin
+      read(data_unit, *, iostat=status) label, cfg%feast_emax
+      if (status == 0) then
+        print *, trim(label), cfg%feast_emax
+        read(data_unit, *, iostat=status) label, cfg%feast_m0
+        if (status == 0) then
+          print *, trim(label), cfg%feast_m0
+        else
+          cfg%feast_m0 = 0
+          status = 0
+        end if
+      else
+        cfg%feast_emax = 0.0_dp
+        cfg%feast_m0 = 0
+        status = 0
+      end if
+    else
+      ! feast_emin not found -- use auto window
+      cfg%feast_emin = 0.0_dp
+      cfg%feast_emax = 0.0_dp
+      cfg%feast_m0 = 0
+      status = 0
+    end if
+
     ! --- Strain parameters (backward compatible: uses defaults if missing) ---
     read(data_unit, *, iostat=status) label, cfg%strain%enabled
     if (status == 0 .and. cfg%strain%enabled) then

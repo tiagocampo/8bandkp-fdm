@@ -32,6 +32,12 @@ target_include_directories(8bandkp_common PUBLIC
 # Enable MKL FEAST eigensolver (available when building with Intel MKL)
 target_compile_definitions(8bandkp_common PUBLIC USE_MKL_FEAST)
 
+# Enable ARPACK-NG eigensolver (optional, provides shift-invert sparse solver)
+if(ARPACK_FOUND)
+    target_compile_definitions(8bandkp_common PUBLIC USE_ARPACK)
+    target_link_libraries(8bandkp_common PUBLIC ARPACK::ARPACK)
+endif()
+
 # Preprocessor for files with #ifdef/#include
 set_source_files_properties(
     core/defs.f90

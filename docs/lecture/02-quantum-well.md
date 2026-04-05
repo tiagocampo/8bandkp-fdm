@@ -200,6 +200,14 @@ Note that $E_C(\text{InAs}) = -0.173$ eV lies well above $E_V(\text{GaSb}) = -0.
 
 ## 3. Computed Example
 
+![QW band-edge profile](../figures/qw_potential_profile.png)
+
+*Figure 1: Band-edge profile of the AlSbW/GaSbW/InAsW heterostructure, showing $E_V$, $E_{\Delta SO}$, and $E_C$ as functions of position $z$. The AlSb barriers provide a large gap for confinement, while GaSb and InAs create nested wells for holes and electrons respectively.*
+
+![QW subband dispersion](../figures/qw_alsbw_gasbw_inasw_bands.png)
+
+*Figure 2: Subband dispersion $E(k_\parallel)$ for the AlSbW/GaSbW/InAsW quantum well. Red curves are valence subbands, cyan curves are conduction subbands. The type-II alignment brings electron and hole subbands close in energy near the gap.*
+
 ### 3.1 Input configuration: AlSb/GaSb/InAs type-II quantum well
 
 The following example is taken from the regression test config `tests/regression/configs/qw_alsb_gasb_inas.cfg`:

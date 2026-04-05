@@ -183,6 +183,14 @@ The conduction band states (bands 7--8) also acquire valence band character at l
 
 ## 3.6 Example: Quantum Well Eigenstates
 
+![QW wavefunctions](../figures/qw_wavefunctions.png)
+
+*Figure 1: Probability density $|\psi(z)|^2$ for the first four conduction-band eigenstates of the AlSbW/GaSbW/InAsW quantum well at $k_\parallel = 0$. State 1 is the ground-state electron localized in the InAs layer. States 2-4 show increasing nodal structure.*
+
+![QW band decomposition](../figures/qw_parts.png)
+
+*Figure 2: Band character decomposition (integrated parts) for the first eight eigenstates of the AlSbW/GaSbW/InAsW QW at $k_\parallel = 0$. The first few states are dominated by CB character (cyan), while higher states show HH (red), LH (blue), and SO (orange) contributions.*
+
 ### 3.6.1 Ground-state conduction band electron
 
 Consider a GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well of width $L = 100$ A with $N = 200$ grid points. The ground-state conduction band electron ($n = 1$, the lowest state with energy above the CB edge) has a parts vector approximately:

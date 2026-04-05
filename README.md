@@ -1,41 +1,36 @@
 # 8bandkp-fdm
 
-Fortran 90 solver for the **8-band zinc-blende k.p Hamiltonian** via finite differences. Computes electronic band structures for bulk semiconductors, quantum wells, and quantum wires. Calculates Landau g-factors via second-order Lowdin partitioning. Includes a self-consistent Schrodinger-Poisson solver with DIIS acceleration. Based on Chuang & Chang (1997) with Foreman renormalization and Winkler g-factor formalism. GPL v3.0, authored by Tiago de Campos.
+Fortran 90 solver for the **8-band zinc-blende k.p Hamiltonian** via finite differences.
 
-## Build Prerequisites
+Computes electronic band structures for bulk semiconductors, quantum wells, and quantum wires. Calculates Landau g-factors via second-order Lowdin partitioning. Includes a self-consistent Schrodinger-Poisson solver with DIIS acceleration.
 
-- Fortran compiler (gfortran recommended)
-- BLAS and LAPACK libraries
-- FFTW3 library
-- CMake >= 3.15, Ninja (optional)
+Based on Chuang & Chang (1997) with Foreman renormalization and Winkler g-factor formalism. GPL v3.0, authored by Tiago de Campos.
+
+If you use this code, please cite: [10.1021/acsaelm.0c00269](https://doi.org/10.1021/acsaelm.0c00269)
+
+## Build
+
+**Prerequisites:** Fortran compiler (gfortran), BLAS/LAPACK, FFTW3, CMake >= 3.15. For best performance use Intel MKL.
 
 Ubuntu:
 ```bash
 sudo apt install gfortran gcc g++ liblapack-dev libblas-dev libfftw3-dev
 ```
 
-For optimal performance, Intel MKL is recommended.
-
-## Build
-
-#### Using CMake (Recommended)
 ```bash
-# Configure (requires Intel MKL)
+# Configure (with MKL)
 cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl
 
 # Build
 cmake --build build
 
-# Executables are at build/src/bandStructure and build/src/gfactorCalculation
-```
-
-#### Using Make (thin CMake wrapper)
-```bash
+# Or use the Make wrapper
 make all       # Configure + build both executables
 make run       # Build and run bandStructure
-make gfactor   # Build and run gfactorCalculation
 make clean     # Remove build/ directory
 ```
+
+Executables: `build/src/bandStructure` and `build/src/gfactorCalculation`.
 
 ## Quick Start
 
@@ -82,7 +77,7 @@ temperature: 300.0   fermi_mode: 1   fermi_level: 1.5   num_kpar: 21   kpar_max:
 bc_type: DD   doping1: 0.0 0.0   doping2: 1.0e18 0.0   doping3: 0.0 0.0
 ```
 
-**Quantum wire** (GaAs rectangular cross-section):
+**Quantum wire** (GaAs rectangular cross section):
 ```
 waveVector: kz            waveVectorMax: 0.1      waveVectorStep: 5
 confinement: 2            wire_nx: 11             wire_ny: 11
@@ -93,8 +88,11 @@ numRegions: 1             region: GaAs 0.0 100.0  numcb: 4   numvb: 4
 
 ## Documentation
 
-- **Lectures** (`docs/lecture/`): [01 Bulk](docs/lecture/01-bulk-band-structure.md) | [02 QW](docs/lecture/02-quantum-well.md) | [03 Wavefunctions](docs/lecture/03-wavefunctions.md) | [04 Strain](docs/lecture/04-strain.md) | [05 g-Factor](docs/lecture/05-gfactor.md) | [06 Optical](docs/lecture/06-optical-properties.md) | [07 SC-SP](docs/lecture/07-self-consistent-sp.md) | [08 Wire](docs/lecture/08-quantum-wire.md) | [09 Numerics](docs/lecture/09-numerical-methods.md) | [10 Extending](docs/lecture/10-extending-the-code.md)
-- **Reference** (`docs/reference/`): [Input](docs/reference/input-reference.md) | [Output](docs/reference/output-reference.md)
+**Lectures** (`docs/lecture/`) — pedagogical progression from k.p theory to quantum wires:
+
+[01 Bulk](docs/lecture/01-bulk-band-structure.md) | [02 QW](docs/lecture/02-quantum-well.md) | [03 Wavefunctions](docs/lecture/03-wavefunctions.md) | [04 Strain](docs/lecture/04-strain.md) | [05 g-Factor](docs/lecture/05-gfactor.md) | [06 Optical](docs/lecture/06-optical-properties.md) | [07 SC-SP](docs/lecture/07-self-consistent-sp.md) | [08 Wire](docs/lecture/08-quantum-wire.md) | [09 Numerics](docs/lecture/09-numerical-methods.md) | [10 Extending](docs/lecture/10-extending-the-code.md)
+
+**Reference** (`docs/reference/`): [Input parameters](docs/reference/input-reference.md) | [Output files](docs/reference/output-reference.md)
 
 ## Testing
 
@@ -118,10 +116,6 @@ defs -> parameters -> utils -> finitedifferences -> hamiltonianConstructor -> gf
 ```
 
 Executables: `bandStructure` (band structure vs k), `gfactorCalculation` (g-factor at k=0).
-
-## Citation
-
-If you use this code, please cite: [10.1021/acsaelm.0c00269](https://doi.org/10.1021/acsaelm.0c00269)
 
 ## License
 

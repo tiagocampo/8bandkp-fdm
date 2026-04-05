@@ -208,6 +208,11 @@ module definitions
     type(wire_geometry) :: wire_geom             ! shape + dimensions
     integer            :: numRegions = 0         ! number of material regions
     type(region_spec), allocatable :: regions(:) ! region specifications
+
+    ! ---- FEAST eigensolver tuning ----
+    real(kind=dp)      :: feast_emin = 0.0_dp   ! manual energy window (0=auto)
+    real(kind=dp)      :: feast_emax = 0.0_dp   ! manual energy window (0=auto)
+    integer            :: feast_m0 = 0           ! manual subspace size (0=auto: 2*nev)
   end type simulation_config
 
   type group

@@ -23,6 +23,12 @@ module linalg
   public :: zfeast_hcsrev
 #endif
 
+  ! ARPACK-NG (guarded)
+#ifdef USE_ARPACK
+  public :: znaupd
+  public :: zneupd
+#endif
+
   ! ================================================================
   ! Interface blocks
   ! ================================================================
@@ -109,6 +115,57 @@ module linalg
       complex(kind=dp), intent(inout) :: x(n, m0)
     end subroutine
   end interface
+#endif
+
+#ifdef USE_ARPACK
+  ! znaupd - ARPACK-NG reverse communication for complex eigenproblems
+  interface
+    subroutine znaupd(ido, bmat, n, which, nev, tol, resid, ncv, v, ldv, &
+                      iparam, ipntr, workd, workl, lworkl, rwork, info)
+      use definitions, only: dp
+      character(len=1), intent(in)    :: bmat
+      character(len=2), intent(in)    :: which
+      integer, intent(inout)          :: ido
+      integer, intent(in)             :: n, nev, ncv, ldv, lworkl
+      real(kind=dp), intent(in)       :: tol
+      complex(kind=dp), intent(inout) :: resid(n)
+      complex(kind=dp), intent(out)   :: v(ldv, ncv)
+      integer, intent(inout)          :: iparam(11)
+      integer, intent(out)            :: ipntr(14)
+      complex(kind=dp), intent(inout) :: workd(3*n)
+      complex(kind=dp), intent(inout) :: workl(lworkl)
+      real(kind=dp), intent(out)      :: rwork(ncv)
+      integer, intent(inout)          :: info
+    end subroutine
+  end interface
+
+  ! zneupd - ARPACK-NG post-processing for complex eigenproblems
+  interface
+    subroutine zneupd(rvec, howmny, select, d, z, ldz, sigma, workev, &
+                      bmat, n, which, nev, tol, resid, ncv, v, ldv, &
+                      iparam, ipntr, workd, workl, lworkl, rwork, info)
+      use definitions, only: dp
+      logical, intent(in)             :: rvec
+      character(len=1), intent(in)    :: howmny, bmat
+      character(len=2), intent(in)    :: which
+      logical, intent(inout)          :: select(ncv)
+      integer, intent(in)             :: n, nev, ncv, ldz, ldv, lworkl
+      real(kind=dp), intent(in)       :: tol
+      complex(kind=dp), intent(out)   :: d(nev)
+      complex(kind=dp), intent(out)   :: z(ldz, nev)
+      complex(kind=dp), intent(in)    :: sigma
+      complex(kind=dp), intent(inout) :: workev(2*ncv)
+      complex(kind=dp), intent(inout) :: resid(n)
+      complex(kind=dp), intent(inout) :: v(ldv, ncv)
+      integer, intent(inout)          :: iparam(11)
+      integer, intent(inout)          :: ipntr(14)
+      complex(kind=dp), intent(inout) :: workd(3*n)
+      complex(kind=dp), intent(inout) :: workl(lworkl)
+      real(kind=dp), intent(inout)    :: rwork(ncv)
+      integer, intent(out)            :: info
+    end subroutine
+  end interface
+
 #endif
 
 contains
