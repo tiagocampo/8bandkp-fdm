@@ -136,6 +136,14 @@ g-factor additional fields: `whichBand` (0=CB, 1=VB) and `bandIdx` (subband inde
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`)
 - **PRs:** All tests must pass before merge. Use `gh pr create` from feature branches.
 
+## Superpowers Skills
+
+Always check for and follow applicable superpowers skills when working. In particular:
+- **brainstorming** — for design decisions and scoping before implementation
+- **writing-plans** — for creating implementation plans before coding
+- **subagent-driven-development** — for executing plans task-by-task with review
+- **test-driven-development** — subagents follow TDD for each task
+
 ## Boundaries
 
 - **NEVER** modify material parameters in `parameters.f90` without verifying against published references (Vurgaftman 2001, Winkler 2003)
