@@ -1,4 +1,4 @@
-# Chapter 10: Extending the Code
+# Chapter 12: Extending the Code
 
 A practical guide for developers who want to add materials, physics, output, or tests to the 8-band k.p finite-difference code. This chapter assumes you have read the earlier chapters and are comfortable navigating the source tree. The goal is to give you enough map to find your way without a companion.
 
