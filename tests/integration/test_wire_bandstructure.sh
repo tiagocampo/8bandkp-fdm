@@ -33,8 +33,9 @@ fi
 
 # Extract only the first data line (k=1, deterministic) for comparison.
 # FEAST non-convergence at k>1 makes those eigenvalues non-deterministic.
-grep -v '^#' "$WORKDIR/output/eigenvalues.dat" | head -1 > "$WORKDIR/output/eig_k1.dat"
-grep -v '^#' "$REF_DIR/eigenvalues.dat" | head -1 > "$WORKDIR/ref_k1.dat"
+# Use awk to avoid SIGPIPE with pipefail from grep|head.
+awk '/^[^#]/{print; exit}' "$WORKDIR/output/eigenvalues.dat" > "$WORKDIR/output/eig_k1.dat"
+awk '/^[^#]/{print; exit}' "$REF_DIR/eigenvalues.dat" > "$WORKDIR/ref_k1.dat"
 
 python3 "$COMPARE" "$WORKDIR/ref_k1.dat" "$WORKDIR/output/eig_k1.dat" --tolerance 1e-8
 
@@ -45,7 +46,7 @@ if [ ! -f "$WORKDIR/output/parts.dat" ]; then
 fi
 
 PARTS_ROWS=$(grep -v '^#' "$WORKDIR/output/parts.dat" | grep -v '^$' | wc -l)
-PARTS_COLS=$(grep -v '^#' "$WORKDIR/output/parts.dat" | grep -v '^$' | head -1 | wc -w)
+PARTS_COLS=$(awk '/^[^#]/&&/[^[:space:]]/{print; exit}' "$WORKDIR/output/parts.dat" | wc -w)
 if [ "$PARTS_COLS" -ne 8 ]; then
     echo "FAIL: parts.dat has $PARTS_COLS columns, expected 8"
     exit 1

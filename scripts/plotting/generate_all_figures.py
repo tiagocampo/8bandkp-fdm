@@ -397,14 +397,55 @@ def fig_bulk_gaas_bands(output_dir: Path) -> None:
     run_executable(EXE_BAND, cfg, REPO_ROOT, label="bulk_gaas_kx")
     k_vals, eig = parse_eigenvalues(output_dir)
 
-    fig, ax = plt.subplots(figsize=(5, 4.5))
+    fig, (ax_full, ax_zoom) = plt.subplots(1, 2, figsize=(9.5, 4.5),
+                                            gridspec_kw={"width_ratios": [1.2, 1]})
+
     n_bands = eig.shape[0]
     for i in range(n_bands):
-        ax.plot(k_vals, eig[i], color=BAND_COLORS[i], linewidth=1.2)
-    ax.set_xlabel(r"$k$ (1/A)")
-    ax.set_ylabel(r"$E$ (eV)")
-    ax.set_title("Bulk GaAs 8-band dispersion")
-    ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+        ax_full.plot(k_vals, eig[i], color=BAND_COLORS[i], linewidth=1.2)
+        ax_zoom.plot(k_vals, eig[i], color=BAND_COLORS[i], linewidth=1.2)
+
+    # Full view
+    ax_full.set_xlabel(r"$k$ (1/A)")
+    ax_full.set_ylabel(r"$E$ (eV)")
+    ax_full.set_title("Bulk GaAs 8-band dispersion")
+    ax_full.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+    # Gamma-point energy annotations
+    e0 = eig[:, 0]  # eigenvalues at k=0
+    # Label distinct energies: SO, HH/LH, CB
+    labels_placed = set()
+    for i, e in enumerate(e0):
+        rounded = round(e, 3)
+        if rounded not in labels_placed:
+            labels_placed.add(rounded)
+            ax_full.annotate(f"{e:.3f} eV", xy=(k_vals[-1], e),
+                           fontsize=7, color=BAND_COLORS[i], va="center")
+
+    # Zoom near gap
+    ax_zoom.set_xlim(-0.002, 0.06)
+    ax_zoom.set_ylim(-0.5, 1.8)
+    ax_zoom.set_xlabel(r"$k$ (1/A)")
+    ax_zoom.set_title(r"Zoom near $\Gamma$")
+    ax_zoom.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+    # Annotate band gap and SO splitting
+    e_vb = max(e for e in e0 if e <= 0.01)
+    e_so = min(e for e in e0 if e <= 0.01)
+    e_cb = min(e for e in e0 if e > 0.01)
+    gap = e_cb - e_vb
+    so_split = e_vb - e_so
+
+    ax_zoom.annotate(f"$E_g$ = {gap:.3f} eV", xy=(0.03, (e_vb + e_cb) / 2),
+                    fontsize=8, color="grey", ha="left")
+    ax_zoom.annotate(f"$\\Delta_{{SO}}$ = {so_split:.3f} eV", xy=(0.03, (e_so + e_vb) / 2),
+                    fontsize=8, color="grey", ha="left")
+
+    # Band labels on zoom
+    ax_zoom.annotate("CB", xy=(0.04, e_cb + 0.03), fontsize=8, color="#17becf")
+    ax_zoom.annotate("HH/LH", xy=(0.04, e_vb - 0.05), fontsize=8, color="#d62728")
+    ax_zoom.annotate("SO", xy=(0.04, e_so - 0.05), fontsize=8, color="#ff7f0e")
+
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "bulk_gaas_bands.png")
     plt.close(fig)
@@ -641,9 +682,27 @@ def fig_gfactor_components(output_dir: Path) -> None:
     width = 0.25
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.bar(x_pos - width, [gx_vals[l] for l in labels], width, label=r"$g_x$", color="#1f77b4")
-    ax.bar(x_pos, [gy_vals[l] for l in labels], width, label=r"$g_y$", color="#ff7f0e")
-    ax.bar(x_pos + width, [gz_vals[l] for l in labels], width, label=r"$g_z$", color="#2ca02c")
+    bars_x = ax.bar(x_pos - width, [gx_vals[l] for l in labels], width, label=r"$g_x$", color="#1f77b4")
+    bars_y = ax.bar(x_pos, [gy_vals[l] for l in labels], width, label=r"$g_y$", color="#ff7f0e")
+    bars_z = ax.bar(x_pos + width, [gz_vals[l] for l in labels], width, label=r"$g_z$", color="#2ca02c")
+
+    # Add value labels on bars — scale offset to data range
+    all_heights = [abs(b.get_height()) for bars in [bars_x, bars_y, bars_z] for b in bars]
+    max_h = max(all_heights) if all_heights else 1.0
+    label_offset = 0.04 * max_h
+    for bars in [bars_x, bars_y, bars_z]:
+        for bar in bars:
+            height = bar.get_height()
+            if abs(height) > 0.01 * max_h:
+                va = "bottom" if height > 0 else "top"
+                offset = label_offset if height > 0 else -label_offset
+                ax.text(bar.get_x() + bar.get_width() / 2, height + offset,
+                       f"{height:.2f}", ha="center", va=va, fontsize=6)
+            else:
+                ax.text(bar.get_x() + bar.get_width() / 2, label_offset,
+                       f"{height:.2f}", ha="center", va="bottom", fontsize=5,
+                       color="grey")
+
     ax.set_xticks(x_pos)
     ax.set_xticklabels(labels, rotation=15, ha="right")
     ax.set_ylabel("g-factor")
@@ -726,16 +785,54 @@ def fig_sc_potential(output_dir: Path) -> None:
             print("  WARNING: no potential profile data found, skipping.")
             return
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(z, EV, color="#d62728", linewidth=1.5, label="$E_V$")
-    ax.plot(z, EV_SO, color="#ff7f0e", linewidth=1.5, label="$E_{\\Delta SO}$")
-    ax.plot(z, EC, color="#17becf", linewidth=1.5, label="$E_C$")
-    ax.fill_between(z, EV.min() - 0.1, EV, alpha=0.06, color="#d62728")
-    ax.fill_between(z, EC, EC.max() + 0.1, alpha=0.06, color="#17becf")
-    ax.set_xlabel(r"$z$ (\u00C5)")
-    ax.set_ylabel("Energy (eV)")
-    ax.set_title(title)
-    ax.legend(loc="best")
+    # Read flat-band profile for comparison
+    try:
+        _, EV_fb, _, EC_fb = parse_potential_profile(output_dir)
+        has_flatband = True
+    except FileNotFoundError:
+        has_flatband = False
+
+    fig, (ax_full, ax_well) = plt.subplots(1, 2, figsize=(9.5, 4.5),
+                                            gridspec_kw={"width_ratios": [1.2, 1]})
+
+    # Full profile
+    ax_full.plot(z, EV, color="#d62728", linewidth=1.5, label="$E_V$")
+    ax_full.plot(z, EV_SO, color="#ff7f0e", linewidth=1.5, label="$E_{\\Delta SO}$")
+    ax_full.plot(z, EC, color="#17becf", linewidth=1.5, label="$E_C$")
+    ax_full.fill_between(z, EV.min() - 0.1, EV, alpha=0.06, color="#d62728")
+    ax_full.fill_between(z, EC, EC.max() + 0.1, alpha=0.06, color="#17becf")
+    ax_full.set_xlabel(r"$z$ (\u00C5)")
+    ax_full.set_ylabel("Energy (eV)")
+    ax_full.set_title("GaAs/AlAs QW SC band edges")
+    ax_full.legend(loc="best", fontsize=8)
+
+    # Zoom on well region — show SC bending vs flat-band
+    well_mask = (z >= -60) & (z <= 60)
+    z_well = z[well_mask]
+    ax_well.plot(z_well, EC[well_mask], color="#17becf", linewidth=1.5, label="$E_C$ (SC)")
+    ax_well.plot(z_well, EV[well_mask], color="#d62728", linewidth=1.5, label="$E_V$ (SC)")
+    if has_flatband:
+        ax_well.plot(z_well, EC_fb[well_mask], "--", color="#17becf", linewidth=0.8,
+                    alpha=0.6, label="$E_C$ (flat)")
+        ax_well.plot(z_well, EV_fb[well_mask], "--", color="#d62728", linewidth=0.8,
+                    alpha=0.6, label="$E_V$ (flat)")
+    # Annotate band bending magnitude
+    well_inner = (z >= -5) & (z <= 5)
+    if np.any(well_inner):
+        ec_sc_mid = np.mean(EC[well_inner])
+        if has_flatband:
+            ec_fb_mid = np.mean(EC_fb[well_inner])
+            bending = ec_sc_mid - ec_fb_mid
+            ax_well.annotate(f"SC shift: {bending*1000:.1f} meV",
+                           xy=(0, ec_sc_mid), fontsize=8, color="grey", ha="center",
+                           va="bottom" if bending > 0 else "top")
+    ax_well.axvline(-50, color="grey", linewidth=0.5, linestyle=":")
+    ax_well.axvline(50, color="grey", linewidth=0.5, linestyle=":")
+    ax_well.set_xlabel(r"$z$ (\u00C5)")
+    ax_well.set_ylabel("Energy (eV)")
+    ax_well.set_title("Zoom: well band bending")
+    ax_well.legend(loc="best", fontsize=7)
+
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "sc_potential.png")
     plt.close(fig)
@@ -847,28 +944,49 @@ def fig_wire_subbands(output_dir: Path) -> None:
           f"gap={e_cb_min - e_vb_max:.4f} eV")
     print(f"  Plotting {max_plot_vb} VB + {max_plot_cb} CB near the gap")
 
-    fig, ax = plt.subplots(figsize=(5, 4.5))
-    # VB subbands near the gap (red shades)
+    fig, (ax_vb, ax_cb) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=False)
+
+    # VB subbands near the gap
     if max_plot_vb > 0:
         vb_colors = plt.cm.Reds_r(np.linspace(0.3, 0.8, max_plot_vb))
         for i, band_i in enumerate(range(plot_vb_start, n_vb)):
-            ax.plot(k_vals, eig[band_i], color=vb_colors[i], linewidth=0.7)
+            ax_vb.plot(k_vals, eig[band_i], color=vb_colors[i], linewidth=0.8)
 
-    # CB subbands near the gap (blue shades)
+    ax_vb.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
+               label=f"VB top = {e_vb_max:.3f} eV")
+    ax_vb.set_xlabel(r"$k_z$ (1/\u00C5)")
+    ax_vb.set_ylabel(r"$E$ (eV)")
+    ax_vb.set_title(f"VB subbands ({max_plot_vb} shown)")
+    ax_vb.legend(loc="best", fontsize=7)
+
+    # CB subbands near the gap
     if max_plot_cb > 0:
         cb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.8, max_plot_cb))
         for i in range(max_plot_cb):
             band_i = n_vb + i
-            ax.plot(k_vals, eig[band_i], color=cb_colors[i], linewidth=0.7)
+            ax_cb.plot(k_vals, eig[band_i], color=cb_colors[i], linewidth=0.8)
 
-    ax.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
-               label=f"VB top = {e_vb_max:.3f} eV")
-    ax.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
+    ax_cb.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
                label=f"CB bottom = {e_cb_min:.3f} eV")
-    ax.set_xlabel(r"$k_z$ (1/\u00C5)")
-    ax.set_ylabel(r"$E$ (eV)")
-    ax.set_title(f"GaAs rectangular wire subbands")
-    ax.legend(loc="best", fontsize=8)
+    ax_cb.set_xlabel(r"$k_z$ (1/\u00C5)")
+    ax_cb.set_ylabel(r"$E$ (eV)")
+    ax_cb.set_title(f"CB subbands ({max_plot_cb} shown)")
+    ax_cb.legend(loc="best", fontsize=7)
+
+    wire_w = float(
+        next(
+            (l.split(":")[1].strip() for l in open(cfg) if l.strip().startswith("wire_width")),
+            "63.0",
+        )
+    )
+    wire_h = float(
+        next(
+            (l.split(":")[1].strip() for l in open(cfg) if l.strip().startswith("wire_height")),
+            "63.0",
+        )
+    )
+    fig.suptitle(f"GaAs wire ({wire_w:.0f}×{wire_h:.0f} Å, gap={e_cb_min-e_vb_max:.3f} eV)",
+                fontsize=10)
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "wire_subbands.png")
     plt.close(fig)
