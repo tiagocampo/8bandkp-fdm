@@ -430,9 +430,19 @@ def fig_bulk_gaas_bands(output_dir: Path) -> None:
     ax_zoom.axhline(0, color="grey", linewidth=0.4, linestyle="--")
 
     # Annotate band gap and SO splitting
-    e_vb = max(e for e in e0 if e <= 0.01)
-    e_so = min(e for e in e0 if e <= 0.01)
-    e_cb = min(e for e in e0 if e > 0.01)
+    try:
+        e_vb = max(e for e in e0 if e <= 0.01)
+    except ValueError:
+        e_vb = 0.0
+    try:
+        e_so = min(e for e in e0 if e <= 0.01)
+    except ValueError:
+        e_so = e_vb
+    try:
+        e_cb = min(e for e in e0 if e > 0.01)
+    except ValueError:
+        e_cb = max(e0) + 1.0
+
     gap = e_cb - e_vb
     so_split = e_vb - e_so
 
@@ -1244,8 +1254,15 @@ def fig_bulk_inas_bands(output_dir: Path) -> None:
     """bulk_inas_bands.png: 8-band E(k) dispersion from bulk InAs."""
     print("[figure] bulk_inas_bands")
     cfg = CONFIG_DIR / "bulk_inas_kx.cfg"
-    run_executable(EXE_BAND, cfg, REPO_ROOT, label="bulk_inas_kx")
-    k_vals, eig = parse_eigenvalues(output_dir)
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="bulk_inas_kx")
+    if result.returncode != 0:
+        print("  WARNING: bulk_inas_kx run failed, skipping.")
+        return
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: eigenvalues.dat not found for bulk InAs, skipping.")
+        return
 
     fig, (ax_full, ax_zoom) = plt.subplots(1, 2, figsize=(9.5, 4.5),
                                             gridspec_kw={"width_ratios": [1.2, 1]})
@@ -1279,9 +1296,19 @@ def fig_bulk_inas_bands(output_dir: Path) -> None:
     ax_zoom.axhline(0, color="grey", linewidth=0.4, linestyle="--")
 
     # Annotate band gap and SO splitting
-    e_vb = max(e for e in e0 if e <= 0.01)
-    e_so = min(e for e in e0 if e <= 0.01)
-    e_cb = min(e for e in e0 if e > 0.01)
+    try:
+        e_vb = max(e for e in e0 if e <= 0.01)
+    except ValueError:
+        e_vb = 0.0
+    try:
+        e_so = min(e for e in e0 if e <= 0.01)
+    except ValueError:
+        e_so = e_vb
+    try:
+        e_cb = min(e for e in e0 if e > 0.01)
+    except ValueError:
+        e_cb = max(e0) + 1.0
+
     gap = e_cb - e_vb
     so_split = e_vb - e_so
 
@@ -1314,7 +1341,7 @@ def fig_qcse_stark_shift(output_dir: Path) -> None:
         print("  WARNING: zero-field QCSE run failed, skipping.")
         return
     try:
-        z0, EV0, EVSO0, EC0 = parse_potential_profile(output_dir)
+        z0, EV0, _, EC0 = parse_potential_profile(output_dir)
     except FileNotFoundError:
         print("  WARNING: potential_profile.dat not found for zero field, skipping.")
         return
@@ -1332,7 +1359,7 @@ def fig_qcse_stark_shift(output_dir: Path) -> None:
         print("  WARNING: electric-field QCSE run failed, skipping.")
         return
     try:
-        z_ef, EV_ef, EVSO_ef, EC_ef = parse_potential_profile(output_dir)
+        z_ef, EV_ef, _, EC_ef = parse_potential_profile(output_dir)
     except FileNotFoundError:
         print("  WARNING: potential_profile.dat not found for e-field, skipping.")
         return
@@ -1359,30 +1386,47 @@ def fig_qcse_stark_shift(output_dir: Path) -> None:
     ax_left.set_title("QCSE: Band-edge tilt under field")
     ax_left.legend(loc="best", fontsize=7)
 
-    # Right panel: subband energy levels
+    # Right panel: energy level diagram with horizontal lines
     if e0_vals is not None and ef_vals is not None:
         n_show = min(len(e0_vals), len(ef_vals), 8)
-        y_pos = np.arange(n_show)
-        bar_width = 0.35
-        ax_right.barh(y_pos - bar_width / 2, e0_vals[:n_show], bar_width,
-                     color="#1f77b4", alpha=0.8, label="0 field")
-        ax_right.barh(y_pos + bar_width / 2, ef_vals[:n_show], bar_width,
-                     color="#ff7f0e", alpha=0.8, label="-70 kV/cm")
-        ax_right.set_ylabel("Subband index")
-        ax_right.set_xlabel("Energy (eV)")
-        ax_right.set_title("Subband Stark shift")
-        ax_right.legend(loc="best", fontsize=8)
+        col_zero = 1
+        col_field = 2
+        line_len = 0.3
+        for i in range(n_show):
+            # 0-field level
+            ax_right.hlines(e0_vals[i], col_zero - line_len / 2,
+                           col_zero + line_len / 2,
+                           colors="#1f77b4", linewidth=2.0)
+            # With-field level
+            ax_right.hlines(ef_vals[i], col_field - line_len / 2,
+                           col_field + line_len / 2,
+                           colors="#ff7f0e", linewidth=2.0)
+            # Annotate Stark shift (delta_E) between the pair
+            delta_e = ef_vals[i] - e0_vals[i]
+            if abs(delta_e) > 1e-6:
+                mid_e = (e0_vals[i] + ef_vals[i]) / 2
+                ax_right.annotate(f"{delta_e*1000:+.1f}",
+                                xy=((col_zero + col_field) / 2, mid_e),
+                                fontsize=6, color="grey", ha="center",
+                                va="center")
+                # Dotted connector between the two levels
+                ax_right.plot([col_zero + line_len / 2, col_field - line_len / 2],
+                             [e0_vals[i], ef_vals[i]],
+                             ":", color="grey", linewidth=0.6)
 
-        # Annotate Stark shift for first CB subband
-        if len(e0_vals) > 0 and len(ef_vals) > 0:
-            # Find first CB state (positive energy)
-            cb_zero = [e for e in e0_vals if e > 0.5]
-            cb_field = [e for e in ef_vals if e > 0.3]
-            if cb_zero and cb_field:
-                shift = cb_field[0] - cb_zero[0]
-                ax_right.annotate(f"$\\Delta E_1$ = {shift*1000:.1f} meV",
-                                xy=(0.5, 0.95), xycoords="axes fraction",
-                                fontsize=8, color="grey", ha="center")
+        # Column labels
+        ax_right.set_xticks([col_zero, col_field])
+        ax_right.set_xticklabels(["0 field", "-70 kV/cm"])
+        ax_right.set_ylabel("Energy (eV)")
+        ax_right.set_title("Subband Stark shift (meV)")
+
+        # Manual legend via proxy artists
+        from matplotlib.lines import Line2D
+        legend_elements = [
+            Line2D([0], [0], color="#1f77b4", linewidth=2, label="0 field"),
+            Line2D([0], [0], color="#ff7f0e", linewidth=2, label="-70 kV/cm"),
+        ]
+        ax_right.legend(handles=legend_elements, loc="best", fontsize=8)
     else:
         ax_right.text(0.5, 0.5, "No eigenvalue data", transform=ax_right.transAxes,
                      ha="center", va="center")
@@ -1397,8 +1441,15 @@ def fig_qw_gaas_algaas_subbands(output_dir: Path) -> None:
     """qw_gaas_algaas_subbands.png: Type-I GaAs/AlGaAs QW E(k_parallel) subbands."""
     print("[figure] qw_gaas_algaas_subbands")
     cfg = REPO_ROOT / "docs" / "benchmarks" / "qw_gaas_algaas.cfg"
-    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_gaas_algaas")
-    k_vals, eig = parse_eigenvalues(output_dir)
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_gaas_algaas")
+    if result.returncode != 0:
+        print("  WARNING: qw_gaas_algaas run failed, skipping.")
+        return
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: eigenvalues.dat not found for GaAs/AlGaAs QW, skipping.")
+        return
 
     fig, ax = plt.subplots(figsize=(6, 5))
     n_bands = eig.shape[0]
@@ -1419,8 +1470,14 @@ def fig_qw_gaas_algaas_subbands(output_dir: Path) -> None:
 
     # Annotate VB top and CB bottom
     e0 = eig[:, 0]
-    e_vb = max(e for e in e0 if e <= 0.01)
-    e_cb = min(e for e in e0 if e > 0.01)
+    try:
+        e_vb = max(e for e in e0 if e <= 0.01)
+    except ValueError:
+        e_vb = 0.0
+    try:
+        e_cb = min(e for e in e0 if e > 0.01)
+    except ValueError:
+        e_cb = max(e0) + 1.0
     gap = e_cb - e_vb
     ax.annotate(f"Gap = {gap*1000:.1f} meV", xy=(k_vals[-1] * 0.6, (e_vb + e_cb) / 2),
                fontsize=8, color="grey", ha="center")
@@ -1505,25 +1562,26 @@ def fig_convergence_grid_spacing(output_dir: Path) -> None:
     steps_sorted = sorted(energies_at_gamma.keys())
     ref_step = max(steps_sorted)
     ref_e = energies_at_gamma[ref_step]
-    dz_ref = dz_values[ref_step]
 
     for band_idx in range(min(ref_e.shape[0], 8)):
         diffs = []
-        dz_list = []
+        dz_plot = []
         for step in steps_sorted:
             if step == ref_step:
                 continue
             e = energies_at_gamma[step]
             if band_idx < e.shape[0]:
                 diffs.append(abs(e[band_idx] - ref_e[band_idx]))
-                dz_list.append(dz_values[step])
-        if len(dz_list) >= 2:
-            ax.loglog(dz_list, diffs, "o-", linewidth=1.2, markersize=5,
+                dz_plot.append(dz_values[step])
+        if len(dz_plot) >= 2:
+            ax.loglog(dz_plot, diffs, "o-", linewidth=1.2, markersize=5,
                      label=f"Band {band_idx + 1}", color=BAND_COLORS[band_idx])
 
     # Reference slope line (2nd-order convergence: error ~ dz^2)
-    if len(dz_list) >= 2:
-        dz_arr = np.array(sorted(set(dz_list)))
+    # Collect dz values cleanly from non-reference steps
+    all_dz = sorted(dz_values[s] for s in steps_sorted if s != ref_step)
+    if len(all_dz) >= 2:
+        dz_arr = np.array(all_dz)
         # Scale the reference line to pass through the mid-point of first band data
         ref_diffs = []
         ref_dzs = []
@@ -1554,9 +1612,16 @@ def fig_benchmark_inasw_gasbw_broken_gap(output_dir: Path) -> None:
     """benchmark_inasw_gasbw_broken_gap.png: broken-gap QW E(k) subbands."""
     print("[figure] benchmark_inasw_gasbw_broken_gap")
     cfg = CONFIG_DIR / "qw_inasw_gasbw_broken_gap.cfg"
-    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_inasw_gasbw_broken_gap",
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_inasw_gasbw_broken_gap",
                   timeout=300)
-    k_vals, eig = parse_eigenvalues(output_dir)
+    if result.returncode != 0:
+        print("  WARNING: broken-gap run failed, skipping.")
+        return
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: eigenvalues.dat not found for broken-gap QW, skipping.")
+        return
 
     fig, ax = plt.subplots(figsize=(6, 5))
     n_bands = eig.shape[0]
@@ -1567,7 +1632,7 @@ def fig_benchmark_inasw_gasbw_broken_gap(output_dir: Path) -> None:
         if energy_mid > 0.2:
             color = "#17becf"  # CB-like
         elif energy_mid > -0.2:
-            color="#2ca02c"  # near-gap / mixed
+            color = "#2ca02c"  # near-gap / mixed
         else:
             color="#d62728"  # VB-like
         ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=0.85)
