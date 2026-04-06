@@ -181,55 +181,9 @@ At $k_\parallel = 0$, a ground-state heavy hole will have $f_{\text{HH}} \approx
 
 The conduction band states (bands 7--8) also acquire valence band character at large $k$ through the interband coupling term $P$ (the Kane momentum matrix element). This non-parabolicity effect is encoded in the parts as small but nonzero $P_1^{(n)}, \ldots, P_6^{(n)}$ for nominally CB states.
 
-## 3.6 Example: Quantum Well Eigenstates
+## 3.6 Implementation: How the Code Writes Wavefunctions
 
-![QW wavefunctions](../figures/qw_wavefunctions.png)
-
-*Figure 1: Probability density $|\psi(z)|^2$ for the first four conduction-band eigenstates of the AlSbW/GaSbW/InAsW quantum well at $k_\parallel = 0$. State 1 is the ground-state electron localized in the InAs layer. States 2-4 show increasing nodal structure.*
-
-![QW band decomposition](../figures/qw_parts.png)
-
-*Figure 2: Band character decomposition (integrated parts) for the first eight eigenstates of the AlSbW/GaSbW/InAsW QW at $k_\parallel = 0$. The first few states are dominated by CB character (cyan), while higher states show HH (red), LH (blue), and SO (orange) contributions.*
-
-### 3.6.1 Ground-state conduction band electron
-
-Consider a GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well of width $L = 100$ A with $N = 200$ grid points. The ground-state conduction band electron ($n = 1$, the lowest state with energy above the CB edge) has a parts vector approximately:
-
-$$
-(P_1, \ldots, P_8) \approx (0.001,\; 0.001,\; 0.001,\; 0.001,\; 0.002,\; 0.002,\; 0.496,\; 0.496).
-$$
-
-The state is overwhelmingly conduction-band in character ($P_7 + P_8 \approx 0.992$), with nearly equal spin-up and spin-down components ($P_7 \approx P_8$), as expected for a state at $k_\parallel = 0$ where spin is degenerate. The tiny valence band admixture ($\sim 0.8\%$) comes from the interband coupling via the Kane parameter $P$.
-
-The spatial profile $|\psi_7^{(1)}(z)|$ and $|\psi_8^{(1)}(z)|$ are identical (spin degeneracy) and show a single half-sine-wave-like envelope localized within the well. The probability density $\rho^{(1)}(z)$ peaks at the well center and decays evanescently into the barriers.
-
-### 3.6.2 Heavy-hole ground state
-
-The highest-energy valence state (HH1) at $k_\parallel = 0$ typically has:
-
-$$
-(P_1, \ldots, P_8) \approx (0.98,\; 0.00,\; 0.00,\; 0.00,\; 0.01,\; 0.01,\; 0.00,\; 0.00).
-$$
-
-The state is almost purely $|3/2, +3/2\rangle$ (band 1). The other HH band (band 4, $|3/2, -3/2\rangle$) carries essentially zero weight because at $k_\parallel = 0$ the two HH bands are decoupled. The small split-off admixture ($\sim 2\%$) arises from the $\Delta_{\text{SO}}$ coupling between the $J = 3/2$ and $J = 1/2$ manifolds, which is never truly zero.
-
-At $k_\parallel = 0.05\;\text{A}^{-1}$ along $k_x$, the same state might show:
-
-$$
-(P_1, \ldots, P_8) \approx (0.82,\; 0.08,\; 0.03,\; 0.01,\; 0.03,\; 0.02,\; 0.01,\; 0.00).
-$$
-
-Now $f_{\text{HH}} = 0.83$ and $f_{\text{LH}} = 0.11$: the state has acquired 11% light-hole character. This mixing modifies the effective mass, the optical matrix elements, and the spin properties of the state.
-
-### 3.6.3 Excited states and nodal structure
-
-Higher eigenstates exhibit nodal structure in their spatial wavefunctions. The $m$-th excited subband in a given band manifold has $m$ nodes in the envelope function. For example, the second conduction subband (CB2) has one node at the well center, with $|\psi_7^{(n)}(z)|$ peaking near the well edges and passing through zero at $z = L/2$.
-
-These nodes are visible directly in the eigenfunction output files. They are analogous to the nodes of a particle-in-a-box wavefunction, but distorted by the spatially varying material parameters (effective mass, band offsets) and the band-mixing terms in the k.p Hamiltonian.
-
-## 3.7 Implementation: How the Code Writes Wavefunctions
-
-### 3.7.1 The writeEigenfunctions subroutine
+### 3.6.1 The writeEigenfunctions subroutine
 
 The output pipeline is:
 
@@ -241,7 +195,7 @@ The output pipeline is:
 
 4. **Compute parts**: Integrate $|\psi_b(z)|^2$ over $z$ using the rectangle rule with spacing $\Delta z = z_2 - z_1$, and write all eigenstates to a single `parts.dat` file.
 
-### 3.7.2 The 2D wire case
+### 3.6.2 The 2D wire case
 
 For quantum wires (confinement mode 2), the code uses `writeEigenfunctions2d`. The eigenvector layout is analogous but now the spatial grid is 2D:
 
@@ -257,50 +211,187 @@ $$
 
 The output format is three columns ($x$, $y$, $\rho$) with blank lines separating $y$-rows, directly plottable with `gnuplot splot`. The band-resolved parts are also computed, integrating over the 2D area element $dA = \Delta x \times \Delta y$.
 
-### 3.7.3 Spin degeneracy and Kramers theorem
+### 3.6.3 Spin degeneracy and Kramers theorem
 
 For systems without magnetic fields or structural inversion asymmetry, every eigenstate has a Kramers partner: a state at the same energy with opposite spin. In the output, this manifests as pairs of states with nearly identical parts vectors (e.g., $P_7 \approx P_8$ for CB states, or $P_1 \approx P_4$ for HH states at $k_\parallel = 0$). At finite $k_\parallel$ in asymmetric structures (e.g., under an external electric field), this degeneracy can be lifted and the parts vectors of the two spin partners may differ.
 
-## 3.8 Practical Guide: Reading and Plotting the Output
+## 3.7 Computed Example: AlSbW/GaSbW/InAsW Quantum Well
 
-### 3.8.1 Eigenfunction files
+To illustrate the concepts above with real data, we use the type-II AlSbW/GaSbW/InAsW quantum well. This structure is interesting because the conduction band electron is confined in the narrow InAs layer ($|z| \leq 35$ A) while the valence band holes reside mainly in the wider GaSb layer ($|z| \leq 135$ A), a hallmark of the broken-gap band alignment.
 
-Each file `eigenfunctions_k_XXXXX_ev_YYYYY.dat` has the format:
+### 3.7.1 The input configuration
+
+The configuration file `tests/regression/configs/qw_alsbw_gasbw_inasw.cfg` reads:
 
 ```
-   z_1    |psi_1(z_1)|    |psi_2(z_1)|    ...    |psi_8(z_1)|
-   z_2    |psi_1(z_2)|    |psi_2(z_2)|    ...    |psi_8(z_2)|
-   ...
-   z_N    |psi_1(z_N)|    |psi_2(z_N)|    ...    |psi_8(z_N)|
+waveVector: kx
+waveVectorMax: 0.1
+waveVectorStep: 11
+confinement:  1
+FDstep: 101
+FDorder: 2
+numLayers:  3
+material1: AlSbW -250  250 0
+material2: GaSbW -135  135 0.2414
+material3: InAsW  -35   35 -0.0914
+numcb: 32
+numvb: 32
+ExternalField: 0  EF
+EFParams: 0.0005
 ```
 
-To plot the total probability density of eigenstate 3 at k-step 1:
+Key parameters: $N = 101$ grid points over $z \in [-250, 250]$ A (spacing $\Delta z = 5$ A), 3 material layers with AlSbW barriers, GaSbW as the main well, and a narrow InAsW insert. The code computes $32 + 32 = 64$ eigenvalues at each of 11 k-steps.
+
+### 3.7.2 Reading an eigenfunction file
+
+After running the code, the file `output/eigenfunctions_k_00001_ev_00033.dat` contains the ground-state conduction band wavefunction (eigenvalue $E_{33} = +0.0205$ eV). The first few lines look like this:
+
+```
+  -250.000       0.00000      0.784947E-08  0.127027E-06  0.922515E-49  0.217827E-08  0.352506E-07  0.437764E-08  0.708426E-07
+  -245.000       0.00000      0.109831E-07  0.177737E-06  0.302387E-49  0.287577E-08  0.465381E-07  0.523735E-08  0.847552E-07
+  -240.000       0.00000      0.190974E-07  0.309050E-06  0.229513E-49  0.510105E-08  0.825494E-07  0.918832E-08  0.148693E-06
+  -235.000       0.00000      0.319546E-07  0.517116E-06  0.860012E-49  0.851595E-08  0.137812E-06  0.152440E-07  0.246691E-06
+  -230.000       0.00000      0.536363E-07  0.867988E-06  0.766746E-49  0.142992E-07  0.231401E-06  0.255520E-07  0.413504E-06
+```
+
+Each row has 9 columns. The first column is the $z$-coordinate in Angstroms. Columns 2 through 9 give $|\psi_b(z_i)|$ for bands $b = 1, \ldots, 8$:
+
+| Column | Band | Label |
+|---|---|---|
+| 1 | -- | $z$ position (A) |
+| 2 | 1 | HH1: $|3/2, +3/2\rangle$ |
+| 3 | 2 | LH1: $|3/2, +1/2\rangle$ |
+| 4 | 3 | LH2: $|3/2, -1/2\rangle$ |
+| 5 | 4 | HH2: $|3/2, -3/2\rangle$ |
+| 6 | 5 | SO1: $|1/2, +1/2\rangle$ |
+| 7 | 6 | SO2: $|1/2, -1/2\rangle$ |
+| 8 | 7 | CB1: $|\Gamma_6, \uparrow\rangle$ |
+| 9 | 8 | CB2: $|\Gamma_6, \downarrow\rangle$ |
+
+**Important**: the values written are $|\psi_b(z_i)|$ (the absolute amplitudes), not $|\psi_b(z_i)|^2$ (the probability density). To obtain the probability density, you must square the values.
+
+### 3.7.3 The CB1 ground-state wavefunction
+
+The following table shows the CB1 wavefunction at selected positions along the growth axis. We list $|\psi_b(z)|$ for each band and the total probability density $\rho(z) = \sum_b |\psi_b(z)|^2$:
+
+| $z$ (A) | Region | $|\psi_7|$ (CB1) | $|\psi_8|$ (CB2) | $|\psi_3|$ (LH2) | Other bands | $\rho(z)$ |
+|---|---|---|---|---|---|---|
+| -250 | AlSb barrier | 4.4e-9 | 7.1e-8 | 1.3e-7 | negligible | 2.2e-14 |
+| -150 | GaSb well | 9.8e-5 | 1.6e-3 | 3.4e-3 | negligible | 1.5e-5 |
+| -40 | GaSb/InAs interface | 3.0e-3 | 4.9e-2 | 1.5e-1 | ~1e-2 | 2.5e-2 |
+| -35 | InAs layer edge | 5.7e-3 | 9.2e-2 | 1.1e-1 | ~4e-2 | 2.2e-2 |
+| -10 | InAs well center | 1.6e-2 | 2.5e-1 | 3.7e-2 | ~2e-2 | 6.5e-2 |
+| 0 | Well center | 1.7e-2 | 2.7e-1 | ~0 | ~8e-3 | 7.2e-2 |
+| +10 | InAs well center | 1.6e-2 | 2.5e-1 | 3.7e-2 | ~2e-2 | 6.5e-2 |
+| +35 | InAs layer edge | 5.7e-3 | 9.2e-2 | 1.1e-1 | ~4e-2 | 2.2e-2 |
+| +150 | GaSb well | 9.8e-5 | 1.6e-3 | 3.4e-3 | negligible | 1.5e-5 |
+| +250 | AlSb barrier | 4.4e-9 | 7.1e-8 | 1.3e-7 | negligible | 2.2e-14 |
+
+The wavefunction peaks at $z = 0$ (the center of the InAs layer) with $\rho(0) = 7.2 \times 10^{-2}$ A$^{-1}$. The CB2 component $|\psi_8|$ (spin-down conduction band) is the dominant contributor, reaching 0.268 at the center. The CB1 component $|\psi_7|$ (spin-up) reaches 0.017. This asymmetry between $P_7$ and $P_8$ is a consequence of the broken-gap alignment: the large LH2 admixture ($P_3 = 0.329$) couples preferentially to one spin channel through the $k \cdot p$ interaction.
+
+The exponential decay into the AlSb barrier is clearly visible: $\rho$ drops from $O(10^{-2})$ inside the well to $O(10^{-14})$ at the barrier boundary, a factor of $10^{12}$.
+
+### 3.7.4 Computing the total probability density
+
+To plot the total probability density, square each band amplitude and sum:
 
 ```gnuplot
-plot 'output/eigenfunctions_k_00001_ev_00003.dat' using 1:(($2**2)+($3**2)+($4**2)+($5**2)+($6**2)+($7**2)+($8**2)+($9**2)) with lines title '|psi|^2'
+plot 'output/eigenfunctions_k_00001_ev_00033.dat' \
+  using 1:(($2**2)+($3**2)+($4**2)+($5**2)+($6**2)+($7**2)+($8**2)+($9**2)) \
+  with lines title '|psi(z)|^2'
 ```
 
-To plot the conduction band component (columns 8 and 9 correspond to bands 7 and 8):
+For the band-resolved density (conduction band only):
 
 ```gnuplot
-plot 'output/eigenfunctions_k_00001_ev_00003.dat' using 1:($8**2+$9**2) with lines title 'CB character'
+plot 'output/eigenfunctions_k_00001_ev_00033.dat' \
+  using 1:($8**2+$9**2) with lines title 'CB character'
 ```
 
-### 3.8.2 Parts file
+### 3.7.5 Band-resolved parts: the full picture
 
-The file `parts.dat` has `evnum` rows and 8 columns:
+The integrated band probabilities (normalized to sum to 1) reveal the character of each eigenstate. For the AlSbW/GaSbW/InAsW structure at $k_\parallel = 0$:
 
+| State | $E$ (eV) | $P_1$ (HH1) | $P_2$ (LH1) | $P_3$ (LH2) | $P_4$ (HH2) | $P_5$ (SO1) | $P_6$ (SO2) | $P_7$ (CB1) | $P_8$ (CB2) | Character |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 30 | -0.033 | 1.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | HH1 |
+| 31 | -0.033 | 1.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | HH1 |
+| 32 | -0.033 | 0.000 | 0.000 | 0.000 | 1.000 | 0.000 | 0.000 | 0.000 | 0.000 | HH2 |
+| **33** | **+0.021** | **0.000** | **0.001** | **0.329** | **0.000** | **0.000** | **0.014** | **0.002** | **0.654** | **CB2** |
+| **34** | **+0.021** | **0.000** | **0.329** | **0.001** | **0.000** | **0.014** | **0.000** | **0.654** | **0.002** | **CB1** |
+| **35** | **+0.290** | **0.000** | **0.186** | **0.001** | **0.000** | **0.026** | **0.000** | **0.784** | **0.002** | **CB1** |
+| **36** | **+0.290** | **0.000** | **0.001** | **0.186** | **0.000** | **0.000** | **0.026** | **0.002** | **0.784** | **CB2** |
+| 39 | +0.842 | 0.000 | 0.038 | 0.000 | 0.000 | 0.008 | 0.000 | 0.945 | 0.008 | CB1 |
+| 40 | +0.842 | 0.000 | 0.000 | 0.038 | 0.000 | 0.000 | 0.008 | 0.008 | 0.945 | CB2 |
+
+Several features are worth noting:
+
+1. **Spin degeneracy (Kramers pairs)**: States 33 and 34 are degenerate at $E = 0.021$ eV and have swapped parts: state 33 has $P_8 = 0.654$ (CB2-dominant) while state 34 has $P_7 = 0.654$ (CB1-dominant). This is the Kramers partner structure at $k_\parallel = 0$.
+
+2. **Large valence band admixture in CB1**: The ground-state electron has $P_3 = 0.329$ (LH2 character), meaning **33% of the state is light-hole**. This is not a small perturbation -- it is a direct consequence of the broken-gap alignment between InAs and GaSb, where the conduction band of InAs lies below the valence band of GaSb, creating strong interband mixing.
+
+3. **Higher CB states become purer**: State 39 ($E = 0.842$ eV) has $P_7 + P_8 = 0.953$, much more conduction-band-like than CB1. The deeper the state is confined in the InAs well, the less it interacts with the GaSb valence band.
+
+4. **Pure HH states at the valence band edge**: States 30--32 have $P_1 = 1.000$ or $P_4 = 1.000$, meaning they are 100% heavy hole at $k_\parallel = 0$. These are the highest-energy valence states confined in the GaSb layer.
+
+### 3.7.6 Spatial profiles
+
+![QW wavefunctions](../figures/qw_wavefunctions.png)
+
+*Figure 1: Probability density $|\psi(z)|^2$ for the first four conduction-band eigenstates of the AlSbW/GaSbW/InAsW quantum well at $k_\parallel = 0$. State 33 (CB1) is the ground-state electron localized in the InAs layer. States 35--40 show increasing energy and more extended wavefunctions.*
+
+The spatial profiles reveal the type-II nature of this structure. The CB states (33, 34) are localized within the narrow InAs insert ($|z| < 35$ A), while the HH states (30--32) are spread across the wider GaSb well ($|z| < 135$ A). The wavefunction decays exponentially into the AlSb barriers, with a decay length that depends on the energy difference between the eigenvalue and the band edge in the barrier material.
+
+![QW band decomposition](../figures/qw_parts.png)
+
+*Figure 2: Band character decomposition (integrated parts) for the first eight eigenstates of the AlSbW/GaSbW/InAsW QW at $k_\parallel = 0$. The conduction-band states (cyan) show significant valence-band admixture, particularly the LH2 component (green), reflecting the broken-gap alignment. The valence-band states are almost purely HH (red).*
+
+## 3.8 Discussion
+
+### 3.8.1 Physical interpretation of wavefunction shapes
+
+The shapes of the eigenfunctions encode the physics of quantum confinement. In a single-band effective-mass picture, the ground state would be a simple half-sine wave with no nodes inside the well. The 8-band k.p result differs in three important ways:
+
+1. **Multi-component structure**: The wavefunction has 8 components, each with its own spatial profile. The CB1 state is not purely conduction-band but contains significant LH2 admixture, as shown by the parts analysis.
+
+2. **Material-dependent penetration**: The wavefunction decays at different rates in different layers. In the AlSb barrier, the decay is governed by the largest energy barrier. In the GaSb layer between the InAs well and the AlSb barrier, the wavefunction has a different effective mass and different decay length than in the barrier.
+
+3. **Broken-gap mixing**: In this particular structure, the InAs conduction band edge lies below the GaSb valence band edge, so the "conduction band electron" is actually a mixture of InAs CB and GaSb VB states. This is visible in the 33% LH2 admixture of the CB1 state, and in the spatial overlap of CB and VB wavefunctions near the GaSb/InAs interfaces.
+
+### 3.8.2 Connection to selection rules (Chapter 6)
+
+The band character of each eigenstate directly determines the optical transition matrix elements. A transition between eigenstates $n$ and $m$ has a matrix element proportional to:
+
+$$
+M_{nm} \propto \sum_{b,b'} \int \psi_b^{(n)*}(z)\, \hat{e} \cdot \mathbf{p}_{bb'}\, \psi_{b'}^{(m)}(z)\, dz,
+$$
+
+where $\mathbf{p}_{bb'}$ are the momentum matrix elements between bands $b$ and $b'$. The parts vector provides a quick estimate: if state $n$ is mostly CB ($P_7 + P_8 > 0.9$) and state $m$ is mostly HH ($P_1 + P_4 > 0.9$), the transition will be dominated by the $\Gamma_6$--$\Gamma_8$ matrix element and will be strongly polarization-dependent. The large LH admixture in the CB1 state of the broken-gap QW means that transitions involving this state have significant LH-like selection rules, which we explore in Chapter 6.
+
+### 3.8.3 Tips for plotting and analysis
+
+**Quick identification of state character**: Read `parts.dat` and look at which columns dominate:
+
+- Columns 7--8 large: conduction band state
+- Columns 1, 4 large: heavy hole state
+- Columns 2, 3 large: light hole state
+- Columns 5--6 large: split-off state
+
+**Plotting wavefunctions with material layers**: Overlay the layer boundaries as vertical lines:
+
+```gnuplot
+set arrow from -35, graph 0 to -35, graph 1 nohead lt -1
+set arrow from  35, graph 0 to  35, graph 1 nohead lt -1
+set arrow from -135, graph 0 to -135, graph 1 nohead lt -1
+set arrow from  135, graph 0 to  135, graph 1 nohead lt -1
+plot 'output/eigenfunctions_k_00001_ev_00033.dat' \
+  using 1:(($2**2)+($3**2)+($4**2)+($5**2)+($6**2)+($7**2)+($8**2)+($9**2)) \
+  with lines title 'CB1 total |psi|^2'
 ```
-P_1^(1)  P_2^(1)  P_3^(1)  P_4^(1)  P_5^(1)  P_6^(1)  P_7^(1)  P_8^(1)
-P_1^(2)  P_2^(2)  P_3^(2)  P_4^(2)  P_5^(2)  P_6^(2)  P_7^(2)  P_8^(2)
-...
-```
 
-A quick way to identify which eigenstates are conduction-band-like: look for rows where columns 7 and 8 sum to near unity. Similarly, valence band states have large entries in columns 1--4, and split-off states in columns 5--6.
+**Tracking band mixing with k**: The eigenfunction files are written at each k-step. By plotting the parts as a function of $k$, you can visualize the evolution from pure HH character at $k = 0$ to mixed HH/LH character at finite $k$, and identify anticrossings where two states swap character.
 
-### 3.8.3 Eigenvalue file
-
-The file `eigenvalues.dat` has `waveVectorStep` rows. The first column is $|\mathbf{k}|$ and the remaining `evnum` columns are the sorted eigenvalues in eV. By cross-referencing with the parts file, you can identify the band character of each subband and track how it evolves with $k$.
+**Cross-referencing with eigenvalues**: The file `eigenvalues.dat` contains `waveVectorStep` rows with $|\mathbf{k}|$ in the first column and the sorted eigenvalues in the remaining columns. By matching eigenvalue indices to the parts file, you can track which subband each eigenstate belongs to across the Brillouin zone.
 
 ## 3.9 Summary
 
@@ -309,5 +400,7 @@ The eigenvectors of the 8-band k.p Hamiltonian encode the full multi-component w
 - **Band-resolved probability densities** $|\psi_b(z)|^2$ showing how the wavefunction distributes across the HH, LH, SO, and CB manifolds.
 - **Integrated parts** $P_b^{(n)}$ quantifying the band character of each eigenstate.
 - **Heavy-hole/light-hole mixing** that evolves with in-plane wavevector and determines the optical and spin properties of the system.
+
+The AlSbW/GaSbW/InAsW example demonstrates that in broken-gap structures, the CB1 electron can have as much as 33% light-hole character, far from the simple single-band picture. This mixing has direct consequences for optical transitions (Chapter 6), g-factors (Chapter 5), and the accuracy of effective-mass approximations.
 
 These quantities are computed directly by the code's `writeEigenfunctions` subroutine using the flat-index mapping $\text{flat\_idx} = (b-1) \times N + i$, and are written to per-eigenstate data files and the aggregated `parts.dat` file. Understanding and visualizing these outputs is essential for interpreting the physics of quantum well and quantum wire structures simulated by the code.
