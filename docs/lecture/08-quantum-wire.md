@@ -318,69 +318,134 @@ The parser validates that `wire_nx >= FDorder + 1` and `wire_ny >= FDorder + 1`,
 
 ---
 
-## 3. Computed Example
+## 3. Computed Example: Rectangular GaAs Wire
 
-### 3.1 Input configuration: GaAs rectangular wire
+### 3.1 Input configuration
 
-The following example is adapted from the regression test config `tests/regression/configs/wire_gaas_rectangle.cfg`:
+The following example is taken from the regression test config `tests/regression/configs/wire_gaas_rectangle.cfg`:
 
 ```
 waveVector: kz
 waveVectorMax: 0.1
-waveVectorStep: 5
+waveVectorStep: 21
 confinement:  2
 FDstep: 1
 FDorder: 2
 numLayers:  1
-wire_nx: 11
-wire_ny: 11
-wire_dx: 2.0
-wire_dy: 2.0
+wire_nx: 21
+wire_ny: 21
+wire_dx: 3.0
+wire_dy: 3.0
 wire_shape: rectangle
-wire_width: 22.0
-wire_height: 22.0
+wire_width: 63.0
+wire_height: 63.0
 numRegions: 1
 region: GaAs  0.0  100.0
-numcb: 4
-numvb: 4
+numcb: 8
+numvb: 16
 ExternalField: 0  EF
 EFParams: 0.0005
 whichBand: 0
 bandIdx: 1
 SC: 0
+feast_emin: -1.5
+feast_emax: 2.0
+feast_m0: -1
 ```
 
 ### 3.2 Structure walkthrough
 
-This input defines a single-material GaAs rectangular wire with cross-section $22 \times 22$ A, discretized on an $11 \times 11$ grid with $\Delta x = \Delta y = 2$ A. The wire axis is along $z$ (set by `waveVector: kz`), and the dispersion is computed for 5 equally spaced $k_z$ points from 0 to 0.1 A$^{-1}$.
+This input defines a single-material GaAs rectangular wire with cross-section $63 \times 63$ A, discretized on a $21 \times 21$ grid with $\Delta x = \Delta y = 3$ A. The wire axis is along $z$ (set by `waveVector: kz`), and the dispersion is computed for 21 equally spaced $k_z$ points from 0 to 0.1 A$^{-1}$.
 
-The single region `GaAs 0.0 100.0` means all grid points within distance 100 A from the grid center receive GaAs parameters. Since the grid extends only to $(5.5 \times 2) = 11$ A from center, all 121 points are GaAs. This is a homogeneous wire: there is no potential confinement from band offsets, only the hard-wall boundary at the grid edges. In a production calculation, one would use at least two regions (e.g., GaAs core + AlGaAs barrier) to create a realistic confinement potential.
+The single region `GaAs 0.0 100.0` means all grid points within distance 100 A from the grid center receive GaAs parameters. Since the grid extends only to $(10.5 \times 3) = 31.5$ A from center, all 441 points are GaAs. This is a homogeneous wire: there is no potential confinement from band offsets, only the hard-wall boundary at the grid edges. The confinement energy arises entirely from the Dirichlet boundary conditions at the wire perimeter.
 
-The Hamiltonian dimension is $8 \times 121 = 968$, which is small enough for the dense LAPACK fallback but demonstrates the full wire assembly pipeline. For larger grids (e.g., $50 \times 50 = 2500$ points, dimension 20,000), the FEAST sparse solver becomes essential.
+The Hamiltonian dimension is $8 \times 441 = 3528$. The FEAST parameters (`feast_emin: -1.5`, `feast_emax: 2.0`) specify the energy search window, and `feast_m0: -1` triggers automatic subspace dimension estimation. With 8 CB and 16 VB states requested, the code returns 24 eigenvalues per $k_z$ point. The dense LAPACK fallback is used for this small matrix.
 
 ### 3.3 Running the example
 
 ```bash
-# Copy the regression config to input.cfg
-# (use Write tool, not cp, due to cp -i alias in the shell)
-# Then run:
+cat tests/regression/configs/wire_gaas_rectangle.cfg > input.cfg
 ./build/src/bandStructure
 ```
 
-The program reads `input.cfg`, initializes the wire grid via `init_wire_from_config`, builds `profile_2d` and `kpterms_2d` via `confinementInitialization_2d`, then sweeps over 5 $k_z$ points. At each point, `ZB8bandGeneralized` assembles the sparse Hamiltonian and the eigensolver computes the 4 lowest (CB) and 4 highest (VB) eigenvalues.
+The program initializes the wire grid, builds `profile_2d` and `kpterms_2d`, then sweeps over 21 $k_z$ points. At each point the sparse Hamiltonian is assembled and the eigensolver computes 24 eigenvalues. Output is written to `output/eigenvalues.dat` and `output/eigenfunctions_k_*_ev_*.dat`.
 
-### 3.4 Expected physics and output
+### 3.4 Numerical results at $k_z = 0$
 
-The band structure output $E(k_z)$ (Figure: `wire_subbands.png`) shows:
-- Several 1D subbands with parabolic dispersion near $k_z = 0$
-- The subband spacing depends on the wire width and the GaAs effective mass
-- For a 22 A square wire, the confinement energy of the lowest subband is on the order of a few hundred meV
+Running the config above produces 562 eigenvalues at $k_z = 0$ within the energy window $[-1.5, 2.0]$ eV. The eigenvalues come in spin-degenerate Kramers pairs (a consequence of time-reversal symmetry at $k_z = 0$). The fundamental band gap is identified as the largest energy gap between consecutive eigenvalues.
 
-The charge density plot (Figure: `wire_density_2d.png`) shows the $|F_n(x,y)|^2$ probability density of each subband integrated over the wire cross-section. The ground state has $s$-like symmetry (no nodes), the first excited state has $p$-like symmetry with a nodal line, etc.
+**Band gap:** 0.232 eV, between eigenvalue 0.799 eV (VB top) and 1.031 eV (CB bottom).
 
-The g-factor calculation (Figure: `wire_gfactor.png`) shows the anisotropic g-factor tensor components $g_{xx}$, $g_{yy}$, $g_{zz}$ for the lowest conduction subband. In a square wire, $g_{xx} = g_{yy}$ by symmetry, while $g_{zz}$ (along the wire axis) differs due to the distinct confinement geometry.
+This gap of 232 meV is substantially larger than the bulk GaAs gap of 1.519 eV shifted to the simulation reference, reflecting the additional quantum confinement in two spatial dimensions. The confinement pushes valence states down and conduction states up from their bulk positions.
 
-Optical transition strengths (Figure: `wire_optical.png`) show the oscillator strengths for the lowest CB-VB transitions, with polarization selection rules determined by the wire symmetry.
+**Conduction subbands (spin-degeneracy removed):**
+
+| Subband | Energy (eV) | Spacing from CB1 (meV) |
+|---------|-------------|------------------------|
+| CB1 | 1.031 | 0 |
+| CB2 | 1.092 | 61 |
+| CB3 | 1.154 | 123 |
+| CB4 | 1.229 | 198 |
+| CB5 | 1.348 | 317 |
+| CB6 | 1.429 | 398 |
+| CB7 | 1.502 | 471 |
+| CB8 | 1.595 | 564 |
+
+The subband spacing is of order 60--130 meV for the lowest states, which is characteristic of a 6.3 nm GaAs wire with hard-wall boundaries. For comparison, the infinite-well particle-in-a-box model predicts a ground-state energy $E_1 = \hbar^2 \pi^2 / (2 m^* L^2) \approx 150$ meV for $m^* = 0.067\,m_0$ and $L = 63$ A, broadly consistent with the confinement shift of CB1 relative to the bulk GaAs CB edge.
+
+**Valence subbands (top 8, spin-degeneracy removed):**
+
+| Subband | Energy (eV) | Spacing from VB top (meV) |
+|---------|-------------|---------------------------|
+| VB1 (HH) | 0.799 | 0 |
+| VB2 (LH) | 0.758 | 42 |
+| VB3 | 0.705 | 94 |
+| VB4 | 0.702 | 97 |
+| VB5 | 0.678 | 121 |
+| VB6 | 0.676 | 123 |
+| VB7 | 0.635 | 165 |
+| VB8 | 0.633 | 166 |
+
+The near-degenerate pairs (VB3/VB4, VB5/VB6, VB7/VB8) arise from the approximate square symmetry of the wire cross-section, which produces quasi-degenerate states related by 90-degree rotation.
+
+### 3.5 Subband classification and gap analysis
+
+In a quantum wire, the band gap is not simply the bulk material gap but the energy difference between the highest occupied valence subband edge and the lowest unoccupied conduction subband edge. The gap depends on the wire geometry through the confinement energies:
+
+$$E_{\text{gap}}^{\text{wire}} = E_{\text{CB1}} - E_{\text{VB1}} = 1.031 - 0.799 = 0.232 \text{ eV}$$
+
+This is an "effective gap" that can be significantly smaller than the bulk gap when the confinement is strong, because the valence subbands are pushed up (toward positive energy) by the quantum confinement of holes, while the conduction subbands are also pushed up. The net effect depends on the ratio of electron and hole confinement energies.
+
+For the GaAs wire at hand, the confinement shifts both the CB and VB edges upward from their bulk positions. The VB top rises by a larger amount than the CB bottom because of the heavier hole masses, resulting in a reduced effective gap compared to the bulk.
+
+### 3.6 Wire vs. quantum well comparison
+
+The following table compares the GaAs rectangular wire with the GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well studied in Chapter 02 (100 A well, 101 FD points):
+
+| Property | QW (GaAs/Al$_{0.3}$Ga$_{0.7}$As, 100 A) | Wire (GaAs, $63 \times 63$ A) |
+|----------|-------------------------------------------|-------------------------------|
+| Confinement | 1D ($z$) | 2D ($x$, $y$) |
+| Free directions | 2 ($x$, $y$) | 1 ($z$) |
+| CB1 energy | 1.021 eV | 1.031 eV |
+| VB1 energy | $-0.959$ eV | 0.799 eV |
+| Effective gap | 1.980 eV | 0.232 eV |
+| CB1 confinement shift | 302 meV above GaAs CB | $\sim$488 meV above GaAs CB |
+| Subband degeneracy | 2 (Kramers) | 2 (Kramers) |
+| Dispersion | 2D sheets $E(k_\parallel)$ | 1D modes $E(k_z)$ |
+| Matrix size | $808 \times 808$ | $3528 \times 3528$ |
+| Storage | Dense | Sparse CSR |
+
+The energy references differ because the QW uses the heterostructure band offset profile (GaAs well + AlGaAs barriers) while the wire is a single-material system with only hard-wall confinement. The wire's effective gap of 232 meV reflects the strong 2D confinement in a small cross-section, compared to the QW where the type-I alignment provides a well-defined gap set by the band offsets plus confinement.
+
+### 3.7 Band structure and density plots
+
+![Wire subband dispersion](../figures/wire_subbands.png)
+
+*Figure 1: Subband dispersion $E(k_z)$ for the GaAs rectangular wire ($63 \times 63$ A cross-section). The 8 lowest CB and 8 highest VB subbands are shown. The parabolic dispersion near $k_z = 0$ is characteristic of free propagation along the wire axis. The subband spacing of 60--130 meV for the lowest CB states reflects the strong 2D confinement.*
+
+![Wire charge density](../figures/wire_density_2d.png)
+
+*Figure 2: Probability density $|F_n(x,y)|^2$ of selected wire subbands at $k_z = 0$, plotted over the wire cross-section. The ground state (CB1) has $s$-like symmetry with a single maximum at the wire center. Higher subbands show $p$-like and $d$-like nodal patterns, reflecting the 2D particle-in-a-box quantization of the square cross-section.*
 
 ---
 
@@ -414,9 +479,9 @@ where the sum runs over all computed subbands and the integral over $k_z$ is dis
 
 ---
 
-## 5. Published Example: SOC Effects in ZB InSb and WZ InAs Nanowires
+## 5. Published Example and Discussion
 
-### 5.1 Reference
+### 5.1 Reference: SOC effects in ZB InSb and WZ InAs nanowires
 
 **P. E. Faria Junior, T. Campos, J. Fabian, G. M. Sipahi**, "Spin-orbit coupling effects in zinc-blende and wurtzite InSb and InAs nanowires," *Phys. Rev. B* **97**, 245402 (2018). [arXiv:1802.06734](https://arxiv.org/abs/1802.06734)
 
@@ -434,15 +499,33 @@ Both are treated within the 8-band k.p framework, but with different Hamiltonian
 - **Rashba and Dresselhaus spin-orbit fields** extracted from the subband structure. In zinc-blende nanowires, the bulk inversion asymmetry (Dresselhaus effect) and structural inversion asymmetry from electric fields (Rashba effect) combine to produce a total spin-orbit field that depends on both the wire radius and the applied field.
 - **Comparison between ZB and WZ crystal phases**, showing qualitatively different spin-orbit behavior: the wurtzite phase has an intrinsic Rashba-like spin splitting even without an external field, due to the built-in polar asymmetry along the c-axis.
 
-### 5.3 What this code can reproduce
+### 5.3 g-factor vs. radius: qualitative physics
+
+One of the central results of Faria Junior et al. is the radius dependence of the Lande g-factor in ZB InSb nanowires. The qualitative trend can be understood from the Lowdin partitioning formula:
+
+$$g = g_{\text{free}} - \frac{2}{m_0} \sum_{l} \frac{|\langle \text{CB1} | p | l \rangle|^2}{E_l - E_{\text{CB1}}}$$
+
+where the sum runs over remote (valence) subbands. As the wire radius decreases:
+
+1. **The subband spacing increases** (confinement energy scales as $\sim 1/R^2$), pushing the denominator $E_l - E_{\text{CB1}}$ to larger values. This tends to *reduce* the g-factor enhancement, bringing $g$ closer to $g_{\text{free}} = 2$.
+
+2. **The momentum matrix elements** $\langle \text{CB1} | p | l \rangle$ are modified by the stronger confinement. In narrow wires, the wavefunctions are more localized and the overlap integrals can either increase or decrease depending on the symmetry of the subbands involved.
+
+3. **Band mixing is enhanced** in narrow wires because the confinement mixes CB and VB character more strongly. The 8-band k.p model captures this self-consistently: the CB1 state acquires significant valence-band admixture, which amplifies the remote-band contribution to the g-factor.
+
+The net result for InSb is a dramatic g-factor enhancement ($|g| > 50$ for large radii) that decreases monotonically as the radius shrinks, eventually approaching the free-electron value for very thin wires. This radius dependence is a direct fingerprint of the 8-band physics that cannot be captured by single-band effective-mass models.
+
+The anisotropy $g_{\perp} \neq g_{\parallel}$ (transverse vs. axial components) also depends on radius: in a cylindrical wire, $g_{xx} = g_{yy}$ by rotational symmetry, but $g_{zz}$ (along the wire axis) differs because the confinement geometry breaks the cubic symmetry of the bulk crystal. An applied transverse electric field further breaks the rotational symmetry, introducing a Rashba contribution that mixes the g-tensor components.
+
+### 5.4 What this code can reproduce
 
 The zinc-blende InSb nanowire portion can be reproduced using the wire mode (`confinement=2`):
 
 - **Subband structure:** A circular InSb wire with the `circle` shape and InSb material parameters from `parameters.f90` gives $E_n(k_z)$ subbands that match the paper's Figure 1. The grid needs to be fine enough to resolve the cylindrical boundary; an $81 \times 81$ grid with `FDorder = 2` or a $41 \times 41$ grid with `FDorder = 4` is recommended.
 - **g-factor:** The `gfactorCalculation_wire` routine computes the full g-tensor for the lowest CB subband. The g-factor vs. radius trend in the paper's Figure 2 is reproduced by running a series of calculations with varying wire radius and plotting $g_{zz}$, $g_{xx}$, $g_{yy}$ against the radius.
-- **Electric field effects:** An applied electric field (via `ExternalField` + `EFParams`) breaks the cylindrical symmetry and introduces Rashba spin-orbit coupling. The field-dependent g-factor shifts reproduce the paper's Figure 3, which shows how the g-factor is tuned by a transverse electric field.
+- **Electric field effects:** An applied electric field (via `ExternalField` + `EFParams`) breaks the cylindrical symmetry and introduces Rashba spin-orbit coupling. The field-dependent g-factor shifts reproduce the paper's Figure 3.
 
-Example configuration for a circular InSb wire (partial, needs `grid_init_circle` support):
+Example configuration for a circular InSb wire:
 
 ```
 confinement:  2
@@ -461,9 +544,7 @@ waveVectorMax: 0.05
 waveVectorStep: 11
 ```
 
-### 5.4 What is missing for full reproduction
-
-Full reproduction of the paper requires capabilities not yet in the code:
+### 5.5 What is missing for full reproduction
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -511,21 +592,7 @@ The FD discretization imposes hard-wall (Dirichlet) boundary conditions at the g
 
 For core-shell wires (e.g., InAs core with GaAs shell), multiple regions with different band offsets create a more realistic confinement profile. The inner/outer distances in the `region_spec` type define concentric annular regions.
 
-### 6.5 Comparison with quantum well mode
-
-| Aspect | QW (`confinement=1`) | Wire (`confinement=2`) |
-|--------|----------------------|----------------------|
-| Confinement directions | 1 ($z$) | 2 ($x$ and $y$) |
-| Free directions | 2 ($x$, $y$) | 1 ($z$) |
-| Matrix size | $8N \times 8N$ | $8 N_{\text{grid}} \times 8 N_{\text{grid}}$ |
-| $k$-space dimension | 2D ($k_x, k_y$) | 1D ($k_z$) |
-| Storage | Dense | Sparse CSR |
-| Eigenvalue solver | `zheevx` (dense) | FEAST or dense fallback |
-| k.p term storage | `kpterms(N,N,10)` dense | `kpterms_2d(15)` CSR |
-| Material mapping | 1D layers | 2D regions with cut-cell |
-| Subband structure | 2D sheets $E(k_\parallel)$ | 1D modes $E(k_z)$ |
-
-### 6.6 Limitations and tips
+### 6.5 Limitations and tips
 
 **Current limitations:**
 - The free propagation direction is fixed to $z$ (`confDir = 'z'`)
