@@ -71,18 +71,18 @@ $p = n/2$ is the half-bandwidth. The code implements orders $n = 2, 4, 6,
 8, 10$ via the subroutine `FDcentralCoeffs2nd`. The normalized coefficients
 $c_j^{(2n)}$ (before division by $\Delta z^2$) are:
 
-| Order $n$ | $c_{-p}$ | $c_{-p+1}$ | ... | $c_0$ | ... | $c_p$ |
-|-----------|----------|------------|-----|--------|-----|--------|
-| 2 | 1 | | | $-2$ | | 1 |
-| 4 | $-\frac{1}{12}$ | $\frac{4}{3}$ | | $-\frac{5}{2}$ | | $\frac{4}{3}$, $-\frac{1}{12}$ |
-| 6 | $\frac{1}{90}$ | $-\frac{3}{20}$ | $\frac{3}{2}$ | $-\frac{49}{18}$ | $\frac{3}{2}$, $-\frac{3}{20}$, $\frac{1}{90}$ |
-| 8 | $-\frac{1}{560}$ | $\frac{8}{315}$ | $-\frac{1}{5}$, $\frac{8}{5}$ | $-\frac{205}{72}$ | $\frac{8}{5}$, $-\frac{1}{5}$, $\frac{8}{315}$, $-\frac{1}{560}$ |
-| 10 | $\frac{8}{25200}$ | $-\frac{125}{25200}$ | $\frac{1000}{25200}$, $-\frac{6000}{25200}$, $\frac{42000}{25200}$ | $-\frac{73766}{25200}$ | (symmetric) |
+| Order | $c_{-p}$ | $c_{-p+1}$ | $c_{-p+2}$ | $c_{-p+3}$ | $c_{-p+4}$ | $c_{-p+5}$ | $c_0$ |
+|-------|-----------|-------------|-------------|-------------|-------------|-------------|--------|
+| 2 | 1 | | | | | | $-2$ |
+| 4 | $-\tfrac{1}{12}$ | $\tfrac{4}{3}$ | | | | | $-\tfrac{5}{2}$ |
+| 6 | $\tfrac{1}{90}$ | $-\tfrac{3}{20}$ | $\tfrac{3}{2}$ | | | | $-\tfrac{49}{18}$ |
+| 8 | $-\tfrac{1}{560}$ | $\tfrac{8}{315}$ | $-\tfrac{1}{5}$ | $\tfrac{8}{5}$ | | | $-\tfrac{205}{72}$ |
+| 10 | $\tfrac{8}{25200}$ | $-\tfrac{125}{25200}$ | $\tfrac{1000}{25200}$ | $-\tfrac{6000}{25200}$ | $\tfrac{42000}{25200}$ | | $-\tfrac{73766}{25200}$ |
 
-All central stencils are **symmetric** ($c_{-j} = c_j$), which guarantees
-that the resulting FD matrix is symmetric (and, for complex Hermitian
-Hamiltonians, preserves Hermiticity when combined with real coefficient
-profiles).
+All stencils are **symmetric** ($c_{-j} = c_j$), so the right side mirrors the
+left. This symmetry guarantees that the resulting FD matrix is symmetric (and,
+for complex Hermitian Hamiltonians, preserves Hermiticity when combined with
+real coefficient profiles).
 
 ### 9.2.2 Central Stencils for the First Derivative
 
@@ -93,16 +93,8 @@ $$
 \sum_{j=-p}^{p} c_j^{(1n)}\, f_{i+j}
 $$
 
-with $c_0^{(1n)} = 0$ and $c_{-j}^{(1n)} = -c_j^{(1n)}$. For example, at
-order 4:
-
-$$
-c^{(1,4)} = \frac{1}{12}\bigl(-1,\; 0,\; 0,\; 0,\; 1\bigr)
-\quad\text{but conventionally}\quad
-\frac{1}{12}\bigl(1,\; -8,\; 0,\; 8,\; -1\bigr)/12
-$$
-
-Wait -- let us be precise. The order-4 first-derivative central stencil is:
+with $c_0^{(1n)} = 0$ and $c_{-j}^{(1n)} = -c_j^{(1n)}$. The order-4
+first-derivative central stencil is:
 
 $$
 \frac{df}{dz}\bigg|_{z_i} = \frac{1}{\Delta z}
@@ -224,29 +216,50 @@ cost is slightly more matrix entries. For 2D quantum wires, the bandwidth
 multiplies through the Kronecker product, and the sparse eigensolver cost
 depends on the fill-in. In practice, order 4 or 6 provides a good balance.
 
-### 9.3.3 Convergence Study
+### 9.3.3 Grid Spacing Convergence
 
-A convergence study proceeds by fixing all physical parameters (well width,
-material, k-point) and varying the FD order at a fixed grid spacing, or
-varying the grid spacing at a fixed FD order. The code supports this through
-the `FDorder` input parameter:
+The most straightforward convergence test fixes the FD order and varies the
+grid spacing $\Delta z$. We ran the AlSbW/GaSbW/InAsW broken-gap quantum well
+with FD order 2 and grid spacings from $\Delta z = 6.0$ down to $0.75$ A,
+using the finest grid (FDstep=801, $\Delta z = 0.375$ A) as the reference.
+The eigenvalue error $|E_n - E_n^{\text{ref}}|$ at $k = 0$ is:
 
-```
-FDorder 2   ! default: second-order
-FDorder 4   ! fourth-order (5-point stencil)
-FDorder 6   ! sixth-order (7-point stencil)
-```
+| $\Delta z$ (A) | 6.0 | 3.0 | 1.5 | 0.75 |
+|----------------|------|------|------|-------|
+| Error (Band 1) | 4.6e-04 | 1.5e-04 | 3.7e-05 | 5.9e-06 |
+| Error (Band 2) | 4.6e-04 | 1.5e-04 | 3.7e-05 | 5.9e-06 |
 
-A typical result for the ground-state energy $E_1$ of a GaAs/AlGaAs quantum
-well shows:
+A log-log fit yields a slope of $\approx 2.1$, confirming the expected
+$\Delta z^2$ convergence rate for second-order FD. The figure
+`convergence_grid_spacing.png` shows this data for all eight bands, with a
+reference $\Delta z^2$ slope line.
+
+### 9.3.4 FD Order Convergence
+
+Increasing the FD order at fixed grid spacing is more efficient than refining
+the grid, but the convergence behavior can be non-trivial in systems with
+strong band mixing (such as broken-gap heterostructures). The figure
+`convergence_fd_order.png` shows the eigenvalue error vs.\ FD order for the
+same AlSbW/GaSbW/InAsW QW at FDstep=101 ($\Delta z = 3$ A), using order 8 as
+the reference. The key observation is:
+
+- **Well-separated states** (deep valence bands) converge smoothly with
+  increasing order.
+- **Near-degenerate states** (in the broken-gap region) can exhibit level
+  reordering at low FD orders, causing large apparent "errors" that reflect
+  incorrect state identification rather than mere discretization error.
+
+For simple type-I quantum wells (e.g., GaAs/Al$_{0.3}$Ga$_{0.7}$As), the
+convergence is monotonic and the error at order $n$ scales approximately as
+$\Delta z^n$. For such systems, the rule of thumb is:
 
 $$
-E_1(N_z, n) = E_1^{\text{exact}} + A_n\, \Delta z^n + \mathcal{O}(\Delta z^{n+2})
+\frac{|E^{(n)} - E^{\text{ref}}|}{|E^{(n+2)} - E^{\text{ref}}|}
+\approx \left(\frac{\Delta z}{\Delta z_{\text{ref}}}\right)^{-2}
 $$
 
-so a log-log plot of $|E_1 - E_1^{\text{ref}}|$ vs.\ $\Delta z$ yields a
-straight line with slope $n$. Extracting this slope from the code output
-validates that the FD implementation is correct.
+so going from order 2 to 4 reduces the error by roughly a factor of
+$2^2 = 4$ at the same grid spacing.
 
 ---
 
@@ -607,7 +620,22 @@ than dense fallback for this problem size, and the advantage grows with
 $N$ since FEAST scales roughly as $O(\text{nnz} \times M_0 \times
 n_{\text{iter}})$ while dense scales as $O(N^3)$.
 
-### 9.9.3 Crossover Point
+### 9.9.3 Measured Benchmarks
+
+The figure `timing_dense_vs_sparse.png` shows wall-clock timing from actual
+runs on the same machine:
+
+| Problem | Method | Matrix size | Wall time |
+|---------|--------|-------------|-----------|
+| AlSb/GaSb/InAs QW (21 k-points) | Dense (`zheevx`) | $808\times 808$ | $\sim 0.7$ s |
+| GaAs wire (1 k-point) | Sparse (FEAST) | $20000\times 20000$ | $\sim 128$ s |
+
+The wire calculation is dominated by the CSR assembly and FEAST iteration;
+the matrix is 25$\times$ larger but uses only $\sim 10^6$ nonzeros (fill
+fraction $< 0.3\%$). The QW is fast because the matrix fits in cache and
+`zheevx` is highly optimized for small Hermitian matrices.
+
+### 9.9.4 Crossover Point
 
 The crossover where sparse methods become advantageous is around $N \sim
 2000$--$3000$ (matrix dimension). Below this, the overhead of CSR construction
