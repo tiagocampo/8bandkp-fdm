@@ -1240,6 +1240,364 @@ def fig_timing_dense_vs_sparse(output_dir: Path) -> None:
     print("  -> docs/figures/timing_dense_vs_sparse.png")
 
 
+def fig_bulk_inas_bands(output_dir: Path) -> None:
+    """bulk_inas_bands.png: 8-band E(k) dispersion from bulk InAs."""
+    print("[figure] bulk_inas_bands")
+    cfg = CONFIG_DIR / "bulk_inas_kx.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="bulk_inas_kx")
+    k_vals, eig = parse_eigenvalues(output_dir)
+
+    fig, (ax_full, ax_zoom) = plt.subplots(1, 2, figsize=(9.5, 4.5),
+                                            gridspec_kw={"width_ratios": [1.2, 1]})
+
+    n_bands = eig.shape[0]
+    for i in range(n_bands):
+        ax_full.plot(k_vals, eig[i], color=BAND_COLORS[i], linewidth=1.2)
+        ax_zoom.plot(k_vals, eig[i], color=BAND_COLORS[i], linewidth=1.2)
+
+    # Full view
+    ax_full.set_xlabel(r"$k$ (1/A)")
+    ax_full.set_ylabel(r"$E$ (eV)")
+    ax_full.set_title("Bulk InAs 8-band dispersion")
+    ax_full.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+    # Gamma-point energy annotations
+    e0 = eig[:, 0]
+    labels_placed = set()
+    for i, e in enumerate(e0):
+        rounded = round(e, 3)
+        if rounded not in labels_placed:
+            labels_placed.add(rounded)
+            ax_full.annotate(f"{e:.3f} eV", xy=(k_vals[-1], e),
+                           fontsize=7, color=BAND_COLORS[i], va="center")
+
+    # Zoom near gap
+    ax_zoom.set_xlim(-0.002, 0.06)
+    ax_zoom.set_ylim(-1.0, 1.2)
+    ax_zoom.set_xlabel(r"$k$ (1/A)")
+    ax_zoom.set_title(r"Zoom near $\Gamma$")
+    ax_zoom.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+    # Annotate band gap and SO splitting
+    e_vb = max(e for e in e0 if e <= 0.01)
+    e_so = min(e for e in e0 if e <= 0.01)
+    e_cb = min(e for e in e0 if e > 0.01)
+    gap = e_cb - e_vb
+    so_split = e_vb - e_so
+
+    ax_zoom.annotate(f"$E_g$ = {gap:.3f} eV", xy=(0.03, (e_vb + e_cb) / 2),
+                    fontsize=8, color="grey", ha="left")
+    ax_zoom.annotate(f"$\\Delta_{{SO}}$ = {so_split:.3f} eV", xy=(0.03, (e_so + e_vb) / 2),
+                    fontsize=8, color="grey", ha="left")
+
+    # Band labels on zoom
+    ax_zoom.annotate("CB", xy=(0.04, e_cb + 0.03), fontsize=8, color="#17becf")
+    ax_zoom.annotate("HH/LH", xy=(0.04, e_vb - 0.05), fontsize=8, color="#d62728")
+    ax_zoom.annotate("SO", xy=(0.04, e_so - 0.05), fontsize=8, color="#ff7f0e")
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "bulk_inas_bands.png")
+    plt.close(fig)
+    print("  -> docs/figures/bulk_inas_bands.png")
+
+
+def fig_qcse_stark_shift(output_dir: Path) -> None:
+    """qcse_stark_shift.png: QW subbands at 0 field vs -70 kV/cm — side by side."""
+    print("[figure] qcse_stark_shift")
+    cfg_zero = CONFIG_DIR / "sc_qcse_gaas_algaas.cfg"
+    cfg_field = CONFIG_DIR / "sc_qcse_gaas_algaas_ef.cfg"
+
+    # Run zero-field config
+    result = run_executable(EXE_BAND, cfg_zero, REPO_ROOT, label="qcse_zero_field",
+                           timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: zero-field QCSE run failed, skipping.")
+        return
+    try:
+        z0, EV0, EVSO0, EC0 = parse_potential_profile(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: potential_profile.dat not found for zero field, skipping.")
+        return
+    # Also get eigenvalues at k=0
+    try:
+        _, eig0 = parse_eigenvalues(output_dir)
+        e0_vals = eig0[:, 0]
+    except FileNotFoundError:
+        e0_vals = None
+
+    # Run with-field config
+    result = run_executable(EXE_BAND, cfg_field, REPO_ROOT, label="qcse_efield",
+                           timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: electric-field QCSE run failed, skipping.")
+        return
+    try:
+        z_ef, EV_ef, EVSO_ef, EC_ef = parse_potential_profile(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: potential_profile.dat not found for e-field, skipping.")
+        return
+    try:
+        _, eig_ef = parse_eigenvalues(output_dir)
+        ef_vals = eig_ef[:, 0]
+    except FileNotFoundError:
+        ef_vals = None
+
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(10, 5))
+
+    # Left panel: band-edge profiles
+    ax_left.plot(z0, EC0, color="#17becf", linewidth=1.5, label=r"$E_C$ (0 field)")
+    ax_left.plot(z0, EV0, color="#d62728", linewidth=1.5, label=r"$E_V$ (0 field)")
+    ax_left.plot(z_ef, EC_ef, "--", color="#17becf", linewidth=1.3,
+                alpha=0.8, label=r"$E_C$ (-70 kV/cm)")
+    ax_left.plot(z_ef, EV_ef, "--", color="#d62728", linewidth=1.3,
+                alpha=0.8, label=r"$E_V$ (-70 kV/cm)")
+    # Mark well region
+    ax_left.axvline(-30, color="grey", linewidth=0.5, linestyle=":")
+    ax_left.axvline(30, color="grey", linewidth=0.5, linestyle=":")
+    ax_left.set_xlabel(r"$z$ (\u00C5)")
+    ax_left.set_ylabel("Energy (eV)")
+    ax_left.set_title("QCSE: Band-edge tilt under field")
+    ax_left.legend(loc="best", fontsize=7)
+
+    # Right panel: subband energy levels
+    if e0_vals is not None and ef_vals is not None:
+        n_show = min(len(e0_vals), len(ef_vals), 8)
+        y_pos = np.arange(n_show)
+        bar_width = 0.35
+        ax_right.barh(y_pos - bar_width / 2, e0_vals[:n_show], bar_width,
+                     color="#1f77b4", alpha=0.8, label="0 field")
+        ax_right.barh(y_pos + bar_width / 2, ef_vals[:n_show], bar_width,
+                     color="#ff7f0e", alpha=0.8, label="-70 kV/cm")
+        ax_right.set_ylabel("Subband index")
+        ax_right.set_xlabel("Energy (eV)")
+        ax_right.set_title("Subband Stark shift")
+        ax_right.legend(loc="best", fontsize=8)
+
+        # Annotate Stark shift for first CB subband
+        if len(e0_vals) > 0 and len(ef_vals) > 0:
+            # Find first CB state (positive energy)
+            cb_zero = [e for e in e0_vals if e > 0.5]
+            cb_field = [e for e in ef_vals if e > 0.3]
+            if cb_zero and cb_field:
+                shift = cb_field[0] - cb_zero[0]
+                ax_right.annotate(f"$\\Delta E_1$ = {shift*1000:.1f} meV",
+                                xy=(0.5, 0.95), xycoords="axes fraction",
+                                fontsize=8, color="grey", ha="center")
+    else:
+        ax_right.text(0.5, 0.5, "No eigenvalue data", transform=ax_right.transAxes,
+                     ha="center", va="center")
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qcse_stark_shift.png")
+    plt.close(fig)
+    print("  -> docs/figures/qcse_stark_shift.png")
+
+
+def fig_qw_gaas_algaas_subbands(output_dir: Path) -> None:
+    """qw_gaas_algaas_subbands.png: Type-I GaAs/AlGaAs QW E(k_parallel) subbands."""
+    print("[figure] qw_gaas_algaas_subbands")
+    cfg = REPO_ROOT / "docs" / "benchmarks" / "qw_gaas_algaas.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_gaas_algaas")
+    k_vals, eig = parse_eigenvalues(output_dir)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    n_bands = eig.shape[0]
+    for i in range(n_bands):
+        energy_mid = np.mean(eig[i])
+        if energy_mid > 0.5:
+            color = "#17becf"
+            alpha = 0.85
+        else:
+            color = "#d62728"
+            alpha = 0.85
+        ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=alpha)
+
+    ax.set_xlabel(r"$k_{\parallel}$ (1/A)")
+    ax.set_ylabel(r"$E$ (eV)")
+    ax.set_title("GaAs/Al$_{0.3}$Ga$_{0.7}$As QW subbands")
+    ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+    # Annotate VB top and CB bottom
+    e0 = eig[:, 0]
+    e_vb = max(e for e in e0 if e <= 0.01)
+    e_cb = min(e for e in e0 if e > 0.01)
+    gap = e_cb - e_vb
+    ax.annotate(f"Gap = {gap*1000:.1f} meV", xy=(k_vals[-1] * 0.6, (e_vb + e_cb) / 2),
+               fontsize=8, color="grey", ha="center")
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_gaas_algaas_subbands.png")
+    plt.close(fig)
+    print("  -> docs/figures/qw_gaas_algaas_subbands.png")
+
+
+def fig_convergence_grid_spacing(output_dir: Path) -> None:
+    """convergence_grid_spacing.png: eigenvalue error vs dz at fixed FD order.
+
+    Runs the same QW config with varying FDstep (51, 101, 201, 401, 801)
+    and plots error against the finest grid (801) as reference.
+    """
+    print("[figure] convergence_grid_spacing")
+    base_cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+    if not base_cfg.exists():
+        print("  WARNING: qw_alsbw_gasbw_inasw.cfg not found, skipping.")
+        return
+
+    base_text = base_cfg.read_text()
+
+    fd_steps = [51, 101, 201, 401, 801]
+    energies_at_gamma: Dict[int, np.ndarray] = {}
+    dz_values: Dict[int, float] = {}
+
+    # Total z-range from config: -150 to 150 = 300 A
+    # dz = 300 / (FDstep - 1)
+    total_range = 300.0
+
+    for step in fd_steps:
+        lines = base_text.splitlines()
+        modified_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("FDstep"):
+                modified_lines.append(f"FDstep: {step}")
+            elif stripped.startswith("waveVectorMax"):
+                modified_lines.append("waveVectorMax: 0.0")
+            elif stripped.startswith("waveVectorStep"):
+                modified_lines.append("waveVectorStep: 1")
+            elif stripped.startswith("waveVector:"):
+                modified_lines.append("waveVector: k0")
+            elif stripped.startswith("numcb"):
+                modified_lines.append("numcb: 4")
+            elif stripped.startswith("numvb"):
+                modified_lines.append("numvb: 4")
+            else:
+                modified_lines.append(line)
+        modified_text = "\n".join(modified_lines) + "\n"
+
+        tmp_cfg = REPO_ROOT / "input.cfg"
+        tmp_cfg.write_text(modified_text)
+
+        print(f"  [FDstep={step}] Running QW ...")
+        result = subprocess.run(
+            [str(EXE_BAND)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            print(f"  [FDstep={step}] FAILED, skipping.")
+            continue
+
+        try:
+            _, eig = parse_eigenvalues(output_dir)
+            energies_at_gamma[step] = eig[:, 0]
+            dz_values[step] = total_range / (step - 1)
+        except FileNotFoundError:
+            print(f"  [FDstep={step}] eigenvalues.dat not found, skipping.")
+            continue
+
+    if len(energies_at_gamma) < 2:
+        print("  WARNING: not enough grid-spacing results for convergence plot, skipping.")
+        return
+
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    steps_sorted = sorted(energies_at_gamma.keys())
+    ref_step = max(steps_sorted)
+    ref_e = energies_at_gamma[ref_step]
+    dz_ref = dz_values[ref_step]
+
+    for band_idx in range(min(ref_e.shape[0], 8)):
+        diffs = []
+        dz_list = []
+        for step in steps_sorted:
+            if step == ref_step:
+                continue
+            e = energies_at_gamma[step]
+            if band_idx < e.shape[0]:
+                diffs.append(abs(e[band_idx] - ref_e[band_idx]))
+                dz_list.append(dz_values[step])
+        if len(dz_list) >= 2:
+            ax.loglog(dz_list, diffs, "o-", linewidth=1.2, markersize=5,
+                     label=f"Band {band_idx + 1}", color=BAND_COLORS[band_idx])
+
+    # Reference slope line (2nd-order convergence: error ~ dz^2)
+    if len(dz_list) >= 2:
+        dz_arr = np.array(sorted(set(dz_list)))
+        # Scale the reference line to pass through the mid-point of first band data
+        ref_diffs = []
+        ref_dzs = []
+        for step in steps_sorted:
+            if step == ref_step:
+                continue
+            e = energies_at_gamma[step]
+            if 0 < e.shape[0]:
+                ref_diffs.append(abs(e[0] - ref_e[0]))
+                ref_dzs.append(dz_values[step])
+        if ref_diffs:
+            mid_idx = len(ref_dzs) // 2
+            scale = ref_diffs[mid_idx] / ref_dzs[mid_idx] ** 2
+            ax.loglog(dz_arr, scale * dz_arr ** 2, "k--", linewidth=0.8, alpha=0.5,
+                     label=r"$\propto \Delta z^2$")
+
+    ax.set_xlabel(r"Grid spacing $\Delta z$ (\u00C5)")
+    ax.set_ylabel(r"$|E_n - E_n^{\rm ref}|$ (eV)")
+    ax.set_title(f"Grid convergence (ref: FDstep={ref_step})")
+    ax.legend(ncol=2, fontsize=8)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "convergence_grid_spacing.png")
+    plt.close(fig)
+    print("  -> docs/figures/convergence_grid_spacing.png")
+
+
+def fig_benchmark_inasw_gasbw_broken_gap(output_dir: Path) -> None:
+    """benchmark_inasw_gasbw_broken_gap.png: broken-gap QW E(k) subbands."""
+    print("[figure] benchmark_inasw_gasbw_broken_gap")
+    cfg = CONFIG_DIR / "qw_inasw_gasbw_broken_gap.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_inasw_gasbw_broken_gap",
+                  timeout=300)
+    k_vals, eig = parse_eigenvalues(output_dir)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    n_bands = eig.shape[0]
+
+    # For broken-gap systems, VB and CB overlap — use energy-based coloring
+    for i in range(n_bands):
+        energy_mid = np.mean(eig[i])
+        if energy_mid > 0.2:
+            color = "#17becf"  # CB-like
+        elif energy_mid > -0.2:
+            color="#2ca02c"  # near-gap / mixed
+        else:
+            color="#d62728"  # VB-like
+        ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=0.85)
+
+    ax.set_xlabel(r"$k_{\parallel}$ (1/A)")
+    ax.set_ylabel(r"$E$ (eV)")
+    ax.set_title("Broken-gap InAsW/GaSbW QW subbands")
+    ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+    # Annotate the overlap region
+    e0 = eig[:, 0]
+    e_cb_min = min(e for e in e0 if e > 0.01) if any(e > 0.01 for e in e0) else 0
+    e_vb_max = max(e for e in e0 if e <= 0.01) if any(e <= 0.01 for e in e0) else 0
+    if e_vb_max > e_cb_min:
+        overlap = e_vb_max - e_cb_min
+        ax.annotate(f"Overlap: {overlap*1000:.1f} meV",
+                   xy=(k_vals[len(k_vals)//2], (e_vb_max + e_cb_min) / 2),
+                   fontsize=8, color="grey", ha="center")
+    else:
+        gap = e_cb_min - e_vb_max
+        ax.annotate(f"Gap: {gap*1000:.1f} meV",
+                   xy=(k_vals[len(k_vals)//2], (e_vb_max + e_cb_min) / 2),
+                   fontsize=8, color="grey", ha="center")
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "benchmark_inasw_gasbw_broken_gap.png")
+    plt.close(fig)
+    print("  -> docs/figures/benchmark_inasw_gasbw_broken_gap.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -1247,10 +1605,13 @@ def fig_timing_dense_vs_sparse(output_dir: Path) -> None:
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
+    "bulk_inas_bands": fig_bulk_inas_bands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,
     "qw_wavefunctions": fig_qw_wavefunctions,
     "qw_parts": fig_qw_parts,
+    "qw_gaas_algaas_subbands": fig_qw_gaas_algaas_subbands,
+    "qcse_stark_shift": fig_qcse_stark_shift,
     "gfactor_components": fig_gfactor_components,
     "gfactor_zeeman": fig_gfactor_zeeman,
     "sc_potential": fig_sc_potential,
@@ -1259,7 +1620,9 @@ ALL_FIGURES = {
     "wire_subbands": fig_wire_subbands,
     "wire_density_2d": fig_wire_density_2d,
     "convergence_fd_order": fig_convergence_fd_order,
+    "convergence_grid_spacing": fig_convergence_grid_spacing,
     "timing_dense_vs_sparse": fig_timing_dense_vs_sparse,
+    "benchmark_inasw_gasbw_broken_gap": fig_benchmark_inasw_gasbw_broken_gap,
 }
 
 
