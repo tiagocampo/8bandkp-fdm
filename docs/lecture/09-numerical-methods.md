@@ -23,11 +23,10 @@ routines.
 
 ### Cross-validation with Cho and Belyanin
 
-The discretization in our code follows exactly the prescription of
-arXiv:1105.6309, Section II. In their notation, the 8-band Hamiltonian for
-a 1D-confined structure along $z$ becomes an $8N_z \times 8N_z$ block matrix,
-where each $8\times 8$ block is coupled to its neighbors through the FD
-stencils. The key identities are:
+The discretization follows arXiv:1105.6309, Section II. The 8-band Hamiltonian
+for a 1D-confined structure along $z$ becomes an $8N_z \times 8N_z$ block
+matrix, where each $8\times 8$ block is coupled to its neighbors through the
+FD stencils:
 
 $$
 \frac{\partial}{\partial z} \longrightarrow \frac{1}{2\Delta z}
@@ -44,13 +43,12 @@ $$
 \end{pmatrix}
 $$
 
-for the second-order stencil. Our code generalizes this to arbitrary even
-orders (2, 4, 6, 8, 10) and applies position-dependent coefficients
-$P(z)$, $\gamma_1(z)$, etc., via element-wise multiplication before the FD
-operator is applied, exactly as in their Eq. (6)--(8). The k.p coupling
-terms $Q$, $R$, $S$, $T$ are assembled from products of Luttinger-parameter
-profiles with FD derivative matrices, matching the structure described in
-their Eq. (3) and Table I.
+for the second-order stencil. Our code generalizes to arbitrary even orders
+(2, 4, 6, 8, 10) and applies position-dependent coefficients $P(z)$,
+$\gamma_1(z)$, etc., via element-wise multiplication, exactly as in their
+Eq. (6)--(8). The k.p coupling terms $Q$, $R$, $S$, $T$ are assembled from
+Luttinger-parameter profiles and FD derivative matrices, matching their
+Eq. (3) and Table I.
 
 ---
 
@@ -143,20 +141,10 @@ The code stores forward and backward coefficients for all orders 2--10 in
 `FDforwardCoeffs2nd` and `FDbackwardCoeffs2nd` (and analogous routines for
 the first derivative).
 
-### 9.2.4 Toeplitz Structure (Order 2, Legacy Path)
+### 9.2.4 Toeplitz Structure (Order 2)
 
-For second-order accuracy ($n=2$), the FD matrix has a simple **tridiagonal
-Toeplitz** structure. The subroutine `toeplitz` builds the full $N\times N$
-matrix by circular shifting (`cshift`) for periodic boundaries or end-off
-shifting (`eoshift`) for hard-wall (Dirichlet) boundaries:
-
-```fortran
-do idx = 1, length
-  matrix(:,idx) = eoshift(vector, shift=hf-idx)
-end do
-```
-
-This produces the familiar tridiagonal form:
+For second-order accuracy ($n=2$), the FD matrix has a **tridiagonal
+Toeplitz** structure built by the subroutine `toeplitz`:
 
 $$
 D_2^{(2)} = \frac{1}{\Delta z^2}
@@ -168,10 +156,9 @@ D_2^{(2)} = \frac{1}{\Delta z^2}
 \end{pmatrix}
 $$
 
-For hard-wall boundaries, the first and last rows contain only the interior
-stencil entries (the "missing" point outside the domain is zero, effectively
-setting $\psi = 0$ at the boundary). This is the default boundary condition
-in the code.
+For hard-wall (Dirichlet) boundaries, the "missing" point outside the domain
+is zero, effectively setting $\psi = 0$ at the boundary. This is the default
+boundary condition.
 
 ---
 
@@ -179,23 +166,12 @@ in the code.
 
 ### 9.3.1 Theoretical Convergence Rate
 
-A finite-difference approximation of order $n$ to the second derivative has a
-truncation error:
-
-$$
-\left|\frac{d^2f}{dz^2} - D_2^{(n)} f\right| = C_n\, \Delta z^n\,
-f^{(n+2)}(\xi)
-$$
-
-where $C_n$ is a known constant and $\xi$ lies within the stencil. This means
-the eigenvalue error scales as:
-
-$$
-|E_{\text{numerical}} - E_{\text{exact}}| \propto \Delta z^n
-$$
-
-Doubling the number of grid points (halving $\Delta z$) therefore reduces the
-error by a factor of $2^n$.
+A finite-difference approximation of order $n$ to the second derivative has
+truncation error $|d^2f/dz^2 - D_2^{(n)} f| = C_n\, \Delta z^n\,
+f^{(n+2)}(\xi)$, so the eigenvalue error scales as
+$|E_{\text{numerical}} - E_{\text{exact}}| \propto \Delta z^n$.
+Doubling the number of grid points (halving $\Delta z$) reduces the error by
+a factor of $2^n$.
 
 ### 9.3.2 Practical Tradeoffs
 
@@ -230,18 +206,21 @@ The eigenvalue error $|E_n - E_n^{\text{ref}}|$ at $k = 0$ is:
 | Error (Band 2) | 4.6e-04 | 1.5e-04 | 3.7e-05 | 5.9e-06 |
 
 A log-log fit yields a slope of $\approx 2.1$, confirming the expected
-$\Delta z^2$ convergence rate for second-order FD. The figure
-`convergence_grid_spacing.png` shows this data for all eight bands, with a
-reference $\Delta z^2$ slope line.
+$\Delta z^2$ convergence rate for second-order FD.
+
+![Eigenvalue error vs. grid spacing for all eight bands, with a $\Delta z^2$ reference slope](../figures/convergence_grid_spacing.png)
 
 ### 9.3.4 FD Order Convergence
 
 Increasing the FD order at fixed grid spacing is more efficient than refining
 the grid, but the convergence behavior can be non-trivial in systems with
-strong band mixing (such as broken-gap heterostructures). The figure
-`convergence_fd_order.png` shows the eigenvalue error vs.\ FD order for the
-same AlSbW/GaSbW/InAsW QW at FDstep=101 ($\Delta z = 3$ A), using order 8 as
-the reference. The key observation is:
+strong band mixing (such as broken-gap heterostructures).
+
+![CB1 eigenvalue error vs. FD order for the AlSbW/GaSbW/InAsW QW](../figures/convergence_fd_order.png)
+
+The figure above shows the eigenvalue error vs.\ FD order for the same
+AlSbW/GaSbW/InAsW QW at FDstep=101 ($\Delta z = 3$ A), using order 8 as
+the reference. The key observations are:
 
 - **Well-separated states** (deep valence bands) converge smoothly with
   increasing order.
@@ -249,17 +228,9 @@ the reference. The key observation is:
   reordering at low FD orders, causing large apparent "errors" that reflect
   incorrect state identification rather than mere discretization error.
 
-For simple type-I quantum wells (e.g., GaAs/Al$_{0.3}$Ga$_{0.7}$As), the
-convergence is monotonic and the error at order $n$ scales approximately as
-$\Delta z^n$. For such systems, the rule of thumb is:
-
-$$
-\frac{|E^{(n)} - E^{\text{ref}}|}{|E^{(n+2)} - E^{\text{ref}}|}
-\approx \left(\frac{\Delta z}{\Delta z_{\text{ref}}}\right)^{-2}
-$$
-
-so going from order 2 to 4 reduces the error by roughly a factor of
-$2^2 = 4$ at the same grid spacing.
+For simple type-I quantum wells, the convergence is monotonic and the error
+at order $n$ scales approximately as $\Delta z^n$, so going from order 2 to 4
+reduces the error by roughly a factor of $2^2 = 4$ at the same grid spacing.
 
 ---
 
@@ -304,29 +275,19 @@ order, ensuring deterministic results.
 
 For an $8N_z \times 8N_z$ quantum-well Hamiltonian with second-order FD, the
 matrix has bandwidth $8 \times 3 = 24$ and approximately $8N_z \times 24$
-nonzeros (roughly). The CSR storage requires:
-
-$$
-\text{memory} = \text{nnz} \times (16\text{ B/complex} + 4\text{ B/integer})
-  + (N+1) \times 4\text{ B}
-$$
-
-For a typical wire with $N_z = 50$ points per direction ($N_{\text{grid}} =
-2500$, matrix size $20000\times 20000$), nnz is of order $10^5$--$10^6$, and
-CSR storage is a few tens of MB. Dense storage of the same matrix would
-require $20000^2 \times 16\text{ B} \approx 6\text{ GB}$, which is
-impractical.
+nonzeros. For a typical wire with $N_z = 50$ points per direction (matrix
+$20000\times 20000$), nnz is of order $10^5$--$10^6$, and CSR storage is a
+few tens of MB. Dense storage would require $20000^2 \times 16\text{ B}
+\approx 6\text{ GB}$, which is impractical.
 
 ### 9.4.4 Cached COO-to-CSR Mapping
 
-A critical optimization for k-point sweeps: the sparsity pattern of the
-Hamiltonian is independent of $\mathbf{k}$, but the values change at each
-k-point. The code provides `csr_build_from_coo_cached`, which saves a
-mapping array `coo_to_csr(:)` that records, for each input COO index, the
-corresponding position in the final CSR arrays. On subsequent k-points,
-`csr_set_values_from_coo` updates only the `values` array in $O(\text{nnz})$
-time, skipping the expensive sort. This is the analog of a symbolic
-factorization that is reused across multiple numerical factorizations.
+The sparsity pattern of the Hamiltonian is independent of $\mathbf{k}$, but
+values change at each k-point. The code provides `csr_build_from_coo_cached`,
+which saves a mapping array recording each COO index's position in the CSR
+arrays. On subsequent k-points, `csr_set_values_from_coo` updates only the
+`values` array in $O(\text{nnz})$ time, skipping the expensive sort -- the
+analog of a symbolic factorization reused across numerical factorizations.
 
 ---
 
@@ -343,28 +304,10 @@ $$
 $$
 
 `zheevx` computes selected eigenvalues and eigenvectors of a complex
-Hermitian matrix. The call signature in the code is:
-
-```fortran
-call zheevx('V', 'I', 'U', N, A, lda, vl, vu, &
-            1, nev_want, abstol, nb, W, Z, ldz, &
-            work, lwork, rwork, iwork, ifail, info)
-```
-
-The parameters have the following meaning:
-
-- `'V'`: compute both eigenvalues and eigenvectors.
-- `'I'`: select eigenvalues by index (the $n$-th smallest).
-- `'U'`: use upper triangle of $A$.
-- `1, nev_want`: compute eigenvalues 1 through `nev_want` (the smallest
-  `nev_want` eigenvalues).
-- `abstol = 0`: use the default tolerance (guaranteed orthogonality).
-
-The workspace query idiom is used: first call with `lwork = -1` to determine
-optimal workspace size, then allocate and call again. The computational cost
-is $O(N^3)$ for the full diagonalization, but since only `nev_want`
-eigenvalues are requested, the tridiagonal reduction is done once ($O(N^3)$)
-and the bisection/inverse iteration for selected eigenvalues is cheaper.
+Hermitian matrix. The code requests the smallest `nev_want` eigenvalues by
+index, using the standard workspace query idiom (`lwork = -1` probe followed
+by allocation). The computational cost is $O(N^3)$ for the tridiagonal
+reduction, with bisection/inverse iteration for selected eigenvalues.
 
 **k-point sweep parallelism**: For band-structure calculations, the
 Hamiltonian must be diagonalized at many k-points independently. The code
@@ -393,27 +336,13 @@ each quadrature point requires solving a linear system $(z_j I - H) x = b$.
 For sparse $H$, these solves are performed via sparse direct factorization
 (MKL PARDISO internally).
 
-The code calls FEAST via:
-
-```fortran
-call zfeast_hcsrev('U', N, val_loc, rowptr_loc, colind_loc, &
-                   fpm, epsout, loop, emin, emax, M0, &
-                   E, X, M, res, info)
-```
-
-Key parameters:
-
-- `M0`: subspace dimension. Must satisfy $M_0 \ge M + 1$ where $M$ is the
-  number of eigenvalues in $[E_{\min}, E_{\max}]$. The code sets
-  `M0 = max(2*nev, nev+1)` by default.
-- `fpm(4)`: maximum FEAST refinement iterations.
-- `fpm(3)`: convergence tolerance (derived from `config%tol`).
-- `emin, emax`: energy search window.
-
-FEAST returns `M` eigenvalues in `E(1:M)` and eigenvectors in `X(:,1:M)`.
-The convergence flag `info = 0` indicates success; `info = 2` means the
-maximum iterations were reached; `info = 3` warns that the subspace is too
-small and eigenvalues may be missing.
+The code calls FEAST with key parameters: `M0` (subspace dimension, must
+satisfy $M_0 \ge M + 1$; code sets `M0 = max(2*nev, nev+1)`), `fpm(4)` (max
+iterations), `fpm(3)` (convergence tolerance), and the energy window
+$[E_{\min}, E_{\max}]$. FEAST returns `M` eigenvalues in `E(1:M)` and
+eigenvectors in `X(:,1:M)`. The convergence flag `info = 0` indicates
+success; `info = 3` warns the subspace is too small and eigenvalues may be
+missing.
 
 ### 9.5.3 Energy Window Estimation: Gershgorin Bounds
 
@@ -437,10 +366,10 @@ that all eigenvalues are captured.
 
 ### 9.5.4 Dense Fallback
 
-When FEAST is not available (MKL not compiled with FEAST support), the code
-falls back to converting the CSR matrix to dense and using `zheevx`. This
-works for small matrices but becomes impractical beyond about $N = 5000$ due
-to the $O(N^2)$ storage and $O(N^3)$ computation.
+When FEAST is not available, the code falls back to converting CSR to dense
+and using `zheevx`. This works for small matrices ($N \lesssim 5000$) but
+becomes impractical beyond that due to $O(N^2)$ storage and $O(N^3)$
+computation.
 
 ---
 
@@ -498,36 +427,18 @@ subroutine `applyVariableCoeff` (for 1D) and `csr_apply_variable_coeff`
 
 ### 9.7.1 1D Variable Coefficients
 
-For 1D, the approach uses matrix-vector products:
-
-```fortran
-call dgemv('N', N, N, 1.0_dp, central, N, profile_vec, 1, 0.0_dp, diag, 1)
-```
-
-This computes `diag(i) = sum_j central(i,j) * profile(j)`, effectively
-forming the row-wise product of the FD matrix with the material parameter
-vector. The result populates the tridiagonal `kpterms` array, which is then
-used directly in the $8\times 8$ block assembly.
+The 1D approach uses BLAS matrix-vector products (`dgemv`) to compute the
+row-wise product of the FD matrix with the material parameter vector. The
+result populates the `kpterms` array used in the $8\times 8$ block assembly.
 
 ### 9.7.2 2D Variable Coefficients in CSR
 
-For 2D, `csr_apply_variable_coeff` scales each row $i$ of a CSR matrix by
-$-\text{profile}(i)$:
-
-$$
-H'_{ij} = -g(i) \cdot H_{ij}
-$$
-
-This is an $O(\text{nnz})$ operation. An optional `cell_volume` parameter
-provides box-integration weights for cut-cell geometries (circular or
-polygonal wire cross-sections). For boundary cells with fractional face
-areas, a two-pass algorithm ensures exact row-sum conservation:
-
-1. Compute all off-diagonal entries with face-fraction weighting.
-2. Set the diagonal as the negative sum of off-diagonals.
-
-This guarantees that a constant function is a null mode of the discrete
-Laplacian, which is essential for physical consistency.
+For 2D, `csr_apply_variable_coeff` scales each row $i$ by $-\text{profile}(i)$,
+an $O(\text{nnz})$ operation. An optional `cell_volume` parameter provides
+box-integration weights for cut-cell geometries. For boundary cells with
+fractional face areas, a two-pass algorithm ensures exact row-sum
+conservation (diagonal = negative sum of off-diagonals), guaranteeing that a
+constant function is a null mode of the discrete Laplacian.
 
 ---
 
@@ -554,7 +465,7 @@ sequential and parallelism comes from within FEAST.
 
 ### 9.8.2 Sparse Matrix-Vector Multiply
 
-The hand-rolled `csr_spmv` routine is OpenMP-parallelized over rows:
+The `csr_spmv` routine is OpenMP-parallelized over rows with `schedule(static)`:
 
 ```fortran
 !$omp parallel do private(row, k, dot) schedule(static)
@@ -569,17 +480,14 @@ end do
 ```
 
 Each thread computes a contiguous block of rows with no write conflicts.
-The `schedule(static)` clause distributes rows evenly. This SpMV is used
-during iterative eigensolver steps and in the self-consistent Schrodinger-
-Poisson loop.
+This SpMV is used during iterative eigensolver steps and in the
+self-consistent Schrodinger-Poisson loop.
 
-### 9.8.3 Thread Safety Considerations
+### 9.8.3 Thread Safety
 
-The code uses `mkl_set_num_threads_local` to control MKL threading within
-OpenMP regions, preventing oversubscription. When the k-point loop is
-parallelized with $T$ threads, each thread's MKL call uses
-`mkl_set_num_threads_local(1)` for sequential MKL calls, or a reduced thread
-count when nested parallelism is desired.
+The code uses `mkl_set_num_threads_local` to prevent oversubscription: when
+the k-point loop runs with $T$ OpenMP threads, each thread's MKL calls use
+`mkl_set_num_threads_local(1)` for sequential execution within that thread.
 
 ---
 
@@ -622,13 +530,12 @@ n_{\text{iter}})$ while dense scales as $O(N^3)$.
 
 ### 9.9.3 Measured Benchmarks
 
-The figure `timing_dense_vs_sparse.png` shows wall-clock timing from actual
-runs on the same machine:
+![Wall-clock timing: dense (zheevx) vs. sparse (FEAST) eigensolver](../figures/timing_dense_vs_sparse.png)
 
-| Problem | Method | Matrix size | Wall time |
-|---------|--------|-------------|-----------|
-| AlSb/GaSb/InAs QW (21 k-points) | Dense (`zheevx`) | $808\times 808$ | $\sim 0.7$ s |
-| GaAs wire (1 k-point) | Sparse (FEAST) | $20000\times 20000$ | $\sim 128$ s |
+The figure above shows wall-clock timing from actual runs on the same machine.
+For the AlSb/GaSb/InAs QW (21 k-points, dense $808\times 808$ matrix), the
+total wall time is $\sim 0.7$ s. For the GaAs wire (1 k-point, sparse
+$20000\times 20000$ matrix with FEAST), the wall time is $\sim 128$ s.
 
 The wire calculation is dominated by the CSR assembly and FEAST iteration;
 the matrix is 25$\times$ larger but uses only $\sim 10^6$ nonzeros (fill
@@ -669,9 +576,7 @@ operations.
 ### 9.10.2 2D PARDISO Solver
 
 For 2D wires, the Poisson equation becomes a large sparse system solved via
-MKL PARDISO (sparse direct solver). The discretization uses the same box-
-integration approach but on a 2D grid, yielding a sparse matrix with the same
-sparsity pattern as the 2D Laplacian.
+MKL PARDISO, using the same box-integration discretization on a 2D grid.
 
 ---
 
