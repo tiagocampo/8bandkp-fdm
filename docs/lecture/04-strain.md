@@ -492,17 +492,130 @@ each point, not on how those components were obtained.
 
 ---
 
-## 7. Worked Example: InAs/GaAs Quantum Well Under Strain
+## 7. Worked Examples
 
-Consider an InAs quantum well (10 nm) embedded in GaAs barriers.  The InAs
-layer is under compressive biaxial strain.
+This section presents two detailed numerical calculations: first a
+near-lattice-matched system from the code's regression tests, then a
+large-mismatch system that illustrates the full magnitude of strain effects.
+All deformation potentials and elastic constants are from Vurgaftman (2001) as
+stored in `parameters.f90`.
 
-### 7.1 Strain calculation
+### 7.1 Example A: AlSb/GaSb/InAs broken-gap quantum well
+
+The type-II broken-gap AlSb/GaSb/InAs system is a near-lattice-matched
+heterostructure used for mid-infrared devices.  The quantum well configuration
+(from `tests/regression/configs/qw_alsb_gasb_inas.cfg`) consists of:
+
+| Layer | Material | Range (A) | $a_0$ (A) |
+|---|---|---|---|
+| Barrier | AlSb | $-250$ to $+250$ | 6.1355 |
+| Well (outer) | GaSb | $-135$ to $+135$ | 6.0959 |
+| Well (inner) | InAs | $-35$ to $+35$ | 6.0583 |
+
+The AlSb barrier has the largest lattice constant and serves as the substrate
+reference.  Both GaSb and InAs have smaller lattice constants than AlSb, so
+they are under **tensile** in-plane strain (forced to stretch to match the
+larger substrate lattice).
+
+**Step 1: In-plane strain.**  Using $\varepsilon_{xx} = (a_{\text{sub}} - a_{\text{layer}})/a_{\text{layer}}$:
+
+$$
+\varepsilon_{xx}^{\text{GaSb}} = \frac{6.1355 - 6.0959}{6.0959} = +0.00649 \approx +0.65\%\,,
+$$
+
+$$
+\varepsilon_{xx}^{\text{InAs}} = \frac{6.1355 - 6.0583}{6.0583} = +0.01274 \approx +1.27\%\,.
+$$
+
+Both are positive, confirming tensile in-plane strain.
+
+**Step 2: Out-of-plane strain (Poisson response).**
+
+For GaSb ($C_{11} = 884.2$, $C_{12} = 402.4$ GPa):
+
+$$
+\varepsilon_{zz}^{\text{GaSb}} = -\frac{2 \times 402.4}{884.2} \times 0.00649 = -0.00591\,.
+$$
+
+For InAs ($C_{11} = 832.9$, $C_{12} = 452.6$ GPa):
+
+$$
+\varepsilon_{zz}^{\text{InAs}} = -\frac{2 \times 452.6}{832.9} \times 0.01274 = -0.01385\,.
+$$
+
+Tensile in-plane strain produces compressive out-of-plane strain, as expected
+from the Poisson effect.
+
+**Step 3: Bir--Pikus band edge shifts.**
+
+Using the code's convention ($P_\varepsilon = -a_v\,\mathrm{Tr}(\varepsilon)$,
+$\delta E_{\text{HH}} = -P_\varepsilon + Q_\varepsilon$):
+
+For GaSb ($a_c = -7.5$, $a_v = 0.8$, $b = -2.0$ eV):
+
+$$
+\mathrm{Tr}^{\text{GaSb}} = 2 \times 0.00649 + (-0.00591) = +0.00708\,,
+$$
+
+$$
+P_\varepsilon^{\text{GaSb}} = -0.8 \times 0.00708 = -5.66\;\text{meV}\,,
+$$
+
+$$
+Q_\varepsilon^{\text{GaSb}} = \frac{-2.0}{2}\left(-0.00591 - \frac{0.00649 + 0.00649}{2}\right)
+= -1.0 \times (-0.01240) = +12.40\;\text{meV}\,.
+$$
+
+For InAs ($a_c = -5.08$, $a_v = 1.00$, $b = -1.8$ eV):
+
+$$
+\mathrm{Tr}^{\text{InAs}} = 2 \times 0.01274 + (-0.01385) = +0.01163\,,
+$$
+
+$$
+P_\varepsilon^{\text{InAs}} = -1.00 \times 0.01163 = -11.63\;\text{meV}\,,
+$$
+
+$$
+Q_\varepsilon^{\text{InAs}} = \frac{-1.8}{2}\left(-0.01385 - \frac{0.01274 + 0.01274}{2}\right)
+= -0.9 \times (-0.02659) = +23.93\;\text{meV}\,.
+$$
+
+**Step 4: Summary of strain-induced shifts.**
+
+The table below collects all Bir--Pikus shifts for each strained layer.  The AlSb
+barrier (reference layer) has zero strain and zero shift.  The shift formulas
+follow the code convention:
+
+$$
+\delta E_c = a_c\,\mathrm{Tr}(\varepsilon)\,,\qquad
+\delta E_{\text{HH}} = -P_\varepsilon + Q_\varepsilon\,,\qquad
+\delta E_{\text{LH}} = -P_\varepsilon - Q_\varepsilon\,,\qquad
+\delta E_{\text{SO}} = -P_\varepsilon\,.
+$$
+
+| Layer | $\varepsilon_{xx}$ | $\varepsilon_{zz}$ | $\mathrm{Tr}(\varepsilon)$ | $\Delta E_c$ (meV) | $\Delta E_{\text{HH}}$ (meV) | $\Delta E_{\text{LH}}$ (meV) | $\Delta E_{\text{SO}}$ (meV) | HH/LH split (meV) |
+|---|---|---|---|---|---|---|---|---|
+| AlSb (ref) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| GaSb | $+0.65\%$ | $-0.59\%$ | $+0.71\%$ | $-53$ | $+18$ | $-7$ | $+6$ | $+25$ |
+| InAs | $+1.27\%$ | $-1.39\%$ | $+1.16\%$ | $-59$ | $+36$ | $-12$ | $+12$ | $+48$ |
+
+Values are rounded to the nearest meV.  Under tensile strain ($\varepsilon_{xx} >
+0$), the HH/LH splitting reverses compared to compressive strain: the
+**light-hole band moves upward** (toward the CB, $\Delta E_{\text{LH}} < 0$ in
+our sign convention) while the heavy-hole band also moves upward but by a
+larger amount ($\Delta E_{\text{HH}} > 0$).  The valence band maximum is HH.
+
+### 7.2 Example B: InAs/GaAs quantum well -- large mismatch
+
+For comparison, consider the classic InAs/GaAs system with a much larger
+lattice mismatch.  An InAs quantum well (10 nm) is embedded in GaAs barriers.
+The InAs layer is under strong compressive biaxial strain.
 
 With $a_{\text{GaAs}} = 5.65325$ A and $a_{\text{InAs}} = 6.0583$ A:
 
 $$
-\varepsilon_{xx} = \varepsilon_{yy} = \frac{5.65325 - 6.0583}{6.0583} = -0.0669\,.
+\varepsilon_{xx} = \frac{5.65325 - 6.0583}{6.0583} = -0.0669\,.
 $$
 
 Using InAs elastic constants ($C_{11} = 832.9$ GPa, $C_{12} = 452.6$ GPa):
@@ -510,8 +623,6 @@ Using InAs elastic constants ($C_{11} = 832.9$ GPa, $C_{12} = 452.6$ GPa):
 $$
 \varepsilon_{zz} = -\frac{2 \times 452.6}{832.9}\times(-0.0669) = +0.0728\,.
 $$
-
-### 7.2 Band edge shifts
 
 Using InAs deformation potentials ($a_c = -5.08$ eV, $a_v = 1.00$ eV,
 $b = -1.8$ eV):
@@ -521,29 +632,82 @@ $$
 $$
 
 $$
-P_\varepsilon = -1.00 \times (-0.0610) = +0.0610\;\text{eV}\,,
+P_\varepsilon = -1.00 \times (-0.0610) = +61.0\;\text{meV}\,,
 $$
 
 $$
 Q_\varepsilon = \frac{-1.8}{2}\left(0.0728 - \frac{-0.0669 + (-0.0669)}{2}\right)
-= \frac{-1.8}{2}(0.0728 + 0.0669) = -0.1257\;\text{eV}\,.
+= \frac{-1.8}{2}(0.0728 + 0.0669) = -125.7\;\text{meV}\,.
 $$
 
-Band edge shifts:
+Band edge shifts (using the code's convention $\delta E = -P_\varepsilon + Q_\varepsilon$):
 
 | Band | Shift formula | Value (eV) |
 |---|---|---|
 | CB | $\Delta E_c = a_c\,\mathrm{Tr}(\varepsilon) = (-5.08)(-0.0610)$ | $+0.310$ |
-| HH | $\Delta E_{\text{HH}} = P_\varepsilon + Q_\varepsilon = 0.0610 - 0.1257$ | $-0.065$ |
-| LH | $\Delta E_{\text{LH}} = P_\varepsilon - Q_\varepsilon = 0.0610 + 0.1257$ | $+0.187$ |
-| SO | $\Delta E_{\text{SO}} = P_\varepsilon = +0.0610$ | $+0.061$ |
+| HH | $\Delta E_{\text{HH}} = -P_\varepsilon + Q_\varepsilon = -61.0 - 125.7$ | $-0.187$ |
+| LH | $\Delta E_{\text{LH}} = -P_\varepsilon - Q_\varepsilon = -61.0 + 125.7$ | $+0.065$ |
+| SO | $\Delta E_{\text{SO}} = -P_\varepsilon = -61.0\;\text{meV}$ | $-0.061$ |
 
-The HH/LH splitting is $2|Q_\varepsilon| = 0.251$ eV -- a very large effect.
+The HH/LH splitting is $2|Q_\varepsilon| = 251$ meV -- a very large effect.
 Under compressive strain, the heavy-hole band moves upward (toward the CB,
 $\Delta E_{\text{HH}} < 0$) while the light-hole band moves downward
-($\Delta E_{\text{LH}} > 0$ in the inverted convention where more negative $E_V$
-is deeper in the valence band).  This is the well-known result that compressive
+($\Delta E_{\text{LH}} > 0$).  This is the well-known result that compressive
 strain favors heavy-hole states at the valence band maximum.
+
+### 7.3 Comparison: strained vs unstrained band gaps
+
+The band gap change under strain is $\Delta E_g = \Delta E_c - \Delta
+E_{\text{HH}}$ (difference between CB and HH-VB shifts).  The following table
+compares the strain-induced gap changes for both example systems.
+
+| System | Layer | $E_g^0$ (eV) | $\varepsilon_{xx}$ | $\Delta E_g$ (meV) | HH/LH split (meV) |
+|---|---|---|---|---|---|
+| AlSb/GaSb/InAs | GaSb on AlSb | 0.812 | $+0.65\%$ (tensile) | $-71$ | 25 |
+| AlSb/GaSb/InAs | InAs on AlSb | 0.417 | $+1.27\%$ (tensile) | $-95$ | 48 |
+| InAs/GaAs | InAs on GaAs | 0.417 | $-6.69\%$ (compressive) | $+497$ | 251 |
+
+The InAs/GaAs system shows dramatically larger strain effects: the band gap
+increases by 497 meV and the HH/LH splitting reaches 251 meV.  In practice,
+such a large mismatch (~6.7%) exceeds the critical thickness for pseudomorphic
+growth (typically a few monolayers for InAs on GaAs), so this system is of more
+theoretical interest.  The AlSb/GaSb/InAs system, with mismatches below 1.3%,
+is fully realizable in experiment and represents the regime where the code's
+pseudomorphic strain model is directly applicable.
+
+Note the sign difference: tensile strain decreases the HH gap (GaSb and InAs on
+AlSb), while compressive strain increases it (InAs on GaAs).  This follows from
+the hydrostatic component: tensile strain produces a positive Tr$(\varepsilon)$,
+which lowers the CB edge (since $a_c < 0$) while the valence band shift depends
+on the competition between the hydrostatic and shear terms.
+
+### 7.4 HH/LH splitting as a function of lattice mismatch
+
+The HH/LH splitting for biaxial strain on a (001) substrate is
+
+$$
+\Delta E_{\text{HH-LH}} = -b\left(1 + \frac{2C_{12}}{C_{11}}\right)\varepsilon_{xx}\,.
+$$
+
+The factor $1 + 2C_{12}/C_{11}$ is approximately 1.9 for most III-V materials,
+so the splitting is roughly $1.9\,|b|\,|\varepsilon_{xx}|$.  The following
+table shows how the splitting scales with mismatch for InAs under compressive
+strain:
+
+| $\varepsilon_{xx}$ (%) | $\Delta E_{\text{HH-LH}}$ (meV) | $\Delta E_c$ (meV) | $\Delta E_g$ (meV) |
+|---|---|---|---|
+| $-0.5$ | 19 | 23 | 37 |
+| $-1.0$ | 38 | 46 | 74 |
+| $-1.3$ | 49 | 60 | 97 |
+| $-2.0$ | 75 | 93 | 149 |
+| $-3.0$ | 113 | 139 | 223 |
+| $-6.7$ | 252 | 311 | 498 |
+
+The HH/LH splitting grows linearly with strain magnitude.  Even modest
+mismatches of 1--2% produce splittings of 40--80 meV, comparable to $k_BT$
+at room temperature (26 meV).  This is why strain engineering is such an
+effective tool: small, controllable lattice mismatches produce band structure
+changes that directly impact device performance.
 
 ---
 
