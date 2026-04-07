@@ -1,10 +1,11 @@
 # Chapter 00: Quickstart Guide
 
-This chapter gets you from zero to your first band-structure calculation in
-under five minutes. We build the code, run a bulk GaAs calculation, and walk
-through every line of output so you know exactly what the numbers mean.
+This chapter gets you from zero to your first calculations in under five
+minutes. We build the code, run a bulk GaAs band-structure sweep and a
+g-factor calculation, and walk through every line of output so you know
+exactly what the numbers mean.
 
-If you hit a snag, jump straight to [Section 6: Common Issues](#6-common-issues).
+If you hit a snag, jump straight to [Section 7: Common Issues](#7-common-issues).
 
 ---
 
@@ -62,8 +63,8 @@ build/src/bandStructure        # band-structure sweeps
 build/src/gfactorCalculation   # Landau g-factor at Gamma
 ```
 
-You can safely ignore the `gfactorCalculation` executable for now; we will
-only use `bandStructure` in this guide.
+Both read the same `input.cfg` format. We will use `bandStructure` in
+Section 3 and `gfactorCalculation` in Section 4.
 
 ---
 
@@ -173,9 +174,82 @@ The file has 12 rows: a header line (`#k, values`) plus 11 k-points (the
 
 ---
 
-## 4. Interpreting the Output
+## 4. Second Run: Bulk GaAs g-Factor
 
-### 4.1 Eigenvalues at the Gamma point (k = 0)
+The second executable, `gfactorCalculation`, computes Landau g-factors at the
+Gamma point ($\mathbf{k} = 0$) using second-order Lowdin partitioning. It reads
+the same `input.cfg` format with two extra parameters.
+
+Replace the contents of `input.cfg` with:
+
+```
+waveVector: k0
+waveVectorMax: 0.1
+waveVectorStep: 0
+confinement:  0
+FDstep: 1
+FDorder: 2
+numLayers:  1
+material1: GaAs
+numcb: 2
+numvb: 6
+ExternalField: 0  EF
+EFParams: 0.0005
+whichBand: 0
+bandIdx: 1
+```
+
+**New parameters:**
+
+| Parameter | Value | Meaning |
+|---|---|---|
+| `waveVector` | `k0` | Fixed at the Gamma point |
+| `waveVectorStep` | `0` | No sweep — single-point calculation |
+| `whichBand` | `0` | Conduction band (1 = valence) |
+| `bandIdx` | `1` | First conduction subband |
+
+Run:
+
+```bash
+./build/src/gfactorCalculation
+```
+
+### 4.1 Output
+
+The program prints the spin matrices, a $2 \times 2$ g-tensor for each
+Cartesian direction, and the resulting g-factor eigenvalues:
+
+```
+ tensor
+   0.0000   -0.0000   0.1575   -0.0000
+   0.1575   -0.0000   0.0000   -0.0000
+
+   0.0000   -0.0000   0.0000    0.1575
+   0.0000   -0.1575   0.0000   -0.0000
+
+   0.1575   -0.0000   0.0000   -0.0000
+   0.0000   -0.0000  -0.1575   -0.0000
+ gx  -0.3150
+ gy  -0.3150
+ gz  -0.3150
+```
+
+The file `output/gfactor.dat` contains three values — the g-factor along $x$,
+$y$, and $z$:
+
+```
+ -0.31500390136823286      -0.31500390136823286      -0.31500390136822709
+```
+
+All three components are equal ($g^* \approx -0.315$) because bulk GaAs has
+cubic symmetry. This is the 8-band k.p result; the experimental value of
+$g^* = -0.44$ includes remote-band contributions beyond the 8-band model.
+
+---
+
+## 5. Interpreting the Output
+
+### 5.1 Eigenvalues at the Gamma point (k = 0)
 
 Focusing on the first data row (k = 0):
 
@@ -206,7 +280,7 @@ Three features to notice:
    $\Gamma_8$ irreducible representation of the zincblende point group. The
    degeneracy lifts as soon as k departs from zero.
 
-### 4.2 The full dispersion
+### 5.2 The full dispersion
 
 The following figure shows all eight bands across the full k-range:
 
@@ -220,7 +294,7 @@ effective mass and bends away more quickly.*
 
 ---
 
-## 5. Next Steps
+## 6. Next Steps
 
 Now that you have a working build and understand the output format, you can
 explore further:
@@ -240,7 +314,7 @@ Copy any of them to `input.cfg` and re-run `./build/src/bandStructure`.
 
 ---
 
-## 6. Common Issues
+## 7. Common Issues
 
 ### Stale `.mod` files
 
@@ -252,12 +326,6 @@ type`, old `.mod` files in the project root may be shadowing the fresh ones in
 rm -f *.mod
 cmake --build build
 ```
-
-### `cp -i` shell alias
-
-If your shell aliases `cp` to `cp -i` (interactive), copying `input.cfg` via a
-script will hang waiting for confirmation. Use your editor or write the file
-directly instead of `cp`.
 
 ### MKL not found
 
