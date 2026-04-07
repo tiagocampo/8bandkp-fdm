@@ -184,9 +184,18 @@ def parse_eigenvalues(output_dir: Path) -> Tuple[np.ndarray, np.ndarray]:
     return k_vals, eig
 
 
-def parse_parts(output_dir: Path) -> np.ndarray:
+def parse_parts(output_dir: Path, k_index: int = 0) -> np.ndarray:
     """
-    Parse output/parts.dat.
+    Parse output/parts.dat in multi-block gnuplot format.
+
+    Each block starts with '# k = <value>' followed by n_eigenvalues rows of
+    8 band-character weights.  Blocks are separated by blank lines.
+
+    Parameters
+    ----------
+    output_dir : Path
+    k_index : int
+        Which k-point block to return (0 = first k-point, i.e. k=0).
 
     Returns
     -------
@@ -195,7 +204,86 @@ def parse_parts(output_dir: Path) -> np.ndarray:
     path = output_dir / "parts.dat"
     if not path.exists():
         raise FileNotFoundError(f"{path} not found")
-    return np.loadtxt(str(path))
+
+    blocks: list[np.ndarray] = []
+    current: list[list[float]] = []
+
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("#"):
+                # New k-point block header
+                if current:
+                    blocks.append(np.array(current))
+                    current = []
+                continue
+            if line == "":
+                if current:
+                    blocks.append(np.array(current))
+                    current = []
+                continue
+            vals = [float(x) for x in line.split()]
+            current.append(vals)
+
+    if current:
+        blocks.append(np.array(current))
+
+    if not blocks:
+        raise ValueError(f"No data blocks found in {path}")
+
+    if k_index >= len(blocks):
+        raise IndexError(
+            f"Requested k_index={k_index} but only {len(blocks)} blocks in {path}"
+        )
+
+    return blocks[k_index]
+
+
+def parse_parts_all_k(output_dir: Path) -> Tuple[np.ndarray, List[float]]:
+    """
+    Parse output/parts.dat returning ALL k-point blocks.
+
+    Returns
+    -------
+    k_values : list of float
+        k-magnitude for each block.
+    all_parts : list of 2-D arrays (n_eigenvalues, 8)
+        Band character for each k-point.
+    """
+    path = output_dir / "parts.dat"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found")
+
+    k_values: list[float] = []
+    all_parts: list[np.ndarray] = []
+    current: list[list[float]] = []
+
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("# k ="):
+                # Save previous block
+                if current:
+                    all_parts.append(np.array(current))
+                    current = []
+                # Parse k value
+                k_val = float(line.split("=")[1].strip())
+                k_values.append(k_val)
+                continue
+            if line.startswith("#"):
+                continue
+            if line == "":
+                if current:
+                    all_parts.append(np.array(current))
+                    current = []
+                continue
+            vals = [float(x) for x in line.split()]
+            current.append(vals)
+
+    if current:
+        all_parts.append(np.array(current))
+
+    return k_values, all_parts
 
 
 def parse_potential_profile(output_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -504,6 +592,205 @@ def fig_bulk_gaas_parts(output_dir: Path) -> None:
     fig.savefig(FIGURE_DIR / "bulk_gaas_parts.png")
     plt.close(fig)
     print("  -> docs/figures/bulk_gaas_parts.png")
+
+
+def fig_bulk_gaas_parts_vs_k(output_dir: Path) -> None:
+    """bulk_gaas_parts_vs_k.png: band character evolution along k."""
+    print("[figure] bulk_gaas_parts_vs_k")
+    cfg = CONFIG_DIR / "bulk_gaas_kxky.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="bulk_gaas_kxky")
+    k_values, all_parts = parse_parts_all_k(output_dir)
+
+    if len(all_parts) == 0:
+        print("  WARNING: no parts data, skipping.")
+        return
+
+    n_k = len(k_values)
+    n_ev = all_parts[0].shape[0]
+    n_band = min(8, all_parts[0].shape[1])
+
+    fig, axes = plt.subplots(2, 4, figsize=(12, 6), sharex=True)
+    axes = axes.flatten()
+
+    for ev in range(min(n_ev, 8)):
+        ax = axes[ev]
+        bottom = np.zeros(n_k)
+        for b in range(n_band):
+            vals = np.array([all_parts[k][ev, b] for k in range(n_k)])
+            # Normalize
+            row_sum = vals.sum()
+            if row_sum > 0:
+                vals = vals / np.sum([all_parts[k][ev, :].sum() for k in range(n_k)]) * n_k
+                vals_raw = np.array([all_parts[k][ev, b] for k in range(n_k)])
+                row_sums = np.array([all_parts[k][ev, :].sum() for k in range(n_k)])
+                row_sums[row_sums == 0] = 1.0
+                vals = vals_raw / row_sums
+            ax.fill_between(k_values, bottom, bottom + vals,
+                          color=BAND_COLORS[b], linewidth=0, alpha=0.9)
+            bottom += vals
+        ax.set_ylim(0, 1.05)
+        ax.set_title(f"State {ev+1}", fontsize=9)
+        ax.set_ylabel("Character", fontsize=7)
+        if ev >= 4:
+            ax.set_xlabel(r"$|k|$ (1/A)", fontsize=7)
+
+    # Add legend to first panel
+    for b in range(n_band):
+        axes[0].plot([], [], color=BAND_COLORS[b], linewidth=6, label=BAND_NAMES[b])
+    axes[0].legend(fontsize=5, ncol=2, loc="upper right")
+
+    fig.suptitle("Bulk GaAs: band character evolution from $\\Gamma$", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "bulk_gaas_parts_vs_k.png")
+    plt.close(fig)
+    print("  -> docs/figures/bulk_gaas_parts_vs_k.png")
+
+
+def fig_bulk_gaas_bands_110(output_dir: Path) -> None:
+    """bulk_gaas_bands_110.png: E(k) along [110] (kxky)."""
+    print("[figure] bulk_gaas_bands_110")
+    cfg = CONFIG_DIR / "bulk_gaas_kxky.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="bulk_gaas_kxky")
+    k_vals, eig = parse_eigenvalues(output_dir)
+
+    n_bands = eig.shape[0]
+    fig, ax = plt.subplots(figsize=(6, 5))
+    for i in range(n_bands):
+        ax.plot(k_vals, eig[i], color=BAND_COLORS[i], linewidth=1.2)
+
+    ax.set_xlabel(r"$k_{[110]}$ (1/A)")
+    ax.set_ylabel(r"$E$ (eV)")
+    ax.set_title("Bulk GaAs $E(k)$ along $[110]$")
+    ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "bulk_gaas_bands_110.png")
+    plt.close(fig)
+    print("  -> docs/figures/bulk_gaas_bands_110.png")
+
+
+def fig_bulk_gaas_warping(output_dir: Path) -> None:
+    """bulk_gaas_warping.png: valence band E(k) comparing [100] vs [110]."""
+    print("[figure] bulk_gaas_warping")
+    # [100] direction
+    cfg_100 = CONFIG_DIR / "bulk_gaas_kx.cfg"
+    run_executable(EXE_BAND, cfg_100, REPO_ROOT, label="bulk_gaas_kx_100")
+    k_100, eig_100 = parse_eigenvalues(output_dir)
+    # Save before [110] run overwrites
+    eig_100_saved = eig_100.copy()
+    k_100_saved = k_100.copy()
+
+    # [110] direction (kxky)
+    cfg_110 = CONFIG_DIR / "bulk_gaas_kxky.cfg"
+    run_executable(EXE_BAND, cfg_110, REPO_ROOT, label="bulk_gaas_kxky_110")
+    k_110, eig_110 = parse_eigenvalues(output_dir)
+
+    fig, (ax_full, ax_vb) = plt.subplots(1, 2, figsize=(10, 5))
+
+    # Full bands
+    for i in range(eig_100_saved.shape[0]):
+        ax_full.plot(k_100_saved, eig_100_saved[i], color=BAND_COLORS[i],
+                    linewidth=1.0, linestyle="-")
+        ax_full.plot(k_110, eig_110[i], color=BAND_COLORS[i],
+                    linewidth=1.0, linestyle="--")
+
+    ax_full.set_xlabel(r"$|k|$ (1/A)")
+    ax_full.set_ylabel(r"$E$ (eV)")
+    ax_full.set_title("Bulk GaAs: [100] (solid) vs [110] (dashed)")
+    ax_full.axhline(0, color="grey", linewidth=0.4, linestyle=":")
+
+    # Zoom on valence bands to show warping
+    for i in range(min(6, eig_100_saved.shape[0])):
+        ax_vb.plot(k_100_saved, eig_100_saved[i], color=BAND_COLORS[i],
+                  linewidth=1.2, linestyle="-", label="[100]" if i == 0 else "")
+        ax_vb.plot(k_110, eig_110[i], color=BAND_COLORS[i],
+                  linewidth=1.2, linestyle="--", label="[110]" if i == 0 else "")
+
+    ax_vb.set_xlabel(r"$|k|$ (1/A)")
+    ax_vb.set_ylabel(r"$E$ (eV)")
+    ax_vb.set_title("Valence band warping (zoom)")
+    ax_vb.set_ylim(-0.4, 0.05)
+    ax_vb.axhline(0, color="grey", linewidth=0.4, linestyle=":")
+    ax_vb.legend(fontsize=8)
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "bulk_gaas_warping.png")
+    plt.close(fig)
+    print("  -> docs/figures/bulk_gaas_warping.png")
+
+
+def fig_bulk_gaas_strained_bands(output_dir: Path) -> None:
+    """bulk_gaas_strained_bands.png: strained GaAs on InP substrate."""
+    print("[figure] bulk_gaas_strained_bands")
+    cfg = CONFIG_DIR / "bulk_gaas_strained.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="bulk_gaas_strained")
+    k_vals, eig = parse_eigenvalues(output_dir)
+
+    n_bands = eig.shape[0]
+    fig, ax = plt.subplots(figsize=(6, 5))
+    for i in range(n_bands):
+        ax.plot(k_vals, eig[i], color=BAND_COLORS[i], linewidth=1.2)
+
+    ax.set_xlabel(r"$k_{[110]}$ (1/A)")
+    ax.set_ylabel(r"$E$ (eV)")
+    ax.set_title(r"GaAs strained on InP substrate ($a_{sub}=5.869$ A)")
+    ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "bulk_gaas_strained_bands.png")
+    plt.close(fig)
+    print("  -> docs/figures/bulk_gaas_strained_bands.png")
+
+
+def fig_bulk_gaas_strain_comparison(output_dir: Path) -> None:
+    """bulk_gaas_strain_comparison.png: unstrained vs strained GaAs."""
+    print("[figure] bulk_gaas_strain_comparison")
+
+    # Unstrained
+    cfg_free = CONFIG_DIR / "bulk_gaas_kxky.cfg"
+    run_executable(EXE_BAND, cfg_free, REPO_ROOT, label="bulk_gaas_unstrained")
+    k_free, eig_free = parse_eigenvalues(output_dir)
+    eig_free_saved = eig_free.copy()
+    k_free_saved = k_free.copy()
+
+    # Strained
+    cfg_strain = CONFIG_DIR / "bulk_gaas_strained.cfg"
+    run_executable(EXE_BAND, cfg_strain, REPO_ROOT, label="bulk_gaas_strained_cmp")
+    k_strain, eig_strain = parse_eigenvalues(output_dir)
+
+    fig, (ax_full, ax_vb) = plt.subplots(1, 2, figsize=(10, 5))
+
+    for i in range(eig_free_saved.shape[0]):
+        ax_full.plot(k_free_saved, eig_free_saved[i], color=BAND_COLORS[i],
+                    linewidth=1.0, linestyle="--")
+        ax_full.plot(k_strain, eig_strain[i], color=BAND_COLORS[i],
+                    linewidth=1.2, linestyle="-")
+
+    ax_full.set_xlabel(r"$k$ (1/A)")
+    ax_full.set_ylabel(r"$E$ (eV)")
+    ax_full.set_title("GaAs: unstrained (dashed) vs strained on InP (solid)")
+    ax_full.axhline(0, color="grey", linewidth=0.4, linestyle=":")
+
+    # Zoom on VB to show HH-LH splitting
+    for i in range(min(6, eig_free_saved.shape[0])):
+        ax_vb.plot(k_free_saved, eig_free_saved[i], color=BAND_COLORS[i],
+                  linewidth=1.0, linestyle="--")
+        ax_vb.plot(k_strain, eig_strain[i], color=BAND_COLORS[i],
+                  linewidth=1.2, linestyle="-")
+
+    ax_vb.set_xlabel(r"$k$ (1/A)")
+    ax_vb.set_ylabel(r"$E$ (eV)")
+    ax_vb.set_title("VB: HH/LH splitting from strain")
+    ax_vb.set_ylim(-0.5, 0.05)
+    ax_vb.axhline(0, color="grey", linewidth=0.4, linestyle=":")
+
+    # Add legend
+    ax_vb.plot([], [], "k--", linewidth=1.0, label="Unstrained")
+    ax_vb.plot([], [], "k-", linewidth=1.2, label="Strained (InP)")
+    ax_vb.legend(fontsize=8)
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "bulk_gaas_strain_comparison.png")
+    plt.close(fig)
+    print("  -> docs/figures/bulk_gaas_strain_comparison.png")
 
 
 def fig_qw_alsbw_gasbw_inasw_bands(output_dir: Path) -> None:
@@ -1670,6 +1957,11 @@ def fig_benchmark_inasw_gasbw_broken_gap(output_dir: Path) -> None:
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
+    "bulk_gaas_parts_vs_k": fig_bulk_gaas_parts_vs_k,
+    "bulk_gaas_bands_110": fig_bulk_gaas_bands_110,
+    "bulk_gaas_warping": fig_bulk_gaas_warping,
+    "bulk_gaas_strained_bands": fig_bulk_gaas_strained_bands,
+    "bulk_gaas_strain_comparison": fig_bulk_gaas_strain_comparison,
     "bulk_inas_bands": fig_bulk_inas_bands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,

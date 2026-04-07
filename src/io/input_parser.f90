@@ -514,6 +514,7 @@ contains
       ! Could not read strain flag -- use defaults (strain off)
       status = 0
     end if
+
 200 continue
 
     print *, ' '
@@ -521,6 +522,17 @@ contains
     !----------------------------------------------------------------------------
     ! Material parameter setup
     call paramDatabase(cfg%materialN, cfg%numLayers, cfg%params)
+
+    ! --- Bulk strain substrate (backward compatible: 0 = no strain) ---
+    ! Must come AFTER paramDatabase so the value is not overwritten.
+    read(data_unit, *, iostat=status) label, cfg%params(1)%strainSubstrate
+    if (status /= 0) then
+      ! Not found -- default to 0 (no bulk strain), reset status
+      cfg%params(1)%strainSubstrate = 0.0_dp
+      status = 0
+    else
+      print *, trim(label), cfg%params(1)%strainSubstrate
+    end if
 
     ! Initialize the unified spatial grid from config fields
     call init_grid_from_config(cfg)

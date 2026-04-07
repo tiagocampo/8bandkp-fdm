@@ -26,19 +26,24 @@ module outputFunctions
       end if
     end subroutine
 
-    subroutine writeEigenfunctions(N, evnum, A, k, fdstep, z, is_bulk)
+    subroutine writeEigenfunctions(N, evnum, A, k, fdstep, z, is_bulk, k_magnitude)
 
       integer, intent(in) :: N, evnum, k, fdstep
       real(kind=dp), intent(in) :: z(:)
       complex(kind=dp), intent(in) :: A(:,:)
       logical, intent(in) :: is_bulk
+      real(kind=dp), intent(in), optional :: k_magnitude  ! |k| for gnuplot header
 
       integer (kind=4) :: iounit, iounit2, ios
       character (len = 255) :: filename
       integer :: i, j, m
+      real(kind=dp) :: kmag
       real(kind=dp), allocatable :: parts(:,:)
       real(kind=dp), allocatable :: eigv_abs(:,:)
       real(kind=dp), allocatable :: component(:)
+
+      kmag = 0.0_dp
+      if (present(k_magnitude)) kmag = k_magnitude
 
       ! Ensure output directory exists
       call ensure_output_dir()
@@ -81,7 +86,6 @@ module outputFunctions
 
       ! Calculate and write parts
       call get_unit(iounit2)
-      open(unit=iounit2, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
 
       if (is_bulk) then
         ! For bulk, calculate probability density for parts
@@ -90,8 +94,30 @@ module outputFunctions
             parts(j,i) = abs(A(i,j))**2
           end do
         end do
+
+        ! Write parts in multi-block gnuplot format (append for k > 1)
+        if (k <= 1) then
+          open(unit=iounit2, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
+        else
+          open(unit=iounit2, file=OUTPUT_DIR//'/parts.dat', position='append', action='write')
+        end if
+
+        ! k-point header (gnuplot index separator)
+        write(unit=iounit2, fmt='("# k = ", g14.6)', iostat=ios) kmag
+
+        ! Write parts for this k-point
+        do j = 1, evnum
+          write(unit=iounit2, fmt="(8(g14.6))", iostat=ios) (parts(j,m), m=1,8)
+        end do
+
+        ! Blank line as gnuplot block separator
+        write(unit=iounit2, fmt='("")', iostat=ios)
+
+        close(iounit2)
       else
         ! For quantum well, integrate over z
+        open(unit=iounit2, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
+
         do j = 1, evnum
           ! Initialize parts for this eigenstate
           parts(j,:) = 0.0_dp
@@ -104,14 +130,14 @@ module outputFunctions
             parts(j,m) = sum(eigv_abs(:,m)**2) * (z(2)-z(1))
           end do
         end do
+
+        ! Write parts
+        do j = 1, evnum
+          write(unit=iounit2, fmt="(8(g14.6))", iostat=ios) (parts(j,m), m=1,8)
+        end do
+
+        close(iounit2)
       end if
-
-      ! Write parts
-      do j = 1, evnum
-        write(unit=iounit2, fmt="(8(g14.6))", iostat=ios) (parts(j,m), m=1,8)
-      end do
-
-      close(iounit2)
       if (.not. is_bulk) deallocate(eigv_abs)
       deallocate(parts)
       deallocate(component)

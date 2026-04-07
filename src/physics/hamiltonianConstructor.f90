@@ -976,6 +976,130 @@ module hamiltonianConstructor
       HT(7,7) = HT(7,7) + params(1)%Eg
       HT(8,8) = HT(8,8) + params(1)%Eg
 
+      ! ---------------------------------------------------------------
+      ! Full Bir-Pikus strain Hamiltonian for bulk.
+      !
+      ! When strainSubstrate > 0, apply uniform biaxial [001] strain:
+      !   eps_xx = eps_yy = eps_par = (a_sub - a_film) / a_film
+      !   eps_zz = eps_perp = -2 C12/C11 * eps_par
+      !   eps_xy = eps_xz = eps_yz = 0  (for [001] biaxial)
+      !
+      ! The strain Hamiltonian has the SAME matrix structure as the
+      ! k-dependent terms but with eps_ij replacing k_i*k_j and
+      ! deformation potentials (av, b_dp, d_dp) replacing Luttinger
+      ! parameters (gamma1, gamma2, gamma3):
+      !
+      !   P_eps     = -av * Tr(eps)                           (hydrostatic)
+      !   Q_eps     =  b_dp/2 * (eps_zz - 0.5*(eps_xx+eps_yy)) (tetragonal shear)
+      !   R_eps     = -sqrt(3) * [b_dp/2*(eps_xx-eps_yy) - i*d_dp*eps_xy]
+      !   S_eps     =  i*2*sqrt(3) * d_dp * (eps_xz - i*eps_yz)
+      !   S_eps_bar = -i*2*sqrt(3) * d_dp * (eps_xz + i*eps_yz)
+      !
+      ! Diagonal:
+      !   CB:  +ac * Tr(eps)
+      !   HH:  +P_eps + Q_eps
+      !   LH:  +P_eps - Q_eps
+      !   SO:  +P_eps
+      !
+      ! Off-diagonal: same pattern as k-terms R, S, S_bar.
+      ! For [001] biaxial: R_eps = S_eps = 0, only Q_eps survives.
+      ! All terms included for physics consistency.
+      ! ---------------------------------------------------------------
+      if (params(1)%strainSubstrate > 0.0_dp) then
+        block
+          real(kind=dp) :: a_film, eps_xx, eps_yy, eps_zz
+          real(kind=dp) :: eps_xy, eps_xz, eps_yz, Tr_eps
+          real(kind=dp) :: delta_Ec, P_eps, Q_eps, T_eps
+          complex(kind=dp) :: R_eps, R_eps_c, S_eps, S_eps_c
+
+          a_film = params(1)%a0
+          if (a_film > 0.0_dp) then
+            ! Biaxial [001] strain tensor
+            eps_xx = (params(1)%strainSubstrate - a_film) / a_film
+            eps_yy = eps_xx
+            eps_zz = -2.0_dp * params(1)%C12 / params(1)%C11 * eps_xx
+            eps_xy = 0.0_dp
+            eps_xz = 0.0_dp
+            eps_yz = 0.0_dp
+
+            Tr_eps = eps_xx + eps_yy + eps_zz
+
+            ! CB hydrostatic shift
+            delta_Ec = params(1)%ac * Tr_eps
+
+            ! VB hydrostatic (P_eps) and shear (Q_eps, T_eps) terms
+            P_eps = -params(1)%av * Tr_eps
+            Q_eps = params(1)%b_dp * 0.5_dp * (eps_zz - 0.5_dp * (eps_xx + eps_yy))
+            T_eps = -Q_eps  ! T = -(Q from shear)
+
+            ! Off-diagonal strain terms (same structure as k-dependent R, S)
+            R_eps = -SQR3 * (params(1)%b_dp * 0.5_dp * (eps_xx - eps_yy) &
+                     - IU * params(1)%d_dp * eps_xy)
+            R_eps_c = conjg(R_eps)
+
+            S_eps = IU * 2.0_dp * SQR3 * params(1)%d_dp * &
+                    cmplx(eps_xz, -eps_yz, kind=dp)
+            S_eps_c = -IU * 2.0_dp * SQR3 * params(1)%d_dp * &
+                      cmplx(eps_xz, eps_yz, kind=dp)
+
+            ! === CB (bands 7,8): hydrostatic shift ===
+            HT(7,7) = HT(7,7) + delta_Ec
+            HT(8,8) = HT(8,8) + delta_Ec
+
+            ! === VB diagonal: P_eps +/- Q_eps ===
+            ! HH (bands 1,4): P_eps + Q_eps
+            HT(1,1) = HT(1,1) + P_eps + Q_eps
+            HT(4,4) = HT(4,4) + P_eps + Q_eps
+
+            ! LH (bands 2,3): P_eps - Q_eps
+            HT(2,2) = HT(2,2) + P_eps - Q_eps
+            HT(3,3) = HT(3,3) + P_eps - Q_eps
+
+            ! SO (bands 5,6): P_eps only
+            HT(5,5) = HT(5,5) + P_eps
+            HT(6,6) = HT(6,6) + P_eps
+
+            ! === Off-diagonal VB strain terms ===
+            ! Same pattern as k-dependent Hamiltonian but using strain R, S
+
+            ! S_eps couples HH-LH: (1,2), (2,1), (3,4), (4,3)
+            HT(1,2) = HT(1,2) + S_eps_c
+            HT(2,1) = HT(2,1) + S_eps
+            HT(3,4) = HT(3,4) - S_eps_c
+            HT(4,3) = HT(4,3) - S_eps
+
+            ! R_eps couples HH-LH: (1,3), (3,1), (2,4), (4,2)
+            HT(1,3) = HT(1,3) + R_eps_c
+            HT(3,1) = HT(3,1) + R_eps
+            HT(2,4) = HT(2,4) + R_eps_c
+            HT(4,2) = HT(4,2) + R_eps
+
+            ! === Off-diagonal VB-SO strain terms ===
+            ! (i/sqrt(2))*S, sqrt(2)*R, etc. — same pattern as k-terms
+            HT(1,5) = HT(1,5) - IU * RQS2 * S_eps_c
+            HT(5,1) = HT(5,1) + IU * RQS2 * S_eps
+            HT(1,6) = HT(1,6) + IU * SQR2 * R_eps_c
+            HT(6,1) = HT(6,1) - IU * SQR2 * R_eps
+
+            HT(2,5) = HT(2,5) + IU * RQS2 * (Q_eps - T_eps)  ! = i/sqrt(2)*2*Q_eps
+            HT(5,2) = HT(5,2) - IU * RQS2 * (Q_eps - T_eps)
+            HT(2,6) = HT(2,6) - IU * sqrt(1.5_dp) * S_eps_c
+            HT(6,2) = HT(6,2) + IU * sqrt(1.5_dp) * S_eps
+
+            HT(3,5) = HT(3,5) + IU * sqrt(1.5_dp) * S_eps
+            HT(5,3) = HT(5,3) - IU * sqrt(1.5_dp) * S_eps_c
+            HT(3,6) = HT(3,6) + IU * RQS2 * (Q_eps - T_eps)
+            HT(6,3) = HT(6,3) - IU * RQS2 * (Q_eps - T_eps)
+
+            HT(4,5) = HT(4,5) - IU * SQR2 * R_eps
+            HT(5,4) = HT(5,4) + IU * SQR2 * R_eps_c
+            HT(4,6) = HT(4,6) + IU * RQS2 * S_eps
+            HT(6,4) = HT(6,4) - IU * RQS2 * S_eps_c
+
+          end if
+        end block
+      end if
+
 
     end subroutine ZB8bandBulk
 

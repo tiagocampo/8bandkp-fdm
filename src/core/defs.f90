@@ -62,6 +62,7 @@ module definitions
     real(kind=dp) :: av    = 0.0_dp    ! VB hydrostatic deformation potential (eV)
     real(kind=dp) :: b_dp  = 0.0_dp    ! shear deformation potential, tetragonal (eV)
     real(kind=dp) :: d_dp  = 0.0_dp    ! shear deformation potential, rhombohedral (eV)
+    real(kind=dp) :: strainSubstrate = 0.0_dp  ! substrate lattice constant for bulk biaxial strain (Angstrom)
 
   end type paramStruct
 
@@ -178,7 +179,7 @@ module definitions
     integer :: evnum = 8
     integer :: waveVectorStep = 100
     integer :: ExternalField = 0
-    character(len=2) :: waveVector = 'k0'
+    character(len=4) :: waveVector = 'k0'
     character(len=1) :: confDir = 'n'
     character(len=2) :: EFtype = '  '
     real(kind=dp) :: waveVectorMax = 0.0_dp

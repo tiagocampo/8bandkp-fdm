@@ -70,6 +70,27 @@ program kpfdm
     case ("kz")
       smallk%kz = [ ((i-1)*cfg%waveVectorMax/(cfg%waveVectorStep-1), i=1,cfg%waveVectorStep) ]
 
+    case ("kxky")
+      ! [110] direction: kx = ky = k, kz = 0
+      do i = 1, cfg%waveVectorStep
+        smallk(i)%kx = (i-1) * cfg%waveVectorMax / (cfg%waveVectorStep - 1)
+        smallk(i)%ky = smallk(i)%kx
+      end do
+
+    case ("kxkz")
+      ! [101] direction: kx = kz = k, ky = 0
+      do i = 1, cfg%waveVectorStep
+        smallk(i)%kx = (i-1) * cfg%waveVectorMax / (cfg%waveVectorStep - 1)
+        smallk(i)%kz = smallk(i)%kx
+      end do
+
+    case ("kykz")
+      ! [011] direction: ky = kz = k, kx = 0
+      do i = 1, cfg%waveVectorStep
+        smallk(i)%ky = (i-1) * cfg%waveVectorMax / (cfg%waveVectorStep - 1)
+        smallk(i)%kz = smallk(i)%ky
+      end do
+
     case ("k0")
       ! Already zeroed above
 
@@ -645,7 +666,8 @@ program kpfdm
     do k = 1, cfg%waveVectorStep
       if (k == 1 .or. k == int(cfg%waveVectorStep/2) .or. k == cfg%waveVectorStep) then
         call writeEigenfunctions(8, min(cfg%evnum,8), eigv(:,1:min(cfg%evnum,8),k), &
-          & k, cfg%fdstep, cfg%z, .true.)
+          & k, cfg%fdstep, cfg%z, .true., &
+          & k_magnitude=sqrt(smallk(k)%kx**2 + smallk(k)%ky**2 + smallk(k)%kz**2))
       end if
     end do
 
