@@ -1,0 +1,188 @@
+module test_optical_qw
+  use funit
+  use definitions
+  use parameters
+  use hamiltonianConstructor
+  use finitedifferences
+  use gfactorFunctions
+  use utils
+
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! QW optical matrix element test.
+  !
+  ! Builds a small Al30Ga70As/GaAs/Al30Ga70As QW (51 grid points),
+  ! constructs the 8-band Hamiltonian, diagonalizes with LAPACK zheevd,
+  ! extracts CB/VB states, then computes optical matrix elements via
+  ! compute_optical_matrix_qw and verifies:
+  !   1. num_trans = numcb * numvb
+  !   2. All transition energies are positive (CB above VB)
+  !   3. Matrix elements |p_dir|^2 are non-negative
+  !   4. Oscillator strengths are non-negative and finite
+  !   5. At least some matrix elements are non-zero
+  ! ==================================================================
+
+  @test
+  subroutine test_optical_matrix_qw_basic()
+    integer, parameter :: ngrid = 51
+    real(kind=dp), parameter :: dz_val = 2.0_dp  ! Angstrom
+    integer :: matSize, numcb, numvb, info, lwork, lrwork, liwork
+    integer :: cb_lo, cb_hi, vb_lo, vb_hi
+
+    ! Grid
+    real(kind=dp) :: z(ngrid)
+    real(kind=dp) :: startz_coord, endz_coord
+
+    ! Materials
+    integer, parameter :: nlayers = 3
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: intStartPos(nlayers), intEndPos(nlayers)
+
+    ! Confinement
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    ! Hamiltonian and eigenvalues
+    complex(kind=dp), allocatable :: HT(:,:), work(:)
+    real(kind=dp), allocatable :: eig(:,:), rwork(:)
+    integer, allocatable :: iwork(:)
+
+    ! CB/VB states
+    real(kind=dp), allocatable :: cb_value(:), vb_value(:)
+    complex(kind=dp), allocatable :: cb_state(:,:), vb_state(:,:)
+
+    ! Optical transitions
+    type(optical_transition), allocatable :: transitions(:)
+    integer :: num_trans, it
+    logical :: all_positive_energy, all_nonneg_melem
+
+    ! ---- Setup grid ----
+    do it = 1, ngrid
+      z(it) = -50.0_dp + dble(it - 1) * dz_val
+    end do
+    startz_coord = z(1)
+    endz_coord = z(ngrid)
+
+    ! ---- 3-layer QW: Al30Ga70As / GaAs / Al30Ga70As ----
+    ! Barrier (points 1-15), well (16-36), barrier (37-51)
+    intStartPos(1) = 1;   intEndPos(1) = 15
+    intStartPos(2) = 16;  intEndPos(2) = 36
+    intStartPos(3) = 37;  intEndPos(3) = 51
+
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    material(3) = "Al30Ga70As"
+
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Build profile and kpterms ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+
+    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    ! ---- Matrix size ----
+    numcb = 2 * ngrid   ! NUM_CB_STATES=2, fdStep=ngrid
+    numvb = 4 * ngrid   ! only 4 VB states (not full 6) to keep test fast
+    matSize = ngrid * 8
+
+    ! ---- Build QW Hamiltonian at k=0 ----
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+
+    ! ---- Diagonalize with zheevd (full diagonalization) ----
+    allocate(eig(matSize, 1))
+    eig = 0.0_dp
+
+    ! Workspace query
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('V', 'U', matSize, HT, matSize, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1)))
+    lrwork = int(rwork(1))
+    liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+
+    ! Solve
+    call zheevd('V', 'U', matSize, HT, matSize, eig(:,1), work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+    @assertTrue(info == 0, message="zheevd diagonalization succeeded")
+
+    ! ---- Extract CB/VB states ----
+    ! Eigenvalues sorted ascending: VB first, then CB.
+    ! Take the top numcb states as CB and the numvb states just below as VB.
+    cb_lo = matSize - numcb + 1
+    cb_hi = matSize
+    vb_lo = matSize - numcb - numvb + 1
+    vb_hi = matSize - numcb
+
+    allocate(cb_value(numcb))
+    allocate(vb_value(numvb))
+    allocate(cb_state(matSize, numcb))
+    allocate(vb_state(matSize, numvb))
+
+    cb_value(:) = eig(cb_lo:cb_hi, 1)
+    vb_value(:) = eig(vb_lo:vb_hi, 1)
+
+    cb_state(:,:) = HT(:, cb_lo:cb_hi)
+    vb_state(:,:) = HT(:, vb_lo:vb_hi)
+
+    ! ---- Compute optical matrix elements ----
+    call compute_optical_matrix_qw(transitions, num_trans, &
+      & cb_state, vb_state, cb_value, vb_value, numcb, numvb, &
+      & nlayers, params, profile, kpterms, startz_coord, endz_coord, dz_val)
+
+    ! ---- Verify results ----
+
+    ! 1. Number of transitions
+    @assertEqual(numcb * numvb, num_trans)
+
+    ! 2-4. Check all transition data
+    all_positive_energy = .true.
+    all_nonneg_melem = .true.
+    do it = 1, num_trans
+      ! Transition energies should be positive (CB above VB)
+      if (transitions(it)%energy <= 0.0_dp) then
+        all_positive_energy = .false.
+      end if
+      ! Matrix elements should be non-negative (they are |p|^2)
+      if (transitions(it)%px < 0.0_dp .or. &
+          transitions(it)%py < 0.0_dp .or. &
+          transitions(it)%pz < 0.0_dp) then
+        all_nonneg_melem = .false.
+      end if
+      ! Oscillator strength should be non-negative and finite
+      if (transitions(it)%oscillator_strength < 0.0_dp .or. &
+          transitions(it)%oscillator_strength /= transitions(it)%oscillator_strength) then
+        all_nonneg_melem = .false.
+      end if
+    end do
+
+    @assertTrue(all_positive_energy, message="All transition energies positive")
+    @assertTrue(all_nonneg_melem, message="All matrix elements non-negative")
+
+    ! 5. At least some matrix elements should be non-zero (inter-band transitions)
+    block
+      real(kind=dp) :: total_p
+      total_p = 0.0_dp
+      do it = 1, num_trans
+        total_p = total_p + transitions(it)%px + transitions(it)%py + transitions(it)%pz
+      end do
+      @assertTrue(total_p > 0.0_dp, message="Some optical matrix elements are non-zero")
+    end block
+
+    ! ---- Cleanup ----
+    deallocate(transitions, cb_state, vb_state, cb_value, vb_value)
+    deallocate(HT, eig, work, rwork, iwork)
+    deallocate(profile, kpterms)
+
+  end subroutine test_optical_matrix_qw_basic
+
+end module test_optical_qw
