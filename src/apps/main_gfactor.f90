@@ -116,8 +116,8 @@ program gfactor
         a0_ref = cfg%params(1)%a0
         call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
           cfg%strain, a0_ref, strain_out)
-        call apply_pikus_bir(strain_out, cfg%params, cfg%grid%material_id, &
-          cfg%grid, profile_2d)
+        call compute_bir_pikus_blocks(strain_out, cfg%params, cfg%grid%material_id, &
+          cfg%grid, cfg%strain_blocks)
         call strain_result_free(strain_out)
 
         print *, '  Wire strain calculation complete'
@@ -321,7 +321,7 @@ program gfactor
     if (cfg%confDir == 'n') then !BULK
       call ZB8bandBulk(HT,smallk(k),cfg%params(1))
     else if (cfg%confDir == 'z') then ! QUANTUM WELL
-      call ZB8bandQW(HT, smallk(k), profile, kpterms)
+      call ZB8bandQW(HT, smallk(k), profile, kpterms, cfg=cfg)
     else
       stop "verify confinement direction or something else"
     end if
@@ -420,6 +420,34 @@ program gfactor
   open(unit=iounit, file='output/gfactor.dat', status="replace", action="write")
   write(iounit,*) 2*gfac(1,1), 2*gfac(1,2), 2*gfac(1,3)
   close(iounit)
+
+  ! QW optical transitions
+  if (cfg%confDir == 'z' .and. cfg%numLayers > 1) then
+    block
+      type(optical_transition), allocatable :: transitions(:)
+      integer :: num_trans, it
+
+      call compute_optical_matrix_qw(transitions, num_trans, &
+        cb_state, vb_state, cb_value, vb_value, cfg%numcb, cfg%numvb, &
+        cfg%numLayers, cfg%params, profile, kpterms, &
+        cfg%startPos(1), cfg%endPos(1), cfg%dz)
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
+      write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
+      do it = 1, num_trans
+        write(iounit, '(2(I4,1x),5(g14.6,1x))') &
+          transitions(it)%cb_idx, transitions(it)%vb_idx, &
+          transitions(it)%energy, transitions(it)%px, &
+          transitions(it)%py, transitions(it)%pz, &
+          transitions(it)%oscillator_strength
+      end do
+      close(iounit)
+      print *, '  Optical transitions written to output/optical_transitions.dat'
+      deallocate(transitions)
+    end block
+  end if
 
   !----------------------------------------------------------------------------
 
