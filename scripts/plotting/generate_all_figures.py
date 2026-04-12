@@ -358,6 +358,36 @@ def parse_gfactor(output_dir: Path) -> Tuple[float, float, float]:
     return float(data[0]), float(data[1]), float(data[2])
 
 
+def parse_optical_transitions(output_dir: Path) -> Tuple[np.ndarray, ...]:
+    """Parse output/optical_transitions.dat.
+
+    Handles Fortran G-edit descriptor output where very small exponents
+    may omit the 'E' character (e.g. ``0.300918-110`` means ``0.300918E-110``).
+
+    Returns
+    -------
+    cb_idx, vb_idx, energy, px, py, pz, f_osc : 1-D arrays
+    """
+    import re
+    path = output_dir / "optical_transitions.dat"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found")
+    rows: list[list[float]] = []
+    _fort_fix = re.compile(r"(\d\.\d+E[+-]?\d+)|(\d\.\d+)([+-]\d{2,3})(?=\s|$)")
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("#") or line.strip() == "":
+                continue
+            # Fix missing-E in Fortran G-edit output: e.g. 0.300918-110 -> 0.300918E-110
+            line = re.sub(r"(\d\.\d+)([+-]\d{2,3})(?=\s|$)", r"\1E\2", line)
+            tokens = line.split()
+            if len(tokens) >= 7:
+                rows.append([float(t) for t in tokens[:7]])
+    data = np.array(rows)
+    return (data[:, 0].astype(int), data[:, 1].astype(int),
+            data[:, 2], data[:, 3], data[:, 4], data[:, 5], data[:, 6])
+
+
 def parse_eigenfunctions_bulk(output_dir: Path, k_idx: int, n_ev: int) -> np.ndarray:
     """
     Parse bulk eigenfunctions for a given k-point.
@@ -1950,6 +1980,218 @@ def fig_benchmark_inasw_gasbw_broken_gap(output_dir: Path) -> None:
     print("  -> docs/figures/benchmark_inasw_gasbw_broken_gap.png")
 
 
+# ---------------------------------------------------------------------------
+# New QW dispersion, optics, and potential-profile figures
+# ---------------------------------------------------------------------------
+
+
+def fig_qw_dispersion_gaas_algaas(output_dir: Path) -> None:
+    """qw_dispersion_gaas_algaas.png: GaAs/AlGaAs QW E(k_parallel) with band-type coloring."""
+    print("[figure] qw_dispersion_gaas_algaas")
+    cfg = CONFIG_DIR / "qw_gaas_algaas_kpar.cfg"
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_gaas_algaas_kpar",
+                           timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: qw_gaas_algaas_kpar run failed, skipping.")
+        return
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: eigenvalues.dat not found, skipping.")
+        return
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    n_bands = eig.shape[0]
+    for i in range(n_bands):
+        energy_mid = np.mean(eig[i])
+        if energy_mid > 0.5:
+            color = "#17becf"  # CB - cyan
+        elif energy_mid <= 0.5 and energy_mid > 0:
+            color = "#d62728"  # VB - red
+        else:
+            color = "#ff7f0e"  # SO - orange
+        ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=0.85)
+
+    # HH/LH labels near VB top at k=0
+    e0 = eig[:, 0]
+    vb_top = [e for e in e0 if -0.5 < e <= 0.5]
+    if vb_top:
+        e_vb_max = max(vb_top)
+        e_vb_min = min(vb_top)
+        ax.annotate("HH", xy=(k_vals[1], e_vb_max), fontsize=8, color="#d62728",
+                    va="bottom")
+        if abs(e_vb_max - e_vb_min) > 0.01:
+            ax.annotate("LH", xy=(k_vals[1], e_vb_min), fontsize=8, color="#d62728",
+                        va="top")
+
+    ax.set_xlabel(r"$k_{\parallel}$ (1/A)")
+    ax.set_ylabel(r"$E$ (eV)")
+    ax.set_title(r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW Dispersion")
+    ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_dispersion_gaas_algaas.png")
+    plt.close(fig)
+    print("  -> docs/figures/qw_dispersion_gaas_algaas.png")
+
+
+def fig_qw_dispersion_broken_gap(output_dir: Path) -> None:
+    """qw_dispersion_broken_gap.png: InAsW/GaSbW broken-gap QW with anticrossing."""
+    print("[figure] qw_dispersion_broken_gap")
+    cfg = CONFIG_DIR / "qw_inas_gasb_broken_gap_kpar.cfg"
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                           label="qw_inas_gasb_broken_gap_kpar", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: broken-gap kpar run failed, skipping.")
+        return
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: eigenvalues.dat not found, skipping.")
+        return
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    n_bands = eig.shape[0]
+    for i in range(n_bands):
+        energy_mid = np.mean(eig[i])
+        if energy_mid > 0.1:
+            color = "#17becf"  # CB-like - cyan
+        elif energy_mid >= -0.1:
+            color = "#2ca02c"  # mixed / near-gap - green
+        else:
+            color = "#d62728"  # VB-like - red
+        ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=0.85)
+
+    # Find anticrossing: minimum gap between any two bands across k-points
+    min_gap_overall = np.inf
+    anticrossing_k = k_vals[0]
+    n_k = len(k_vals)
+    for ki in range(n_k):
+        energies_at_k = sorted(eig[:, ki])
+        for j in range(len(energies_at_k) - 1):
+            gap_here = energies_at_k[j + 1] - energies_at_k[j]
+            if gap_here < min_gap_overall:
+                min_gap_overall = gap_here
+                anticrossing_k = k_vals[ki]
+
+    ax.axvline(anticrossing_k, color="grey", linewidth=0.8, linestyle="--", alpha=0.7)
+    ax.annotate(f"Anticrossing at k ~ {anticrossing_k:.2f} 1/A",
+                xy=(anticrossing_k, ax.get_ylim()[1] * 0.85 if ax.get_ylim()[1] > 0 else 0.5),
+                fontsize=8, color="grey", ha="left",
+                xytext=(anticrossing_k + 0.01, 0.0))
+
+    ax.set_xlabel(r"$k_{\parallel}$ (1/A)")
+    ax.set_ylabel(r"$E$ (eV)")
+    ax.set_title("InAsW/GaSbW Broken-Gap QW Dispersion")
+    ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_dispersion_broken_gap.png")
+    plt.close(fig)
+    print("  -> docs/figures/qw_dispersion_broken_gap.png")
+
+
+def fig_qw_optical_matrix_elements(output_dir: Path) -> None:
+    """qw_optical_matrix_elements.png: grouped bar chart of optical matrix elements."""
+    print("[figure] qw_optical_matrix_elements")
+    cfg = CONFIG_DIR / "qw_gaas_algaas_optics.cfg"
+    result = run_executable(EXE_GFACTOR, cfg, REPO_ROOT,
+                           label="qw_gaas_algaas_optics", timeout=1200)
+    if result.returncode != 0:
+        print("  WARNING: qw_gaas_algaas_optics run failed, skipping.")
+        return
+    try:
+        cb_idx, vb_idx, energy, px, py, pz, f_osc = parse_optical_transitions(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: optical_transitions.dat not found, skipping.")
+        return
+
+    # Filter to positive-energy transitions only
+    pos_mask = energy > 0
+    if not np.any(pos_mask):
+        print("  WARNING: no positive-energy transitions found, skipping.")
+        return
+    cb_idx = cb_idx[pos_mask]
+    vb_idx = vb_idx[pos_mask]
+    energy = energy[pos_mask]
+    px = px[pos_mask]
+    py = py[pos_mask]
+    pz = pz[pos_mask]
+    f_osc = f_osc[pos_mask]
+
+    # Sort by oscillator strength descending, keep top entries
+    sort_order = np.argsort(-f_osc)
+    max_show = min(15, len(sort_order))
+    sort_order = sort_order[:max_show]
+
+    cb_idx = cb_idx[sort_order]
+    vb_idx = vb_idx[sort_order]
+    energy = energy[sort_order]
+    px = px[sort_order]
+    py = py[sort_order]
+    pz = pz[sort_order]
+
+    n_trans = len(cb_idx)
+    labels = [f"CB{cb_idx[i]}-VB{vb_idx[i]}" for i in range(n_trans)]
+
+    fig, ax = plt.subplots(figsize=(max(8, n_trans * 0.7), 5))
+    x = np.arange(n_trans)
+    width = 0.25
+
+    ax.bar(x - width, px, width, label=r"$|p_x|^2$", color="#1f77b4", linewidth=0)
+    ax.bar(x, py, width, label=r"$|p_y|^2$", color="#2ca02c", linewidth=0)
+    ax.bar(x + width, pz, width, label=r"$|p_z|^2$", color="#d62728", linewidth=0)
+
+    ax.set_yscale("log")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Matrix element (arb. units)")
+    ax.set_title(r"GaAs/AlGaAs QW Optical Matrix Elements at $k=0$")
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_optical_matrix_elements.png")
+    plt.close(fig)
+    print("  -> docs/figures/qw_optical_matrix_elements.png")
+
+
+def fig_qw_potential_profile_gaas(output_dir: Path) -> None:
+    """qw_potential_profile_gaas.png: GaAs/AlGaAs QW band-edge profile."""
+    print("[figure] qw_potential_profile_gaas")
+    cfg = CONFIG_DIR / "qw_gaas_algaas_kpar.cfg"
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_gaas_algaas_kpar_pp",
+                           timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: qw_gaas_algaas_kpar run failed, skipping.")
+        return
+    try:
+        z, EV, EV_SO, EC = parse_potential_profile(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: potential_profile.dat not found, skipping.")
+        return
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(z, EC, color="#17becf", linewidth=1.5, label=r"$E_C$")
+    ax.plot(z, EV, color="#d62728", linewidth=1.5, label=r"$E_V$")
+    ax.plot(z, EV_SO, color="#ff7f0e", linewidth=1.5, label=r"$E_{\Delta SO}$")
+
+    # Dashed vertical lines at material boundaries
+    ax.axvline(-50, color="grey", linewidth=0.8, linestyle="--")
+    ax.axvline(50, color="grey", linewidth=0.8, linestyle="--")
+
+    # Shade the well region
+    well_mask = (z >= -50) & (z <= 50)
+    if np.any(well_mask):
+        ax.fill_between(z[well_mask], EV[well_mask].min() - 0.05,
+                        EC[well_mask].max() + 0.05, alpha=0.08, color="#17becf")
+
+    ax.set_xlabel(r"$z$ (\u00C5)")
+    ax.set_ylabel("Energy (eV)")
+    ax.set_title(r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW Band Edge Profile")
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_potential_profile_gaas.png")
+    plt.close(fig)
+    print("  -> docs/figures/qw_potential_profile_gaas.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -1980,6 +2222,10 @@ ALL_FIGURES = {
     "convergence_grid_spacing": fig_convergence_grid_spacing,
     "timing_dense_vs_sparse": fig_timing_dense_vs_sparse,
     "benchmark_inasw_gasbw_broken_gap": fig_benchmark_inasw_gasbw_broken_gap,
+    "qw_dispersion_gaas_algaas": fig_qw_dispersion_gaas_algaas,
+    "qw_dispersion_broken_gap": fig_qw_dispersion_broken_gap,
+    "qw_optical_matrix_elements": fig_qw_optical_matrix_elements,
+    "qw_potential_profile_gaas": fig_qw_potential_profile_gaas,
 }
 
 
