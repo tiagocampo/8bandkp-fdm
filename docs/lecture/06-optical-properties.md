@@ -369,6 +369,45 @@ The transitions involving CB2 (the second conduction subband) follow the same se
 
 The total oscillator strength across all transitions for a given CB state should satisfy the f-sum rule $\sum_{\text{VB}} f_{ij} \leq 1$, with the deficit reflecting contributions from states outside the computed VB manifold.
 
+### 6.6.5 Quantum Well Optical Transitions
+
+The same momentum matrix element formalism applies to quantum wells. The routine
+`compute_optical_matrix_qw` in `gfactor_functions.f90` computes $|\langle \psi_{\text{CB}} | \partial H / \partial k_\alpha | \psi_{\text{VB}} \rangle|^2$ for all CB-VB pairs at $k_\parallel = 0$ using the dense QW `pMatrixEleCalc` subroutine.
+
+For a GaAs/Al$_{0.3}$Ga$_{0.7}$As QW (10 nm well, 401 grid points, FD order 4), the
+optical transitions computed at $k_\parallel = 0$ show clear polarization selection rules:
+
+![QW optical matrix elements](../figures/qw_optical_matrix_elements.png)
+
+**Figure 6.3:** Optical momentum matrix elements $|p_\alpha|^2$ for the strongest
+interband transitions in a GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well at $k_\parallel = 0$.
+The bar chart shows $|p_x|^2$ (blue), $|p_y|^2$ (green), $|p_z|^2$ (red) for the 15
+strongest transitions sorted by oscillator strength. The selection rules from Table 6.2
+are clearly visible: HH-related transitions have $|p_x|^2 = |p_y|^2$ with $|p_z|^2 \approx 0$
+(purely TE-polarized), while LH-related transitions show a significant $|p_z|^2$ component
+(TM admixture).
+
+The QW selection rules at zone center are:
+
+| VB character | $|p_x|^2, |p_y|^2$ | $|p_z|^2$ | Polarization |
+|---|---|---|---|
+| HH ($m_J = \pm 3/2$) | Strong, equal | $\approx 0$ | TE |
+| LH ($m_J = \pm 1/2$) | Moderate | Strong | TE + TM |
+| SO ($m_J = \pm 1/2$) | Moderate | Moderate | Mixed |
+
+This reproduces the selection rules discussed in the nextnano optics tutorial (5.9.7).
+At finite $k_\parallel$, the HH/LH mixing modifies these selection rules -- the matrix
+elements become $k$-dependent, a topic addressed in the k_parallel-integrated absorption
+spectrum (planned for Phase 2 of the development roadmap).
+
+**Code locations (QW):**
+
+| Component | File | Routine |
+|---|---|---|
+| Matrix element computation | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_qw` |
+| Per-direction computation | `src/physics/gfactor_functions.f90` | `pMatrixEleCalc` |
+| Output writing | `src/apps/main_gfactor.f90` | QW optical block |
+
 ---
 
 ## 6.7 Connection to Absorption Spectra
@@ -446,7 +485,7 @@ In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") g
 
 3. **No magnetic field dependence.** The optical transitions are computed at $B = 0$. Magneto-optical measurements (e.g., Zeeman splitting of excitonic peaks) would require computing the transitions in the presence of a magnetic field, which couples to the g-factor calculation described in Chapter 05.
 
-4. **No direct Im[$\epsilon$] computation.** The code computes individual transition matrix elements and oscillator strengths but does not assemble them into the imaginary part of the dielectric function $\text{Im}[\epsilon(\omega)]$. This requires a post-processing step that sums over all transitions with appropriate Fermi occupation factors and broadening (Section 6.7). A future extension could output $\text{Im}[\epsilon(\omega)]$ directly.
+4. **No direct Im[$\epsilon$] computation.** The code computes individual transition matrix elements and oscillator strengths for both wire and QW modes but does not assemble them into the imaginary part of the dielectric function $\text{Im}[\epsilon(\omega)]$. This requires a post-processing step that sums over all transitions with appropriate Fermi occupation factors, k_parallel integration (for QWs), and broadening (Section 6.7). A future extension could output $\text{Im}[\epsilon(\omega)]$ directly -- this is planned for Phase 2 of the development roadmap.
 
 ### 6.8.4 Wurtzite limitation
 
@@ -492,3 +531,6 @@ The computation framework -- `compute_optical_matrix_wire`, the `optical_transit
 | Matrix element computation | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_wire` |
 | Per-direction dispatcher | `src/physics/gfactor_functions.f90` | `compute_pele_2d` |
 | Output writing | `src/apps/main_gfactor.f90` | wire block |
+| Matrix element computation (QW) | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_qw` |
+| Per-direction computation (QW) | `src/physics/gfactor_functions.f90` | `pMatrixEleCalc` |
+| Output writing (QW) | `src/apps/main_gfactor.f90` | QW optical block |
