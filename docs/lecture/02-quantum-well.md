@@ -413,39 +413,45 @@ outside the well.
 
 #### A.3 Numerical results
 
-At $k_\parallel = 0$, the code computes the following eigenvalues:
+At $k_\parallel = 0$, the code computes the following eigenvalues (FDstep=401,
+FDorder=2, two-layer config with painter's algorithm):
 
-**Valence subbands (8 requested):**
-
-| State | Energy (eV) | Character |
-|-------|-------------|-----------|
-| VB-8 | $-0.961$ | HH1 (second well state) |
-| VB-7 | $-0.961$ | HH1 (degenerate partner) |
-| VB-6 | $-0.960$ | LH1 |
-| VB-5 | $-0.960$ | LH1 (degenerate partner) |
-| VB-4 | $-0.960$ | HH2 |
-| VB-3 | $-0.960$ | HH2 (degenerate partner) |
-| VB-2 | $-0.959$ | SO-related |
-| VB-1 | $-0.959$ | SO-related |
-
-The VB top lies at approximately $-0.959$ eV, just above the GaAs valence band edge
-($-0.800$ eV) plus the confinement shift. The energies are close to the AlGaAs
-barrier edge because 8 states are requested and the GaAs well is narrow -- the
-higher VB states are weakly confined and approach the barrier edge.
-
-**Conduction subbands (4 requested):**
+**Valence subbands (8 requested, 4 Kramers pairs):**
 
 | State | Energy (eV) | Character |
 |-------|-------------|-----------|
-| CB-1 | $1.021$ | CB1 (ground state) |
-| CB-2 | $1.021$ | CB1 (degenerate partner) |
-| CB-3 | $1.031$ | CB2 (first excited state) |
-| CB-4 | $1.031$ | CB2 (degenerate partner) |
+| VB-8 | $-0.8262$ | HH1 (ground hole state) |
+| VB-7 | $-0.8262$ | HH1 (Kramers partner) |
+| VB-6 | $-0.8209$ | LH1 |
+| VB-5 | $-0.8209$ | LH1 (Kramers partner) |
+| VB-4 | $-0.8093$ | HH2 (first excited hole) |
+| VB-3 | $-0.8093$ | HH2 (Kramers partner) |
+| VB-2 | $-0.8023$ | LH2 (weakly confined) |
+| VB-1 | $-0.8023$ | LH2 (Kramers partner) |
 
-The CB ground state at $1.021$ eV lies $1.021 - 0.719 = 0.302$ eV above the GaAs CB
-edge, corresponding to the confinement energy of the electron in the 100 A well.
-The degeneracy of 2 reflects the Kramers degeneracy (time-reversal symmetry at
-$k_\parallel = 0$).
+The VB top lies at $-0.8023$ eV, just $2.3$ meV below the GaAs valence band edge
+($-0.800$ eV). All four confined hole states lie between the GaAs ($-0.800$ eV) and
+AlGaAs ($-0.959$ eV) valence band edges, with the deepest state (HH1) at
+$-0.8262$ eV sitting $26.2$ meV below the GaAs edge. The HH1--HH2 splitting of
+$16.9$ meV and the LH1 state at $-0.8209$ eV ($20.9$ meV below the edge) reflect
+the $159$ meV VB offset and the $100$ A well width.
+
+**Conduction subbands (4 requested, 2 Kramers pairs):**
+
+| State | Energy (eV) | Character |
+|-------|-------------|-----------|
+| CB-1 | $+0.7613$ | CB1 (ground electron state) |
+| CB-2 | $+0.7613$ | CB1 (Kramers partner) |
+| CB-3 | $+0.8750$ | CB2 (first excited electron) |
+| CB-4 | $+0.8750$ | CB2 (Kramers partner) |
+
+The CB1 state at $+0.7613$ eV lies $(0.7613 - 0.719) \times 1000 = 42.3$ meV above
+the GaAs CB edge ($+0.719$ eV). The AlGaAs barrier CB edge is at $+1.018$ eV, so the
+confinement energy places CB1 $(1.018 - 0.7613) \times 1000 = 256.7$ meV below the
+barrier top. The CB1--CB2 splitting of $113.8$ meV is consistent with the light GaAs
+electron mass ($0.067\,m_0$) in the $100$ A well. The $1594$ meV band gap between
+VB-1 ($-0.8023$ eV) and CB-1 ($+0.7613$ eV) is slightly larger than the bulk GaAs gap
+($1519$ meV) due to quantum confinement pushing hole states down and electron states up.
 
 #### A.4 Comparison with Bastard formula
 
@@ -454,19 +460,18 @@ For the GaAs/AlGaAs well:
 - $m_w^* = 0.067\,m_0$ (GaAs), $m_b^* = 0.093\,m_0$ (Al$_{0.3}$Ga$_{0.7}$As)
 
 The Bastard transcendental equation predicts $E_1 \approx 35$--$40$ meV above the
-GaAs CB edge. The 8-band k.p result shows the CB1 state at 302 meV above the GaAs
-edge. The difference arises because the "simple" offset picture is complicated by
-band mixing in the 8-band model: the CB state includes admixtures of VB/SO states
-through the k.p couplings, which renormalize the effective confinement. Additionally,
-the AlGaAs barrier CB edge at 1.018 eV is very close to the computed CB1 energy of
-1.021 eV, indicating that the ground state is actually quite weakly confined and
-extends significantly into the barrier -- a regime where the Bastard formula's
-single-band approximation breaks down.
+GaAs CB edge. The 8-band k.p result shows the CB1 state at $42.3$ meV above the GaAs
+edge, in excellent agreement with the single-band Bastard prediction. The small
+difference ($\sim 5$ meV) arises from band mixing in the 8-band model: the CB state
+includes admixtures of VB/SO states through the k.p couplings, which slightly
+renormalize the effective confinement. The CB1 state lies $256.7$ meV below the
+AlGaAs barrier top at $1.018$ eV, confirming strong confinement in the $299$ meV
+CB well.
 
 ![GaAs/AlGaAs QW dispersion](../figures/qw_dispersion_gaas_algaas.png)
 
 *Figure 1: Subband dispersion $E(k_\parallel)$ for the GaAs/Al$_{0.3}$Ga$_{0.7}$As
-quantum well, computed with a finer grid (FDstep=401, FDorder=4, 101 k-points). The
+quantum well, computed with a finer grid (FDstep=401, FDorder=2, 101 k-points). The
 type-I alignment confines both electrons (upper set) and holes (lower set) in the GaAs
 layer. The near-parabolic CB dispersion is characteristic of the light GaAs electron
 mass. The VB subbands show strong nonparabolicity due to HH-LH mixing at finite
@@ -474,11 +479,12 @@ $k_\parallel$.*
 
 #### A.5 Dispersion and HH/LH mixing
 
-The dispersion plot above was generated using the configuration
+The dispersion plot above was generated using a modified version of
 `tests/regression/configs/qw_gaas_algaas_kpar.cfg`, which uses a finer spatial grid
-(FDstep=401, FDorder=4) and denser k-sampling (101 k-points) compared to the basic
-config. The fourth-order FD stencil and fine grid ensure that the subband curvatures
--- and hence the in-plane effective masses -- are converged to better than 1%.
+(FDstep=401, FDorder=2, 101 k-points) with the correct two-layer painter's algorithm
+(AlGaAs barrier first, GaAs well second). The fine grid and dense k-sampling ensure
+that the subband curvatures -- and hence the in-plane effective masses -- are
+well-converged.
 
 At $k_\parallel = 0$, the heavy-hole (HH) and light-hole (LH) subbands are decoupled
 by symmetry. The HH states have angular momentum projection $J_z = \pm 3/2$, while the
@@ -655,22 +661,43 @@ above the GaSbW $E_V$.*
 
 #### B.3 Numerical results
 
-At $k_\parallel = 0$, the diagonalization of the $8 \times 101 = 808$ dimensional
-Hamiltonian yields a rich spectrum. The valence band top lies at approximately
-$0.020$ eV and the conduction band bottom at approximately $0.290$ eV, giving an
-effective gap of about 270 meV. This gap is determined by the hybridization of InAsW
-electron states and GaSbW hole states, not by any single material's band gap.
+At $k_\parallel = 0$, the diagonalization of the $8 \times 401 = 3208$ dimensional
+Hamiltonian yields a rich spectrum (computed with FDstep=401, FDorder=2, finer grid
+than the reference config).
 
-The 32 VB and 32 CB states span a wide energy range:
-- The deepest VB states are bound deep in the GaSbW/AlSbW valence-band wells
-- The VB top states are derived from the GaSbW valence band edge, pushed up by
-  confinement
-- The CB bottom states are InAsW-derived, pulled up from $E_C = -0.172$ eV by
-  confinement in the 70 A InAs well
-- Higher CB states extend toward the AlSbW barrier edge at 1.974 eV
+**Selected subbands near the effective gap (from 10+10 computed states):**
 
-The large number of bound states (32+32) reflects the deep confinement potentials:
-the InAsW CB well depth exceeds 2 eV, and the GaSbW VB well depth is about 0.38 eV.
+| State | Energy (eV) | Character |
+|-------|-------------|-----------|
+| VB-10 | $-0.0609$ | HH1 (deep hole state) |
+| VB-9 | $-0.0609$ | HH1 (Kramers partner) |
+| VB-8 | $-0.0437$ | HH2 / LH1 (4-fold degenerate) |
+| VB-7 | $-0.0437$ | HH2 / LH1 (Kramers partner) |
+| VB-6 | $-0.0437$ | HH2 / LH1 (4-fold degenerate) |
+| VB-5 | $-0.0437$ | HH2 / LH1 (Kramers partner) |
+| VB-4 | $-0.0334$ | GaSbW-derived HH (highest VB) |
+| VB-3 | $-0.0334$ | GaSbW-derived HH (Kramers partner) |
+| VB-2 | $-0.0334$ | Weakly confined hole |
+| VB-1 | $-0.0334$ | Weakly confined hole (Kramers partner) |
+| CB-1 | $+0.0319$ | InAsW-derived electron (lowest CB) |
+| CB-2 | $+0.0319$ | InAsW electron (Kramers partner) |
+| CB-3 | $+0.3256$ | Second electron state |
+| CB-4 | $+0.3256$ | Second electron (Kramers partner) |
+| CB-5 | $+0.6749$ | Third electron state |
+| CB-6 | $+0.6749$ | Third electron (Kramers partner) |
+
+The effective gap between VB-1 ($-0.0334$ eV) and CB-1 ($+0.0319$ eV) is
+**$65.3$ meV**, determined by the hybridization of InAsW electron states and
+GaSbW hole states across the broken-gap interface. This gap is NOT the gap of any
+single material -- it arises from the anticrossing of InAsW conduction-band states
+(pushed up from $E_C = -0.172$ eV by confinement in the 70 A InAs well) and GaSbW
+valence-band states (pushed down from $E_V = -0.030$ eV by confinement in the
+270 A GaSb layer).
+
+The VB states cluster near the GaSbW valence edge ($-0.030$ eV), with the deepest
+confined hole at $-0.0609$ eV sitting $30.9$ meV below the GaSbW edge. The CB states
+span a wider range: the lowest at $+0.0319$ eV (204 meV above $E_C(\text{InAsW})$),
+with excited states reaching $+0.872$ eV, approaching the GaSbW CB edge at $0.782$ eV.
 
 ![QW subband dispersion](../figures/qw_alsbw_gasbw_inasw_bands.png)
 
@@ -695,7 +722,7 @@ Energy (eV)
       |              E_C(GaSbW)=0.782   |
   0.5 |     ┌───────────────────────┐   |
       |     │       GaSbW           │   |
-  0.0 ──────│─── E_V(GaSbW)=-0.030 │───│──── effective gap ~0.27 eV
+  0.0 ──────│─── E_V(GaSbW)=-0.030 │───│──── effective gap ~65 meV
       |     │                       │   |
  -0.2 |     │    ┌─────────────┐    │   |
       |     │    │ E_C(InAsW)  │    │   |
