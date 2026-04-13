@@ -2000,36 +2000,84 @@ def fig_qw_dispersion_gaas_algaas(output_dir: Path) -> None:
         print("  WARNING: eigenvalues.dat not found, skipping.")
         return
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(6.5, 5))
     n_bands = eig.shape[0]
+
+    # Classify bands by energy at k=0.
+    # GaAs/AlGaAs QW: CB subbands sit above ~1 eV, VB subbands are < 0.
+    # Use the eigenvalue range to set thresholds adaptively.
+    from matplotlib.lines import Line2D
+    cb_handle = Line2D([0], [0], color="#17becf", linewidth=1.5, label="Conduction band")
+    vb_handle = Line2D([0], [0], color="#d62728", linewidth=1.5, label="Valence band")
+    so_handle = Line2D([0], [0], color="#ff7f0e", linewidth=1.5, label="Split-off")
+
+    e0 = eig[:, 0]
+    has_cb = any(e > 0.5 for e in e0)
+    has_vb = any(-1.1 < e <= 0.5 for e in e0)
+    has_so = any(e <= -1.1 for e in e0)
+
     for i in range(n_bands):
         energy_mid = np.mean(eig[i])
         if energy_mid > 0.5:
-            color = "#17becf"  # CB - cyan
-        elif energy_mid <= 0.5 and energy_mid > 0:
-            color = "#d62728"  # VB - red
+            color = "#17becf"  # CB
+        elif energy_mid > -1.1:
+            color = "#d62728"  # VB
         else:
-            color = "#ff7f0e"  # SO - orange
+            color = "#ff7f0e"  # SO
         ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=0.85)
 
-    # HH/LH labels near VB top at k=0
-    e0 = eig[:, 0]
-    vb_top = [e for e in e0 if -0.5 < e <= 0.5]
-    if vb_top:
-        e_vb_max = max(vb_top)
-        e_vb_min = min(vb_top)
-        ax.annotate("HH", xy=(k_vals[1], e_vb_max), fontsize=8, color="#d62728",
-                    va="bottom")
-        if abs(e_vb_max - e_vb_min) > 0.01:
-            ax.annotate("LH", xy=(k_vals[1], e_vb_min), fontsize=8, color="#d62728",
-                        va="top")
+    # Band labels and gap annotation — only when both CB and VB present
+    if has_cb:
+        cb_bottom = min(e for e in e0 if e > 0.5)
+        ax.annotate("CB1", xy=(k_vals[1], cb_bottom), fontsize=8, color="#17becf",
+                    fontweight="bold", va="bottom")
+    if has_vb:
+        vb_top = max(e for e in e0 if -1.1 < e <= 0.5)
+        ax.annotate("HH1", xy=(k_vals[1], vb_top), fontsize=8, color="#d62728",
+                    fontweight="bold", va="top")
+    if has_cb and has_vb:
+        gap = cb_bottom - vb_top
+        ax.annotate("", xy=(k_vals[1] * 0.5, cb_bottom),
+                    xytext=(k_vals[1] * 0.5, vb_top),
+                    arrowprops=dict(arrowstyle="<->", color="#666666", lw=1.2))
+        ax.text(k_vals[1] * 0.8, (cb_bottom + vb_top) / 2,
+                f"$E_g$ = {gap*1000:.0f} meV", fontsize=8, color="#666666",
+                va="center")
 
-    ax.set_xlabel(r"$k_{\parallel}$ (1/A)")
-    ax.set_ylabel(r"$E$ (eV)")
-    ax.set_title(r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW Dispersion")
+    # Subband spacing labels for CB-only plots
+    if has_cb and not has_vb and n_bands >= 4:
+        # Label the first few CB subbands
+        cb_bands = sorted(set(round(e, 4) for e in e0 if e > 0.5))
+        for j, e_cb in enumerate(cb_bands[:3]):
+            ax.annotate(f"e{j+1}", xy=(k_vals[-1], e_cb), fontsize=7,
+                        color="#17becf", fontweight="bold",
+                        xytext=(5, 0), textcoords="offset points", va="center")
+
+    # Barrier edge reference lines (Al30Ga70As: EC ~ 1.018 eV)
+    barrier_ec = 1.018
+    ax.axhline(barrier_ec, color="#17becf", linewidth=0.6, linestyle=":", alpha=0.5)
+    ax.text(k_vals[-1], barrier_ec + 0.007, "  Barrier $E_C$", fontsize=7,
+            color="#17becf", ha="right", alpha=0.7)
+
+    # E=0 reference
     ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+    # Grid
+    ax.grid(True, alpha=0.2, linewidth=0.5)
+    ax.set_xlabel(r"$k_{\parallel}$ (1/A)", fontsize=11)
+    ax.set_ylabel(r"$E$ (eV)", fontsize=11)
+    ax.set_title(r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW Dispersion", fontsize=12)
+    legend_handles = []
+    if has_cb:
+        legend_handles.append(cb_handle)
+    if has_vb:
+        legend_handles.append(vb_handle)
+    if has_so:
+        legend_handles.append(so_handle)
+    if legend_handles:
+        ax.legend(handles=legend_handles, loc="best", fontsize=9, framealpha=0.9)
     fig.tight_layout()
-    fig.savefig(FIGURE_DIR / "qw_dispersion_gaas_algaas.png")
+    fig.savefig(FIGURE_DIR / "qw_dispersion_gaas_algaas.png", dpi=150)
     plt.close(fig)
     print("  -> docs/figures/qw_dispersion_gaas_algaas.png")
 
