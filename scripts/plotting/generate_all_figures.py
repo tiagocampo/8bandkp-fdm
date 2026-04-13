@@ -2198,9 +2198,9 @@ def fig_qw_optical_matrix_elements(output_dir: Path) -> None:
     pz = pz[pos_mask]
     f_osc = f_osc[pos_mask]
 
-    # Sort by oscillator strength descending, keep top entries
+    # Sort by oscillator strength descending, keep top 10
     sort_order = np.argsort(-f_osc)
-    max_show = min(15, len(sort_order))
+    max_show = min(10, len(sort_order))
     sort_order = sort_order[:max_show]
 
     cb_idx = cb_idx[sort_order]
@@ -2209,32 +2209,45 @@ def fig_qw_optical_matrix_elements(output_dir: Path) -> None:
     px = px[sort_order]
     py = py[sort_order]
     pz = pz[sort_order]
+    f_osc = f_osc[sort_order]
 
     n_trans = len(cb_idx)
-    labels = [f"CB{cb_idx[i]}-VB{vb_idx[i]}" for i in range(n_trans)]
+    labels = [f"CB{cb_idx[i]}-VB{vb_idx[i]}\n({energy[i]*1000:.0f} meV)"
+              for i in range(n_trans)]
 
-    fig, ax = plt.subplots(figsize=(max(8, n_trans * 0.7), 5))
+    fig, ax = plt.subplots(figsize=(max(8, n_trans * 0.9), 5))
     x = np.arange(n_trans)
     width = 0.25
 
-    ax.bar(x - width, px, width, label=r"$|p_x|^2$", color="#1f77b4", linewidth=0)
-    ax.bar(x, py, width, label=r"$|p_y|^2$", color="#2ca02c", linewidth=0)
-    ax.bar(x + width, pz, width, label=r"$|p_z|^2$", color="#d62728", linewidth=0)
+    bars_x = ax.bar(x - width, px, width, label=r"TE: $|p_x|^2$",
+                    color="#1f77b4", linewidth=0)
+    bars_y = ax.bar(x, py, width, label=r"TE: $|p_y|^2$",
+                    color="#2ca02c", linewidth=0)
+    bars_z = ax.bar(x + width, pz, width, label=r"TM: $|p_z|^2$",
+                    color="#d62728", linewidth=0)
 
     ax.set_yscale("log")
+    # Tighten y-range based on actual data
+    all_vals = np.concatenate([px, py, pz])
+    all_vals = all_vals[all_vals > 0]
+    if len(all_vals) > 0:
+        ax.set_ylim(max(all_vals.min() * 0.1, 1e-12), all_vals.max() * 5)
+
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Matrix element (arb. units)")
-    ax.set_title(r"GaAs/AlGaAs QW Optical Matrix Elements at $k=0$")
-    ax.legend(loc="best")
+    ax.set_xticklabels(labels, fontsize=8, ha="center")
+    ax.set_ylabel("Matrix element (arb. units)", fontsize=11)
+    ax.set_title(r"GaAs/AlGaAs QW Optical Matrix Elements at $k=0$", fontsize=12)
+    ax.legend(loc="upper right", fontsize=9, framealpha=0.9)
+    ax.grid(True, axis="y", alpha=0.3, linewidth=0.5, which="both")
+    ax.set_axisbelow(True)
     fig.tight_layout()
-    fig.savefig(FIGURE_DIR / "qw_optical_matrix_elements.png")
+    fig.savefig(FIGURE_DIR / "qw_optical_matrix_elements.png", dpi=150)
     plt.close(fig)
     print("  -> docs/figures/qw_optical_matrix_elements.png")
 
 
 def fig_qw_potential_profile_gaas(output_dir: Path) -> None:
-    """qw_potential_profile_gaas.png: GaAs/AlGaAs QW band-edge profile."""
+    """qw_potential_profile_gaas.png: GaAs/AlGaAs QW band-edge profile with levels."""
     print("[figure] qw_potential_profile_gaas")
     cfg = CONFIG_DIR / "qw_gaas_algaas_kpar.cfg"
     result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_gaas_algaas_kpar_pp",
@@ -2248,7 +2261,14 @@ def fig_qw_potential_profile_gaas(output_dir: Path) -> None:
         print("  WARNING: potential_profile.dat not found, skipping.")
         return
 
-    fig, ax = plt.subplots(figsize=(6, 4))
+    # Get eigenvalues at k=0 for energy level lines
+    try:
+        _, eig = parse_eigenvalues(output_dir)
+        e0 = eig[:, 0]
+    except (FileNotFoundError, IndexError):
+        e0 = None
+
+    fig, ax = plt.subplots(figsize=(7, 5))
     ax.plot(z, EC, color="#17becf", linewidth=1.5, label=r"$E_C$")
     ax.plot(z, EV, color="#d62728", linewidth=1.5, label=r"$E_V$")
     ax.plot(z, EV_SO, color="#ff7f0e", linewidth=1.5, label=r"$E_{\Delta SO}$")
@@ -2263,12 +2283,47 @@ def fig_qw_potential_profile_gaas(output_dir: Path) -> None:
         ax.fill_between(z[well_mask], EV[well_mask].min() - 0.05,
                         EC[well_mask].max() + 0.05, alpha=0.08, color="#17becf")
 
-    ax.set_xlabel(r"$z$ (\u00C5)")
-    ax.set_ylabel("Energy (eV)")
-    ax.set_title(r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW Band Edge Profile")
-    ax.legend(loc="best")
+    # Band offset annotations
+    ec_well = EC[well_mask].min() if np.any(well_mask) else EC[len(EC)//2]
+    ec_barrier = EC[~well_mask].mean() if np.any(~well_mask) else EC[0]
+    delta_ec = ec_barrier - ec_well
+    ax.annotate("", xy=(-75, ec_barrier), xytext=(-75, ec_well),
+                arrowprops=dict(arrowstyle="<->", color="#17becf", lw=1.0))
+    ax.text(-90, (ec_barrier + ec_well) / 2, f"$\\Delta E_C$\n{delta_ec*1000:.0f} meV",
+            fontsize=7, color="#17becf", ha="right", va="center")
+
+    # Quantized energy levels from eigenvalues at k=0
+    if e0 is not None:
+        # CB levels (unique energies, deduplicated)
+        cb_levels = sorted(set(round(e, 3) for e in e0 if e > 0.5))
+        for i, e_cb in enumerate(cb_levels[:4]):
+            ax.axhline(e_cb, color="#17becf", linewidth=0.5, linestyle="--", alpha=0.4,
+                       xmin=0.35, xmax=0.65)
+            ax.text(55, e_cb, f" CB{i+1}", fontsize=7, color="#17becf", va="center")
+
+        # VB top level
+        vb_levels = sorted(set(round(e, 3) for e in e0 if -1.1 < e <= 0.5), reverse=True)
+        if vb_levels:
+            ax.axhline(vb_levels[0], color="#d62728", linewidth=0.5, linestyle="--",
+                       alpha=0.4, xmin=0.35, xmax=0.65)
+            ax.text(55, vb_levels[0], " HH1", fontsize=7, color="#d62728", va="center")
+
+    # Material labels
+    y_bottom = ax.get_ylim()[0] + 0.05
+    ax.text(0, y_bottom, "GaAs", fontsize=9, ha="center",
+            color="#444444", style="italic")
+    ax.text(-120, y_bottom, r"Al$_{0.3}$Ga$_{0.7}$As", fontsize=8,
+            ha="center", color="#444444", style="italic")
+    ax.text(120, y_bottom, r"Al$_{0.3}$Ga$_{0.7}$As", fontsize=8,
+            ha="center", color="#444444", style="italic")
+
+    ax.set_xlabel(r"$z$ (\u00C5)", fontsize=11)
+    ax.set_ylabel("Energy (eV)", fontsize=11)
+    ax.set_title(r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW Band Edge Profile", fontsize=12)
+    ax.legend(loc="best", fontsize=9, framealpha=0.9)
+    ax.grid(True, alpha=0.15, linewidth=0.5)
     fig.tight_layout()
-    fig.savefig(FIGURE_DIR / "qw_potential_profile_gaas.png")
+    fig.savefig(FIGURE_DIR / "qw_potential_profile_gaas.png", dpi=150)
     plt.close(fig)
     print("  -> docs/figures/qw_potential_profile_gaas.png")
 
