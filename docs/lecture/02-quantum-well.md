@@ -520,6 +520,21 @@ CB-VB pairs.
 conduction band ground state (CB1) and valence subbands in the GaAs/AlGaAs quantum
 well, decomposed into Cartesian components ($p_x$, $p_y$, $p_z$).*
 
+The strongest interband transitions at $k_\parallel = 0$, sorted by oscillator strength:
+
+| Transition | dE (meV) | $|p_x|^2$ | $|p_y|^2$ | $|p_z|^2$ | $f_{osc}$ | Polarization |
+|------------|----------|-----------|-----------|-----------|-----------|-------------|
+| CB1-VB2 | 5.9 | 0.1399 | 0.1399 | 3.32e-01 | 27.097 | TE+TM |
+| CB2-VB1 | 5.9 | 0.1399 | 0.1399 | 3.32e-01 | 27.097 | TE+TM |
+| CB9-VB23 | 2073.0 | 42.4591 | 42.4591 | 0.00e+00 | 10.752 | TE |
+| CB10-VB24 | 2073.0 | 42.4591 | 42.4591 | 4.77e-31 | 10.752 | TE |
+| CB7-VB20 | 2040.6 | 41.3720 | 41.3720 | 0.00e+00 | 10.643 | TE |
+| CB8-VB19 | 2040.6 | 41.3720 | 41.3720 | 3.51e-30 | 10.643 | TE |
+| CB11-VB26 | 2111.7 | 42.5785 | 42.5785 | 0.00e+00 | 10.584 | TE |
+| CB12-VB25 | 2111.7 | 42.5785 | 42.5785 | 1.64e-31 | 10.584 | TE |
+
+*Table: Computed optical transition strengths from `qw_gaas_algaas_optics.cfg` (FDstep=101, FDorder=4).*
+
 The key selection rules for a GaAs quantum well at the zone center arise from the
 angular momentum symmetry of the Bloch states:
 
