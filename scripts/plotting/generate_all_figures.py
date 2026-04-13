@@ -2049,42 +2049,75 @@ def fig_qw_dispersion_broken_gap(output_dir: Path) -> None:
         print("  WARNING: eigenvalues.dat not found, skipping.")
         return
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(7, 5))
     n_bands = eig.shape[0]
+
+    # Band-type colors and legend handles
+    from matplotlib.lines import Line2D
+    cb_handle = Line2D([0], [0], color="#17becf", linewidth=1.5, label="CB-like")
+    vb_handle = Line2D([0], [0], color="#d62728", linewidth=1.5, label="VB-like")
+
     for i in range(n_bands):
         energy_mid = np.mean(eig[i])
         if energy_mid > 0.1:
             color = "#17becf"  # CB-like - cyan
-        elif energy_mid >= -0.1:
-            color = "#2ca02c"  # mixed / near-gap - green
         else:
             color = "#d62728"  # VB-like - red
         ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=0.85)
 
-    # Find anticrossing: minimum gap between any two bands across k-points
-    min_gap_overall = np.inf
-    anticrossing_k = k_vals[0]
+    # Focus on the broken-gap region
+    ax.set_ylim(-0.40, 0.85)
+
+    # Find anticrossing: look for the minimum gap between the highest VB-like
+    # and lowest CB-like states (not just any minimum gap)
     n_k = len(k_vals)
+    vb_ceiling = np.full(n_k, -np.inf)
+    cb_floor = np.full(n_k, np.inf)
     for ki in range(n_k):
-        energies_at_k = sorted(eig[:, ki])
-        for j in range(len(energies_at_k) - 1):
-            gap_here = energies_at_k[j + 1] - energies_at_k[j]
-            if gap_here < min_gap_overall:
-                min_gap_overall = gap_here
+        for i in range(n_bands):
+            e = eig[i, ki]
+            if e < 0:
+                vb_ceiling[ki] = max(vb_ceiling[ki], e)
+            else:
+                cb_floor[ki] = min(cb_floor[ki], e)
+
+    min_gap = np.inf
+    anticrossing_k = k_vals[0]
+    anticrossing_e_vb = 0.0
+    anticrossing_e_cb = 0.0
+    for ki in range(n_k):
+        if vb_ceiling[ki] > -np.inf and cb_floor[ki] < np.inf:
+            gap = cb_floor[ki] - vb_ceiling[ki]
+            if gap < min_gap:
+                min_gap = gap
                 anticrossing_k = k_vals[ki]
+                anticrossing_e_vb = vb_ceiling[ki]
+                anticrossing_e_cb = cb_floor[ki]
 
-    ax.axvline(anticrossing_k, color="grey", linewidth=0.8, linestyle="--", alpha=0.7)
-    ax.annotate(f"Anticrossing at k ~ {anticrossing_k:.2f} 1/A",
-                xy=(anticrossing_k, ax.get_ylim()[1] * 0.85 if ax.get_ylim()[1] > 0 else 0.5),
-                fontsize=8, color="grey", ha="left",
-                xytext=(anticrossing_k + 0.01, 0.0))
+    # Annotate anticrossing
+    ax.axvline(anticrossing_k, color="grey", linewidth=0.8, linestyle="--", alpha=0.6)
+    anticrossing_e_mid = (anticrossing_e_vb + anticrossing_e_cb) / 2
+    ax.annotate(f"Anticrossing\nk = {anticrossing_k:.3f} A$^{{-1}}$\n"
+                f"gap = {min_gap*1000:.1f} meV",
+                xy=(anticrossing_k, anticrossing_e_mid),
+                xytext=(anticrossing_k + 0.025, anticrossing_e_mid + 0.15),
+                fontsize=8, color="#555555",
+                arrowprops=dict(arrowstyle="->", color="#999999", lw=0.8))
 
-    ax.set_xlabel(r"$k_{\parallel}$ (1/A)")
-    ax.set_ylabel(r"$E$ (eV)")
-    ax.set_title("InAsW/GaSbW Broken-Gap QW Dispersion")
+    # Band edge reference lines
     ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+    ax.text(k_vals[-1], 0.01, "  E = 0 (InAsW $E_C$)", fontsize=7,
+            color="grey", va="bottom", ha="right")
+
+    # Grid and labels
+    ax.grid(True, alpha=0.2, linewidth=0.5)
+    ax.set_xlabel(r"$k_{\parallel}$ (1/A)", fontsize=11)
+    ax.set_ylabel(r"$E$ (eV)", fontsize=11)
+    ax.set_title(r"InAsW/GaSbW Broken-Gap QW Dispersion", fontsize=12)
+    ax.legend(handles=[cb_handle, vb_handle], loc="upper left", fontsize=9,
+              framealpha=0.9)
     fig.tight_layout()
-    fig.savefig(FIGURE_DIR / "qw_dispersion_broken_gap.png")
+    fig.savefig(FIGURE_DIR / "qw_dispersion_broken_gap.png", dpi=150)
     plt.close(fig)
     print("  -> docs/figures/qw_dispersion_broken_gap.png")
 
