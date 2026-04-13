@@ -400,6 +400,22 @@ At finite $k_\parallel$, the HH/LH mixing modifies these selection rules -- the 
 elements become $k$-dependent, a topic addressed in the k_parallel-integrated absorption
 spectrum (planned for Phase 2 of the development roadmap).
 
+### 6.6.6 Computed QW Transition Strengths
+
+For the GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well described in Chapter 02, the
+optical matrix elements at $k_\parallel = 0$ reveal the selection rules in action.
+The two strongest transitions are CB1$\to$VB2 and CB2$\to$VB1 (both at $\sim$6 meV
+transition energy), which show nearly equal $|p_x|^2 \approx |p_y|^2$ with a smaller
+but non-zero $|p_z|^2$ component — giving mixed TE+TM polarization. This is consistent
+with the expected LH character of these valence states at the zone center.
+
+Higher-energy transitions (CB$n \to$VB$m$ at 2.0–2.1 eV) are predominantly TE-polarized,
+with $|p_x|^2 \approx |p_y|^2 \gg |p_z|^2$, reflecting the HH character of the deeper
+valence subbands. The oscillator strengths of these transitions reach $f_{osc} \approx 10$,
+making them the dominant contributors to the interband absorption spectrum.
+
+See Chapter 02, Section A.6 for the full computed transition table.
+
 **Code locations (QW):**
 
 | Component | File | Routine |

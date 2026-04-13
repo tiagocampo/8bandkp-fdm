@@ -757,7 +757,7 @@ The anticrossing point is annotated with a vertical dashed line.*
 At $k_\parallel = 0$, the InAsW-derived electron ground state (e1) and the GaSbW-derived
 light-hole state (lh1) are separated in energy. As $k_\parallel$ increases, the e1
 state rises in energy (positive effective mass) while the lh1 state descends (negative
-effective mass for holes). At a critical $k_\parallel \approx 0.02$--$0.04$ A$^{-1}$,
+effective mass for holes). At a critical $k_\parallel$ (computed from the eigenvalue sweep — see the annotated figure),
 the two subbands approach each other and would cross in a simple single-band picture.
 
 In the 8-band k.p model, however, the off-diagonal coupling terms -- particularly the
@@ -766,10 +766,10 @@ states. This coupling opens a **hybridization gap** at the would-be crossing poi
 resulting subbands "repel" each other, producing the characteristic anticrossing pattern
 visible in the dispersion figure.
 
-The anticrossing gap is a direct consequence of the broken-gap alignment. Its magnitude
-is typically 10--20 meV for InAs/GaSb structures, depending on the layer thicknesses
-and the degree of electron-hole wavefunction overlap. This gap is of fundamental
-importance because:
+The computed hybridization gap at the anticrossing point is visible in the figure
+annotation. For InAs/GaSb structures, this gap is typically 10--20 meV depending on
+layer thicknesses, consistent with the results of Zakharova et al. (PRB 64, 235332,
+2001). This gap is of fundamental importance because:
 
 1. **It determines the effective band gap** of the heterostructure, which can be much
    smaller than the gap of either constituent material.
