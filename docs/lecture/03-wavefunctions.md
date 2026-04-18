@@ -354,6 +354,120 @@ The spatial profiles reveal the type-II nature of this structure. The CB states 
 
 *Figure 2: Band character decomposition (integrated parts) for the eigenstates of the AlSbW/GaSbW/InAsW QW at $k_\parallel = 0$. The conduction-band states (cyan) show ~18% valence-band admixture, reflecting the broken-gap alignment. The valence-band states show significant HH--LH mixing, a hallmark of the type-II band alignment.*
 
+## 7b. Computed Example: GaAs/Al$_{0.3}$Ga$_{0.7}$As Type-I Quantum Well
+
+For comparison with the broken-gap system above, we examine the wavefunctions
+of the type-I GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well from Chapter 02,
+Example A. This system has a 100 Å GaAs well sandwiched between AlGaAs barriers,
+with a conduction band offset of 299 meV and a valence band offset of 159 meV.
+
+### 7b.1 Configuration
+
+```
+waveVector: kx
+waveVectorMax: 0.1
+waveVectorStep: 21
+confinement:  1
+FDstep: 401
+FDorder: 4
+numLayers:  2
+material1: Al30Ga70As -200 200 0
+material2: GaAs -50 50 0
+numcb: 4
+numvb: 8
+ExternalField: 0  EF
+EFParams: 0.0
+```
+
+Domain: $z \in [-200, 200]$ Å with $N = 401$ grid points ($\Delta z = 1.0$ Å).
+Two material layers: AlGaAs barrier covering the full domain, GaAs well occupying
+$[-50, 50]$ Å. The code computes $4 + 8 = 12$ eigenvalues at each k-point.
+
+### 7b.2 CB1 ground-state wavefunction
+
+The ground-state electron (state 9, $E = +0.7613$ eV) is localized in the GaAs
+well. Its spatial profile shows the characteristic half-sine envelope of a
+confined state:
+
+| $z$ (Å) | Region | $|\psi_7|$ (CB↑) | $|\psi_8|$ (CB↓) | $\rho_{\text{CB}}$ (Å$^{-1}$) |
+|---|---|---|---|---|
+| -200 | AlGaAs barrier | $5.2 \times 10^{-6}$ | $3.6 \times 10^{-6}$ | $4.0 \times 10^{-11}$ |
+| -100 | AlGaAs barrier | $1.8 \times 10^{-3}$ | $1.3 \times 10^{-3}$ | $5.0 \times 10^{-6}$ |
+| -60 | AlGaAs/GaAs interface | $2.2 \times 10^{-2}$ | $1.5 \times 10^{-2}$ | $7.0 \times 10^{-4}$ |
+| -50 | GaAs well edge | $4.1 \times 10^{-2}$ | $2.8 \times 10^{-2}$ | $2.5 \times 10^{-3}$ |
+| -25 | GaAs well | $8.2 \times 10^{-2}$ | $5.7 \times 10^{-2}$ | $1.0 \times 10^{-2}$ |
+| 0 | Well center | $9.8 \times 10^{-2}$ | $6.8 \times 10^{-2}$ | $1.4 \times 10^{-2}$ |
+| +50 | GaAs well edge | $4.1 \times 10^{-2}$ | $2.8 \times 10^{-2}$ | $2.5 \times 10^{-3}$ |
+| +100 | AlGaAs barrier | $1.8 \times 10^{-3}$ | $1.3 \times 10^{-3}$ | $5.0 \times 10^{-6}$ |
+| +200 | AlGaAs barrier | $5.2 \times 10^{-6}$ | $3.6 \times 10^{-6}$ | $4.0 \times 10^{-6}$ |
+
+The wavefunction is symmetric about $z = 0$ and peaks at the well center with
+$\rho_{\text{CB}}(0) = 1.4 \times 10^{-2}$ Å$^{-1}$. The CB↑ ($|\psi_7|$) and
+CB↓ ($|\psi_8|$) components are comparable in magnitude, reflecting the spin
+degeneracy at $k_\parallel = 0$. The exponential decay into the barrier spans
+$\sim 10^{-2}$ to $\sim 10^{-11}$ Å$^{-1}$, a factor of $10^9$.
+
+### 7b.3 Band-resolved parts
+
+The integrated band character reveals important differences from the broken-gap
+system:
+
+| State | $E$ (eV) | $P_{\text{HH}}$ | $P_{\text{LH}}$ | $P_{\text{SO}}$ | $P_{\text{CB}}$ | Character |
+|---|---|---|---|---|---|---|
+| 1 | $-0.8262$ | 0.590 | 0.400 | 0.010 | 0.000 | HH1 |
+| 2 | $-0.8262$ | 0.590 | 0.400 | 0.010 | 0.000 | HH1' |
+| 3 | $-0.8209$ | 0.478 | 0.516 | 0.006 | 0.000 | LH1 |
+| 4 | $-0.8209$ | 0.478 | 0.516 | 0.006 | 0.000 | LH1' |
+| 7 | $-0.8023$ | 0.440 | 0.556 | 0.003 | 0.000 | LH2 |
+| 8 | $-0.8023$ | 0.440 | 0.556 | 0.003 | 0.000 | LH2' |
+| **9** | **$+0.7613$** | **0.086** | **0.033** | **0.044** | **0.837** | **CB1** |
+| **10** | **$+0.7613$** | **0.086** | **0.033** | **0.044** | **0.837** | **CB1'** |
+| **11** | **$+0.8750$** | **0.078** | **0.040** | **0.044** | **0.839** | **CB2** |
+| **12** | **$+0.8750$** | **0.078** | **0.040** | **0.044** | **0.839** | **CB2'** |
+
+Several features stand out:
+
+1. **VB states are not pure HH.** Even at $k_\parallel = 0$, the deepest hole state
+   (HH1) has $P_{\text{HH}} = 0.590$ — it is 59% heavy-hole and 40% light-hole.
+   This HH-LH mixing arises because the quantum well potential couples the HH and
+   LH blocks through the off-diagonal $S$ operator (proportional to
+   $d/dz$), which is nonzero even at $k_\parallel = 0$ in the QW Hamiltonian.
+
+2. **CB1 is 84% conduction-band.** The type-I CB1 has $P_{\text{CB}} = 0.837$,
+   with 16% total valence-band admixture (9% HH, 3% LH, 4% SO). This is
+   significantly more pure than the broken-gap CB1 ($P_{\text{CB}} = 0.812$ with
+   18% VB admixture), but the difference is modest — even in a wide-gap type-I
+   system, the 8-band coupling introduces non-negligible VB character.
+
+3. **CB purity does not increase with energy.** CB1 ($P_{\text{CB}} = 0.837$)
+   and CB2 ($P_{\text{CB}} = 0.839$) have nearly identical purity. In the
+   type-I system, the coupling strength is relatively uniform across the
+   confined CB states.
+
+### 7b.4 Comparison: Type-I vs. Type-III
+
+| Property | Type-I (GaAs/AlGaAs) | Type-III (AlSbW/GaSbW/InAsW) |
+|---|---|---|
+| CB1 $P_{\text{CB}}$ | 0.837 | 0.812 |
+| CB1 VB admixture | 16% (9% HH, 3% LH, 4% SO) | 18% (10% HH, 5% LH, 4% SO) |
+| CB1 energy above well edge | 42 meV | 204 meV |
+| HH1 $P_{\text{HH}}$ | 0.590 | 0.267 |
+| HH1 LH admixture | 40% | 46% |
+| Wavefunction localization | CB and HH in same layer | CB in InAs, HH in GaSb |
+| Band gap type | Straddling (type-I) | Broken gap (type-III) |
+
+The most striking difference is not in the CB purity (which is similar at ~82-84%)
+but in the **spatial separation** of carriers. In the type-I system, both CB1
+and HH1 are localized in the same GaAs layer, giving large electron-hole overlap.
+In the type-III system, CB1 is confined in the narrow InAs layer while HH1
+spreads across the wider GaSb layer, reducing the overlap and hence the optical
+matrix element for interband transitions.
+
+A subtler difference is the VB state purity: type-I HH1 has $P_{\text{HH}} = 0.59$
+(41% LH admixture), while type-III HH1 has $P_{\text{HH}} = 0.27$ (73% LH+other
+admixture). The stronger mixing in the type-III system reflects the deeper wells
+and larger Luttinger parameters of InAs and GaSb compared to GaAs.
+
 ## 8. Discussion
 
 ### 8.1 Physical interpretation of wavefunction shapes
