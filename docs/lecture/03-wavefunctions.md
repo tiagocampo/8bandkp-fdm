@@ -1,6 +1,6 @@
 # Chapter 3: Eigenstates and Wavefunctions
 
-## 3.1 From Eigenvalues to Eigenvectors
+## 1. From Eigenvalues to Eigenvectors
 
 In Chapter 2 we constructed the Hamiltonian matrix $H(\mathbf{k})$ and diagonalized it to obtain the energy eigenvalues $E_n(\mathbf{k})$. The diagonalization routine (LAPACK's `zheevx` for dense matrices, or MKL sparse eigensolvers for large sparse problems) returns not only the eigenvalues but also the corresponding eigenvectors. These eigenvectors are the wavefunctions of the system, and they carry far richer physical information than the eigenvalues alone.
 
@@ -12,9 +12,9 @@ $$
 
 The question we address in this chapter is: **what do these $8N$ complex numbers mean physically, and how do we extract spatial and band-resolved information from them?**
 
-## 3.2 The Block Structure of Eigenvectors
+## 2. The Block Structure of Eigenvectors
 
-### 3.2.1 The 8-band basis
+### 2.1 The 8-band basis
 
 Recall that the 8-band Kane basis for zinc-blende semiconductors comprises:
 
@@ -31,7 +31,7 @@ Recall that the 8-band Kane basis for zinc-blende semiconductors comprises:
 
 This ordering is fixed throughout the code (bands 1--4 are valence, 5--6 are split-off, 7--8 are conduction) and must never be changed.
 
-### 3.2.2 Spatial decomposition: the band-block structure
+### 2.2 Spatial decomposition: the band-block structure
 
 The $8N$-dimensional eigenvector is organized into 8 contiguous blocks of $N$ entries each. Entry $i$ of the $b$-th block corresponds to the amplitude of band $b$ at the $i$-th grid point $z_i$:
 
@@ -60,7 +60,7 @@ $$
 
 where $|b\rangle$ denotes the basis kets listed in the table above, and $\psi_b^{(n)}(z)$ is obtained by interpolating the discrete values $\psi_b^{(n)}(z_i)$.
 
-### 3.2.3 Bulk eigenvectors (no spatial dependence)
+### 2.3 Bulk eigenvectors (no spatial dependence)
 
 For bulk semiconductors ($N = 1$, no confinement), the Hamiltonian is only $8 \times 8$, and each eigenvector has exactly 8 complex components. There is no spatial profile -- the wavefunction is a plane wave extended throughout the crystal. The output code handles this case by writing only the 8 complex amplitudes:
 
@@ -70,9 +70,9 @@ $$
 
 The "parts" (band-resolved probability) are computed trivially as $|c_b^{(n)}|^2$.
 
-## 3.3 Band-Resolved Probability Density
+## 3. Band-Resolved Probability Density
 
-### 3.3.1 Per-band spatial density
+### 3.1 Per-band spatial density
 
 For a quantum well eigenstate $n$, the probability density contributed by band $b$ at position $z$ is:
 
@@ -91,7 +91,7 @@ end do
 
 The output file `eigenfunctions_k_XXXXX_ev_YYYYY.dat` contains $N$ rows (one per grid point), each with 9 columns: the $z$-coordinate followed by $|\psi_b^{(n)}(z_i)|$ for $b = 1, \ldots, 8$.
 
-### 3.3.2 Total probability density
+### 3.2 Total probability density
 
 The total probability density at position $z$ is the sum over all bands:
 
@@ -107,9 +107,9 @@ $$
 
 This is not the same as saying each band individually integrates to unity -- quite the contrary. The distribution across bands is precisely the information that tells us about the state's character.
 
-## 3.4 Band Character: The Parts File
+## 4. Band Character: The Parts File
 
-### 3.4.1 Definition
+### 4.1 Definition
 
 The **integrated band probability** (called "parts" in the code) quantifies how much of eigenstate $n$ resides in each of the 8 bands:
 
@@ -133,7 +133,7 @@ $$
 \sum_{b=1}^{8} P_b^{(n)} = 1 \qquad \text{(normalization)}.
 $$
 
-### 3.4.2 Physical interpretation
+### 4.2 Physical interpretation
 
 The parts vector $(P_1^{(n)}, P_2^{(n)}, \ldots, P_8^{(n)})$ tells you the **character** of eigenstate $n$:
 
@@ -144,9 +144,9 @@ The parts vector $(P_1^{(n)}, P_2^{(n)}, \ldots, P_8^{(n)})$ tells you the **cha
 
 In practice, at finite in-plane wavevector $\mathbf{k}_\parallel = (k_x, k_y)$, the bands couple and no eigenstate is purely of one character. The parts vector provides a quantitative measure of this **band mixing**.
 
-## 3.5 Heavy-Hole vs Light-Hole Mixing
+## 5. Heavy-Hole vs Light-Hole Mixing
 
-### 3.5.1 Mixing at finite in-plane wavevector
+### 5.1 Mixing at finite in-plane wavevector
 
 At the zone center ($\mathbf{k}_\parallel = 0$), the quantum well eigenstates have definite angular momentum character. The HH bands ($b = 1, 4$) and LH bands ($b = 2, 3$) decouple in the diagonal blocks $Q$ and $T$ of the Hamiltonian. However, the off-diagonal terms $S$, $R$, and their conjugates couple HH and LH at finite $k_\parallel$.
 
@@ -169,7 +169,7 @@ The consequence is that at any finite $k_\parallel$, a nominally "heavy-hole" ei
 3. **The Luttinger parameters** $\gamma_2$ and $\gamma_3$: materials with larger $\gamma_2/\gamma_3$ anisotropy show stronger mixing.
 4. **The direction of $\mathbf{k}_\parallel$**: the mixing is anisotropic because $R$ depends on the angle $\phi = \arctan(k_y/k_x)$ in the $k_x$-$k_y$ plane.
 
-### 3.5.2 Quantifying the mixing
+### 5.2 Quantifying the mixing
 
 The parts vector provides the simplest quantification. Define the **HH fraction** and **LH fraction** of eigenstate $n$:
 
@@ -181,9 +181,9 @@ At $k_\parallel = 0$, a ground-state heavy hole will have $f_{\text{HH}} \approx
 
 The conduction band states (bands 7--8) also acquire valence band character at large $k$ through the interband coupling term $P$ (the Kane momentum matrix element). This non-parabolicity effect is encoded in the parts as small but nonzero $P_1^{(n)}, \ldots, P_6^{(n)}$ for nominally CB states.
 
-## 3.6 Implementation: How the Code Writes Wavefunctions
+## 6. Implementation: How the Code Writes Wavefunctions
 
-### 3.6.1 The writeEigenfunctions subroutine
+### 6.1 The writeEigenfunctions subroutine
 
 The output pipeline is:
 
@@ -195,7 +195,7 @@ The output pipeline is:
 
 4. **Compute parts**: Integrate $|\psi_b(z)|^2$ over $z$ using the rectangle rule with spacing $\Delta z = z_2 - z_1$, and write all eigenstates to a single `parts.dat` file.
 
-### 3.6.2 The 2D wire case
+### 6.2 The 2D wire case
 
 For quantum wires (confinement mode 2), the code uses `writeEigenfunctions2d`. The eigenvector layout is analogous but now the spatial grid is 2D:
 
@@ -211,15 +211,15 @@ $$
 
 The output format is three columns ($x$, $y$, $\rho$) with blank lines separating $y$-rows, directly plottable with `gnuplot splot`. The band-resolved parts are also computed, integrating over the 2D area element $dA = \Delta x \times \Delta y$.
 
-### 3.6.3 Spin degeneracy and Kramers theorem
+### 6.3 Spin degeneracy and Kramers theorem
 
 For systems without magnetic fields or structural inversion asymmetry, every eigenstate has a Kramers partner: a state at the same energy with opposite spin. In the output, this manifests as pairs of states with nearly identical parts vectors (e.g., $P_7 \approx P_8$ for CB states, or $P_1 \approx P_4$ for HH states at $k_\parallel = 0$). At finite $k_\parallel$ in asymmetric structures (e.g., under an external electric field), this degeneracy can be lifted and the parts vectors of the two spin partners may differ.
 
-## 3.7 Computed Example: AlSbW/GaSbW/InAsW Quantum Well
+## 7. Computed Example: AlSbW/GaSbW/InAsW Quantum Well
 
 To illustrate the concepts above with real data, we use the type-II AlSbW/GaSbW/InAsW quantum well. This structure is interesting because the conduction band electron is confined in the narrow InAs layer ($|z| \leq 35$ A) while the valence band holes reside mainly in the wider GaSb layer ($|z| \leq 135$ A), a hallmark of the broken-gap band alignment.
 
-### 3.7.1 The input configuration
+### 7.1 The input configuration
 
 The configuration file `tests/regression/configs/qw_alsbw_gasbw_inasw.cfg` reads:
 
@@ -242,7 +242,7 @@ EFParams: 0.0005
 
 Key parameters: $N = 101$ grid points over $z \in [-250, 250]$ A (spacing $\Delta z = 5$ A), 3 material layers with AlSbW barriers, GaSbW as the main well, and a narrow InAsW insert. The code computes $32 + 32 = 64$ eigenvalues at each of 11 k-steps.
 
-### 3.7.2 Reading an eigenfunction file
+### 7.2 Reading an eigenfunction file
 
 After running the code, the file `output/eigenfunctions_k_00001_ev_00033.dat` contains the ground-state conduction band wavefunction (eigenvalue $E_{33} = +0.0205$ eV). The first few lines look like this:
 
@@ -270,7 +270,7 @@ Each row has 9 columns. The first column is the $z$-coordinate in Angstroms. Col
 
 **Important**: the values written are $|\psi_b(z_i)|$ (the absolute amplitudes), not $|\psi_b(z_i)|^2$ (the probability density). To obtain the probability density, you must square the values.
 
-### 3.7.3 The CB1 ground-state wavefunction
+### 7.3 The CB1 ground-state wavefunction
 
 The following table shows the CB1 wavefunction at selected positions along the growth axis. We list $|\psi_b(z)|$ for each band and the total probability density $\rho(z) = \sum_b |\psi_b(z)|^2$:
 
@@ -291,7 +291,7 @@ The wavefunction peaks at $z = 0$ (the center of the InAs layer) with $\rho(0) =
 
 The exponential decay into the AlSb barrier is clearly visible: $\rho$ drops from $O(10^{-2})$ inside the well to $O(10^{-14})$ at the barrier boundary, a factor of $10^{12}$.
 
-### 3.7.4 Computing the total probability density
+### 7.4 Computing the total probability density
 
 To plot the total probability density, square each band amplitude and sum:
 
@@ -308,7 +308,7 @@ plot 'output/eigenfunctions_k_00001_ev_00033.dat' \
   using 1:($8**2+$9**2) with lines title 'CB character'
 ```
 
-### 3.7.5 Band-resolved parts: the full picture
+### 7.5 Band-resolved parts: the full picture
 
 The integrated band probabilities (normalized to sum to 1) reveal the character of each eigenstate. For the AlSbW/GaSbW/InAsW structure at $k_\parallel = 0$:
 
@@ -334,7 +334,7 @@ Several features are worth noting:
 
 4. **Pure HH states at the valence band edge**: States 30--32 have $P_1 = 1.000$ or $P_4 = 1.000$, meaning they are 100% heavy hole at $k_\parallel = 0$. These are the highest-energy valence states confined in the GaSb layer.
 
-### 3.7.6 Spatial profiles
+### 7.6 Spatial profiles
 
 ![QW wavefunctions](../figures/qw_wavefunctions.png)
 
@@ -346,9 +346,9 @@ The spatial profiles reveal the type-II nature of this structure. The CB states 
 
 *Figure 2: Band character decomposition (integrated parts) for the first eight eigenstates of the AlSbW/GaSbW/InAsW QW at $k_\parallel = 0$. The conduction-band states (cyan) show significant valence-band admixture, particularly the LH2 component (green), reflecting the broken-gap alignment. The valence-band states are almost purely HH (red).*
 
-## 3.8 Discussion
+## 8. Discussion
 
-### 3.8.1 Physical interpretation of wavefunction shapes
+### 8.1 Physical interpretation of wavefunction shapes
 
 The shapes of the eigenfunctions encode the physics of quantum confinement. In a single-band effective-mass picture, the ground state would be a simple half-sine wave with no nodes inside the well. The 8-band k.p result differs in three important ways:
 
@@ -358,7 +358,7 @@ The shapes of the eigenfunctions encode the physics of quantum confinement. In a
 
 3. **Broken-gap mixing**: In this particular structure, the InAs conduction band edge lies below the GaSb valence band edge, so the "conduction band electron" is actually a mixture of InAs CB and GaSb VB states. This is visible in the 33% LH2 admixture of the CB1 state, and in the spatial overlap of CB and VB wavefunctions near the GaSb/InAs interfaces.
 
-### 3.8.2 Connection to selection rules (Chapter 6)
+### 8.2 Connection to selection rules (Chapter 6)
 
 The band character of each eigenstate directly determines the optical transition matrix elements. A transition between eigenstates $n$ and $m$ has a matrix element proportional to:
 
@@ -368,7 +368,7 @@ $$
 
 where $\mathbf{p}_{bb'}$ are the momentum matrix elements between bands $b$ and $b'$. The parts vector provides a quick estimate: if state $n$ is mostly CB ($P_7 + P_8 > 0.9$) and state $m$ is mostly HH ($P_1 + P_4 > 0.9$), the transition will be dominated by the $\Gamma_6$--$\Gamma_8$ matrix element and will be strongly polarization-dependent. The large LH admixture in the CB1 state of the broken-gap QW means that transitions involving this state have significant LH-like selection rules, which we explore in Chapter 6.
 
-### 3.8.3 Tips for plotting and analysis
+### 8.3 Tips for plotting and analysis
 
 **Quick identification of state character**: Read `parts.dat` and look at which columns dominate:
 
@@ -393,7 +393,7 @@ plot 'output/eigenfunctions_k_00001_ev_00033.dat' \
 
 **Cross-referencing with eigenvalues**: The file `eigenvalues.dat` contains `waveVectorStep` rows with $|\mathbf{k}|$ in the first column and the sorted eigenvalues in the remaining columns. By matching eigenvalue indices to the parts file, you can track which subband each eigenstate belongs to across the Brillouin zone.
 
-## 3.9 Summary
+## 9. Summary
 
 The eigenvectors of the 8-band k.p Hamiltonian encode the full multi-component wavefunction of each electronic state. By decomposing the $8N$-component vector into 8 spatial profiles, we obtain:
 
