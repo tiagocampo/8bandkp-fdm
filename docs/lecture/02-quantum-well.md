@@ -180,6 +180,13 @@ the grid points within that material's spatial range. The parameters $E_V$ and $
 are stored in the material database (`parameters.f90`) and define the relative
 alignment of bands across the heterostructure.
 
+> **Energy convention.** In bulk mode (Chapter 01), eigenvalues are referenced
+> to an internal energy zero where $E_V = 0$. In quantum well mode, the material
+> database band offsets ($E_V$, $E_C$) are added to the diagonal of the
+> Hamiltonian, shifting all eigenvalues to an **absolute energy scale**. For GaAs,
+> the valence band edge appears at $E_V = -0.800$ eV and the conduction band at
+> $E_C = +0.719$ eV, rather than at 0 and $E_g = 1.519$ eV respectively.
+
 For an electric field along $z$ with magnitude $\mathcal{E}$, the code adds a linear
 potential:
 
