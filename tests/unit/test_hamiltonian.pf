@@ -125,4 +125,107 @@ contains
     @assertTrue(max_err < 1.0e-12_dp, message="InAs bulk Hamiltonian is Hermitian")
   end subroutine test_bulk_hermitian_inas
 
+  @test
+  subroutine test_qw_variable_coeff_order4()
+    ! FDorder=4 should give same eigenvalues as FDorder=2 for a QW
+    ! (both must correctly handle variable coefficients at interfaces)
+    integer, parameter :: ngrid = 41
+    real(kind=dp), parameter :: dz_val = 2.5_dp  ! Angstrom
+    integer :: matSize, info, lwork, lrwork, liwork
+
+    ! Grid
+    real(kind=dp) :: z(ngrid)
+
+    ! Materials: 2-layer AlGaAs/GaAs (non-overlapping)
+    integer, parameter :: nlayers = 2
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: intStartPos(nlayers), intEndPos(nlayers)
+
+    ! Confinement
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    ! Hamiltonian and eigenvalues
+    complex(kind=dp), allocatable :: HT(:,:), work(:)
+    real(kind=dp), allocatable :: eig(:,:), rwork(:)
+    integer, allocatable :: iwork(:)
+
+    ! Results storage
+    real(kind=dp) :: cb1_order2, cb1_order4
+    real(kind=dp) :: vb1_order2, vb1_order4
+    integer :: num_states_to_check, idx
+
+    matSize = ngrid * 8
+
+    ! ---- Setup grid ----
+    do idx = 1, ngrid
+      z(idx) = -50.0_dp + dble(idx - 1) * dz_val
+    end do
+
+    ! 2-layer: AlGaAs(-50,-25) | GaAs(-25,50)
+    ! AlGaAs is points 1-10, GaAs is points 11-41
+    intStartPos(1) = 1;   intEndPos(1) = 10
+    intStartPos(2) = 11;  intEndPos(2) = 41
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Run with FDorder=2 ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    allocate(HT(matSize, matSize), eig(matSize, 1))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+    deallocate(profile, kpterms)
+
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+    @assertTrue(info == 0, message="FDorder=2 diagonalization succeeded")
+
+    ! CB1 = highest eigenvalue, VB1 = next-to-top group
+    cb1_order2 = eig(matSize, 1)
+    vb1_order2 = eig(matSize - 8, 1)  ! top of VB block (8 bands per kpoint)
+    deallocate(HT, eig, work, rwork, iwork)
+
+    ! ---- Run with FDorder=4 ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=4)
+
+    allocate(HT(matSize, matSize), eig(matSize, 1))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+    deallocate(profile, kpterms)
+
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+    @assertTrue(info == 0, message="FDorder=4 diagonalization succeeded")
+
+    cb1_order4 = eig(matSize, 1)
+    vb1_order4 = eig(matSize - 8, 1)
+    deallocate(HT, eig, work, rwork, iwork)
+
+    ! ---- Verify: FDorder=4 must match FDorder=2 within tolerance ----
+    ! FDorder=4 should be MORE accurate, not less. With bug, CB1 is ~1.8 eV off.
+    ! Tolerance is generous (50 meV) — the exact values differ due to different
+    ! truncation error, but they should agree much better than the current bug.
+    @assertTrue(abs(cb1_order4 - cb1_order2) < 0.05_dp, message="FDorder=4 CB1 matches FDorder=2 within 50 meV")
+    @assertTrue(abs(vb1_order4 - vb1_order2) < 0.05_dp, message="FDorder=4 VB1 matches FDorder=2 within 50 meV")
+
+  end subroutine test_qw_variable_coeff_order4
+
 end module test_hamiltonian
