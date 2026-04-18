@@ -399,69 +399,24 @@ module finitedifferences
       real(kind=dp), intent(in) :: d
       real(kind=dp), allocatable, dimension(:), intent(out) :: coeffs
 
-      integer :: npts
+      integer :: npts, j
+      real(kind=dp), allocatable :: offsets(:)
 
-      ! Number of points in the one-sided stencil: need FDorder+1 points
-      ! for FDorder-th order accuracy
       npts = FDorder + 1
-
       if (allocated(coeffs)) deallocate(coeffs)
       allocate(coeffs(npts))
       coeffs = 0.0_dp
 
-      ! Coefficients for d^2f/dx^2 at point 0 using points 0,1,...,FDorder
-      ! These give FDorder-th order accuracy
-      select case(FDorder)
-      case(2)
-        ! 3-point forward 2nd derivative
-        coeffs(1) = 1.0_dp
-        coeffs(2) = -2.0_dp
-        coeffs(3) = 1.0_dp
-      case(4)
-        ! 5-point forward 2nd derivative
-        coeffs(1) = 35.0_dp/12.0_dp
-        coeffs(2) = -26.0_dp/3.0_dp
-        coeffs(3) = 19.0_dp/2.0_dp
-        coeffs(4) = -14.0_dp/3.0_dp
-        coeffs(5) = 11.0_dp/12.0_dp
-      case(6)
-        ! 7-point forward 2nd derivative
-        coeffs(1) = 203.0_dp/45.0_dp
-        coeffs(2) = -87.0_dp/5.0_dp
-        coeffs(3) = 117.0_dp/4.0_dp
-        coeffs(4) = -254.0_dp/9.0_dp
-        coeffs(5) = 33.0_dp/2.0_dp
-        coeffs(6) = -27.0_dp/5.0_dp
-        coeffs(7) = 137.0_dp/180.0_dp
-      case(8)
-        ! 9-point forward 2nd derivative
-        coeffs(1) = 29531.0_dp/5040.0_dp
-        coeffs(2) = -962.0_dp/35.0_dp
-        coeffs(3) = 621.0_dp/10.0_dp
-        coeffs(4) = -4006.0_dp/45.0_dp
-        coeffs(5) = 691.0_dp/8.0_dp
-        coeffs(6) = -282.0_dp/5.0_dp
-        coeffs(7) = 2143.0_dp/90.0_dp
-        coeffs(8) = -206.0_dp/35.0_dp
-        coeffs(9) = 363.0_dp/560.0_dp
-      case(10)
-        ! 11-point forward 2nd derivative
-        coeffs(1)  = 177133.0_dp/25200.0_dp
-        coeffs(2)  = -4861.0_dp/126.0_dp
-        coeffs(3)  = 6121.0_dp/56.0_dp
-        coeffs(4)  = -13082.0_dp/63.0_dp
-        coeffs(5)  = 6751.0_dp/24.0_dp
-        coeffs(6)  = -6877.0_dp/25.0_dp
-        coeffs(7)  = 6961.0_dp/36.0_dp
-        coeffs(8)  = -2006.0_dp/21.0_dp
-        coeffs(9)  = 3533.0_dp/112.0_dp
-        coeffs(10) = -263.0_dp/42.0_dp
-        coeffs(11) = 7129.0_dp/12600.0_dp
-      case default
-        print *, 'Error: unsupported FDorder:', FDorder
-        stop 1
-      end select
+      ! Offsets from evaluation point (boundary_idx, 1-indexed) to
+      ! stencil points 1..npts (1-indexed grid positions).
+      allocate(offsets(npts))
+      do j = 1, npts
+        offsets(j) = dble(j - boundary_idx)
+      end do
 
+      call vandermonde_2nd_deriv(offsets, npts, coeffs)
+
+      deallocate(offsets)
       coeffs = coeffs / d**2
 
     end subroutine FDforwardCoeffs2nd
@@ -476,64 +431,137 @@ module finitedifferences
       real(kind=dp), intent(in) :: d
       real(kind=dp), allocatable, dimension(:), intent(out) :: coeffs
 
-      integer :: npts
+      integer :: npts, j
+      real(kind=dp), allocatable :: offsets(:)
 
       npts = FDorder + 1
-
       if (allocated(coeffs)) deallocate(coeffs)
       allocate(coeffs(npts))
       coeffs = 0.0_dp
 
-      ! Backward stencils are the reverse of forward stencils
-      select case(FDorder)
-      case(2)
-        coeffs(3) = 1.0_dp
-        coeffs(2) = -2.0_dp
-        coeffs(1) = 1.0_dp
-      case(4)
-        coeffs(5) = 35.0_dp/12.0_dp
-        coeffs(4) = -26.0_dp/3.0_dp
-        coeffs(3) = 19.0_dp/2.0_dp
-        coeffs(2) = -14.0_dp/3.0_dp
-        coeffs(1) = 11.0_dp/12.0_dp
-      case(6)
-        coeffs(7) = 203.0_dp/45.0_dp
-        coeffs(6) = -87.0_dp/5.0_dp
-        coeffs(5) = 117.0_dp/4.0_dp
-        coeffs(4) = -254.0_dp/9.0_dp
-        coeffs(3) = 33.0_dp/2.0_dp
-        coeffs(2) = -27.0_dp/5.0_dp
-        coeffs(1) = 137.0_dp/180.0_dp
-      case(8)
-        coeffs(9) = 29531.0_dp/5040.0_dp
-        coeffs(8) = -962.0_dp/35.0_dp
-        coeffs(7) = 621.0_dp/10.0_dp
-        coeffs(6) = -4006.0_dp/45.0_dp
-        coeffs(5) = 691.0_dp/8.0_dp
-        coeffs(4) = -282.0_dp/5.0_dp
-        coeffs(3) = 2143.0_dp/90.0_dp
-        coeffs(2) = -206.0_dp/35.0_dp
-        coeffs(1) = 363.0_dp/560.0_dp
-      case(10)
-        coeffs(11) = 177133.0_dp/25200.0_dp
-        coeffs(10) = -4861.0_dp/126.0_dp
-        coeffs(9)  = 6121.0_dp/56.0_dp
-        coeffs(8)  = -13082.0_dp/63.0_dp
-        coeffs(7)  = 6751.0_dp/24.0_dp
-        coeffs(6)  = -6877.0_dp/25.0_dp
-        coeffs(5)  = 6961.0_dp/36.0_dp
-        coeffs(4)  = -2006.0_dp/21.0_dp
-        coeffs(3)  = 3533.0_dp/112.0_dp
-        coeffs(2)  = -263.0_dp/42.0_dp
-        coeffs(1)  = 7129.0_dp/12600.0_dp
-      case default
-        print *, 'Error: unsupported FDorder:', FDorder
-        stop 1
-      end select
+      ! Backward offsets: from evaluation point (at position N-boundary_idx+1)
+      ! to stencil points {N-npts+1, ..., N}.  Offsets are negative/zero.
+      allocate(offsets(npts))
+      do j = 1, npts
+        offsets(j) = dble(-(npts - j) + (boundary_idx - 1))
+      end do
 
+      call vandermonde_2nd_deriv(offsets, npts, coeffs)
+
+      deallocate(offsets)
       coeffs = coeffs / d**2
 
     end subroutine FDbackwardCoeffs2nd
+
+    !---------------------------------------------------------------------------
+    !> Solve Vandermonde system for 2nd-derivative FD coefficients.
+    !> Given n offsets (in units of dz) from the evaluation point,
+    !> computes coefficients c such that sum_j c_j*f(x+p_j*dz) = f''(x).
+    !> Uses Gaussian elimination with partial pivoting (n <= 11).
+    !---------------------------------------------------------------------------
+    subroutine vandermonde_2nd_deriv(offsets, n, coeffs)
+      integer, intent(in) :: n
+      real(kind=dp), intent(in) :: offsets(n)
+      real(kind=dp), intent(out) :: coeffs(n)
+
+      real(kind=dp) :: V(11, 11), rhs(11), factor
+      integer :: i, j, k, pivot_row
+
+      ! Build Vandermonde matrix
+      do j = 1, n
+        do i = 1, n
+          V(i, j) = offsets(j) ** (i - 1)
+        end do
+      end do
+      rhs(1:n) = 0.0_dp
+      rhs(3) = 2.0_dp  ! 2nd derivative: sum c_j * p_j^2 = 2
+
+      ! Gaussian elimination with partial pivoting
+      do k = 1, n
+        pivot_row = k
+        do i = k + 1, n
+          if (abs(V(i, k)) > abs(V(pivot_row, k))) pivot_row = i
+        end do
+        if (pivot_row /= k) then
+          do j = k, n
+            factor = V(k, j); V(k, j) = V(pivot_row, j); V(pivot_row, j) = factor
+          end do
+          factor = rhs(k); rhs(k) = rhs(pivot_row); rhs(pivot_row) = factor
+        end if
+        do i = k + 1, n
+          factor = V(i, k) / V(k, k)
+          do j = k + 1, n
+            V(i, j) = V(i, j) - factor * V(k, j)
+          end do
+          rhs(i) = rhs(i) - factor * rhs(k)
+        end do
+      end do
+
+      ! Back-substitution
+      do i = n, 1, -1
+        coeffs(i) = rhs(i)
+        do j = i + 1, n
+          coeffs(i) = coeffs(i) - V(i, j) * coeffs(j)
+        end do
+        coeffs(i) = coeffs(i) / V(i, i)
+      end do
+
+    end subroutine vandermonde_2nd_deriv
+
+    !---------------------------------------------------------------------------
+    !> Solve Vandermonde system for 1st-derivative FD coefficients.
+    !> Given n offsets (in units of dz) from the evaluation point,
+    !> computes coefficients c such that sum_j c_j*f(x+p_j*dz) = f'(x).
+    !> Uses Gaussian elimination with partial pivoting (n <= 11).
+    !---------------------------------------------------------------------------
+    subroutine vandermonde_1st_deriv(offsets, n, coeffs)
+      integer, intent(in) :: n
+      real(kind=dp), intent(in) :: offsets(n)
+      real(kind=dp), intent(out) :: coeffs(n)
+
+      real(kind=dp) :: V(11, 11), rhs(11), factor
+      integer :: i, j, k, pivot_row
+
+      ! Build Vandermonde matrix
+      do j = 1, n
+        do i = 1, n
+          V(i, j) = offsets(j) ** (i - 1)
+        end do
+      end do
+      rhs(1:n) = 0.0_dp
+      rhs(2) = 1.0_dp  ! 1st derivative: sum c_j * p_j = 1
+
+      ! Gaussian elimination with partial pivoting
+      do k = 1, n
+        pivot_row = k
+        do i = k + 1, n
+          if (abs(V(i, k)) > abs(V(pivot_row, k))) pivot_row = i
+        end do
+        if (pivot_row /= k) then
+          do j = k, n
+            factor = V(k, j); V(k, j) = V(pivot_row, j); V(pivot_row, j) = factor
+          end do
+          factor = rhs(k); rhs(k) = rhs(pivot_row); rhs(pivot_row) = factor
+        end if
+        do i = k + 1, n
+          factor = V(i, k) / V(k, k)
+          do j = k + 1, n
+            V(i, j) = V(i, j) - factor * V(k, j)
+          end do
+          rhs(i) = rhs(i) - factor * rhs(k)
+        end do
+      end do
+
+      ! Back-substitution
+      do i = n, 1, -1
+        coeffs(i) = rhs(i)
+        do j = i + 1, n
+          coeffs(i) = coeffs(i) - V(i, j) * coeffs(j)
+        end do
+        coeffs(i) = coeffs(i) / V(i, i)
+      end do
+
+    end subroutine vandermonde_1st_deriv
 
     !---------------------------------------------------------------------------
     !> Forward (one-sided) 1st-derivative stencil coefficients.
@@ -544,66 +572,29 @@ module finitedifferences
       real(kind=dp), intent(in) :: d
       real(kind=dp), allocatable, dimension(:), intent(out) :: coeffs
 
-      integer :: npts
+      integer :: npts, j
+      real(kind=dp), allocatable :: offsets(:)
 
       npts = FDorder + 1
-
       if (allocated(coeffs)) deallocate(coeffs)
       allocate(coeffs(npts))
       coeffs = 0.0_dp
 
-      select case(FDorder)
-      case(2)
-        coeffs(1) = -3.0_dp/2.0_dp
-        coeffs(2) = 2.0_dp
-        coeffs(3) = -1.0_dp/2.0_dp
-      case(4)
-        coeffs(1) = -25.0_dp/12.0_dp
-        coeffs(2) = 4.0_dp
-        coeffs(3) = -3.0_dp
-        coeffs(4) = 4.0_dp/3.0_dp
-        coeffs(5) = -1.0_dp/4.0_dp
-      case(6)
-        coeffs(1) = -49.0_dp/20.0_dp
-        coeffs(2) = 6.0_dp
-        coeffs(3) = -15.0_dp/2.0_dp
-        coeffs(4) = 20.0_dp/3.0_dp
-        coeffs(5) = -15.0_dp/4.0_dp
-        coeffs(6) = 6.0_dp/5.0_dp
-        coeffs(7) = -1.0_dp/6.0_dp
-      case(8)
-        coeffs(1) = -761.0_dp/280.0_dp
-        coeffs(2) = 8.0_dp
-        coeffs(3) = -14.0_dp
-        coeffs(4) = 56.0_dp/3.0_dp
-        coeffs(5) = -35.0_dp/2.0_dp
-        coeffs(6) = 56.0_dp/5.0_dp
-        coeffs(7) = -14.0_dp/3.0_dp
-        coeffs(8) = 8.0_dp/7.0_dp
-        coeffs(9) = -1.0_dp/8.0_dp
-      case(10)
-        coeffs(1)  = -7381.0_dp/2520.0_dp
-        coeffs(2)  = 10.0_dp
-        coeffs(3)  = -45.0_dp/2.0_dp
-        coeffs(4)  = 40.0_dp
-        coeffs(5)  = -105.0_dp/2.0_dp
-        coeffs(6)  = 252.0_dp/5.0_dp
-        coeffs(7)  = -35.0_dp
-        coeffs(8)  = 120.0_dp/7.0_dp
-        coeffs(9)  = -45.0_dp/8.0_dp
-        coeffs(10) = 10.0_dp/9.0_dp
-        coeffs(11) = -1.0_dp/10.0_dp
-      case default
-        print *, 'Error: unsupported FDorder:', FDorder
-        stop 1
-      end select
+      allocate(offsets(npts))
+      do j = 1, npts
+        offsets(j) = dble(j - boundary_idx)
+      end do
 
+      call vandermonde_1st_deriv(offsets, npts, coeffs)
+
+      deallocate(offsets)
       coeffs = coeffs / d
 
     end subroutine FDforwardCoeffs1st
 
     !---------------------------------------------------------------------------
     !> Backward (one-sided) 1st-derivative stencil coefficients.
+    !> Uses Vandermonde system for consistency with forward coefficients.
     !---------------------------------------------------------------------------
     subroutine FDbackwardCoeffs1st(boundary_idx, FDorder, d, coeffs)
 
@@ -611,7 +602,8 @@ module finitedifferences
       real(kind=dp), intent(in) :: d
       real(kind=dp), allocatable, dimension(:), intent(out) :: coeffs
 
-      integer :: npts
+      integer :: npts, j
+      real(kind=dp), allocatable :: offsets(:)
 
       npts = FDorder + 1
 
@@ -619,53 +611,16 @@ module finitedifferences
       allocate(coeffs(npts))
       coeffs = 0.0_dp
 
-      ! Backward = reverse sign and reverse order of forward
-      select case(FDorder)
-      case(2)
-        coeffs(3) = 3.0_dp/2.0_dp
-        coeffs(2) = -2.0_dp
-        coeffs(1) = 1.0_dp/2.0_dp
-      case(4)
-        coeffs(5) = 25.0_dp/12.0_dp
-        coeffs(4) = -4.0_dp
-        coeffs(3) = 3.0_dp
-        coeffs(2) = -4.0_dp/3.0_dp
-        coeffs(1) = 1.0_dp/4.0_dp
-      case(6)
-        coeffs(7) = 49.0_dp/20.0_dp
-        coeffs(6) = -6.0_dp
-        coeffs(5) = 15.0_dp/2.0_dp
-        coeffs(4) = -20.0_dp/3.0_dp
-        coeffs(3) = 15.0_dp/4.0_dp
-        coeffs(2) = -6.0_dp/5.0_dp
-        coeffs(1) = 1.0_dp/6.0_dp
-      case(8)
-        coeffs(9) = 761.0_dp/280.0_dp
-        coeffs(8) = -8.0_dp
-        coeffs(7) = 14.0_dp
-        coeffs(6) = -56.0_dp/3.0_dp
-        coeffs(5) = 35.0_dp/2.0_dp
-        coeffs(4) = -56.0_dp/5.0_dp
-        coeffs(3) = 14.0_dp/3.0_dp
-        coeffs(2) = -8.0_dp/7.0_dp
-        coeffs(1) = 1.0_dp/8.0_dp
-      case(10)
-        coeffs(11) = 7381.0_dp/2520.0_dp
-        coeffs(10) = -10.0_dp
-        coeffs(9)  = 45.0_dp/2.0_dp
-        coeffs(8)  = -40.0_dp
-        coeffs(7)  = 105.0_dp/2.0_dp
-        coeffs(6)  = -252.0_dp/5.0_dp
-        coeffs(5)  = 35.0_dp
-        coeffs(4)  = -120.0_dp/7.0_dp
-        coeffs(3)  = 45.0_dp/8.0_dp
-        coeffs(2)  = -10.0_dp/9.0_dp
-        coeffs(1)  = 1.0_dp/10.0_dp
-      case default
-        print *, 'Error: unsupported FDorder:', FDorder
-        stop 1
-      end select
+      ! Backward offsets: from evaluation point (at position N-boundary_idx+1)
+      ! to stencil points {N-npts+1, ..., N}.  Offsets are negative/zero.
+      allocate(offsets(npts))
+      do j = 1, npts
+        offsets(j) = dble(-(npts - j) + (boundary_idx - 1))
+      end do
 
+      call vandermonde_1st_deriv(offsets, npts, coeffs)
+
+      deallocate(offsets)
       coeffs = coeffs / d
 
     end subroutine FDbackwardCoeffs1st
@@ -717,6 +672,167 @@ module finitedifferences
 
     end subroutine toeplitz
 
+    !---------------------------------------------------------------------------
+    !> Build (N-1) x N half-point forward first-derivative matrix.
+    !> Row j computes df/dz at the half-point z_{j+1/2} = (z_j + z_{j+1})/2.
+    !>
+    !> For FDorder=2, this gives the standard 2-point stencil:
+    !>   D_inner(j, j) = -1/dz,  D_inner(j, j+1) = 1/dz
+    !>
+    !> For FDorder>=4, interior half-points use FDorder-point symmetric stencils
+    !> with half-integer offsets. Boundary half-points use (FDorder+1)-point
+    !> one-sided stencils to maintain accuracy.
+    !---------------------------------------------------------------------------
+    subroutine buildStaggeredD1Inner(N, dz, FDorder, D_inner)
+      integer, intent(in) :: N, FDorder
+      real(kind=dp), intent(in) :: dz
+      real(kind=dp), allocatable, intent(out) :: D_inner(:,:)
+
+      integer :: half_bw, i, j, npts, col, bw_inner
+      real(kind=dp) :: coeffs(11), offsets_work(11)
+
+      half_bw = FDorder / 2
+
+      if (allocated(D_inner)) deallocate(D_inner)
+      allocate(D_inner(N-1, N))
+      D_inner = 0.0_dp
+
+      ! For FDorder=2: simple 2-point forward difference at each half-point
+      if (FDorder == 2) then
+        do j = 1, N - 1
+          D_inner(j, j)   = -1.0_dp / dz
+          D_inner(j, j+1) =  1.0_dp / dz
+        end do
+        return
+      end if
+
+      ! For FDorder >= 4: use (FDorder+1)-point stencils for FDorder-accurate
+      ! 1st derivative at half-points.
+      ! Interior: symmetric centered stencil with half-integer offsets.
+      ! E.g. FDorder=4: 5-point stencil, offsets = -2.5,-1.5,-0.5,0.5,1.5
+      !      covering grid points j-2,j-1,j,j+1,j+2.
+      bw_inner = (FDorder + 1) / 2  ! stencil half-width for interior
+
+      do j = 1, N - 1
+
+        if (j >= bw_inner .and. j <= N - bw_inner) then
+          ! Interior half-points: (FDorder+1)-point symmetric central stencil
+          npts = FDorder + 1
+          do i = 1, npts
+            offsets_work(i) = dble(i - bw_inner) - 0.5_dp
+          end do
+          call vandermonde_1st_deriv(offsets_work(1:npts), npts, coeffs(1:npts))
+
+          do i = 1, npts
+            col = j + nint(0.5_dp + offsets_work(i))
+            if (col >= 1 .and. col <= N) D_inner(j, col) = coeffs(i) / dz
+          end do
+
+        else if (j < bw_inner) then
+          ! Left boundary: one-sided forward stencil
+          ! Evaluation point: z_{j+0.5}.  Use grid points 1..npts.
+          npts = FDorder + 1
+          do i = 1, npts
+            offsets_work(i) = dble(i) - dble(j) - 0.5_dp
+          end do
+          call vandermonde_1st_deriv(offsets_work(1:npts), npts, coeffs(1:npts))
+
+          do i = 1, npts
+            col = i
+            if (col >= 1 .and. col <= N) D_inner(j, col) = coeffs(i) / dz
+          end do
+
+        else
+          ! Right boundary: one-sided backward stencil
+          npts = FDorder + 1
+          do i = 1, npts
+            offsets_work(i) = dble(N - npts + i) - dble(j) - 0.5_dp
+          end do
+          call vandermonde_1st_deriv(offsets_work(1:npts), npts, coeffs(1:npts))
+
+          do i = 1, npts
+            col = N - npts + i
+            if (col >= 1 .and. col <= N) D_inner(j, col) = coeffs(i) / dz
+          end do
+
+        end if
+
+      end do
+
+    end subroutine buildStaggeredD1Inner
+
+    !---------------------------------------------------------------------------
+    !> Build N x (N-1) half-point backward first-derivative matrix.
+    !> Row i computes dg/dz at grid point z_i from half-point values.
+    !>
+    !> Uses D_outer = -D_inner^T to ensure the product D_outer*D_inner is
+    !> symmetric (self-adjoint), which is required for the conservative
+    !> variable-coefficient discretization of d/dz[g(z)*d/dz].
+    !---------------------------------------------------------------------------
+    subroutine buildStaggeredD1Outer(N, dz, FDorder, D_outer)
+      integer, intent(in) :: N, FDorder
+      real(kind=dp), intent(in) :: dz
+      real(kind=dp), allocatable, intent(out) :: D_outer(:,:)
+
+      real(kind=dp), allocatable :: D_inner(:,:)
+      integer :: i, j
+
+      ! Build D_inner first, then set D_outer = -D_inner^T
+      call buildStaggeredD1Inner(N, dz, FDorder, D_inner)
+
+      if (allocated(D_outer)) deallocate(D_outer)
+      allocate(D_outer(N, N-1))
+      D_outer = 0.0_dp
+
+      ! D_outer(i,j) = -D_inner(j,i)
+      do j = 1, N - 1
+        do i = 1, N
+          D_outer(i, j) = -D_inner(j, i)
+        end do
+      end do
+
+      deallocate(D_inner)
+
+    end subroutine buildStaggeredD1Outer
+
+    !---------------------------------------------------------------------------
+    !> Interpolate profile values to half-points with order-appropriate accuracy.
+    !> g_half(j) = interpolated value at z_{j+1/2} = (z_j + z_{j+1})/2.
+    !>
+    !> For FDorder=2:  g_half(j) = (g_j + g_{j+1}) / 2  (2nd-order)
+    !> For FDorder=4:  interior uses 4th-order Lagrange interpolation at x=1/2:
+    !>   g_half(j) = (-g_{j-1} + 9*g_j + 9*g_{j+1} - g_{j+2}) / 16
+    !> For boundary half-points: falls back to 2nd-order averaging.
+    !---------------------------------------------------------------------------
+    subroutine interpolateToHalfPoints(profile_vec, N, FDorder, g_half)
+      integer, intent(in) :: N, FDorder
+      real(kind=dp), intent(in) :: profile_vec(N)
+      real(kind=dp), intent(out) :: g_half(N-1)
+
+      integer :: j
+
+      ! For FDorder=2 or near boundaries: simple 2-point average
+      g_half = 0.0_dp
+
+      if (FDorder <= 2) then
+        do j = 1, N - 1
+          g_half(j) = 0.5_dp * (profile_vec(j) + profile_vec(j + 1))
+        end do
+        return
+      end if
+
+      ! FDorder >= 4: use 4th-order interior formula, 2nd-order at boundaries
+      ! Boundary half-points (j=1, j=N-1): use 2-point average
+      g_half(1) = 0.5_dp * (profile_vec(1) + profile_vec(2))
+      g_half(N-1) = 0.5_dp * (profile_vec(N-1) + profile_vec(N))
+
+      ! Interior half-points: 4th-order formula
+      do j = 2, N - 2
+        g_half(j) = (-profile_vec(j-1) + 9.0_dp*profile_vec(j) &
+          &       + 9.0_dp*profile_vec(j+1) - profile_vec(j+2)) / 16.0_dp
+      end do
+
+    end subroutine interpolateToHalfPoints
 
 
 end module finitedifferences

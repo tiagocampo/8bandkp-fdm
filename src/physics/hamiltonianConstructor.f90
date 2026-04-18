@@ -110,7 +110,8 @@ module hamiltonianConstructor
       real(kind=dp), allocatable, dimension(:,:) :: ScnDer, FstDer, kptermsProfile
       real(kind=dp), allocatable, dimension(:,:) :: forward, central, backward
       real(kind=dp), allocatable, dimension(:) :: diag, offup, offdown
-      real(kind=dp), allocatable, dimension(:,:) :: D2, D1
+      real(kind=dp), allocatable, dimension(:,:) :: D_inner, D_outer
+      real(kind=dp), allocatable, dimension(:) :: g_half
 
       integer :: i, initIDX, endIDX, N, ii, jj
       integer :: order
@@ -222,27 +223,62 @@ module hamiltonianConstructor
           & backward, diag, offup, offdown, N, 9, 1.0_dp/(4.0_dp*delta), .False.)
 
       else
-        ! ---- Higher order: use FD matrix approach ----
-        ! Build 2nd-derivative and 1st-derivative FD matrices
-        call buildFD2ndDerivMatrix(N, delta, order, D2)
-        call buildFD1stDerivMatrix(N, delta, order, D1)
+        ! ---- Higher order: conservative variable-coefficient FD ----
+        !
+        ! Strategy: use the same tridiagonal structure as FDorder=2
+        ! (build_kpterm_block), but with higher-order half-point
+        ! interpolation of g for the 2nd-derivative terms.
+        ! This gives identical results to FDorder=2 for uniform g,
+        ! and improved accuracy at interfaces for FDorder>=4.
+        !
+        ! Build the same averaging matrices as FDorder=2
+        allocate(forward(N,N))
+        allocate(backward(N,N))
+        allocate(central(N,N))
+        forward = 0.0_dp
+        backward = 0.0_dp
+        central = 0.0_dp
 
-        ! A*kz**2 (term 5): profile = A(z), operator = d^2/dz^2
-        call applyVariableCoeff(kpterms, kptermsProfile(1:N,4), D2, N, 5)
+        forall(ii=1:N-1)
+          forward(ii,ii) = 1
+          forward(ii,ii+1) = 1
+        end forall
+        forward(N,N) = 1
+        backward = transpose(forward)
+        central = backward + forward
 
-        ! Q (term 7): profile = gamma1 - 2*gamma2, operator = d^2/dz^2
-        call applyVariableCoeff(kpterms, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), &
-          & D2, N, 7)
+        ! 2nd-derivative terms: use higher-order g_half interpolation
+        ! with the staggered grid (2-point D_inner/D_outer)
+        call buildStaggeredD1Inner(N, delta, 2, D_inner)
+        call buildStaggeredD1Outer(N, delta, 2, D_outer)
+        allocate(g_half(N - 1))
 
-        ! T (term 8): profile = gamma1 + 2*gamma2, operator = d^2/dz^2
-        call applyVariableCoeff(kpterms, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), &
-          & D2, N, 8)
+        ! A*kz**2 (term 5)
+        call interpolateToHalfPoints(kptermsProfile(1:N,4), N, order, g_half)
+        call applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, 5)
 
-        ! P*kz (term 6): profile = P(z), operator = d/dz
-        call applyVariableCoeff(kpterms, kptermsProfile(1:N,5), D1, N, 6)
+        ! Q (term 7): (gamma1-2*gamma2)
+        call interpolateToHalfPoints(kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), &
+          & N, order, g_half)
+        call applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, 7)
 
-        ! S -> gamma3*kz (term 9): profile = gamma3(z), operator = d/dz
-        call applyVariableCoeff(kpterms, kptermsProfile(1:N,3), D1, N, 9)
+        ! T (term 8): (gamma1+2*gamma2)
+        call interpolateToHalfPoints(kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), &
+          & N, order, g_half)
+        call applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, 8)
+
+        ! 1st-derivative terms: use same build_kpterm_block approach
+        allocate(diag(N))
+        allocate(offup(N))
+        allocate(offdown(N))
+
+        ! P*kz (term 6)
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,5), central, forward, &
+          & backward, diag, offup, offdown, N, 6, 1.0_dp/(4.0_dp*delta), .False.)
+
+        ! S -> gamma3*kz (term 9)
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,3), central, forward, &
+          & backward, diag, offup, offdown, N, 9, 1.0_dp/(4.0_dp*delta), .False.)
 
       end if
 
@@ -253,8 +289,9 @@ module hamiltonianConstructor
       if (allocated(diag)) deallocate(diag)
       if (allocated(offup)) deallocate(offup)
       if (allocated(offdown)) deallocate(offdown)
-      if (allocated(D2)) deallocate(D2)
-      if (allocated(D1)) deallocate(D1)
+      if (allocated(D_inner)) deallocate(D_inner)
+      if (allocated(D_outer)) deallocate(D_outer)
+      if (allocated(g_half)) deallocate(g_half)
 
     end subroutine confinementInitialization_raw
 
@@ -599,36 +636,55 @@ module hamiltonianConstructor
     end subroutine build_diagonal_csr
 
     !---------------------------------------------------------------------------
-    !> Apply variable coefficient to FD matrix using midpoint averaging.
-    !> Computes: kpterms(:,:,term_idx) = -G_avg .* FD
-    !> where G_avg(i,i) = profile(i) and G_avg(i,j) = (profile(i)+profile(j))/2
-    !> This correctly discretizes d/dz[g(z)·d/dz] at heterointerfaces.
+    !> Apply variable coefficient using staggered-grid conservative form.
+    !> Computes: kpterms(:,:,term_idx) = -D_outer * diag(g_half) * D_inner
+    !>
+    !> This correctly discretizes d/dz[g(z)*d/dz] at heterointerfaces
+    !> for any FD order, using the staggered-grid (half-point) approach.
+    !>
+    !> @param[in]  D_inner   (N-1) x N forward half-point 1st-derivative matrix
+    !> @param[in]  D_outer   N x (N-1) backward half-point 1st-derivative matrix
+    !> @param[in]  g_half    (N-1) coefficient values interpolated to half-points
     !---------------------------------------------------------------------------
-    subroutine applyVariableCoeff(kpterms, profile_vec, FD, N, term_idx)
+    subroutine applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, term_idx)
 
       real(kind=dp), intent(inout), dimension(:,:,:) :: kpterms
-      real(kind=dp), intent(in), dimension(:) :: profile_vec
-      real(kind=dp), intent(in), dimension(:,:) :: FD
+      real(kind=dp), intent(in) :: g_half(:)
+      real(kind=dp), intent(in) :: D_inner(:,:), D_outer(:,:)
       integer, intent(in) :: N, term_idx
 
+      real(kind=dp), allocatable :: temp(:,:), result(:,:)
       integer :: ii, jj
-      real(kind=dp) :: g_avg
 
-      do ii = 1, N
-        do jj = 1, N
-          if (FD(jj, ii) == 0.0_dp) cycle
-          if (jj == ii) then
-            ! Diagonal: use local profile value
-            kpterms(jj, ii, term_idx) = -profile_vec(jj) * FD(jj, ii)
-          else
-            ! Off-diagonal: midpoint average
-            g_avg = 0.5_dp * (profile_vec(jj) + profile_vec(ii))
-            kpterms(jj, ii, term_idx) = -g_avg * FD(jj, ii)
-          end if
+      ! temp(N-1, N) = diag(g_half) * D_inner
+      ! Scale each row of D_inner by g_half
+      allocate(temp(N-1, N))
+      temp = 0.0_dp
+      do jj = 1, N
+        do ii = 1, N - 1
+          temp(ii, jj) = g_half(ii) * D_inner(ii, jj)
         end do
       end do
 
-    end subroutine applyVariableCoeff
+      ! result(N, N) = D_outer * temp
+      allocate(result(N, N))
+      result = 0.0_dp
+      do ii = 1, N
+        do jj = 1, N
+          result(ii, jj) = dot_product(D_outer(ii, :), temp(:, jj))
+        end do
+      end do
+
+      ! Store with negative sign (kinetic energy operator convention)
+      do jj = 1, N
+        do ii = 1, N
+          kpterms(ii, jj, term_idx) = -result(ii, jj)
+        end do
+      end do
+
+      deallocate(temp, result)
+
+    end subroutine applyVariableCoeffStaggered
 
     subroutine ZB8bandQW(HT, wv, profile, kpterms, cfg, sparse, HT_csr, g)
 
