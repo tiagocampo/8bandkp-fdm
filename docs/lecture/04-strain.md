@@ -69,15 +69,16 @@ $$
 This is implemented in `compute_strain_qw` in `src/physics/strain_solver.f90`:
 
 ```fortran
-eps_0 = (a0_mat - a0_ref) / a0_ref
+eps_0 = (a0_ref - a0_mat) / a0_mat
 strain_out%eps_xx(ij) = eps_0
 strain_out%eps_yy(ij) = eps_0
 ```
 
-Note the sign: if $a_0^{\text{mat}} > a_0^{\text{ref}}$ then $\varepsilon_0 > 0$.
-The code uses $a_0^{\text{ref}}$ as the denominator, which differs from the
-textbook convention $(a_{\text{sub}} - a_{\text{layer}})/a_{\text{layer}}$ by a
-factor of $a_{\text{layer}}/a_{\text{ref}} \approx 1$ for small mismatches.
+Note the sign: if $a_0^{\text{mat}} > a_0^{\text{ref}}$ (e.g., InAs on GaAs substrate),
+then $\varepsilon_0 < 0$ — the layer is compressed.  The formula
+$(a_{\text{ref}} - a_0^{\text{mat}})/a_0^{\text{mat}}$ is equivalent to the
+textbook expression $(a_{\text{sub}} - a_{\text{layer}})/a_{\text{layer}}$
+since $a_0^{\text{ref}} = a_{\text{sub}}$ and $a_0^{\text{mat}} = a_{\text{layer}}$.
 
 ### 2.2 Poisson response along the growth axis
 
