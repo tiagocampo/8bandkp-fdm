@@ -404,15 +404,21 @@ spectrum (planned for Phase 2 of the development roadmap).
 
 For the GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well described in Chapter 02, the
 optical matrix elements at $k_\parallel = 0$ reveal the selection rules in action.
-The two strongest transitions are CB1$\to$VB2 and CB2$\to$VB1 (both at $\sim$6 meV
-transition energy), which show nearly equal $|p_x|^2 \approx |p_y|^2$ with a smaller
-but non-zero $|p_z|^2$ component — giving mixed TE+TM polarization. This is consistent
-with the expected LH character of these valence states at the zone center.
-
-Higher-energy transitions (CB$n \to$VB$m$ at 2.0–2.1 eV) are predominantly TE-polarized,
-with $|p_x|^2 \approx |p_y|^2 \gg |p_z|^2$, reflecting the HH character of the deeper
-valence subbands. The oscillator strengths of these transitions reach $f_{osc} \approx 10$,
+The two strongest transitions are CB1$\to$VB2 and CB2$\to$VB1 (both at
+$\sim$1.561 eV transition energy), which show $|p_x|^2 \approx |p_y|^2 \approx 51.6$
+with $|p_z|^2 \approx 0$ -- purely TE-polarized. This is consistent with the expected
+HH character of the valence subband (VB2 is the HH ground state, the Kramers partner
+of VB1). The oscillator strength of these transitions is $f_{osc} \approx 17.4$,
 making them the dominant contributors to the interband absorption spectrum.
+
+The next-strongest transitions are CB1$\to$VB7 and CB2$\to$VB8 (at $\sim$1.584 eV),
+which are predominantly TM-polarized ($|p_z|^2 \approx 64.8$, $|p_x|^2 \approx |p_y|^2
+\approx 0.03$), reflecting the LH character of these deeper valence states. The
+oscillator strength is $f_{osc} \approx 10.8$.
+
+Higher-energy transitions (CB$n \to$VB$m$ at 1.7--2.0 eV) are predominantly
+TE-polarized, with $|p_x|^2 \approx |p_y|^2 \gg |p_z|^2$, reflecting the HH
+character of the deeper valence subbands.
 
 See Chapter 02, Section A.6 for the full computed transition table.
 

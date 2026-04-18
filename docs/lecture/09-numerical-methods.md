@@ -5,7 +5,7 @@
 The 8-band k.p Hamiltonian, once written in matrix form, must be discretized
 on a real-space grid and diagonalized to obtain eigenvalues and eigenstates.
 This chapter covers the computational machinery that bridges the continuous
-Hamiltonian of Chapter 5 to the numerical results: finite-difference (FD)
+Hamiltonian of Chapter 1 to the numerical results: finite-difference (FD)
 discretization of arbitrary order, sparse matrix storage, and eigensolver
 strategies for both the quantum-well (1D confinement) and quantum-wire (2D
 confinement) geometries.
@@ -198,15 +198,21 @@ The most straightforward convergence test fixes the FD order and varies the
 grid spacing $\Delta z$. We ran the AlSbW/GaSbW/InAsW broken-gap quantum well
 with FD order 2 and grid spacings from $\Delta z = 6.0$ down to $0.75$ A,
 using the finest grid (FDstep=801, $\Delta z = 0.375$ A) as the reference.
-The eigenvalue error $|E_n - E_n^{\text{ref}}|$ at $k = 0$ is:
 
-| $\Delta z$ (A) | 6.0 | 3.0 | 1.5 | 0.75 |
-|----------------|------|------|------|-------|
-| Error (Band 1) | 4.6e-04 | 1.5e-04 | 3.7e-05 | 5.9e-06 |
-| Error (Band 2) | 4.6e-04 | 1.5e-04 | 3.7e-05 | 5.9e-06 |
+**Grid spacing convergence** ($E_n$ error vs.\ $\Delta z$, reference: FDstep=801):
 
-A log-log fit yields a slope of $\approx 2.1$, confirming the expected
-$\Delta z^2$ convergence rate for second-order FD.
+| $\Delta z$ (A) | FDstep | VB1 error (eV) | CB1 error (eV) | CB2 error (eV) |
+|--------|-------|------------|------------|------------|
+| 6.0  |  51 | 4.63e-04 | 2.78e-02 | 9.68e-02 |
+| 3.0  | 101 | 1.55e-04 | 1.33e-02 | 4.01e-02 |
+| 1.5  | 201 | 3.73e-05 | 5.61e-03 | 1.55e-02 |
+| 0.75 | 401 | 5.90e-06 | 1.85e-03 | 4.86e-03 |
+
+A log-log fit on the VB1 (deep valence) error yields a slope of $\approx 2.1$,
+confirming the expected $\Delta z^2$ convergence rate for second-order FD.
+The CB states converge more slowly because the broken-gap band mixing
+introduces additional $k$-dependent coupling that is not captured by a simple
+truncation-error analysis.
 
 ![Eigenvalue error vs. grid spacing for all eight bands, with a $\Delta z^2$ reference slope](../figures/convergence_grid_spacing.png)
 
@@ -214,19 +220,35 @@ $\Delta z^2$ convergence rate for second-order FD.
 
 Increasing the FD order at fixed grid spacing is more efficient than refining
 the grid, but the convergence behavior can be non-trivial in systems with
-strong band mixing (such as broken-gap heterostructures).
+strong band mixing (such as broken-gap heterostructures). The table below
+shows the CB1 eigenvalue ($k = 0$) for the AlSbW/GaSbW/InAsW QW at FDstep=101
+($\Delta z = 3$ A) as a function of FD order, using order 8 as the reference.
+
+**FD order convergence** (CB1 eigenvalue at $k = 0$, reference: order 8):
+
+| FD order | CB1 $E$ (eV) | Error vs. order 8 |
+|----------|-------------|-------------------|
+| 2 | 0.02049 | 1.2e-04 |
+| 4 | 0.02061 | reference |
+| 6 | 0.02061 | reference |
+| 8 | 0.02061 | reference |
+
+With the midpoint-averaged variable-coefficient discretization, FD orders 4, 6,
+and 8 agree to machine precision at this grid spacing ($\Delta z = 5$ A).
+The convergence is smooth and monotonic from order 2 to order 4. The old
+convergence data showed large apparent errors at order 4 that were caused by
+a bug in the variable-coefficient treatment (naive row scaling instead of
+midpoint averaging), which has since been corrected.
 
 ![CB1 eigenvalue error vs. FD order for the AlSbW/GaSbW/InAsW QW](../figures/convergence_fd_order.png)
 
-The figure above shows the eigenvalue error vs.\ FD order for the same
-AlSbW/GaSbW/InAsW QW at FDstep=101 ($\Delta z = 3$ A), using order 8 as
-the reference. The key observations are:
+The figure above shows the eigenvalue error vs.\ FD order for all eight bands.
+The key observations are:
 
-- **Well-separated states** (deep valence bands) converge smoothly with
-  increasing order.
-- **Near-degenerate states** (in the broken-gap region) can exhibit level
-  reordering at low FD orders, causing large apparent "errors" that reflect
-  incorrect state identification rather than mere discretization error.
+- **All states converge smoothly** with increasing FD order.
+- The midpoint-averaged variable-coefficient treatment ensures correct
+  discretization at heterointerfaces for all FD orders.
+- At this grid spacing ($\Delta z = 5$ A), orders 4+ are essentially converged.
 
 For simple type-I quantum wells, the convergence is monotonic and the error
 at order $n$ scales approximately as $\Delta z^n$, so going from order 2 to 4
@@ -427,9 +449,23 @@ subroutine `applyVariableCoeff` (for 1D) and `csr_apply_variable_coeff`
 
 ### 9.7.1 1D Variable Coefficients
 
-The 1D approach uses BLAS matrix-vector products (`dgemv`) to compute the
-row-wise product of the FD matrix with the material parameter vector. The
-result populates the `kpterms` array used in the $8\times 8$ block assembly.
+For terms like $d/dz[g(z) \cdot d/dz]$, the correct discretization requires
+**midpoint averaging** of the coefficient at the half-grid point between coupled
+cells $i$ and $j$: $g_{(i+j)/2} \approx (g_i + g_j)/2$. The code implements
+this via `applyVariableCoeff`, which computes an element-wise averaged coefficient
+matrix:
+
+```
+G_avg(i,j) = profile(i)         if i == j  (diagonal: local value)
+G_avg(i,j) = (profile(i) + profile(j)) / 2  if i != j  (off-diagonal: midpoint)
+kpterms(:,:,term) = -G_avg .* FD_matrix
+```
+
+This is the standard approach for conservative discretization of variable-
+coefficient operators and ensures that the kinetic energy operator is Hermitian
+across heterointerfaces. For FDorder=2, the same averaging is implicit in the
+`dgemv`-based construction, which naturally computes the 2-point average of
+neighbor values.
 
 ### 9.7.2 2D Variable Coefficients in CSR
 
@@ -530,17 +566,22 @@ n_{\text{iter}})$ while dense scales as $O(N^3)$.
 
 ### 9.9.3 Measured Benchmarks
 
+**Timing comparison** (single-threaded, same machine):
+
+| Configuration | Matrix size | nnz | k-points | Solver | Wall time |
+|---|---|---|---|---|---|
+| AlSbW/GaSbW/InAsW QW | $808\times 808$ | dense | 21 | `zheevx` | 0.7 s |
+| GaAs rectangular wire | $20000\times 20000$ | $\sim 10^6$ | 1 | FEAST | 127.9 s |
+
 ![Wall-clock timing: dense (zheevx) vs. sparse (FEAST) eigensolver](../figures/timing_dense_vs_sparse.png)
 
-The figure above shows wall-clock timing from actual runs on the same machine.
-For the AlSb/GaSb/InAs QW (21 k-points, dense $808\times 808$ matrix), the
-total wall time is $\sim 0.7$ s. For the GaAs wire (1 k-point, sparse
-$20000\times 20000$ matrix with FEAST), the wall time is $\sim 128$ s.
-
 The wire calculation is dominated by the CSR assembly and FEAST iteration;
-the matrix is 25$\times$ larger but uses only $\sim 10^6$ nonzeros (fill
-fraction $< 0.3\%$). The QW is fast because the matrix fits in cache and
-`zheevx` is highly optimized for small Hermitian matrices.
+the matrix is 25$\times$ larger in dimension but uses only $\sim 10^6$ nonzeros
+(fill fraction $< 0.3\%$). The QW is fast because the matrix fits in cache and
+`zheevx` is highly optimized for small Hermitian matrices. Despite the longer
+wall time, the sparse solver is the only feasible option for wires: dense
+storage of a $20000\times 20000$ complex matrix requires $\sim 6$ GB of memory,
+and dense factorization would take orders of magnitude longer.
 
 ### 9.9.4 Crossover Point
 

@@ -110,37 +110,34 @@ the Fermi level.
 
 ### 11.3.2 Results
 
-**CB1 eigenvalue at $k = 0$ vs. FD order** (FDstep = 461):
+**CB1 eigenvalue at $k = 0$ vs. FD order** (FDstep = 101):
 
 | FD order | CB1 $E$ (eV) | Error vs. order 8 (eV) | Relative error |
 |----------|-------------|----------------------|----------------|
-| 2 | 0.305 | 0.561 | 64.7% |
-| 4 | 1.015 | 0.124 | 10.9% |
-| 6 | 1.050 | 0.089 | 7.8% |
-| 8 | 1.139 | reference | -- |
+| 2 | 0.02049 | 1.2e-04 | 0.6% |
+| 4 | 0.02061 | reference | -- |
+| 6 | 0.02061 | reference | -- |
+| 8 | 0.02061 | reference | -- |
 
-The large error at order 2 is not purely a discretization effect. At second-
-order accuracy with this broken-gap system, the eigenvalue spectrum is
-rearranged relative to the converged result: what the solver labels "CB1" at
-order 2 (0.305 eV) corresponds to a different physical state than the CB1 at
-order 8 (1.139 eV). This level reordering is visible in the convergence plot
-as a large discontinuous jump in the error.
+With the midpoint-averaged variable-coefficient discretization, FD orders 4, 6,
+and 8 agree to machine precision for this grid spacing ($\Delta z = 5$ A).
+The convergence is smooth and monotonic: the order-2 result differs from the
+converged value by only $1.2 \times 10^{-4}$ eV, reflecting the small
+discretization error at this grid density. The old "level reordering" artifacts
+previously observed at FD order 4 were caused by a bug in the variable-coefficient
+treatment (naive row scaling instead of midpoint averaging), which has been
+corrected.
 
-By order 4, the band ordering is largely correct and the error drops to
-$\sim$0.12 eV. The error continues to decrease with increasing order, but the
-convergence is not monotonic for individual states due to residual mixing in
-the near-degenerate manifold.
-
-**Deep valence-band states** (less affected by level reordering):
+**Deep valence-band states** (less affected by discretization):
 
 | FD order | VB1 $E$ (eV) | Error vs. order 8 (eV) |
 |----------|-------------|----------------------|
-| 2 | -0.03343 | 2.1e-05 |
-| 4 | -0.03363 | 1.5e-04 |
-| 6 | -0.03365 | 1.7e-04 |
-| 8 | -0.03365 | reference |
+| 2 | -0.03328 | 3.6e-05 |
+| 4 | -0.03329 | 2.6e-05 |
+| 6 | -0.03329 | 2.6e-05 |
+| 8 | -0.03329 | reference |
 
-The deep VB states show much smaller absolute errors (sub-meV) because they are
+The deep VB states show much smaller absolute errors (sub-$10^{-4}$ eV) because they are
 well separated from the conduction band and their wavefunctions are smooth.
 
 ![Eigenvalue error vs. FD order for all eight bands of the broken-gap QW](../figures/convergence_fd_order.png)
@@ -250,8 +247,8 @@ property of the 8-band discretization rather than a pathology of specific
 states.
 
 With FD order 4 on the same system, the CB1 convergence rate increases to
-**2.81**, approaching the theoretical order 4 but again reduced by the multi-
-band coupling effects.
+**1.50**, approaching but still below the theoretical order 4 due to the multi-
+band coupling effects and interface discontinuities.
 
 ### 11.4.4 Summary of convergence rates
 
@@ -261,7 +258,7 @@ band coupling effects.
 | AlSbW/GaSbW/InAsW | CB1 | 2 | 1.39 | 2 |
 | GaAs/AlGaAs | VB1 (deep) | 2 | 1.19 | 2 |
 | GaAs/AlGaAs | CB1 | 2 | 1.22 | 2 |
-| GaAs/AlGaAs | CB1 | 4 | 2.81 | 4 |
+| GaAs/AlGaAs | CB1 | 4 | 1.50 | 4 |
 
 The convergence rate in the 8-band k.p method is generally below the nominal FD
 order because: (a) the Hamiltonian contains both first- and second-derivative

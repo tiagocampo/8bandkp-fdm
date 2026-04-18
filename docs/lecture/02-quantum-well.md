@@ -375,12 +375,11 @@ waveVector: kx
 waveVectorMax: 0.1
 waveVectorStep: 21
 confinement:  1
-FDstep: 201
-FDorder: 2
-numLayers:  3
+FDstep: 401
+FDorder: 4
+numLayers:  2
 material1: Al30Ga70As -200 200 0
 material2: GaAs -50 50 0
-material3: Al30Ga70As -200 200 0
 numcb: 4
 numvb: 8
 ExternalField: 0  EF
@@ -389,17 +388,17 @@ EFParams: 0.0
 
 #### A.2 Structure walkthrough
 
-This defines a symmetric type-I quantum well:
+This defines a symmetric type-I quantum well using a two-layer configuration where
+the AlGaAs barrier covers the full domain and the GaAs well is placed on top:
 
 | Layer | Material | Range (A) | $E_V$ (eV) | $E_C$ (eV) | $E_g$ (eV) |
 |-------|----------|-----------|------------|------------|------------|
 | 1 | Al$_{0.3}$Ga$_{0.7}$As | $[-200, 200]$ | $-0.959$ | $+1.018$ | 1.977 |
 | 2 | GaAs | $[-50, 50]$ | $-0.800$ | $+0.719$ | 1.519 |
-| 3 | Al$_{0.3}$Ga$_{0.7}$As | $[-200, 200]$ | $-0.959$ | $+1.018$ | 1.977 |
 
 - **Domain:** $z \in [-200, 200]$ A, total 400 A
 - **Well width:** 100 A of GaAs
-- **Grid:** $N = 201$ points, $\Delta z = 400/200 = 2.0$ A
+- **Grid:** $N = 401$ points, $\Delta z = 400/400 = 1.0$ A
 - **Band offsets:** $\Delta E_C = 1.018 - 0.719 = 0.299$ eV (CB),
   $\Delta E_V = 0.959 - 0.800 = 0.159$ eV (VB)
 - **Sweep:** 21 k-points from $k_x = 0$ to $0.1$ A$^{-1}$
@@ -408,13 +407,14 @@ This defines a symmetric type-I quantum well:
 This is the textbook type-I alignment: both the conduction band and valence band
 edges of GaAs lie inside the gap of AlGaAs, so electrons are confined in the GaAs
 layer by the CB offset of 299 meV, and holes are confined by the VB offset of
-159 meV. The barrier layers overlap the full domain, providing a uniform background
-outside the well.
+159 meV. The two-layer configuration uses mask-based assignment: the AlGaAs barrier
+covers the full domain, then the GaAs well overwrites the central $[-50, 50]$ A
+region, producing the correct confinement profile without overlap ambiguity.
 
 #### A.3 Numerical results
 
 At $k_\parallel = 0$, the code computes the following eigenvalues (FDstep=401,
-FDorder=2, two-layer config with painter's algorithm):
+FDorder=4, two-layer config with mask-based assignment):
 
 **Valence subbands (8 requested, 4 Kramers pairs):**
 
@@ -448,8 +448,8 @@ the $159$ meV VB offset and the $100$ A well width.
 The CB1 state at $+0.7613$ eV lies $(0.7613 - 0.719) \times 1000 = 42.3$ meV above
 the GaAs CB edge ($+0.719$ eV). The AlGaAs barrier CB edge is at $+1.018$ eV, so the
 confinement energy places CB1 $(1.018 - 0.7613) \times 1000 = 256.7$ meV below the
-barrier top. The CB1--CB2 splitting of $113.8$ meV is consistent with the light GaAs
-electron mass ($0.067\,m_0$) in the $100$ A well. The $1594$ meV band gap between
+barrier top. The CB1--CB2 splitting of $113.7$ meV is consistent with the light GaAs
+electron mass ($0.067\,m_0$) in the $100$ A well. The $1564$ meV band gap between
 VB-1 ($-0.8023$ eV) and CB-1 ($+0.7613$ eV) is slightly larger than the bulk GaAs gap
 ($1519$ meV) due to quantum confinement pushing hole states down and electron states up.
 
@@ -471,7 +471,7 @@ CB well.
 ![GaAs/AlGaAs QW dispersion](../figures/qw_dispersion_gaas_algaas.png)
 
 *Figure 1: Subband dispersion $E(k_\parallel)$ for the GaAs/Al$_{0.3}$Ga$_{0.7}$As
-quantum well, computed with a finer grid (FDstep=401, FDorder=2, 101 k-points). The
+quantum well, computed with a finer grid (FDstep=401, FDorder=4, 101 k-points). The
 type-I alignment confines both electrons (upper set) and holes (lower set) in the GaAs
 layer. The near-parabolic CB dispersion is characteristic of the light GaAs electron
 mass. The VB subbands show strong nonparabolicity due to HH-LH mixing at finite
@@ -479,12 +479,12 @@ $k_\parallel$.*
 
 #### A.5 Dispersion and HH/LH mixing
 
-The dispersion plot above was generated using a modified version of
+The dispersion plot above was generated using
 `tests/regression/configs/qw_gaas_algaas_kpar.cfg`, which uses a finer spatial grid
-(FDstep=401, FDorder=2, 101 k-points) with the correct two-layer painter's algorithm
-(AlGaAs barrier first, GaAs well second). The fine grid and dense k-sampling ensure
-that the subband curvatures -- and hence the in-plane effective masses -- are
-well-converged.
+(FDstep=401, FDorder=4, 101 k-points) with a two-layer mask-based assignment
+(AlGaAs barrier covers the full domain, GaAs well overwrites the central region).
+The fine grid and dense k-sampling ensure that the subband curvatures -- and hence
+the in-plane effective masses -- are well-converged.
 
 At $k_\parallel = 0$, the heavy-hole (HH) and light-hole (LH) subbands are decoupled
 by symmetry. The HH states have angular momentum projection $J_z = \pm 3/2$, while the
@@ -528,16 +528,16 @@ well, decomposed into Cartesian components ($p_x$, $p_y$, $p_z$).*
 
 The strongest interband transitions at $k_\parallel = 0$, sorted by oscillator strength:
 
-| Transition | dE (meV) | $|p_x|^2$ | $|p_y|^2$ | $|p_z|^2$ | $f_{osc}$ | Polarization |
+| Transition | dE (eV) | $|p_x|^2$ | $|p_y|^2$ | $|p_z|^2$ | $f_{osc}$ | Polarization |
 |------------|----------|-----------|-----------|-----------|-----------|-------------|
-| CB1-VB2 | 5.9 | 0.1399 | 0.1399 | 3.32e-01 | 27.097 | TE+TM |
-| CB2-VB1 | 5.9 | 0.1399 | 0.1399 | 3.32e-01 | 27.097 | TE+TM |
-| CB9-VB23 | 2073.0 | 42.4591 | 42.4591 | 0.00e+00 | 10.752 | TE |
-| CB10-VB24 | 2073.0 | 42.4591 | 42.4591 | 4.77e-31 | 10.752 | TE |
-| CB7-VB20 | 2040.6 | 41.3720 | 41.3720 | 0.00e+00 | 10.643 | TE |
-| CB8-VB19 | 2040.6 | 41.3720 | 41.3720 | 3.51e-30 | 10.643 | TE |
-| CB11-VB26 | 2111.7 | 42.5785 | 42.5785 | 0.00e+00 | 10.584 | TE |
-| CB12-VB25 | 2111.7 | 42.5785 | 42.5785 | 1.64e-31 | 10.584 | TE |
+| CB1-VB2 | 1.561 | 51.60 | 51.60 | ~0 | 17.35 | TE |
+| CB2-VB1 | 1.561 | 51.60 | 51.60 | ~0 | 17.35 | TE |
+| CB3-VB4 | 1.676 | 43.74 | 43.74 | ~0 | 13.70 | TE |
+| CB4-VB3 | 1.676 | 43.74 | 43.74 | ~0 | 13.70 | TE |
+| CB1-VB7 | 1.584 | 0.027 | 0.027 | 64.80 | 10.75 | TM |
+| CB2-VB8 | 1.584 | 0.027 | 0.027 | 64.80 | 10.75 | TM |
+| CB7-VB25 | 1.996 | 40.85 | 40.85 | ~0 | 10.74 | TE |
+| CB8-VB26 | 1.996 | 40.85 | 40.85 | ~0 | 10.74 | TE |
 
 *Table: Computed optical transition strengths from `qw_gaas_algaas_optics.cfg` (FDstep=101, FDorder=4).*
 
@@ -662,7 +662,7 @@ above the GaSbW $E_V$.*
 #### B.3 Numerical results
 
 At $k_\parallel = 0$, the diagonalization of the $8 \times 401 = 3208$ dimensional
-Hamiltonian yields a rich spectrum (computed with FDstep=401, FDorder=2, finer grid
+Hamiltonian yields a rich spectrum (computed with FDstep=401, FDorder=4, finer grid
 than the reference config).
 
 **Selected subbands near the effective gap (from 10+10 computed states):**
@@ -681,10 +681,10 @@ than the reference config).
 | VB-1 | $-0.0334$ | Weakly confined hole (Kramers partner) |
 | CB-1 | $+0.0319$ | InAsW-derived electron (lowest CB) |
 | CB-2 | $+0.0319$ | InAsW electron (Kramers partner) |
-| CB-3 | $+0.3256$ | Second electron state |
-| CB-4 | $+0.3256$ | Second electron (Kramers partner) |
-| CB-5 | $+0.6749$ | Third electron state |
-| CB-6 | $+0.6749$ | Third electron (Kramers partner) |
+| CB-3 | $+0.3254$ | Second electron state |
+| CB-4 | $+0.3254$ | Second electron (Kramers partner) |
+| CB-5 | $+0.6748$ | Third electron state |
+| CB-6 | $+0.6748$ | Third electron (Kramers partner) |
 
 The effective gap between VB-1 ($-0.0334$ eV) and CB-1 ($+0.0319$ eV) is
 **$65.3$ meV**, determined by the hybridization of InAsW electron states and
@@ -868,8 +868,8 @@ Practical guidelines:
 
 | System | Recommended `FDstep` | `FDorder` | Energy accuracy |
 |--------|---------------------|-----------|-----------------|
-| Shallow type-I QW (100 A) | 100--150 | 2 | sub-meV |
-| Deep type-III QW (multi-layer) | 150--250 | 2 | ~1 meV |
+| Shallow type-I QW (100 A) | 200--400 | 4 | sub-meV |
+| Deep type-III QW (multi-layer) | 200--400 | 4 | ~1 meV |
 | Critical (hybridization gaps) | 200--400 | 4 | sub-0.1 meV |
 | Production + strain | 300--500 | 4--6 | < 0.01 meV |
 
@@ -942,13 +942,17 @@ roadmap:
 A subtlety of the position-dependent k.p approach is the treatment of interfaces.
 When the Luttinger parameters ($\gamma_1, \gamma_2, \gamma_3$) or the interband
 matrix element $P$ change abruptly at a heterointerface, the simple product
-$\gamma(z) \cdot d^2/dz^2$ is not the correct Hermitian operator. The code uses the
-"forward/backward" stencil approach for order 2 and the `applyVariableCoeff` routine
-for higher orders, which effectively symmetrize the kinetic energy operator. This is
-the standard approach in k.p finite difference codes and is accurate for slowly-
-varying envelopes, though it may introduce small errors at abrupt interfaces. The
-Foreman renormalization (disabled by default via `renormalization = .False.` in
-`defs.f90`) provides a more rigorous treatment at the cost of additional complexity.
+$\gamma(z) \cdot d^2/dz^2$ is not the correct Hermitian operator. The correct
+discretization of $d/dz[g(z) \cdot d/dz]$ requires **midpoint averaging**:
+each off-diagonal stencil entry coupling grid points $i$ and $j$ is weighted by
+$(g_i + g_j)/2$, the arithmetic average at the half-grid point between the coupled
+cells. The code implements this for all FD orders via `applyVariableCoeff`, which
+precomputes an element-wise averaged coefficient matrix $G_{\text{avg}}(i,j)$ and
+multiplies it by the FD stencil matrix. For FDorder=2, this averaging is implicit
+in the `dgemv`-based construction; for FDorder>=4, the explicit midpoint average
+ensures correct variable-coefficient treatment. The Foreman renormalization
+(disabled by default via `renormalization = .False.` in `defs.f90`) provides a more
+rigorous treatment at the cost of additional complexity.
 
 ### 4.7 Comparison with bulk mode
 
