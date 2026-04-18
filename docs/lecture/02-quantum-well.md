@@ -326,30 +326,60 @@ Hamiltonian:
 ### 2.3 Step-by-step kpterms construction for a 3-layer system
 
 Consider a three-layer QW: barrier/well/barrier with $N = 7$ grid points for
-illustration. Points 1--2 are barrier, 3--5 are well, 6--7 are barrier. The second
-derivative operator with FD order 2 gives a tridiagonal stencil with $-2/\Delta
-z^2$ on the diagonal and $1/\Delta z^2$ on the sub/super-diagonals. For the Q-term
-(index 7), which carries the coefficient $(\gamma_1 - 2\gamma_2)(z)$:
+illustration. Points 1--2 are barrier, 3--5 are well, 6--7 are barrier. The
+second-derivative operator with variable coefficients $g(z)$ is discretized in
+**staggered-grid conservative form**:
+
+$$\frac{d}{dz}\!\left[g(z)\frac{d}{dz}\right] \approx D_{\text{outer}} \cdot \mathrm{diag}(g_{1/2}) \cdot D_{\text{inner}}$$
+
+where $D_{\text{inner}}$ is an $(N{-}1) \times N$ forward half-point difference
+matrix and $D_{\text{outer}} = -D_{\text{inner}}^T$ (ensuring exact self-adjointness).
+The half-point coefficients $g_{j+1/2}$ are:
+
+- **FDorder=2:** $g_{j+1/2} = (g_j + g_{j+1})/2$ (simple average)
+- **FDorder≥4:** $g_{j+1/2} = (-g_{j-1} + 9g_j + 9g_{j+1} - g_{j+2})/16$ (4th-order Lagrange)
+
+For the Q-term (kpterms index 7), which carries $g(z) = \gamma_1(z) - 2\gamma_2(z)$:
 
 ```
-gamma1 - 2*gamma2 at each grid point (illustrative):
+g at each grid point (illustrative):
   z:    1      2      3      4      5      6      7
   g:  4.00   4.00   2.88   2.88   2.88   4.00   4.00
 
-kpterms(:,:,7) = diag(g) @ D2  (second-derivative stencil)
+g_half (2nd-order):  4.00  3.44  2.88  2.88  3.44  4.00
+                    (average of adjacent g values)
 
-Result: each row i gets the stencil weighted by g(i)
-  Row 3 (well): g(3)*[-1, +2, -1] / dz^2 = 2.88*[-1, +2, -1] / dz^2
-  Row 5 (well): g(5)*[-1, +2, -1] / dz^2 = 2.88*[-1, +2, -1] / dz^2
-  Row 2 (barrier/well interface): g(2)*[-1, +2, -1] / dz^2 = 4.00*[...]
+kpterms(:,:,7) = D_outer @ diag(g_half) @ D_inner
+
+D_inner (6x7, each row = [-1/dz, +1/dz] shifted right):
+  row 1: [-1/dz, +1/dz,    0,    0,    0,    0,    0]
+  row 2: [   0, -1/dz, +1/dz,    0,    0,    0,    0]
+  ...
+D_outer = -D_inner^T
+
+Result (7x7 operator):
+  Row 3 (well interior):
+    g_half(2)*D_inner(row 2) + g_half(3)*D_inner(row 3)
+    = 3.44*[-1/dz, +1/dz, 0, ...] + 2.88*[0, -1/dz, +1/dz, ...]
+    → diagonal: (3.44 + 2.88)/dz² = 6.32/dz²
+    → off-diag left: -3.44/dz²,  off-diag right: -2.88/dz²
+
+  Row 2 (barrier/well interface):
+    g_half(1)*D_inner(row 1) + g_half(2)*D_inner(row 2)
+    = 4.00*[-1/dz, +1/dz, 0, ...] + 3.44*[0, -1/dz, +1/dz, ...]
+    → diagonal: (4.00 + 3.44)/dz² = 7.44/dz²
+    → off-diag left: -4.00/dz²,  off-diag right: -3.44/dz²
 ```
 
-This is the essence: the position-dependent material parameter is multiplied into
-the stencil at each grid point, so that the kinetic energy operator automatically
-reflects the material composition at each location. When `confinementInitialization`
-has finished, all ten kpterms matrices are ready, and the Hamiltonian assembly loop
-over $\mathbf{k}_\parallel$ values needs only to form the linear combinations of
-these precomputed blocks.
+At interfaces, the off-diagonal weights smoothly transition between the barrier
+coefficient ($4.00/\mathrm{dz}^2$) and the well coefficient ($2.88/\mathrm{dz}^2$),
+correctly capturing the abrupt change in material parameters. For FDorder=2, the
+code achieves the same result implicitly via a `dgemv`-based construction that
+computes `profile-weighted stencil sums` (see Section 4.6 for details).
+
+When `confinementInitialization` has finished, all ten kpterms matrices are ready,
+and the Hamiltonian assembly loop over $\mathbf{k}_\parallel$ values needs only to
+form the linear combinations of these precomputed blocks.
 
 ### 2.4 Input parsing for QW mode
 
@@ -946,20 +976,26 @@ roadmap:
 
 ### 4.6 Variable material parameters at interfaces
 
-A subtlety of the position-dependent k.p approach is the treatment of interfaces.
 When the Luttinger parameters ($\gamma_1, \gamma_2, \gamma_3$) or the interband
-matrix element $P$ change abruptly at a heterointerface, the simple product
-$\gamma(z) \cdot d^2/dz^2$ is not the correct Hermitian operator. The correct
-discretization of $d/dz[g(z) \cdot d/dz]$ requires **midpoint averaging**:
-each off-diagonal stencil entry coupling grid points $i$ and $j$ is weighted by
-$(g_i + g_j)/2$, the arithmetic average at the half-grid point between the coupled
-cells. The code implements this for all FD orders via `applyVariableCoeff`, which
-precomputes an element-wise averaged coefficient matrix $G_{\text{avg}}(i,j)$ and
-multiplies it by the FD stencil matrix. For FDorder=2, this averaging is implicit
-in the `dgemv`-based construction; for FDorder>=4, the explicit midpoint average
-ensures correct variable-coefficient treatment. The Foreman renormalization
-(disabled by default via `renormalization = .False.` in `defs.f90`) provides a more
-rigorous treatment at the cost of additional complexity.
+matrix element $P$ change abruptly at a heterointerface, the product
+$\gamma(z) \cdot d^2/dz^2$ is not a Hermitian operator. The code uses a
+**staggered-grid conservative form** (see Section 2.3 for a worked example):
+
+$$\frac{d}{dz}\!\left[g(z)\frac{d}{dz}\right] \approx D_{\text{outer}} \cdot \mathrm{diag}(g_{1/2}) \cdot D_{\text{inner}}$$
+
+where $D_{\text{inner}}$ is the half-point forward difference matrix,
+$D_{\text{outer}} = -D_{\text{inner}}^T$, and $g_{1/2}$ is the coefficient
+interpolated to half-grid points. For FDorder=2, this reduces to the standard
+3-point stencil with $(g_j + g_{j+1})/2$ averaging, which is achieved implicitly
+by the `dgemv`-based construction in `build_kpterm_block`. For FDorder≥4, the
+subroutine `applyVariableCoeffStaggered` builds $D_{\text{inner}}$ and
+$D_{\text{outer}}$ explicitly, and `interpolateToHalfPoints` computes $g_{1/2}$
+using 4th-order Lagrange interpolation: $(-g_{j-1} + 9g_j + 9g_{j+1} - g_{j+2})/16$.
+
+This approach ensures the resulting operator is exactly self-adjoint and correctly
+handles sharp interfaces at all FD orders. The Foreman renormalization (disabled by
+default via `renormalization = .False.` in `defs.f90`) provides an alternative
+treatment at the cost of additional complexity.
 
 ### 4.7 Comparison with bulk mode
 
