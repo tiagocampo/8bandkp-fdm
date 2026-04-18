@@ -4,6 +4,7 @@ module hamiltonianConstructor
   use finitedifferences
   use sparse_matrices
   use utils
+  use strain_solver, only: compute_bp_scalar, bir_pikus_blocks_free
 
   implicit none
 
@@ -598,10 +599,10 @@ module hamiltonianConstructor
     end subroutine build_diagonal_csr
 
     !---------------------------------------------------------------------------
-    !> Apply variable coefficient to FD matrix and store in kpterms.
-    !> Computes: kpterms(:,:,term_idx) = -diag(profile) @ FD
-    !> This gives the correct sign for both 1st and 2nd derivative terms
-    !> in the k.p Hamiltonian.
+    !> Apply variable coefficient to FD matrix using midpoint averaging.
+    !> Computes: kpterms(:,:,term_idx) = -G_avg .* FD
+    !> where G_avg(i,i) = profile(i) and G_avg(i,j) = (profile(i)+profile(j))/2
+    !> This correctly discretizes d/dz[g(z)·d/dz] at heterointerfaces.
     !---------------------------------------------------------------------------
     subroutine applyVariableCoeff(kpterms, profile_vec, FD, N, term_idx)
 
@@ -611,15 +612,25 @@ module hamiltonianConstructor
       integer, intent(in) :: N, term_idx
 
       integer :: ii, jj
+      real(kind=dp) :: g_avg
 
-      ! kpterms(j,i) = -profile_vec(j) * FD(j,i)
-      forall(ii=1:N, jj=1:N)
-        kpterms(jj, ii, term_idx) = -profile_vec(jj) * FD(jj, ii)
-      end forall
+      do ii = 1, N
+        do jj = 1, N
+          if (FD(jj, ii) == 0.0_dp) cycle
+          if (jj == ii) then
+            ! Diagonal: use local profile value
+            kpterms(jj, ii, term_idx) = -profile_vec(jj) * FD(jj, ii)
+          else
+            ! Off-diagonal: midpoint average
+            g_avg = 0.5_dp * (profile_vec(jj) + profile_vec(ii))
+            kpterms(jj, ii, term_idx) = -g_avg * FD(jj, ii)
+          end if
+        end do
+      end do
 
     end subroutine applyVariableCoeff
 
-    subroutine ZB8bandQW(HT, wv, profile, kpterms, sparse, HT_csr, g)
+    subroutine ZB8bandQW(HT, wv, profile, kpterms, cfg, sparse, HT_csr, g)
 
       implicit none
 
@@ -629,6 +640,7 @@ module hamiltonianConstructor
       type(wavevector), intent(in) :: wv
       real(kind = dp), intent(in), dimension(:,:) :: profile
       real(kind = dp), intent(in), dimension(:,:,:) :: kpterms
+      type(simulation_config), intent(in), optional :: cfg
       logical, intent(in), optional:: sparse
       character(len=1), intent(in), optional :: g
 
@@ -795,6 +807,15 @@ module hamiltonianConstructor
         HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + profile(ii,3)
         HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + profile(ii,3)
       end forall
+
+      ! Full Bir-Pikus strain (k-independent, not in g-mode)
+      if (present(cfg)) then
+        if (.not. present(g) .and. allocated(cfg%strain_blocks%delta_Ec)) then
+          do ii = 1, N
+            call add_bp_strain_dense(HT, ii, N, cfg%strain_blocks)
+          end do
+        end if
+      end if
 
 
       deallocate(Q)
@@ -1007,95 +1028,31 @@ module hamiltonianConstructor
       ! ---------------------------------------------------------------
       if (params(1)%strainSubstrate > 0.0_dp) then
         block
-          real(kind=dp) :: a_film, eps_xx, eps_yy, eps_zz
-          real(kind=dp) :: eps_xy, eps_xz, eps_yz, Tr_eps
-          real(kind=dp) :: delta_Ec, P_eps, Q_eps, T_eps
-          complex(kind=dp) :: R_eps, R_eps_c, S_eps, S_eps_c
+          real(kind=dp) :: a_film, eps_xx, eps_zz
+          type(bir_pikus_blocks) :: bp_bulk
 
           a_film = params(1)%a0
           if (a_film > 0.0_dp) then
-            ! Biaxial [001] strain tensor
             eps_xx = (params(1)%strainSubstrate - a_film) / a_film
-            eps_yy = eps_xx
             eps_zz = -2.0_dp * params(1)%C12 / params(1)%C11 * eps_xx
-            eps_xy = 0.0_dp
-            eps_xz = 0.0_dp
-            eps_yz = 0.0_dp
 
-            Tr_eps = eps_xx + eps_yy + eps_zz
+            allocate(bp_bulk%delta_Ec(1), bp_bulk%delta_EHH(1), &
+              bp_bulk%delta_ELH(1), bp_bulk%delta_ESO(1), &
+              bp_bulk%R_eps(1), bp_bulk%S_eps(1), bp_bulk%QT2_eps(1))
 
-            ! CB hydrostatic shift
-            delta_Ec = params(1)%ac * Tr_eps
+            associate(s => compute_bp_scalar(params(1), eps_xx, eps_xx, eps_zz, &
+                                              0.0_dp, 0.0_dp, 0.0_dp))
+              bp_bulk%delta_Ec(1)  = s%delta_Ec
+              bp_bulk%delta_EHH(1) = s%delta_EHH
+              bp_bulk%delta_ELH(1) = s%delta_ELH
+              bp_bulk%delta_ESO(1) = s%delta_ESO
+              bp_bulk%R_eps(1)     = s%R_eps
+              bp_bulk%S_eps(1)     = s%S_eps
+              bp_bulk%QT2_eps(1)   = s%QT2_eps
+            end associate
 
-            ! VB hydrostatic (P_eps) and shear (Q_eps, T_eps) terms
-            P_eps = -params(1)%av * Tr_eps
-            Q_eps = params(1)%b_dp * 0.5_dp * (eps_zz - 0.5_dp * (eps_xx + eps_yy))
-            T_eps = -Q_eps  ! T = -(Q from shear)
-
-            ! Off-diagonal strain terms (same structure as k-dependent R, S)
-            R_eps = -SQR3 * (params(1)%b_dp * 0.5_dp * (eps_xx - eps_yy) &
-                     - IU * params(1)%d_dp * eps_xy)
-            R_eps_c = conjg(R_eps)
-
-            S_eps = IU * 2.0_dp * SQR3 * params(1)%d_dp * &
-                    cmplx(eps_xz, -eps_yz, kind=dp)
-            S_eps_c = -IU * 2.0_dp * SQR3 * params(1)%d_dp * &
-                      cmplx(eps_xz, eps_yz, kind=dp)
-
-            ! === CB (bands 7,8): hydrostatic shift ===
-            HT(7,7) = HT(7,7) + delta_Ec
-            HT(8,8) = HT(8,8) + delta_Ec
-
-            ! === VB diagonal: P_eps +/- Q_eps ===
-            ! HH (bands 1,4): P_eps + Q_eps
-            HT(1,1) = HT(1,1) + P_eps + Q_eps
-            HT(4,4) = HT(4,4) + P_eps + Q_eps
-
-            ! LH (bands 2,3): P_eps - Q_eps
-            HT(2,2) = HT(2,2) + P_eps - Q_eps
-            HT(3,3) = HT(3,3) + P_eps - Q_eps
-
-            ! SO (bands 5,6): P_eps only
-            HT(5,5) = HT(5,5) + P_eps
-            HT(6,6) = HT(6,6) + P_eps
-
-            ! === Off-diagonal VB strain terms ===
-            ! Same pattern as k-dependent Hamiltonian but using strain R, S
-
-            ! S_eps couples HH-LH: (1,2), (2,1), (3,4), (4,3)
-            HT(1,2) = HT(1,2) + S_eps_c
-            HT(2,1) = HT(2,1) + S_eps
-            HT(3,4) = HT(3,4) - S_eps_c
-            HT(4,3) = HT(4,3) - S_eps
-
-            ! R_eps couples HH-LH: (1,3), (3,1), (2,4), (4,2)
-            HT(1,3) = HT(1,3) + R_eps_c
-            HT(3,1) = HT(3,1) + R_eps
-            HT(2,4) = HT(2,4) + R_eps_c
-            HT(4,2) = HT(4,2) + R_eps
-
-            ! === Off-diagonal VB-SO strain terms ===
-            ! (i/sqrt(2))*S, sqrt(2)*R, etc. — same pattern as k-terms
-            HT(1,5) = HT(1,5) - IU * RQS2 * S_eps_c
-            HT(5,1) = HT(5,1) + IU * RQS2 * S_eps
-            HT(1,6) = HT(1,6) + IU * SQR2 * R_eps_c
-            HT(6,1) = HT(6,1) - IU * SQR2 * R_eps
-
-            HT(2,5) = HT(2,5) + IU * RQS2 * (Q_eps - T_eps)  ! = i/sqrt(2)*2*Q_eps
-            HT(5,2) = HT(5,2) - IU * RQS2 * (Q_eps - T_eps)
-            HT(2,6) = HT(2,6) - IU * sqrt(1.5_dp) * S_eps_c
-            HT(6,2) = HT(6,2) + IU * sqrt(1.5_dp) * S_eps
-
-            HT(3,5) = HT(3,5) + IU * sqrt(1.5_dp) * S_eps
-            HT(5,3) = HT(5,3) - IU * sqrt(1.5_dp) * S_eps_c
-            HT(3,6) = HT(3,6) + IU * RQS2 * (Q_eps - T_eps)
-            HT(6,3) = HT(6,3) - IU * RQS2 * (Q_eps - T_eps)
-
-            HT(4,5) = HT(4,5) - IU * SQR2 * R_eps
-            HT(5,4) = HT(5,4) + IU * SQR2 * R_eps_c
-            HT(4,6) = HT(4,6) + IU * RQS2 * S_eps
-            HT(6,4) = HT(6,4) - IU * RQS2 * S_eps_c
-
+            call add_bp_strain_dense(HT, 1, 1, bp_bulk)
+            call bir_pikus_blocks_free(bp_bulk)
           end if
         end block
       end if
@@ -1459,6 +1416,10 @@ module hamiltonianConstructor
         nnz_est = nnz_est + 2*(blk_Q%nnz + blk_T%nnz)
         ! Profile diagonal: 8 bands * N
         nnz_est = nnz_est + 8 * N
+        ! Strain: 32 entries per grid point (8 diag + 4 S_eps + 4 R_eps + 16 VB-SO)
+        if (allocated(cfg%strain_blocks%delta_Ec)) then
+          nnz_est = nnz_est + 32 * N
+        end if
         coo_capacity = nnz_est
 
         allocate(coo_rows(coo_capacity))
@@ -1657,6 +1618,18 @@ module hamiltonianConstructor
         ! ==================================================================
         call insert_profile_diagonal(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, profile_2d, N)
+
+        ! ==================================================================
+        ! Add Bir-Pikus strain corrections (diagonal + off-diagonal)
+        !
+        ! Strain is k-independent so NOT added in g-mode.
+        ! All strain terms are per-grid-point scalars (diagonal in spatial
+        ! indices), inserted as individual COO entries.
+        ! ==================================================================
+        if (allocated(cfg%strain_blocks%delta_Ec)) then
+          call insert_strain_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
+            coo_idx, cfg%strain_blocks, N)
+        end if
 
       end if
 
@@ -1969,6 +1942,289 @@ module hamiltonianConstructor
         end do
       end do
     end subroutine insert_profile_diagonal
+
+    ! ==================================================================
+    ! Helper: Insert Bir-Pikus strain corrections into dense 8Nx8N matrix.
+    !
+    ! Adds all 32 entries (8 diagonal + 4 S + 4 R + 16 VB-SO) for grid
+    ! point ii. Works for both bulk (N=1, ii=1) and QW (any N).
+    ! ==================================================================
+    subroutine add_bp_strain_dense(HT, ii, N, bp)
+      complex(kind=dp), intent(inout) :: HT(:,:)
+      integer, intent(in) :: ii, N
+      type(bir_pikus_blocks), intent(in) :: bp
+
+      complex(kind=dp) :: R_eps_c, S_eps_c
+
+      R_eps_c = conjg(bp%R_eps(ii))
+      S_eps_c = conjg(bp%S_eps(ii))
+
+      ! === Diagonal per-band ===
+      HT(      ii,      ii) = HT(      ii,      ii) + bp%delta_EHH(ii)
+      HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + bp%delta_ELH(ii)
+      HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + bp%delta_ELH(ii)
+      HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + bp%delta_EHH(ii)
+      HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + bp%delta_ESO(ii)
+      HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + bp%delta_ESO(ii)
+      HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + bp%delta_Ec(ii)
+      HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + bp%delta_Ec(ii)
+
+      ! === Off-diagonal: S_eps (HH-LH) ===
+      HT(      ii,  N + ii) = HT(      ii,  N + ii) + S_eps_c
+      HT(  N + ii,      ii) = HT(  N + ii,      ii) + bp%S_eps(ii)
+      HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - S_eps_c
+      HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - bp%S_eps(ii)
+
+      ! === Off-diagonal: R_eps (HH-LH) ===
+      HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + R_eps_c
+      HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + bp%R_eps(ii)
+      HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + R_eps_c
+      HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + bp%R_eps(ii)
+
+      ! === Off-diagonal: VB-SO coupling ===
+      HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU * RQS2 * S_eps_c
+      HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU * RQS2 * bp%S_eps(ii)
+      HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU * SQR2 * R_eps_c
+      HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU * SQR2 * bp%R_eps(ii)
+
+      HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU * RQS2 * bp%QT2_eps(ii)
+      HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU * RQS2 * bp%QT2_eps(ii)
+      HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU * SQR3o2 * S_eps_c
+      HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU * SQR3o2 * bp%S_eps(ii)
+
+      HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU * SQR3o2 * bp%S_eps(ii)
+      HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU * SQR3o2 * S_eps_c
+      HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU * RQS2 * bp%QT2_eps(ii)
+      HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU * RQS2 * bp%QT2_eps(ii)
+
+      HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU * SQR2 * bp%R_eps(ii)
+      HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU * SQR2 * R_eps_c
+      HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU * RQS2 * bp%S_eps(ii)
+      HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU * RQS2 * S_eps_c
+    end subroutine add_bp_strain_dense
+
+    ! ==================================================================
+    ! Helper: Insert Bir-Pikus strain corrections as COO entries.
+    !
+    ! Adds per-band diagonal shifts and off-diagonal coupling following
+    ! the same block topology as ZB8bandBulk.  All terms are per-grid-point
+    ! scalars (diagonal in spatial indices).
+    !
+    ! Block topology (alpha_off, beta_off are 0-based band indices):
+    !   Diagonal: bands 1-8, per-band shift
+    !   S_eps: (0,1),(1,0),(2,3),(3,2) with sign
+    !   R_eps: (0,2),(2,0),(1,3),(3,1)
+    !   VB-SO: 16 entries with RQS2, SQR2, sqrt(1.5), QT2 prefactors
+    ! ==================================================================
+    subroutine insert_strain_coo(coo_r, coo_c, coo_v, coo_cap, &
+        coo_idx, bp, N)
+      integer, intent(inout) :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(in) :: coo_cap
+      integer, intent(inout) :: coo_idx
+      type(bir_pikus_blocks), intent(in) :: bp
+      integer, intent(in) :: N
+
+      integer :: ii
+
+      do ii = 1, N
+        ! === Diagonal per-band ===
+        ! band 1 (HH): delta_EHH
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = ii; coo_c(coo_idx) = ii
+        coo_v(coo_idx) = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
+
+        ! band 2 (LH): delta_ELH
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
+
+        ! band 3 (LH): delta_ELH
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 2*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
+
+        ! band 4 (HH): delta_EHH
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 3*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
+
+        ! band 5 (SO): delta_ESO
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = 4*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
+
+        ! band 6 (SO): delta_ESO
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = 5*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
+
+        ! band 7 (CB): delta_Ec
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 6*N + ii; coo_c(coo_idx) = 6*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
+
+        ! band 8 (CB): delta_Ec
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 7*N + ii; coo_c(coo_idx) = 7*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
+
+        ! === Off-diagonal: S_eps (HH-LH coupling) ===
+        ! (1,2): S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = ii; coo_c(coo_idx) = N + ii
+        coo_v(coo_idx) = conjg(bp%S_eps(ii))
+
+        ! (2,1): S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = ii
+        coo_v(coo_idx) = bp%S_eps(ii)
+
+        ! (3,4): -S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 3*N + ii
+        coo_v(coo_idx) = -conjg(bp%S_eps(ii))
+
+        ! (4,3): -S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 2*N + ii
+        coo_v(coo_idx) = -bp%S_eps(ii)
+
+        ! === Off-diagonal: R_eps (HH-LH coupling) ===
+        ! (1,3): R_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = ii; coo_c(coo_idx) = 2*N + ii
+        coo_v(coo_idx) = conjg(bp%R_eps(ii))
+
+        ! (3,1): R_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = ii
+        coo_v(coo_idx) = bp%R_eps(ii)
+
+        ! (2,4): R_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = 3*N + ii
+        coo_v(coo_idx) = conjg(bp%R_eps(ii))
+
+        ! (4,2): R_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = N + ii
+        coo_v(coo_idx) = bp%R_eps(ii)
+
+        ! === Off-diagonal: VB-SO coupling ===
+        ! (1,5): -i/sqrt(2) * S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = ii; coo_c(coo_idx) = 4*N + ii
+        coo_v(coo_idx) = -IU * RQS2 * conjg(bp%S_eps(ii))
+
+        ! (5,1): +i/sqrt(2) * S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = ii
+        coo_v(coo_idx) = IU * RQS2 * bp%S_eps(ii)
+
+        ! (1,6): +i*sqrt(2) * R_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = ii; coo_c(coo_idx) = 5*N + ii
+        coo_v(coo_idx) = IU * SQR2 * conjg(bp%R_eps(ii))
+
+        ! (6,1): -i*sqrt(2) * R_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = ii
+        coo_v(coo_idx) = -IU * SQR2 * bp%R_eps(ii)
+
+        ! (2,5): +i/sqrt(2) * QT2_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = 4*N + ii
+        coo_v(coo_idx) = cmplx(IU * RQS2 * bp%QT2_eps(ii), kind=dp)
+
+        ! (5,2): -i/sqrt(2) * QT2_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = N + ii
+        coo_v(coo_idx) = cmplx(-IU * RQS2 * bp%QT2_eps(ii), kind=dp)
+
+        ! (2,6): -i*sqrt(3/2) * S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = 5*N + ii
+        coo_v(coo_idx) = -IU * SQR3o2 * conjg(bp%S_eps(ii))
+
+        ! (6,2): +i*sqrt(3/2) * S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = N + ii
+        coo_v(coo_idx) = IU * SQR3o2 * bp%S_eps(ii)
+
+        ! (3,5): +i*sqrt(3/2) * S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 4*N + ii
+        coo_v(coo_idx) = IU * SQR3o2 * bp%S_eps(ii)
+
+        ! (5,3): -i*sqrt(3/2) * S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = 2*N + ii
+        coo_v(coo_idx) = -IU * SQR3o2 * conjg(bp%S_eps(ii))
+
+        ! (3,6): +i/sqrt(2) * QT2_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 5*N + ii
+        coo_v(coo_idx) = cmplx(IU * RQS2 * bp%QT2_eps(ii), kind=dp)
+
+        ! (6,3): -i/sqrt(2) * QT2_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = 2*N + ii
+        coo_v(coo_idx) = cmplx(-IU * RQS2 * bp%QT2_eps(ii), kind=dp)
+
+        ! (4,5): -i*sqrt(2) * R_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 4*N + ii
+        coo_v(coo_idx) = -IU * SQR2 * bp%R_eps(ii)
+
+        ! (5,4): +i*sqrt(2) * R_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = 3*N + ii
+        coo_v(coo_idx) = IU * SQR2 * conjg(bp%R_eps(ii))
+
+        ! (4,6): +i/sqrt(2) * S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 5*N + ii
+        coo_v(coo_idx) = IU * RQS2 * bp%S_eps(ii)
+
+        ! (6,4): -i/sqrt(2) * S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = 3*N + ii
+        coo_v(coo_idx) = -IU * RQS2 * conjg(bp%S_eps(ii))
+      end do
+    end subroutine insert_strain_coo
 
     ! ==================================================================
     ! Helper: Negate a CSR matrix in-place (multiply all values by -1)

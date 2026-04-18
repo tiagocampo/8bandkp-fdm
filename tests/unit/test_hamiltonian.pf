@@ -153,7 +153,7 @@ contains
     ! Results storage
     real(kind=dp) :: cb1_order2, cb1_order4
     real(kind=dp) :: vb1_order2, vb1_order4
-    integer :: num_states_to_check, idx
+    integer :: idx
 
     matSize = ngrid * 8
 
