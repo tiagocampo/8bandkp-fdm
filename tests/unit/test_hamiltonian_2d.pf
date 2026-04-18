@@ -785,6 +785,13 @@ contains
 
     @assertTrue(actual_cb_diag > expected_min, message="Wire CB diagonal includes const factor")
 
+    ! Also verify exact expected value: EC + A*const*(2/dx² + 2/dy²)
+    block
+      real(kind=dp) :: expected_exact
+      expected_exact = params(1)%EC + params(1)%A * hbar2O2m0 * (2.0_dp/dx**2 + 2.0_dp/dy**2)
+      @assertEqual(expected_exact, actual_cb_diag, tolerance=0.5_dp)
+    end block
+
     call csr_free(HT_csr)
     do ij = 1, size(kpterms_2d)
       call csr_free(kpterms_2d(ij))

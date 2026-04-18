@@ -520,6 +520,10 @@ module hamiltonianConstructor
         profile_2d(ij, 2) = params(mid)%EV - params(mid)%DeltaSO
         profile_2d(ij, 3) = params(mid)%EC
 
+        ! Convention: Unlike the 1D QW path where const is applied at Hamiltonian assembly,
+        ! the wire path bakes const = hbar^2/(2*m_0) into the gamma/A profiles so that
+        ! kpterms_2d operators directly have energy units (eV).
+
         ! Material parameter profiles (scaled by const = hbar^2/(2m_0))
         ! The gamma and A parameters are dimensionless; multiplying by const
         ! converts the kpterms operators to energy units (eV).
