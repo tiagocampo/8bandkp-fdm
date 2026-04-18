@@ -113,9 +113,10 @@ module hamiltonianConstructor
       real(kind=dp), allocatable, dimension(:,:) :: D_inner, D_outer
       real(kind=dp), allocatable, dimension(:) :: g_half
 
-      integer :: i, initIDX, endIDX, N, ii, jj
+      integer :: i, initIDX, endIDX, N, ii, jj, j
       integer :: order
       real(kind = dp) :: delta
+      logical, allocatable :: assigned(:)
 
 
       N = size(z, dim=1)
@@ -146,20 +147,36 @@ module hamiltonianConstructor
           end if
         end do
 
+        ! Mask-based assignment: first layer to claim a grid point wins
+        allocate(assigned(N))
+        assigned = .false.
+
         do i = 1, nlayers, 1
-
-
-          profile(startPos(i):endPos(i),1) = params(i)%EV
-          profile(startPos(i):endPos(i),2) = params(i)%EV - params(i)%DeltaSO
-          profile(startPos(i):endPos(i),3) =  params(i)%EC
-
-          kptermsProfile(startPos(i):endPos(i),1) = params(i)%gamma1
-          kptermsProfile(startPos(i):endPos(i),2) = params(i)%gamma2
-          kptermsProfile(startPos(i):endPos(i),3) = params(i)%gamma3
-          kptermsProfile(startPos(i):endPos(i),4) = params(i)%A
-          kptermsProfile(startPos(i):endPos(i),5) = params(i)%P
-
+          do j = startPos(i), endPos(i)
+            if (.not. assigned(j)) then
+              profile(j, 1) = params(i)%EV
+              profile(j, 2) = params(i)%EV - params(i)%DeltaSO
+              profile(j, 3) = params(i)%EC
+              kptermsProfile(j, 1) = params(i)%gamma1
+              kptermsProfile(j, 2) = params(i)%gamma2
+              kptermsProfile(j, 3) = params(i)%gamma3
+              kptermsProfile(j, 4) = params(i)%A
+              kptermsProfile(j, 5) = params(i)%P
+              assigned(j) = .true.
+            end if
+          end do
         end do
+
+        ! Verify all grid points are covered by at least one layer
+        if (any(.not. assigned)) then
+          print *, 'ERROR: grid points not covered by any material layer:'
+          do j = 1, N
+            if (.not. assigned(j)) print *, '  z-point', j, 'z =', z(j)
+          end do
+          stop 1
+        end if
+
+        deallocate(assigned)
 
       else
 
