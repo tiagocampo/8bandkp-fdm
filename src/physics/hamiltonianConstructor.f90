@@ -147,14 +147,11 @@ module hamiltonianConstructor
           end if
         end do
 
-        ! Mask-based assignment: last layer to claim a grid point wins.
-        ! Config convention: layer 1 = outermost barrier, later layers = inner
-        ! structures (wells).  By scanning in reverse order, inner structures
-        ! claim their points first and the outer barrier fills the remainder.
+        ! Mask-based assignment: first layer to claim a grid point wins.
         allocate(assigned(N))
         assigned = .false.
 
-        do i = nlayers, 1, -1
+        do i = 1, nlayers, 1
           do j = startPos(i), endPos(i)
             if (.not. assigned(j)) then
               profile(j, 1) = params(i)%EV
