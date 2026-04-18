@@ -310,37 +310,37 @@ plot 'output/eigenfunctions_k_00001_ev_00011.dat' \
 
 ### 7.5 Band-resolved parts: the full picture
 
-The integrated band probabilities (normalized to sum to 1) reveal the character of each eigenstate. For the AlSbW/GaSbW/InAsW structure at $k_\parallel = 0$, computed with FDstep=401 and FDorder=4:
+The integrated band probabilities (normalized to sum to 1) reveal the character of each eigenstate. The `parts.dat` file is overwritten at each k-step, so it captures the **last** k-point ($k_\parallel = 0.10$ Å$^{-1}$ for this 11-step run). For the AlSbW/GaSbW/InAsW structure at $k_\parallel = 0.10$ Å$^{-1}$, computed with FDstep=401 and FDorder=4:
 
 **Valence band states** (states 1--10, energies negative):
 
 | State | $E$ (eV) | $P_1$ (HH1) | $P_2$ (LH1) | $P_3$ (LH2) | $P_4$ (HH2) | $P_5$ (SO1) | $P_6$ (SO2) | $P_7$ (CB1) | $P_8$ (CB2) | Character |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 1 | -0.0609 | 0.2667 | 0.2320 | 0.2321 | 0.2667 | 0.0010 | 0.0010 | 0.0002 | 0.0002 | HH1+LH |
-| 2 | -0.0609 | 0.2667 | 0.2321 | 0.2320 | 0.2667 | 0.0010 | 0.0010 | 0.0002 | 0.0002 | HH1'+LH |
-| 7 | -0.0334 | 0.1638 | 0.3361 | 0.3361 | 0.1638 | 0.0001 | 0.0001 | 0.0000 | 0.0000 | LH+HH |
-| 8 | -0.0334 | 0.1638 | 0.3361 | 0.3361 | 0.1638 | 0.0001 | 0.0001 | 0.0000 | 0.0000 | LH'+HH |
+| 1 | -0.0785 | 0.2667 | 0.2320 | 0.2321 | 0.2667 | 0.0010 | 0.0010 | 0.0002 | 0.0002 | HH1+LH |
+| 2 | -0.0785 | 0.2667 | 0.2321 | 0.2320 | 0.2667 | 0.0010 | 0.0010 | 0.0002 | 0.0002 | HH1'+LH |
+| 7 | -0.0691 | 0.1638 | 0.3361 | 0.3361 | 0.1638 | 0.0001 | 0.0001 | 0.0000 | 0.0000 | LH+HH |
+| 8 | -0.0691 | 0.1638 | 0.3361 | 0.3361 | 0.1638 | 0.0001 | 0.0001 | 0.0000 | 0.0000 | LH'+HH |
 
 **Conduction band states** (states 11--20, energies positive):
 
 | State | $E$ (eV) | $P_1$ (HH1) | $P_2$ (LH1) | $P_3$ (LH2) | $P_4$ (HH2) | $P_5$ (SO1) | $P_6$ (SO2) | $P_7$ (CB1) | $P_8$ (CB2) | Character |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **11** | **+0.0319** | **0.0972** | **0.0149** | **0.0331** | **0.0002** | **0.0046** | **0.0381** | **0.8104** | **0.0014** | **CB1** |
-| **12** | **+0.0319** | **0.0002** | **0.0331** | **0.0149** | **0.0972** | **0.0381** | **0.0046** | **0.0014** | **0.8104** | **CB1'** |
-| 13 | +0.3254 | 0.0758 | 0.0370 | 0.0277 | 0.0020 | 0.0124 | 0.0285 | 0.7955 | 0.0211 | CB2 |
-| 14 | +0.3254 | 0.0020 | 0.0277 | 0.0370 | 0.0758 | 0.0285 | 0.0124 | 0.0211 | 0.7955 | CB2' |
-| 17 | +0.8507 | 0.0117 | 0.0311 | 0.0120 | 0.0901 | 0.0276 | 0.0058 | 0.0944 | 0.7273 | CB4 |
-| 18 | +0.8507 | 0.0901 | 0.0120 | 0.0311 | 0.0117 | 0.0058 | 0.0276 | 0.7273 | 0.0944 | CB4' |
+| **11** | **+0.7752** | **0.0972** | **0.0149** | **0.0331** | **0.0002** | **0.0046** | **0.0381** | **0.8104** | **0.0014** | **CB1** |
+| **12** | **+0.7752** | **0.0002** | **0.0331** | **0.0149** | **0.0972** | **0.0381** | **0.0046** | **0.0014** | **0.8104** | **CB1'** |
+| 13 | +0.9756 | 0.0758 | 0.0370 | 0.0277 | 0.0020 | 0.0124 | 0.0285 | 0.7955 | 0.0211 | CB2 |
+| 14 | +0.9756 | 0.0020 | 0.0277 | 0.0370 | 0.0758 | 0.0285 | 0.0124 | 0.0211 | 0.7955 | CB2' |
+| 17 | +1.4826 | 0.0117 | 0.0311 | 0.0120 | 0.0901 | 0.0276 | 0.0058 | 0.0944 | 0.7273 | CB4 |
+| 18 | +1.4826 | 0.0901 | 0.0120 | 0.0311 | 0.0117 | 0.0058 | 0.0276 | 0.7273 | 0.0944 | CB4' |
 
 Several features are worth noting:
 
-1. **Spin degeneracy (Kramers pairs)**: States 11 and 12 are degenerate at $E = +0.0319$ eV and have swapped parts: state 11 has $P_7 = 0.8104$ (CB1-dominant) while state 12 has $P_8 = 0.8104$ (CB2-dominant). The Kramers partner structure at $k_\parallel = 0$ exchanges $P_1 \leftrightarrow P_4$, $P_2 \leftrightarrow P_3$, $P_5 \leftrightarrow P_6$, and $P_7 \leftrightarrow P_8$.
+1. **Spin degeneracy (Kramers pairs)**: States 11 and 12 are degenerate at $E = +0.775$ eV and have swapped parts: state 11 has $P_7 = 0.8104$ (CB1-dominant) while state 12 has $P_8 = 0.8104$ (CB2-dominant). The Kramers partner structure exchanges $P_1 \leftrightarrow P_4$, $P_2 \leftrightarrow P_3$, $P_5 \leftrightarrow P_6$, and $P_7 \leftrightarrow P_8$.
 
-2. **Valence band admixture in CB1**: The ground-state electron has $P_1 = 0.0972$ (HH), $P_3 = 0.0331$ (LH), and $P_6 = 0.0381$ (SO), totaling 18% valence band character. The broken-gap alignment between InAs and GaSb creates this interband mixing, but it is less dramatic than the coarse-grid result (FDstep=101) which overestimated the admixture. The fine grid reveals that CB1 is predominantly conduction-band (82%).
+2. **Valence band admixture in CB1**: At $k_\parallel = 0.10$ Å$^{-1}$, the ground-state electron has $P_1 = 0.0972$ (HH), $P_3 = 0.0331$ (LH), and $P_6 = 0.0381$ (SO), totaling 18% valence band character. The broken-gap alignment between InAs and GaSb creates this interband mixing.
 
-3. **Higher CB states maintain similar purity**: State 17 ($E = 0.8507$ eV) has $P_7 + P_8 = 0.822$, comparable to CB1. Unlike a simple type-I QW where higher states become purer, in this broken-gap structure the higher CB states remain coupled to the valence band through the type-II interface, maintaining about 18% VB admixture across the entire CB manifold.
+3. **Higher CB states maintain similar purity**: State 17 ($E = 1.4826$ eV) has $P_7 + P_8 = 0.822$, comparable to CB1. Unlike a simple type-I QW where higher states become purer, in this broken-gap structure the higher CB states remain coupled to the valence band through the type-II interface, maintaining about 18% VB admixture across the entire CB manifold.
 
-4. **Mixed VB states at the valence band edge**: Unlike a type-I QW where VB states are purely HH or LH at $k = 0$, the broken-gap alignment creates strong HH--LH mixing even at the zone center. State 1 has $f_{\text{HH}} = 0.534$ and $f_{\text{LH}} = 0.464$, while state 7 has $f_{\text{HH}} = 0.328$ and $f_{\text{LH}} = 0.672$. This mixing is a hallmark of the broken-gap system.
+4. **Mixed VB states at the valence band edge**: At finite $k_\parallel$, the HH and LH states mix strongly. State 1 has $f_{\text{HH}} = 0.534$ and $f_{\text{LH}} = 0.464$, while state 7 has $f_{\text{HH}} = 0.328$ and $f_{\text{LH}} = 0.672$. This mixing is absent at $k_\parallel = 0$ where the HH block (bands 1, 4) decouples from the LH/SO/CB block (see Section 7c below).
 
 ### 7.6 Spatial profiles
 
@@ -352,7 +352,7 @@ The spatial profiles reveal the type-II nature of this structure. The CB states 
 
 ![QW band decomposition](../figures/qw_parts.png)
 
-*Figure 2: Band character decomposition (integrated parts) for the eigenstates of the AlSbW/GaSbW/InAsW QW at $k_\parallel = 0$. The conduction-band states (cyan) show ~18% valence-band admixture, reflecting the broken-gap alignment. The valence-band states show significant HH--LH mixing, a hallmark of the type-II band alignment.*
+*Figure 2: Band character decomposition (integrated parts) for the eigenstates of the AlSbW/GaSbW/InAsW QW. The conduction-band states (cyan) show ~18% valence-band admixture, reflecting the broken-gap alignment. The valence-band states show significant HH--LH mixing at finite $k_\parallel$ (see Section 7c).*
 
 ## 7b. Computed Example: GaAs/Al$_{0.3}$Ga$_{0.7}$As Type-I Quantum Well
 
@@ -427,11 +427,10 @@ system:
 
 Several features stand out:
 
-1. **VB states are not pure HH.** Even at $k_\parallel = 0$, the deepest hole state
+1. **VB states are not pure HH.** The deepest hole state
    (HH1) has $P_{\text{HH}} = 0.590$ — it is 59% heavy-hole and 40% light-hole.
-   This HH-LH mixing arises because the quantum well potential couples the HH and
-   LH blocks through the off-diagonal $S$ operator (proportional to
-   $d/dz$), which is nonzero even at $k_\parallel = 0$ in the QW Hamiltonian.
+   This HH-LH mixing arises at finite $k_\parallel$ through the off-diagonal $S$ operator (proportional to
+   $k_- d/dz$), which couples the HH and LH blocks.
 
 2. **CB1 is 84% conduction-band.** The type-I CB1 has $P_{\text{CB}} = 0.837$,
    with 16% total valence-band admixture (9% HH, 3% LH, 4% SO). This is
@@ -467,6 +466,51 @@ A subtler difference is the VB state purity: type-I HH1 has $P_{\text{HH}} = 0.5
 (41% LH admixture), while type-III HH1 has $P_{\text{HH}} = 0.27$ (73% LH+other
 admixture). The stronger mixing in the type-III system reflects the deeper wells
 and larger Luttinger parameters of InAs and GaSb compared to GaAs.
+
+## 7c. Band Character Evolution with In-Plane Wavevector
+
+The band character of each eigenstate evolves with $k_\parallel$ due to the off-diagonal coupling terms in the Hamiltonian. The code's `parts.dat` only captures the last k-point (it opens with `replace` status), so tracking this evolution requires integrating the eigenfunction files at each k-step. Below we show the results for the broken-gap AlSbW/GaSbW/InAsW structure.
+
+### 7c.1 Conduction band evolution
+
+The CB1 ground state (state 11) shows a striking evolution of its band character:
+
+| $k_\parallel$ (Å$^{-1}$) | $E_{\text{CB1}}$ (eV) | $P_{\text{HH}}$ | $P_{\text{LH}}$ | $P_{\text{SO}}$ | $P_{\text{CB}}$ |
+|---|---|---|---|---|---|
+| 0.00 | +0.0319 | 0.000 | 0.314 | 0.015 | 0.671 |
+| 0.04 | +0.1892 | 0.083 | 0.119 | 0.031 | 0.767 |
+| 0.10 | +0.7752 | 0.097 | 0.048 | 0.043 | 0.812 |
+
+Three trends are visible:
+
+1. **CB purity increases with $k$**: $P_{\text{CB}}$ rises from 67% at $k = 0$ to 81% at $k = 0.10$ Å$^{-1}$. This is counterintuitive -- one might expect more mixing at larger $k$. The explanation is that the CB1 eigenvalue rises steeply from $+0.032$ eV to $+0.775$ eV, moving it further from the GaSb valence band edge and weakening the broken-gap interband coupling.
+
+2. **LH admixture decreases while HH admixture appears**: At $k = 0$, the HH bands ($m_J = \pm 3/2$) are completely decoupled from the CB ($m_J = \pm 1/2$) because the coupling operator $S \propto k_- = k_x - ik_y$ vanishes. Only LH ($\Delta m_J = 0$) and SO ($\Delta m_J = \pm 1$) couple to CB at $k = 0$ through the $k_z$ and $d/dz$ terms. At finite $k$, $S \neq 0$ and HH character enters ($P_{\text{HH}} = 0$ → 0.097), while the LH admixture decreases as the state becomes more CB-like.
+
+3. **SO admixture grows steadily**: $P_{\text{SO}}$ increases from 1.5% to 4.3%, reflecting the growing importance of the $\Gamma_7$--$\Gamma_6$ coupling at larger $k$.
+
+### 7c.2 Valence band evolution
+
+The VB states undergo an even more dramatic transformation:
+
+| $k_\parallel$ (Å$^{-1}$) | State 1 (HH1) $P_{\text{HH}}$ | State 1 $P_{\text{LH}}$ | State 7 $P_{\text{HH}}$ | State 7 $P_{\text{LH}}$ |
+|---|---|---|---|---|
+| 0.00 | 1.000 | 0.000 | 1.000 | 0.000 |
+| 0.04 | 0.803 | 0.194 | 0.519 | 0.480 |
+| 0.10 | 0.534 | 0.464 | 0.328 | 0.672 |
+
+At $k_\parallel = 0$, the HH block (bands 1, 4 with $m_J = \pm 3/2$) is completely decoupled from the LH/SO/CB block ($m_J = \pm 1/2$) in the Hamiltonian. All 10 computed VB states are purely HH. The LH and SO subbands exist but are not among the 10 lowest eigenstates returned by `zheevx`.
+
+At finite $k$, the off-diagonal terms $S$ and $R$ couple HH and LH, and the mixing grows rapidly. By $k = 0.10$ Å$^{-1}$, state 7 has flipped from 100% HH to 67% LH -- it has become a predominantly light-hole state. State 1 retains majority HH character (53%) but with substantial LH admixture (46%). This HH--LH crossover is a general feature of QW valence bands and has important consequences for optical polarization selection rules and the density of states near the band edge.
+
+### 7c.3 Why parts.dat only captures the last k-point
+
+The code writes `parts.dat` with `open(..., status='replace')` at each k-step, overwriting the previous content. To obtain k-resolved parts, one must either:
+
+1. **Integrate the eigenfunction files** at each k-step (as done above), using $P_b = \Delta z \sum_i |\psi_b(z_i)|^2$.
+2. **Modify the output routine** to append rather than replace, or write a separate parts file per k-step.
+
+The eigenfunction files are preserved at all k-steps, so option 1 is always available for post-processing.
 
 ## 8. Discussion
 
