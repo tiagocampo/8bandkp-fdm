@@ -6,7 +6,7 @@ When light interacts with a semiconductor, photons are absorbed by promoting ele
 
 In the 8-band k.p framework, these matrix elements are computed not from first-principles wave functions but from the **Kane momentum parameter** $E_P$ (or equivalently $P$), which already encodes the strength of the conduction-to-valence band coupling. The k.p Hamiltonian itself, evaluated at a unit perturbation wave vector, acts as a natural operator for computing these matrix elements: the off-diagonal blocks coupling CB (bands 7--8) to VB (bands 1--6) contain precisely the $P$-dependent terms that generate optical transitions.
 
-This chapter derives the oscillator strength formula from Fermi's golden rule, explains the polarization-dependent selection rules that emerge from the 8-band zincblende basis with a comprehensive TE/TM table, describes the implementation in `compute_optical_matrix_wire` and `compute_pele_2d`, presents computed examples with actual oscillator strength data for quantum wires, and discusses the connection to measurable absorption spectra.
+This chapter derives the oscillator strength formula from Fermi's golden rule, explains the polarization-dependent selection rules that emerge from the 8-band zincblende basis with a comprehensive TE/TM table, describes the implementation in `compute_optical_matrix_wire` and `compute_pele_2d`, presents computed wire subband eigenvalues and quantum well oscillator strength data, and discusses the connection to measurable absorption spectra.
 
 ---
 
@@ -305,69 +305,59 @@ Each row represents one CB-VB pair. The columns are:
 
 ---
 
-## 6.6 Computed Example: Wire Optical Transitions
+## 6.6 Computed Example: Wire Electronic Structure and Optical Transitions
 
-### 6.6.1 Setup: GaAs circular wire
+### 6.6.1 Setup: GaAs rectangular wire
 
-Consider a GaAs quantum wire with circular cross-section (diameter 10 nm) modeled on a $15 \times 15$ grid. The wire is computed in `confinement=2` mode using `gfactorCalculation`, with 2 CB and 6 VB states requested. The material parameters are GaAs: $E_P = 28.8$ eV, $E_g = 1.519$ eV, $\Delta_{SO} = 0.341$ eV.
+Consider a GaAs quantum wire with rectangular cross-section ($63 \times 63$ nm$^2$) modeled on a $21 \times 21$ grid (3.0 nm spacing, 2nd-order FD). The wire is computed in `confinement=2` mode, with `numcb=8` and `numvb=16` states requested. The material parameters are GaAs: $E_P = 28.8$ eV, $E_g = 1.519$ eV, $\Delta_{SO} = 0.341$ eV. The configuration file is `tests/regression/configs/wire_gaas_rectangle.cfg`.
 
-The wire subbands are shown in Figure 6.1.
+The 8-band Hamiltonian for the wire has dimension $8 \times N_{\text{grid}} = 8 \times 441 = 3528$. Dense LAPACK diagonalization (`zheevx`) found 221 eigenvalues at $k_z = 0$ within the energy window $[-1.5, 2.0]$ eV, corresponding to 110 Kramers-degenerate pairs plus one state at 0.0 eV. All eigenvalues exhibit the expected 2-fold Kramers degeneracy.
 
-![Wire subband structure showing the confined CB and VB states](../figures/wire_subbands.png)
+### 6.6.2 Wire subband eigenvalues
 
-**Figure 6.1:** Subband structure of a 10 nm diameter GaAs quantum wire. The 2 lowest CB and 6 highest VB subbands are shown. The confinement pushes the fundamental gap above the bulk value of 1.519 eV.
+Table 6.3 lists the computed subband eigenvalues at $k_z = 0$ near the band edges. The subbands are identified by their proximity to the bulk GaAs band edges: $E_V = 0$ eV (valence band top) and $E_C = E_V + E_g = 1.519$ eV (conduction band bottom).
 
-### 6.6.2 Oscillator strength table
+**Table 6.3:** Computed wire subband eigenvalues at $k_z = 0$ for the $63 \times 63$ nm$^2$ GaAs rectangular wire (Kramers degeneracy removed). Only states near the band edges are shown.
 
-Table 6.3 shows representative oscillator strengths for all CB1-VB pairs in the GaAs wire. The polarization-resolved components reveal the underlying selection rules.
-
-**Table 6.3:** Oscillator strengths for CB1-to-VB transitions in a 10 nm GaAs wire. Values are illustrative for a circular cross-section.
-
-| VB idx | dE (eV) | $|p_x|^2$ | $|p_y|^2$ | $|p_z|^2$ | $f_{\text{osc}}$ | Dominant character |
-|---|---|---|---|---|---|---|
-| 1 | 1.525 | 54.4 | 54.4 | ~0 | 1.88 | HH-like (TE only) |
-| 2 | 1.526 | 32.0 | 32.0 | 38.9 | 2.05 | LH-like (TE + TM) |
-| 3 | 1.528 | 18.2 | 18.2 | ~0 | 0.63 | HH-like (TE only) |
-| 4 | 1.531 | ~0 | ~0 | ~0 | ~0 | Dark (symmetry) |
-| 5 | 1.856 | 9.1 | 9.1 | 12.7 | 0.39 | SO-like (TE + TM) |
-| 6 | 1.858 | ~0 | ~0 | ~0 | ~0 | Dark (symmetry) |
-
-**Observations from Table 6.3:**
-
-1. **Strongest transition (CB1-VB1):** The lowest-energy transition has the largest oscillator strength. The near-perfect $|p_x|^2 = |p_y|^2$ and $|p_z|^2 \approx 0$ confirm the HH character of VB1 -- this is a purely TE-polarized transition, exactly as predicted by the zone-center selection rules.
-
-2. **LH transitions (CB1-VB2):** The second transition shows significant $|p_z|^2$ along with $|p_x|^2$ and $|p_y|^2$, confirming LH character. The TM component is comparable to TE, consistent with the selection rule $|p_z|^2 : (|p_x|^2 + |p_y|^2) = 2:1$ for LH.
-
-3. **SO transitions (CB1-VB5):** Appear at higher energy ($\Delta E \approx E_g + \Delta_{SO}$) with weaker oscillator strength. The ratio of TE to TM components follows the SO selection rules.
-
-4. **Dark transitions (CB1-VB4, CB1-VB6):** Near-zero matrix elements due to symmetry-forbidden combinations. In a perfectly circular wire, certain angular momentum combinations produce identically zero dipole matrix elements at $k_z = 0$.
-
-### 6.6.3 Polarization-resolved analysis
-
-The polarization ratio $R = (|p_x|^2 + |p_y|^2) / |p_z|^2$ provides a direct diagnostic of the valence band character:
-
-**Table 6.4:** Polarization ratio $R$ for CB-VB transitions and expected zone-center values.
-
-| VB character | Expected $R$ at $k=0$ | Typical wire value | Interpretation |
+| Index | Energy (eV) | Offset from bulk edge | Character |
 |---|---|---|---|
-| HH | $\infty$ ($|p_z|=0$) | $> 100$ | Purely TE |
-| LH | 1/2 | 0.5--0.8 | Mixed, TM dominant |
-| SO | 1/2 | 0.5--0.7 | Mixed, TM dominant |
+| **Conduction subbands** | | **$E - E_C$ (meV)** | |
+| CB1 | 1.5217 | +2.7 | CB ground state |
+| CB2 | 1.5675 | +48.5 | CB excited |
+| CB3 | 1.6084 | +89.4 | CB excited |
+| CB4 | 1.6605 | +141.5 | CB excited |
+| CB5 | 1.7319 | +212.9 | CB excited |
+| **Valence subbands (top)** | | **$E_V - E$ (meV)** | |
+| VB1 | 0.0000 | 0.0 | HH/LH ground state |
+| VB2 | $-$0.0553 | 55.3 | HH/LH excited |
+| VB3 | $-$0.2183 | 218.3 | HH/LH excited |
+| VB4 | $-$0.2205 | 220.5 | HH/LH excited |
+| VB5 | $-$0.4410 | 441.0 | Near SO band edge |
+| VB6 | $-$0.5128 | 512.8 | SO-related |
 
-For a circular wire, $|p_x|^2 = |p_y|^2$ by symmetry. A rectangular wire breaks this degeneracy. Figure 6.2 shows the 2D charge density in the wire cross-section.
+**Fundamental gap:** CB1 $-$ VB1 = 1.5217 $-$ 0.0000 = **1.522 eV**, only 2.7 meV above the bulk GaAs gap of 1.519 eV. This is expected: for a 63 nm wire the confinement energy $E_{\text{conf}} \approx \hbar^2 \pi^2 / (2 m^* L^2)$ is negligible ($\sim$1 meV for electrons, $\ll$1 meV for holes). The CB1 state at 1.522 eV sits just above $E_C = 1.519$ eV, confirming the corrected Hamiltonian (the missing $\hbar^2/2m_0$ factor fix).
 
-![2D charge density distribution in the wire cross-section](../figures/wire_density_2d.png)
+### 6.6.3 Wire optical transitions: current status
 
-**Figure 6.2:** Charge density distribution in the GaAs wire cross-section. For a circular wire, the density has cylindrical symmetry. Rectangular wires produce anisotropic density profiles that translate into polarization-dependent optical response.
+The optical transition calculation for wires (`compute_optical_matrix_wire` in `gfactor_functions.f90`) requires the `gfactorCalculation` executable, which uses FEAST (sparse eigensolver) for the $3528 \times 3528$ Hamiltonian. Two issues currently prevent reliable wire oscillator strengths from being computed:
 
-### 6.6.4 Second CB subband transitions
+1. **State selection.** The code selects CB and VB states by position from the sorted eigenvalue list: the bottom `numvb` eigenvalues become "VB" and the next `numcb` become "CB." For a wire with 86 unique subbands spanning $-1.5$ to $+2.0$ eV, this selects deep valence states rather than the states near the band edges ($E_V = 0$, $E_C = 1.519$). The actual CB states start at eigenvalue index $\sim$70 from the bottom. A band-edge-aware selection strategy is needed.
 
-The transitions involving CB2 (the second conduction subband) follow the same selection rules but with modified strengths due to different wave function overlap. CB2 typically has a node in the wave function, leading to:
+2. **FEAST convergence.** The FEAST subspace ($m_0 = 2 \times 24 = 48$) is too small for the 3528-dimensional problem, producing the warning "FEAST subspace too small (info=3). Missing eigenvalues." Additionally, the COO cache for the perturbation Hamiltonian overflows (`WARNING: COO capacity exceeded in insert_csr_block_scaled`), causing entries to be dropped.
 
-- Reduced oscillator strength for CB2-VB1 compared to CB1-VB1, due to the overlap integral having a sign change.
-- Enhanced CB2-VB3 transitions when the nodal structure of CB2 matches the spatial character of VB3.
+These are code-level issues that will be addressed in a future update. The QW optical transitions (Section 6.6.5) use dense LAPACK and do not suffer from these problems.
 
-The total oscillator strength across all transitions for a given CB state should satisfy the f-sum rule $\sum_{\text{VB}} f_{ij} \leq 1$, with the deficit reflecting contributions from states outside the computed VB manifold.
+### 6.6.4 Expected wire selection rules
+
+Despite the current computational limitation, the selection rules for wire optical transitions can be predicted from the theory in Sections 6.3--6.4:
+
+1. **For a rectangular wire** (the geometry computed here), the $C_{2v}$ symmetry of the cross-section lifts the degeneracy between $|p_x|^2$ and $|p_y|^2$, producing polarization anisotropy. The $|p_x|^2 / |p_y|^2$ ratio depends on the aspect ratio of the wire and the spatial character of the subband wave functions.
+
+2. **The zone-center selection rules** from Table 6.2 apply at $k_z = 0$: HH-like transitions are purely TE, LH-like transitions are TE+TM with TM dominant, and SO-like transitions are mixed. At finite $k_z$, band mixing relaxes these rules.
+
+3. **The 1D joint density of states** produces van Hove singularities at each subband edge, leading to sharp peaks in the absorption spectrum. This is a key distinguishing feature of wire optical response compared to quantum wells (step-like JDOS) and bulk (smooth JDOS).
+
+For a smaller wire ($\sim$10 nm cross-section), the confinement energy would be significant ($\sim$50 meV for electrons), producing a larger fundamental gap and more widely spaced subbands, making the selection rules more clearly visible in the transition spectrum.
 
 ### 6.6.5 Quantum Well Optical Transitions
 
@@ -508,6 +498,8 @@ In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") g
 3. **No magnetic field dependence.** The optical transitions are computed at $B = 0$. Magneto-optical measurements (e.g., Zeeman splitting of excitonic peaks) would require computing the transitions in the presence of a magnetic field, which couples to the g-factor calculation described in Chapter 05.
 
 4. **No direct Im[$\epsilon$] computation.** The code computes individual transition matrix elements and oscillator strengths for both wire and QW modes but does not assemble them into the imaginary part of the dielectric function $\text{Im}[\epsilon(\omega)]$. This requires a post-processing step that sums over all transitions with appropriate Fermi occupation factors, k_parallel integration (for QWs), and broadening (Section 6.7). A future extension could output $\text{Im}[\epsilon(\omega)]$ directly -- this is planned for Phase 2 of the development roadmap.
+
+5. **Wire state selection.** The `gfactorCalculation` wire mode selects CB/VB states by their position in the sorted eigenvalue list (bottom `numvb` as VB, next `numcb` as CB) rather than by proximity to the band edges. For wires with many subbands, this selects deep valence states instead of the actual band-edge states, producing incorrect optical transitions. A band-edge-aware selection (identifying the gap and selecting states adjacent to it) is needed for correct wire oscillator strengths.
 
 ### 6.8.4 Wurtzite limitation
 
