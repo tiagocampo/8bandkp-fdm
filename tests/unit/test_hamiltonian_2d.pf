@@ -491,7 +491,7 @@ contains
 
     ! For interior point, the 2nd derivative FD stencil gives -2/h^2 on diagonal.
     ! csr_apply_variable_coeff scales by -profile, so:
-    ! diagonal = -A * (-2/dx^2 + -2/dy^2) = A * (2/dx^2 + 2/dy^2)
+    ! diagonal = -(A*const) * (-2/dx^2 + -2/dy^2) = A*const * (2/dx^2 + 2/dy^2)
     ! Pick an interior point (e.g. row at center of grid)
     diag_idx = (nny/2 - 1) * nnx + nnx/2  ! interior grid point
     diag_val = 0.0_dp
@@ -502,7 +502,7 @@ contains
       end if
     end do
 
-    expected_diag = gaas_A * (2.0_dp/dx**2 + 2.0_dp/dy**2)
+    expected_diag = gaas_A * const * (2.0_dp/dx**2 + 2.0_dp/dy**2)
 
     @assertTrue(diag_val > 0.0_dp, message="Term 5 interior diagonal is positive")
     @assertEqual(expected_diag, diag_val, tolerance=0.01_dp * expected_diag)
@@ -715,5 +715,82 @@ contains
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
     call grid_free(grid)
   end subroutine test_ZB8bandGeneralized_nonsquare
+
+  ! ==================================================================
+  ! Wire Hamiltonian diagonal units test
+  !
+  ! Verifies that the wire Hamiltonian CB diagonal includes the
+  ! hbar^2/(2*m0) conversion factor.  Without it, the kinetic term
+  ! is ~3.8x too small because gamma/A are dimensionless while the FD
+  ! operators have units Ang^-2.
+  ! ==================================================================
+
+  @test
+  subroutine test_wire_hamiltonian_diagonal_units()
+    integer, parameter :: nx = 5, ny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ngrid, ij, band7_diag_idx
+    real(kind=dp) :: actual_cb_diag, expected_min
+
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+
+    ngrid = nx * ny
+    mat2d = 1  ! all GaAs
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+
+    ! Minimal config for ZB8bandGeneralized
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+
+    ! Interior grid point (ix=3, iy=3) in column-major flat index:
+    !   ij = (iy-1)*nx + ix = 2*5 + 3 = 13
+    ! Band 7 (CB1) offset: 6 * ngrid = 150
+    ! Global index: 150 + 13 = 163
+    band7_diag_idx = 6 * ngrid + 13
+
+    ! Without const: CB_diag ~ EC + A*(2/dx^2+2/dy^2) ~ 0.72 + 6.6 ~ 7.3
+    ! With const:    CB_diag ~ EC + A*const*(2/dx^2+2/dy^2) ~ 0.72 + 25.2 ~ 26.0
+    ! Threshold: must exceed EC + 10 = 10.72 to confirm const is present
+    expected_min = params(1)%EC + 10.0_dp
+
+    actual_cb_diag = 0.0_dp
+    do ij = HT_csr%rowptr(band7_diag_idx), HT_csr%rowptr(band7_diag_idx + 1) - 1
+      if (HT_csr%colind(ij) == band7_diag_idx) then
+        actual_cb_diag = real(HT_csr%values(ij), kind=dp)
+        exit
+      end if
+    end do
+
+    @assertTrue(actual_cb_diag > expected_min, message="Wire CB diagonal includes const factor")
+
+    call csr_free(HT_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_wire_hamiltonian_diagonal_units
 
 end module test_hamiltonian_2d

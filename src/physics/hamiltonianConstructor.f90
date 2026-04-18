@@ -147,11 +147,14 @@ module hamiltonianConstructor
           end if
         end do
 
-        ! Mask-based assignment: first layer to claim a grid point wins
+        ! Mask-based assignment: last layer to claim a grid point wins.
+        ! Config convention: layer 1 = outermost barrier, later layers = inner
+        ! structures (wells).  By scanning in reverse order, inner structures
+        ! claim their points first and the outer barrier fills the remainder.
         allocate(assigned(N))
         assigned = .false.
 
-        do i = 1, nlayers, 1
+        do i = nlayers, 1, -1
           do j = startPos(i), endPos(i)
             if (.not. assigned(j)) then
               profile(j, 1) = params(i)%EV
@@ -520,14 +523,17 @@ module hamiltonianConstructor
         profile_2d(ij, 2) = params(mid)%EV - params(mid)%DeltaSO
         profile_2d(ij, 3) = params(mid)%EC
 
-        ! Material parameter profiles
-        prof_gamma1(ij) = params(mid)%gamma1
-        prof_gamma2(ij) = params(mid)%gamma2
-        prof_gamma3(ij) = params(mid)%gamma3
+        ! Material parameter profiles (scaled by const = hbar^2/(2m_0))
+        ! The gamma and A parameters are dimensionless; multiplying by const
+        ! converts the kpterms operators to energy units (eV).
+        ! P is NOT scaled because it already includes const: P = sqrt(EP*const).
+        prof_gamma1(ij) = params(mid)%gamma1 * const
+        prof_gamma2(ij) = params(mid)%gamma2 * const
+        prof_gamma3(ij) = params(mid)%gamma3 * const
         prof_P(ij)      = params(mid)%P
-        prof_A(ij)      = params(mid)%A
-        prof_gm12g2(ij) = params(mid)%gamma1 - 2.0_dp * params(mid)%gamma2
-        prof_gp12g2(ij) = params(mid)%gamma1 + 2.0_dp * params(mid)%gamma2
+        prof_A(ij)      = params(mid)%A * const
+        prof_gm12g2(ij) = (params(mid)%gamma1 - 2.0_dp * params(mid)%gamma2) * const
+        prof_gp12g2(ij) = (params(mid)%gamma1 + 2.0_dp * params(mid)%gamma2) * const
       end do
 
       ! ====================================================================
