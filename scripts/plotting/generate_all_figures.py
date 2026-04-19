@@ -2970,6 +2970,86 @@ def fig_qw_parts_gaas(output_dir: Path) -> None:
     print("  -> docs/figures/qw_parts_gaas.png")
 
 
+def fig_cb_parts_evolution(output_dir: Path) -> None:
+    """cb_parts_evolution.png: CB1 band character vs k_parallel."""
+    print("[figure] cb_parts_evolution")
+    cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+
+    # Clean stale eigenfunction files from previous runs
+    for f in output_dir.glob("eigenfunctions_*.dat"):
+        f.unlink()
+
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw_k")
+
+    # Get k-values from eigenvalues.dat
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: no eigenvalues data, skipping.")
+        return
+
+    n_k = len(k_vals)
+    n_ev_total = eig.shape[0]  # 64 for numcb=32, numvb=32
+    n_z = 101
+
+    if n_k == 0:
+        print("  WARNING: no k-points found, skipping.")
+        return
+
+    # Compute band character from eigenfunctions at each k-point
+    k_values_list: list[float] = []
+    all_parts_list: list[np.ndarray] = []
+
+    for ki in range(1, n_k + 1):  # k_idx is 1-based
+        z, wf = parse_eigenfunctions_qw(output_dir, k_idx=ki, n_ev=n_ev_total, n_z=n_z)
+        if z.size == 0 or wf.shape[0] == 0:
+            continue
+        # wf: (n_ev, n_z, 8) -- integrate |psi_b(z)|^2 over z
+        dz = float(z[1] - z[0]) if len(z) > 1 else 1.0
+        psi2 = wf ** 2  # (n_ev, n_z, 8)
+        parts_k = np.sum(psi2, axis=1) * dz  # (n_ev, 8)
+        all_parts_list.append(parts_k)
+        k_values_list.append(float(k_vals[ki - 1]))
+
+    if not all_parts_list:
+        print("  WARNING: no band character data, skipping.")
+        return
+
+    n_k_actual = len(all_parts_list)
+    p_cb = np.zeros(n_k_actual)
+    p_hh = np.zeros(n_k_actual)
+    p_lh = np.zeros(n_k_actual)
+    p_so = np.zeros(n_k_actual)
+
+    for ki, parts_k in enumerate(all_parts_list):
+        row_sums = parts_k.sum(axis=1, keepdims=True)
+        row_sums[row_sums == 0] = 1.0
+        parts_k = parts_k / row_sums
+        cb_char = parts_k[:, 6] + parts_k[:, 7]
+        cb1_idx = np.argmax(cb_char)
+        p_cb[ki] = cb_char[cb1_idx]
+        p_hh[ki] = parts_k[cb1_idx, 0] + parts_k[cb1_idx, 3]
+        p_lh[ki] = parts_k[cb1_idx, 1] + parts_k[cb1_idx, 2]
+        p_so[ki] = parts_k[cb1_idx, 4] + parts_k[cb1_idx, 5]
+
+    k_arr = np.array(k_values_list[:n_k_actual])
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(k_arr, p_cb, "o-", color="#17becf", linewidth=1.5, markersize=4, label="CB")
+    ax.plot(k_arr, p_hh, "s-", color="#d62728", linewidth=1.5, markersize=4, label="HH")
+    ax.plot(k_arr, p_lh, "^-", color="#1f77b4", linewidth=1.5, markersize=4, label="LH")
+    ax.plot(k_arr, p_so, "D-", color="#ff7f0e", linewidth=1.5, markersize=4, label="SO")
+    ax.set_xlabel(r"$k_{\parallel}$ (1/A)")
+    ax.set_ylabel("Band character fraction")
+    ax.set_title(r"CB1 band character evolution (AlSbW/GaSbW/InAsW)")
+    ax.set_ylim(0, 1.0)
+    ax.legend(loc="center right")
+    ax.axhline(0.5, color="grey", linewidth=0.3, linestyle=":")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "cb_parts_evolution.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/cb_parts_evolution.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -3013,6 +3093,7 @@ ALL_FIGURES = {
     "qw_potential_profile_gaas": fig_qw_potential_profile_gaas,
     "qw_wavefunctions_gaas": fig_qw_wavefunctions_gaas,
     "qw_parts_gaas": fig_qw_parts_gaas,
+    "cb_parts_evolution": fig_cb_parts_evolution,
 }
 
 

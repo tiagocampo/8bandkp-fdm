@@ -497,6 +497,8 @@ Three trends are visible:
 
 3. **SO admixture grows steadily**: $P_{\text{SO}}$ increases from 1.5% to 4.3%, reflecting the growing importance of the $\Gamma_7$--$\Gamma_6$ coupling at larger $k$.
 
+![Band character of the CB1 ground state vs.\ $k_{\parallel}$ for the AlSbW/GaSbW/InAsW QW. CB purity increases from 67% at $k=0$ to 81% at $k=0.10$ A$^{-1}$ as the state moves away from the broken-gap coupling region.](../figures/cb_parts_evolution.png){ width=80% }
+
 ### 7c.2 Valence band evolution
 
 The VB states undergo an even more dramatic transformation:
