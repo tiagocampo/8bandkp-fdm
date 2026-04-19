@@ -2819,7 +2819,10 @@ def fig_perband_density(output_dir: Path) -> None:
     """perband_density.png: |psi_b(z)|^2 for each of 8 bands, CB1 state."""
     print("[figure] perband_density")
     cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
-    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
+    if result.returncode != 0:
+        print("  WARNING: broken-gap QW run failed, skipping.")
+        return
     n_z = 101
     n_ev = 11  # load states 1-11 so we can access CB1 = state 11 (0-indexed: 10)
     try:
@@ -3157,7 +3160,12 @@ def fig_qw_strained_bands(output_dir: Path) -> None:
         print("  WARNING: unstrained run failed, skipping.")
         cfg_off.unlink(missing_ok=True)
         return
-    k_off, eig_off = parse_eigenvalues(output_dir)
+    try:
+        k_off, eig_off = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: no eigenvalue data (unstrained), skipping.")
+        cfg_off.unlink(missing_ok=True)
+        return
 
     # --- Run 2: Strained (inject strain block) ---
     cfg_on = output_dir / "tmp_strained_bands_on.cfg"
@@ -3174,7 +3182,13 @@ def fig_qw_strained_bands(output_dir: Path) -> None:
         for p in [cfg_off, cfg_on]:
             p.unlink(missing_ok=True)
         return
-    k_on, eig_on = parse_eigenvalues(output_dir)
+    try:
+        k_on, eig_on = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: no eigenvalue data (strained), skipping.")
+        for p in [cfg_off, cfg_on]:
+            p.unlink(missing_ok=True)
+        return
 
     # Clean up temp configs
     for p in [cfg_off, cfg_on]:
@@ -3278,7 +3292,7 @@ def fig_strained_unit_cell(output_dir: Path) -> None:
     ax_strained.set_title("InAs on GaAs (compressive)", fontsize=11)
     dx = 1.0 * (1 + eps_xx)
     dz = 1.0 * (1 + eps_zz)
-    strained = np.array([[0, 0], [dx, 0], [dx, dz], [0, dz], [0, dz]])
+    strained = np.array([[0, 0], [dx, 0], [dx, dz], [0, dz], [0, 0]])
     ax_strained.plot(strained[:, 0], strained[:, 1], "r-", linewidth=2)
     ax_strained.fill(strained[:-1, 0], strained[:-1, 1], color="#d94a4a", alpha=0.15)
     # Ghost of original cell
