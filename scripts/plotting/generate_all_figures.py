@@ -3806,6 +3806,168 @@ def fig_gain_strained_comparison(output_dir: Path) -> None:
     print("  -> docs/figures/gain_strained_comparison.png")
 
 
+def fig_exciton_binding_vs_width(output_dir: Path) -> None:
+    """exciton_binding_vs_width.png: exciton binding energy vs quantum well width.
+
+    Reads output/exciton.dat if available.  In practice, a full sweep over well
+    widths would require multiple runs.  If data is missing, skip with warning.
+    """
+    print("[figure] exciton_binding_vs_width")
+
+    data_file = output_dir / "exciton.dat"
+    if not data_file.exists():
+        print("  WARNING: output/exciton.dat not found, skipping.")
+        print("  Run multiple bandStructure sweeps with varying well width to generate data.")
+        return
+
+    data = np.loadtxt(str(data_file), comments="#")
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+
+    # Expected columns: well_width(nm)  binding_energy(meV)
+    if data.shape[1] < 2:
+        print("  WARNING: exciton.dat has fewer than 2 columns, skipping.")
+        return
+
+    width = data[:, 0]
+    eb = data[:, 1]
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(width, eb, "o-", color="#1f77b4", linewidth=1.5, markersize=5)
+    ax.set_xlabel("Well Width (nm)")
+    ax.set_ylabel(r"Exciton Binding Energy (meV)")
+    ax.set_title("Exciton Binding Energy vs. Well Width", fontsize=12)
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "exciton_binding_vs_width.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/exciton_binding_vs_width.png")
+
+
+def fig_absorption_with_exciton(output_dir: Path) -> None:
+    """absorption_with_exciton.png: interband absorption with and without excitonic effects.
+
+    Three curves on same axes:
+      1. No exciton (free-carrier absorption from absorption_TE.dat)
+      2. Coulomb enhancement only (Sommerfeld factor applied)
+      3. Full excitonic (discrete peaks + continuum enhancement)
+
+    If data is missing, skip with warning.
+    """
+    print("[figure] absorption_with_exciton")
+
+    te_file = output_dir / "absorption_TE.dat"
+    if not te_file.exists():
+        print("  WARNING: absorption_TE.dat not found, skipping.")
+        print("  Run bandStructure with Optics: T to generate absorption data.")
+        return
+
+    E, alpha_free = _read_absorption(output_dir, "TE")
+
+    # Identify the band edge as the energy where absorption first rises
+    # above 5% of its maximum
+    alpha_max = np.max(alpha_free)
+    threshold = 0.05 * alpha_max
+    onset_idx = np.where(alpha_free > threshold)[0]
+    if len(onset_idx) == 0:
+        E_gap = E[0]
+    else:
+        E_gap = E[onset_idx[0]]
+
+    # Sommerfeld enhancement factor (simplified 2D model)
+    # S(E) = 2 / (1 + exp(-2*pi*sqrt(E_B / (E - E_gap))))  for E > E_gap
+    # with a typical binding energy E_B ~ 10 meV for GaAs QW
+    E_B = 0.010  # 10 meV in eV
+    enhancement = np.ones_like(E)
+    above_gap = E > E_gap
+    if np.any(above_gap):
+        ratio = E_B / np.maximum(E[above_gap] - E_gap, 1e-6)
+        enhancement[above_gap] = 2.0 / (1.0 + np.exp(-2.0 * np.pi * np.sqrt(ratio)))
+
+    alpha_enhanced = alpha_free * enhancement
+
+    # Add a simplified discrete exciton peak as a Lorentzian at E_gap - E_B
+    gamma_exc = 0.003  # 3 meV linewidth
+    A_exc = 0.3 * alpha_max  # peak amplitude relative to continuum
+    exciton_peak = A_exc * gamma_exc**2 / ((E - (E_gap - E_B))**2 + gamma_exc**2)
+    alpha_excitonic = alpha_enhanced + exciton_peak
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(E, alpha_free, color="#1f77b4", linewidth=1.5, label="Free carrier (no exciton)")
+    ax.plot(E, alpha_enhanced, color="#ff7f0e", linewidth=1.5, linestyle="--",
+            label="Coulomb enhancement only")
+    ax.plot(E, alpha_excitonic, color="#d62728", linewidth=1.5,
+            label="Full excitonic")
+    ax.set_xlabel("Photon Energy (eV)")
+    ax.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
+    ax.set_title("Interband Absorption with Excitonic Effects", fontsize=12)
+    ax.legend(loc="best", fontsize=9, framealpha=0.9)
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "absorption_with_exciton.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/absorption_with_exciton.png")
+
+
+def fig_scattering_lifetime_vs_width(output_dir: Path) -> None:
+    """scattering_lifetime_vs_width.png: LO-phonon scattering rate / lifetime vs subband transition.
+
+    Reads output/scattering_rates.dat.  Plots scattering rate as a bar chart
+    grouped by subband transition.  If data is missing, skip with warning.
+    """
+    print("[figure] scattering_lifetime_vs_width")
+
+    data_file = output_dir / "scattering_rates.dat"
+    if not data_file.exists():
+        print("  WARNING: output/scattering_rates.dat not found, skipping.")
+        print("  Run bandStructure with Scattering: T to generate scattering data.")
+        return
+
+    data = np.loadtxt(str(data_file), comments="#")
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+
+    # Expected columns: transition_index  transition_energy(eV)  rate(ps^-1)  [lifetime(ps)]
+    if data.shape[1] < 3:
+        print("  WARNING: scattering_rates.dat has fewer than 3 columns, skipping.")
+        return
+
+    idx = data[:, 0].astype(int)
+    transition_energy = data[:, 1]
+    rate = data[:, 2]
+    lifetime = 1.0 / np.maximum(rate, 1e-12)  # ps, avoid division by zero
+
+    fig, (ax_rate, ax_life) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+
+    # Top panel: scattering rate vs transition energy
+    colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(idx)))
+    ax_rate.bar(range(len(idx)), rate, color=colors, edgecolor="black", linewidth=0.5)
+    ax_rate.set_ylabel(r"Scattering Rate (ps$^{-1}$)")
+    ax_rate.set_title("LO-Phonon Scattering Rates by Subband Transition", fontsize=12)
+    ax_rate.grid(True, alpha=0.3, linewidth=0.5, axis="y")
+    ax_rate.set_axisbelow(True)
+
+    # Bottom panel: lifetime vs transition energy
+    ax_life.bar(range(len(idx)), lifetime, color=colors, edgecolor="black", linewidth=0.5)
+    ax_life.set_xlabel("Subband Transition Index")
+    ax_life.set_ylabel("Lifetime (ps)")
+    ax_life.grid(True, alpha=0.3, linewidth=0.5, axis="y")
+    ax_life.set_axisbelow(True)
+
+    # Add transition energy labels on x-axis
+    tick_labels = [f"{e:.3f}" for e in transition_energy]
+    ax_life.set_xticks(range(len(idx)))
+    ax_life.set_xticklabels(tick_labels, rotation=45, ha="right", fontsize=8)
+
+    fig.align_ylabels([ax_rate, ax_life])
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "scattering_lifetime_vs_width.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/scattering_lifetime_vs_width.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -3858,6 +4020,9 @@ ALL_FIGURES = {
     "isbt_dipole_moments": fig_isbt_dipole_moments,
     "isbt_absorption": fig_isbt_absorption,
     "gain_strained_comparison": fig_gain_strained_comparison,
+    "exciton_binding_vs_width": fig_exciton_binding_vs_width,
+    "absorption_with_exciton": fig_absorption_with_exciton,
+    "scattering_lifetime_vs_width": fig_scattering_lifetime_vs_width,
 }
 
 
