@@ -185,6 +185,8 @@ At $k_\parallel = 0$, a ground-state heavy hole will have $f_{\text{HH}} \approx
 
 The conduction band states (bands 7--8) also acquire valence band character at large $k$ through the interband coupling term $P$ (the Kane momentum matrix element). This non-parabolicity effect is encoded in the parts as small but nonzero $P_1^{(n)}, \ldots, P_6^{(n)}$ for nominally CB states.
 
+![HH and LH fractions $f_{\text{HH}}$, $f_{\text{LH}}$ vs.\ $k_{\parallel}$ for two valence-band states of the AlSbW/GaSbW/InAsW QW. At $k=0$ both states are purely HH; at finite $k$ the LH admixture grows, with state 7 crossing over to majority-LH character.](../figures/vb_hh_lh_mixing.png){ width=80% }
+
 ## 6. Implementation: How the Code Writes Wavefunctions
 
 ### 6.1 The writeEigenfunctions subroutine

@@ -3050,6 +3050,93 @@ def fig_cb_parts_evolution(output_dir: Path) -> None:
     print("  -> docs/figures/cb_parts_evolution.png")
 
 
+def fig_vb_hh_lh_mixing(output_dir: Path) -> None:
+    """vb_hh_lh_mixing.png: HH/LH fraction vs k for VB states."""
+    print("[figure] vb_hh_lh_mixing")
+    cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+
+    # Clean stale eigenfunction files from previous runs
+    for f in output_dir.glob("eigenfunctions_*.dat"):
+        f.unlink()
+
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw_k2")
+
+    # Get k-values from eigenvalues.dat
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: no eigenvalues data, skipping.")
+        return
+
+    n_k = len(k_vals)
+    n_ev_total = 64  # numcb=32 + numvb=32
+    n_z = 101        # FDstep=101
+
+    if n_k == 0:
+        print("  WARNING: no k-points found, skipping.")
+        return
+
+    # Compute HH/LH fractions from eigenfunctions at each k-point
+    k_values_list: list[float] = []
+    f_hh_s1: list[float] = []
+    f_lh_s1: list[float] = []
+    f_hh_s7: list[float] = []
+    f_lh_s7: list[float] = []
+
+    for ki in range(1, n_k + 1):  # k_idx is 1-based
+        z, wf = parse_eigenfunctions_qw(output_dir, k_idx=ki, n_ev=n_ev_total, n_z=n_z)
+        if z.size == 0 or wf.shape[0] == 0:
+            continue
+
+        # wf: (n_ev, n_z, 8) -- compute band character for states 1 and 7
+        # State indices are 0-based in the array: state 1 -> index 0, state 7 -> index 6
+        for state_idx, hh_list, lh_list in [
+            (0, f_hh_s1, f_lh_s1),
+            (6, f_hh_s7, f_lh_s7),
+        ]:
+            if state_idx >= wf.shape[0]:
+                continue
+            psi2 = wf[state_idx] ** 2  # (n_z, 8)
+            total = psi2.sum()
+            if total == 0:
+                continue
+            # HH bands: b=0,3 (bands 1,4); LH bands: b=1,2 (bands 2,3)
+            hh_frac = (psi2[:, 0].sum() + psi2[:, 3].sum()) / total
+            lh_frac = (psi2[:, 1].sum() + psi2[:, 2].sum()) / total
+            hh_list.append(hh_frac)
+            lh_list.append(lh_frac)
+
+        if len(f_hh_s1) > len(k_values_list):
+            k_values_list.append(float(k_vals[ki - 1]))
+
+    if not f_hh_s1:
+        print("  WARNING: no data for HH/LH mixing, skipping.")
+        return
+
+    n_k_actual = len(f_hh_s1)
+    k_arr = np.array(k_values_list[:n_k_actual])
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(k_arr, f_hh_s1, "o-", color="#d62728", linewidth=1.5, markersize=4,
+            label=r"$f_{\mathrm{HH}}$ state 1")
+    ax.plot(k_arr, f_lh_s1, "s--", color="#1f77b4", linewidth=1.5, markersize=4,
+            label=r"$f_{\mathrm{LH}}$ state 1")
+    ax.plot(k_arr, f_hh_s7, "^-", color="#9467bd", linewidth=1.5, markersize=4,
+            label=r"$f_{\mathrm{HH}}$ state 7")
+    ax.plot(k_arr, f_lh_s7, "D--", color="#2ca02c", linewidth=1.5, markersize=4,
+            label=r"$f_{\mathrm{LH}}$ state 7")
+    ax.set_xlabel(r"$k_{\parallel}$ (1/A)")
+    ax.set_ylabel("Band character fraction")
+    ax.set_title(r"HH/LH mixing in VB states (AlSbW/GaSbW/InAsW)")
+    ax.set_ylim(0, 1.05)
+    ax.legend(loc="center right", fontsize=8)
+    ax.axhline(0.5, color="grey", linewidth=0.3, linestyle=":")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "vb_hh_lh_mixing.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/vb_hh_lh_mixing.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -3094,6 +3181,7 @@ ALL_FIGURES = {
     "qw_wavefunctions_gaas": fig_qw_wavefunctions_gaas,
     "qw_parts_gaas": fig_qw_parts_gaas,
     "cb_parts_evolution": fig_cb_parts_evolution,
+    "vb_hh_lh_mixing": fig_vb_hh_lh_mixing,
 }
 
 
