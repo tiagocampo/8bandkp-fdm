@@ -268,6 +268,8 @@ important for device physics:
    at $\Gamma$; under tensile strain, LH is above HH.  This switching changes
    the polarization selection rules and the dominant hole type in transport.
 
+![Valence band ordering under biaxial strain: unstrained (HH = LH degenerate), compressive (HH above LH), and tensile (LH above HH). The splitting reverses the ordering, changing the dominant hole character at the valence band maximum.](../figures/hh_lh_ordering.png){ width=90% }
+
 ---
 
 ## 4. Deformation Potential Parameters

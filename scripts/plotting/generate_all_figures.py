@@ -3203,6 +3203,52 @@ def fig_qw_strained_bands(output_dir: Path) -> None:
     print("  -> docs/figures/qw_strained_bands.png")
 
 
+def fig_hh_lh_ordering(output_dir: Path) -> None:
+    """hh_lh_ordering.png: VB ordering under unstrained, compressive, tensile."""
+    print("[figure] hh_lh_ordering")
+    fig, axes = plt.subplots(1, 3, figsize=(9, 4), sharey=True)
+
+    cases = [
+        ("Unstrained", 0.0, 0.0),
+        ("Compressive\n" + r"$\varepsilon_{xx}<0$", -0.08, 0.06),
+        ("Tensile\n" + r"$\varepsilon_{xx}>0$", 0.06, -0.08),
+    ]
+    x = 0.5
+    lw = 4.0
+
+    for ax, (label, dE_hh, dE_lh) in zip(axes, cases):
+        E_hh = dE_hh
+        E_lh = dE_lh
+
+        ax.plot([x - 0.15, x + 0.15], [E_hh, E_hh], color="#d62728", linewidth=lw)
+        ax.plot([x - 0.15, x + 0.15], [E_lh, E_lh], color="#1f77b4", linewidth=lw)
+
+        y_off = 0.015
+        ax.text(x + 0.2, E_hh + y_off, "HH", fontsize=11, color="#d62728", va="bottom", fontweight="bold")
+        ax.text(x + 0.2, E_lh - y_off, "LH", fontsize=11, color="#1f77b4", va="top", fontweight="bold")
+
+        if abs(dE_hh - dE_lh) > 0.01:
+            ax.annotate("", xy=(x - 0.22, E_hh), xytext=(x - 0.22, E_lh),
+                        arrowprops=dict(arrowstyle="<->", color="grey", lw=1.2))
+            mid = (E_hh + E_lh) / 2
+            ax.text(x - 0.3, mid, f"{abs(E_hh - E_lh)*1000:.0f}\nmeV",
+                    fontsize=7, color="grey", ha="right", va="center")
+        else:
+            ax.text(x + 0.2, (E_hh + E_lh) / 2, "HH=LH", fontsize=9, color="grey")
+
+        ax.set_xlim(-0.1, 1.1)
+        ax.set_ylim(-0.15, 0.12)
+        ax.set_title(label, fontsize=10)
+        ax.axhline(0, color="grey", linewidth=0.3, linestyle=":")
+        ax.set_xticks([])
+        ax.set_ylabel(r"$E$ (eV)" if ax is axes[0] else "")
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "hh_lh_ordering.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/hh_lh_ordering.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -3249,6 +3295,7 @@ ALL_FIGURES = {
     "qw_parts_gaas": fig_qw_parts_gaas,
     "cb_parts_evolution": fig_cb_parts_evolution,
     "vb_hh_lh_mixing": fig_vb_hh_lh_mixing,
+    "hh_lh_ordering": fig_hh_lh_ordering,
 }
 
 
