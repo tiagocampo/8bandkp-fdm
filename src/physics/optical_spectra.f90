@@ -10,13 +10,21 @@ module optical_spectra
 
   public :: optics_init, optics_accumulate, optics_finalize, optics_cleanup
   public :: compute_intersubband_transitions, compute_isbt_absorption
+  public :: compute_gain_qw, gain_reset
 
   ! Module-level accumulation arrays (set by optics_init)
   real(kind=dp), allocatable, save :: alpha_te(:)    ! TE accumulation on E_grid
   real(kind=dp), allocatable, save :: alpha_tm(:)    ! TM accumulation on E_grid
   real(kind=dp), allocatable, save :: alpha_isbt(:)  ! ISBT accumulation on E_grid
+  real(kind=dp), allocatable, save :: alpha_gain_te(:)  ! Gain TE accumulation on E_grid
+  real(kind=dp), allocatable, save :: alpha_gain_tm(:)  ! Gain TM accumulation on E_grid
   real(kind=dp), allocatable, save :: E_grid(:)      ! photon energy grid (eV)
   integer, save :: nE = 0                            ! number of energy points
+
+  ! Gain quasi-Fermi level state (set once per k_sweep)
+  real(kind=dp), save :: mu_e = 0.0_dp              ! electron quasi-Fermi level (eV)
+  real(kind=dp), save :: mu_h = 0.0_dp              ! hole quasi-Fermi level (eV)
+  logical, save :: gain_fermi_computed = .false.
 
   ! Minimum transition energy threshold (eV)
   real(kind=dp), parameter :: DE_MIN = 1.0e-6_dp
@@ -47,6 +55,13 @@ contains
     alpha_te = 0.0_dp
     alpha_tm = 0.0_dp
     alpha_isbt = 0.0_dp
+
+    ! Gain arrays: allocated when gain is enabled
+    if (optcfg%gain_enabled) then
+      allocate(alpha_gain_te(nE), alpha_gain_tm(nE))
+      alpha_gain_te = 0.0_dp
+      alpha_gain_tm = 0.0_dp
+    end if
 
   end subroutine optics_init
 
@@ -254,6 +269,45 @@ contains
 
     print '(a)', 'Optical spectra written to output/absorption_TE.dat, output/absorption_TM.dat, and output/absorption_ISBT.dat'
 
+    ! --- Gain output ---
+    if (optcfg%gain_enabled .and. allocated(alpha_gain_te)) then
+      ! Apply the same prefactor to gain arrays
+      do ie = 1, nE
+        if (E_grid(ie) > 0.0_dp) then
+          prefactor_E = m0_over_hbar2 * (2.0_dp * pi_dp * e**2) &
+            & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
+        else
+          prefactor_E = 0.0_dp
+        end if
+        alpha_gain_te(ie) = prefactor_E * alpha_gain_te(ie) * AA_TO_CM
+        alpha_gain_tm(ie) = prefactor_E * alpha_gain_tm(ie) * AA_TO_CM
+      end do
+
+      open(unit=iounit, file='output/gain_TE.dat', status='replace', &
+        & action='write')
+      write(iounit, '(a)') '# Interband TE gain spectrum (gain_TE vs E)'
+      write(iounit, '(a,es10.2,a)') '# Carrier density = ', &
+        & optcfg%gain_carrier_density, ' cm^-2'
+      write(iounit, '(a)') '# E(eV)  gain(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_gain_te(ie)
+      end do
+      close(iounit)
+
+      open(unit=iounit, file='output/gain_TM.dat', status='replace', &
+        & action='write')
+      write(iounit, '(a)') '# Interband TM gain spectrum (gain_TM vs E)'
+      write(iounit, '(a,es10.2,a)') '# Carrier density = ', &
+        & optcfg%gain_carrier_density, ' cm^-2'
+      write(iounit, '(a)') '# E(eV)  gain(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_gain_tm(ie)
+      end do
+      close(iounit)
+
+      print '(a)', 'Gain spectra written to output/gain_TE.dat and output/gain_TM.dat'
+    end if
+
   end subroutine optics_finalize
 
 
@@ -264,13 +318,30 @@ contains
   ! ------------------------------------------------------------------
   subroutine optics_cleanup()
 
-    if (allocated(E_grid))     deallocate(E_grid)
-    if (allocated(alpha_te))   deallocate(alpha_te)
-    if (allocated(alpha_tm))   deallocate(alpha_tm)
-    if (allocated(alpha_isbt)) deallocate(alpha_isbt)
+    if (allocated(E_grid))       deallocate(E_grid)
+    if (allocated(alpha_te))     deallocate(alpha_te)
+    if (allocated(alpha_tm))     deallocate(alpha_tm)
+    if (allocated(alpha_isbt))   deallocate(alpha_isbt)
+    if (allocated(alpha_gain_te)) deallocate(alpha_gain_te)
+    if (allocated(alpha_gain_tm)) deallocate(alpha_gain_tm)
     nE = 0
+    gain_fermi_computed = .false.
+    mu_e = 0.0_dp
+    mu_h = 0.0_dp
 
   end subroutine optics_cleanup
+
+
+  ! ------------------------------------------------------------------
+  ! Reset the gain quasi-Fermi level state so they are recomputed
+  ! on the next call to compute_gain_qw.  Call this before starting
+  ! a new k_sweep for gain.
+  ! ------------------------------------------------------------------
+  subroutine gain_reset()
+    gain_fermi_computed = .false.
+    mu_e = 0.0_dp
+    mu_h = 0.0_dp
+  end subroutine gain_reset
 
 
   ! ------------------------------------------------------------------
@@ -480,5 +551,281 @@ contains
     end do
 
   end subroutine compute_isbt_absorption
+
+
+  ! ------------------------------------------------------------------
+  ! Find quasi-Fermi level by bisection for a given 2D carrier density.
+  !
+  ! For parabolic subbands in 2D:
+  !   n_2D = sum_i (m_eff_i * kB*T) / (pi*hbar^2) * ln(1 + exp((mu-E_i)/(kBT)))
+  !
+  ! Since we work with the raw k.p eigenvalues (not known m_eff), we
+  ! use a simplified model: approximate the 2D DOS per subband using
+  ! the free-electron mass m0.  This gives a first estimate of mu;
+  ! the gain spectrum itself is computed via k-space integration so
+  ! the exact quasi-Fermi level only needs to be self-consistent
+  ! within the k_sweep.
+  !
+  ! For the gain calculation, we use a simpler approach:
+  !   n_2D = sum_i N_2D_i * ln(1 + exp((mu - E_i) / (kB*T)))
+  ! where N_2D_i = m0 * kB * T / (pi * hbar^2) is the 2D DOS per subband.
+  !
+  ! NOTE: carrier_density is in cm^-2.  We convert to AA^-2 internally
+  ! (1 cm^-2 = 1e-16 AA^-2).
+  ! ------------------------------------------------------------------
+  function find_quasi_fermi(eigvals, temperature, carrier_density_cm2, &
+    & n_states, state_offset) result(mu)
+
+    real(kind=dp), intent(in) :: eigvals(:)       ! all eigenvalues at k=0
+    real(kind=dp), intent(in) :: temperature       ! K
+    real(kind=dp), intent(in) :: carrier_density_cm2  ! cm^-2
+    integer, intent(in)       :: n_states          ! number of subbands to sum
+    integer, intent(in)       :: state_offset      ! index offset (numvb for CB)
+    real(kind=dp)             :: mu                ! quasi-Fermi level (eV)
+
+    real(kind=dp), parameter :: CM2_TO_AA2 = 1.0e-16_dp  ! cm^-2 -> AA^-2
+    integer, parameter :: MAX_ITER = 200
+    real(kind=dp), parameter :: BISECT_TOL = 1.0e-10_dp
+
+    real(kind=dp) :: n_target, n_current, kBT
+    real(kind=dp) :: N_2D_per_subband, x
+    real(kind=dp) :: mu_lo, mu_hi, dmu
+    integer :: iter, s
+
+    kBT = kB_eV * temperature
+
+    ! 2D DOS per subband (AA^-2): N_2D = m0 * kB*T / (pi * hbar^2)
+    ! m0 [=] eV*s^2/AA^2, kB*T [=] eV, hbar^2 [=] (eV*s)^2
+    ! N_2D [=] eV*s^2/AA^2 * eV / ((eV*s)^2) = 1/AA^2
+    N_2D_per_subband = m0 * kBT / (pi_dp * hbar**2)
+
+    ! Target carrier density in AA^-2
+    n_target = carrier_density_cm2 * CM2_TO_AA2
+
+    ! Bisection bounds: start wide around the subband energies
+    mu_lo = minval(eigvals(state_offset+1:state_offset+n_states)) - 50.0_dp * kBT
+    mu_hi = maxval(eigvals(state_offset+1:state_offset+n_states)) + 50.0_dp * kBT
+
+    ! Bisection loop
+    do iter = 1, MAX_ITER
+      mu = 0.5_dp * (mu_lo + mu_hi)
+      dmu = mu_hi - mu_lo
+
+      ! Compute n_2D(mu) = sum over subbands
+      n_current = 0.0_dp
+      do s = 1, n_states
+        x = (mu - eigvals(state_offset + s)) / kBT
+        ! Clamp to avoid overflow in exp
+        if (x > 500.0_dp) then
+          n_current = n_current + N_2D_per_subband * x
+        else
+          n_current = n_current + N_2D_per_subband * log(1.0_dp + exp(x))
+        end if
+      end do
+
+      if (n_current < n_target) then
+        mu_lo = mu
+      else
+        mu_hi = mu
+      end if
+
+      if (dmu < BISECT_TOL * kBT) exit
+    end do
+
+  end function find_quasi_fermi
+
+
+  ! ------------------------------------------------------------------
+  ! Gain spectrum for a QW with population inversion.
+  !
+  ! Structurally identical to optics_accumulate but uses separate
+  ! quasi-Fermi levels for electrons (f_e in CB) and holes (f_h in VB).
+  !
+  ! For each CB-VB pair:
+  !   1. Find quasi-Fermi levels f_e, f_h from the carrier density
+  !   2. Occupation factor = f_v(E_VB, f_h) - f_c(E_CB, f_e)
+  !      When inverted (f_c > f_v), this is NEGATIVE => gain
+  !   3. Same momentum matrix elements as absorption
+  !   4. Accumulate into alpha_gain_te, alpha_gain_tm
+  !
+  ! This subroutine is called inside the k_sweep loop. The quasi-Fermi
+  ! levels are computed once (at the first k-point call) and reused.
+  ! ------------------------------------------------------------------
+  subroutine compute_gain_qw(optcfg, eigvals, eigvecs, k_weight, &
+    & nlayers, params, profile, kpterms, startz, endz, dz, &
+    & numcb, numvb, carrier_density)
+
+    type(optics_config), intent(in) :: optcfg
+    real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
+    complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
+    real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
+    integer, intent(in) :: nlayers
+    type(paramStruct), intent(in) :: params(nlayers)
+    real(kind=dp), intent(in), dimension(:,:) :: profile
+    real(kind=dp), intent(in), dimension(:,:,:) :: kpterms
+    real(kind=dp), intent(in) :: startz, endz, dz
+    integer, intent(in) :: numcb, numvb
+    real(kind=dp), intent(in) :: carrier_density   ! 2D carrier density (cm^-2)
+
+    integer :: i, j, dir, ie
+    real(kind=dp) :: dE, f_c, f_v, occ_factor
+    real(kind=dp) :: px, py, pz
+    real(kind=dp) :: gamma_l, gamma_g
+    complex(kind=dp) :: Pele
+
+    if (nE == 0) return  ! optics_init not called
+    if (.not. allocated(alpha_gain_te)) return  ! gain not initialized
+
+    ! Compute quasi-Fermi levels once on the first k-point call.
+    ! We use the eigenvalues at the first k-point (usually k_par ~ 0)
+    ! to estimate the subband edges.
+    if (.not. gain_fermi_computed) then
+      ! f_e: quasi-Fermi level for CB states
+      mu_e = find_quasi_fermi(eigvals, optcfg%temperature, &
+        & carrier_density, numcb, numvb)
+      ! f_h: quasi-Fermi level for VB states.
+      ! For holes: sum_i (1 - f(E_i, mu_h)) = n_2D, which by
+      ! particle-hole symmetry is sum_i f(-E_i, -mu_h) = n_2D.
+      mu_h = find_quasi_fermi_holes(eigvals, optcfg%temperature, &
+        & carrier_density, numvb)
+      gain_fermi_computed = .true.
+      print '(a,es14.6,a)', '  Gain: mu_e = ', mu_e, ' eV'
+      print '(a,es14.6,a)', '  Gain: mu_h = ', mu_h, ' eV'
+      print '(a,es10.2,a)', '  Gain: carrier density = ', carrier_density, ' cm^-2'
+    end if
+
+    ! Half-widths at half-maximum from FWHM
+    gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
+    gamma_g = optcfg%linewidth_gaussian / 2.0_dp
+
+    ! Loop over VB-CB pairs (same structure as optics_accumulate)
+    do i = 1, numvb
+      ! VB state: use hole quasi-Fermi level
+      f_v = fermi_dirac(eigvals(i), mu_h, optcfg%temperature)
+
+      do j = 1, numcb
+        ! CB state: use electron quasi-Fermi level
+        f_c = fermi_dirac(eigvals(numvb + j), mu_e, optcfg%temperature)
+
+        ! Occupation factor: (f_V - f_C).
+        ! When f_C > f_V (population inversion), this is NEGATIVE => GAIN.
+        ! We keep the full range (both positive and negative) unlike
+        ! absorption which skips negative contributions.
+        occ_factor = f_v - f_c
+
+        ! Transition energy: E_CB - E_VB > 0
+        dE = eigvals(numvb + j) - eigvals(i)
+        if (dE < DE_MIN) cycle
+
+        ! Skip negligible contributions
+        if (abs(occ_factor) < 1.0e-30_dp) cycle
+
+        ! Momentum matrix elements in each direction
+        px = 0.0_dp
+        py = 0.0_dp
+        pz = 0.0_dp
+
+        do dir = 1, 3
+          Pele = ZERO
+          call pMatrixEleCalc(Pele, dir, eigvecs(:,numvb+j), &
+            & eigvecs(:,i), nlayers, params, &
+            & profile=profile, kpterms=kpterms, &
+            & startz=startz, endz=endz, dz=dz)
+
+          select case(dir)
+          case(1)
+            px = real(Pele * conjg(Pele), kind=dp)
+          case(2)
+            py = real(Pele * conjg(Pele), kind=dp)
+          case(3)
+            pz = real(Pele * conjg(Pele), kind=dp)
+          end select
+        end do
+
+        ! Broaden and accumulate onto the energy grid
+        do ie = 1, nE
+          alpha_gain_te(ie) = alpha_gain_te(ie) + occ_factor * (px + py) &
+            & * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+          alpha_gain_tm(ie) = alpha_gain_tm(ie) + occ_factor * pz &
+            & * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+        end do
+
+      end do
+    end do
+
+  end subroutine compute_gain_qw
+
+
+  ! ------------------------------------------------------------------
+  ! Find quasi-Fermi level for holes in the VB manifold.
+  !
+  ! Hole density: p = sum_i (1 - f(E_i, mu_h)) = sum_i f(-E_i, -mu_h)
+  ! We want p = carrier_density.
+  !
+  ! Using the identity 1 - f(E, mu) = f(-E, -mu), we negate the VB
+  ! eigenvalues and search for -mu_h using the same 2D DOS formula:
+  !   p = sum_i N_2D * ln(1 + exp((mu_h' - (-E_i)) / kBT))
+  ! where mu_h' = -mu_h is the returned value, and -E_i are the
+  ! negated VB energies.  The actual mu_h = -mu_h'.
+  ! ------------------------------------------------------------------
+  function find_quasi_fermi_holes(eigvals, temperature, carrier_density_cm2, &
+    & numvb) result(mu_h)
+
+    real(kind=dp), intent(in) :: eigvals(:)       ! all eigenvalues at k=0
+    real(kind=dp), intent(in) :: temperature       ! K
+    real(kind=dp), intent(in) :: carrier_density_cm2  ! cm^-2
+    integer, intent(in)       :: numvb             ! number of VB states
+    real(kind=dp)             :: mu_h              ! hole quasi-Fermi level (eV)
+
+    real(kind=dp), parameter :: CM2_TO_AA2 = 1.0e-16_dp
+    integer, parameter :: MAX_ITER = 200
+    real(kind=dp), parameter :: BISECT_TOL = 1.0e-10_dp
+
+    real(kind=dp) :: n_target, n_current, kBT
+    real(kind=dp) :: N_2D_per_subband, x
+    real(kind=dp) :: mu_lo, mu_hi, dmu, mu_prime
+    real(kind=dp) :: neg_Evb(6)  ! negated VB energies
+    integer :: iter, s
+
+    kBT = kB_eV * temperature
+    N_2D_per_subband = m0 * kBT / (pi_dp * hbar**2)
+    n_target = carrier_density_cm2 * CM2_TO_AA2
+
+    ! Negate VB eigenvalues for hole calculation
+    do s = 1, numvb
+      neg_Evb(s) = -eigvals(s)
+    end do
+
+    ! Bisection for mu' = -mu_h
+    mu_lo = minval(neg_Evb(1:numvb)) - 50.0_dp * kBT
+    mu_hi = maxval(neg_Evb(1:numvb)) + 50.0_dp * kBT
+
+    do iter = 1, MAX_ITER
+      mu_prime = 0.5_dp * (mu_lo + mu_hi)
+      dmu = mu_hi - mu_lo
+
+      n_current = 0.0_dp
+      do s = 1, numvb
+        x = (mu_prime - neg_Evb(s)) / kBT
+        if (x > 500.0_dp) then
+          n_current = n_current + N_2D_per_subband * x
+        else
+          n_current = n_current + N_2D_per_subband * log(1.0_dp + exp(x))
+        end if
+      end do
+
+      if (n_current < n_target) then
+        mu_lo = mu_prime
+      else
+        mu_hi = mu_prime
+      end if
+
+      if (dmu < BISECT_TOL * kBT) exit
+    end do
+
+    ! mu_h = -mu_prime
+    mu_h = -mu_prime
+
+  end function find_quasi_fermi_holes
 
 end module optical_spectra

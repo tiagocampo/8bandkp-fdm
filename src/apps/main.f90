@@ -765,7 +765,15 @@ program kpfdm
       ! Initialize optics accumulation arrays
       call optics_init(cfg%optics)
 
+      ! Reset gain quasi-Fermi state if gain is enabled
+      if (cfg%optics%gain_enabled) then
+        call gain_reset()
+      end if
+
       print '(A)', ' Computing optical absorption...'
+      if (cfg%optics%gain_enabled) then
+        print '(A)', ' Computing gain spectrum alongside absorption...'
+      end if
       do k = 1, npts
         call optics_accumulate(cfg%optics, &
           & eigvals=eig(:, k), &
@@ -776,6 +784,19 @@ program kpfdm
           & startz=cfg%startPos(1), endz=cfg%endPos(1), dz=cfg%dz, &
           & numcb=cfg%numcb, numvb=cfg%numvb, &
           & fermi_level=cfg%sc%fermi_level)
+
+        ! Gain spectrum accumulation (uses separate quasi-Fermi levels)
+        if (cfg%optics%gain_enabled) then
+          call compute_gain_qw(cfg%optics, &
+            & eigvals=eig(:, k), &
+            & eigvecs=eigv(:, :, k), &
+            & k_weight=simpson_w(k), &
+            & nlayers=cfg%numLayers, params=cfg%params, &
+            & profile=profile, kpterms=kpterms, &
+            & startz=cfg%startPos(1), endz=cfg%endPos(1), dz=cfg%dz, &
+            & numcb=cfg%numcb, numvb=cfg%numvb, &
+            & carrier_density=cfg%optics%gain_carrier_density)
+        end if
       end do
 
       call optics_finalize(cfg%optics)
