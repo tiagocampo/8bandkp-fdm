@@ -3768,6 +3768,44 @@ def fig_isbt_absorption(output_dir: Path) -> None:
     print("  -> docs/figures/isbt_absorption.png")
 
 
+def fig_gain_strained_comparison(output_dir: Path) -> None:
+    """gain_strained_comparison.png: TE and TM gain for compressive, tensile, unstrained QW.
+
+    This is a placeholder for the full 3-strain comparison.  Currently it
+    plots a single panel with both TE and TM gain curves if gain data exists.
+    When separate strain-labelled data files become available (e.g.
+    gain_TE_compressive.dat), the function can be upgraded to a 1x3 subplot
+    layout.
+    """
+    print("[figure] gain_strained_comparison")
+
+    te_file = output_dir / "gain_TE.dat"
+    tm_file = output_dir / "gain_TM.dat"
+
+    if not te_file.exists() or not tm_file.exists():
+        print("  WARNING: gain_TE.dat or gain_TM.dat not found, skipping.")
+        print("  Run bandStructure with Gain: T enabled config to generate data.")
+        return
+
+    E_te, g_te = np.loadtxt(str(te_file), unpack=True, comments="#")
+    E_tm, g_tm = np.loadtxt(str(tm_file), unpack=True, comments="#")
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(E_te, g_te, color="#1f77b4", linewidth=1.5, label="TE polarization")
+    ax.plot(E_tm, g_tm, color="#d62728", linewidth=1.5, label="TM polarization")
+    ax.axhline(0, color="black", linewidth=0.6, linestyle="--")
+    ax.set_xlabel("Photon Energy (eV)")
+    ax.set_ylabel(r"Gain (cm$^{-1}$)")
+    ax.set_title("Interband Gain Spectrum", fontsize=12)
+    ax.legend(loc="best", fontsize=9, framealpha=0.9)
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "gain_strained_comparison.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/gain_strained_comparison.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -3819,6 +3857,7 @@ ALL_FIGURES = {
     "qw_absorption_vs_width": fig_qw_absorption_vs_width,
     "isbt_dipole_moments": fig_isbt_dipole_moments,
     "isbt_absorption": fig_isbt_absorption,
+    "gain_strained_comparison": fig_gain_strained_comparison,
 }
 
 
