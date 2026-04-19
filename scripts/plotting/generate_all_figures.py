@@ -3671,6 +3671,103 @@ def fig_qw_absorption_vs_width(output_dir: Path) -> None:
     print("  -> docs/figures/qw_absorption_vs_width.png")
 
 
+# ---------------------------------------------------------------------------
+# ISBT (intersubband transition) helpers
+# ---------------------------------------------------------------------------
+
+def _read_isbt_transitions(output_dir: Path) -> Tuple[np.ndarray, ...]:
+    """Parse output/isbt_transitions.dat.
+
+    Expected columns: i, j, E_ij, Re(z_ij), Im(z_ij), |z_ij|^2, f_ij
+
+    Returns
+    -------
+    i_idx, j_idx, E_ij, z_re, z_im, z2, f_osc : 1-D arrays
+    """
+    import re
+    path = output_dir / "isbt_transitions.dat"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found")
+    rows: list[list[float]] = []
+    _fort_fix = re.compile(r"(\d\.\d+E[+-]?\d+)|(\d\.\d+)([+-]\d{2,3})(?=\s|$)")
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("#") or line.strip() == "":
+                continue
+            # Fix missing-E in Fortran G-edit output
+            line = re.sub(r"(\d\.\d+)([+-]\d{2,3})(?=\s|$)", r"\1E\2", line)
+            tokens = line.split()
+            if len(tokens) >= 7:
+                rows.append([float(t) for t in tokens[:7]])
+    data = np.array(rows)
+    return (data[:, 0].astype(int), data[:, 1].astype(int),
+            data[:, 2], data[:, 3], data[:, 4], data[:, 5], data[:, 6])
+
+
+def fig_isbt_dipole_moments(output_dir: Path) -> None:
+    """isbt_dipole_moments.png: bar chart of |z_ij|^2 for ISBT transitions."""
+    print("[figure] isbt_dipole_moments")
+
+    try:
+        i_idx, j_idx, E_ij, z_re, z_im, z2, f_osc = _read_isbt_transitions(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: isbt_transitions.dat not found, skipping.")
+        return
+
+    if len(i_idx) == 0:
+        print("  WARNING: no ISBT transitions found in data file, skipping.")
+        return
+
+    n_trans = len(i_idx)
+    labels = [f"CB{i_idx[k]}\u2192CB{j_idx[k]}" for k in range(n_trans)]
+
+    fig, ax = plt.subplots(figsize=(max(6, n_trans * 1.2), 5))
+    x = np.arange(n_trans)
+    colors = plt.cm.Blues(np.linspace(0.4, 0.85, n_trans))
+    bars = ax.bar(x, z2, color=colors, edgecolor="black", linewidth=0.5)
+
+    # Add oscillator strength labels on each bar
+    for bar, f_val in zip(bars, f_osc):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width() / 2, height,
+                f"f={f_val:.3f}", ha="center", va="bottom", fontsize=8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=9, ha="center")
+    ax.set_ylabel(r"$|z_{ij}|^2$ ($\AA^2$)", fontsize=11)
+    ax.set_title("Intersubband Dipole Moments", fontsize=12)
+    ax.grid(True, axis="y", alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "isbt_dipole_moments.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/isbt_dipole_moments.png")
+
+
+def fig_isbt_absorption(output_dir: Path) -> None:
+    """isbt_absorption.png: TM-polarized intersubband absorption vs photon energy."""
+    print("[figure] isbt_absorption")
+
+    path = output_dir / "absorption_ISBT.dat"
+    if not path.exists():
+        print("  WARNING: absorption_ISBT.dat not found, skipping.")
+        return
+
+    E, alpha = np.loadtxt(str(path), unpack=True, comments="#")
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(E, alpha, color="#d62728", linewidth=1.5)
+    ax.set_xlabel("Photon Energy (eV)")
+    ax.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
+    ax.set_title("Intersubband Absorption (TM)", fontsize=12)
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "isbt_absorption.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/isbt_absorption.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -3720,6 +3817,8 @@ ALL_FIGURES = {
     "qw_absorption_spectrum": fig_qw_absorption_spectrum,
     "qw_absorption_strained": fig_qw_absorption_strained,
     "qw_absorption_vs_width": fig_qw_absorption_vs_width,
+    "isbt_dipole_moments": fig_isbt_dipole_moments,
+    "isbt_absorption": fig_isbt_absorption,
 }
 
 
