@@ -411,6 +411,8 @@ CB↓ ($|\psi_8|$) components are comparable in magnitude, reflecting the spin
 degeneracy at $k_\parallel = 0$. The exponential decay into the barrier spans
 $\sim 10^{-2}$ to $\sim 10^{-11}$ Å$^{-1}$, a factor of $10^9$.
 
+![Probability density $|\psi(z)|^2$ for the first four conduction-band eigenstates of the GaAs/Al$_{0.3}$Ga$_{0.7}$As QW at $k_{\parallel} = 0$. The type-I confinement localizes the wavefunction in the GaAs well ($|z| < 50$ A). Dashed lines mark the well boundaries.](../figures/qw_wavefunctions_gaas.png){ width=95% }
+
 ### 7b.3 Band-resolved parts
 
 The integrated band character reveals important differences from the broken-gap

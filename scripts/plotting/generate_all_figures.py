@@ -2866,6 +2866,62 @@ def fig_perband_density(output_dir: Path) -> None:
     print("  -> docs/figures/perband_density.png")
 
 
+def fig_qw_wavefunctions_gaas(output_dir: Path) -> None:
+    """qw_wavefunctions_gaas.png: |psi(z)|^2 for GaAs/AlGaAs QW CB states."""
+    print("[figure] qw_wavefunctions_gaas")
+    cfg = REPO_ROOT / "docs" / "benchmarks" / "qw_gaas_algaas.cfg"
+    if not cfg.exists():
+        print("  WARNING: docs/benchmarks/qw_gaas_algaas.cfg not found, skipping.")
+        return
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_gaas_algaas")
+    if result.returncode != 0:
+        print("  WARNING: GaAs/AlGaAs run failed, skipping.")
+        return
+    n_z = 201  # FDstep from config
+    try:
+        z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=12, n_z=n_z)
+    except FileNotFoundError:
+        print("  WARNING: no eigenfunction data, skipping.")
+        return
+
+    if z.size == 0:
+        print("  WARNING: no data, skipping.")
+        return
+
+    # With numvb=8, states 1-8 are VB, states 9-12 are CB.
+    # We loaded n_ev=12; extract CB states (indices 8:12 in 0-based).
+    n_cb = min(wf.shape[0] - 8, 4)
+    if n_cb <= 0:
+        print("  WARNING: no CB states found, skipping.")
+        return
+    cb_wf = wf[8 : 8 + n_cb]  # (n_cb, n_z, 8)
+
+    fig, axes = plt.subplots(1, n_cb, figsize=(3.5 * n_cb, 4), sharey=True)
+    if n_cb == 1:
+        axes = [axes]
+    for idx in range(n_cb):
+        ax = axes[idx]
+        psi2_total = np.sum(cb_wf[idx] ** 2, axis=1)
+        ax.plot(z, psi2_total, color="#17becf", linewidth=1.2)
+        ax.fill_between(z, 0, psi2_total, alpha=0.15, color="#17becf")
+        ax.axvline(-50, color="grey", linewidth=0.8, linestyle="--")
+        ax.axvline(50, color="grey", linewidth=0.8, linestyle="--")
+        ax.set_xlabel(r"$z$ (A)")
+        ax.set_title(f"CB{idx + 1}")
+        nonzero = psi2_total > 0.01 * psi2_total.max()
+        if np.any(nonzero):
+            ax.set_xlim(z[nonzero][0] - 20, z[nonzero][-1] + 20)
+    axes[0].set_ylabel(r"$|\psi(z)|^2$")
+    fig.suptitle(
+        r"QW probability density (GaAs/Al$_{0.3}$Ga$_{0.7}$As, $k_{\parallel}=0$)",
+        fontsize=11,
+    )
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_wavefunctions_gaas.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/qw_wavefunctions_gaas.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -2907,6 +2963,7 @@ ALL_FIGURES = {
     "qw_dispersion_broken_gap": fig_qw_dispersion_broken_gap,
     "qw_optical_matrix_elements": fig_qw_optical_matrix_elements,
     "qw_potential_profile_gaas": fig_qw_potential_profile_gaas,
+    "qw_wavefunctions_gaas": fig_qw_wavefunctions_gaas,
 }
 
 
