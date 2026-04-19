@@ -463,6 +463,108 @@ contains
     end if
 100 continue
 
+    ! --- Optical spectra parameters (backward compatible: uses defaults if missing) ---
+    read(data_unit, *, iostat=status) label, cfg%optics%enabled
+    if (status == 0 .and. cfg%optics%enabled) then
+      print *, trim(label), cfg%optics%enabled
+
+      read(data_unit, *, iostat=status) label, cfg%optics%linewidth_lorentzian
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%linewidth_lorentzian
+
+      read(data_unit, *, iostat=status) label, cfg%optics%linewidth_gaussian
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%linewidth_gaussian
+
+      read(data_unit, *, iostat=status) label, cfg%optics%refractive_index
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%refractive_index
+
+      read(data_unit, *, iostat=status) label, cfg%optics%E_min
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%E_min
+
+      read(data_unit, *, iostat=status) label, cfg%optics%E_max
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%E_max
+
+      read(data_unit, *, iostat=status) label, cfg%optics%num_energy_points
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%num_energy_points
+
+      read(data_unit, *, iostat=status) label, cfg%optics%temperature
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%temperature
+
+      read(data_unit, *, iostat=status) label, cfg%optics%carrier_density
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%carrier_density
+
+      ! Gain parameters
+      read(data_unit, *, iostat=status) label, cfg%optics%gain_enabled
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%gain_enabled
+
+      read(data_unit, *, iostat=status) label, cfg%optics%gain_carrier_density
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%gain_carrier_density
+
+      ! ISBT
+      read(data_unit, *, iostat=status) label, cfg%optics%isbt_enabled
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%isbt_enabled
+
+    else if (status == 0) then
+      ! Optics=F, skip remaining optics lines
+      print *, trim(label), cfg%optics%enabled
+    else
+      ! Could not read optics flag -- use defaults (optics off)
+      status = 0
+    end if
+101 continue
+
+    ! --- Exciton parameters (backward compatible: uses defaults if missing) ---
+    read(data_unit, *, iostat=status) label, cfg%exciton%enabled
+    if (status == 0 .and. cfg%exciton%enabled) then
+      print *, trim(label), cfg%exciton%enabled
+
+      read(data_unit, *, iostat=status) label, cfg%exciton%method
+      if (status /= 0) goto 102
+      print *, trim(label), trim(cfg%exciton%method)
+
+    else if (status == 0) then
+      print *, trim(label), cfg%exciton%enabled
+    else
+      ! Could not read exciton flag -- use defaults (exciton off)
+      status = 0
+    end if
+102 continue
+
+    ! --- Scattering parameters (backward compatible: uses defaults if missing) ---
+    read(data_unit, *, iostat=status) label, cfg%scattering%enabled
+    if (status == 0 .and. cfg%scattering%enabled) then
+      print *, trim(label), cfg%scattering%enabled
+
+      read(data_unit, *, iostat=status) label, cfg%scattering%phonon_energy
+      if (status /= 0) goto 103
+      print *, trim(label), cfg%scattering%phonon_energy
+
+      read(data_unit, *, iostat=status) label, cfg%scattering%eps_inf
+      if (status /= 0) goto 103
+      print *, trim(label), cfg%scattering%eps_inf
+
+      read(data_unit, *, iostat=status) label, cfg%scattering%eps_0
+      if (status /= 0) goto 103
+      print *, trim(label), cfg%scattering%eps_0
+
+    else if (status == 0) then
+      print *, trim(label), cfg%scattering%enabled
+    else
+      ! Could not read scattering flag -- use defaults (scattering off)
+      status = 0
+    end if
+103 continue
+
     ! --- FEAST eigensolver tuning (backward compatible: uses defaults if missing) ---
     read(data_unit, *, iostat=status) label, cfg%feast_emin
     if (status == 0) then

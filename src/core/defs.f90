@@ -192,6 +192,45 @@ module definitions
     real(kind=dp) :: oscillator_strength  ! dimensionless, = sum|p|^2 / (hbar2O2m0 * dE)
   end type
 
+  ! ------------------------------------------------------------------
+  ! Optical spectra parameters (Tier 1: absorption, gain, ISBT).
+  ! Default values correspond to a typical GaAs-based QW at 300 K.
+  ! ------------------------------------------------------------------
+  type optics_config
+    logical          :: enabled = .false.
+    real(kind=dp)    :: linewidth_lorentzian = 0.030_dp   ! eV FWHM
+    real(kind=dp)    :: linewidth_gaussian = 0.005_dp     ! eV FWHM
+    real(kind=dp)    :: refractive_index = 3.3_dp
+    real(kind=dp)    :: temperature = 300.0_dp            ! K
+    integer          :: num_energy_points = 200
+    real(kind=dp)    :: E_min = 0.5_dp                    ! eV
+    real(kind=dp)    :: E_max = 2.0_dp                    ! eV
+    real(kind=dp)    :: carrier_density = 0.0_dp          ! 2D cm^-2 (0=equilibrium)
+    ! Gain
+    logical          :: gain_enabled = .false.
+    real(kind=dp)    :: gain_carrier_density = 3.0e12_dp  ! 2D cm^-2
+    ! ISBT
+    logical          :: isbt_enabled = .false.
+  end type optics_config
+
+  ! ------------------------------------------------------------------
+  ! Exciton solver parameters (Tier 2).
+  ! ------------------------------------------------------------------
+  type exciton_config
+    logical          :: enabled = .false.
+    character(len=20) :: method = 'variational'
+  end type exciton_config
+
+  ! ------------------------------------------------------------------
+  ! Phonon scattering parameters (Tier 3).
+  ! ------------------------------------------------------------------
+  type scattering_config
+    logical          :: enabled = .false.
+    real(kind=dp)    :: phonon_energy = 0.036_dp   ! eV (LO phonon)
+    real(kind=dp)    :: eps_inf = 10.9_dp          ! high-freq dielectric
+    real(kind=dp)    :: eps_0 = 12.9_dp            ! static dielectric
+  end type scattering_config
+
   type simulation_config
     integer :: confinement = 0
     integer :: fdStep = 1
@@ -239,6 +278,11 @@ module definitions
     integer            :: feast_m0 = 0           ! manual subspace size (0=auto: 2*nev)
 
     type(bir_pikus_blocks)     :: strain_blocks    ! precomputed strain data
+
+    ! ---- Optical spectra / gain / exciton / scattering ----
+    type(optics_config)      :: optics       ! optical spectra parameters
+    type(exciton_config)     :: exciton      ! exciton solver parameters
+    type(scattering_config)  :: scattering   ! phonon scattering parameters
   end type simulation_config
 
   type group
