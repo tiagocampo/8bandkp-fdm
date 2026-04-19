@@ -45,6 +45,8 @@ $$
 \text{flat\_idx}(b, i) = (b - 1) \times N + i, \qquad b = 1, \ldots, 8, \quad i = 1, \ldots, N.
 $$
 
+![Block structure of the $8N$-component eigenvector. Each of the 8 band blocks contains $N$ spatial amplitudes. The flat index maps band $b$ at grid point $i$ to position $(b-1)N + i$.](../figures/eigenvector_block_structure.png){ width=85% }
+
 This mapping is implemented directly in the code's `get_eigenvector_component` subroutine, which extracts the $N$-element spatial profile for a given band from the full eigenvector:
 
 ```fortran

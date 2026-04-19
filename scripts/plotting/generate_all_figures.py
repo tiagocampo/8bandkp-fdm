@@ -2756,6 +2756,65 @@ def fig_qw_potential_profile_gaas(output_dir: Path) -> None:
     print("  -> docs/figures/qw_potential_profile_gaas.png")
 
 
+def fig_eigenvector_block_structure(output_dir: Path) -> None:
+    """eigenvector_block_structure.png: schematic of 8N eigenvector layout."""
+    print("[figure] eigenvector_block_structure")
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    band_labels = ["HH (+3/2)", "LH (+1/2)", "LH (-1/2)", "HH (-3/2)",
+                   "SO (+1/2)", "SO (-1/2)", "CB (+1/2)", "CB (-1/2)"]
+    band_colors = ["#d62728", "#1f77b4", "#2ca02c", "#9467bd",
+                   "#ff7f0e", "#e377c2", "#17becf", "#bcbd22"]
+
+    y0 = 0
+    block_h = 1.0
+    N = 6  # show 6 grid-point boxes per block
+
+    for b in range(8):
+        # Draw the block rectangle
+        rect = plt.Rectangle((0, y0), 3.5, block_h, facecolor=band_colors[b],
+                              edgecolor="black", alpha=0.3, linewidth=1.2)
+        ax.add_patch(rect)
+
+        # Draw N small boxes inside to represent spatial points
+        for i in range(N):
+            small = plt.Rectangle((0.15 + i * 0.55, y0 + 0.15), 0.45, 0.7,
+                                  facecolor=band_colors[b], edgecolor="white",
+                                  alpha=0.7)
+            ax.add_patch(small)
+
+        # Label on the right
+        ax.text(3.7, y0 + 0.5, f"Band {b+1}: {band_labels[b]}",
+                fontsize=8, va="center", color=band_colors[b], fontweight="bold")
+
+        # Flat index annotation (every other band)
+        if b % 2 == 0:
+            ax.annotate(f"flat_idx = {b}N+1 ... {b+1}N",
+                        xy=(0, y0 + 0.5), xytext=(-0.3, y0 + 0.5),
+                        fontsize=6, va="center", ha="right", color="grey")
+
+        y0 += block_h + 0.15
+
+    # Group labels on the left
+    ax.annotate("Valence\n(Bands 1-4)", xy=(-2.5, 1.5 * (block_h + 0.15)),
+                fontsize=9, ha="center", color="#d62728", fontweight="bold")
+    ax.annotate("Split-off\n(Bands 5-6)", xy=(-2.5, 4.5 * (block_h + 0.15)),
+                fontsize=9, ha="center", color="#ff7f0e", fontweight="bold")
+    ax.annotate("Conduction\n(Bands 7-8)", xy=(-2.5, 6.5 * (block_h + 0.15)),
+                fontsize=9, ha="center", color="#17becf", fontweight="bold")
+
+    ax.set_xlim(-4, 8)
+    ax.set_ylim(-0.5, y0)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.set_title(r"Eigenvector layout: $\mathbf{c}^{(n)}$ with $8N$ components", fontsize=12)
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "eigenvector_block_structure.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/eigenvector_block_structure.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -2771,6 +2830,7 @@ ALL_FIGURES = {
     "strain_lattice_mismatch": fig_strain_lattice_mismatch,
     "strain_biaxial_tensor": fig_strain_biaxial_tensor,
     "bir_pikus_band_shifts": fig_bir_pikus_band_shifts,
+    "eigenvector_block_structure": fig_eigenvector_block_structure,
     "qw_strained_band_edges": fig_qw_strained_band_edges,
     "wire_strain_2d": fig_wire_strain_2d,
     "bulk_inas_bands": fig_bulk_inas_bands,
