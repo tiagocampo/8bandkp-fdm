@@ -3431,6 +3431,246 @@ def fig_wire_strain_tensor(output_dir: Path) -> None:
     print("  -> docs/figures/wire_strain_tensor.png")
 
 
+# ===========================================================================
+# Absorption spectrum figures
+# ===========================================================================
+
+
+def _read_absorption(output_dir: Path, polarization: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Read a two-column absorption file (E in eV, alpha in cm^-1).
+
+    Parameters
+    ----------
+    output_dir : Path
+        Directory containing the output files.
+    polarization : str
+        'TE' or 'TM'.
+
+    Returns
+    -------
+    E, alpha : 1-D arrays
+    """
+    path = output_dir / f"absorption_{polarization}.dat"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found")
+    E, alpha = np.loadtxt(str(path), unpack=True, comments="#")
+    return E, alpha
+
+
+def fig_qw_absorption_spectrum(output_dir: Path) -> None:
+    """qw_absorption_spectrum.png: TE and TM interband absorption for a GaAs/AlGaAs QW."""
+    print("[figure] qw_absorption_spectrum")
+    te_file = output_dir / "absorption_TE.dat"
+    tm_file = output_dir / "absorption_TM.dat"
+
+    if not te_file.exists() or not tm_file.exists():
+        # Attempt to run with the optics-enabled config
+        cfg = CONFIG_DIR / "qw_gaas_algaas_optics.cfg"
+        if cfg.exists():
+            # Append Optics block to a temp config if needed
+            # Check whether the config already has optics lines
+            has_optics = False
+            with open(cfg) as fh:
+                for line in fh:
+                    if line.strip().startswith("Optics:"):
+                        has_optics = True
+                        break
+            if has_optics:
+                result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                                       label="qw_absorption_spectrum", timeout=600)
+                if result.returncode != 0:
+                    print("  WARNING: bandStructure run failed, skipping.")
+                    return
+            else:
+                print("  WARNING: Config file exists but lacks Optics section, "
+                      "skipping. Add 'Optics: T' and optics parameters to enable.")
+                return
+        else:
+            print("  WARNING: No absorption data files found and no optics config "
+                  "available. Run bandStructure with Optics: T to generate data.")
+            return
+
+    # Read data (re-check after potential run)
+    if not te_file.exists() or not tm_file.exists():
+        print("  WARNING: absorption_TE.dat or absorption_TM.dat still not found, skipping.")
+        return
+
+    E_te, alpha_te = _read_absorption(output_dir, "TE")
+    E_tm, alpha_tm = _read_absorption(output_dir, "TM")
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(E_te, alpha_te, color="#1f77b4", linewidth=1.5, label="TE polarization")
+    ax.plot(E_tm, alpha_tm, color="#d62728", linewidth=1.5, label="TM polarization")
+    ax.set_xlabel("Photon Energy (eV)")
+    ax.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
+    ax.set_title("QW Interband Absorption Spectrum", fontsize=12)
+    ax.legend(loc="best", fontsize=9, framealpha=0.9)
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_absorption_spectrum.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/qw_absorption_spectrum.png")
+
+
+def fig_qw_absorption_strained(output_dir: Path) -> None:
+    """qw_absorption_strained.png: strained vs unstrained QW absorption (TE and TM panels)."""
+    print("[figure] qw_absorption_strained")
+
+    # Look for strained/unstrained data pairs
+    # Naming convention: absorption_TE.dat (current run), or
+    # user may have saved paired runs as absorption_TE_unstrained.dat / absorption_TE_strained.dat
+    te_unstr = output_dir / "absorption_TE_unstrained.dat"
+    tm_unstr = output_dir / "absorption_TM_unstrained.dat"
+    te_str = output_dir / "absorption_TE_strained.dat"
+    tm_str = output_dir / "absorption_TM_strained.dat"
+
+    # Also accept the default naming if only one dataset exists
+    te_default = output_dir / "absorption_TE.dat"
+    tm_default = output_dir / "absorption_TM.dat"
+
+    have_strained_pair = (te_unstr.exists() and tm_unstr.exists()
+                          and te_str.exists() and tm_str.exists())
+    have_single = te_default.exists() and tm_default.exists()
+
+    if not have_strained_pair and not have_single:
+        print("  WARNING: No absorption data files found. Run bandStructure with "
+              "Optics: T for unstrained and strained configs to generate data.")
+        print("  Expected files: absorption_TE_unstrained.dat, absorption_TE_strained.dat, "
+              "etc., or absorption_TE.dat / absorption_TM.dat")
+        return
+
+    fig, (ax_te, ax_tm) = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+
+    if have_strained_pair:
+        # Plot both unstrained and strained
+        E_u_te, a_u_te = _read_absorption(output_dir, "TE_unstrained")
+        E_s_te, a_s_te = _read_absorption(output_dir, "TE_strained")
+        E_u_tm, a_u_tm = _read_absorption(output_dir, "TM_unstrained")
+        E_s_tm, a_s_tm = _read_absorption(output_dir, "TM_strained")
+
+        ax_te.plot(E_u_te, a_u_te, color="#1f77b4", linewidth=1.5,
+                   label="Unstrained")
+        ax_te.plot(E_s_te, a_s_te, color="#d62728", linewidth=1.5,
+                   linestyle="--", label="Strained")
+        ax_tm.plot(E_u_tm, a_u_tm, color="#1f77b4", linewidth=1.5,
+                   label="Unstrained")
+        ax_tm.plot(E_s_tm, a_s_tm, color="#d62728", linewidth=1.5,
+                   linestyle="--", label="Strained")
+
+        ax_te.set_title("TE Polarization", fontsize=11)
+        ax_tm.set_title("TM Polarization", fontsize=11)
+    else:
+        # Single dataset -- plot it with a note
+        E_te, a_te = _read_absorption(output_dir, "TE")
+        E_tm, a_tm = _read_absorption(output_dir, "TM")
+
+        ax_te.plot(E_te, a_te, color="#1f77b4", linewidth=1.5, label="Available data")
+        ax_tm.plot(E_tm, a_tm, color="#d62728", linewidth=1.5, label="Available data")
+
+        ax_te.set_title("TE Polarization (single dataset)", fontsize=11)
+        ax_tm.set_title("TM Polarization (single dataset)", fontsize=11)
+
+        ax_te.text(0.5, 0.92, "Run with strained InGaAs config\nfor comparison",
+                   transform=ax_te.transAxes, fontsize=8, ha="center", va="top",
+                   color="grey", style="italic")
+
+    for ax in (ax_te, ax_tm):
+        ax.set_xlabel("Photon Energy (eV)")
+        ax.legend(loc="best", fontsize=8, framealpha=0.9)
+        ax.grid(True, alpha=0.3, linewidth=0.5)
+        ax.set_axisbelow(True)
+
+    ax_te.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
+
+    fig.suptitle("QW Absorption: Unstrained vs Strained", fontsize=12)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_absorption_strained.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/qw_absorption_strained.png")
+
+
+def fig_qw_absorption_vs_width(output_dir: Path) -> None:
+    """qw_absorption_vs_width.png: absorption curves for different QW well widths."""
+    print("[figure] qw_absorption_vs_width")
+
+    # Check for any absorption data -- look for convention:
+    #   absorption_TE_W<width>.dat / absorption_TM_W<width>.dat
+    # or the default absorption_TE.dat / absorption_TM.dat
+    te_file = output_dir / "absorption_TE.dat"
+    tm_file = output_dir / "absorption_TM.dat"
+
+    # Search for width-annotated files
+    te_width_files = sorted(output_dir.glob("absorption_TE_W*.dat"))
+    tm_width_files = sorted(output_dir.glob("absorption_TM_W*.dat"))
+
+    have_width_sweep = len(te_width_files) > 0 and len(tm_width_files) > 0
+    have_single = te_file.exists() and tm_file.exists()
+
+    if not have_width_sweep and not have_single:
+        print("  WARNING: No absorption data files found. Run bandStructure with "
+              "Optics: T to generate data. For a full well-width sweep, run "
+              "multiple configs with different FDstep/totalSize values and save "
+              "output as absorption_TE_W<width>.dat / absorption_TM_W<width>.dat.")
+        return
+
+    fig, (ax_te, ax_tm) = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+
+    cmap = plt.cm.viridis
+
+    if have_width_sweep:
+        n_curves = len(te_width_files)
+        colors = [cmap(i / max(n_curves - 1, 1)) for i in range(n_curves)]
+
+        for i, (te_path, tm_path) in enumerate(zip(te_width_files, tm_width_files)):
+            # Extract width from filename (e.g. absorption_TE_W50.dat -> 50)
+            width_str = te_path.stem.split("_W")[-1]
+            label = f"{width_str} A"
+
+            E_te, a_te = np.loadtxt(str(te_path), unpack=True, comments="#")
+            E_tm, a_tm = np.loadtxt(str(tm_path), unpack=True, comments="#")
+
+            ax_te.plot(E_te, a_te, color=colors[i], linewidth=1.3, label=label)
+            ax_tm.plot(E_tm, a_tm, color=colors[i], linewidth=1.3, label=label)
+
+        ax_te.set_title("TE Polarization", fontsize=11)
+        ax_tm.set_title("TM Polarization", fontsize=11)
+
+    elif have_single:
+        E_te, a_te = _read_absorption(output_dir, "TE")
+        E_tm, a_tm = _read_absorption(output_dir, "TM")
+
+        ax_te.plot(E_te, a_te, color="#1f77b4", linewidth=1.5, label="Single width")
+        ax_tm.plot(E_tm, a_tm, color="#d62728", linewidth=1.5, label="Single width")
+
+        ax_te.set_title("TE Polarization", fontsize=11)
+        ax_tm.set_title("TM Polarization", fontsize=11)
+
+        # Annotation about width dependence
+        ax_te.text(0.5, 0.92,
+                   "Full well-width parameter sweep\n"
+                   "requires multiple manual runs\n"
+                   "(save as absorption_TE_W<width>.dat)",
+                   transform=ax_te.transAxes, fontsize=8, ha="center", va="top",
+                   color="grey", style="italic",
+                   bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                             edgecolor="lightgrey", alpha=0.9))
+
+    for ax in (ax_te, ax_tm):
+        ax.set_xlabel("Photon Energy (eV)")
+        ax.legend(loc="best", fontsize=8, framealpha=0.9)
+        ax.grid(True, alpha=0.3, linewidth=0.5)
+        ax.set_axisbelow(True)
+
+    ax_te.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
+
+    fig.suptitle("QW Absorption vs Well Width", fontsize=12)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_absorption_vs_width.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/qw_absorption_vs_width.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -3477,6 +3717,9 @@ ALL_FIGURES = {
     "vb_hh_lh_mixing": fig_vb_hh_lh_mixing,
     "hh_lh_ordering": fig_hh_lh_ordering,
     "hh_lh_splitting_vs_mismatch": fig_hh_lh_splitting_vs_mismatch,
+    "qw_absorption_spectrum": fig_qw_absorption_spectrum,
+    "qw_absorption_strained": fig_qw_absorption_strained,
+    "qw_absorption_vs_width": fig_qw_absorption_vs_width,
 }
 
 
