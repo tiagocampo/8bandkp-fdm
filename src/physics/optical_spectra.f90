@@ -12,10 +12,11 @@ module optical_spectra
   public :: compute_intersubband_transitions, compute_isbt_absorption
 
   ! Module-level accumulation arrays (set by optics_init)
-  real(kind=dp), allocatable, save :: alpha_te(:)   ! TE accumulation on E_grid
-  real(kind=dp), allocatable, save :: alpha_tm(:)   ! TM accumulation on E_grid
-  real(kind=dp), allocatable, save :: E_grid(:)     ! photon energy grid (eV)
-  integer, save :: nE = 0                           ! number of energy points
+  real(kind=dp), allocatable, save :: alpha_te(:)    ! TE accumulation on E_grid
+  real(kind=dp), allocatable, save :: alpha_tm(:)    ! TM accumulation on E_grid
+  real(kind=dp), allocatable, save :: alpha_isbt(:)  ! ISBT accumulation on E_grid
+  real(kind=dp), allocatable, save :: E_grid(:)      ! photon energy grid (eV)
+  integer, save :: nE = 0                            ! number of energy points
 
   ! Minimum transition energy threshold (eV)
   real(kind=dp), parameter :: DE_MIN = 1.0e-6_dp
@@ -36,7 +37,7 @@ contains
     call optics_cleanup()
 
     nE = optcfg%num_energy_points
-    allocate(E_grid(nE), alpha_te(nE), alpha_tm(nE))
+    allocate(E_grid(nE), alpha_te(nE), alpha_tm(nE), alpha_isbt(nE))
 
     dE = (optcfg%E_max - optcfg%E_min) / max(nE - 1, 1)
     do i = 1, nE
@@ -45,6 +46,7 @@ contains
 
     alpha_te = 0.0_dp
     alpha_tm = 0.0_dp
+    alpha_isbt = 0.0_dp
 
   end subroutine optics_init
 
@@ -216,6 +218,7 @@ contains
       end if
       alpha_te(ie) = prefactor_E * alpha_te(ie) * AA_TO_CM
       alpha_tm(ie) = prefactor_E * alpha_tm(ie) * AA_TO_CM
+      alpha_isbt(ie) = prefactor_E * alpha_isbt(ie) * AA_TO_CM
     end do
 
     ! --- Write output files ---
@@ -240,7 +243,16 @@ contains
     end do
     close(iounit)
 
-    print '(a)', 'Optical spectra written to output/absorption_TE.dat and output/absorption_TM.dat'
+    open(unit=iounit, file='output/absorption_ISBT.dat', status='replace', &
+      & action='write')
+    write(iounit, '(a)') '# ISBT absorption spectrum (TM-polarized, z-dipole only)'
+    write(iounit, '(a)') '# E(eV)  alpha(cm^-1)'
+    do ie = 1, nE
+      write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_isbt(ie)
+    end do
+    close(iounit)
+
+    print '(a)', 'Optical spectra written to output/absorption_TE.dat, output/absorption_TM.dat, and output/absorption_ISBT.dat'
 
   end subroutine optics_finalize
 
@@ -252,12 +264,44 @@ contains
   ! ------------------------------------------------------------------
   subroutine optics_cleanup()
 
-    if (allocated(E_grid))    deallocate(E_grid)
-    if (allocated(alpha_te))  deallocate(alpha_te)
-    if (allocated(alpha_tm))  deallocate(alpha_tm)
+    if (allocated(E_grid))     deallocate(E_grid)
+    if (allocated(alpha_te))   deallocate(alpha_te)
+    if (allocated(alpha_tm))   deallocate(alpha_tm)
+    if (allocated(alpha_isbt)) deallocate(alpha_isbt)
     nE = 0
 
   end subroutine optics_cleanup
+
+
+  ! ------------------------------------------------------------------
+  ! Private helper: compute z-dipole matrix element between two
+  ! eigenstates of the 8-band k.p Hamiltonian.
+  !
+  ! z_ij = dz * sum_n [ sum_b conjg(eigvecs((n-1)*8+b, state_i))
+  !               * z_grid(n) * eigvecs((n-1)*8+b, state_j)) ]
+  !
+  ! Returns the complex z_ij in units of AA.
+  ! ------------------------------------------------------------------
+  function z_dipole(eigvecs, z_grid, dz, fdstep, state_i, state_j) result(z_ij)
+    complex(kind=dp), intent(in) :: eigvecs(:,:)
+    real(kind=dp), intent(in)    :: z_grid(:)
+    real(kind=dp), intent(in)    :: dz
+    integer, intent(in)          :: fdstep, state_i, state_j
+    complex(kind=dp)             :: z_ij
+
+    integer :: n, b, idx
+
+    z_ij = ZERO
+    do n = 1, fdstep
+      do b = 1, 8
+        idx = (n - 1) * 8 + b
+        z_ij = z_ij + conjg(eigvecs(idx, state_i)) &
+          & * z_grid(n) * eigvecs(idx, state_j)
+      end do
+    end do
+    z_ij = z_ij * dz
+
+  end function z_dipole
 
 
   ! ------------------------------------------------------------------
@@ -329,12 +373,10 @@ contains
     integer, intent(in)          :: numcb, numvb, fdstep
     character(len=*), intent(in) :: transitions_file
 
-    integer :: i, j, n, b, idx, state_i, state_j
-    integer :: nstates, iounit
+    integer :: i, j, state_i, state_j
+    integer :: iounit
     real(kind=dp) :: E_ij, z_ij_re, z_ij_im, z_ij_abs2, f_ij
     complex(kind=dp) :: z_ij
-
-    nstates = numcb + numvb
 
     call ensure_output_dir()
     call get_unit(iounit)
@@ -355,16 +397,8 @@ contains
         E_ij = eigvals(state_j) - eigvals(state_i)
         if (E_ij < DE_MIN) cycle
 
-        ! z-dipole: sum over all FD points and all 8 band components
-        z_ij = ZERO
-        do n = 1, fdstep
-          do b = 1, 8
-            idx = (n - 1) * 8 + b
-            z_ij = z_ij + conjg(eigvecs(idx, state_i)) &
-              & * z_grid(n) * eigvecs(idx, state_j)
-          end do
-        end do
-        z_ij = z_ij * dz
+        ! z-dipole matrix element via helper
+        z_ij = z_dipole(eigvecs, z_grid, dz, fdstep, state_i, state_j)
 
         z_ij_re = real(z_ij, kind=dp)
         z_ij_im = aimag(z_ij)
@@ -404,16 +438,13 @@ contains
     real(kind=dp), intent(in)    :: k_weight
     real(kind=dp), intent(in)    :: fermi_level
 
-    integer :: i, j, n, b, idx, ie, state_i, state_j
-    integer :: nstates
+    integer :: i, j, ie, state_i, state_j
     real(kind=dp) :: E_ij, occ_factor, f_i, f_j
     real(kind=dp) :: gamma_l, gamma_g
     real(kind=dp) :: z_ij_abs2
     complex(kind=dp) :: z_ij
 
     if (nE == 0) return  ! optics_init not called
-
-    nstates = numcb + numvb
 
     ! Half-widths at half-maximum from FWHM
     gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
@@ -435,21 +466,13 @@ contains
         E_ij = eigvals(state_j) - eigvals(state_i)
         if (E_ij < DE_MIN) cycle
 
-        ! z-dipole matrix element
-        z_ij = ZERO
-        do n = 1, fdstep
-          do b = 1, 8
-            idx = (n - 1) * 8 + b
-            z_ij = z_ij + conjg(eigvecs(idx, state_i)) &
-              & * z_grid(n) * eigvecs(idx, state_j)
-          end do
-        end do
-        z_ij = z_ij * dz
+        ! z-dipole matrix element via helper
+        z_ij = z_dipole(eigvecs, z_grid, dz, fdstep, state_i, state_j)
         z_ij_abs2 = real(z_ij * conjg(z_ij), kind=dp)
 
-        ! Broaden and accumulate onto energy grid (TM only)
+        ! Broaden and accumulate onto energy grid (ISBT, TM-polarized)
         do ie = 1, nE
-          alpha_tm(ie) = alpha_tm(ie) + occ_factor * z_ij_abs2 &
+          alpha_isbt(ie) = alpha_isbt(ie) + occ_factor * z_ij_abs2 &
             & * lineshape_voigt(E_grid(ie), E_ij, gamma_l, gamma_g) * k_weight
         end do
 

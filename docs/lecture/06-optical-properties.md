@@ -422,19 +422,125 @@ See Chapter 02, Section A.6 for the full computed transition table.
 
 ---
 
-## 6.7 Connection to Absorption Spectra
+## 6.7 Interband Absorption Coefficient
 
-### 6.7.1 From oscillator strength to absorption coefficient
+### 6.7.1 Derivation from Fermi's golden rule
 
-The inter-band absorption coefficient for polarization $\hat{e}$ is related to the imaginary part of the dielectric function. Using the Fermi golden rule:
+The absorption rate for a transition from a valence state $|\psi_v\rangle$ to a conduction state $|\psi_c\rangle$ under monochromatic illumination follows from Fermi's golden rule (Chuang, *Physics of Optoelectronic Devices*, Ch. 9; Bastard, *Wave Mechanics Applied to Semiconductor Heterostructures*, Ch. VII):
 
 $$
-\alpha(\hbar\omega, \hat{e}) = \frac{\pi e^2}{n_r c \epsilon_0 m_0 \omega} \sum_{ij} f_{ij}^{(\hat{e})} \, \delta(\hbar\omega - \Delta E_{ij})
+W_{cv} = \frac{2\pi}{\hbar} \left| M_{cv} \right|^2 \, \delta(E_c - E_v - \hbar\omega)
 $$
 
-where $f_{ij}^{(\hat{e})} = (2/m_0 \Delta E_{ij}) \, |\hat{e} \cdot \mathbf{p}_{ij}|^2$ is the polarization-resolved oscillator strength, $n_r$ is the refractive index, and the sum runs over occupied initial and empty final states.
+where $M_{cv} = (e/m_0) \langle \psi_c | \hat{e} \cdot \mathbf{p} | \psi_v \rangle$ is the optical matrix element for photon polarization $\hat{e}$. For a quantum well, each subband is dispersive in the in-plane wave vector $\mathbf{k}_\parallel$, so the transition energy depends on $k_\parallel$. Summing over all CB-VB subband pairs and integrating over $\mathbf{k}_\parallel$ yields the polarization-dependent absorption coefficient (Winkler, *Spin-Orbit Coupling Effects in Two-Dimensional Electron and Hole Systems*, Ch. 4):
 
-### 6.7.2 Joint density of states
+$$
+\alpha(\hbar\omega, \hat{e}) = \frac{2\pi e^2}{n_r \, c \, \epsilon_0 \, m_0^2 \, \hbar\omega} \sum_{c,v} \frac{1}{(2\pi)^2} \int d^2\mathbf{k}_\parallel \; \left| \hat{e} \cdot \mathbf{p}_{cv}(k_\parallel) \right|^2 \left[ f_v(k_\parallel) - f_c(k_\parallel) \right] \, L(\hbar\omega - \Delta E_{cv}(k_\parallel))
+$$
+
+The terms are:
+
+- $n_r$ is the background refractive index (3.3 for GaAs).
+- $c$ is the speed of light, $\epsilon_0$ is the vacuum permittivity.
+- The outer sum runs over all CB subband indices $c$ and VB subband indices $v$.
+- $\mathbf{p}_{cv}(k_\parallel)$ is the momentum matrix element between subbands $c$ and $v$ at wave vector $k_\parallel$. In the code's dH/dk units, $|P_\alpha^{cv}|^2$ (in eV$^2 \cdot$ angstrom$^2$) replaces $|p_\alpha^{cv}|^2 / m_0^2$ with a factor of $(\hbar^2/2m_0)$ absorbed into the prefactor.
+- $f_v(k_\parallel)$ and $f_c(k_\parallel)$ are the Fermi-Dirac occupation probabilities for the valence and conduction subbands, evaluated at the in-plane kinetic energy $E(k_\parallel)$. At equilibrium with no external doping or excitation, $f_v \approx 1$ and $f_c \approx 0$ near the band edge, so $f_v - f_c \approx 1$ for all interband transitions of interest.
+- $L(\hbar\omega - \Delta E_{cv})$ is a lineshape broadening function (Section 6.7.4) that replaces the delta function.
+
+The $1/\omega$ prefactor makes $\alpha$ larger at lower photon energies (near the band edge), but the onset of absorption is controlled by the transition energies and the matrix elements. For a QW with cylindrical in-plane symmetry, the angular integral contributes $2\pi$, leaving a single radial integral over $k_\parallel$:
+
+$$
+\alpha(\hbar\omega, \hat{e}) = \frac{e^2}{n_r \, c \, \epsilon_0 \, m_0^2 \, \hbar\omega} \sum_{c,v} \int_0^{k_{\max}} dk_\parallel \; k_\parallel \left| \hat{e} \cdot \mathbf{p}_{cv}(k_\parallel) \right|^2 \left[ f_v - f_c \right] \, L(\hbar\omega - \Delta E_{cv}(k_\parallel))
+$$
+
+The factor $k_\parallel$ in the integration measure is the 2D density of states weight (the Jacobian of the polar coordinate transformation).
+
+### 6.7.2 k_parallel integration methodology
+
+The integral over $k_\parallel$ is evaluated numerically on a uniform grid $\{k_1, k_2, \ldots, k_{N_k}\}$ using Simpson's rule. This requires an odd number of grid points (already enforced by the existing `simpson` routine in `utils.f90`, which is used in the self-consistent charge density loop).
+
+The integration proceeds as follows:
+
+1. **Define the grid.** Set $k_{\max}$ large enough that the Fermi functions $f_v$ and $f_c$ suppress all transitions beyond the cutoff. A typical choice is $k_{\max} \approx 0.5$--$1.0$ angstrom$^{-1}$ (corresponding to $\hbar^2 k_{\max}^2 / 2m_0 \sim 0.8$--$3.0$ eV for a free-electron mass). Use an odd number of points (e.g., $N_k = 51$) for Simpson integration.
+
+2. **On-the-fly accumulation.** At each $k_\parallel$ point, the k.p eigenproblem is solved for the QW Hamiltonian (which already happens during the band structure $k$-sweep in `main.f90`). The eigenvectors are then fed to `pMatrixEleCalc` for each CB-VB pair to obtain the momentum matrix elements. The absorption integrand $k_\parallel \cdot |M_{cv}|^2 \cdot (f_v - f_c) \cdot L(E - \Delta E_{cv})$ is accumulated directly into the energy-grid arrays for $\alpha_{\text{TE}}$ and $\alpha_{\text{TM}}$. After the accumulation, the eigenvectors can be discarded -- they are never stored for all $k_\parallel$ points simultaneously, keeping memory usage at $O(N_{\text{grid}})$ rather than $O(N_k \cdot N_{\text{grid}})$.
+
+3. **Simpson integration.** After the loop over all $k_\parallel$ points completes, the accumulated arrays are integrated using Simpson's rule: $\int_0^{k_{\max}} f(k) \, dk \approx (\Delta k / 3) \sum_j w_j f(k_j)$ with Simpson weights $w_j = \{1, 4, 2, 4, 2, \ldots, 4, 1\}$.
+
+4. **Computational cost.** For each $k_\parallel$ point, the cost is dominated by the $N_c \times N_v$ matrix element evaluations. Each evaluation calls `pMatrixEleCalc` three times (for $x$, $y$, $z$), each involving a Hamiltonian build and a dot product. The total cost scales as $O(N_c \cdot N_v \cdot N_k \cdot N_E)$, where $N_E$ is the number of energy grid points. For a typical QW calculation ($N_c = 4$, $N_v = 12$, $N_k = 51$, $N_E = 200$), this amounts to roughly $5 \times 10^5$ matrix element evaluations -- each of which is a dense matrix-vector product of dimension $8N_{\text{FD}}$. This is feasible on a single core in seconds to minutes for $N_{\text{FD}} \leq 400$.
+
+### 6.7.3 TE and TM polarization decomposition
+
+For a QW grown along $z$, the absorption coefficient separates naturally into TE and TM components:
+
+- **TE polarization** (electric field in the $x$--$y$ plane): $\quad M_{\text{TE}}^2 = |M_x|^2 + |M_y|^2$
+- **TM polarization** (electric field along $z$): $\quad M_{\text{TM}}^2 = |M_z|^2$
+
+At the zone center ($k_\parallel = 0$), the selection rules from Section 6.4 apply exactly. For a GaAs/Al$_{0.3}$Ga$_{0.7}$As QW (10 nm well), the zone-center matrix elements (from Section 6.6.6) give:
+
+| Transition | $M_{\text{TE}}^2$ (eV$^2 \cdot$ angstrom$^2$) | $M_{\text{TM}}^2$ (eV$^2 \cdot$ angstrom$^2$) | TE/TM ratio |
+|---|---|---|---|
+| CB1 $\to$ VB1/2 (HH) | 103.2 | $\approx 0$ | $\infty$ (TM forbidden) |
+| CB1 $\to$ VB7/8 (LH) | $\approx 0.06$ | 64.8 | $\approx 1:1000$ (TM dominant) |
+| CB2 $\to$ VB7/8 (LH) | $\approx 0.06$ | 64.8 | $\approx 1:1000$ (TM dominant) |
+
+The HH-related transitions dominate the TE absorption spectrum near the fundamental gap ($\sim$1.56 eV), while the LH-related transitions produce a weaker TE contribution but a strong TM peak at slightly higher energy ($\sim$1.58 eV). The TE/TM splitting is a direct consequence of the angular momentum selection rule $\Delta J_z = \pm 1$ for dipole-allowed transitions: the HH states ($J_z = \pm 3/2$) couple to the CB ($J_z = \pm 1/2$) exclusively via the in-plane circular polarizations $p_\pm$, while the LH states ($J_z = \pm 1/2$) couple via $p_z$.
+
+At finite $k_\parallel$, the HH/LH mixing induced by the off-diagonal k.p terms relaxes these strict selection rules. The TM matrix element for HH transitions, which is exactly zero at $k_\parallel = 0$, grows as $k_\parallel^2$ near the zone center. For the 10 nm GaAs QW at $k_\parallel = 0.2$ angstrom$^{-1}$, $|M_z|^2$ for the CB1-to-HH1 transition reaches $\sim$1--2 eV$^2 \cdot$ angstrom$^2$, compared to $|M_{\text{TE}}^2| \approx 90$ eV$^2 \cdot$ angstrom$^2$ -- still small but no longer identically zero. The code captures this automatically because the eigenvectors of the full 8-band Hamiltonian already contain the correct band mixing at each $k_\parallel$.
+
+### 6.7.4 Lineshape broadening
+
+The delta function $\delta(\hbar\omega - \Delta E_{cv})$ in the absorption formula represents an idealized transition with infinite lifetime. Real transitions are broadened by two distinct mechanisms:
+
+**Homogeneous broadening (Lorentzian).** Finite carrier lifetimes due to scattering (phonon, impurity, interface roughness) produce a Lorentzian lineshape:
+
+$$
+L_{\text{Lor}}(E, E_0) = \frac{1}{\pi} \frac{\gamma}{(E - E_0)^2 + \gamma^2}
+$$
+
+where $\gamma$ is the half-width at half-maximum (HWHM) in energy units. The Lorentzian has long tails ($\sim 1/E^2$) and is the appropriate lineshape when a single exponential decay process dominates. For high-quality GaAs QWs at room temperature, $\gamma \sim 5$--$15$ meV (Chuang, Ch. 9).
+
+**Inhomogeneous broadening (Gaussian).** Well-width fluctuations, alloy disorder, and interface roughness produce a Gaussian distribution of transition energies:
+
+$$
+L_{\text{Gauss}}(E, E_0) = \frac{1}{\sigma\sqrt{2\pi}} \exp\!\left[-\frac{(E - E_0)^2}{2\sigma^2}\right]
+$$
+
+where $\sigma$ is the standard deviation (related to the FWHM by $\Gamma_{\text{FWHM}} = 2\sqrt{2\ln 2} \cdot \sigma \approx 2.355 \sigma$). The Gaussian decays faster than the Lorentzian ($\sim e^{-E^2}$), suppressing the far wings of the absorption edge. For InGaAs/GaAs QWs, well-width fluctuations of $\pm$1 monolayer correspond to $\sigma \sim 3$--$8$ meV.
+
+**Voigt profile.** When both homogeneous and inhomogeneous mechanisms are present, the physical lineshape is the convolution of the two, known as the Voigt profile:
+
+$$
+L_{\text{Voigt}}(E, E_0) = \int_{-\infty}^{\infty} L_{\text{Lor}}(E', E_0) \, L_{\text{Gauss}}(E - E', E_0) \, dE'
+$$
+
+The Voigt profile has no closed-form expression, but can be approximated by the **pseudo-Voigt** formula:
+
+$$
+L_{\text{pV}}(E) = \eta \, L_{\text{Lor}}(E) + (1 - \eta) \, L_{\text{Gauss}}(E)
+$$
+
+where $\eta \in [0, 1]$ is the mixing parameter. A common approximation sets $\eta = f_{\text{Lor}}^5 / (f_{\text{Lor}}^5 + f_{\text{Gauss}}^5 + 2.69269 f_{\text{Lor}}^4 f_{\text{Gauss}} + \ldots)$ following Thompson *et al.* (1987), where $f_{\text{Lor}}$ and $f_{\text{Gauss}}$ are the Lorentzian and Gaussian FWHM. For most QW absorption calculations, a purely Lorentzian broadening with $\gamma = 10$--$15$ meV provides a reasonable first approximation, and the additional Gaussian component becomes important only when fitting experimental data with well-width fluctuations.
+
+### 6.7.5 Comparison with the nextnano InGaAs absorption tutorial
+
+The nextnano tutorial 5.9.9 reproduces the interband absorption spectrum of a strained In$_x$Ga$_{1-x}$As/GaAs quantum well as computed by Dumitras *et al.*, Phys. Rev. B **66**, 205324 (2002). The key features of that work are:
+
+1. **8-band k.p Hamiltonian.** Dumitras uses the 8-band Kane model (the same framework as this code) to compute the subband structure and optical matrix elements as functions of $k_\parallel$. The Bir-Pikus strain Hamiltonian is included for the pseudomorphically strained InGaAs layer.
+
+2. **Absorption formula.** The absorption coefficient is computed from the Fermi golden rule expression derived in Section 6.7.1, with Lorentzian broadening of $\gamma \approx 30$ meV at room temperature. The large linewidth reflects thermal broadening and alloy disorder in the InGaAs alloy.
+
+3. **TE/TM splitting.** The computed absorption spectrum shows a clear separation between the TE and TM polarized components. The TE spectrum has a sharp onset at the HH-related band gap, followed by a step-like increase (the signature of the 2D joint density of states). The TM spectrum is weaker at the band edge but becomes comparable at higher energies where the LH-related transitions contribute.
+
+4. **Strain effect.** The compressive strain in the InGaAs layer splits the HH and LH band edges at $k_\parallel = 0$, moving the HH above the LH. This increases the TE/TM polarization contrast at the band edge compared to an unstrained QW (where HH and LH are degenerate at $k_\parallel = 0$). The code reproduces this through the Bir-Pikus strain terms in `hamiltonianConstructor.f90`.
+
+The physics in the Dumitras calculation is identical to what this code implements: the same 8-band zincblende k.p Hamiltonian, the same momentum matrix elements from the Kane $E_P$ parameter, and the same Fermi golden rule absorption formula. The numerical values depend on the InGaAs material parameters (Vurgaftman 2001 provides the recommended parameters), the well width, and the strain state, all of which are configurable through `input.cfg`.
+
+---
+
+## 6.8 Connection to Absorption Spectra
+
+### 6.8.1 Joint density of states
 
 For a quantum wire, the joint density of states (JDOS) for each subband pair $(i, j)$ includes a 1D $k_z$ integration:
 
@@ -444,17 +550,7 @@ $$
 
 Due to the 1D nature, the JDOS for each subband pair has a **van Hove singularity** (a $1/\sqrt{\hbar\omega - \Delta E_{ij}(0)}$ divergence) at the subband edge, producing sharp peaks in the absorption spectrum. This is a key signature of quantum wire optical response and contrasts with the step-like JDOS of quantum wells.
 
-### 6.7.3 Broadening
-
-In practice, the delta functions are replaced by Lorentzian or Gaussian broadening functions to account for lifetime and inhomogeneous broadening:
-
-$$
-\delta(E) \to \frac{1}{\pi} \frac{\Gamma}{E^2 + \Gamma^2}
-$$
-
-where $\Gamma$ is the broadening parameter (typically 1--10 meV for high-quality nanowires at low temperature). The code outputs the raw (unbroadened) oscillator strengths and transition energies; post-processing with a broadening kernel is left to the plotting scripts.
-
-### 6.7.4 Published example: InP polytypic superlattices
+### 6.8.2 Published example: InP polytypic superlattices
 
 Holmberg *et al.* (arXiv:1409.6836) studied interband polarized absorption in InP polytypic superlattice nanowires, where alternating wurtzite (WZ) and zincblende (ZB) segments create a natural superlattice along the wire axis. This system is an excellent illustration of polarization-resolved optical transitions in a quasi-1D geometry.
 
@@ -464,13 +560,13 @@ For the zincblende segments, the present code can compute:
 - Oscillator strengths from the Kane $E_P$ parameter (InP: $E_P = 20.7$ eV)
 - Polarization anisotropy arising from the nanowire cross-section geometry
 
-The ZB Hamiltonian naturally produces the correct polarization dependence: TE-polarized absorption (in-plane, $p_x$ and $p_y$) dominates for HH-related transitions, while TM-polarized absorption ($p_z$) is stronger for LH-related transitions. Full reproduction of the Holmberg results requires wurtzite support (see Section 6.8.4).
+The ZB Hamiltonian naturally produces the correct polarization dependence: TE-polarized absorption (in-plane, $p_x$ and $p_y$) dominates for HH-related transitions, while TM-polarized absorption ($p_z$) is stronger for LH-related transitions. Full reproduction of the Holmberg results requires wurtzite support (see Section 6.9.4).
 
 ---
 
-## 6.8 Discussion
+## 6.9 Discussion
 
-### 6.8.1 Convergence considerations
+### 6.9.1 Convergence considerations
 
 The momentum matrix elements converge more slowly with the FD grid spacing than the eigenvalues, because they involve the derivative operator $\partial H / \partial k_\alpha$, which is sensitive to the finite-difference stencil accuracy. For reliable optical matrix elements:
 
@@ -479,7 +575,7 @@ The momentum matrix elements converge more slowly with the FD grid spacing than 
 - The number of VB states included (`numvb`) should be large enough to capture the dominant transitions; typically 10--20 VB states are needed.
 - Convergence of the oscillator strength should be checked by varying the grid spacing: $f_{ij}$ should change by less than 1% between successive refinements.
 
-### 6.8.2 Gauge invariance
+### 6.9.2 Gauge invariance
 
 The momentum matrix elements $\mathbf{p}_{if}$ and the position matrix elements $\mathbf{r}_{if}$ are related by
 
@@ -489,7 +585,7 @@ $$
 
 In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") give identical results. In a heterostructure with position-dependent material parameters, however, the velocity gauge (used by this code, since it directly evaluates $\partial H / \partial k$) is preferred because it avoids the ambiguity of the position operator across interfaces. The k.p Hamiltonian naturally provides the velocity-gauge matrix elements, and the code exploits this without needing to define a position operator.
 
-### 6.8.3 Current limitations
+### 6.9.3 Current limitations
 
 1. **No excitonic effects.** The independent-particle approximation neglects electron-hole Coulomb attraction, which can significantly enhance the absorption near the band edge (especially in low-dimensional systems where the exciton binding energy is large). For GaAs quantum wires, the exciton binding energy can reach 10--30 meV. Including excitons would require solving the Bethe-Salpeter equation or using a variational approach.
 
@@ -501,7 +597,7 @@ In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") g
 
 5. **Wire state selection.** The `gfactorCalculation` wire mode selects CB/VB states by their position in the sorted eigenvalue list (bottom `numvb` as VB, next `numcb` as CB) rather than by proximity to the band edges. For wires with many subbands, this selects deep valence states instead of the actual band-edge states, producing incorrect optical transitions. A band-edge-aware selection (identifying the gap and selecting states adjacent to it) is needed for correct wire oscillator strengths.
 
-### 6.8.4 Wurtzite limitation
+### 6.9.4 Wurtzite limitation
 
 Full reproduction of polarized absorption results for mixed-phase nanowires (e.g., Holmberg *et al.*) requires modeling the **wurtzite** crystal structure, which has a different 8-band Hamiltonian with distinct selection rules. The wurtzite basis introduces a crystal-field splitting $\Delta_{CR}$ that further separates the A (HH-like), B (LH-like), and C (SO-like) valence bands, modifying the polarization selection rules compared to zincblende.
 
@@ -515,7 +611,7 @@ The computation framework -- `compute_optical_matrix_wire`, the `optical_transit
 
 ---
 
-## 6.9 Summary
+## 6.10 Summary
 
 **Table 6.5:** Quick reference for optical properties computed by the code.
 
