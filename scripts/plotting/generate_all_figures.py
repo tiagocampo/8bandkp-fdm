@@ -3137,6 +3137,72 @@ def fig_vb_hh_lh_mixing(output_dir: Path) -> None:
     print("  -> docs/figures/vb_hh_lh_mixing.png")
 
 
+def fig_qw_strained_bands(output_dir: Path) -> None:
+    """qw_strained_bands.png: side-by-side unstrained vs strained QW subbands."""
+    print("[figure] qw_strained_bands")
+
+    base_cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+    base_text = base_cfg.read_text()
+
+    # --- Run 1: Unstrained (original config, no strain block) ---
+    cfg_off = output_dir / "tmp_strained_bands_off.cfg"
+    cfg_off.write_text(base_text)
+    # Clean output dir before run
+    for f in output_dir.glob("eigenvalues*.dat"):
+        f.unlink(missing_ok=True)
+    for f in output_dir.glob("eigenfunctions*.dat"):
+        f.unlink(missing_ok=True)
+    result = run_executable(EXE_BAND, cfg_off, REPO_ROOT, label="qw_unstrained_bands")
+    if result.returncode != 0:
+        print("  WARNING: unstrained run failed, skipping.")
+        cfg_off.unlink(missing_ok=True)
+        return
+    k_off, eig_off = parse_eigenvalues(output_dir)
+
+    # --- Run 2: Strained (inject strain block) ---
+    cfg_on = output_dir / "tmp_strained_bands_on.cfg"
+    strain_text = base_text.rstrip() + "\nstrain: T\nstrain_ref: AlSbW\nstrain_solver: pardiso\npiezo: F\n"
+    cfg_on.write_text(strain_text)
+    # Clean output dir before second run
+    for f in output_dir.glob("eigenvalues*.dat"):
+        f.unlink(missing_ok=True)
+    for f in output_dir.glob("eigenfunctions*.dat"):
+        f.unlink(missing_ok=True)
+    result = run_executable(EXE_BAND, cfg_on, REPO_ROOT, label="qw_strained_bands")
+    if result.returncode != 0:
+        print("  WARNING: strained run failed, skipping.")
+        for p in [cfg_off, cfg_on]:
+            p.unlink(missing_ok=True)
+        return
+    k_on, eig_on = parse_eigenvalues(output_dir)
+
+    # Clean up temp configs
+    for p in [cfg_off, cfg_on]:
+        p.unlink(missing_ok=True)
+
+    # --- Plot ---
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(11, 5), sharey=True)
+
+    for ax, k_vals, eig, title in [
+        (ax_left, k_off, eig_off, "Unstrained"),
+        (ax_right, k_on, eig_on, "Strained (Bir-Pikus)")]:
+        n_bands = eig.shape[0]
+        for i in range(n_bands):
+            e_mid = np.mean(eig[i])
+            color = "#17becf" if e_mid > 0 else "#d62728"
+            ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=0.85)
+        ax.set_xlabel(r"$k_{\parallel}$ (1/A)")
+        ax.set_title(title)
+        ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+    ax_left.set_ylabel(r"$E$ (eV)")
+    fig.suptitle("AlSbW/GaSbW/InAsW QW subbands", fontsize=12)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_strained_bands.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/qw_strained_bands.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -3155,6 +3221,7 @@ ALL_FIGURES = {
     "eigenvector_block_structure": fig_eigenvector_block_structure,
     "perband_density": fig_perband_density,
     "qw_strained_band_edges": fig_qw_strained_band_edges,
+    "qw_strained_bands": fig_qw_strained_bands,
     "wire_strain_2d": fig_wire_strain_2d,
     "bulk_inas_bands": fig_bulk_inas_bands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,

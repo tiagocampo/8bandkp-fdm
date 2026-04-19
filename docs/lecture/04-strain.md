@@ -621,6 +621,8 @@ larger amount ($\Delta E_{\text{HH}} > 0$).  The valence band maximum is HH.
 
 ![Band edge profiles for the AlSb/GaSb/InAs quantum well: unstrained (left) vs strained (right). The Bir--Pikus Hamiltonian splits the HH/LH degeneracy and shifts the conduction band.](../figures/qw_strained_band_edges.png){ width=90% }
 
+![Subband dispersion $E(k_{\parallel})$ for the AlSbW/GaSbW/InAsW QW: unstrained (left) vs strained (right). The Bir--Pikus corrections shift the CB subbands and split the HH/LH valence subbands.](../figures/qw_strained_bands.png){ width=95% }
+
 ### 7.2 Example B: InAs/GaAs quantum well -- large mismatch
 
 For comparison, consider the classic InAs/GaAs system with a much larger
