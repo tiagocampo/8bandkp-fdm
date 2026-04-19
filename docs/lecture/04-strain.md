@@ -182,6 +182,8 @@ $$
 Q_\varepsilon = \frac{b}{2}\left(\varepsilon_{zz} - \frac{\varepsilon_{xx} + \varepsilon_{yy}}{2}\right)\,.
 $$
 
+![GaAs band structure under biaxial strain on an InP substrate. The HH/LH degeneracy at $\Gamma$ is lifted by the shear component of the Bir--Pikus Hamiltonian.](../figures/bulk_gaas_strained_bands.png){ width=70% }
+
 ### 3.2 Band edge shifts
 
 The resulting shifts of each band edge are:
@@ -236,6 +238,8 @@ compressive strain, the product $-b\varepsilon_{xx} > 0$.  This means
 compressive strain pushes the HH band up (toward the CB) and the LH band down
 relative to the unstrained average.  For GaAs ($b = -2.0$ eV), the splitting is
 substantial -- on the order of 100 meV for 1% strain.
+
+![Valence band comparison: unstrained (dashed) vs strained (solid) GaAs on InP. The HH/LH splitting at $\Gamma$ is clearly visible in the right panel.](../figures/bulk_gaas_strain_comparison.png){ width=90% }
 
 ### 3.4 Physical interpretation
 
@@ -755,7 +759,9 @@ changes that directly impact device performance.
 | `compute_strain` | `src/physics/strain_solver.f90` | Top-level dispatcher: QW or wire |
 | `compute_strain_qw` | `src/physics/strain_solver.f90` | Algebraic biaxial strain for 1D |
 | `compute_strain_wire` | `src/physics/strain_solver.f90` | Navier--Cauchy PDE for 2D cross-section |
-| `apply_pikus_bir` | `src/physics/strain_solver.f90` | Bir--Pikus shifts to band edge profile |
+| `compute_bir_pikus_blocks` | `src/physics/strain_solver.f90` | Bir--Pikus shifts to structured output |
+| `bir_pikus_blocks_free` | `src/physics/strain_solver.f90` | Free Bir--Pikus arrays |
+| `compute_bp_scalar` | `src/physics/strain_solver.f90` | Pure function: BP shifts for single point |
 | `strain_result` | `src/physics/strain_solver.f90` | Derived type: eps_xx, eps_yy, eps_zz, eps_yz |
 | `strain_config` | `src/core/defs.f90` | Configuration: enabled, reference, solver |
 | `paramStruct` | `src/core/defs.f90` | Deformation potentials: ac, av, b_dp, d_dp, C11, C12, C44, a0 |
