@@ -1073,6 +1073,143 @@ def fig_bir_pikus_band_shifts(output_dir: Path) -> None:
     print("  -> docs/figures/bir_pikus_band_shifts.png")
 
 
+def fig_qw_strained_band_edges(output_dir: Path) -> None:
+    """qw_strained_band_edges.png: strained vs unstrained QW potential profile."""
+    print("[figure] qw_strained_band_edges")
+
+    # --- Material parameters (W-variant with band offsets, same strain params) ---
+    # AlSbW (layer 1, substrate / reference) -- same strain params as AlSb
+    mat_alsb = dict(a0=6.1355, C11=876.5, C12=434.1, ac=-4.5, av=1.4, b=-1.35)
+    # GaSbW (layer 2) -- same strain params as GaSb
+    mat_gasb = dict(a0=6.0959, C11=884.2, C12=402.4, ac=-7.5, av=0.8, b=-2.0)
+    # InAsW (layer 3) -- same strain params as InAs
+    mat_inas = dict(a0=6.0583, C11=832.9, C12=452.6, ac=-5.08, av=1.00, b=-1.8)
+
+    # --- Bir-Pikus shifts for [001] biaxial strain ---
+    # eps_xx = eps_yy = (a_ref - a_layer) / a_layer
+    # eps_zz = -2*C12/C11 * eps_xx
+    # delta_Ec  = ac * Tr(eps)
+    # P_eps     = -av * Tr(eps)
+    # Q_eps     = b/2 * (eps_zz - eps_xx)      [since eps_xx = eps_yy]
+    # delta_EHH = P_eps + Q_eps
+    # delta_ELH = P_eps - Q_eps
+    # delta_ESO = P_eps
+    a_ref = mat_alsb["a0"]  # AlSbW is the substrate/reference
+
+    def bir_pikus_shifts(mat):
+        eps_xx = (a_ref - mat["a0"]) / mat["a0"]
+        eps_zz = -2.0 * mat["C12"] / mat["C11"] * eps_xx
+        Tr_eps = 2.0 * eps_xx + eps_zz
+        P_eps = -mat["av"] * Tr_eps
+        Q_eps = mat["b"] / 2.0 * (eps_zz - eps_xx)
+        return dict(
+            dEc=mat["ac"] * Tr_eps,
+            dEHH=P_eps + Q_eps,
+            dELH=P_eps - Q_eps,
+            dESO=P_eps,
+        )
+
+    # Reference layer (AlSbW): zero strain
+    shifts_alsb = dict(dEc=0.0, dEHH=0.0, dELH=0.0, dESO=0.0)
+    shifts_gasb = bir_pikus_shifts(mat_gasb)
+    shifts_inas = bir_pikus_shifts(mat_inas)
+
+    # --- Build a minimal config and run the QW (unstrained) ---
+    # Layer geometry: AlSbW [-250,250], GaSbW [-135,135], InAsW [-35,35]
+    cfg_text = (
+        "waveVector: k0\n"
+        "waveVectorMax: 0.0\n"
+        "waveVectorStep: 0\n"
+        "confinement:  1\n"
+        "FDstep: 201\n"
+        "FDorder: 4\n"
+        "numLayers:  3\n"
+        "material1: AlSbW -250 250 0\n"
+        "material2: GaSbW -135 135 0.2414\n"
+        "material3: InAsW -35 35 -0.0914\n"
+        "numcb: 4\n"
+        "numvb: 8\n"
+        "ExternalField: 0  EF\n"
+        "EFParams: 0.0\n"
+        "whichBand: 0\n"
+        "bandIdx: 1\n"
+        "SC: 0\n"
+        "strain: F\n"
+        "strainSubstrate: 0.0\n"
+    )
+    cfg_path = output_dir / "tmp_qw_strain_unstrained.cfg"
+    cfg_path.write_text(cfg_text)
+    run_executable(EXE_BAND, cfg_path, REPO_ROOT, label="qw_unstrained_profile")
+    z, EV, EV_SO, EC = parse_potential_profile(output_dir)
+
+    # Clean up temp config
+    if cfg_path.exists():
+        cfg_path.unlink()
+
+    # --- Apply Bir-Pikus shifts per-layer to get strained profile ---
+    # Determine which layer each z-point belongs to
+    # Layer 1: AlSbW [-250, 250], Layer 2: GaSbW [-135, 135], Layer 3: InAsW [-35, 35]
+    dEc  = np.zeros_like(z)
+    dEHH = np.zeros_like(z)
+    dELH = np.zeros_like(z)
+    dESO = np.zeros_like(z)
+
+    for i, zi in enumerate(z):
+        if -135 <= zi <= 135:
+            # GaSbW well layer (check InAsW first since it's nested)
+            if -35 <= zi <= 35:
+                # InAsW
+                dEc[i]  = shifts_inas["dEc"]
+                dEHH[i] = shifts_inas["dEHH"]
+                dELH[i] = shifts_inas["dELH"]
+                dESO[i] = shifts_inas["dESO"]
+            else:
+                dEc[i]  = shifts_gasb["dEc"]
+                dEHH[i] = shifts_gasb["dEHH"]
+                dELH[i] = shifts_gasb["dELH"]
+                dESO[i] = shifts_gasb["dESO"]
+        # else: AlSbW barrier, shifts remain zero
+
+    # Strained band edges
+    EC_s  = EC   + dEc
+    EV_HH = EV   + dEHH
+    EV_LH = EV   + dELH
+    EV_SO_s = EV_SO + dESO
+
+    # --- Plot: side-by-side unstrained vs strained ---
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(10, 5), sharey=True)
+
+    # Left: unstrained (HH=LH degenerate)
+    ax_left.plot(z, EC, "b-", linewidth=1.5, label="CB")
+    ax_left.plot(z, EV, "r-", linewidth=1.5, label="HH=LH")
+    ax_left.plot(z, EV_SO, color="orange", linewidth=1.5, label="SO")
+    ax_left.set_xlabel(r"$z$ (A)")
+    ax_left.set_ylabel(r"$E$ (eV)")
+    ax_left.set_title("Unstrained")
+    ax_left.legend(fontsize=8, loc="upper right")
+    ax_left.axhline(0, color="grey", linewidth=0.3, linestyle=":")
+
+    # Right: strained (HH/LH split)
+    ax_right.plot(z, EC_s, "b-", linewidth=1.5, label=r"CB ($\delta E_c$)")
+    ax_right.plot(z, EV_HH, "r-", linewidth=1.5, label="HH")
+    ax_right.plot(z, EV_LH, "g-", linewidth=1.5, label="LH")
+    ax_right.plot(z, EV_SO_s, color="orange", linewidth=1.5, label="SO")
+    ax_right.set_xlabel(r"$z$ (A)")
+    ax_right.set_title("Strained (Bir-Pikus)")
+    ax_right.legend(fontsize=8, loc="upper right")
+    ax_right.axhline(0, color="grey", linewidth=0.3, linestyle=":")
+
+    # Add layer boundaries
+    for ax in [ax_left, ax_right]:
+        for boundary in [-135, 135, -35, 35]:
+            ax.axvline(boundary, color="grey", linewidth=0.5, linestyle="--")
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_strained_band_edges.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/qw_strained_band_edges.png")
+
+
 def fig_qw_alsbw_gasbw_inasw_bands(output_dir: Path) -> None:
     """qw_alsbw_gasbw_inasw_bands.png: E(k_parallel) subbands from QW."""
     print("[figure] qw_alsbw_gasbw_inasw_bands")
@@ -2593,6 +2730,7 @@ ALL_FIGURES = {
     "strain_lattice_mismatch": fig_strain_lattice_mismatch,
     "strain_biaxial_tensor": fig_strain_biaxial_tensor,
     "bir_pikus_band_shifts": fig_bir_pikus_band_shifts,
+    "qw_strained_band_edges": fig_qw_strained_band_edges,
     "bulk_inas_bands": fig_bulk_inas_bands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,
