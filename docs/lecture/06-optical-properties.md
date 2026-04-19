@@ -560,13 +560,117 @@ For the zincblende segments, the present code can compute:
 - Oscillator strengths from the Kane $E_P$ parameter (InP: $E_P = 20.7$ eV)
 - Polarization anisotropy arising from the nanowire cross-section geometry
 
-The ZB Hamiltonian naturally produces the correct polarization dependence: TE-polarized absorption (in-plane, $p_x$ and $p_y$) dominates for HH-related transitions, while TM-polarized absorption ($p_z$) is stronger for LH-related transitions. Full reproduction of the Holmberg results requires wurtzite support (see Section 6.9.4).
+The ZB Hamiltonian naturally produces the correct polarization dependence: TE-polarized absorption (in-plane, $p_x$ and $p_y$) dominates for HH-related transitions, while TM-polarized absorption ($p_z$) is stronger for LH-related transitions. Full reproduction of the Holmberg results requires wurtzite support (see Section 6.11.4).
 
 ---
 
-## 6.9 Discussion
+## 6.9 Intersubband Transitions (ISBT)
 
-### 6.9.1 Convergence considerations
+### 6.9.1 Selection rules for ISBT
+
+The interband transitions discussed in Sections 6.2--6.8 couple valence and conduction band states via the Kane momentum matrix element $P$. A fundamentally different class of optical transitions occurs between subbands within the **same band** -- most commonly between conduction subbands in a quantum well. These intersubband transitions (ISBTs) are the basis for quantum cascade lasers (QCLs) and quantum well infrared photodetectors (QWIPs).
+
+For a QW grown along $z$, the ISBT matrix element is the **position dipole** between two conduction subband envelope functions:
+
+$$
+z_{ij} = \langle \psi_i | z | \psi_j \rangle = \int \psi_i^*(z) \, z \, \psi_j(z) \, dz
+$$
+
+This is distinct from the momentum matrix element $\mathbf{p}_{if}$ used for interband transitions. The position operator $z$ couples only states with **opposite parity** in an infinite square well, giving the selection rule $\Delta n = n_f - n_i = \pm 1, \pm 3, \pm 5, \ldots$. For a symmetric well, only odd $\Delta n$ transitions have nonzero $z_{ij}$, with $\Delta n = \pm 1$ typically dominant. In an asymmetric well (e.g., with an applied electric field), the parity selection rule relaxes and all $\Delta n$ transitions become allowed.
+
+A critical consequence of the $z$-dipole operator is that ISBTs are **TM-polarized**: the oscillating dipole is oriented along the growth direction, so only light with an electric field component along $z$ can drive the transition. Normal-incidence absorption (TE-polarized, electric field in the $x$--$y$ plane) is identically zero for ISBTs in a QW. This is the opposite of the interband case, where the dominant HH-CB transitions are TE-polarized.
+
+The $\Delta n$ selection rule assumes that the in-plane part of the wave function has the same symmetry for both subbands. Since all conduction subbands share the same $|S\rangle$-like Bloch character and the same in-plane free-particle dispersion, transitions between any two CB subbands satisfy this condition automatically. The same formalism applies to valence intersubband transitions (e.g., HH1-to-HH2), although the valence band mixing complicates the simple parity rule.
+
+### 6.9.2 Oscillator strength
+
+The dimensionless oscillator strength for an ISBT is (Ando, Fowler, and Stern, Rev. Mod. Phys. **54**, 437 (1982); Bastard, *Wave Mechanics Applied to Semiconductor Heterostructures*, Ch. III):
+
+$$
+f_{ij} = \frac{2 m_0 E_{ij}}{\hbar^2} \, |z_{ij}|^2
+$$
+
+where $E_{ij} = E_j - E_i$ is the intersubband energy separation. This formula is the length-gauge counterpart of the velocity-gauge expression used for interband transitions (Section 6.3). The two formulations are connected by the gauge relation $\mathbf{p}_{ij} = i m_0 \omega_{ij} \mathbf{r}_{ij}$, but for ISBTs the length gauge ($z_{ij}$) is the natural choice because the position operator is well-defined for states within the same band.
+
+For a GaAs/Al$_{0.3}$Ga$_{0.7}$As QW with well width $L = 10$ nm, typical values are:
+
+| Quantity | Value |
+|---|---|
+| $z_{12}$ | 10--20 angstrom |
+| $E_{12}$ | 80--120 meV |
+| $f_{12}$ | 5--15 |
+
+The oscillator strength satisfies the same Thomas-Reiche-Kuhn sum rule as interband transitions: $\sum_j f_{ij} = 1$ for a complete set of final states. In practice, the $i \to j = i+1$ transition carries most of the oscillator strength (typically $f > 0.9$ for the ground-to-first-excited transition in a single QW), with weaker contributions from higher transitions.
+
+### 6.9.3 ISBT absorption coefficient
+
+The ISBT absorption coefficient has the same functional form as the interband expression (Section 6.7), but with the $z$-dipole replacing the momentum matrix element and only TM polarization contributing:
+
+$$
+\alpha_{\text{ISBT}}(\hbar\omega) = \frac{n_{2D} \, e^2 \, \omega}{n_r \, c \, \epsilon_0} \sum_{i<j} f_{ij} \left[ f_i - f_j \right] \, L(\hbar\omega - E_{ij})
+$$
+
+where $n_{2D}$ is the 2D electron density in the well (from doping or carrier injection), $f_i$ and $f_j$ are Fermi-Dirac occupation factors for the lower and upper subbands, and $L$ is the broadening lineshape. The factor $f_i - f_j$ ensures that absorption occurs only when the lower subband is more populated than the upper one. At zero temperature with the Fermi level between subbands $i$ and $i+1$, only the transitions originating from subband $i$ are active.
+
+The polarization restriction means that ISBT absorption is measured at oblique or grating-coupled incidence (to project a $z$-component of the electric field into the well plane). This geometric constraint is a distinguishing experimental signature of ISBTs and is exploited in QWIP focal plane arrays, where a diffraction grating on the detector surface provides the necessary TM coupling.
+
+For computational purposes, the code evaluates $z_{ij}$ by direct numerical integration of the envelope functions:
+
+$$
+z_{ij} = \sum_{n=1}^{N_{\text{FD}}} \psi_i^*(z_n) \, z_n \, \psi_j(z_n) \, \Delta z
+$$
+
+using the same FD grid and Simpson integration as the charge density calculation. The ISBT oscillator strength is then computed from the $f_{ij}$ formula above. This routine (`compute_isbt_dipole` in `gfactor_functions.f90`) operates on the CB envelope functions extracted from the 8-band eigenvectors.
+
+---
+
+## 6.10 Optical Gain in Quantum Wells
+
+### 6.10.1 Gain from population inversion
+
+When the occupation factor $f_i - f_j$ in the absorption formula becomes negative, the medium no longer absorbs photons but **amplifies** them. The gain coefficient is simply the negative of absorption:
+
+$$
+g(\hbar\omega) = -\alpha(\hbar\omega)
+$$
+
+Population inversion between conduction and valence subbands requires that the probability of finding an electron in the CB state exceeds the probability of finding a hole in the corresponding VB state. In the language of quasi-Fermi levels, this means $E_{F_n} - E_{F_p} > E_g$, where $E_{F_n}$ and $E_{F_p}$ are the quasi-Fermi levels for electrons and holes, respectively (Bernard-Duraffourg condition). In practice, inversion is achieved by carrier injection -- either optically (optical pumping) or electrically (forward-biased p-n junction, as in a laser diode).
+
+The transparency carrier density $N_{tr}$ is the injection level at which the peak gain crosses zero: the medium is transparent at the band edge but has not yet reached net amplification. Above $N_{tr}$, the peak gain increases approximately linearly with carrier density for QWs (Chuang, *Physics of Optoelectronic Devices*, Ch. 10):
+
+$$
+g_{\text{peak}} \approx a (N - N_{tr})
+$$
+
+where $a$ is the differential gain coefficient. The transparency density and differential gain are the key parameters for laser design: lower $N_{tr}$ means lower threshold current, and higher $a$ means faster modulation bandwidth.
+
+### 6.10.2 TE/TM gain in strained quantum wells
+
+Strain modifies the gain spectrum by shifting the HH and LH band edges relative to each other, which changes the relative weight of TE and TM transitions at the band edge. This has profound implications for polarization control in vertical-cavity surface-emitting lasers (VCSELs), where the gain polarization determines the laser emission polarization.
+
+**Compressive strain** (e.g., In$_x$Ga$_{1-x}$As/GaAs with $x > 0$): The in-plane lattice constant of the well exceeds that of the barrier, placing the well under biaxial compressive strain. The Bir-Pikus strain Hamiltonian splits the HH and LH band edges at $k_\parallel = 0$, pushing the HH above the LH. Since HH-CB transitions are purely TE-polarized (Table 6.2), the **TE gain is enhanced** at the band edge. This is the preferred material system for conventional edge-emitting lasers and VCSELs, where TE-polarized emission is desired.
+
+**Tensile strain** (e.g., GaAs$_{1-x}$P$_x$/GaAs with $x > 0$): The well is under biaxial tensile strain, which pushes the LH above the HH. The LH-CB transitions have a dominant TM component, so the **TM gain is enhanced** at the band edge. This is exploited in TM-polarized VCSELs and polarization-switching devices. Chuang (Ch. 10) provides a detailed analysis of the strain-dependent gain for arbitrary strain configurations.
+
+The 8-band k.p framework captures these effects automatically: the Bir-Pikus strain terms in the Hamiltonian shift the HH and LH edges, and the momentum matrix elements computed from the strained eigenvectors contain the correct TE/TM polarization weights. No additional post-processing is needed beyond the standard absorption/gain formula.
+
+### 6.10.3 Gain spectrum characteristics
+
+The gain spectrum of a QW has several characteristic features that depend on the structural and material parameters:
+
+1. **Peak gain vs. carrier density.** The peak gain increases monotonically with carrier density, but the relationship is sublinear at high densities due to band filling and phase-space filling. For a single GaAs QW, $g_{\text{peak}}$ saturates at $\sim$2000--3000 cm$^{-1}$ for $N \sim 5 \times 10^{12}$ cm$^{-2}$.
+
+2. **Gain bandwidth.** The spectral width of the gain region is determined by the subband spacing and the Fermi distribution broadening. For a 10 nm GaAs QW, the gain bandwidth at threshold is typically 30--50 meV. Wider wells have smaller subband spacing and narrower gain bandwidth, while narrower wells have larger spacing and broader gain.
+
+3. **Temperature dependence.** The gain spectrum shifts to lower energy with increasing temperature (band gap shrinkage, $dE_g/dT \approx -0.5$ meV/K for GaAs) and broadens due to increased thermal occupation of higher subbands. The peak gain at a fixed carrier density decreases with temperature, which is the primary reason for the increase in laser threshold current with temperature.
+
+4. **Many-body effects.** The independent-particle gain formula underestimates the peak gain and overestimates the transparency density because it neglects Coulomb enhancement and band-gap renormalization. These many-body corrections can modify the gain by 20--50% near the band edge (Chuang, Ch. 10; Haug and Koch, *Quantum Theory of the Optical and Electronic Properties of Semiconductors*, Ch. 5). A rigorous treatment requires solving the semiconductor Bloch equations, which is beyond the scope of the present code.
+
+---
+
+## 6.11 Discussion
+
+### 6.11.1 Convergence considerations
 
 The momentum matrix elements converge more slowly with the FD grid spacing than the eigenvalues, because they involve the derivative operator $\partial H / \partial k_\alpha$, which is sensitive to the finite-difference stencil accuracy. For reliable optical matrix elements:
 
@@ -575,7 +679,7 @@ The momentum matrix elements converge more slowly with the FD grid spacing than 
 - The number of VB states included (`numvb`) should be large enough to capture the dominant transitions; typically 10--20 VB states are needed.
 - Convergence of the oscillator strength should be checked by varying the grid spacing: $f_{ij}$ should change by less than 1% between successive refinements.
 
-### 6.9.2 Gauge invariance
+### 6.11.2 Gauge invariance
 
 The momentum matrix elements $\mathbf{p}_{if}$ and the position matrix elements $\mathbf{r}_{if}$ are related by
 
@@ -585,7 +689,7 @@ $$
 
 In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") give identical results. In a heterostructure with position-dependent material parameters, however, the velocity gauge (used by this code, since it directly evaluates $\partial H / \partial k$) is preferred because it avoids the ambiguity of the position operator across interfaces. The k.p Hamiltonian naturally provides the velocity-gauge matrix elements, and the code exploits this without needing to define a position operator.
 
-### 6.9.3 Current limitations
+### 6.11.3 Current limitations
 
 1. **No excitonic effects.** The independent-particle approximation neglects electron-hole Coulomb attraction, which can significantly enhance the absorption near the band edge (especially in low-dimensional systems where the exciton binding energy is large). For GaAs quantum wires, the exciton binding energy can reach 10--30 meV. Including excitons would require solving the Bethe-Salpeter equation or using a variational approach.
 
@@ -597,7 +701,7 @@ In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") g
 
 5. **Wire state selection.** The `gfactorCalculation` wire mode selects CB/VB states by their position in the sorted eigenvalue list (bottom `numvb` as VB, next `numcb` as CB) rather than by proximity to the band edges. For wires with many subbands, this selects deep valence states instead of the actual band-edge states, producing incorrect optical transitions. A band-edge-aware selection (identifying the gap and selecting states adjacent to it) is needed for correct wire oscillator strengths.
 
-### 6.9.4 Wurtzite limitation
+### 6.11.4 Wurtzite limitation
 
 Full reproduction of polarized absorption results for mixed-phase nanowires (e.g., Holmberg *et al.*) requires modeling the **wurtzite** crystal structure, which has a different 8-band Hamiltonian with distinct selection rules. The wurtzite basis introduces a crystal-field splitting $\Delta_{CR}$ that further separates the A (HH-like), B (LH-like), and C (SO-like) valence bands, modifying the polarization selection rules compared to zincblende.
 
@@ -611,7 +715,7 @@ The computation framework -- `compute_optical_matrix_wire`, the `optical_transit
 
 ---
 
-## 6.10 Summary
+## 6.12 Summary
 
 **Table 6.5:** Quick reference for optical properties computed by the code.
 
