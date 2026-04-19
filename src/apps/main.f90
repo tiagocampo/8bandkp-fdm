@@ -141,8 +141,8 @@ program kpfdm
         close(iounit)
         print *, '  Wire strain tensor written to output/strain.dat'
 
-        call apply_pikus_bir(strain_out, cfg%params, cfg%grid%material_id, &
-          cfg%grid, profile_2d)
+        call compute_bir_pikus_blocks(strain_out, cfg%params, cfg%grid%material_id, &
+          cfg%grid, cfg%strain_blocks)
         call strain_result_free(strain_out)
 
         print *, '  Wire strain calculation complete'
@@ -567,8 +567,8 @@ program kpfdm
 
       call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
         cfg%strain, a0_ref, strain_out_qw)
-      call apply_pikus_bir(strain_out_qw, cfg%params, cfg%grid%material_id, &
-        cfg%grid, profile)
+      call compute_bir_pikus_blocks(strain_out_qw, cfg%params, cfg%grid%material_id, &
+        cfg%grid, cfg%strain_blocks)
       call strain_result_free(strain_out_qw)
 
       print *, '  QW strain calculation complete'
@@ -627,7 +627,7 @@ program kpfdm
     allocate(work(lwork))
   else if (cfg%confDir == 'z') then
     ! QW: NxN workspace query
-    call ZB8bandQW(HT, smallk(1), profile, kpterms)
+    call ZB8bandQW(HT, smallk(1), profile, kpterms, cfg=cfg)
     if (allocated(work)) deallocate(work)
     allocate(work(1))
     lwork = -1
@@ -699,7 +699,7 @@ program kpfdm
       !$omp do schedule(static)
       do k = 1, cfg%waveVectorStep
         ! Build Hamiltonian for this k-point
-        call ZB8bandQW(HT_loc, smallk(k), profile, kpterms)
+        call ZB8bandQW(HT_loc, smallk(k), profile, kpterms, cfg=cfg)
 
         ! Diagonalize
         call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &

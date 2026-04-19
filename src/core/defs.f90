@@ -36,9 +36,32 @@ module definitions
   real(kind=dp), parameter :: SQR2o3 = dsqrt(2.0_dp/3.0_dp)
   real(kind=dp), parameter :: RQS3 = 1.0_dp/SQR3
   real(kind=dp), parameter :: RQS2 = 1.0_dp/SQR2
+  real(kind=dp), parameter :: SQR3o2 = dsqrt(1.5_dp)   ! sqrt(3/2) = SQR3 * RQS2
   complex(kind=dp), parameter :: ZERO = cmplx(0.0_dp, 0.0_dp, kind=dp)
   complex(kind=dp), parameter :: UM = cmplx(1.0_dp, 0.0_dp, kind=dp)
 
+  ! Scalar Bir-Pikus strain result for a single grid point.
+  type :: bp_scalar
+    real(kind=dp) :: delta_Ec    = 0.0_dp   ! CB: ac*Tr(eps)
+    real(kind=dp) :: delta_EHH   = 0.0_dp   ! HH: P_eps + Q_eps
+    real(kind=dp) :: delta_ELH   = 0.0_dp   ! LH: P_eps - Q_eps
+    real(kind=dp) :: delta_ESO   = 0.0_dp   ! SO: P_eps
+    complex(kind=dp) :: R_eps    = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    complex(kind=dp) :: S_eps    = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    real(kind=dp) :: QT2_eps     = 0.0_dp   ! Q_eps - T_eps = 2*Q_eps
+  end type bp_scalar
+
+  ! Per-grid-point Bir-Pikus strain Hamiltonian components.
+  ! Arrays have length ngrid; unallocated when unstrained.
+  type :: bir_pikus_blocks
+    real(kind=dp), allocatable :: delta_Ec(:)    ! CB bands 7,8
+    real(kind=dp), allocatable :: delta_EHH(:)   ! HH bands 1,4
+    real(kind=dp), allocatable :: delta_ELH(:)   ! LH bands 2,3
+    real(kind=dp), allocatable :: delta_ESO(:)   ! SO bands 5,6
+    complex(kind=dp), allocatable :: R_eps(:)    ! VB-VB coupling
+    complex(kind=dp), allocatable :: S_eps(:)    ! VB-VB coupling
+    real(kind=dp), allocatable :: QT2_eps(:)     ! VB-SO coupling (2*Q_eps)
+  end type bir_pikus_blocks
 
   type wavevector
 
@@ -214,6 +237,8 @@ module definitions
     real(kind=dp)      :: feast_emin = 0.0_dp   ! manual energy window (0=auto)
     real(kind=dp)      :: feast_emax = 0.0_dp   ! manual energy window (0=auto)
     integer            :: feast_m0 = 0           ! manual subspace size (0=auto: 2*nev)
+
+    type(bir_pikus_blocks)     :: strain_blocks    ! precomputed strain data
   end type simulation_config
 
   type group

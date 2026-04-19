@@ -116,7 +116,6 @@ module hamiltonianConstructor
       integer :: i, initIDX, endIDX, N, ii, jj, j
       integer :: order
       real(kind = dp) :: delta
-      logical, allocatable :: assigned(:)
 
 
       N = size(z, dim=1)
@@ -147,36 +146,21 @@ module hamiltonianConstructor
           end if
         end do
 
-        ! Mask-based assignment: first layer to claim a grid point wins.
-        allocate(assigned(N))
-        assigned = .false.
-
+        ! Last-layer-wins assignment: later layers overwrite earlier ones.
+        ! This allows 2-layer configs where barrier covers the full domain
+        ! and the well layer overwrites the central region.
         do i = 1, nlayers, 1
           do j = startPos(i), endPos(i)
-            if (.not. assigned(j)) then
-              profile(j, 1) = params(i)%EV
-              profile(j, 2) = params(i)%EV - params(i)%DeltaSO
-              profile(j, 3) = params(i)%EC
-              kptermsProfile(j, 1) = params(i)%gamma1
-              kptermsProfile(j, 2) = params(i)%gamma2
-              kptermsProfile(j, 3) = params(i)%gamma3
-              kptermsProfile(j, 4) = params(i)%A
-              kptermsProfile(j, 5) = params(i)%P
-              assigned(j) = .true.
-            end if
+            profile(j, 1) = params(i)%EV
+            profile(j, 2) = params(i)%EV - params(i)%DeltaSO
+            profile(j, 3) = params(i)%EC
+            kptermsProfile(j, 1) = params(i)%gamma1
+            kptermsProfile(j, 2) = params(i)%gamma2
+            kptermsProfile(j, 3) = params(i)%gamma3
+            kptermsProfile(j, 4) = params(i)%A
+            kptermsProfile(j, 5) = params(i)%P
           end do
         end do
-
-        ! Verify all grid points are covered by at least one layer
-        if (any(.not. assigned)) then
-          print *, 'ERROR: grid points not covered by any material layer:'
-          do j = 1, N
-            if (.not. assigned(j)) print *, '  z-point', j, 'z =', z(j)
-          end do
-          stop 1
-        end if
-
-        deallocate(assigned)
 
       else
 

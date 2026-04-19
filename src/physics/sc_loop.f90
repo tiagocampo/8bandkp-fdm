@@ -212,7 +212,7 @@ contains
         wv%ky = 0.0_dp
         wv%kz = 0.0_dp
 
-        call ZB8bandQW(HT, wv, profile, kpterms)
+        call ZB8bandQW(HT, wv, profile, kpterms, cfg=cfg)
 
         call zheevx('V', 'I', 'U', N, HT, N, 0.0_dp, 0.0_dp, il, iuu, abstol, &
           & M_out, eig_kpar(:, k_idx), HT, N, work, lwork, rwork, &
