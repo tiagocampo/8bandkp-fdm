@@ -11,6 +11,7 @@ program kpfdm
   use sparse_matrices
   use eigensolver
   use strain_solver
+  use optical_spectra
   use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch
 
   implicit none
@@ -733,6 +734,56 @@ program kpfdm
   end if
   call writeEigenvalues(smallk, eig(:,:), cfg%waveVectorStep)
 
+  ! ====================================================================
+  ! Post-sweep optical absorption (QW only, serial)
+  ! ====================================================================
+  if (cfg%optics%enabled .and. cfg%confDir == 'z') then
+    block
+      real(kind=dp), allocatable :: simpson_w(:)
+      real(kind=dp) :: dk
+      integer :: npts
+
+      ! Simpson 1/3 rule weights for k_sweep integration
+      npts = cfg%waveVectorStep
+      if (mod(npts, 2) == 0) then
+        npts = npts - 1  ! Simpson requires odd number of points
+        print '(A,I0,A)', ' Warning: optics integration uses ', npts, &
+          & ' k-points (Simpson requires odd count)'
+      end if
+      allocate(simpson_w(npts))
+      dk = cfg%waveVectorMax / real(cfg%waveVectorStep - 1, kind=dp)  ! true grid spacing
+      simpson_w(1) = dk / 3.0_dp
+      simpson_w(npts) = dk / 3.0_dp
+      do i = 2, npts - 1
+        if (mod(i, 2) == 0) then
+          simpson_w(i) = 4.0_dp * dk / 3.0_dp
+        else
+          simpson_w(i) = 2.0_dp * dk / 3.0_dp
+        end if
+      end do
+
+      ! Initialize optics accumulation arrays
+      call optics_init(cfg%optics)
+
+      print '(A)', ' Computing optical absorption...'
+      do k = 1, npts
+        call optics_accumulate(cfg%optics, &
+          & eigvals=eig(:, k), &
+          & eigvecs=eigv(:, :, k), &
+          & k_weight=simpson_w(k), &
+          & nlayers=cfg%numLayers, params=cfg%params, &
+          & profile=profile, kpterms=kpterms, &
+          & startz=cfg%startPos(1), endz=cfg%endPos(1), dz=cfg%dz, &
+          & numcb=cfg%numcb, numvb=cfg%numvb, &
+          & fermi_level=cfg%sc%fermi_level)
+      end do
+
+      call optics_finalize(cfg%optics)
+      call optics_cleanup()
+      deallocate(simpson_w)
+      print '(A)', ' Absorption spectra written to output/'
+    end block
+  end if
 
   !----------------------------------------------------------------------------
 
