@@ -2815,6 +2815,57 @@ def fig_eigenvector_block_structure(output_dir: Path) -> None:
     print("  -> docs/figures/eigenvector_block_structure.png")
 
 
+def fig_perband_density(output_dir: Path) -> None:
+    """perband_density.png: |psi_b(z)|^2 for each of 8 bands, CB1 state."""
+    print("[figure] perband_density")
+    cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
+    n_z = 101
+    n_ev = 11  # load states 1-11 so we can access CB1 = state 11 (0-indexed: 10)
+    try:
+        z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=n_ev, n_z=n_z)
+    except FileNotFoundError:
+        print("  WARNING: no eigenfunction data, skipping.")
+        return
+
+    if z.size == 0 or wf.shape[0] < n_ev:
+        print("  WARNING: no wavefunction data or missing CB1 state, skipping.")
+        return
+
+    band_labels = ["HH (+3/2)", "LH (+1/2)", "LH (-1/2)", "HH (-3/2)",
+                   "SO (+1/2)", "SO (-1/2)", "CB (+1/2)", "CB (-1/2)"]
+    band_colors = ["#d62728", "#1f77b4", "#2ca02c", "#9467bd",
+                   "#ff7f0e", "#e377c2", "#17becf", "#bcbd22"]
+
+    psi = wf[10]  # CB1 = state 11 (0-indexed), shape (n_z, 8)
+    psi2 = psi ** 2
+
+    fig, axes = plt.subplots(2, 4, figsize=(12, 6), sharex=True, sharey=True)
+    axes = axes.flatten()
+
+    for b in range(8):
+        ax = axes[b]
+        ax.plot(z, psi2[:, b], color=band_colors[b], linewidth=1.2)
+        ax.fill_between(z, 0, psi2[:, b], alpha=0.2, color=band_colors[b])
+        ax.set_title(band_labels[b], fontsize=9, color=band_colors[b])
+        nz = psi2[:, b] > 0.01 * psi2[:, b].max()
+        if np.any(nz):
+            ax.set_xlim(z[nz][0] - 20, z[nz][-1] + 20)
+        for boundary in [-135, 135, -35, 35]:
+            ax.axvline(boundary, color="grey", linewidth=0.3, linestyle="--")
+
+    for ax in axes[4:]:
+        ax.set_xlabel(r"$z$ (A)")
+    for ax in [axes[0], axes[4]]:
+        ax.set_ylabel(r"$|\psi_b(z)|^2$")
+
+    fig.suptitle(r"Per-band probability density for CB1 (state 11, $k_{\parallel}=0$)", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "perband_density.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/perband_density.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -2831,6 +2882,7 @@ ALL_FIGURES = {
     "strain_biaxial_tensor": fig_strain_biaxial_tensor,
     "bir_pikus_band_shifts": fig_bir_pikus_band_shifts,
     "eigenvector_block_structure": fig_eigenvector_block_structure,
+    "perband_density": fig_perband_density,
     "qw_strained_band_edges": fig_qw_strained_band_edges,
     "wire_strain_2d": fig_wire_strain_2d,
     "bulk_inas_bands": fig_bulk_inas_bands,

@@ -93,6 +93,8 @@ end do
 
 The output file `eigenfunctions_k_XXXXX_ev_YYYYY.dat` contains $N$ rows (one per grid point), each with 9 columns: the $z$-coordinate followed by $|\psi_b^{(n)}(z_i)|$ for $b = 1, \ldots, 8$.
 
+![Per-band probability density $|\psi_b(z)|^2$ for the CB1 ground state of the AlSbW/GaSbW/InAsW QW at $k_{\parallel} = 0$. Each panel shows one of the 8 band components; the conduction-band amplitudes (CB $\uparrow$, CB $\downarrow$) dominate with valence-band tails from the broken-gap coupling.](../figures/perband_density.png){ width=95% }
+
 ### 3.2 Total probability density
 
 The total probability density at position $z$ is the sum over all bands:
