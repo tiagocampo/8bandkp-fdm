@@ -8,6 +8,8 @@ module exciton_solver
   private
 
   public :: compute_exciton_binding
+  public :: sommerfeld_2d
+  public :: apply_excitonic_corrections
 
   ! Coulomb constant: e^2/(4*pi*eps0) = hbar*c/alpha_fine = 14.40 eV*AA
   ! Computed from code's hbar (eV*s) and c (AA/s) via fine structure constant.
@@ -415,5 +417,182 @@ contains
     print '(A)', '  Exciton results written to output/exciton.dat'
 
   end subroutine write_exciton_output
+
+  ! ------------------------------------------------------------------
+  ! 2D Sommerfeld enhancement factor for the absorption continuum.
+  !
+  ! S_2D(E_excess) = exp(pi/sqrt(D)) / cosh(pi/sqrt(D))
+  ! where D = E_excess / (E_binding / 4)
+  !
+  ! When D > 0 (above band edge): enhances continuum absorption.
+  ! When D -> 0 (at band edge): S_2D -> 2 (maximum 2D enhancement).
+  ! When D -> infinity: S_2D -> 1 (no enhancement).
+  ! ------------------------------------------------------------------
+  function sommerfeld_2d(E_excess, E_binding) result(S)
+    real(kind=dp), intent(in) :: E_excess    ! energy above band edge (eV)
+    real(kind=dp), intent(in) :: E_binding    ! exciton binding energy (eV, positive)
+    real(kind=dp) :: S
+    real(kind=dp) :: D, x
+
+    if (E_binding < 1.0e-10_dp .or. E_excess < 0.0_dp) then
+      S = 1.0_dp
+      return
+    end if
+
+    D = E_excess / (E_binding / 4.0_dp)
+
+    if (D < 1.0e-10_dp) then
+      S = 2.0_dp  ! 2D limit at band edge
+      return
+    end if
+
+    x = pi_dp / sqrt(D)
+
+    ! Avoid overflow for small D
+    if (x > 500.0_dp) then
+      S = 2.0_dp
+      return
+    end if
+
+    S = exp(x) / cosh(x)
+
+  end function sommerfeld_2d
+
+
+  ! ------------------------------------------------------------------
+  ! Local pseudo-Voigt lineshape (same formulation as optical_spectra).
+  !
+  ! V(E) = eta * L(E; E0, gamma_l) + (1-eta) * G(E; E0, gamma_g)
+  ! where eta = fwhm_L / (fwhm_L + fwhm_G) (Thompson mixing).
+  ! gamma_l and gamma_g are HWHM values.
+  ! ------------------------------------------------------------------
+  function lineshape_voigt_local(E, E0, gamma_l, gamma_g) result(V)
+    real(kind=dp), intent(in) :: E, E0, gamma_l, gamma_g
+    real(kind=dp) :: V
+
+    real(kind=dp) :: fwhm_l, fwhm_g, eta
+    real(kind=dp) :: lorentz, gaussian
+    real(kind=dp) :: x, sigma
+
+    fwhm_l = 2.0_dp * gamma_l
+    fwhm_g = 2.0_dp * gamma_g
+
+    ! Mixing parameter (Thompson et al. approximation)
+    if (fwhm_l + fwhm_g > 0.0_dp) then
+      eta = fwhm_l / (fwhm_l + fwhm_g)
+    else
+      eta = 0.5_dp
+    end if
+
+    ! Lorentzian: L(E) = gamma_l / (pi * ((E-E0)^2 + gamma_l^2))
+    if (gamma_l > 0.0_dp) then
+      lorentz = gamma_l / (pi_dp * ((E - E0)**2 + gamma_l**2))
+    else
+      lorentz = 0.0_dp
+    end if
+
+    ! Gaussian: G(E) = exp(-0.5*((E-E0)/sigma)^2) / (sigma*sqrt(2*pi))
+    if (gamma_g > 0.0_dp) then
+      sigma = fwhm_g / (2.0_dp * sqrt(2.0_dp * log(2.0_dp)))
+      x = (E - E0) / sigma
+      gaussian = exp(-0.5_dp * x**2) / (sigma * sqrt(2.0_dp * pi_dp))
+    else
+      gaussian = 0.0_dp
+    end if
+
+    V = eta * lorentz + (1.0_dp - eta) * gaussian
+
+  end function lineshape_voigt_local
+
+
+  ! ------------------------------------------------------------------
+  ! Apply excitonic corrections to the absorption spectrum.
+  !
+  ! 1. Above band gap (E > E_gap): multiply continuum by Sommerfeld
+  !    enhancement factor sommerfeld_2d(E - E_gap, E_binding).
+  ! 2. Below band gap (E ~ E_gap - E_binding): add a discrete exciton
+  !    peak, broadened by the Voigt lineshape.  The peak amplitude is
+  !    proportional to 1/gamma_l (for a 2D exciton, the oscillator
+  !    strength scales as 1/linewidth).
+  !
+  ! E_binding is in meV from compute_exciton_binding; convert to eV
+  ! internally (1 meV = 1e-3 eV).
+  ! ------------------------------------------------------------------
+  subroutine apply_excitonic_corrections(E_grid, alpha_te, alpha_tm, &
+    & E_gap, E_binding, optcfg)
+    real(kind=dp), intent(in)    :: E_grid(:)
+    real(kind=dp), intent(inout) :: alpha_te(:), alpha_tm(:)
+    real(kind=dp), intent(in)    :: E_gap       ! band gap (eV)
+    real(kind=dp), intent(in)    :: E_binding    ! binding energy (meV, positive)
+    type(optics_config), intent(in) :: optcfg
+
+    integer :: ie, npts
+    real(kind=dp) :: E_excess, S, E_exciton
+    real(kind=dp) :: gamma_l, gamma_g
+    real(kind=dp) :: A_exciton, peak_norm
+
+    ! Convert binding energy from meV to eV
+    real(kind=dp) :: Eb_eV
+
+    Eb_eV = E_binding * 1.0e-3_dp
+
+    if (Eb_eV < 1.0e-10_dp) return  ! no binding energy, nothing to do
+
+    npts = size(E_grid)
+    if (npts == 0) return
+    if (size(alpha_te) /= npts .or. size(alpha_tm) /= npts) return
+
+    ! Half-widths at half-maximum from FWHM (same convention as optics)
+    gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
+    gamma_g = optcfg%linewidth_gaussian / 2.0_dp
+
+    ! Exciton peak energy: E_gap - E_binding
+    E_exciton = E_gap - Eb_eV
+
+    ! Exciton peak amplitude: proportional to 1/gamma_l for a 2D exciton.
+    ! Scale relative to the continuum: use the average continuum alpha
+    ! near the band edge as a reference amplitude, then multiply by the
+    ! oscillator strength enhancement factor.
+    ! For a simple model: A_exciton = alpha_ref / gamma_l where alpha_ref
+    ! is the average of alpha_te near E_gap.
+    !
+    ! We estimate alpha_ref from the first few points above the gap.
+    A_exciton = 0.0_dp
+    peak_norm = 0.0_dp
+    do ie = 1, npts
+      if (E_grid(ie) > E_gap .and. E_grid(ie) < E_gap + 5.0_dp * Eb_eV) then
+        A_exciton = A_exciton + alpha_te(ie)
+        peak_norm = peak_norm + 1.0_dp
+      end if
+    end do
+
+    if (peak_norm > 0.0_dp .and. gamma_l > 0.0_dp) then
+      A_exciton = (A_exciton / peak_norm) / gamma_l
+    else if (gamma_l > 0.0_dp) then
+      ! Fallback: if no continuum data near gap, use a small default
+      A_exciton = 0.0_dp
+    else
+      A_exciton = 0.0_dp
+    end if
+
+    do ie = 1, npts
+      ! 1. Sommerfeld enhancement for E > E_gap (continuum)
+      if (E_grid(ie) >= E_gap) then
+        E_excess = E_grid(ie) - E_gap
+        S = sommerfeld_2d(E_excess, Eb_eV)
+        alpha_te(ie) = alpha_te(ie) * S
+        alpha_tm(ie) = alpha_tm(ie) * S
+      end if
+
+      ! 2. Discrete exciton peak at E = E_gap - E_binding
+      if (A_exciton > 0.0_dp) then
+        alpha_te(ie) = alpha_te(ie) + A_exciton &
+          & * lineshape_voigt_local(E_grid(ie), E_exciton, gamma_l, gamma_g)
+        alpha_tm(ie) = alpha_tm(ie) + A_exciton &
+          & * lineshape_voigt_local(E_grid(ie), E_exciton, gamma_l, gamma_g)
+      end if
+    end do
+
+  end subroutine apply_excitonic_corrections
 
 end module exciton_solver
