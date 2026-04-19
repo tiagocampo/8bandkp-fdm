@@ -3249,6 +3249,63 @@ def fig_hh_lh_ordering(output_dir: Path) -> None:
     print("  -> docs/figures/hh_lh_ordering.png")
 
 
+def fig_strained_unit_cell(output_dir: Path) -> None:
+    """strained_unit_cell.png: InAs unit cell before/after biaxial strain."""
+    print("[figure] strained_unit_cell")
+    fig, (ax_free, ax_strained) = plt.subplots(1, 2, figsize=(8, 4))
+
+    a_inas = 1.0
+    eps_xx = -0.067
+    eps_zz = +0.073
+
+    # Left: unstrained cubic cell
+    ax_free.set_title("Unstrained InAs", fontsize=11)
+    corners = np.array([[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]) * a_inas
+    ax_free.plot(corners[:, 0], corners[:, 1], "k-", linewidth=2)
+    ax_free.fill(corners[:-1, 0], corners[:-1, 1], color="#d94a4a", alpha=0.15)
+    ax_free.annotate("", xy=(1.0, -0.15), xytext=(0.0, -0.15),
+                     arrowprops=dict(arrowstyle="<->", color="black", lw=1.5))
+    ax_free.text(0.5, -0.25, r"$a_0 = 6.058$ A", ha="center", fontsize=9)
+    ax_free.annotate("", xy=(-0.15, 1.0), xytext=(-0.15, 0.0),
+                     arrowprops=dict(arrowstyle="<->", color="black", lw=1.5))
+    ax_free.text(-0.25, 0.5, r"$a_0$", ha="center", va="center", fontsize=9, rotation=90)
+    ax_free.set_xlim(-0.5, 1.6)
+    ax_free.set_ylim(-0.5, 1.5)
+    ax_free.set_aspect("equal")
+    ax_free.axis("off")
+
+    # Right: strained (compressed in x, expanded in z)
+    ax_strained.set_title("InAs on GaAs (compressive)", fontsize=11)
+    dx = 1.0 * (1 + eps_xx)
+    dz = 1.0 * (1 + eps_zz)
+    strained = np.array([[0, 0], [dx, 0], [dx, dz], [0, dz], [0, dz]])
+    ax_strained.plot(strained[:, 0], strained[:, 1], "r-", linewidth=2)
+    ax_strained.fill(strained[:-1, 0], strained[:-1, 1], color="#d94a4a", alpha=0.15)
+    # Ghost of original cell
+    ax_strained.plot(corners[:, 0], corners[:, 1], "k--", linewidth=1, alpha=0.3)
+    # Compression arrows (inward)
+    ax_strained.annotate("", xy=(dx, 0.5 * dz), xytext=(1.0, 0.5 * dz),
+                         arrowprops=dict(arrowstyle="->", color="#2962a0", lw=1.5))
+    ax_strained.annotate("", xy=(0, 0.5 * dz), xytext=(-0.1, 0.5 * dz),
+                         arrowprops=dict(arrowstyle="->", color="#2962a0", lw=1.5))
+    ax_strained.text(0.5 * dx, -0.25, r"$\varepsilon_{xx}=-6.7\%$", ha="center",
+                     fontsize=9, color="#2962a0")
+    # Expansion arrows (outward)
+    ax_strained.annotate("", xy=(0.5 * dx, dz), xytext=(0.5 * dx, 1.0),
+                         arrowprops=dict(arrowstyle="->", color="#a02929", lw=1.5))
+    ax_strained.text(0.5 * dx + 0.3, dz + 0.05, r"$\varepsilon_{zz}=+7.3\%$",
+                     fontsize=9, color="#a02929")
+    ax_strained.set_xlim(-0.5, 1.6)
+    ax_strained.set_ylim(-0.5, 1.5)
+    ax_strained.set_aspect("equal")
+    ax_strained.axis("off")
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "strained_unit_cell.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/strained_unit_cell.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -3263,6 +3320,7 @@ ALL_FIGURES = {
     "bulk_gaas_strain_comparison": fig_bulk_gaas_strain_comparison,
     "strain_lattice_mismatch": fig_strain_lattice_mismatch,
     "strain_biaxial_tensor": fig_strain_biaxial_tensor,
+    "strained_unit_cell": fig_strained_unit_cell,
     "bir_pikus_band_shifts": fig_bir_pikus_band_shifts,
     "eigenvector_block_structure": fig_eigenvector_block_structure,
     "perband_density": fig_perband_density,

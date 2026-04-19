@@ -160,6 +160,8 @@ $$
 
 The hydrostatic component (volume change) is negative: the unit cell shrinks.
 
+![InAs unit cell before and after biaxial compression on a GaAs substrate. The in-plane lattice is compressed by 6.7% while the out-of-plane direction expands by 7.3% via the Poisson effect. The dashed outline shows the unstrained cubic cell.](../figures/strained_unit_cell.png){ width=90% }
+
 ---
 
 ## 3. The Bir--Pikus Strain Hamiltonian
