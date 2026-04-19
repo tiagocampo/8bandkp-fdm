@@ -48,6 +48,14 @@ Thumbs.db
 docs/papers/
 docs/articles/
 
+# Python
+__pycache__/
+*.pyc
+
+# Test/debug artifacts
+test_debug_*
+test_staggered
+
 # CMake generated files
 Makefile
 *.cmake
