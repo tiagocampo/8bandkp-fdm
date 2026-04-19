@@ -36,6 +36,8 @@ elastically rather than forming misfit dislocations.  This is the
 **pseudomorphic growth** regime, and it is the regime assumed throughout the
 code.
 
+![Lattice mismatch between substrate and epitaxial layer. In the pseudomorphic configuration the layer is forced to adopt the substrate lattice constant, producing in-plane compression when $a_0^{\text{layer}} > a_0^{\text{sub}}$.](../figures/strain_lattice_mismatch.png){ width=90% }
+
 ### 1.2 Sign convention
 
 The convention matters for interpreting results:

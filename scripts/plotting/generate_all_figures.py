@@ -823,6 +823,80 @@ def fig_bulk_gaas_strain_comparison(output_dir: Path) -> None:
     print("  -> docs/figures/bulk_gaas_strain_comparison.png")
 
 
+def fig_strain_lattice_mismatch(output_dir: Path) -> None:
+    """strain_lattice_mismatch.png: schematic of pseudomorphic strain."""
+    print("[figure] strain_lattice_mismatch")
+    fig, (ax_free, ax_pseudo) = plt.subplots(1, 2, figsize=(8, 4))
+
+    # Left: free-standing layers with different lattice constants
+    ax_free.set_title("Free-standing", fontsize=11)
+    a_sub = 1.0    # substrate lattice constant (reference)
+    a_layer = 1.15  # epitaxial layer (larger, e.g. InAs on GaAs)
+
+    # Substrate grid (bottom half)
+    for ix in range(6):
+        for iy in range(3):
+            rect = plt.Rectangle((ix * a_sub, iy * a_sub), a_sub * 0.85, a_sub * 0.85,
+                                 facecolor="#4a90d9", edgecolor="white", alpha=0.7)
+            ax_free.add_patch(rect)
+    ax_free.text(3 * a_sub, -0.5, "Substrate ($a_{sub}$)", ha="center", fontsize=9)
+
+    # Layer grid (top half, larger spacing)
+    for ix in range(5):
+        for iy in range(3):
+            rect = plt.Rectangle((ix * a_layer + 0.3, iy * a_layer + 3.5),
+                                 a_layer * 0.85, a_layer * 0.85,
+                                 facecolor="#d94a4a", edgecolor="white", alpha=0.7)
+            ax_free.add_patch(rect)
+    ax_free.text(3 * a_layer, 7.2, "Layer ($a_0 > a_{sub}$)", ha="center", fontsize=9)
+
+    # Dashed line showing interface
+    ax_free.axhline(3.3, color="grey", linestyle="--", linewidth=0.8)
+    ax_free.set_xlim(-0.3, 6.5)
+    ax_free.set_ylim(-1, 8)
+    ax_free.set_aspect("equal")
+    ax_free.axis("off")
+
+    # Right: pseudomorphic (forced to match)
+    ax_pseudo.set_title("Pseudomorphic", fontsize=11)
+    a_match = a_sub  # layer forced to match substrate
+
+    # Substrate grid (same as left)
+    for ix in range(6):
+        for iy in range(3):
+            rect = plt.Rectangle((ix * a_sub, iy * a_sub), a_sub * 0.85, a_sub * 0.85,
+                                 facecolor="#4a90d9", edgecolor="white", alpha=0.7)
+            ax_pseudo.add_patch(rect)
+    ax_pseudo.text(3 * a_sub, -0.5, "Substrate", ha="center", fontsize=9)
+
+    # Layer grid (compressed to match substrate)
+    for ix in range(6):
+        for iy in range(3):
+            rect = plt.Rectangle((ix * a_match, iy * a_match + 3.5),
+                                 a_match * 0.85, a_match * 0.85,
+                                 facecolor="#d94a4a", edgecolor="white", alpha=0.7)
+            ax_pseudo.add_patch(rect)
+
+    # Compression arrows
+    ax_pseudo.annotate("", xy=(5.5, 5.0), xytext=(6.3, 5.0),
+                       arrowprops=dict(arrowstyle="->", color="#d94a4a", lw=1.5))
+    ax_pseudo.annotate("", xy=(0.5, 5.0), xytext=(-0.3, 5.0),
+                       arrowprops=dict(arrowstyle="->", color="#d94a4a", lw=1.5))
+    ax_pseudo.text(3.0, 6.8, "Layer compressed\n$\\varepsilon_{xx} < 0$", ha="center",
+                   fontsize=9, color="#d94a4a")
+
+    ax_pseudo.axhline(3.3, color="grey", linestyle="--", linewidth=0.8)
+    ax_pseudo.set_xlim(-0.5, 6.5)
+    ax_pseudo.set_ylim(-1, 8)
+    ax_pseudo.set_aspect("equal")
+    ax_pseudo.axis("off")
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "strain_lattice_mismatch.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/strain_lattice_mismatch.png")
+
+
 def fig_qw_alsbw_gasbw_inasw_bands(output_dir: Path) -> None:
     """qw_alsbw_gasbw_inasw_bands.png: E(k_parallel) subbands from QW."""
     print("[figure] qw_alsbw_gasbw_inasw_bands")
@@ -2340,6 +2414,7 @@ ALL_FIGURES = {
     "bulk_gaas_warping": fig_bulk_gaas_warping,
     "bulk_gaas_strained_bands": fig_bulk_gaas_strained_bands,
     "bulk_gaas_strain_comparison": fig_bulk_gaas_strain_comparison,
+    "strain_lattice_mismatch": fig_strain_lattice_mismatch,
     "bulk_inas_bands": fig_bulk_inas_bands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,
