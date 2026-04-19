@@ -17,6 +17,7 @@ set(COMMON_SOURCES
     physics/strain_solver.f90
     physics/gfactor_functions.f90
     physics/optical_spectra.f90
+    physics/exciton.f90
 )
 
 # Create library of common code
@@ -58,6 +59,7 @@ set_source_files_properties(
     physics/strain_solver.f90
     physics/gfactor_functions.f90
     physics/optical_spectra.f90
+    physics/exciton.f90
     apps/main.f90
     apps/main_gfactor.f90
     PROPERTIES
