@@ -272,7 +272,7 @@ Note: Published results use single-band effective mass. 8-band k.p gives
 
 ## 6. Quantum-Confined Stark Effect
 
-**See also:** [Chapter 02: Quantum Well Band Structure](../lecture/02-quantum-well.md)
+**See also:** [Chapter 10: Quantum-Confined Stark Effect](../lecture/10-qcse.md)
 
 ### System
 
