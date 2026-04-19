@@ -3306,6 +3306,44 @@ def fig_strained_unit_cell(output_dir: Path) -> None:
     print("  -> docs/figures/strained_unit_cell.png")
 
 
+def fig_hh_lh_splitting_vs_mismatch(output_dir: Path) -> None:
+    """hh_lh_splitting_vs_mismatch.png: linear scaling of HH/LH splitting."""
+    print("[figure] hh_lh_splitting_vs_mismatch")
+
+    # Data from Ch04 Sec 7.4 table (InAs under compressive strain)
+    eps_xx_pct = np.array([0.5, 1.0, 1.3, 2.0, 3.0, 6.7])
+    dE_hh_lh = np.array([19, 38, 49, 75, 113, 252])
+    dE_c = np.array([23, 46, 60, 93, 139, 311])
+    dE_g = np.array([37, 74, 97, 149, 223, 498])
+
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    ax.plot(eps_xx_pct, dE_hh_lh, "o-", color="#d62728", linewidth=1.5,
+            markersize=5, label=r"$\Delta E_{\mathrm{HH-LH}}$")
+    ax.plot(eps_xx_pct, dE_c, "s-", color="#17becf", linewidth=1.5,
+            markersize=5, label=r"$\Delta E_c$")
+    ax.plot(eps_xx_pct, dE_g, "^-", color="#2ca02c", linewidth=1.5,
+            markersize=5, label=r"$\Delta E_g$")
+
+    # Linear fit for HH/LH splitting
+    coef = np.polyfit(eps_xx_pct, dE_hh_lh, 1)
+    x_fit = np.linspace(0, 7, 50)
+    ax.plot(x_fit, np.polyval(coef, x_fit), "--", color="#d62728", alpha=0.4,
+            linewidth=1)
+    ax.text(4, coef[0] * 4 + coef[1] - 15,
+            f"slope = {coef[0]:.1f} meV/%", fontsize=8, color="#d62728", alpha=0.7)
+
+    ax.set_xlabel(r"$|\varepsilon_{xx}|$ (%)")
+    ax.set_ylabel("Energy shift (meV)")
+    ax.set_title("Strain-induced shifts in InAs (compressive)")
+    ax.legend(loc="upper left")
+    ax.set_xlim(0, 7.5)
+    ax.set_ylim(0, 550)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "hh_lh_splitting_vs_mismatch.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/hh_lh_splitting_vs_mismatch.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -3354,6 +3392,7 @@ ALL_FIGURES = {
     "cb_parts_evolution": fig_cb_parts_evolution,
     "vb_hh_lh_mixing": fig_vb_hh_lh_mixing,
     "hh_lh_ordering": fig_hh_lh_ordering,
+    "hh_lh_splitting_vs_mismatch": fig_hh_lh_splitting_vs_mismatch,
 }
 
 

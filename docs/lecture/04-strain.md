@@ -724,6 +724,8 @@ strain:
 | $-3.0$ | 113 | 139 | 223 |
 | $-6.7$ | 252 | 311 | 498 |
 
+![Strain-induced energy shifts in InAs as a function of compressive strain magnitude. The HH/LH splitting, CB shift, and band gap change all scale linearly with $|\varepsilon_{xx}|$. Even 1% strain produces a 38 meV splitting, comparable to $k_BT$ at room temperature.](../figures/hh_lh_splitting_vs_mismatch.png){ width=75% }
+
 The HH/LH splitting grows linearly with strain magnitude.  Even modest
 mismatches of 1--2% produce splittings of 40--80 meV, comparable to $k_BT$
 at room temperature (26 meV).  This is why strain engineering is such an
