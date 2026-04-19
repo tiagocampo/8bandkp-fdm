@@ -501,6 +501,8 @@ This strain tensor is then fed to `apply_pikus_bir` exactly as in the QW case.
 The Bir--Pikus formulas are local: they depend only on the strain components at
 each point, not on how those components were obtained.
 
+![Biaxial strain component $\varepsilon_{xx}$ in an InAs/GaAs wire cross-section. The InAs core (compressive) and GaAs matrix show the strain concentration at the interface corners.](../figures/wire_strain_2d.png){ width=70% }
+
 ---
 
 ## 7. Worked Examples

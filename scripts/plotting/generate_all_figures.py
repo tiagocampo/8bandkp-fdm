@@ -1210,6 +1210,47 @@ def fig_qw_strained_band_edges(output_dir: Path) -> None:
     print("  -> docs/figures/qw_strained_band_edges.png")
 
 
+def fig_wire_strain_2d(output_dir: Path) -> None:
+    """wire_strain_2d.png: wire cross-section strain colormap."""
+    print("[figure] wire_strain_2d")
+    cfg = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_strain", timeout=600)
+
+    # Parse strain.dat: x y eps_xx eps_yy eps_zz eps_xy eps_xz eps_yz
+    # Format: gnuplot splot with blank lines between y-rows
+    strain_path = output_dir / "strain.dat"
+    if not strain_path.exists():
+        print("  SKIP: output/strain.dat not found")
+        return
+
+    # Read data, skipping comment and blank lines
+    data = np.loadtxt(str(strain_path), comments="#")
+    # Filter out NaN rows (shouldn't happen, but safety check)
+    data = data[~np.isnan(data[:, 0])]
+
+    x = data[:, 0]
+    y = data[:, 1]
+    eps_xx = data[:, 2]
+
+    # Grid dimensions from config
+    nx, ny = 30, 30
+    X = x.reshape(ny, nx)
+    Y = y.reshape(ny, nx)
+    Eps = eps_xx.reshape(ny, nx)
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    im = ax.pcolormesh(X, Y, Eps, cmap="RdBu_r", shading="auto")
+    ax.set_xlabel(r"$x$ (\u00C5)")
+    ax.set_ylabel(r"$y$ (\u00C5)")
+    ax.set_title(r"$\varepsilon_{xx}$ in InAs/GaAs wire cross-section")
+    ax.set_aspect("equal")
+    cbar = fig.colorbar(im, ax=ax, label=r"$\varepsilon_{xx}$")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "wire_strain_2d.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/wire_strain_2d.png")
+
+
 def fig_qw_alsbw_gasbw_inasw_bands(output_dir: Path) -> None:
     """qw_alsbw_gasbw_inasw_bands.png: E(k_parallel) subbands from QW."""
     print("[figure] qw_alsbw_gasbw_inasw_bands")
@@ -2731,6 +2772,7 @@ ALL_FIGURES = {
     "strain_biaxial_tensor": fig_strain_biaxial_tensor,
     "bir_pikus_band_shifts": fig_bir_pikus_band_shifts,
     "qw_strained_band_edges": fig_qw_strained_band_edges,
+    "wire_strain_2d": fig_wire_strain_2d,
     "bulk_inas_bands": fig_bulk_inas_bands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,
