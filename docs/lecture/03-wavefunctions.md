@@ -449,6 +449,8 @@ Several features stand out:
    type-I system, the coupling strength is relatively uniform across the
    confined CB states.
 
+![Band character decomposition for the GaAs/Al$_{0.3}$Ga$_{0.7}$As QW eigenstates at $k_{\parallel} = 0$. Conduction-band states (cyan) show ~84% CB purity with 16% valence-band admixture. Compare with the broken-gap QW in Figure 2.](../figures/qw_parts_gaas.png){ width=90% }
+
 ### 7b.4 Comparison: Type-I vs. Type-III
 
 | Property | Type-I (GaAs/AlGaAs) | Type-III (AlSbW/GaSbW/InAsW) |

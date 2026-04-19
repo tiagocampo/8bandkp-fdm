@@ -2922,6 +2922,54 @@ def fig_qw_wavefunctions_gaas(output_dir: Path) -> None:
     print("  -> docs/figures/qw_wavefunctions_gaas.png")
 
 
+def fig_qw_parts_gaas(output_dir: Path) -> None:
+    """qw_parts_gaas.png: band character bar chart for GaAs/AlGaAs QW."""
+    print("[figure] qw_parts_gaas")
+    try:
+        parts = parse_parts(output_dir)
+    except FileNotFoundError:
+        cfg = REPO_ROOT / "docs" / "benchmarks" / "qw_gaas_algaas.cfg"
+        if not cfg.exists():
+            print("  WARNING: config not found, skipping.")
+            return
+        run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_gaas_algaas")
+        parts = parse_parts(output_dir)
+
+    if parts.size == 0:
+        print("  WARNING: no parts data, skipping.")
+        return
+
+    row_sums = parts.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1.0
+    parts = parts / row_sums
+
+    n_show = min(parts.shape[0], 12)
+    parts = parts[:n_show]
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    x = np.arange(n_show)
+    bottom = np.zeros(n_show)
+    groups = [
+        ("HH", [0, 3], "#d62728"),
+        ("LH", [1, 2], "#1f77b4"),
+        ("SO", [4, 5], "#ff7f0e"),
+        ("CB", [6, 7], "#17becf"),
+    ]
+    for name, indices, color in groups:
+        vals = sum(parts[:, i] for i in indices)
+        ax.bar(x, vals, 0.7, bottom=bottom, label=name, color=color, linewidth=0)
+        bottom += vals
+    ax.set_xlabel("Eigenstate index")
+    ax.set_ylabel("Band character")
+    ax.set_title(r"Band decomposition (GaAs/Al$_{0.3}$Ga$_{0.7}$As, $k_{\parallel}=0$)")
+    ax.set_ylim(0, 1.05)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_parts_gaas.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/qw_parts_gaas.png")
+
+
 # ===========================================================================
 # Main
 # ===========================================================================
@@ -2964,6 +3012,7 @@ ALL_FIGURES = {
     "qw_optical_matrix_elements": fig_qw_optical_matrix_elements,
     "qw_potential_profile_gaas": fig_qw_potential_profile_gaas,
     "qw_wavefunctions_gaas": fig_qw_wavefunctions_gaas,
+    "qw_parts_gaas": fig_qw_parts_gaas,
 }
 
 
