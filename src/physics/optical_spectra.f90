@@ -9,6 +9,7 @@ module optical_spectra
   private
 
   public :: optics_init, optics_accumulate, optics_finalize, optics_cleanup
+  public :: compute_intersubband_transitions, compute_isbt_absorption
 
   ! Module-level accumulation arrays (set by optics_init)
   real(kind=dp), allocatable, save :: alpha_te(:)   ! TE accumulation on E_grid
@@ -308,5 +309,153 @@ contains
     V = eta * lorentz + (1.0_dp - eta) * gaussian
 
   end function lineshape_voigt
+
+  ! ------------------------------------------------------------------
+  ! Intersubband transitions: z-dipole matrix elements between CB
+  ! subbands.  Outputs transition table to output/isbt_transitions.dat.
+  !
+  ! z_ij = sum_n [ sum_b conjg(eigvecs((n-1)*8+b, i)) * z_n
+  !               * eigvecs((n-1)*8+b, j)) ] * dz
+  !
+  ! Oscillator strength: f_ij = E_ij * |z_ij|^2 / hbar2O2m0
+  ! ------------------------------------------------------------------
+  subroutine compute_intersubband_transitions(eigvals, eigvecs, z_grid, dz, &
+    & numcb, numvb, fdstep, transitions_file)
+
+    real(kind=dp), intent(in)    :: eigvals(:)           ! (nstates) eigenvalues ascending
+    complex(kind=dp), intent(in) :: eigvecs(:,:)         ! (8*fdstep, nstates)
+    real(kind=dp), intent(in)    :: z_grid(:)            ! (fdstep) z-coords (AA)
+    real(kind=dp), intent(in)    :: dz                   ! grid spacing (AA)
+    integer, intent(in)          :: numcb, numvb, fdstep
+    character(len=*), intent(in) :: transitions_file
+
+    integer :: i, j, n, b, idx, state_i, state_j
+    integer :: nstates, iounit
+    real(kind=dp) :: E_ij, z_ij_re, z_ij_im, z_ij_abs2, f_ij
+    complex(kind=dp) :: z_ij
+
+    nstates = numcb + numvb
+
+    call ensure_output_dir()
+    call get_unit(iounit)
+    open(unit=iounit, file=transitions_file, status='replace', action='write')
+    write(iounit, '(a)') '# Intersubband transitions (ISBT)'
+    write(iounit, '(a)') '# i  j  E_ij(eV)  Re(z_ij)(AA)  Im(z_ij)(AA)' &
+      & // '  |z_ij|^2(AA^2)  f_ij(osc.str.)'
+    write(iounit, '(a)') '# CB state indices are 1-based within CB manifold'
+
+    ! Loop over all CB-CB pairs (i < j)
+    do i = 1, numcb
+      do j = i + 1, numcb
+        ! Map to eigenvalue index: CB starts at numvb+1
+        state_i = numvb + i
+        state_j = numvb + j
+
+        ! Transition energy
+        E_ij = eigvals(state_j) - eigvals(state_i)
+        if (E_ij < DE_MIN) cycle
+
+        ! z-dipole: sum over all FD points and all 8 band components
+        z_ij = ZERO
+        do n = 1, fdstep
+          do b = 1, 8
+            idx = (n - 1) * 8 + b
+            z_ij = z_ij + conjg(eigvecs(idx, state_i)) &
+              & * z_grid(n) * eigvecs(idx, state_j)
+          end do
+        end do
+        z_ij = z_ij * dz
+
+        z_ij_re = real(z_ij, kind=dp)
+        z_ij_im = aimag(z_ij)
+        z_ij_abs2 = z_ij_re**2 + z_ij_im**2
+
+        ! Oscillator strength: f_ij = E_ij * |z_ij|^2 / hbar2O2m0
+        f_ij = E_ij * z_ij_abs2 / hbar2O2m0
+
+        write(iounit, '(i4,1x,i4,1x,es14.6,1x,es14.6,1x,es14.6,1x,es14.6,1x,es14.6)') &
+          & i, j, E_ij, z_ij_re, z_ij_im, z_ij_abs2, f_ij
+      end do
+    end do
+
+    close(iounit)
+
+  end subroutine compute_intersubband_transitions
+
+
+  ! ------------------------------------------------------------------
+  ! ISBT absorption spectrum: TM-polarized (z-dipole only).
+  !
+  ! alpha_TM(E) proportional to sum_{i<j} |z_ij|^2 * (f_i - f_j)
+  !             * lineshape(E - E_ij) * k_weight
+  !
+  ! Uses the same Voigt broadening as interband.  Written to
+  ! output/absorption_ISBT.dat after finalization.
+  ! ------------------------------------------------------------------
+  subroutine compute_isbt_absorption(optcfg, eigvals, eigvecs, z_grid, dz, &
+    & numcb, numvb, fdstep, k_weight, fermi_level)
+
+    type(optics_config), intent(in) :: optcfg
+    real(kind=dp), intent(in)    :: eigvals(:)
+    complex(kind=dp), intent(in) :: eigvecs(:,:)
+    real(kind=dp), intent(in)    :: z_grid(:)
+    real(kind=dp), intent(in)    :: dz
+    integer, intent(in)          :: numcb, numvb, fdstep
+    real(kind=dp), intent(in)    :: k_weight
+    real(kind=dp), intent(in)    :: fermi_level
+
+    integer :: i, j, n, b, idx, ie, state_i, state_j
+    integer :: nstates
+    real(kind=dp) :: E_ij, occ_factor, f_i, f_j
+    real(kind=dp) :: gamma_l, gamma_g
+    real(kind=dp) :: z_ij_abs2
+    complex(kind=dp) :: z_ij
+
+    if (nE == 0) return  ! optics_init not called
+
+    nstates = numcb + numvb
+
+    ! Half-widths at half-maximum from FWHM
+    gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
+    gamma_g = optcfg%linewidth_gaussian / 2.0_dp
+
+    do i = 1, numcb
+      state_i = numvb + i
+      f_i = fermi_dirac(eigvals(state_i), fermi_level, optcfg%temperature)
+
+      do j = i + 1, numcb
+        state_j = numvb + j
+        f_j = fermi_dirac(eigvals(state_j), fermi_level, optcfg%temperature)
+
+        ! Occupation factor: (f_i - f_j).  Positive means absorption
+        ! from lower CB subband i to upper CB subband j.
+        occ_factor = f_i - f_j
+        if (occ_factor < 1.0e-30_dp) cycle
+
+        E_ij = eigvals(state_j) - eigvals(state_i)
+        if (E_ij < DE_MIN) cycle
+
+        ! z-dipole matrix element
+        z_ij = ZERO
+        do n = 1, fdstep
+          do b = 1, 8
+            idx = (n - 1) * 8 + b
+            z_ij = z_ij + conjg(eigvecs(idx, state_i)) &
+              & * z_grid(n) * eigvecs(idx, state_j)
+          end do
+        end do
+        z_ij = z_ij * dz
+        z_ij_abs2 = real(z_ij * conjg(z_ij), kind=dp)
+
+        ! Broaden and accumulate onto energy grid (TM only)
+        do ie = 1, nE
+          alpha_tm(ie) = alpha_tm(ie) + occ_factor * z_ij_abs2 &
+            & * lineshape_voigt(E_grid(ie), E_ij, gamma_l, gamma_g) * k_weight
+        end do
+
+      end do
+    end do
+
+  end subroutine compute_isbt_absorption
 
 end module optical_spectra
