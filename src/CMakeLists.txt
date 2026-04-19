@@ -18,6 +18,7 @@ set(COMMON_SOURCES
     physics/gfactor_functions.f90
     physics/optical_spectra.f90
     physics/exciton.f90
+    physics/scattering.f90
 )
 
 # Create library of common code
@@ -60,6 +61,7 @@ set_source_files_properties(
     physics/gfactor_functions.f90
     physics/optical_spectra.f90
     physics/exciton.f90
+    physics/scattering.f90
     apps/main.f90
     apps/main_gfactor.f90
     PROPERTIES
