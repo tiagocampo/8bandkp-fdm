@@ -3348,6 +3348,75 @@ def fig_hh_lh_splitting_vs_mismatch(output_dir: Path) -> None:
 # Main
 # ===========================================================================
 
+def fig_wire_strain_tensor(output_dir: Path) -> None:
+    """wire_strain_tensor.png: 4-panel wire strain components eps_xx, eps_yy, eps_zz, eps_yz."""
+    print("[figure] wire_strain_tensor")
+    cfg = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
+    if not cfg.exists():
+        print("  SKIP: wire_inas_gaas_strain.cfg not found")
+        return
+
+    strain_path = output_dir / "strain.dat"
+    if not strain_path.exists():
+        result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_strain_tensor", timeout=600)
+        if result.returncode != 0:
+            print("  WARNING: wire strain run failed, skipping.")
+            return
+
+    strain_path = output_dir / "strain.dat"
+    if not strain_path.exists():
+        print("  SKIP: output/strain.dat not found")
+        return
+
+    data = np.loadtxt(str(strain_path), comments="#")
+    data = data[~np.isnan(data[:, 0])]
+
+    # Determine grid size from unique x and y values
+    x_unique = np.unique(np.round(data[:, 0], 3))
+    y_unique = np.unique(np.round(data[:, 1], 3))
+    nx = len(x_unique)
+    ny = len(y_unique)
+
+    # Take first block (first nx*ny rows) if multiple k-points
+    n_first = nx * ny
+    data = data[:n_first]
+
+    x = data[:, 0]
+    y = data[:, 1]
+
+    components = [
+        (2, r"$\varepsilon_{xx}$", "In-plane x"),
+        (3, r"$\varepsilon_{yy}$", "In-plane y"),
+        (4, r"$\varepsilon_{zz}$", "Axial (z)"),
+        (7, r"$\varepsilon_{yz}$", "Shear"),
+    ]
+
+    X = x.reshape(ny, nx)
+    Y = y.reshape(ny, nx)
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    axes = axes.flatten()
+
+    for ax, (col, label, subtitle) in zip(axes, components):
+        vals = data[:, col].reshape(ny, nx)
+        vmax = max(abs(vals.min()), abs(vals.max()))
+        if vmax < 1e-10:
+            vmax = 1.0
+        im = ax.pcolormesh(X, Y, vals, cmap="RdBu_r", shading="auto",
+                           vmin=-vmax, vmax=vmax)
+        ax.set_title(f"{label} ({subtitle})", fontsize=10)
+        ax.set_xlabel(r"$x$ (\u00C5)")
+        ax.set_ylabel(r"$y$ (\u00C5)")
+        ax.set_aspect("equal")
+        fig.colorbar(im, ax=ax, label=label, shrink=0.8)
+
+    fig.suptitle("Strain tensor components in InAs/GaAs wire", fontsize=12)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "wire_strain_tensor.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/wire_strain_tensor.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -3365,6 +3434,7 @@ ALL_FIGURES = {
     "qw_strained_band_edges": fig_qw_strained_band_edges,
     "qw_strained_bands": fig_qw_strained_bands,
     "wire_strain_2d": fig_wire_strain_2d,
+    "wire_strain_tensor": fig_wire_strain_tensor,
     "bulk_inas_bands": fig_bulk_inas_bands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,

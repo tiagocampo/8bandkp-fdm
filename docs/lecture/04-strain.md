@@ -507,6 +507,8 @@ each point, not on how those components were obtained.
 
 ![Biaxial strain component $\varepsilon_{xx}$ in an InAs/GaAs wire cross-section. The InAs core (compressive) and GaAs matrix show the strain concentration at the interface corners.](../figures/wire_strain_2d.png){ width=70% }
 
+![All four non-zero strain tensor components in the InAs/GaAs wire cross-section. The axial component $\varepsilon_{zz}$ (bottom-left) is prescribed from lattice mismatch. The in-plane components $\varepsilon_{xx}$, $\varepsilon_{yy}$ (top row) and the shear component $\varepsilon_{yz}$ (bottom-right) are obtained from the Navier--Cauchy PDE solution. The non-zero $\varepsilon_{yz}$ is the key wire-specific feature absent in QW biaxial strain.](../figures/wire_strain_tensor.png){ width=95% }
+
 ---
 
 ## 7. Worked Examples
