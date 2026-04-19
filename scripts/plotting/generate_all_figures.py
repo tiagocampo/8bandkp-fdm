@@ -897,6 +897,97 @@ def fig_strain_lattice_mismatch(output_dir: Path) -> None:
     print("  -> docs/figures/strain_lattice_mismatch.png")
 
 
+def fig_strain_biaxial_tensor(output_dir: Path) -> None:
+    """strain_biaxial_tensor.png: biaxial strain geometry schematic."""
+    print("[figure] strain_biaxial_tensor")
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    # Draw a 3D-ish box using isometric projection
+    # Bottom face corners
+    ox, oy = 1.5, 1.0  # origin
+    dx, dy = 3.0, 2.5  # x and y sizes
+    dz = 2.0           # z height
+
+    # Isometric offsets
+    iso_x = np.array([1.0, 0.4])
+    iso_y = np.array([0.0, 0.7])
+
+    def iso(ix, iy, iz):
+        return ox + ix * iso_x[0] * dx + iy * iso_y[0] * dy, \
+               oy + ix * iso_x[1] * dx + iy * iso_y[1] * dy + iz * dz
+
+    # Bottom face
+    bx = [iso(0,0,0), iso(1,0,0), iso(1,1,0), iso(0,1,0), iso(0,0,0)]
+    ax.plot([p[0] for p in bx], [p[1] for p in bx], "k-", linewidth=1.2)
+
+    # Top face
+    tx = [iso(0,0,1), iso(1,0,1), iso(1,1,1), iso(0,1,1), iso(0,0,1)]
+    ax.plot([p[0] for p in tx], [p[1] for p in tx], "k-", linewidth=1.2)
+
+    # Vertical edges
+    for (ix, iy) in [(0,0), (1,0), (1,1), (0,1)]:
+        b = iso(ix, iy, 0)
+        t = iso(ix, iy, 1)
+        ax.plot([b[0], t[0]], [b[1], t[1]], "k-", linewidth=1.2)
+
+    # Fill top face lightly
+    from matplotlib.patches import Polygon
+    top_poly = Polygon([iso(0,0,1), iso(1,0,1), iso(1,1,1), iso(0,1,1)],
+                       facecolor="#e8e8e8", edgecolor="none", alpha=0.5)
+    ax.add_patch(top_poly)
+
+    # In-plane strain arrows (x direction) - blue
+    mid_y_side = iso(0.5, 0, 0.5)
+    ax.annotate("", xy=(mid_y_side[0]-0.8, mid_y_side[1]),
+                xytext=(mid_y_side[0]-0.1, mid_y_side[1]),
+                arrowprops=dict(arrowstyle="<->", color="#2962a0", lw=2))
+    ax.text(mid_y_side[0]-0.5, mid_y_side[1]-0.35,
+            r"$\varepsilon_{xx}$", fontsize=12, color="#2962a0", ha="center")
+
+    # In-plane strain arrows (y direction) - blue
+    mid_x_side = iso(1, 0.5, 0.5)
+    ax.annotate("", xy=(mid_x_side[0]+0.3, mid_x_side[1]+0.5),
+                xytext=(mid_x_side[0]+0.05, mid_x_side[1]+0.05),
+                arrowprops=dict(arrowstyle="<->", color="#2962a0", lw=2))
+    ax.text(mid_x_side[0]+0.5, mid_x_side[1]+0.6,
+            r"$\varepsilon_{yy}=\varepsilon_{xx}$", fontsize=10, color="#2962a0")
+
+    # Out-of-plane arrow (z) - red
+    top_center = iso(0.5, 0.5, 1)
+    ax.annotate("", xy=(top_center[0], top_center[1]+0.8),
+                xytext=(top_center[0], top_center[1]+0.15),
+                arrowprops=dict(arrowstyle="<->", color="#a02929", lw=2))
+    ax.text(top_center[0]+0.3, top_center[1]+0.6,
+            r"$\varepsilon_{zz}=-\frac{2C_{12}}{C_{11}}\varepsilon_{xx}$",
+            fontsize=11, color="#a02929")
+
+    # Shear zero label
+    ax.text(iso(0.5, 0.5, 0.5)[0], iso(0.5, 0.5, 0.5)[1]-0.3,
+            r"$\varepsilon_{yz}=0$", fontsize=11, color="grey",
+            ha="center", style="italic")
+
+    # Axis labels
+    ax.text(iso(1,0,0)[0]+0.3, iso(1,0,0)[1]-0.2, "x", fontsize=12, fontweight="bold")
+    ax.text(iso(0,1,0)[0]-0.5, iso(0,1,0)[1]+0.1, "y", fontsize=12, fontweight="bold")
+    ax.text(iso(0,0,1)[0]-0.4, iso(0,0,1)[1]+0.2, "z", fontsize=12, fontweight="bold")
+
+    # Growth direction label
+    ax.annotate("growth\ndirection", xy=iso(0,0,0.5), xytext=(iso(0,0,0.5)[0]-1.2, iso(0,0,0.5)[1]),
+                fontsize=9, ha="center",
+                arrowprops=dict(arrowstyle="->", color="grey", lw=1))
+
+    ax.set_xlim(-0.5, 7)
+    ax.set_ylim(0, 6.5)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.set_title("Biaxial strain in (001) quantum well", fontsize=12, pad=10)
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "strain_biaxial_tensor.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/strain_biaxial_tensor.png")
+
+
 def fig_qw_alsbw_gasbw_inasw_bands(output_dir: Path) -> None:
     """qw_alsbw_gasbw_inasw_bands.png: E(k_parallel) subbands from QW."""
     print("[figure] qw_alsbw_gasbw_inasw_bands")
@@ -2415,6 +2506,7 @@ ALL_FIGURES = {
     "bulk_gaas_strained_bands": fig_bulk_gaas_strained_bands,
     "bulk_gaas_strain_comparison": fig_bulk_gaas_strain_comparison,
     "strain_lattice_mismatch": fig_strain_lattice_mismatch,
+    "strain_biaxial_tensor": fig_strain_biaxial_tensor,
     "bulk_inas_bands": fig_bulk_inas_bands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,

@@ -132,6 +132,8 @@ $$
 \end{pmatrix}\,.
 $$
 
+![Biaxial strain geometry for a (001)-oriented quantum well. The in-plane strain components are equal by symmetry; the out-of-plane response is determined by the Poisson ratio.](../figures/strain_biaxial_tensor.png){ width=70% }
+
 ### 2.5 Numerical example: InAs on GaAs
 
 Consider a thin InAs layer ($a_0 = 6.0583$ A) grown pseudomorphically on a GaAs
