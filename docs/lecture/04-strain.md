@@ -220,6 +220,8 @@ $$
 \boxed{\Delta E_{\text{SO}} = a_v\;\mathrm{Tr}(\varepsilon) = -P_\varepsilon\,.}
 $$
 
+![Bir--Pikus strain-induced band edge shifts. Under compressive strain the HH/LH degeneracy is lifted with HH moving toward the CB; under tensile strain the splitting reverses.](../figures/bir_pikus_band_shifts.png){ width=90% }
+
 ### 3.3 Heavy-hole / light-hole splitting
 
 The shear term $Q_\varepsilon$ shifts the HH and LH band edges in opposite

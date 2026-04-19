@@ -988,6 +988,91 @@ def fig_strain_biaxial_tensor(output_dir: Path) -> None:
     print("  -> docs/figures/strain_biaxial_tensor.png")
 
 
+def fig_bir_pikus_band_shifts(output_dir: Path) -> None:
+    """bir_pikus_band_shifts.png: energy level diagram for compressive + tensile strain."""
+    print("[figure] bir_pikus_band_shifts")
+    fig, (ax_comp, ax_tens) = plt.subplots(1, 2, figsize=(9, 5), sharey=True)
+
+    # Energy positions (arbitrary units, qualitatively correct)
+    # Unstrained: CB=1.0, HH=LH=0.0 (degenerate), SO=-0.34
+    E_CB_0 = 1.0
+    E_HH_0 = 0.0
+    E_LH_0 = 0.0
+    E_SO_0 = -0.34
+
+    # Compressive (eps_xx < 0): CB moves up, HH moves up, LH moves down
+    dEc_comp = 0.15
+    dEHH_comp = -0.10   # HH moves toward CB (upward in our convention)
+    dELH_comp = 0.05    # LH moves away
+    dESO_comp = 0.03
+
+    E_CB_comp = E_CB_0 + dEc_comp
+    E_HH_comp = E_HH_0 + dEHH_comp
+    E_LH_comp = E_LH_0 + dELH_comp
+    E_SO_comp = E_SO_0 + dESO_comp
+
+    # Tensile (eps_xx > 0): opposite shifts
+    dEc_tens = -0.10
+    dEHH_tens = 0.08
+    dELH_tens = -0.04
+    dESO_tens = -0.03
+
+    E_CB_tens = E_CB_0 + dEc_tens
+    E_HH_tens = E_HH_0 + dEHH_tens
+    E_LH_tens = E_LH_0 + dELH_tens
+    E_SO_tens = E_SO_0 + dESO_tens
+
+    x_un = 0.3   # unstrained x position
+    x_st = 0.7   # strained x position
+    lw = 3.0
+
+    for ax, E_CB_s, E_HH_s, E_LH_s, E_SO_s, label in [
+        (ax_comp, E_CB_comp, E_HH_comp, E_LH_comp, E_SO_comp,
+         r"Compressive ($\varepsilon_{xx} < 0$)"),
+        (ax_tens, E_CB_tens, E_HH_tens, E_LH_tens, E_SO_tens,
+         r"Tensile ($\varepsilon_{xx} > 0$)")]:
+
+        # Unstrained lines (dashed grey)
+        ax.plot([x_un-0.15, x_un+0.15], [E_CB_0, E_CB_0], "k--", linewidth=lw, alpha=0.3)
+        ax.plot([x_un-0.15, x_un+0.15], [E_HH_0, E_HH_0], "k--", linewidth=lw, alpha=0.3)
+        ax.plot([x_un-0.15, x_un+0.15], [E_SO_0, E_SO_0], "k--", linewidth=lw, alpha=0.3)
+        ax.text(x_un, E_CB_0+0.06, "CB", ha="center", fontsize=9, color="grey")
+        ax.text(x_un, E_HH_0-0.08, "HH=LH", ha="center", fontsize=9, color="grey")
+        ax.text(x_un, E_SO_0-0.08, "SO", ha="center", fontsize=9, color="grey")
+
+        # Strained lines (solid)
+        ax.plot([x_st-0.15, x_st+0.15], [E_CB_s, E_CB_s], color="#2962a0", linewidth=lw)
+        ax.plot([x_st-0.15, x_st+0.15], [E_HH_s, E_HH_s], color="#d94a4a", linewidth=lw)
+        ax.plot([x_st-0.15, x_st+0.15], [E_LH_s, E_LH_s], color="#4ad94a", linewidth=lw)
+        ax.plot([x_st-0.15, x_st+0.15], [E_SO_s, E_SO_s], color="#d9a04a", linewidth=lw)
+
+        ax.text(x_st+0.2, E_CB_s, "CB", fontsize=9, color="#2962a0", va="center")
+        ax.text(x_st+0.2, E_HH_s, "HH", fontsize=9, color="#d94a4a", va="center")
+        ax.text(x_st+0.2, E_LH_s, "LH", fontsize=9, color="#4ad94a", va="center")
+        ax.text(x_st+0.2, E_SO_s, "SO", fontsize=9, color="#d9a04a", va="center")
+
+        # Arrows showing shifts
+        for E0, Es in [(E_CB_0, E_CB_s), (E_HH_0, E_HH_s),
+                        (E_LH_0, E_LH_s), (E_SO_0, E_SO_s)]:
+            if abs(Es - E0) > 0.01:
+                ax.annotate("", xy=(x_st, Es), xytext=(x_un+0.15, E0),
+                           arrowprops=dict(arrowstyle="->", lw=0.8, color="grey",
+                                          linestyle="--"))
+
+        ax.set_xlim(0, 1.2)
+        ax.set_ylim(-0.6, 1.3)
+        ax.set_ylabel(r"$E$ (eV)" if ax is ax_comp else "")
+        ax.set_title(label, fontsize=11)
+        ax.set_xticks([x_un, x_st])
+        ax.set_xticklabels(["Unstrained", "Strained"], fontsize=9)
+        ax.axhline(0, color="grey", linewidth=0.3, linestyle=":")
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "bir_pikus_band_shifts.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/bir_pikus_band_shifts.png")
+
+
 def fig_qw_alsbw_gasbw_inasw_bands(output_dir: Path) -> None:
     """qw_alsbw_gasbw_inasw_bands.png: E(k_parallel) subbands from QW."""
     print("[figure] qw_alsbw_gasbw_inasw_bands")
@@ -2507,6 +2592,7 @@ ALL_FIGURES = {
     "bulk_gaas_strain_comparison": fig_bulk_gaas_strain_comparison,
     "strain_lattice_mismatch": fig_strain_lattice_mismatch,
     "strain_biaxial_tensor": fig_strain_biaxial_tensor,
+    "bir_pikus_band_shifts": fig_bir_pikus_band_shifts,
     "bulk_inas_bands": fig_bulk_inas_bands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,
