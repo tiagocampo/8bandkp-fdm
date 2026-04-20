@@ -790,7 +790,7 @@ contains
     real(kind=dp) :: n_target, n_current, kBT
     real(kind=dp) :: N_2D_per_subband, x
     real(kind=dp) :: mu_lo, mu_hi, dmu, mu_prime
-    real(kind=dp) :: neg_Evb(6)  ! negated VB energies
+    real(kind=dp), allocatable :: neg_Evb(:)
     integer :: iter, s
 
     kBT = kB_eV * temperature
@@ -798,6 +798,7 @@ contains
     n_target = carrier_density_cm2 * CM2_TO_AA2
 
     ! Negate VB eigenvalues for hole calculation
+    allocate(neg_Evb(numvb))
     do s = 1, numvb
       neg_Evb(s) = -eigvals(s)
     end do
@@ -832,6 +833,7 @@ contains
     ! mu_h = -mu_prime
     mu_h = -mu_prime
 
+    deallocate(neg_Evb)
   end function find_quasi_fermi_holes
 
 end module optical_spectra
