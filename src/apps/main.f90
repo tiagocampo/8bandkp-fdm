@@ -12,6 +12,8 @@ program kpfdm
   use eigensolver
   use strain_solver
   use optical_spectra
+  use exciton_solver
+  use scattering_solver
   use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch
 
   implicit none
@@ -743,7 +745,10 @@ program kpfdm
       real(kind=dp) :: dk
       integer :: npts
 
-      ! Simpson 1/3 rule weights for k_sweep integration
+      ! Simpson 1/3 rule weights for k_sweep integration.
+      ! For a QW, the k_parallel integral over 2D BZ with cylindrical
+      ! symmetry is: int d^2k = 2*pi * int k dk.  The 1D kx sweep
+      ! needs an additional 2*pi*k factor per point.
       npts = cfg%waveVectorStep
       if (mod(npts, 2) == 0) then
         npts = npts - 1  ! Simpson requires odd number of points
@@ -752,14 +757,17 @@ program kpfdm
       end if
       allocate(simpson_w(npts))
       dk = cfg%waveVectorMax / real(cfg%waveVectorStep - 1, kind=dp)  ! true grid spacing
-      simpson_w(1) = dk / 3.0_dp
-      simpson_w(npts) = dk / 3.0_dp
-      do i = 2, npts - 1
-        if (mod(i, 2) == 0) then
+      do i = 1, npts
+        ! Base Simpson weight
+        if (i == 1 .or. i == npts) then
+          simpson_w(i) = dk / 3.0_dp
+        else if (mod(i, 2) == 0) then
           simpson_w(i) = 4.0_dp * dk / 3.0_dp
         else
           simpson_w(i) = 2.0_dp * dk / 3.0_dp
         end if
+        ! Multiply by 2*pi*k for 2D cylindrical integration
+        simpson_w(i) = simpson_w(i) * 2.0_dp * pi_dp * real(i - 1, kind=dp) * dk
       end do
 
       ! Initialize optics accumulation arrays
@@ -797,16 +805,96 @@ program kpfdm
             & numcb=cfg%numcb, numvb=cfg%numvb, &
             & carrier_density=cfg%optics%gain_carrier_density)
         end if
+
+        ! ISBT accumulation
+        if (cfg%optics%isbt_enabled) then
+          call compute_isbt_absorption(cfg%optics, &
+            & eigvals=eig(:, k), &
+            & eigvecs=eigv(:, :, k), &
+            & z_grid=cfg%z, dz=cfg%dz, &
+            & numcb=cfg%numcb, numvb=cfg%numvb, fdstep=cfg%fdstep, &
+            & k_weight=simpson_w(k), fermi_level=cfg%sc%fermi_level)
+        end if
       end do
 
+      ! ISBT transition table at k=0
+      if (cfg%optics%isbt_enabled) then
+        call compute_intersubband_transitions(eig(:, 1), eigv(:, :, 1), &
+          & cfg%z, cfg%dz, cfg%numcb, cfg%numvb, cfg%fdstep, &
+          & 'output/isbt_transitions.dat')
+        print '(A)', ' ISBT transitions written to output/isbt_transitions.dat'
+      end if
+
       call optics_finalize(cfg%optics)
+
+      ! Exciton corrections (applied before cleanup to access alpha arrays)
+      if (cfg%exciton%enabled) then
+        block
+          real(kind=dp) :: E_binding_ex, lambda_opt_ex
+          real(kind=dp) :: E_gap_ex
+          integer :: ie, iounit_ex, cb_st, vb_st
+          cb_st = cfg%numvb + 1
+          vb_st = cfg%numvb
+          E_gap_ex = eig(cb_st, 1) - eig(vb_st, 1)
+          call compute_exciton_binding(eig(:, 1), eigv(:, :, 1), &
+            & cfg%z, cfg%dz, cfg%numLayers, cfg%params, &
+            & cfg%numcb, cfg%numvb, cfg%fdstep, E_binding_ex, lambda_opt_ex, &
+            & cfg%grid%material_id)
+          print '(A,F8.3,A)', ' Exciton binding energy: ', E_binding_ex, ' meV'
+          call apply_excitonic_corrections(E_grid, alpha_te, alpha_tm, &
+            & E_gap_ex, E_binding_ex, cfg%optics)
+          ! Rewrite absorption files with excitonic corrections
+          call ensure_output_dir()
+          call get_unit(iounit_ex)
+          open(unit=iounit_ex, file='output/absorption_TE.dat', &
+            & status='replace', action='write')
+          write(iounit_ex, '(a)') '# TE absorption with excitonic corrections'
+          write(iounit_ex, '(a)') '# E(eV)  alpha(cm^-1)'
+          do ie = 1, nE
+            write(iounit_ex, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_te(ie)
+          end do
+          close(iounit_ex)
+          open(unit=iounit_ex, file='output/absorption_TM.dat', &
+            & status='replace', action='write')
+          write(iounit_ex, '(a)') '# TM absorption with excitonic corrections'
+          write(iounit_ex, '(a)') '# E(eV)  alpha(cm^-1)'
+          do ie = 1, nE
+            write(iounit_ex, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_tm(ie)
+          end do
+          close(iounit_ex)
+          print '(A)', ' Excitonic corrections applied to absorption spectra'
+        end block
+      end if
+
       call optics_cleanup()
       deallocate(simpson_w)
       print '(A)', ' Absorption spectra written to output/'
     end block
   end if
 
-  !----------------------------------------------------------------------------
+  ! ====================================================================
+  ! Exciton binding energy (standalone, when optics is disabled)
+  ! ====================================================================
+  if (cfg%exciton%enabled .and. cfg%confDir == 'z' .and. .not. cfg%optics%enabled) then
+    block
+      real(kind=dp) :: E_binding_sa, lambda_opt_sa
+      call compute_exciton_binding(eig(:, 1), eigv(:, :, 1), &
+        & cfg%z, cfg%dz, cfg%numLayers, cfg%params, &
+        & cfg%numcb, cfg%numvb, cfg%fdstep, E_binding_sa, lambda_opt_sa, &
+        & cfg%grid%material_id)
+      print '(A,F8.3,A)', ' Exciton binding energy: ', E_binding_sa, ' meV'
+      print '(A,F8.2,A)', ' Variational parameter: ', lambda_opt_sa, ' AA'
+    end block
+  end if
+
+  ! ====================================================================
+  ! LO-phonon scattering rates (QW only, k=0)
+  ! ====================================================================
+  if (cfg%scattering%enabled .and. cfg%confDir == 'z') then
+    call compute_phonon_scattering(cfg, eig(:, 1), eigv(:, :, 1), &
+      & cfg%z, cfg%params, cfg%dz, cfg%numcb, cfg%numvb, cfg%fdstep)
+    print '(A)', ' Scattering rates written to output/scattering_rates.dat'
+  end if
 
 
   if (allocated(smallk)) deallocate(smallk)

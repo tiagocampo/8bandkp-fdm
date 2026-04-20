@@ -3748,16 +3748,31 @@ def fig_isbt_absorption(output_dir: Path) -> None:
     """isbt_absorption.png: TM-polarized intersubband absorption vs photon energy."""
     print("[figure] isbt_absorption")
 
+    # Always re-run with the ISBT-specific config: the ISBT energy grid
+    # (0.02--0.30 eV) differs from the interband grid (0.5--2.0 eV), so a
+    # stale absorption_ISBT.dat from a prior interband run has the wrong range.
     path = output_dir / "absorption_ISBT.dat"
+    cfg = CONFIG_DIR / "qw_gaas_algaas_isbt.cfg"
+    if cfg.exists():
+        result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                               label="isbt_absorption", timeout=600)
+        if result.returncode != 0:
+            print("  WARNING: bandStructure run failed, skipping.")
+            return
+    else:
+        if not path.exists():
+            print("  WARNING: absorption_ISBT.dat not found and no ISBT config, skipping.")
+            return
+
     if not path.exists():
-        print("  WARNING: absorption_ISBT.dat not found, skipping.")
+        print("  WARNING: absorption_ISBT.dat still not found, skipping.")
         return
 
     E, alpha = np.loadtxt(str(path), unpack=True, comments="#")
 
     fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot(E, alpha, color="#d62728", linewidth=1.5)
-    ax.set_xlabel("Photon Energy (eV)")
+    ax.plot(E * 1000, alpha, color="#d62728", linewidth=1.5)
+    ax.set_xlabel("Photon Energy (meV)")
     ax.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
     ax.set_title("Intersubband Absorption (TM)", fontsize=12)
     ax.grid(True, alpha=0.3, linewidth=0.5)
@@ -3806,32 +3821,97 @@ def fig_gain_strained_comparison(output_dir: Path) -> None:
     print("  -> docs/figures/gain_strained_comparison.png")
 
 
+def _run_exciton_width(widths_aa: list) -> list:
+    """Run bandStructure for each well width, collect (width_nm, E_b_meV)."""
+    results = []
+    for w_aa in widths_aa:
+        half = w_aa / 2.0
+        # Ensure barrier always extends beyond the well
+        barrier = max(200.0, half + 100.0)
+        fdstep = max(201, int(2.0 * barrier / 2.0) + 1)  # dz ~ 2 AA
+        lines = [
+            "waveVector: k0",
+            "waveVectorMax: 0.0",
+            "waveVectorStep: 1",
+            "confinement:  1",
+            f"FDstep: {fdstep}",
+            "FDorder: 4",
+            "numLayers:  2",
+            f"material1: Al30Ga70As {-barrier:.0f} {barrier:.0f} 0",
+            f"material2: GaAs {-half:.1f} {half:.1f} 0",
+            "numcb: 4",
+            "numvb: 8",
+            "ExternalField: 0  EF",
+            "EFParams: 0.0",
+            "whichBand: 0",
+            "bandIdx: 1",
+            "SC: 0",
+            "Optics: F",
+            "Exciton: T",
+            "ExcitonMethod: variational",
+        ]
+        tmp = REPO_ROOT / "input.cfg"
+        tmp.write_text("\n".join(lines) + "\n")
+        result = subprocess.run(
+            [str(EXE_BAND)], cwd=str(REPO_ROOT),
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode != 0:
+            print(f"    width={w_aa / 10:.0f} nm: FAILED")
+            continue
+        dat = Path("output") / "exciton.dat"
+        if not dat.exists():
+            continue
+        vals = np.loadtxt(str(dat), comments="#")
+        if vals.ndim == 1:
+            vals = vals.reshape(1, -1)
+        if vals.shape[0] > 0 and vals.shape[1] >= 2:
+            results.append((w_aa / 10.0, vals[0, 1]))  # nm, meV
+    return results
+
+
 def fig_exciton_binding_vs_width(output_dir: Path) -> None:
     """exciton_binding_vs_width.png: exciton binding energy vs quantum well width.
 
-    Reads output/exciton.dat if available.  In practice, a full sweep over well
-    widths would require multiple runs.  If data is missing, skip with warning.
+    Runs bandStructure for multiple well widths (3--150 nm) with Exciton: T
+    to build the curve.  Falls back to reading a pre-existing sweep file.
     """
     print("[figure] exciton_binding_vs_width")
 
-    data_file = output_dir / "exciton.dat"
-    if not data_file.exists():
-        print("  WARNING: output/exciton.dat not found, skipping.")
-        print("  Run multiple bandStructure sweeps with varying well width to generate data.")
+    sweep_file = output_dir / "exciton_width_sweep.dat"
+    if sweep_file.exists():
+        data = np.loadtxt(str(sweep_file), comments="#")
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+        if data.shape[0] >= 3:
+            width, eb = data[:, 0], data[:, 1]
+            _plot_exciton_binding(width, eb)
+            return
+
+    # Run the sweep
+    widths_aa = [30, 50, 60, 80, 100, 120, 150, 200, 300, 500]
+    print(f"  Running exciton sweep over {len(widths_aa)} well widths ...")
+    results = _run_exciton_width(widths_aa)
+
+    if len(results) < 3:
+        print(f"  WARNING: only {len(results)} data points, need >= 3. Skipping.")
         return
 
-    data = np.loadtxt(str(data_file), comments="#")
-    if data.ndim == 1:
-        data = data.reshape(1, -1)
+    width = np.array([r[0] for r in results])
+    eb = np.array([r[1] for r in results])
 
-    # Expected columns: well_width(nm)  binding_energy(meV)
-    if data.shape[1] < 2:
-        print("  WARNING: exciton.dat has fewer than 2 columns, skipping.")
-        return
+    # Cache the sweep for future runs
+    with open(str(sweep_file), "w") as fh:
+        fh.write("# Exciton binding energy vs well width (auto-sweep)\n")
+        fh.write("# width(nm)  E_binding(meV)\n")
+        for w, e in zip(width, eb):
+            fh.write(f"  {w:.1f}   {e:.6f}\n")
 
-    width = data[:, 0]
-    eb = data[:, 1]
+    _plot_exciton_binding(width, eb)
 
+
+def _plot_exciton_binding(width: np.ndarray, eb: np.ndarray) -> None:
+    """Plot and save the exciton binding energy curve."""
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.plot(width, eb, "o-", color="#1f77b4", linewidth=1.5, markersize=5)
     ax.set_xlabel("Well Width (nm)")
@@ -3839,10 +3919,15 @@ def fig_exciton_binding_vs_width(output_dir: Path) -> None:
     ax.set_title("Exciton Binding Energy vs. Well Width", fontsize=12)
     ax.grid(True, alpha=0.3, linewidth=0.5)
     ax.set_axisbelow(True)
+
+    # Annotate the 3D bulk limit for reference
+    ax.axhline(y=4.2, color="grey", linestyle=":", linewidth=0.8, label="3D bulk GaAs (~4.2 meV)")
+    ax.legend(fontsize=9, framealpha=0.9)
+
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "exciton_binding_vs_width.png", dpi=150)
     plt.close(fig)
-    print("  -> docs/figures/exciton_binding_vs_width.png")
+    print(f"  -> docs/figures/exciton_binding_vs_width.png  ({len(width)} points)")
 
 
 def fig_absorption_with_exciton(output_dir: Path) -> None:

@@ -12,7 +12,6 @@ module exciton_solver
   public :: apply_excitonic_corrections
 
   ! Coulomb constant: e^2/(4*pi*eps0) = hbar*c/alpha_fine = 14.40 eV*AA
-  ! Computed from code's hbar (eV*s) and c (AA/s) via fine structure constant.
   real(kind=dp), parameter :: ALPHA_FINE = 137.035999084_dp
   real(kind=dp), parameter :: COULOMB_CONST = hbar * c / ALPHA_FINE  ! eV*AA
 
@@ -143,7 +142,8 @@ contains
 
 
   ! ------------------------------------------------------------------
-  ! Extract envelope density: phi(n) = sum_b |eigvecs((n-1)*8+b,state)|^2
+  ! Extract envelope density: phi(n) = sum_b |eigvecs(idx,state)|^2
+  ! Band-outer ordering: idx = (b-1)*fdstep + n
   ! Normalised so that sum(phi)*dz = 1.
   ! ------------------------------------------------------------------
   subroutine extract_envelope(eigvecs, fdstep, state_idx, dz, density)
@@ -158,7 +158,7 @@ contains
     do n = 1, fdstep
       density(n) = 0.0_dp
       do b = 1, 8
-        idx = (n - 1) * 8 + b
+        idx = (b - 1) * fdstep + n
         density(n) = density(n) + real(eigvecs(idx, state_idx) &
           & * conjg(eigvecs(idx, state_idx)), kind=dp)
       end do
@@ -264,13 +264,6 @@ contains
 
   ! ------------------------------------------------------------------
   ! E(lambda) = T + V_C
-  !
-  ! T = hbar^2 / (2*mu*lambda^2)  [eV]
-  !
-  ! V_C = -(COULOMB_CONST/eps_r) * I_C(lambda)  [eV]
-  !
-  ! COULOMB_CONST = hbar*c/alpha = 14.40 eV*AA
-  ! I_C is the dimensionless Coulomb integral.
   ! ------------------------------------------------------------------
   function total_energy(lambda, phi_e, phi_h, dz, fdstep, eps_r, mu_eff) &
     & result(E)
@@ -282,13 +275,8 @@ contains
 
     real(kind=dp) :: T_kinetic, V_coulomb, I_C
 
-    ! Kinetic energy: hbar^2/(2*mu*lambda^2)
     T_kinetic = hbar**2 / (2.0_dp * mu_eff * lambda**2)
-
-    ! Coulomb integral (dimensionless, returns 1/AA units for <1/r>)
     I_C = coulomb_integral(lambda, phi_e, phi_h, dz, fdstep)
-
-    ! V_C = -(COULOMB_CONST/eps_r) * I_C  [eV]
     V_coulomb = -(COULOMB_CONST / eps_r) * I_C
 
     E = T_kinetic + V_coulomb
@@ -301,11 +289,6 @@ contains
   !
   ! I_C = (4/lambda^2) * sum_{n,m} phi_e(n)*phi_h(m)
   !       * I_r(|z_n-z_m|, lambda) * dz^2
-  !
-  ! I_r(dz, lambda) = int_0^inf r*exp(-2r/lambda)/sqrt(r^2+dz^2) dr
-  ! has units of AA.  So (4/lambda^2)*I_r is 1/AA.
-  ! phi_e*phi_h*dz^2 is dimensionless.
-  ! Total: I_C has units of 1/AA.
   ! ------------------------------------------------------------------
   function coulomb_integral(lambda, phi_e, phi_h, dz, fdstep) result(I_C)
     real(kind=dp), intent(in) :: lambda, phi_e(:), phi_h(:), dz
@@ -315,7 +298,7 @@ contains
     integer :: n, m
     real(kind=dp) :: dz_nm, Ir, prefactor
 
-    prefactor = 4.0_dp / lambda**2  ! 1/AA^2
+    prefactor = 4.0_dp / lambda**2
 
     I_C = 0.0_dp
     do n = 1, fdstep
@@ -326,26 +309,15 @@ contains
       end do
     end do
 
-    I_C = prefactor * I_C * dz * dz  ! 1/AA^2 * AA * AA^2 = 1/AA
+    I_C = prefactor * I_C * dz * dz
 
   end function coulomb_integral
 
 
   ! ------------------------------------------------------------------
   ! Radial Coulomb integral:
-  !
-  ! I_r(dz, lambda) = int_0^inf r * exp(-2r/lambda) / sqrt(r^2 + dz^2) dr
-  !
-  ! Substitution u = 2r/lambda:
-  !   r = lambda*u/2, dr = lambda/2 du
-  !   exp(-2r/lambda) = exp(-u)
-  !   sqrt(r^2+dz^2) = (lambda/2)*sqrt(u^2 + alpha^2), alpha = 2*dz/lambda
-  !
-  ! I_r = (lambda/2) * int_0^inf u*exp(-u) / sqrt(u^2+alpha^2) du
-  !
-  ! For dz=0: I_r(0,lambda) = (lambda/2)*int_0^inf exp(-u) du = lambda/2
-  !
-  ! Evaluated by Simpson's rule on [0, U_MAX] with NR_RADIAL points.
+  ! I_r(dz, lambda) = (lambda/2) * int_0^inf u*exp(-u)/sqrt(u^2+alpha^2) du
+  ! where alpha = 2*dz/lambda.  Evaluated by Simpson's rule.
   ! ------------------------------------------------------------------
   function radial_integral(dz_val, lambda) result(Ir)
     real(kind=dp), intent(in) :: dz_val, lambda
@@ -361,24 +333,22 @@ contains
     end if
 
     alpha = 2.0_dp * dz_val / lambda
-    u_max = 30.0_dp  ! exp(-30) ~ 1e-13
+    u_max = 30.0_dp
     du = u_max / real(NR_RADIAL - 1, kind=dp)
 
-    ! Build integrand f(u) = u*exp(-u) / sqrt(u^2 + alpha^2)
     do i = 1, NR_RADIAL
       u = real(i - 1, kind=dp) * du
       if (u < 1.0e-30_dp) then
         if (alpha < 1.0e-30_dp) then
-          f(i) = 1.0_dp  ! limit u->0, dz=0: u/sqrt(u^2) = 1
+          f(i) = 1.0_dp
         else
-          f(i) = 0.0_dp  ! limit u->0, dz>0: u/sqrt(alpha^2) = 0
+          f(i) = 0.0_dp
         end if
       else
         f(i) = u * exp(-u) / sqrt(u**2 + alpha**2)
       end if
     end do
 
-    ! Simpson's 1/3 rule
     h = du / 3.0_dp
     wsum = f(1) + f(NR_RADIAL)
     do i = 2, NR_RADIAL - 1, 2
@@ -420,13 +390,6 @@ contains
 
   ! ------------------------------------------------------------------
   ! 2D Sommerfeld enhancement factor for the absorption continuum.
-  !
-  ! S_2D(E_excess) = exp(pi/sqrt(D)) / cosh(pi/sqrt(D))
-  ! where D = E_excess / (E_binding / 4)
-  !
-  ! When D > 0 (above band edge): enhances continuum absorption.
-  ! When D -> 0 (at band edge): S_2D -> 2 (maximum 2D enhancement).
-  ! When D -> infinity: S_2D -> 1 (no enhancement).
   ! ------------------------------------------------------------------
   function sommerfeld_2d(E_excess, E_binding) result(S)
     real(kind=dp), intent(in) :: E_excess    ! energy above band edge (eV)
@@ -442,13 +405,12 @@ contains
     D = E_excess / (E_binding / 4.0_dp)
 
     if (D < 1.0e-10_dp) then
-      S = 2.0_dp  ! 2D limit at band edge
+      S = 2.0_dp
       return
     end if
 
     x = pi_dp / sqrt(D)
 
-    ! Avoid overflow for small D
     if (x > 500.0_dp) then
       S = 2.0_dp
       return
@@ -460,11 +422,7 @@ contains
 
 
   ! ------------------------------------------------------------------
-  ! Local pseudo-Voigt lineshape (same formulation as optical_spectra).
-  !
-  ! V(E) = eta * L(E; E0, gamma_l) + (1-eta) * G(E; E0, gamma_g)
-  ! where eta = fwhm_L / (fwhm_L + fwhm_G) (Thompson mixing).
-  ! gamma_l and gamma_g are HWHM values.
+  ! Local pseudo-Voigt lineshape.
   ! ------------------------------------------------------------------
   function lineshape_voigt_local(E, E0, gamma_l, gamma_g) result(V)
     real(kind=dp), intent(in) :: E, E0, gamma_l, gamma_g
@@ -477,21 +435,18 @@ contains
     fwhm_l = 2.0_dp * gamma_l
     fwhm_g = 2.0_dp * gamma_g
 
-    ! Mixing parameter (Thompson et al. approximation)
     if (fwhm_l + fwhm_g > 0.0_dp) then
       eta = fwhm_l / (fwhm_l + fwhm_g)
     else
       eta = 0.5_dp
     end if
 
-    ! Lorentzian: L(E) = gamma_l / (pi * ((E-E0)^2 + gamma_l^2))
     if (gamma_l > 0.0_dp) then
       lorentz = gamma_l / (pi_dp * ((E - E0)**2 + gamma_l**2))
     else
       lorentz = 0.0_dp
     end if
 
-    ! Gaussian: G(E) = exp(-0.5*((E-E0)/sigma)^2) / (sigma*sqrt(2*pi))
     if (gamma_g > 0.0_dp) then
       sigma = fwhm_g / (2.0_dp * sqrt(2.0_dp * log(2.0_dp)))
       x = (E - E0) / sigma
@@ -507,16 +462,6 @@ contains
 
   ! ------------------------------------------------------------------
   ! Apply excitonic corrections to the absorption spectrum.
-  !
-  ! 1. Above band gap (E > E_gap): multiply continuum by Sommerfeld
-  !    enhancement factor sommerfeld_2d(E - E_gap, E_binding).
-  ! 2. Below band gap (E ~ E_gap - E_binding): add a discrete exciton
-  !    peak, broadened by the Voigt lineshape.  The peak amplitude is
-  !    proportional to 1/gamma_l (for a 2D exciton, the oscillator
-  !    strength scales as 1/linewidth).
-  !
-  ! E_binding is in meV from compute_exciton_binding; convert to eV
-  ! internally (1 meV = 1e-3 eV).
   ! ------------------------------------------------------------------
   subroutine apply_excitonic_corrections(E_grid, alpha_te, alpha_tm, &
     & E_gap, E_binding, optcfg)
@@ -530,33 +475,20 @@ contains
     real(kind=dp) :: E_excess, S, E_exciton
     real(kind=dp) :: gamma_l, gamma_g
     real(kind=dp) :: A_exciton, peak_norm
-
-    ! Convert binding energy from meV to eV
     real(kind=dp) :: Eb_eV
 
     Eb_eV = E_binding * 1.0e-3_dp
 
-    if (Eb_eV < 1.0e-10_dp) return  ! no binding energy, nothing to do
+    if (Eb_eV < 1.0e-10_dp) return
 
     npts = size(E_grid)
     if (npts == 0) return
     if (size(alpha_te) /= npts .or. size(alpha_tm) /= npts) return
 
-    ! Half-widths at half-maximum from FWHM (same convention as optics)
     gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
     gamma_g = optcfg%linewidth_gaussian / 2.0_dp
-
-    ! Exciton peak energy: E_gap - E_binding
     E_exciton = E_gap - Eb_eV
 
-    ! Exciton peak amplitude: proportional to 1/gamma_l for a 2D exciton.
-    ! Scale relative to the continuum: use the average continuum alpha
-    ! near the band edge as a reference amplitude, then multiply by the
-    ! oscillator strength enhancement factor.
-    ! For a simple model: A_exciton = alpha_ref / gamma_l where alpha_ref
-    ! is the average of alpha_te near E_gap.
-    !
-    ! We estimate alpha_ref from the first few points above the gap.
     A_exciton = 0.0_dp
     peak_norm = 0.0_dp
     do ie = 1, npts
@@ -569,14 +501,12 @@ contains
     if (peak_norm > 0.0_dp .and. gamma_l > 0.0_dp) then
       A_exciton = (A_exciton / peak_norm) / gamma_l
     else if (gamma_l > 0.0_dp) then
-      ! Fallback: if no continuum data near gap, use a small default
       A_exciton = 0.0_dp
     else
       A_exciton = 0.0_dp
     end if
 
     do ie = 1, npts
-      ! 1. Sommerfeld enhancement for E > E_gap (continuum)
       if (E_grid(ie) >= E_gap) then
         E_excess = E_grid(ie) - E_gap
         S = sommerfeld_2d(E_excess, Eb_eV)
@@ -584,7 +514,6 @@ contains
         alpha_tm(ie) = alpha_tm(ie) * S
       end if
 
-      ! 2. Discrete exciton peak at E = E_gap - E_binding
       if (A_exciton > 0.0_dp) then
         alpha_te(ie) = alpha_te(ie) + A_exciton &
           & * lineshape_voigt_local(E_grid(ie), E_exciton, gamma_l, gamma_g)

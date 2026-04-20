@@ -58,6 +58,7 @@ contains
     integer :: i, j, pair_count
     integer :: cb_lo, cb_hi, ncb
     real(kind=dp) :: temperature, omega_lo, eps_inf, eps_0
+    real(kind=dp), parameter :: e0_AA = e0 / 10.0_dp   ! C/(V*AA)
     real(kind=dp) :: coupling_const, N_lo
     real(kind=dp), allocatable :: phi_i(:), phi_j(:)
     real(kind=dp), allocatable :: rate_em(:,:), rate_ab(:,:)
@@ -95,7 +96,7 @@ contains
     !   C_F = e^2 * omega_lo / (4*pi*eps0) * (1/eps_inf - 1/eps_0)
     ! in SI-like code units.  We compute the rate in 1/s using:
     !   prefactor = C_F / hbar   (1/s)
-    coupling_const = e**2 * omega_lo / (4.0_dp * pi_dp * e0) &
+    coupling_const = e**2 * omega_lo / (4.0_dp * pi_dp * e0_AA) &
       & * (1.0_dp / eps_inf - 1.0_dp / eps_0)
 
     ! Bose-Einstein occupation N_LO = 1/(exp(hbar*omega/(kB*T)) - 1)
@@ -190,7 +191,7 @@ contains
     do n = 1, fdstep
       density(n) = 0.0_dp
       do b = 7, 8
-        idx = (n - 1) * 8 + b
+        idx = (b - 1) * fdstep + n
         density(n) = density(n) + real(eigvecs(idx, state_idx) &
           & * conjg(eigvecs(idx, state_idx)), kind=dp)
       end do

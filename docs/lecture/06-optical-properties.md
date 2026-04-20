@@ -488,6 +488,10 @@ The HH-related transitions dominate the TE absorption spectrum near the fundamen
 
 At finite $k_\parallel$, the HH/LH mixing induced by the off-diagonal k.p terms relaxes these strict selection rules. The TM matrix element for HH transitions, which is exactly zero at $k_\parallel = 0$, grows as $k_\parallel^2$ near the zone center. For the 10 nm GaAs QW at $k_\parallel = 0.2$ angstrom$^{-1}$, $|M_z|^2$ for the CB1-to-HH1 transition reaches $\sim$1--2 eV$^2 \cdot$ angstrom$^2$, compared to $|M_{\text{TE}}^2| \approx 90$ eV$^2 \cdot$ angstrom$^2$ -- still small but no longer identically zero. The code captures this automatically because the eigenvectors of the full 8-band Hamiltonian already contain the correct band mixing at each $k_\parallel$.
 
+![Interband absorption spectrum](../figures/qw_absorption_spectrum.png)
+
+**Figure 6.4:** Interband absorption coefficient $\alpha(\hbar\omega)$ for a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well at $T = 300$ K with Lorentzian broadening $\gamma_L = 30$ meV. The TE spectrum (blue) shows strong absorption near the HH band edge, while the TM spectrum (orange) is suppressed at the fundamental gap but grows at higher energies where LH-related transitions contribute.
+
 ### 6.7.4 Lineshape broadening
 
 The delta function $\delta(\hbar\omega - \Delta E_{cv})$ in the absorption formula represents an idealized transition with infinite lifetime. Real transitions are broadened by two distinct mechanisms:
@@ -535,6 +539,14 @@ The nextnano tutorial 5.9.9 reproduces the interband absorption spectrum of a st
 4. **Strain effect.** The compressive strain in the InGaAs layer splits the HH and LH band edges at $k_\parallel = 0$, moving the HH above the LH. This increases the TE/TM polarization contrast at the band edge compared to an unstrained QW (where HH and LH are degenerate at $k_\parallel = 0$). The code reproduces this through the Bir-Pikus strain terms in `hamiltonianConstructor.f90`.
 
 The physics in the Dumitras calculation is identical to what this code implements: the same 8-band zincblende k.p Hamiltonian, the same momentum matrix elements from the Kane $E_P$ parameter, and the same Fermi golden rule absorption formula. The numerical values depend on the InGaAs material parameters (Vurgaftman 2001 provides the recommended parameters), the well width, and the strain state, all of which are configurable through `input.cfg`.
+
+![Strained QW absorption](../figures/qw_absorption_strained.png)
+
+**Figure 6.5:** Interband absorption for a strained In$_{0.53}$Ga$_{0.47}$As/Al$_{0.48}$In$_{0.52}$As QW. Compressive strain splits the HH and LH band edges, enhancing the TE/TM polarization contrast at the absorption edge. The TE onset is dominated by HH-CB transitions, while TM absorption peaks at the LH-related transitions.
+
+![Absorption vs well width](../figures/qw_absorption_vs_width.png)
+
+**Figure 6.6:** Interband absorption coefficient for GaAs/Al$_{0.3}$Ga$_{0.7}$As QWs of varying well width. Narrower wells show blue-shifted absorption edges and increased confinement energy, while wider wells approach the bulk GaAs band gap.
 
 ---
 
@@ -622,6 +634,14 @@ $$
 
 using the same FD grid and Simpson integration as the charge density calculation. The ISBT oscillator strength is then computed from the $f_{ij}$ formula above. This routine (`compute_isbt_dipole` in `gfactor_functions.f90`) operates on the CB envelope functions extracted from the 8-band eigenvectors.
 
+![ISBT dipole moments](../figures/isbt_dipole_moments.png)
+
+**Figure 6.7:** Intersubband $z$-dipole matrix elements $|z_{ij}|$ (angstrom) for conduction subband pairs in a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well. The dominant transitions ($\Delta n = 1$) have the largest dipole moments, consistent with the parity selection rule.
+
+![ISBT absorption spectrum](../figures/isbt_absorption.png)
+
+**Figure 6.8:** Intersubband absorption spectrum for a GaAs/Al$_{0.3}$Ga$_{0.7}$As QW. Only TM polarization ($z$-dipole) contributes to ISBT absorption, a direct consequence of the growth-direction dipole orientation.
+
 ---
 
 ## 6.10 Optical Gain in Quantum Wells
@@ -665,6 +685,10 @@ The gain spectrum of a QW has several characteristic features that depend on the
 3. **Temperature dependence.** The gain spectrum shifts to lower energy with increasing temperature (band gap shrinkage, $dE_g/dT \approx -0.5$ meV/K for GaAs) and broadens due to increased thermal occupation of higher subbands. The peak gain at a fixed carrier density decreases with temperature, which is the primary reason for the increase in laser threshold current with temperature.
 
 4. **Many-body effects.** The independent-particle gain formula underestimates the peak gain and overestimates the transparency density because it neglects Coulomb enhancement and band-gap renormalization. These many-body corrections can modify the gain by 20--50% near the band edge (Chuang, Ch. 10; Haug and Koch, *Quantum Theory of the Optical and Electronic Properties of Semiconductors*, Ch. 5). A rigorous treatment requires solving the semiconductor Bloch equations, which is beyond the scope of the present code.
+
+![Gain strained comparison](../figures/gain_strained_comparison.png)
+
+**Figure 6.9:** TE and TM optical gain for a 10 nm QW under compressive strain (In$_{0.53}$Ga$_{0.47}$As/Al$_{0.48}$In$_{0.52}$As) at carrier density $n_{2D} = 3 \times 10^{12}$ cm$^{-2}$. Compressive strain pushes the HH above the LH, enhancing the TE gain at the band edge relative to TM.
 
 ---
 
@@ -734,7 +758,38 @@ This controls the temperature dependence of the scattering rates. At low tempera
 
 The temperature dependence of the scattering rate has direct implications for device performance: the linewidth of intersubband transitions in quantum cascade lasers broadens with temperature due to increased LO-phonon scattering, while the population inversion between subbands is degraded by thermally activated absorption processes.
 
-### 6.11.5 Reference
+![Scattering lifetime vs well width](../figures/scattering_lifetime_vs_width.png)
+
+**Figure 6.10:** LO-phonon scattering lifetime $\tau$ vs quantum well width for the CB1$\to$CB2 intersubband transition in GaAs/Al$_{0.3}$Ga$_{0.7}$As at $T = 300$ K. The lifetime increases for narrow wells (reduced form-factor overlap) and approaches the 3D Froehlich limit for wide wells.
+
+### 6.11.5 Excitonic effects in quantum wells
+
+The independent-particle absorption coefficient derived in Section 6.7 neglects the Coulomb attraction between the photoexcited electron and hole. This attraction produces bound **excitonic states** below the band gap and a **Sommerfeld enhancement** of the continuum absorption above the gap. In 2D (quantum wells), the excitonic effects are significantly stronger than in 3D because the electron-hole overlap is enhanced by the confinement.
+
+The code implements excitonic corrections using the variational method of Bastard (PRB **25**, 2558, 1982):
+1. A 1s trial function $\phi(r) = \sqrt{2/\pi} (1/\lambda) \exp(-r/\lambda)$ is used for the in-plane relative motion.
+2. The variational parameter $\lambda$ (Bohr radius) is optimized by minimizing the expectation value of the 2D hydrogenic Hamiltonian.
+3. The binding energy $E_b$ and optimal $\lambda$ are computed from the CB1 and HH1 envelope functions.
+
+The 2D Sommerfeld enhancement factor is applied to the continuum absorption above the band edge:
+
+$$
+S_{2D}(E) = \frac{\exp(\pi/\sqrt{D})}{\cosh(\pi/\sqrt{D})}, \quad D = \frac{E - E_g}{E_b/4}
+$$
+
+At the band edge ($E \to E_g$), $S_{2D} \to 4$ in the ideal 2D limit, meaning the absorption is enhanced by a factor of 4 compared to the non-interacting case. This is a hallmark of 2D excitonic physics.
+
+For a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As QW, the computed binding energy is approximately 3--5 meV, with the exciton Bohr radius $\lambda \approx 100$--$200$ angstrom. The binding energy increases for narrower wells due to the enhanced electron-hole overlap, following the well-known trend of Bastard (1982).
+
+![Exciton binding vs well width](../figures/exciton_binding_vs_width.png)
+
+**Figure 6.11:** Exciton binding energy vs quantum well width for GaAs/Al$_{0.3}$Ga$_{0.7}$As, computed using the variational method. The binding energy increases for narrow wells (enhanced overlap) and decreases for wide wells (approaching the 3D bulk limit of $\sim$4.2 meV for GaAs).
+
+![Absorption with excitonic corrections](../figures/absorption_with_exciton.png)
+
+**Figure 6.12:** Interband absorption spectrum with (red) and without (blue dashed) excitonic corrections. The excitonic correction adds a sharp peak at $E = E_g - E_b$ and enhances the continuum absorption above the band edge by the 2D Sommerfeld factor. The enhancement is most pronounced near the absorption onset.
+
+### 6.11.6 Reference
 
 The foundational treatment of LO-phonon scattering in semiconductor quantum wells is given by Ferreira & Bastard, Phys. Rev. B **40**, 1074 (1989). This work derives the scattering rates for both intra-subband and inter-subband processes, evaluates the form factors for infinite and finite square wells, and discusses the crossover from 3D to 2D scattering behavior as the well width decreases. The formalism is directly applicable to the envelope functions computed by the 8-band k.p solver.
 
@@ -742,7 +797,7 @@ The foundational treatment of LO-phonon scattering in semiconductor quantum well
 
 ## 6.12 Discussion
 
-### 6.11.1 Convergence considerations
+### 6.12.1 Convergence considerations
 
 The momentum matrix elements converge more slowly with the FD grid spacing than the eigenvalues, because they involve the derivative operator $\partial H / \partial k_\alpha$, which is sensitive to the finite-difference stencil accuracy. For reliable optical matrix elements:
 
@@ -751,7 +806,7 @@ The momentum matrix elements converge more slowly with the FD grid spacing than 
 - The number of VB states included (`numvb`) should be large enough to capture the dominant transitions; typically 10--20 VB states are needed.
 - Convergence of the oscillator strength should be checked by varying the grid spacing: $f_{ij}$ should change by less than 1% between successive refinements.
 
-### 6.11.2 Gauge invariance
+### 6.12.2 Gauge invariance
 
 The momentum matrix elements $\mathbf{p}_{if}$ and the position matrix elements $\mathbf{r}_{if}$ are related by
 
@@ -761,9 +816,9 @@ $$
 
 In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") give identical results. In a heterostructure with position-dependent material parameters, however, the velocity gauge (used by this code, since it directly evaluates $\partial H / \partial k$) is preferred because it avoids the ambiguity of the position operator across interfaces. The k.p Hamiltonian naturally provides the velocity-gauge matrix elements, and the code exploits this without needing to define a position operator.
 
-### 6.11.3 Current limitations
+### 6.12.3 Current limitations
 
-1. **No excitonic effects.** The independent-particle approximation neglects electron-hole Coulomb attraction, which can significantly enhance the absorption near the band edge (especially in low-dimensional systems where the exciton binding energy is large). For GaAs quantum wires, the exciton binding energy can reach 10--30 meV. Including excitons would require solving the Bethe-Salpeter equation or using a variational approach.
+1. **Excitonic effects are included at the variational level.** The code computes exciton binding energies using the Bastard variational method and applies the 2D Sommerfeld enhancement to the continuum absorption (Section 6.11.5). A more rigorous treatment would require solving the Bethe-Salpeter equation, which captures excitonic effects beyond the 1s variational approximation.
 
 2. **Single-particle states only.** The oscillator strengths computed here are for transitions between Kohn-Sham-like single-particle states. Many-body corrections (local-field effects, self-energy corrections) can modify the absolute magnitudes by 10--20%.
 
@@ -773,7 +828,7 @@ In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") g
 
 5. **Wire state selection.** The `gfactorCalculation` wire mode selects CB/VB states by their position in the sorted eigenvalue list (bottom `numvb` as VB, next `numcb` as CB) rather than by proximity to the band edges. For wires with many subbands, this selects deep valence states instead of the actual band-edge states, producing incorrect optical transitions. A band-edge-aware selection (identifying the gap and selecting states adjacent to it) is needed for correct wire oscillator strengths.
 
-### 6.11.4 Wurtzite limitation
+### 6.12.4 Wurtzite limitation
 
 Full reproduction of polarized absorption results for mixed-phase nanowires (e.g., Holmberg *et al.*) requires modeling the **wurtzite** crystal structure, which has a different 8-band Hamiltonian with distinct selection rules. The wurtzite basis introduces a crystal-field splitting $\Delta_{CR}$ that further separates the A (HH-like), B (LH-like), and C (SO-like) valence bands, modifying the polarization selection rules compared to zincblende.
 
@@ -798,6 +853,9 @@ The computation framework -- `compute_optical_matrix_wire`, the `optical_transit
 | $y$-polarized matrix element | $\|\langle \text{CB}\|\partial H/\partial k_y\|\text{VB}\rangle\|^2$ | `\|py\|^2` |
 | $z$-polarized matrix element | $\|\langle \text{CB}\|\partial H/\partial k_z\|\text{VB}\rangle\|^2$ | `\|pz\|^2` |
 | Oscillator strength | $f = \sum_\alpha \|p_\alpha\|^2 / [(\hbar^2/2m_0) \cdot \Delta E]$ | `f_osc` |
+| ISBT dipole moment | $z_{ij} = \langle\psi_i|z|\psi_j\rangle$ | `z_ij` |
+| Exciton binding energy | $E_b$ (variational) | `E_binding(meV)` |
+| Scattering rate | $1/\tau_{ij}^{\text{Fr}}$ | `rate(1/s)` |
 
 **Key physical insights:**
 

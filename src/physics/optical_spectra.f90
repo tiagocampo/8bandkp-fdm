@@ -11,6 +11,7 @@ module optical_spectra
   public :: optics_init, optics_accumulate, optics_finalize, optics_cleanup
   public :: compute_intersubband_transitions, compute_isbt_absorption
   public :: compute_gain_qw, gain_reset
+  public :: E_grid, alpha_te, alpha_tm, nE
 
   ! Module-level accumulation arrays (set by optics_init)
   real(kind=dp), allocatable, save :: alpha_te(:)    ! TE accumulation on E_grid
@@ -211,22 +212,19 @@ contains
     type(optics_config), intent(in) :: optcfg
 
     integer :: ie, iounit
-    real(kind=dp) :: prefactor_E, m0_over_hbar2
+    real(kind=dp) :: prefactor_E
 
     ! eps0 in AA units: e0 is C/(V*nm), 1 nm = 10 AA
-    real(kind=dp), parameter :: e0_AA = e0 * 10.0_dp   ! C/(V*AA)
+    ! C/(V*nm) -> C/(V*AA): divide by 10 (not multiply)
+    real(kind=dp), parameter :: e0_AA = e0 / 10.0_dp   ! C/(V*AA)
 
     ! Conversion factor: alpha_AA -> alpha_cm (1/AA -> 1/cm)
     real(kind=dp), parameter :: AA_TO_CM = 1.0e8_dp
 
-    ! (m0 / hbar)^2 converts |dH/dk|^2 -> |p|^2 since
-    ! p = (m0/hbar) * dH/dk  when dH/dk is in eV*AA.
-    m0_over_hbar2 = (m0 / hbar)**2
-
     ! --- Apply prefactor to build final alpha arrays ---
     do ie = 1, nE
       if (E_grid(ie) > 0.0_dp) then
-        prefactor_E = m0_over_hbar2 * (2.0_dp * pi_dp * e**2) &
+        prefactor_E = (2.0_dp * pi_dp * e**2) &
           & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
       else
         prefactor_E = 0.0_dp
@@ -274,7 +272,7 @@ contains
       ! Apply the same prefactor to gain arrays
       do ie = 1, nE
         if (E_grid(ie) > 0.0_dp) then
-          prefactor_E = m0_over_hbar2 * (2.0_dp * pi_dp * e**2) &
+          prefactor_E = (2.0_dp * pi_dp * e**2) &
             & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
         else
           prefactor_E = 0.0_dp
@@ -365,7 +363,7 @@ contains
     z_ij = ZERO
     do n = 1, fdstep
       do b = 1, 8
-        idx = (n - 1) * 8 + b
+        idx = (b - 1) * fdstep + n
         z_ij = z_ij + conjg(eigvecs(idx, state_i)) &
           & * z_grid(n) * eigvecs(idx, state_j)
       end do
@@ -514,20 +512,28 @@ contains
     real(kind=dp) :: gamma_l, gamma_g
     real(kind=dp) :: z_ij_abs2
     complex(kind=dp) :: z_ij
+    real(kind=dp) :: ef_cb
 
     if (nE == 0) return  ! optics_init not called
 
-    ! Half-widths at half-maximum from FWHM
     gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
     gamma_g = optcfg%linewidth_gaussian / 2.0_dp
 
+    ! Use gain quasi-Fermi level (mu_e) when available, since it
+    ! accounts for carrier injection into CB states.
+    if (gain_fermi_computed) then
+      ef_cb = mu_e
+    else
+      ef_cb = fermi_level
+    end if
+
     do i = 1, numcb
       state_i = numvb + i
-      f_i = fermi_dirac(eigvals(state_i), fermi_level, optcfg%temperature)
+      f_i = fermi_dirac(eigvals(state_i), ef_cb, optcfg%temperature)
 
       do j = i + 1, numcb
         state_j = numvb + j
-        f_j = fermi_dirac(eigvals(state_j), fermi_level, optcfg%temperature)
+        f_j = fermi_dirac(eigvals(state_j), ef_cb, optcfg%temperature)
 
         ! Occupation factor: (f_i - f_j).  Positive means absorption
         ! from lower CB subband i to upper CB subband j.
