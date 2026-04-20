@@ -3460,39 +3460,25 @@ def _read_absorption(output_dir: Path, polarization: str) -> Tuple[np.ndarray, n
 def fig_qw_absorption_spectrum(output_dir: Path) -> None:
     """qw_absorption_spectrum.png: TE and TM interband absorption for a GaAs/AlGaAs QW."""
     print("[figure] qw_absorption_spectrum")
+
+    # Always run with the interband config — ISBT runs may leave stale data
+    # with the wrong energy range (0.02-0.30 eV vs 1.3-2.0 eV).
+    cfg = CONFIG_DIR / "qw_gaas_algaas_optics_full.cfg"
+    if cfg.exists():
+        result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                               label="qw_absorption_spectrum", timeout=600)
+        if result.returncode != 0:
+            print("  WARNING: bandStructure run failed, skipping.")
+            return
+    else:
+        print("  WARNING: No interband optics config found, skipping.")
+        return
+
     te_file = output_dir / "absorption_TE.dat"
     tm_file = output_dir / "absorption_TM.dat"
 
     if not te_file.exists() or not tm_file.exists():
-        # Attempt to run with the optics-enabled config
-        cfg = CONFIG_DIR / "qw_gaas_algaas_optics.cfg"
-        if cfg.exists():
-            # Append Optics block to a temp config if needed
-            # Check whether the config already has optics lines
-            has_optics = False
-            with open(cfg) as fh:
-                for line in fh:
-                    if line.strip().startswith("Optics:"):
-                        has_optics = True
-                        break
-            if has_optics:
-                result = run_executable(EXE_BAND, cfg, REPO_ROOT,
-                                       label="qw_absorption_spectrum", timeout=600)
-                if result.returncode != 0:
-                    print("  WARNING: bandStructure run failed, skipping.")
-                    return
-            else:
-                print("  WARNING: Config file exists but lacks Optics section, "
-                      "skipping. Add 'Optics: T' and optics parameters to enable.")
-                return
-        else:
-            print("  WARNING: No absorption data files found and no optics config "
-                  "available. Run bandStructure with Optics: T to generate data.")
-            return
-
-    # Read data (re-check after potential run)
-    if not te_file.exists() or not tm_file.exists():
-        print("  WARNING: absorption_TE.dat or absorption_TM.dat still not found, skipping.")
+        print("  WARNING: absorption_TE.dat or absorption_TM.dat not found, skipping.")
         return
 
     E_te, alpha_te = _read_absorption(output_dir, "TE")
@@ -3784,22 +3770,26 @@ def fig_isbt_absorption(output_dir: Path) -> None:
 
 
 def fig_gain_strained_comparison(output_dir: Path) -> None:
-    """gain_strained_comparison.png: TE and TM gain for compressive, tensile, unstrained QW.
-
-    This is a placeholder for the full 3-strain comparison.  Currently it
-    plots a single panel with both TE and TM gain curves if gain data exists.
-    When separate strain-labelled data files become available (e.g.
-    gain_TE_compressive.dat), the function can be upgraded to a 1x3 subplot
-    layout.
-    """
+    """gain_strained_comparison.png: TE and TM gain for a GaAs/AlGaAs QW."""
     print("[figure] gain_strained_comparison")
+
+    # Always re-run with interband config to avoid stale ISBT-range data
+    cfg = CONFIG_DIR / "qw_gaas_algaas_optics_full.cfg"
+    if cfg.exists():
+        result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                               label="gain_strained_comparison", timeout=600)
+        if result.returncode != 0:
+            print("  WARNING: bandStructure run failed, skipping.")
+            return
+    else:
+        print("  WARNING: No interband optics config found, skipping.")
+        return
 
     te_file = output_dir / "gain_TE.dat"
     tm_file = output_dir / "gain_TM.dat"
 
     if not te_file.exists() or not tm_file.exists():
         print("  WARNING: gain_TE.dat or gain_TM.dat not found, skipping.")
-        print("  Run bandStructure with Gain: T enabled config to generate data.")
         return
 
     E_te, g_te = np.loadtxt(str(te_file), unpack=True, comments="#")
