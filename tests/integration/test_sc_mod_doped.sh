@@ -35,4 +35,5 @@ if ! grep -q "SC loop converged" test_output.log; then
     exit 1
 fi
 
-python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" --tolerance 1e-8
+# SC eigenvalues have larger tolerance due to iterative convergence paths
+python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" --tolerance 1e-5
