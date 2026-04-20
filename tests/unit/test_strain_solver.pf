@@ -449,9 +449,9 @@ contains
     P_eps = -params(1)%av * Tr_eps
     Q_eps = params(1)%b_dp * 0.5_dp * (eps_zz_val - 0.5_dp * 2.0_dp * eps_xx_val)
     delta_Ec_exp  = params(1)%ac * Tr_eps
-    delta_EHH_exp = P_eps + Q_eps
-    delta_ELH_exp = P_eps - Q_eps
-    delta_ESO_exp = P_eps
+    delta_EHH_exp = -P_eps + Q_eps
+    delta_ELH_exp = -P_eps - Q_eps
+    delta_ESO_exp = -P_eps
 
     call compute_bir_pikus_blocks(strain_out, params, grid%material_id, grid, bp)
 
@@ -537,9 +537,9 @@ contains
     Q_eps = params(1)%b_dp * 0.5_dp * (eps_zz - eps_xx)
 
     @assertEqual(params(1)%ac * Tr_eps, s%delta_Ec, tolerance=1.0e-12_dp)
-    @assertEqual(P_eps + Q_eps, s%delta_EHH, tolerance=1.0e-12_dp)
-    @assertEqual(P_eps - Q_eps, s%delta_ELH, tolerance=1.0e-12_dp)
-    @assertEqual(P_eps, s%delta_ESO, tolerance=1.0e-12_dp)
+    @assertEqual(-P_eps + Q_eps, s%delta_EHH, tolerance=1.0e-12_dp)
+    @assertEqual(-P_eps - Q_eps, s%delta_ELH, tolerance=1.0e-12_dp)
+    @assertEqual(-P_eps, s%delta_ESO, tolerance=1.0e-12_dp)
     @assertEqual(2.0_dp * Q_eps, s%QT2_eps, tolerance=1.0e-12_dp)
 
     ! For [001] biaxial (eps_xx=eps_yy, eps_xy=0): R_eps=0, S_eps=0

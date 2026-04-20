@@ -1082,9 +1082,9 @@ module hamiltonianConstructor
       !
       ! Diagonal:
       !   CB:  +ac * Tr(eps)
-      !   HH:  +P_eps + Q_eps
-      !   LH:  +P_eps - Q_eps
-      !   SO:  +P_eps
+      !   HH:  -P_eps + Q_eps
+      !   LH:  -P_eps - Q_eps
+      !   SO:  -P_eps
       !
       ! Off-diagonal: same pattern as k-terms R, S, S_bar.
       ! For [001] biaxial: R_eps = S_eps = 0, only Q_eps survives.

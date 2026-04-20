@@ -43,9 +43,9 @@ module definitions
   ! Scalar Bir-Pikus strain result for a single grid point.
   type :: bp_scalar
     real(kind=dp) :: delta_Ec    = 0.0_dp   ! CB: ac*Tr(eps)
-    real(kind=dp) :: delta_EHH   = 0.0_dp   ! HH: P_eps + Q_eps
-    real(kind=dp) :: delta_ELH   = 0.0_dp   ! LH: P_eps - Q_eps
-    real(kind=dp) :: delta_ESO   = 0.0_dp   ! SO: P_eps
+    real(kind=dp) :: delta_EHH   = 0.0_dp   ! HH: -P_eps + Q_eps
+    real(kind=dp) :: delta_ELH   = 0.0_dp   ! LH: -P_eps - Q_eps
+    real(kind=dp) :: delta_ESO   = 0.0_dp   ! SO: -P_eps
     complex(kind=dp) :: R_eps    = cmplx(0.0_dp, 0.0_dp, kind=dp)
     complex(kind=dp) :: S_eps    = cmplx(0.0_dp, 0.0_dp, kind=dp)
     real(kind=dp) :: QT2_eps     = 0.0_dp   ! Q_eps - T_eps = 2*Q_eps
