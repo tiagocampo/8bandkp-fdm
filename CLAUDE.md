@@ -148,5 +148,6 @@ Always check for and follow applicable superpowers skills when working. In parti
 
 - **NEVER** modify material parameters in `parameters.f90` without verifying against published references (Vurgaftman 2001, Winkler 2003)
 - **NEVER** change the basis ordering (bands 1-4 valence, 5-6 split-off, 7-8 conduction) — it is hardcoded throughout
+- **NEVER** change the Bir-Pikus sign convention: VB diagonal shifts all contain `-P_eps` (which equals `av * Tr(eps)` due to the sign flip in the helper), so delta_EHH = -P_eps + Q_eps, delta_ELH = -P_eps - Q_eps, delta_ESO = -P_eps. The helper `P_eps = -av * Tr(eps)` introduces a sign flip — every consumer must negate it. Single source of truth: `compute_bp_scalar` in `strain_solver.f90`.
 - **NEVER** commit `input.cfg` with personal test configs — use `tests/regression/configs/` for test configs
 - **Require approval** for: changes to `defs.f90` derived types, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`, Poisson solver in `poisson.f90`, SC loop convergence logic in `sc_loop.f90`
