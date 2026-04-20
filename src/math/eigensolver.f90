@@ -310,7 +310,7 @@ contains
     iparm(40) = 1  ! distributed matrix input (CSR)
     maxfct = 1
     mnum = 1
-    mtype = 6  ! complex Hermitian (or -6 for indefinite)
+    mtype = 3  ! complex structurally symmetric (full CSR, not triangle-only)
     nrhs = 1
     msglvl = 0  ! no output
 
@@ -453,6 +453,9 @@ contains
           result%eigenvalues(i) = real(d(i), kind=dp)
           result%eigenvectors(:, i) = z(:, i)
         end do
+
+        ! Sort eigenvalues (and corresponding eigenvectors) in ascending order
+        call sort_eigenpairs_ascending(result%eigenvalues, result%eigenvectors)
       else
         print *, 'ARPACK zneupd error: info =', info
         result%converged = .false.
@@ -655,5 +658,41 @@ contains
       end do
     end do
   end subroutine csr_to_dense_work
+
+
+  ! ------------------------------------------------------------------
+  ! Sort eigenvalues in ascending order, rearranging eigenvectors to match.
+  ! Simple selection sort (sufficient for typical nev << N).
+  ! ------------------------------------------------------------------
+  subroutine sort_eigenpairs_ascending(evals, evecs)
+    real(kind=dp), intent(inout) :: evals(:)
+    complex(kind=dp), intent(inout) :: evecs(:,:)
+
+    integer :: i, j, jmin, n
+    real(kind=dp) :: tmp_eval
+    complex(kind=dp), allocatable :: tmp_vec(:)
+
+    n = size(evals)
+    if (n <= 1) return
+
+    allocate(tmp_vec(size(evecs, 1)))
+
+    do i = 1, n - 1
+      jmin = i
+      do j = i + 1, n
+        if (evals(j) < evals(jmin)) jmin = j
+      end do
+      if (jmin /= i) then
+        tmp_eval = evals(i)
+        evals(i) = evals(jmin)
+        evals(jmin) = tmp_eval
+        tmp_vec = evecs(:, i)
+        evecs(:, i) = evecs(:, jmin)
+        evecs(:, jmin) = tmp_vec
+      end if
+    end do
+
+    deallocate(tmp_vec)
+  end subroutine sort_eigenpairs_ascending
 
 end module eigensolver
