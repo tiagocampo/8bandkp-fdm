@@ -711,9 +711,9 @@ contains
   ! Hamiltonian by ZB8bandQW or ZB8bandGeneralized.
   !
   ! The diagonal shifts are:
-  !   HH (bands 1,4): P_eps + Q_eps
-  !   LH (bands 2,3): P_eps - Q_eps
-  !   SO (bands 5,6): P_eps
+  !   HH (bands 1,4): -P_eps + Q_eps
+  !   LH (bands 2,3): -P_eps - Q_eps
+  !   SO (bands 5,6): -P_eps
   !   CB (bands 7,8): ac * Tr(eps)
   !
   ! where P_eps = -av * Tr(eps), Q_eps = b/2 * (ezz - 0.5*(exx+eyy)).
@@ -838,9 +838,9 @@ contains
     T_eps = -Q_eps
 
     s%delta_Ec  = params%ac * Tr_eps
-    s%delta_EHH = P_eps + Q_eps
-    s%delta_ELH = P_eps - Q_eps
-    s%delta_ESO = P_eps
+    s%delta_EHH = -P_eps + Q_eps
+    s%delta_ELH = -P_eps - Q_eps
+    s%delta_ESO = -P_eps
     s%QT2_eps   = Q_eps - T_eps
 
     s%R_eps = -SQR3 * (params%b_dp * 0.5_dp * (eps_xx - eps_yy) &
