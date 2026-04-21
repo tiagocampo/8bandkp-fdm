@@ -326,6 +326,12 @@ To add a new regression test:
 
 Run the full test suite with `ctest --test-dir build`. Use `-L unit` or `-L regression` to run only one category. Use `-V` for verbose output when debugging failures.
 
+## Known Limitations
+
+The following capabilities are deliberately excluded from the current codebase and would require substantial new physics modules:
+
+**Non-resonant photoluminescence (NRPL).** nextnano Tutorial 5.9.13 computes NRPL spectra by combining the k.p eigenstates with carrier transport from a drift-diffusion solver. The drift-diffusion equation couples the electron and hole continuity equations with Poisson's equation and the current density ($J_n = q n \mu_n E + q D_n \nabla n$), requiring spatially resolved carrier mobilities, recombination rates, and generation profiles. This goes beyond the equilibrium Schrodinger-Poisson solver described in Chapter 7, which finds the ground-state charge distribution but does not simulate carrier dynamics or steady-state transport under optical excitation. Implementing NRPL support would require adding a drift-diffusion module to `src/physics/`, coupling it to the existing Poisson solver and optical absorption modules, and is deferred to future work.
+
 ## Feature Roadmap
 
 The table below lists the major features needed to reproduce the full set of results from the target publications. Each feature is assigned a priority (1 = highest), the papers it unlocks (P4 = Paper 4, etc.), and an estimated effort.

@@ -167,6 +167,22 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# SC InAs/AlSb QW self-consistent (narrow-gap Type-II, Winkler parameters, 77K)
+add_test(
+    NAME regression_sc_qw_inas_alsb
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_sc_qw_inas_alsb.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/sc_qw_inas_alsb.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_qw_inas_alsb
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_sc_qw_inas_alsb
+    PROPERTIES LABELS "regression"
+)
+
 # QCSE GaAs/AlGaAs QW without electric field (Harrison benchmark)
 add_test(
     NAME regression_qcse_gaas_algaas

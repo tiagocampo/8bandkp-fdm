@@ -4890,6 +4890,303 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
     print("  -> docs/figures/wire_inas_gaas_wavefunctions.png")
 
 
+def fig_wire_gfactor_vs_size(output_dir: Path) -> None:
+    """wire_gfactor_vs_size.png: wire g-factor (gx, gy, gz) vs cross-section size.
+
+    Sweeps square GaAs wire sizes [20, 30, 40, 50, 60, 80, 100] A,
+    runs gfactorCalculation for each, and plots the three tensor
+    components against wire width.  A horizontal reference line marks
+    the bulk GaAs g-factor.
+    """
+    print("[figure] wire_gfactor_vs_size")
+
+    sizes = [20, 30, 40, 50, 60, 80, 100]
+    gx_list: List[float] = []
+    gy_list: List[float] = []
+    gz_list: List[float] = []
+    valid_sizes: List[float] = []
+
+    # Bulk GaAs reference — known value from Roth formula (Ch05 Section 5.3.1)
+    # The bulk executable currently segfaults on some systems, so use the
+    # well-validated analytical value directly.
+    bulk_g = -0.315
+
+    for width in sizes:
+        # Build a GaAs wire config dynamically
+        # Use a square cross-section with ~3 A grid spacing (same as wire_gaas_rectangle.cfg)
+        # Minimum nx=11 for adequate resolution
+        dx_target = 3.0  # Angstrom, similar to wire_gaas_rectangle.cfg
+        nx = max(11, int(width / dx_target))
+        if nx % 2 == 0:
+            nx += 1  # keep odd for symmetry
+        dx = width / nx
+        cfg_text = (
+            "waveVector: k0\n"
+            "waveVectorMax: 0.1\n"
+            "waveVectorStep: 0\n"
+            f"confinement: 2\n"
+            "FDstep: 1\n"
+            "FDorder: 2\n"
+            "numLayers: 1\n"
+            f"wire_nx: {nx}\n"
+            f"wire_ny: {nx}\n"
+            f"wire_dx: {dx:.4f}\n"
+            f"wire_dy: {dx:.4f}\n"
+            "wire_shape: rectangle\n"
+            f"wire_width: {width:.1f}\n"
+            f"wire_height: {width:.1f}\n"
+            "numRegions: 1\n"
+            "region: GaAs 0.0 100.0\n"
+            "numcb: 4\n"
+            "numvb: 8\n"
+            "ExternalField: 0 EF\n"
+            "EFParams: 0.0005\n"
+            "whichBand: 0\n"
+            "bandIdx: 1\n"
+            "SC: 0\n"
+            "feast_emin: -1.5\n"
+            "feast_emax: 2.0\n"
+            "feast_m0: -1\n"
+        )
+        tmp_cfg = REPO_ROOT / "input.cfg"
+        tmp_cfg.write_text(cfg_text)
+
+        print(f"  [wire {width}A, nx={nx}] Running gfactorCalculation ...")
+        result = subprocess.run(
+            [str(EXE_GFACTOR)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            print(f"  [wire {width}A] FAILED (rc={result.returncode}), skipping.")
+            print(f"    stderr: {result.stderr[:300]}")
+            continue
+
+        try:
+            gx, gy, gz = parse_gfactor(output_dir)
+            gx_list.append(gx)
+            gy_list.append(gy)
+            gz_list.append(gz)
+            valid_sizes.append(float(width))
+            print(f"  [wire {width}A] gx={gx:.4f} gy={gy:.4f} gz={gz:.4f}")
+        except FileNotFoundError:
+            print(f"  [wire {width}A] gfactor.dat not found, skipping.")
+
+    if len(valid_sizes) < 2:
+        print("  WARNING: not enough wire g-factor data for plot, skipping.")
+        return
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.plot(valid_sizes, gx_list, "o-", color="#1f77b4", linewidth=1.3,
+            markersize=5, label=r"$g_x$")
+    ax.plot(valid_sizes, gy_list, "s-", color="#ff7f0e", linewidth=1.3,
+            markersize=5, label=r"$g_y$")
+    ax.plot(valid_sizes, gz_list, "^-", color="#2ca02c", linewidth=1.3,
+            markersize=5, label=r"$g_z$")
+
+    # Bulk reference
+    ax.axhline(bulk_g, color="grey", linewidth=1.0, linestyle="--",
+               label=f"Bulk GaAs $g$ = {bulk_g:.3f}")
+
+    ax.set_xlabel(r"Wire width (\u00C5)")
+    ax.set_ylabel("g-factor")
+    ax.set_title("Wire g-factor vs cross-section size (GaAs)")
+    ax.legend(loc="best")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "wire_gfactor_vs_size.png")
+    plt.close(fig)
+    print("  -> docs/figures/wire_gfactor_vs_size.png")
+
+
+def fig_sc_inas_alsb_potential(output_dir: Path) -> None:
+    """sc_inas_alsb_potential.png: InAsW/AlSbW QW band-edge profile after SC convergence.
+
+    Uses sc_qw_inas_alsb.cfg.  Plots EV and EC vs z with the InAs
+    well region shaded and CB subband energies overlaid as dashed lines.
+    """
+    print("[figure] sc_inas_alsb_potential")
+    cfg = CONFIG_DIR / "sc_qw_inas_alsb.cfg"
+    if not cfg.exists():
+        print("  WARNING: sc_qw_inas_alsb.cfg not found, skipping.")
+        return
+
+    # Remove stale outputs
+    for f in ["sc_potential_profile.dat", "potential_profile.dat",
+              "eigenvalues.dat"]:
+        p = output_dir / f
+        if p.exists():
+            p.unlink()
+
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                            label="sc_inas_alsb", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: InAs/AlSb SC run failed, skipping.")
+        return
+
+    # Parse SC potential profile
+    try:
+        z, EV, EV_SO, EC = parse_sc_potential(output_dir)
+        source = "SC converged"
+    except FileNotFoundError:
+        try:
+            z, EV, EV_SO, EC = parse_potential_profile(output_dir)
+            source = "flat-band"
+        except FileNotFoundError:
+            print("  WARNING: no potential profile found, skipping.")
+            return
+
+    # Parse eigenvalues at k=0 for CB subbands
+    cb_energies = None
+    try:
+        _, eig = parse_eigenvalues(output_dir)
+        e0 = eig[:, 0]
+        # Classify: find gap
+        gaps = np.diff(e0)
+        gap_mask = (e0[:-1] > -2.0) & (e0[:-1] < 2.0)
+        if np.any(gap_mask):
+            gap_idx = np.argmax(gaps * gap_mask)
+            n_vb = gap_idx + 1
+        else:
+            n_vb = min(8, len(e0))
+        cb_energies = e0[n_vb:n_vb + 4]  # first 4 CB subbands
+    except (FileNotFoundError, IndexError):
+        pass
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    ax.plot(z, EV, color="#d62728", linewidth=1.5, label=r"$E_V$")
+    ax.plot(z, EV_SO, color="#ff7f0e", linewidth=1.2, label=r"$E_{\Delta SO}$")
+    ax.plot(z, EC, color="#17becf", linewidth=1.5, label=r"$E_C$")
+
+    # Shade InAs well region
+    ax.axvspan(-50, 50, alpha=0.08, color="green", label="InAs well")
+
+    # Overlay CB subband energies
+    if cb_energies is not None and len(cb_energies) > 0:
+        for i, e_cb in enumerate(cb_energies):
+            ax.axhline(e_cb, color="#17becf", linewidth=0.7, linestyle="--",
+                       alpha=0.6)
+            ax.text(z.max() - 5, e_cb + 0.005, f"CB{i+1} = {e_cb:.3f} eV",
+                    fontsize=7, color="#17becf", ha="right", va="bottom")
+
+    ax.set_xlabel(r"$z$ (\u00C5)")
+    ax.set_ylabel("Energy (eV)")
+    ax.set_title(f"InAsW/AlSbW QW band-edge profile ({source})")
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "sc_inas_alsb_potential.png")
+    plt.close(fig)
+    print("  -> docs/figures/sc_inas_alsb_potential.png")
+
+
+def fig_sc_inas_alsb_convergence(output_dir: Path) -> None:
+    """sc_inas_alsb_convergence.png: SC convergence or subband structure for InAs/AlSb.
+
+    If the SC run from fig_sc_inas_alsb_potential already produced output,
+    reuse it.  Otherwise re-run.  Plots the convergence history if captured
+    in stdout, otherwise shows subband energy levels as horizontal lines
+    on the potential profile.
+    """
+    print("[figure] sc_inas_alsb_convergence")
+    cfg = CONFIG_DIR / "sc_qw_inas_alsb.cfg"
+    if not cfg.exists():
+        print("  WARNING: sc_qw_inas_alsb.cfg not found, skipping.")
+        return
+
+    # Re-run to capture stdout for convergence history
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                            label="sc_inas_alsb_conv", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: InAs/AlSb SC run failed, skipping.")
+        return
+
+    # Parse convergence history from stdout
+    # Lines like: "iter:   1  |dPhi|:  6.993E-03  mu:  0.8033"
+    iters: List[int] = []
+    dphis: List[float] = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if "iter:" in line and "|dPhi|:" in line:
+            parts = line.split()
+            try:
+                iter_idx = parts.index("iter:")
+                dphi_idx = parts.index("|dPhi|:")
+                it = int(parts[iter_idx + 1])
+                dphi_str = parts[dphi_idx + 1]
+                dphi = float(dphi_str.replace("D", "E").replace("d", "e"))
+                iters.append(it)
+                dphis.append(dphi)
+            except (ValueError, IndexError):
+                continue
+
+    if len(iters) >= 3:
+        # Plot convergence history
+        fig, ax = plt.subplots(figsize=(7, 4.5))
+        ax.semilogy(iters, dphis, "o-", color="#1f77b4", linewidth=1.3,
+                    markersize=4)
+        ax.axhline(1e-6, color="grey", linewidth=0.8, linestyle="--",
+                   label=r"Tolerance $10^{-6}$ eV")
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel(r"$|\Delta\Phi|_\infty$ (eV)")
+        ax.set_title("SC convergence: InAsW/AlSbW QW (doped, 77 K)")
+        ax.legend(loc="best")
+        fig.tight_layout()
+        fig.savefig(FIGURE_DIR / "sc_inas_alsb_convergence.png")
+        plt.close(fig)
+        print("  -> docs/figures/sc_inas_alsb_convergence.png")
+    else:
+        # Fallback: show subband structure as energy level diagram
+        try:
+            z, EV, _, EC = parse_sc_potential(output_dir)
+        except FileNotFoundError:
+            try:
+                z, EV, _, EC = parse_potential_profile(output_dir)
+            except FileNotFoundError:
+                print("  WARNING: no profile data, skipping.")
+                return
+
+        try:
+            _, eig = parse_eigenvalues(output_dir)
+            e0 = eig[:, 0]
+            gaps = np.diff(e0)
+            gap_mask = (e0[:-1] > -2.0) & (e0[:-1] < 2.0)
+            if np.any(gap_mask):
+                gap_idx = np.argmax(gaps * gap_mask)
+                n_vb = gap_idx + 1
+            else:
+                n_vb = min(8, len(e0))
+            cb_energies = e0[n_vb:n_vb + 6]
+            vb_energies = e0[max(0, n_vb - 4):n_vb]
+        except (FileNotFoundError, IndexError):
+            cb_energies = np.array([])
+            vb_energies = np.array([])
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.plot(z, EC, color="#17becf", linewidth=1.2, label=r"$E_C$", alpha=0.5)
+        ax.plot(z, EV, color="#d62728", linewidth=1.2, label=r"$E_V$", alpha=0.5)
+        ax.axvspan(-50, 50, alpha=0.08, color="green")
+
+        for i, e in enumerate(cb_energies):
+            ax.axhline(e, color="#17becf", linewidth=1.0, linestyle="--")
+            ax.text(z.max() - 5, e, f"CB{i+1}", fontsize=7, color="#17becf",
+                    ha="right", va="bottom")
+        for i, e in enumerate(reversed(vb_energies)):
+            ax.axhline(e, color="#d62728", linewidth=0.7, linestyle=":")
+            ax.text(z.min() + 5, e, f"VB{i+1}", fontsize=7, color="#d62728",
+                    ha="left", va="top")
+
+        ax.set_xlabel(r"$z$ (\u00C5)")
+        ax.set_ylabel("Energy (eV)")
+        ax.set_title("InAsW/AlSbW QW: subband structure after SC convergence")
+        ax.legend(loc="best", fontsize=8)
+        fig.tight_layout()
+        fig.savefig(FIGURE_DIR / "sc_inas_alsb_convergence.png")
+        plt.close(fig)
+        print("  -> docs/figures/sc_inas_alsb_convergence.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -4954,6 +5251,9 @@ ALL_FIGURES = {
     "wire_inas_gaas_profile": fig_wire_inas_gaas_profile,
     "wire_inas_gaas_subbands": fig_wire_inas_gaas_subbands,
     "wire_inas_gaas_wavefunctions": fig_wire_inas_gaas_wavefunctions,
+    "wire_gfactor_vs_size": fig_wire_gfactor_vs_size,
+    "sc_inas_alsb_potential": fig_sc_inas_alsb_potential,
+    "sc_inas_alsb_convergence": fig_sc_inas_alsb_convergence,
 }
 
 
