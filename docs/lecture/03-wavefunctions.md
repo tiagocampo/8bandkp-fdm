@@ -477,6 +477,20 @@ A subtler difference is the VB state purity: type-I HH1 has $P_{\text{HH}} = 0.5
 admixture). The stronger mixing in the type-III system reflects the deeper wells
 and larger Luttinger parameters of InAs and GaSb compared to GaAs.
 
+## 7b-2. Coupled Quantum Well Wavefunctions
+
+When two identical quantum wells are separated by a thin barrier, each confined state of the single well splits into a symmetric (bonding) and antisymmetric (antibonding) combination. This is the solid-state analogue of the molecular orbital picture: the double quantum well acts like a "diatomic molecule" for electrons.
+
+![Double QW wavefunctions](../figures/double_qw_wavefunctions.png)
+
+*Figure 3b: Probability densities $|\psi(z)|^2$ for the first four conduction-band eigenstates of a double GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well at $k_{\parallel} = 0$. Two 50 A GaAs wells are separated by a 20 A AlGaAs coupling barrier.*
+
+**CB1 (symmetric/bonding):** The ground state has nonzero amplitude in both wells with the same sign. There is no node at the barrier center ($z = 0$) -- the wavefunction tunnels through the thin barrier, maintaining a positive envelope across the entire structure. This is the bonding combination $\psi_{\text{CB1}} \propto \psi_L + \psi_R$, where $\psi_L$ and $\psi_R$ are the ground states of the left and right wells.
+
+**CB2 (antisymmetric/antibonding):** The first excited state also has amplitude in both wells but with opposite sign. It has a node at the barrier center ($z = 0$). This is the antibonding combination $\psi_{\text{CB2}} \propto \psi_L - \psi_R$. The energy splitting between CB1 and CB2 equals twice the tunnel coupling matrix element: $\Delta_{\text{SAS}} = E_{\text{CB2}} - E_{\text{CB1}} = 2t$, where $t$ is the overlap integral of the evanescent tails in the barrier region. For the 20 A AlGaAs barrier, this splitting is approximately 42 meV.
+
+Higher states (CB3, CB4) follow the same alternating pattern: each single-well excited state produces a symmetric-antisymmetric pair. The wavefunctions of these higher pairs penetrate less into the barrier because their oscillatory structure reduces the amplitude at the well edges.
+
 ## 7c. Band Character Evolution with In-Plane Wavevector
 
 The band character of each eigenstate evolves with $k_\parallel$ due to the off-diagonal coupling terms in the Hamiltonian. The code's `parts.dat` only captures the last k-point (it opens with `replace` status), so tracking this evolution requires integrating the eigenfunction files at each k-step. Below we show the results for the broken-gap AlSbW/GaSbW/InAsW structure.

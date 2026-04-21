@@ -4382,6 +4382,169 @@ def fig_double_qw_anticrossing(output_dir: Path) -> None:
     print("  -> docs/figures/double_qw_anticrossing.png")
 
 
+def fig_double_qw_potential_profile(output_dir: Path) -> None:
+    """double_qw_potential_profile.png: double QW band-edge profile with levels."""
+    print("[figure] double_qw_potential_profile")
+    cfg = CONFIG_DIR / "qw_gaas_algaas_double_qw.cfg"
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                           label="qw_gaas_algaas_double_qw_pp", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: double QW run failed, skipping.")
+        return
+    try:
+        z, EV, EV_SO, EC = parse_potential_profile(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: potential_profile.dat not found, skipping.")
+        return
+
+    # Get eigenvalues at k=0 for energy level lines
+    try:
+        _, eig = parse_eigenvalues(output_dir)
+        e0 = eig[:, 0]
+    except (FileNotFoundError, IndexError):
+        e0 = None
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(z, EC, color="#17becf", linewidth=1.5, label=r"$E_C$")
+    ax.plot(z, EV, color="#d62728", linewidth=1.5, label=r"$E_V$")
+    ax.plot(z, EV_SO, color="#ff7f0e", linewidth=1.5, label=r"$E_{\Delta SO}$")
+
+    # Dashed vertical lines at material boundaries
+    for bnd in [-60, -10, 10, 60]:
+        ax.axvline(bnd, color="grey", linewidth=0.6, linestyle="--")
+
+    # Shade the two well regions
+    well1 = (z >= -60) & (z <= -10)
+    well2 = (z >= 10) & (z <= 60)
+    y_lo = min(EV.min(), EV_SO.min()) - 0.05
+    y_hi = EC.max() + 0.05
+    if np.any(well1):
+        ax.fill_between(z[well1], y_lo, y_hi, alpha=0.08, color="#17becf")
+    if np.any(well2):
+        ax.fill_between(z[well2], y_lo, y_hi, alpha=0.08, color="#17becf")
+
+    # Shade the coupling barrier
+    barrier = (z >= -10) & (z <= 10)
+    if np.any(barrier):
+        ax.fill_between(z[barrier], y_lo, y_hi, alpha=0.10, color="#ff7f0e",
+                        label="Coupling barrier")
+
+    # Quantized energy levels from eigenvalues at k=0
+    if e0 is not None:
+        cb_levels = sorted(set(round(e, 3) for e in e0 if e > 0.5))
+        for i, e_cb in enumerate(cb_levels[:4]):
+            ax.axhline(e_cb, color="#17becf", linewidth=0.5, linestyle="--", alpha=0.4,
+                       xmin=0.25, xmax=0.75)
+            ax.text(65, e_cb, f" CB{i+1}", fontsize=7, color="#17becf", va="center")
+
+        vb_levels = sorted(set(round(e, 3) for e in e0 if -1.1 < e <= 0.5), reverse=True)
+        if vb_levels:
+            ax.axhline(vb_levels[0], color="#d62728", linewidth=0.5, linestyle="--",
+                       alpha=0.4, xmin=0.25, xmax=0.75)
+            ax.text(65, vb_levels[0], " HH1", fontsize=7, color="#d62728", va="center")
+
+    # Material labels
+    y_bottom = ax.get_ylim()[0] + 0.05
+    ax.text(-35, y_bottom, "GaAs", fontsize=9, ha="center",
+            color="#444444", style="italic")
+    ax.text(35, y_bottom, "GaAs", fontsize=9, ha="center",
+            color="#444444", style="italic")
+    ax.text(0, y_bottom + 0.08, "AlGaAs", fontsize=7, ha="center",
+            color="#999999", style="italic")
+    ax.text(-110, y_bottom, r"Al$_{0.3}$Ga$_{0.7}$As", fontsize=8,
+            ha="center", color="#444444", style="italic")
+    ax.text(110, y_bottom, r"Al$_{0.3}$Ga$_{0.7}$As", fontsize=8,
+            ha="center", color="#444444", style="italic")
+
+    ax.set_xlabel(r"$z$ (\u00C5)", fontsize=11)
+    ax.set_ylabel("Energy (eV)", fontsize=11)
+    ax.set_title(r"Double GaAs/Al$_{0.3}$Ga$_{0.7}$As QW Band Edge Profile", fontsize=12)
+    ax.legend(loc="best", fontsize=9, framealpha=0.9)
+    ax.grid(True, alpha=0.15, linewidth=0.5)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "double_qw_potential_profile.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/double_qw_potential_profile.png")
+
+
+def fig_double_qw_wavefunctions(output_dir: Path) -> None:
+    """double_qw_wavefunctions.png: |psi(z)|^2 for double QW CB states."""
+    print("[figure] double_qw_wavefunctions")
+    cfg = CONFIG_DIR / "qw_gaas_algaas_double_qw.cfg"
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                           label="qw_gaas_algaas_double_qw_wf", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: double QW run failed, skipping.")
+        return
+    n_z = 201  # FDstep from config
+    try:
+        z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=12, n_z=n_z)
+    except FileNotFoundError:
+        print("  WARNING: no eigenfunction data, skipping.")
+        return
+
+    if z.size == 0:
+        print("  WARNING: no data, skipping.")
+        return
+
+    # Get eigenvalues at k=0 for energy labels
+    try:
+        _, eig = parse_eigenvalues(output_dir)
+        e0 = eig[:, 0]
+    except (FileNotFoundError, IndexError):
+        e0 = None
+
+    # With numvb=8, states 1-8 are VB, states 9-12 are CB.
+    # We loaded n_ev=12; extract CB states (indices 8:12 in 0-based).
+    n_cb = min(wf.shape[0] - 8, 4)
+    if n_cb <= 0:
+        print("  WARNING: no CB states found, skipping.")
+        return
+    cb_wf = wf[8 : 8 + n_cb]  # (n_cb, n_z, 8)
+
+    # Get CB eigenvalues
+    cb_energies = None
+    if e0 is not None:
+        cb_energies = sorted([e for e in e0 if e > 0.5])[:n_cb]
+
+    cb_colors = ["#17becf", "#1f77b4", "#2ca02c", "#9467bd"]
+    cb_labels = ["CB1 (symmetric)", "CB2 (antisymmetric)",
+                 "CB3", "CB4"]
+
+    # Panel 1: wavefunctions stacked by energy
+    fig, axes = plt.subplots(1, n_cb, figsize=(3.5 * n_cb, 4.5), sharey=True)
+    if n_cb == 1:
+        axes = [axes]
+    for idx in range(n_cb):
+        ax = axes[idx]
+        psi2_total = np.sum(cb_wf[idx] ** 2, axis=1)
+        color = cb_colors[idx % len(cb_colors)]
+        ax.plot(z, psi2_total, color=color, linewidth=1.2)
+        ax.fill_between(z, 0, psi2_total, alpha=0.15, color=color)
+        # Material boundaries
+        for bnd in [-60, -10, 10, 60]:
+            ax.axvline(bnd, color="grey", linewidth=0.6, linestyle="--")
+        ax.set_xlabel(r"$z$ (\u00C5)")
+        label = cb_labels[idx] if idx < len(cb_labels) else f"CB{idx+1}"
+        if cb_energies is not None and idx < len(cb_energies):
+            ax.set_title(f"{label}\nE = {cb_energies[idx]*1000:.1f} meV",
+                         fontsize=9)
+        else:
+            ax.set_title(label, fontsize=9)
+        nonzero = psi2_total > 0.01 * psi2_total.max()
+        if np.any(nonzero):
+            ax.set_xlim(z[nonzero][0] - 15, z[nonzero][-1] + 15)
+    axes[0].set_ylabel(r"$|\psi(z)|^2$")
+    fig.suptitle(
+        r"Double QW wavefunctions (GaAs/Al$_{0.3}$Ga$_{0.7}$As, $k_{\parallel}=0$)",
+        fontsize=11,
+    )
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "double_qw_wavefunctions.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/double_qw_wavefunctions.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -4441,6 +4604,8 @@ ALL_FIGURES = {
     "scattering_lifetime_vs_width": fig_scattering_lifetime_vs_width,
     "scattering_lifetime_vs_field": fig_scattering_lifetime_vs_field,
     "double_qw_anticrossing": fig_double_qw_anticrossing,
+    "double_qw_potential_profile": fig_double_qw_potential_profile,
+    "double_qw_wavefunctions": fig_double_qw_wavefunctions,
 }
 
 
