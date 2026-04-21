@@ -233,3 +233,19 @@ set_tests_properties(
     regression_wire_gaas_rectangle
     PROPERTIES LABELS "regression"
 )
+
+# Wire InAs/GaAs core-shell with strain (Stier & Bimberg benchmark)
+add_test(
+    NAME regression_wire_inas_gaas_core_shell
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_core_shell.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_strain.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/wire_inas_gaas_core_shell
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_wire_inas_gaas_core_shell
+    PROPERTIES LABELS "regression"
+)
