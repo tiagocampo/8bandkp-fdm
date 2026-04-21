@@ -4545,6 +4545,351 @@ def fig_double_qw_wavefunctions(output_dir: Path) -> None:
     print("  -> docs/figures/double_qw_wavefunctions.png")
 
 
+# ===========================================================================
+# InAs/GaAs strained wire figures (Ch08)
+# ===========================================================================
+
+
+def _parse_wire_potential_profile(
+    output_dir: Path,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Parse output/potential_profile.dat for wire mode (gnuplot 2D format).
+
+    Returns
+    -------
+    x, y : 1-D coordinate arrays (unique values)
+    EV, EV_SO, EC : 2-D arrays (ny, nx)
+    """
+    path = output_dir / "potential_profile.dat"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found")
+
+    xs, ys, ev, evso, ec = [], [], [], [], []
+    row_block: List[List[float]] = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("#"):
+                continue
+            if not line:
+                if row_block:
+                    for row in row_block:
+                        xs.append(row[0])
+                        ys.append(row[1])
+                        ev.append(row[2])
+                        evso.append(row[3])
+                        ec.append(row[4])
+                    row_block = []
+                continue
+            row_block.append([float(v) for v in line.split()])
+        if row_block:
+            for row in row_block:
+                xs.append(row[0])
+                ys.append(row[1])
+                ev.append(row[2])
+                evso.append(row[3])
+                ec.append(row[4])
+
+    xs = np.array(xs)
+    ys = np.array(ys)
+    ev = np.array(ev)
+    evso = np.array(evso)
+    ec = np.array(ec)
+
+    if len(xs) == 0:
+        return xs, ys, ev, evso, ec
+
+    x_unique = np.unique(xs)
+    y_unique = np.unique(ys)
+    nx = len(x_unique)
+    ny = len(y_unique)
+
+    EV = ev.reshape(ny, nx)
+    EV_SO = evso.reshape(ny, nx)
+    EC = ec.reshape(ny, nx)
+
+    return x_unique, y_unique, EV, EV_SO, EC
+
+
+def _wire_material_boundary(cfg_path: Path) -> float:
+    """Extract the InAs core outer radius from the wire config."""
+    for line in open(cfg_path):
+        stripped = line.strip()
+        if stripped.startswith("region:"):
+            parts = stripped.split()
+            # region: Material inner outer
+            inner = float(parts[2])
+            outer = float(parts[3])
+            if inner == 0.0:
+                return outer
+    return 0.0
+
+
+def fig_wire_inas_gaas_profile(output_dir: Path) -> None:
+    """wire_inas_gaas_profile.png: EC 2D colormap for InAs/GaAs core-shell wire."""
+    print("[figure] wire_inas_gaas_profile")
+    cfg = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
+    run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_inas_gaas_profile", timeout=600)
+
+    try:
+        x, y, EV, EV_SO, EC = _parse_wire_potential_profile(output_dir)
+    except FileNotFoundError:
+        print("  SKIP: output/potential_profile.dat not found")
+        return
+
+    if x.size == 0:
+        print("  SKIP: empty potential profile data")
+        return
+
+    # Get grid and geometry info from config
+    core_outer = _wire_material_boundary(cfg)
+    wire_w = float(
+        next(
+            (l.split(":")[1].strip() for l in open(cfg) if l.strip().startswith("wire_width")),
+            "150.0",
+        )
+    )
+
+    fig, ax = plt.subplots(figsize=(6.5, 5.5))
+
+    im = ax.pcolormesh(x, y, EC, cmap="viridis", shading="auto")
+    cbar = fig.colorbar(im, ax=ax, label=r"$E_C$ (eV)")
+
+    # Overlay material boundary as contour
+    X, Y = np.meshgrid(x, y)
+    R = np.sqrt(X**2 + Y**2)
+    if core_outer > 0:
+        ax.contour(X, Y, R, levels=[core_outer], colors="white", linewidths=1.5,
+                   linestyles="--")
+        # Wire outer boundary (rectangle)
+        hw = wire_w / 2.0
+        rect = plt.Rectangle((-hw, -hw), wire_w, wire_w,
+                             linewidth=1.0, edgecolor="white",
+                             facecolor="none", linestyle=":")
+        ax.add_patch(rect)
+
+    ax.set_xlabel(r"$x$ (\u00C5)")
+    ax.set_ylabel(r"$y$ (\u00C5)")
+    ax.set_title("InAs/GaAs core-shell wire band-edge profile")
+    ax.set_aspect("equal")
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "wire_inas_gaas_profile.png")
+    plt.close(fig)
+    print("  -> docs/figures/wire_inas_gaas_profile.png")
+
+
+def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
+    """wire_inas_gaas_subbands.png: E(k_z) subband dispersion for InAs/GaAs wire."""
+    print("[figure] wire_inas_gaas_subbands")
+
+    cfg_src = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
+    cfg_text = cfg_src.read_text()
+
+    # Modify config for a kz sweep: use fewer k-points to stay within time budget.
+    # The 30x30 strained wire is expensive; 11 k-points is a reasonable tradeoff.
+    # Also widen the energy window to capture CB states.
+    lines = cfg_text.splitlines()
+    modified_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("waveVectorMax:"):
+            modified_lines.append("waveVectorMax: 0.05")
+        elif stripped.startswith("waveVectorStep:"):
+            modified_lines.append("waveVectorStep: 11")
+        elif stripped.startswith("feast_emin:"):
+            modified_lines.append("feast_emin: -3.0")
+        elif stripped.startswith("feast_emax:"):
+            modified_lines.append("feast_emax: 1.5")
+        elif stripped.startswith("numcb:"):
+            modified_lines.append("numcb: 8")
+        elif stripped.startswith("numvb:"):
+            modified_lines.append("numvb: 16")
+        else:
+            modified_lines.append(line)
+    modified_text = "\n".join(modified_lines) + "\n"
+
+    # Write modified config to input.cfg
+    INPUT_CFG.write_text(modified_text)
+
+    print("  Running InAs/GaAs wire kz-sweep ...")
+    result = subprocess.run(
+        [str(EXE_BAND)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    if result.returncode != 0:
+        print(f"  WARNING: wire run failed (rc={result.returncode}), skipping.")
+        return
+
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  SKIP: eigenvalues.dat not found")
+        return
+
+    n_bands = eig.shape[0]
+    e0 = eig[:, 0]
+
+    # Classify VB/CB by largest gap
+    gaps = np.diff(e0)
+    gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.5)
+    if np.any(gap_mask):
+        gap_idx = np.argmax(gaps * gap_mask)
+        n_vb = gap_idx + 1
+        n_cb = n_bands - n_vb
+    else:
+        n_vb = min(8, n_bands)
+        n_cb = n_bands - n_vb
+
+    e_vb_max = e0[n_vb - 1] if n_vb > 0 else e0[0]
+    e_cb_min = e0[n_vb] if n_cb > 0 else e0[-1]
+
+    max_plot_vb = min(n_vb, 8)
+    max_plot_cb = min(n_cb, 8)
+    plot_vb_start = n_vb - max_plot_vb
+
+    print(f"  {n_vb} VB + {n_cb} CB, gap={e_cb_min - e_vb_max:.4f} eV")
+
+    fig, (ax_vb, ax_cb) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=False)
+
+    if max_plot_vb > 0:
+        vb_colors = plt.cm.Reds_r(np.linspace(0.3, 0.8, max_plot_vb))
+        for i, band_i in enumerate(range(plot_vb_start, n_vb)):
+            ax_vb.plot(k_vals, eig[band_i], color=vb_colors[i], linewidth=0.8)
+
+    ax_vb.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
+               label=f"VB top = {e_vb_max:.3f} eV")
+    ax_vb.set_xlabel(r"$k_z$ (1/\u00C5)")
+    ax_vb.set_ylabel(r"$E$ (eV)")
+    ax_vb.set_title(f"VB subbands ({max_plot_vb} shown)")
+    ax_vb.legend(loc="best", fontsize=7)
+
+    if max_plot_cb > 0:
+        cb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.8, max_plot_cb))
+        for i in range(max_plot_cb):
+            band_i = n_vb + i
+            ax_cb.plot(k_vals, eig[band_i], color=cb_colors[i], linewidth=0.8)
+
+    ax_cb.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
+               label=f"CB bottom = {e_cb_min:.3f} eV")
+    ax_cb.set_xlabel(r"$k_z$ (1/\u00C5)")
+    ax_cb.set_ylabel(r"$E$ (eV)")
+    ax_cb.set_title(f"CB subbands ({max_plot_cb} shown)")
+    ax_cb.legend(loc="best", fontsize=7)
+
+    fig.suptitle(
+        f"InAs/GaAs wire subband dispersion (gap={e_cb_min - e_vb_max:.3f} eV)",
+        fontsize=10,
+    )
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "wire_inas_gaas_subbands.png")
+    plt.close(fig)
+    print("  -> docs/figures/wire_inas_gaas_subbands.png")
+
+
+def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
+    """wire_inas_gaas_wavefunctions.png: 2x2 panel of |psi(x,y)|^2 for first few states."""
+    print("[figure] wire_inas_gaas_wavefunctions")
+
+    cfg = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
+
+    # Run if needed (reuse output from subband run if present)
+    eigenval_path = output_dir / "eigenvalues.dat"
+    eigfunc_path = output_dir / "eigenfunctions_k_00001_ev_00001.dat"
+    if not eigenval_path.exists() or not eigfunc_path.exists():
+        run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_inas_gaas_wf", timeout=600)
+
+    # Read eigenvalues to get energies at k=0
+    try:
+        _, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  SKIP: eigenvalues.dat not found")
+        return
+
+    e0 = eig[:, 0]
+    n_bands = eig.shape[0]
+
+    # Classify VB/CB
+    gaps = np.diff(e0)
+    gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.5)
+    if np.any(gap_mask):
+        gap_idx = np.argmax(gaps * gap_mask)
+        n_vb = gap_idx + 1
+    else:
+        n_vb = min(8, n_bands)
+
+    e_cb_min = e0[n_vb] if n_vb < n_bands else e0[-1]
+
+    # Plot a 2x2 panel: top 3 VB states + CB ground state
+    n_show = min(4, n_bands - n_vb)
+    n_vb_show = min(3, n_vb)
+
+    core_outer = _wire_material_boundary(cfg)
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 9))
+    axes = axes.flatten()
+
+    # Select states: VB top-2, VB top-1, VB top, CB bottom
+    state_indices = []
+    state_labels = []
+    for i in range(n_vb_show):
+        idx = n_vb - n_vb_show + i  # 0-based eigenvalue index
+        state_indices.append(idx + 1)  # 1-based for file lookup
+        state_labels.append(f"VB{n_vb_show - i} (E = {e0[idx]:.3f} eV)")
+    if n_show > 0:
+        state_indices.append(n_vb + 1)  # 1-based CB ground
+        state_labels.append(f"CB1 (E = {e0[n_vb]:.3f} eV)")
+
+    for panel_idx in range(4):
+        ax = axes[panel_idx]
+
+        if panel_idx >= len(state_indices):
+            ax.text(0.5, 0.5, "N/A", transform=ax.transAxes, ha="center", va="center")
+            ax.set_aspect("equal")
+            continue
+
+        ev_idx = state_indices[panel_idx]
+
+        try:
+            x, y, psi2 = parse_wire_eigenfunction_2d(output_dir, k_idx=1, ev_idx=ev_idx)
+        except FileNotFoundError:
+            ax.text(0.5, 0.5, "No data", transform=ax.transAxes, ha="center", va="center")
+            ax.set_aspect("equal")
+            continue
+
+        if x.size == 0:
+            ax.text(0.5, 0.5, "Empty", transform=ax.transAxes, ha="center", va="center")
+            ax.set_aspect("equal")
+            continue
+
+        im = ax.pcolormesh(x, y, psi2, shading="auto", cmap="inferno")
+        ax.set_xlabel(r"$x$ (\u00C5)")
+        ax.set_ylabel(r"$y$ (\u00C5)")
+
+        ax.set_title(state_labels[panel_idx], fontsize=10)
+        ax.set_aspect("equal")
+        fig.colorbar(im, ax=ax, label=r"$|\psi|^2$", shrink=0.85)
+
+        # Overlay material boundary
+        if core_outer > 0:
+            X, Y = np.meshgrid(x, y)
+            R = np.sqrt(X**2 + Y**2)
+            ax.contour(X, Y, R, levels=[core_outer], colors="white",
+                       linewidths=1.0, linestyles="--")
+
+    fig.suptitle(
+        "InAs/GaAs wire CB wavefunctions ($k_z = 0$)",
+        fontsize=12,
+    )
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "wire_inas_gaas_wavefunctions.png")
+    plt.close(fig)
+    print("  -> docs/figures/wire_inas_gaas_wavefunctions.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -4606,6 +4951,9 @@ ALL_FIGURES = {
     "double_qw_anticrossing": fig_double_qw_anticrossing,
     "double_qw_potential_profile": fig_double_qw_potential_profile,
     "double_qw_wavefunctions": fig_double_qw_wavefunctions,
+    "wire_inas_gaas_profile": fig_wire_inas_gaas_profile,
+    "wire_inas_gaas_subbands": fig_wire_inas_gaas_subbands,
+    "wire_inas_gaas_wavefunctions": fig_wire_inas_gaas_wavefunctions,
 }
 
 

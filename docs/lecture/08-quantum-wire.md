@@ -607,3 +607,127 @@ For core-shell wires (e.g., InAs core with GaAs shell), multiple regions with di
 - For g-factor calculations, use at least `FDorder = 4` and $N_x, N_y \geq 40$ for converged results, since g-factors are sensitive to the wavefunction shape near interfaces
 - The COO cache is automatically enabled for $k_z$ sweeps; no user configuration is needed
 - When using non-rectangular shapes, verify that `cell_volume` and `face_fraction` arrays are correct by checking that the total active area matches the analytical cross-section area
+
+---
+
+## 7. Computed Example: Strained InAs/GaAs Core-Shell Wire
+
+### 7.1 Motivation
+
+The GaAs rectangular wire studied in Section 3 was a single-material system with hard-wall confinement. A more realistic -- and technologically important -- structure is a heterostructure core-shell wire, where the confinement arises from the band offsets between two lattice-mismatched semiconductors. The InAs/GaAs system is a canonical example: InAs has a lattice constant 7.2% larger than GaAs ($a_{\text{InAs}} = 6.058$ A vs.\ $a_{\text{GaAs}} = 5.653$ A), so an InAs core embedded in a GaAs matrix is under compressive strain. This strain shifts the band edges via the Bir-Pikus Hamiltonian, modifying the confinement potential and subband structure in ways that a simple unstrained calculation cannot capture.
+
+### 7.2 Input configuration
+
+The following config defines a rectangular $150 \times 150$ A simulation domain with a $30 \times 30$ grid ($\Delta x = \Delta y = 5$ A). The inner region (0--40 A from center) is InAs; the outer region (40--150 A) is GaAs. Strain is computed using the continuum elasticity solver with GaAs as the reference substrate:
+
+```
+waveVector: kz
+waveVectorMax: 0.01
+waveVectorStep: 2
+confinement:  2
+FDstep: 1
+FDorder: 2
+numLayers:  2
+wire_nx: 30
+wire_ny: 30
+wire_dx: 5.0
+wire_dy: 5.0
+wire_shape: rectangle
+wire_width: 150.0
+wire_height: 150.0
+numRegions: 2
+region: GaAs  40.0  150.0
+region: InAs  0.0  40.0
+numcb: 4
+numvb: 8
+strain: T
+strain_ref: GaAs
+strain_solver: pardiso
+```
+
+The `strain: T` flag activates the continuum elasticity solver, which computes the full strain tensor $\varepsilon_{ij}(x,y)$ on the wire cross-section. The Bir-Pikus deformation potentials then shift the band edges at each grid point before the Hamiltonian is assembled.
+
+### 7.3 Band-edge profile: strain-induced confinement
+
+![InAs/GaAs wire band-edge profile](../figures/wire_inas_gaas_profile.png)
+
+*Figure 3: Conduction band edge $E_C(x,y)$ for the strained InAs/GaAs core-shell wire. The InAs core (interior of the dashed white circle, radius 40 A) forms a deep potential well for electrons due to the large conduction band offset between strained InAs and GaAs. The GaAs shell provides Type-I confinement for both electrons and holes.*
+
+The band-edge profile reveals the physics of strained heterostructure confinement. At the InAs core center:
+
+- $E_C = -0.173$ eV (InAs conduction band, shifted by strain)
+- $E_V = -0.590$ eV (InAs valence band, shifted by strain)
+- Effective band gap in the core: 0.417 eV
+
+At the GaAs shell (far from the core):
+
+- $E_C = 0.719$ eV
+- $E_V = -0.800$ eV
+- GaAs band gap: 1.519 eV
+
+The resulting band offsets are:
+
+- **Conduction band offset** $\Delta E_C = 0.892$ eV (Type I, electrons confined in InAs)
+- **Valence band offset** $\Delta E_V = 0.210$ eV (Type I, holes confined in InAs)
+
+The strain modifies the band edges through the Bir-Pikus mechanism. Under the compressive biaxial strain in the InAs core (the core is squeezed to match the GaAs lattice in the cross-section plane), the hydrostatic component shifts both $E_C$ and $E_V$, while the shear component splits the heavy-hole and light-hole valence bands. The net effect is a reduction of the InAs band gap from its unstrained value of 0.354 eV (Vurgaftman 2001) to approximately 0.417 eV in the strained core -- a strain-induced gap increase of about 63 meV. The conduction band offset of 0.892 eV is significantly larger than the unstrained InAs/GaAs offset ($\sim$0.6 eV), creating a deep electron well.
+
+### 7.4 Subband dispersion
+
+![InAs/GaAs wire subband dispersion](../figures/wire_inas_gaas_subbands.png)
+
+*Figure 4: Subband dispersion $E(k_z)$ for the InAs/GaAs core-shell wire. The 8 highest VB subbands (left panel) and 1 CB subband (right panel) are shown. The narrow strained InAs core supports only a single confined electron subband within the energy search window, while multiple hole subbands are bound.*
+
+The subband structure differs markedly from the unstrained GaAs wire of Section 3. Key observations:
+
+1. **Band gap**: The effective gap between VB top ($-0.216$ eV) and CB bottom ($-0.015$ eV) is only 0.201 eV. This is the *strained* effective gap, reduced from the strained InAs bulk gap of 0.417 eV by the quantum confinement energy in two spatial dimensions.
+
+2. **Single CB subband**: The InAs core well is narrow enough to bind only one electron subband within the computed energy range. The CB ground state at $-0.015$ eV sits 0.158 eV above the InAs core $E_C$, reflecting the zero-point kinetic energy of a 2D-confined electron in an 80 A diameter well.
+
+3. **VB subband spacing**: The 8 VB subbands near the gap top span approximately 0.43 eV. The spacing is non-uniform, with pairs of nearly degenerate states reflecting the approximate square symmetry of the wire cross-section (analogous to the unstrained GaAs wire in Section 3).
+
+4. **Non-parabolic dispersion**: Both CB1 and the VB top show significant non-parabolicity in their $E(k_z)$ dispersion. This is a hallmark of the 8-band k.p model, where band mixing between conduction and valence bands introduces $k^3$ and higher-order corrections to the parabolic approximation. The non-parabolicity is particularly strong in InAs due to its small band gap and large spin-orbit coupling.
+
+### 7.5 Wavefunction cross-sections
+
+![InAs/GaAs wire wavefunctions](../figures/wire_inas_gaas_wavefunctions.png)
+
+*Figure 5: Probability density $|\psi(x,y)|^2$ for the top 3 VB subbands and the CB ground state at $k_z = 0$. The dashed white circle marks the InAs/GaAs material boundary. All wavefunctions are strongly localized within the InAs core, confirming Type-I confinement.*
+
+The wavefunction plots confirm the Type-I confinement picture:
+
+- **VB3** ($E = -0.404$ eV): The deepest VB state shown has a more spread-out distribution with multiple nodes, characteristic of a higher excited state. The wavefunction extends somewhat toward the InAs/GaAs interface.
+
+- **VB2** ($E = -0.287$ eV): A higher VB state with a different nodal pattern, showing how the increasing confinement energy produces more complex spatial structures.
+
+- **VB1 (VB top)** ($E = -0.216$ eV): The highest valence subband has a broad distribution concentrated in the InAs core. Its spatial extent fills much of the core diameter, reflecting the relatively weak hole confinement (smaller VB offset of 0.210 eV compared to 0.892 eV for electrons).
+
+- **CB1** ($E = -0.015$ eV): The sole conduction subband has an $s$-like ground state pattern concentrated at the wire center. The deep electron well ($\Delta E_C = 0.892$ eV) produces tight confinement, squeezing the electron wavefunction into a smaller region than the hole states.
+
+The contrast between CB1 and VB1 illustrates the asymmetric confinement: electrons see a deep narrow well (large $\Delta E_C$), producing a compact ground state, while holes see a shallower well (smaller $\Delta E_V$), allowing the wavefunction to spread more toward the interface. This asymmetry has important consequences for optical matrix elements and exciton binding energies in wire-based devices.
+
+### 7.6 Strain effects: HH-LH splitting
+
+The strain tensor in the InAs core has a strong biaxial component (compressive in the $x$-$y$ plane) and a tensile component along the wire axis $z$ (via the Poisson effect). The resulting Bir-Pikus shifts split the heavy-hole (HH, $J_z = \pm 3/2$) and light-hole (LH, $J_z = \pm 1/2$) bands:
+
+$$\Delta E_{\text{HH}} = -a_v \,\text{Tr}(\varepsilon) - b \,(\varepsilon_{xx} + \varepsilon_{yy} - 2\varepsilon_{zz})$$
+
+$$\Delta E_{\text{LH}} = -a_v \,\text{Tr}(\varepsilon) + b \,(\varepsilon_{xx} + \varepsilon_{yy} - 2\varepsilon_{zz})$$
+
+where $a_v$ is the hydrostatic valence deformation potential and $b$ is the shear deformation potential. For compressive strain ($\varepsilon_{xx}, \varepsilon_{yy} < 0$, $\varepsilon_{zz} > 0$), the HH band moves up relative to LH, pushing the HH-LH splitting to positive values. This means the top of the valence band in the strained InAs core is predominantly heavy-hole in character, which affects the optical selection rules and polarization dependence of interband transitions in the wire.
+
+### 7.7 Comparison with unstrained GaAs wire
+
+| Property | GaAs wire (Section 3) | InAs/GaAs core-shell wire |
+|----------|----------------------|---------------------------|
+| Confinement | Hard-wall (Dirichlet) | Band offsets + strain |
+| Cross-section | $63 \times 63$ A | 80 A diameter core |
+| Grid | $21 \times 21$ | $30 \times 30$ |
+| Band gap (wire) | 0.232 eV | 0.201 eV |
+| CB subbands | 8 | 1 |
+| CB1 confinement shift | $\sim$488 meV above GaAs CB | $\sim$158 meV above InAs $E_C$ |
+| CB offset | None (hard wall) | 0.892 eV |
+| Strain | None | Compressive in core |
+| Matrix size | $3528 \times 3528$ | $7200 \times 7200$ |
+
+The InAs/GaAs wire has a smaller effective gap (201 meV vs.\ 232 meV) despite the deeper confinement potential, because the strained InAs bulk gap (0.417 eV) is much smaller than the GaAs bulk gap (1.519 eV). The single CB subband in the InAs/GaAs wire versus 8 in the GaAs wire reflects the narrower effective well for electrons: the strain-modified InAs CB offset (0.892 eV) confines electrons to a smaller physical region (40 A radius) than the hard-wall GaAs wire (31.5 A half-width with no offset), but the relevant energy scale is different because the InAs effective mass is much smaller ($m^*_e \approx 0.023\,m_0$ for bulk InAs vs.\ $0.067\,m_0$ for GaAs).
