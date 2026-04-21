@@ -4112,6 +4112,208 @@ def fig_scattering_lifetime_vs_width(output_dir: Path) -> None:
     print("  -> docs/figures/scattering_lifetime_vs_width.png")
 
 
+def _run_scattering_field_sweep(fields_kVcm: list) -> list:
+    """Run bandStructure for each electric field, collect (field_kVcm, lifetime_ps).
+
+    Reads the config template from tests/regression/configs/qw_gaas_algaas_qcse_scattering.cfg,
+    overrides EFParams for each field value, and extracts the total scattering lifetime
+    (inverse of sum of all emission + absorption rates) from output/scattering_rates.dat.
+
+    EFParams units: eV/Angstrom.  Conversion: 1 kV/cm = 1e-4 eV/A.
+    """
+    template_path = CONFIG_DIR / "qw_gaas_algaas_qcse_scattering.cfg"
+    template_text = template_path.read_text()
+    results = []
+    for field in fields_kVcm:
+        # Convert kV/cm -> eV/Angstrom
+        ef_value = field * 1e-4
+        lines = []
+        for line in template_text.splitlines():
+            if line.strip().startswith("EFParams"):
+                lines.append(f"EFParams: {ef_value:.6e}")
+            else:
+                lines.append(line)
+        INPUT_CFG.write_text("\n".join(lines) + "\n")
+        result = subprocess.run(
+            [str(EXE_BAND)], cwd=str(REPO_ROOT),
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode != 0:
+            print(f"    field={field:.1f} kV/cm: FAILED")
+            continue
+        dat = REPO_ROOT / "output" / "scattering_rates.dat"
+        if not dat.exists():
+            print(f"    field={field:.1f} kV/cm: no scattering_rates.dat")
+            continue
+        try:
+            data = np.loadtxt(str(dat), comments="#")
+        except ValueError:
+            print(f"    field={field:.1f} kV/cm: parse error")
+            continue
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+        if data.shape[0] == 0 or data.shape[1] < 5:
+            print(f"    field={field:.1f} kV/cm: insufficient data")
+            continue
+        # Total scattering rate: sum all emission + absorption rates across
+        # all subband transitions, then compute total lifetime.
+        total_rate = float(np.sum(data[:, 3]) + np.sum(data[:, 4]))  # 1/s
+        if total_rate > 0:
+            tau_total_ps = 1.0e12 / total_rate
+        else:
+            tau_total_ps = float("nan")
+        results.append((field, tau_total_ps))
+        print(f"    field={field:.1f} kV/cm: tau={tau_total_ps:.2f} ps")
+    return results
+
+
+def fig_scattering_lifetime_vs_field(output_dir: Path) -> None:
+    """scattering_lifetime_vs_field.png: LO-phonon scattering lifetime vs electric field.
+
+    Runs bandStructure for multiple electric field values with Scattering: T
+    to build the curve.  Falls back to reading a pre-existing sweep file.
+    """
+    print("[figure] scattering_lifetime_vs_field")
+
+    sweep_file = output_dir / "scattering_field_sweep.dat"
+    if sweep_file.exists():
+        data = np.loadtxt(str(sweep_file), comments="#")
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+        if data.shape[0] >= 3:
+            fields = data[:, 0]
+            tau = data[:, 1]
+            _plot_scattering_lifetime_vs_field(fields, tau)
+            return
+
+    # Run the sweep
+    fields_kVcm = [0, 5, 10, 15, 20, 25, 30, 40, 50]
+    print(f"  Running scattering sweep over {len(fields_kVcm)} field values ...")
+    results = _run_scattering_field_sweep(fields_kVcm)
+
+    if len(results) < 3:
+        print(f"  WARNING: only {len(results)} data points, need >= 3. Skipping.")
+        return
+
+    fields = np.array([r[0] for r in results])
+    tau = np.array([r[1] for r in results])
+
+    # Cache the sweep for future runs
+    with open(str(sweep_file), "w") as fh:
+        fh.write("# LO-phonon total scattering lifetime vs electric field (auto-sweep)\n")
+        fh.write("# field(kV/cm)  tau_total(ps)\n")
+        for f_val, t_val in zip(fields, tau):
+            fh.write(f"  {f_val:.1f}   {t_val:.6f}\n")
+
+    _plot_scattering_lifetime_vs_field(fields, tau)
+
+
+def _plot_scattering_lifetime_vs_field(fields: np.ndarray, tau: np.ndarray) -> None:
+    """Plot and save the scattering lifetime vs electric field curve."""
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.semilogy(fields, tau, "o-", color="#1f77b4", linewidth=1.5, markersize=5)
+    ax.set_xlabel("Electric field (kV/cm)")
+    ax.set_ylabel("Scattering lifetime (ps)")
+    ax.set_title("LO-phonon scattering lifetime vs electric field", fontsize=12)
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "scattering_lifetime_vs_field.png", dpi=150)
+    plt.close(fig)
+    print(f"  -> docs/figures/scattering_lifetime_vs_field.png  ({len(fields)} points)")
+
+
+def fig_double_qw_anticrossing(output_dir: Path) -> None:
+    """double_qw_anticrossing.png: double QW E(k) showing subband anticrossing."""
+    print("[figure] double_qw_anticrossing")
+    cfg = CONFIG_DIR / "qw_gaas_algaas_double_qw.cfg"
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                           label="qw_gaas_algaas_double_qw", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: double QW run failed, skipping.")
+        return
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: eigenvalues.dat not found, skipping.")
+        return
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    n_bands = eig.shape[0]
+
+    # Classify bands by energy at k=0.
+    from matplotlib.lines import Line2D
+    cb_handle = Line2D([0], [0], color="#17becf", linewidth=1.5, label="Conduction band")
+    vb_handle = Line2D([0], [0], color="#d62728", linewidth=1.5, label="Valence band")
+    so_handle = Line2D([0], [0], color="#ff7f0e", linewidth=1.5, label="Split-off")
+
+    e0 = eig[:, 0]
+
+    for i in range(n_bands):
+        energy_mid = np.mean(eig[i])
+        if energy_mid > 0.5:
+            color = "#17becf"  # CB
+        elif energy_mid > -1.1:
+            color = "#d62728"  # VB
+        else:
+            color = "#ff7f0e"  # SO
+        ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=0.85)
+
+    # CB subband labels at k_max
+    cb_bands = sorted([(np.mean(eig[i]), i) for i in range(n_bands)
+                       if np.mean(eig[i]) > 0.5])
+    for j, (e_mid, idx) in enumerate(cb_bands[:4]):
+        e_at_kmax = eig[idx, -1]
+        ax.annotate(f"e{j+1}", xy=(k_vals[-1], e_at_kmax), fontsize=7,
+                    color="#17becf", fontweight="bold",
+                    xytext=(5, 0), textcoords="offset points", va="center")
+
+    # Anticrossing annotation: find the two lowest CB subbands
+    if len(cb_bands) >= 2:
+        cb1_idx = cb_bands[0][1]
+        cb2_idx = cb_bands[1][1]
+        splitting = eig[cb1_idx] - eig[cb2_idx]
+        min_gap_idx = np.argmin(np.abs(splitting))
+        min_gap_k = k_vals[min_gap_idx]
+        min_gap_e1 = eig[cb1_idx, min_gap_idx]
+        min_gap_e2 = eig[cb2_idx, min_gap_idx]
+        gap_meV = abs(min_gap_e1 - min_gap_e2) * 1000
+        if gap_meV > 1:
+            mid_e = (min_gap_e1 + min_gap_e2) / 2
+            ax.annotate(f"Anticrossing gap\n{gap_meV:.0f} meV",
+                        xy=(min_gap_k, mid_e),
+                        xytext=(min_gap_k + 0.04, mid_e - 0.04),
+                        fontsize=8, color="#333333",
+                        arrowprops=dict(arrowstyle="->", color="#666666",
+                                        lw=0.8),
+                        bbox=dict(boxstyle="round,pad=0.3", fc="white",
+                                  ec="#999999", alpha=0.85))
+
+    # Barrier edge reference (Al30Ga70As EC ~ 1.018 eV)
+    barrier_ec = 1.018
+    ax.axhline(barrier_ec, color="#17becf", linewidth=0.6, linestyle=":", alpha=0.5)
+    ax.text(k_vals[-1], barrier_ec + 0.007, "  Barrier $E_C$", fontsize=7,
+            color="#17becf", ha="right", alpha=0.7)
+
+    # E=0 reference
+    ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+    ax.grid(True, alpha=0.2, linewidth=0.5)
+    ax.set_xlabel(r"$k$ (1/A)", fontsize=11)
+    ax.set_ylabel(r"$E$ (eV)", fontsize=11)
+    ax.set_title(r"Double GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Subband Anticrossing",
+                 fontsize=12)
+    legend_handles = [cb_handle, vb_handle]
+    if any(np.mean(eig[i]) <= -1.1 for i in range(n_bands)):
+        legend_handles.append(so_handle)
+    ax.legend(handles=legend_handles, loc="best", fontsize=9, framealpha=0.9)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "double_qw_anticrossing.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/double_qw_anticrossing.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -4168,6 +4370,8 @@ ALL_FIGURES = {
     "exciton_bohr_vs_width": fig_exciton_bohr_vs_width,
     "absorption_with_exciton": fig_absorption_with_exciton,
     "scattering_lifetime_vs_width": fig_scattering_lifetime_vs_width,
+    "scattering_lifetime_vs_field": fig_scattering_lifetime_vs_field,
+    "double_qw_anticrossing": fig_double_qw_anticrossing,
 }
 
 
