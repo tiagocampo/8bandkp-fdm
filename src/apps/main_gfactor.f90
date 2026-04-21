@@ -396,7 +396,7 @@ program gfactor
   dd = tensor(2,2,1)
   print *, (0.5 * ( -sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ) - 0.5 * ( sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ))
   call zheev('N', 'U', 2, tensor(:,:,1), 2, gfac(:,1), work, lwork, rwork, info)
-  print *, 2*gfac(1,1) !+ 2.00231
+  print *, 2*gfac(1,1) !+ free-electron g-factor (included via sigma tensor)
 
   print *, 'gy'
   aa = tensor(1,1,2)
@@ -405,7 +405,7 @@ program gfactor
   dd = tensor(2,2,2)
   print *, (0.5 * ( -sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ) - 0.5 * ( sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ))
   call zheev('N', 'U', 2, tensor(:,:,2), 2, gfac(:,2), work, lwork, rwork, info)
-  print *, 2*gfac(1,2) !+ 2.00231
+  print *, 2*gfac(1,2) !+ free-electron g-factor (included via sigma tensor)
 
   print *, 'gz'
   aa = tensor(1,1,3)
@@ -414,7 +414,7 @@ program gfactor
   dd = tensor(2,2,3)
   print *, (0.5 * ( -sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ) - 0.5 * ( sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ))
   call zheev('N', 'U', 2, tensor(:,:,3), 2, gfac(:,3), work, lwork, rwork, info)
-  print *, 2*gfac(1,3) !+ 2.00231
+  print *, 2*gfac(1,3) !+ free-electron g-factor (included via sigma tensor)
 
   call get_unit(iounit)
   open(unit=iounit, file='output/gfactor.dat', status="replace", action="write")

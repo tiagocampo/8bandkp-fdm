@@ -216,6 +216,11 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
   complex(kind=dp) :: aux(8,8), aux_v(8), aux1_v(8), Y(8)
   complex(kind=dp), allocatable, dimension(:) :: v, Y1
 
+  if (abs(dz) < tolerance) then
+    print *, 'Error: pMatrixEleCalc called with dz=0. Grid spacing is zero.'
+    stop 1
+  end if
+
   dimax = size(state1,1)
   fdstep = dimax/8
 
