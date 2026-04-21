@@ -123,6 +123,33 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
+add_test(
+    NAME regression_qw_character_and_output_dir
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_character_and_output_dir.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/qw_alsbw_gasbw_inasw.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_state_character.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_qw_absorption_polarization
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_absorption_polarization.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/qw_gaas_algaas_absorption.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_absorption_polarization.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_scattering_transition_sanity
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_scattering_transition_sanity.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/qw_gaas_algaas_qcse_scattering.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_scattering_transition_sanity.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
 # g-factor CB
 add_test(
     NAME regression_gfactor_cb
@@ -131,6 +158,14 @@ add_test(
         ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/gfactor_qw_cb.cfg
         ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/gfactor_qw_cb
         ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_gfactor_no_optics
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_gfactor_no_optics.sh
+        $<TARGET_FILE:gfactorCalculation>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/gfactor_qw_no_optics.cfg
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
@@ -147,7 +182,9 @@ add_test(
 
 set_tests_properties(
     regression_bulk_gaas regression_qw_alsbw_gasbw_inasw
-    regression_gfactor_cb regression_bulk_inas
+    regression_qw_character_and_output_dir regression_qw_absorption_polarization
+    regression_scattering_transition_sanity regression_gfactor_cb
+    regression_gfactor_no_optics regression_bulk_inas
     PROPERTIES LABELS "regression"
 )
 
@@ -214,6 +251,7 @@ set_tests_properties(
 add_test(
     NAME regression_stark_shift
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_stark_shift.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/sc_qcse_gaas_algaas_ef.cfg
         ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_qcse_gaas_algaas/eigenvalues.dat
         ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_qcse_gaas_algaas_ef/eigenvalues.dat
 )
@@ -295,5 +333,19 @@ add_test(
 
 set_tests_properties(
     regression_wire_insb_gfactor
+    PROPERTIES LABELS "regression"
+)
+
+add_test(
+    NAME regression_wire_optical_selection
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_optical_selection.sh
+        $<TARGET_FILE:gfactorCalculation>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_gaas_optical_window.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_wire_optical_selection.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_wire_optical_selection
     PROPERTIES LABELS "regression"
 )

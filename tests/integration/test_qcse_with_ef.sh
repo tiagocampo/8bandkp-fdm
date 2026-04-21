@@ -1,12 +1,14 @@
 #!/bin/bash
-# Integration test: QCSE GaAs/AlGaAs QW with electric field (-70 kV/cm)
-# Validates Stark shift: CB1 should red-shift relative to zero-field case
+# Integration test: QCSE GaAs/AlGaAs QW with electric field from config EFParams
+# Validates both regression output equality and config-derived Stark shift semantics
 set -euo pipefail
 
 EXE="$1"
 CONFIG="$2"
 REF_DIR="$3"
 COMPARE="$4"
+VERIFY_STARK="$(dirname "$0")/verify_stark_shift.py"
+ZERO_FIELD_REF="$(dirname "$REF_DIR")/sc_qcse_gaas_algaas/eigenvalues.dat"
 
 WORKDIR=$(mktemp -d)
 trap "rm -rf $WORKDIR" EXIT
@@ -29,3 +31,4 @@ if [ ! -f "$WORKDIR/output/eigenvalues.dat" ]; then
 fi
 
 python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" --tolerance 1e-8
+python3 "$VERIFY_STARK" "$CONFIG" "$ZERO_FIELD_REF" "$WORKDIR/output/eigenvalues.dat"
