@@ -1268,9 +1268,9 @@ module hamiltonianConstructor
         ! g='g3' mode (z direction): PP, PM, S, SC blocks only.
         ! Same block topology as the original g='g' mode.
         ! ==================================================================
-        ! PP:6, PM:5, S:6, SC:6
+        ! PP:6, PM:5, S:6, SC:6  (+ 20% safety margin)
         nnz_est = 6*blk_PP%nnz + 5*blk_PM%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
-        coo_capacity = nnz_est
+        coo_capacity = nnz_est + nnz_est / 5
 
         allocate(coo_rows(coo_capacity))
         allocate(coo_cols(coo_capacity))
@@ -1375,8 +1375,9 @@ module hamiltonianConstructor
         ! Block topology matches the normal mode's PZ and S/SC insertions.
         ! PZ:8, S:6, SC:6
         ! ==================================================================
+        ! PZ:8, S:6, SC:6  (+ 20% safety margin)
         nnz_est = 8*blk_PZ%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
-        coo_capacity = nnz_est
+        coo_capacity = nnz_est + nnz_est / 5
 
         allocate(coo_rows(coo_capacity))
         allocate(coo_cols(coo_capacity))
@@ -1484,7 +1485,7 @@ module hamiltonianConstructor
         if (allocated(cfg%strain_blocks%delta_Ec)) then
           nnz_est = nnz_est + 32 * N
         end if
-        coo_capacity = nnz_est
+        coo_capacity = nnz_est + nnz_est / 5  ! 20% safety margin
 
         allocate(coo_rows(coo_capacity))
         allocate(coo_cols(coo_capacity))

@@ -1,0 +1,72 @@
+ waveVector:k0  
+ waveVectorMax:  0.10000000000000001     
+ waveVectorStep:           0
+ confinement:           2
+ FDstep:           1
+ FDorder:           2
+ numLayers:           1
+ wire_nx:          11
+ wire_ny:          11
+ wire_dx:   5.0000000000000000     
+ wire_dy:   5.0000000000000000     
+ wire_shape:rectangle
+ wire_width:   55.000000000000000     
+ wire_height:   55.000000000000000     
+ numRegions:           1
+ region:InSbW   0.0000000000000000        100.00000000000000     
+ numcb:           4
+ numvb:           8
+ ExternalField:           0 EF
+ EFParams:   5.0000000000000001E-004
+ whichBand:           0
+ bandIdx:           1
+ SC:           0
+  
+ Material: InSbW
+ Parameters
+ EP :   24.399999999999999     
+ P  :   9.6417613046285773     
+ A  :   71.942446043165475     
+ gamma1 :   37.100000000000001     
+ gamma2 :   16.500000000000000     
+ gamma3 :   17.699999999999999     
+  
+ 
+ === Wire g-factor (2D confinement) ===
+   Grid: nx=          11  ny=          11  Ngrid=         121
+   Matrix size:          968 x         968
+   numcb=           4  numvb=           8
+ 
+   Eigensolver: FEAST
+   WARNING: FEAST subspace too small (info=3). Missing eigenvalues.
+   Increase feast_m0 or narrow the energy window.
+ Warning: FEAST did not converge for g-factor calculation
+ gfactor (wire) for conduction band
+ sigma
+  -0.2620   -0.0000  -0.2565    0.3178
+  -0.2565   -0.3178  -0.9551    0.0000
+  
+   0.0578   -0.0000  -0.1649    0.0613
+  -0.1649   -0.0613   0.1429    0.0000
+  
+  -0.6000    0.0000  -0.0948    0.8183
+  -0.0948   -0.8183   0.4710   -0.0000
+   Optical transitions written to output/optical_transitions.dat
+ tensor
+  -1.2460   -1.3499  -0.0111   -0.2601
+   0.7616    0.1722  -1.0899   -1.0366
+  
+  -1.5535   -1.2322  -0.3341   -0.0208
+   0.6648   -0.1201  -2.0860   -0.9848
+  
+   2.1886    1.2995   0.4327   -0.8523
+  -0.4212    0.8521   1.5976    1.1255
+ gx
+            (-0.62343466617792298,0.56325363965941000)
+  -2.8795082872145850     
+ gy
+       (-9.57967623520894485E-002,0.82768502924195575)
+  -4.4949362676084608     
+ gz
+            (-1.8009396301145535,-0.86521855114176660)
+   1.7852478620978522     

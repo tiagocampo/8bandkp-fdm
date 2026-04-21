@@ -249,3 +249,19 @@ set_tests_properties(
     regression_wire_inas_gaas_core_shell
     PROPERTIES LABELS "regression"
 )
+
+# Wire InSb g-factor (extreme g-factor regime)
+add_test(
+    NAME regression_wire_insb_gfactor
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_insb_gfactor.sh
+        $<TARGET_FILE:gfactorCalculation>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_insb_gfactor.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/wire_insb_gfactor
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_wire_insb_gfactor
+    PROPERTIES LABELS "regression"
+)

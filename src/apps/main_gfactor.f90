@@ -142,14 +142,19 @@ program gfactor
     ! Build wire Hamiltonian at kz=0
     call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg, coo_cache)
 
-    ! Configure FEAST with auto energy window
+    ! Configure FEAST: use config energy window if provided, else auto
     eigen_cfg%method   = 'FEAST'
     eigen_cfg%nev      = nev_wire
     eigen_cfg%max_iter = 100
     eigen_cfg%tol      = 1.0e-10_dp
-    eigen_cfg%feast_m0 = 0  ! auto: 2*nev
+    eigen_cfg%feast_m0 = cfg%feast_m0  ! 0 = auto: 2*nev
 
-    call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
+    if (cfg%feast_emin /= 0.0_dp .and. cfg%feast_emax /= 0.0_dp) then
+      eigen_cfg%emin = cfg%feast_emin
+      eigen_cfg%emax = cfg%feast_emax
+    else
+      call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
+    end if
 
     ! Solve eigenvalue problem
     call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
