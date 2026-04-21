@@ -3812,7 +3812,7 @@ def fig_gain_strained_comparison(output_dir: Path) -> None:
 
 
 def _run_exciton_width(widths_aa: list) -> list:
-    """Run bandStructure for each well width, collect (width_nm, E_b_meV)."""
+    """Run bandStructure for each well width, collect (width_nm, E_b_meV, lambda_AA)."""
     results = []
     for w_aa in widths_aa:
         half = w_aa / 2.0
@@ -3856,7 +3856,8 @@ def _run_exciton_width(widths_aa: list) -> list:
         if vals.ndim == 1:
             vals = vals.reshape(1, -1)
         if vals.shape[0] > 0 and vals.shape[1] >= 2:
-            results.append((w_aa / 10.0, vals[0, 1]))  # nm, meV
+            lam = vals[0, 0] if vals.shape[1] >= 1 else float("nan")
+            results.append((w_aa / 10.0, vals[0, 1], lam))  # nm, meV, AA
     return results
 
 
@@ -3889,13 +3890,14 @@ def fig_exciton_binding_vs_width(output_dir: Path) -> None:
 
     width = np.array([r[0] for r in results])
     eb = np.array([r[1] for r in results])
+    lam_aa = np.array([r[2] for r in results])
 
-    # Cache the sweep for future runs
+    # Cache the sweep for future runs (including Bohr radius)
     with open(str(sweep_file), "w") as fh:
         fh.write("# Exciton binding energy vs well width (auto-sweep)\n")
-        fh.write("# width(nm)  E_binding(meV)\n")
-        for w, e in zip(width, eb):
-            fh.write(f"  {w:.1f}   {e:.6f}\n")
+        fh.write("# width(nm)  E_binding(meV)  lambda_opt(AA)\n")
+        for w, e, l in zip(width, eb, lam_aa):
+            fh.write(f"  {w:.1f}   {e:.6f}   {l:.6f}\n")
 
     _plot_exciton_binding(width, eb)
 
@@ -3918,6 +3920,73 @@ def _plot_exciton_binding(width: np.ndarray, eb: np.ndarray) -> None:
     fig.savefig(FIGURE_DIR / "exciton_binding_vs_width.png", dpi=150)
     plt.close(fig)
     print(f"  -> docs/figures/exciton_binding_vs_width.png  ({len(width)} points)")
+
+
+def fig_exciton_bohr_vs_width(output_dir: Path) -> None:
+    """exciton_bohr_vs_width.png: exciton Bohr radius vs quantum well width.
+
+    Uses the same sweep data as fig_exciton_binding_vs_width, extracting
+    lambda_opt (column 0 of exciton.dat) and converting from Angstroms to nm.
+    Includes a horizontal reference line at the 3D bulk GaAs Bohr radius (~11.3 nm).
+    """
+    print("[figure] exciton_bohr_vs_width")
+
+    sweep_file = output_dir / "exciton_width_sweep.dat"
+    if sweep_file.exists():
+        data = np.loadtxt(str(sweep_file), comments="#")
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+        if data.shape[0] >= 3 and data.shape[1] >= 3:
+            width_nm = data[:, 0]
+            lam_aa = data[:, 2]
+            lam_nm = lam_aa / 10.0
+            _plot_exciton_bohr(width_nm, lam_nm)
+            return
+
+    # Run the sweep
+    widths_aa = [30, 50, 60, 80, 100, 120, 150, 200, 300, 500]
+    print(f"  Running exciton sweep over {len(widths_aa)} well widths ...")
+    results = _run_exciton_width(widths_aa)
+
+    if len(results) < 3:
+        print(f"  WARNING: only {len(results)} data points, need >= 3. Skipping.")
+        return
+
+    width_nm = np.array([r[0] for r in results])
+    eb = np.array([r[1] for r in results])
+    lam_aa = np.array([r[2] for r in results])
+    lam_nm = lam_aa / 10.0
+
+    # Cache the sweep (same format as fig_exciton_binding_vs_width)
+    with open(str(sweep_file), "w") as fh:
+        fh.write("# Exciton binding energy vs well width (auto-sweep)\n")
+        fh.write("# width(nm)  E_binding(meV)  lambda_opt(AA)\n")
+        for w, e, l in zip(width_nm, eb, lam_aa):
+            fh.write(f"  {w:.1f}   {e:.6f}   {l:.6f}\n")
+
+    _plot_exciton_bohr(width_nm, lam_nm)
+
+
+def _plot_exciton_bohr(width_nm: np.ndarray, lam_nm: np.ndarray) -> None:
+    """Plot and save the exciton Bohr radius curve."""
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(width_nm, lam_nm, "o-", color="#2ca02c", linewidth=1.5, markersize=5)
+    ax.set_xlabel("Well Width (nm)")
+    ax.set_ylabel("Exciton Bohr Radius (nm)")
+    ax.set_title("Exciton Bohr Radius vs. Well Width", fontsize=12)
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+
+    # 3D bulk GaAs exciton Bohr radius reference
+    ax.axhline(y=11.3, color="grey", linestyle=":", linewidth=0.8,
+               label="3D bulk GaAs (~11.3 nm)")
+    ax.legend(fontsize=9, framealpha=0.9)
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "exciton_bohr_vs_width.png", dpi=150,
+                bbox_inches="tight")
+    plt.close(fig)
+    print(f"  -> docs/figures/exciton_bohr_vs_width.png  ({len(width_nm)} points)")
 
 
 def fig_absorption_with_exciton(output_dir: Path) -> None:
@@ -4096,6 +4165,7 @@ ALL_FIGURES = {
     "isbt_absorption": fig_isbt_absorption,
     "gain_strained_comparison": fig_gain_strained_comparison,
     "exciton_binding_vs_width": fig_exciton_binding_vs_width,
+    "exciton_bohr_vs_width": fig_exciton_bohr_vs_width,
     "absorption_with_exciton": fig_absorption_with_exciton,
     "scattering_lifetime_vs_width": fig_scattering_lifetime_vs_width,
 }
