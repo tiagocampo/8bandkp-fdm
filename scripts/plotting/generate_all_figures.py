@@ -4055,6 +4055,74 @@ def fig_absorption_with_exciton(output_dir: Path) -> None:
     print("  -> docs/figures/absorption_with_exciton.png")
 
 
+def fig_absorption_excitonic_TE(output_dir: Path) -> None:
+    """absorption_excitonic_TE.png: TE absorption with exciton resonance marked.
+
+    Runs the full optics config to generate absorption_TE.dat and exciton.dat,
+    then plots alpha_TE vs E with a vertical dashed line at E_gap - E_binding.
+    """
+    print("[figure] absorption_excitonic_TE")
+
+    # Run with the interband optics config to get fresh data
+    cfg = CONFIG_DIR / "qw_gaas_algaas_optics_full.cfg"
+    if cfg.exists():
+        result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                                label="absorption_excitonic_TE", timeout=600)
+        if result.returncode != 0:
+            print("  WARNING: bandStructure run failed, skipping.")
+            return
+    else:
+        print("  WARNING: No interband optics config found, skipping.")
+        return
+
+    te_file = output_dir / "absorption_TE.dat"
+    exc_file = output_dir / "exciton.dat"
+
+    if not te_file.exists():
+        print("  WARNING: absorption_TE.dat not found, skipping.")
+        return
+
+    E, alpha = _read_absorption(output_dir, "TE")
+
+    # Read exciton binding energy from exciton.dat
+    E_binding_meV = None
+    if exc_file.exists():
+        vals = np.loadtxt(str(exc_file), comments="#")
+        if vals.ndim == 1:
+            vals = vals.reshape(1, -1)
+        if vals.shape[1] >= 2:
+            E_binding_meV = vals[0, 1]  # E_binding in meV
+
+    # Identify the band edge: energy where absorption first rises above 5% of max
+    alpha_max = np.max(alpha)
+    threshold = 0.05 * alpha_max
+    onset_idx = np.where(alpha > threshold)[0]
+    if len(onset_idx) == 0:
+        E_gap = E[0]
+    else:
+        E_gap = E[onset_idx[0]]
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(E, alpha, color="#1f77b4", linewidth=1.5, label="TE absorption")
+
+    # Draw exciton resonance vertical line
+    if E_binding_meV is not None:
+        E_res = E_gap - E_binding_meV * 1e-3  # convert meV -> eV
+        ax.axvline(E_res, color="#d62728", linewidth=1.2, linestyle="--",
+                   label=f"Exciton resonance ({E_binding_meV:.1f} meV)")
+
+    ax.set_xlabel("Photon Energy (eV)")
+    ax.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
+    ax.set_title("Excitonic TE Absorption", fontsize=12)
+    ax.legend(loc="best", fontsize=9, framealpha=0.9)
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "absorption_excitonic_TE.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/absorption_excitonic_TE.png")
+
+
 def fig_scattering_lifetime_vs_width(output_dir: Path) -> None:
     """scattering_lifetime_vs_width.png: LO-phonon scattering rate / lifetime vs subband transition.
 
@@ -4369,6 +4437,7 @@ ALL_FIGURES = {
     "exciton_binding_vs_width": fig_exciton_binding_vs_width,
     "exciton_bohr_vs_width": fig_exciton_bohr_vs_width,
     "absorption_with_exciton": fig_absorption_with_exciton,
+    "absorption_excitonic_TE": fig_absorption_excitonic_TE,
     "scattering_lifetime_vs_width": fig_scattering_lifetime_vs_width,
     "scattering_lifetime_vs_field": fig_scattering_lifetime_vs_field,
     "double_qw_anticrossing": fig_double_qw_anticrossing,
