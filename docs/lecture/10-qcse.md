@@ -242,8 +242,8 @@ modifies the profile on top of it.
 We compute the subband structure of a 60-Angstrom GaAs quantum well with
 Al$_{0.2}$Ga$_{0.8}$As barriers at two field values: zero field and
 $F = -0.007$ eV/Angstrom. This field corresponds to
-$|F| = 7 \times 10^{-3}$ eV/A $= 1.12 \times 10^6$ V/cm, a moderately strong
-field for a 60-Angstrom well.
+$|F| = 7 \times 10^{-3}$ eV/A $= 7.0 \times 10^5$ V/cm $= 700$ kV/cm, which is
+an intentionally strong field for a 60-Angstrom well.
 
 ### 10.4.1 Structure
 
@@ -415,8 +415,9 @@ pattern**.
 
 *Figure: Subband energies of the GaAs/Al$_{0.2}$Ga$_{0.8}$As QW at zero field
 and under $F = -0.007$ eV/Angstrom. The left panel shows the band-edge profile
-with and without the field tilt. The right panel shows the corresponding
-subband energies at $k = 0$.*
+with and without the field tilt. The equivalent field label in device units is
+$-700$ kV/cm. The right panel shows the corresponding subband energies at
+$k = 0$.*
 
 ### 10.4.5 Consistency check
 
@@ -476,10 +477,12 @@ Key design parameters:
 - **Barrier height**: set by the Al fraction in AlGaAs. Higher barriers prevent
   tunneling at high fields but increase the band gap.
 - **Field range**: limited by breakdown. For GaAs/AlGaAs, typical operating
-  fields are $10^4$--$10^5$ V/cm ($10^{-3}$--$10^{-2}$ eV/Angstrom).
+  fields are $10^4$--$10^5$ V/cm ($10^{-4}$--$10^{-3}$ eV/Angstrom).
 
-Our computed field of $F = -0.007$ eV/Angstrom ($1.12 \times 10^6$ V/cm) is
-at the upper end of the practical range, pushing the well well into the
+Our computed field of $F = -0.007$ eV/Angstrom ($7.0 \times 10^5$ V/cm, or
+$700$ kV/cm) is stronger than the typical operating range quoted above, so this
+example should be read as a stress-test of the QCSE implementation rather than
+as a representative modulator bias point. It pushes the well deep into the
 triangular-regime behavior.
 
 ### 10.5.3 Limitations

@@ -55,6 +55,8 @@ program gfactor
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   integer                          :: Ngrid, Ntot, nev_wire
+  integer                          :: gap_idx, cb_start, vb_start
+  real(kind=dp), allocatable       :: gaps(:)
 
   ! Ensure MKL routines run single-threaded (sequential) regardless of
   ! MKL_THREADING setting.  Prevents thread oversubscription when
@@ -188,18 +190,45 @@ program gfactor
     call writeEigenfunctions2d(cfg%grid, eigen_res%eigenvalues, &
       & eigen_res%eigenvectors, 1, eigen_res%nev_found, write_parts=.true.)
 
-    ! Extract CB/VB states from sorted eigenvalues
-    ! Eigenvalues are sorted ascending: VB first (lower energy), then CB (higher)
+    ! Extract CB/VB states from the band edge, not from fixed sorted positions.
+    ! FEAST may return many states in the search window, so the user-supplied
+    ! numvb/numcb should be interpreted as counts around the actual gap.
     allocate(cb_value(cfg%numcb))
     allocate(vb_value(cfg%numvb))
     allocate(cb_state(N, cfg%numcb))
     allocate(vb_state(N, cfg%numvb))
 
-    cb_value(:) = eigen_res%eigenvalues(cfg%numvb+1:cfg%numvb+cfg%numcb)
-    vb_value(:) = eigen_res%eigenvalues(cfg%numvb:1:-1)
+    allocate(gaps(eigen_res%nev_found - 1))
+    gaps(:) = eigen_res%eigenvalues(2:eigen_res%nev_found) - &
+      & eigen_res%eigenvalues(1:eigen_res%nev_found-1)
+    gap_idx = maxloc(gaps, dim=1)
+    deallocate(gaps)
 
-    cb_state(:,:) = eigen_res%eigenvectors(:, cfg%numvb+1:cfg%numvb+cfg%numcb)
-    vb_state(:,:) = eigen_res%eigenvectors(:, cfg%numvb:1:-1)
+    cb_start = gap_idx + 1
+    vb_start = gap_idx - cfg%numvb + 1
+
+    if (vb_start >= 1 .and. cb_start + cfg%numcb - 1 <= eigen_res%nev_found) then
+      print *, '  Wire band edge detected between eigenvalues ', gap_idx, ' and ', gap_idx + 1
+      print *, '  Selecting VB indices ', vb_start, ':', gap_idx, &
+        & ' and CB indices ', cb_start, ':', cb_start + cfg%numcb - 1
+
+      cb_value(:) = eigen_res%eigenvalues(cb_start:cb_start+cfg%numcb-1)
+      vb_value(:) = eigen_res%eigenvalues(gap_idx:vb_start:-1)
+
+      cb_state(:,:) = eigen_res%eigenvectors(:, cb_start:cb_start+cfg%numcb-1)
+      vb_state(:,:) = eigen_res%eigenvectors(:, gap_idx:vb_start:-1)
+    else
+      print *, '  WARNING: automatic wire band-edge detection did not have enough'
+      print *, '           states on both sides of the gap. Falling back to the'
+      print *, '           legacy contiguous selection around numvb/numcb.'
+      print *, '  gap_idx=', gap_idx, ' nev_found=', eigen_res%nev_found
+
+      cb_value(:) = eigen_res%eigenvalues(cfg%numvb+1:cfg%numvb+cfg%numcb)
+      vb_value(:) = eigen_res%eigenvalues(cfg%numvb:1:-1)
+
+      cb_state(:,:) = eigen_res%eigenvectors(:, cfg%numvb+1:cfg%numvb+cfg%numcb)
+      vb_state(:,:) = eigen_res%eigenvectors(:, cfg%numvb:1:-1)
+    end if
 
     ! Compute g-factor tensor
     allocate(tensor(2,2,3))
@@ -209,32 +238,34 @@ program gfactor
       & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg, &
       & profile_2d, kpterms_2d)
 
-    ! Compute optical transitions
-    block
-      type(optical_transition), allocatable :: transitions(:)
-      integer :: num_trans, it
+    if (cfg%optics%enabled) then
+      ! Compute optical transitions only for optics-enabled runs.
+      block
+        type(optical_transition), allocatable :: transitions(:)
+        integer :: num_trans, it
 
-      call compute_optical_matrix_wire(transitions, num_trans, &
-        cb_state, vb_state, cb_value, vb_value, cfg%numcb, cfg%numvb, &
-        profile_2d, kpterms_2d, cfg)
+        call compute_optical_matrix_wire(transitions, num_trans, &
+          cb_state, vb_state, cb_value, vb_value, cfg%numcb, cfg%numvb, &
+          profile_2d, kpterms_2d, cfg)
 
-      ! Write to file
-      call ensure_output_dir()
-      call get_unit(iounit)
-      open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
-      write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
-      do it = 1, num_trans
-        write(iounit, '(2(I4,1x),5(g14.6,1x))') &
-          transitions(it)%cb_idx, transitions(it)%vb_idx, &
-          transitions(it)%energy, transitions(it)%px, &
-          transitions(it)%py, transitions(it)%pz, &
-          transitions(it)%oscillator_strength
-      end do
-      close(iounit)
-      print *, '  Optical transitions written to output/optical_transitions.dat'
+        ! Write to file
+        call ensure_output_dir()
+        call get_unit(iounit)
+        open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
+        write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
+        do it = 1, num_trans
+          write(iounit, '(2(I4,1x),5(g14.6,1x))') &
+            transitions(it)%cb_idx, transitions(it)%vb_idx, &
+            transitions(it)%energy, transitions(it)%px, &
+            transitions(it)%py, transitions(it)%pz, &
+            transitions(it)%oscillator_strength
+        end do
+        close(iounit)
+        print *, '  Optical transitions written to output/optical_transitions.dat'
 
-      deallocate(transitions)
-    end block
+        deallocate(transitions)
+      end block
+    end if
 
     ! Free wire-specific resources
     call csr_free(HT_csr)
@@ -427,7 +458,7 @@ program gfactor
   close(iounit)
 
   ! QW optical transitions
-  if (cfg%confDir == 'z' .and. cfg%numLayers > 1) then
+  if (cfg%optics%enabled .and. cfg%confDir == 'z' .and. cfg%numLayers > 1) then
     block
       type(optical_transition), allocatable :: transitions(:)
       integer :: num_trans, it

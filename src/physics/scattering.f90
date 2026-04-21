@@ -56,7 +56,8 @@ contains
     integer, intent(in)          :: numcb, numvb, fdstep
 
     integer :: i, j, pair_count
-    integer :: cb_lo, cb_hi, ncb
+    integer :: cb_lo, cb_hi, ncb, ncb_raw
+    integer, allocatable :: cb_state_idx(:)
     real(kind=dp) :: temperature, omega_lo, eps_inf, eps_0
     real(kind=dp), parameter :: e0_AA = e0 / 10.0_dp   ! C/(V*AA)
     real(kind=dp) :: coupling_const, N_lo
@@ -64,19 +65,39 @@ contains
     real(kind=dp), allocatable :: rate_em(:,:), rate_ab(:,:)
     real(kind=dp) :: E_i, E_j, dE, r_em, r_ab
     integer :: iounit, ios
+    real(kind=dp), parameter :: KRAMERS_TOL_EV = 1.0e-6_dp
 
     ! First CB state index in the eigenvalue array
     cb_lo = numvb + 1
-    ncb   = numcb
-    cb_hi = cb_lo + ncb - 1
+    ncb_raw = numcb
+    cb_hi = cb_lo + ncb_raw - 1
 
     if (cb_hi > size(eigvals)) then
       print '(A)', 'scattering_solver: not enough eigenvalues for CB states.'
       return
     end if
 
-    if (ncb < 2) then
+    if (ncb_raw < 2) then
       print '(A)', 'scattering_solver: only one CB subband, no intersubband scattering.'
+      return
+    end if
+
+    ! Collapse consecutive Kramers-degenerate partners into one physical
+    ! subband representative so intersubband scattering does not include
+    ! zero-energy spin-partner transitions.
+    allocate(cb_state_idx(ncb_raw))
+    ncb = 0
+    do i = cb_lo, cb_hi
+      if (ncb == 0 .or. abs(eigvals(i) - eigvals(cb_state_idx(ncb))) > KRAMERS_TOL_EV) then
+        ncb = ncb + 1
+        cb_state_idx(ncb) = i
+      end if
+    end do
+
+    if (ncb < 2) then
+      print '(A)', 'scattering_solver: fewer than two unique CB subbands after'
+      print '(A)', '  collapsing Kramers partners. No intersubband scattering.'
+      deallocate(cb_state_idx)
       return
     end if
 
@@ -109,7 +130,8 @@ contains
     print '(A,ES12.4,A)', '  eps_0         = ', eps_0
     print '(A,ES12.4,A)', '  temperature   = ', temperature, ' K'
     print '(A,ES12.4)',   '  N_LO          = ', N_lo
-    print '(A,I0)',       '  CB subbands   = ', ncb
+    print '(A,I0)',       '  CB states     = ', ncb_raw
+    print '(A,I0)',       '  unique CB subbands = ', ncb
 
     ! Allocate work arrays
     allocate(phi_i(fdstep), phi_j(fdstep))
@@ -122,11 +144,11 @@ contains
     do i = 1, ncb
       do j = i + 1, ncb
         ! Extract envelopes
-        call extract_cb_envelope(eigvecs, fdstep, cb_lo + i - 1, dz, phi_i)
-        call extract_cb_envelope(eigvecs, fdstep, cb_lo + j - 1, dz, phi_j)
+        call extract_cb_envelope(eigvecs, fdstep, cb_state_idx(i), dz, phi_i)
+        call extract_cb_envelope(eigvecs, fdstep, cb_state_idx(j), dz, phi_j)
 
-        E_i = eigvals(cb_lo + i - 1)
-        E_j = eigvals(cb_lo + j - 1)
+        E_i = eigvals(cb_state_idx(i))
+        E_j = eigvals(cb_state_idx(j))
         dE  = E_j - E_i  ! always positive since j > i => E_j > E_i for CB
 
         ! Compute scattering rates
@@ -161,14 +183,14 @@ contains
     end do
 
     ! Write output file
-    call write_scattering_output(ncb, cb_lo, eigvals, rate_em, rate_ab)
+    call write_scattering_output(ncb, cb_state_idx(1:ncb), eigvals, rate_em, rate_ab)
 
     print '(A)', ''
     print '(A,I0,A)', '  Computed ', pair_count, ' subband pairs.'
     print '(A)', '  Results written to output/scattering_rates.dat'
     print '(A)', ''
 
-    deallocate(phi_i, phi_j, rate_em, rate_ab)
+    deallocate(phi_i, phi_j, rate_em, rate_ab, cb_state_idx)
 
   end subroutine compute_phonon_scattering
 
@@ -375,8 +397,9 @@ contains
   ! ------------------------------------------------------------------
   ! Write scattering rates to output/scattering_rates.dat
   ! ------------------------------------------------------------------
-  subroutine write_scattering_output(ncb, cb_lo, eigvals, rate_em, rate_ab)
-    integer, intent(in)       :: ncb, cb_lo
+  subroutine write_scattering_output(ncb, cb_state_idx, eigvals, rate_em, rate_ab)
+    integer, intent(in)       :: ncb
+    integer, intent(in)       :: cb_state_idx(:)
     real(kind=dp), intent(in) :: eigvals(:)
     real(kind=dp), intent(in) :: rate_em(:,:), rate_ab(:,:)
 
@@ -395,7 +418,7 @@ contains
 
     do i = 1, ncb
       do j = i + 1, ncb
-        dE = (eigvals(cb_lo + j - 1) - eigvals(cb_lo + i - 1)) * 1000.0_dp  ! meV
+        dE = (eigvals(cb_state_idx(j)) - eigvals(cb_state_idx(i))) * 1000.0_dp  ! meV
 
         tau_em_ps = 0.0_dp
         tau_ab_ps = 0.0_dp

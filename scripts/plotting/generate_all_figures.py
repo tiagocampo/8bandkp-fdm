@@ -55,6 +55,9 @@ CONFIG_DIR = REPO_ROOT / "tests" / "regression" / "configs"
 FIGURE_DIR = REPO_ROOT / "docs" / "figures"
 INPUT_CFG = REPO_ROOT / "input.cfg"
 
+# Derived-figure constants
+BOHR_MAGNETON_MEV_PER_T = 5.7883818060e-2
+
 # ---------------------------------------------------------------------------
 # Band names and colours (basis ordering: 1-4 valence, 5-6 SO, 7-8 CB)
 # ---------------------------------------------------------------------------
@@ -182,6 +185,34 @@ def parse_eigenvalues(output_dir: Path) -> Tuple[np.ndarray, np.ndarray]:
     k_vals = data[:, 0]
     eig = data[:, 1:].T  # (n_bands, n_kpoints)
     return k_vals, eig
+
+
+def read_config_scalar(config_path: Path, key: str) -> float:
+    """Read a scalar value from `key: value` config lines."""
+    with open(config_path) as fh:
+        for raw_line in fh:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith(f"{key}:"):
+                return float(line.split(":", 1)[1].strip().split()[0])
+    raise KeyError(f"{key} not found in {config_path}")
+
+
+def read_config_int(config_path: Path, key: str) -> int:
+    """Read an integer value from `key: value` config lines."""
+    return int(round(read_config_scalar(config_path, key)))
+
+
+def ev_per_angstrom_to_kv_per_cm(field_ev_per_angstrom: float) -> float:
+    """Convert EFParams units (eV/Angstrom == V/Angstrom) to kV/cm."""
+    return field_ev_per_angstrom * 1.0e5
+
+
+def format_field_label(field_ev_per_angstrom: float) -> str:
+    """Format a field label using the config's EFParams value."""
+    field_kvcm = ev_per_angstrom_to_kv_per_cm(field_ev_per_angstrom)
+    return f"{field_kvcm:+.0f} kV/cm"
 
 
 def parse_parts(output_dir: Path, k_index: int = 0) -> np.ndarray:
@@ -824,7 +855,11 @@ def fig_bulk_gaas_strain_comparison(output_dir: Path) -> None:
 
 
 def fig_strain_lattice_mismatch(output_dir: Path) -> None:
-    """strain_lattice_mismatch.png: schematic of pseudomorphic strain."""
+    """strain_lattice_mismatch.png: schematic of pseudomorphic strain.
+
+    Non-computed pedagogical figure. It is drawn from hand-coded geometry only
+    and must not be treated as solver-validated quantitative output.
+    """
     print("[figure] strain_lattice_mismatch")
     fig, (ax_free, ax_pseudo) = plt.subplots(1, 2, figsize=(8, 4))
 
@@ -898,7 +933,11 @@ def fig_strain_lattice_mismatch(output_dir: Path) -> None:
 
 
 def fig_strain_biaxial_tensor(output_dir: Path) -> None:
-    """strain_biaxial_tensor.png: biaxial strain geometry schematic."""
+    """strain_biaxial_tensor.png: biaxial strain geometry schematic.
+
+    Non-computed pedagogical figure. It illustrates tensor components and
+    geometry only; no solver output is consumed here.
+    """
     print("[figure] strain_biaxial_tensor")
     fig, ax = plt.subplots(figsize=(6, 5))
 
@@ -989,7 +1028,12 @@ def fig_strain_biaxial_tensor(output_dir: Path) -> None:
 
 
 def fig_bir_pikus_band_shifts(output_dir: Path) -> None:
-    """bir_pikus_band_shifts.png: energy level diagram for compressive + tensile strain."""
+    """bir_pikus_band_shifts.png: energy level diagram for compressive + tensile strain.
+
+    Derived qualitative figure. The level shifts are hard-coded illustrative
+    values, not direct solver output, so this plot must not be cited as a
+    quantitative validation result.
+    """
     print("[figure] bir_pikus_band_shifts")
     fig, (ax_comp, ax_tens) = plt.subplots(1, 2, figsize=(9, 5), sharey=True)
 
@@ -1074,7 +1118,12 @@ def fig_bir_pikus_band_shifts(output_dir: Path) -> None:
 
 
 def fig_qw_strained_band_edges(output_dir: Path) -> None:
-    """qw_strained_band_edges.png: strained vs unstrained QW potential profile."""
+    """qw_strained_band_edges.png: strained vs unstrained QW potential profile.
+
+    Derived hybrid figure. The unstrained profile comes from solver output, but
+    the strained profile is constructed in Python from manual Bir-Pikus shifts
+    instead of a direct strained run.
+    """
     print("[figure] qw_strained_band_edges")
 
     # --- Material parameters (W-variant with band offsets, same strain params) ---
@@ -1211,7 +1260,12 @@ def fig_qw_strained_band_edges(output_dir: Path) -> None:
 
 
 def fig_wire_strain_2d(output_dir: Path) -> None:
-    """wire_strain_2d.png: wire cross-section strain colormap."""
+    """wire_strain_2d.png: wire cross-section strain colormap.
+
+    Known-risk figure. The underlying wire strain interpretation is still under
+    benchmark review, so this output should be treated as provisional and not
+    as validated quantitative evidence.
+    """
     print("[figure] wire_strain_2d")
     cfg = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
     run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_strain", timeout=600)
@@ -1308,33 +1362,42 @@ def fig_qw_potential_profile(output_dir: Path) -> None:
 
 
 def fig_qw_wavefunctions(output_dir: Path) -> None:
-    """qw_wavefunctions.png: |psi(z)|^2 per band for lowest CB states."""
+    """qw_wavefunctions.png: |psi(z)|^2 per band for selected low-index states.
+
+    Known-risk figure. Chapter 03 currently overclaims this as a conduction-band
+    view, but the generator loads only the first few eigenstates. Keep this
+    output provisional until the state indexing is repaired.
+    """
     print("[figure] qw_wavefunctions")
     # Always re-run the QW to ensure fresh data
     cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
     run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
+    numvb = read_config_int(cfg, "numvb")
+    n_cb_show = 4
     n_z = 101  # FDstep from config
     try:
-        z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=4, n_z=n_z)
+        z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=numvb + n_cb_show, n_z=n_z)
     except FileNotFoundError:
         print("  WARNING: no eigenfunction data found, skipping.")
         return
 
-    if z.size == 0:
+    if z.size == 0 or wf.shape[0] < numvb + 1:
         print("  WARNING: no wavefunction data found, skipping.")
         return
 
-    n_show = min(wf.shape[0], 4)
+    cb_wf = wf[numvb:numvb + n_cb_show]
+    n_show = min(cb_wf.shape[0], n_cb_show)
     fig, axes = plt.subplots(1, n_show, figsize=(3.5 * n_show, 4), sharey=True)
     if n_show == 1:
         axes = [axes]
     for idx in range(n_show):
         ax = axes[idx]
-        psi2_total = np.sum(wf[idx] ** 2, axis=1)
+        state_number = numvb + idx + 1
+        psi2_total = np.sum(cb_wf[idx] ** 2, axis=1)
         ax.plot(z, psi2_total, color="#17becf", linewidth=1.2)
         ax.fill_between(z, 0, psi2_total, alpha=0.15, color="#17becf")
         ax.set_xlabel(r"$z$ (\u00C5)")
-        ax.set_title(f"State {idx + 1}")
+        ax.set_title(f"State {state_number} (CB{idx + 1})")
         # Zoom to region where wavefunction is non-negligible
         nonzero = psi2_total > 0.01 * psi2_total.max()
         if np.any(nonzero):
@@ -1342,7 +1405,11 @@ def fig_qw_wavefunctions(output_dir: Path) -> None:
             z_hi = z[nonzero][-1] + 20
             ax.set_xlim(z_lo, z_hi)
     axes[0].set_ylabel(r"$|\psi(z)|^2$")
-    fig.suptitle(r"QW probability density (AlSbW/GaSbW/InAsW, $k_{\parallel}=0$)", fontsize=12)
+    fig.suptitle(
+        rf"QW conduction-state probability density (states {numvb + 1}-{numvb + n_show}, "
+        r"AlSbW/GaSbW/InAsW, $k_{\parallel}=0$)",
+        fontsize=12,
+    )
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "qw_wavefunctions.png")
     plt.close(fig)
@@ -1471,7 +1538,13 @@ def fig_gfactor_components(output_dir: Path) -> None:
 
 
 def fig_gfactor_zeeman(output_dir: Path) -> None:
-    """gfactor_zeeman.png: Zeeman splitting diagram (schematic)."""
+    """gfactor_zeeman.png: Zeeman splitting diagram.
+
+    Derived figure. It visualizes the linear Zeeman energy shift implied by the
+    parsed bulk ``g_z`` value using ``Delta E = ± mu_B g_z B / 2`` in meV.
+    This is not a direct solver spectrum, but its slope must remain consistent
+    with the computed g-factor.
+    """
     print("[figure] gfactor_zeeman")
     # Re-run CB bulk GaAs to get gfactor
     cfg_path = CONFIG_DIR / "gfactor_bulk_gaas_cb.cfg"
@@ -1484,19 +1557,23 @@ def fig_gfactor_zeeman(output_dir: Path) -> None:
     else:
         gx, gy, gz = -0.5, -0.5, -0.5
 
-    g = gz  # use z-component for the schematic
+    g = gz  # use z-component for the derived visualization
 
     fig, ax = plt.subplots(figsize=(5, 4))
     B_values = np.linspace(0, 10, 100)  # Tesla
-    E_up = 0.5 * g * B_values   # m_j = +1/2
-    E_dn = -0.5 * g * B_values  # m_j = -1/2
+    zeeman_prefactor = 0.5 * BOHR_MAGNETON_MEV_PER_T * g
+    E_up = zeeman_prefactor * B_values   # m_j = +1/2
+    E_dn = -zeeman_prefactor * B_values  # m_j = -1/2
 
     ax.plot(B_values, E_up, color="#d62728", linewidth=1.5, label=r"$m_J = +\frac{1}{2}$")
     ax.plot(B_values, E_dn, color="#1f77b4", linewidth=1.5, label=r"$m_J = -\frac{1}{2}$")
     ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
     ax.set_xlabel("Magnetic field $B$ (T)")
-    ax.set_ylabel("Zeeman energy (meV)")
-    ax.set_title(f"Zeeman splitting ($g_z = {g:.3f}$)")
+    ax.set_ylabel(r"Energy shift $\Delta E$ (meV)")
+    ax.set_title(
+        f"Derived Zeeman shift ($g_z = {g:.3f}$, "
+        f"slope = {zeeman_prefactor:.4f} meV/T)"
+    )
     ax.legend(loc="best")
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "gfactor_zeeman.png")
@@ -1943,7 +2020,12 @@ def fig_convergence_fd_order(output_dir: Path) -> None:
 
 
 def fig_timing_dense_vs_sparse(output_dir: Path) -> None:
-    """timing_dense_vs_sparse.png: timing comparison dense vs sparse."""
+    """timing_dense_vs_sparse.png: timing comparison dense vs sparse.
+
+    Derived illustrative benchmark. It measures wall-clock runtime for two
+    different problem classes and is not a controlled apples-to-apples solver
+    benchmark.
+    """
     print("[figure] timing_dense_vs_sparse")
     # Run QW (dense) and wire (sparse) and compare timing from stdout.
     # This is approximate -- we measure wall-clock time.
@@ -2074,10 +2156,21 @@ def fig_bulk_inas_bands(output_dir: Path) -> None:
 
 
 def fig_qcse_stark_shift(output_dir: Path) -> None:
-    """qcse_stark_shift.png: QW subbands at 0 field vs -70 kV/cm — side by side."""
+    """qcse_stark_shift.png: QW subbands at two electric fields.
+
+    Derived comparison figure. It overlays direct solver outputs from two runs,
+    but the panel labels and Stark annotations are post-processed in Python and
+    therefore require explicit benchmark validation before quantitative use.
+    """
     print("[figure] qcse_stark_shift")
     cfg_zero = CONFIG_DIR / "sc_qcse_gaas_algaas.cfg"
     cfg_field = CONFIG_DIR / "sc_qcse_gaas_algaas_ef.cfg"
+    field_ev_per_angstrom = read_config_scalar(cfg_field, "EFParams")
+    field_label = format_field_label(field_ev_per_angstrom)
+    field_title = (
+        f"QCSE: Band-edge tilt at $F = {field_ev_per_angstrom:+.3f}$ eV/$\\AA$ "
+        f"({field_label})"
+    )
 
     # Run zero-field config
     result = run_executable(EXE_BAND, cfg_zero, REPO_ROOT, label="qcse_zero_field",
@@ -2120,15 +2213,15 @@ def fig_qcse_stark_shift(output_dir: Path) -> None:
     ax_left.plot(z0, EC0, color="#17becf", linewidth=1.5, label=r"$E_C$ (0 field)")
     ax_left.plot(z0, EV0, color="#d62728", linewidth=1.5, label=r"$E_V$ (0 field)")
     ax_left.plot(z_ef, EC_ef, "--", color="#17becf", linewidth=1.3,
-                alpha=0.8, label=r"$E_C$ (-70 kV/cm)")
+                alpha=0.8, label=rf"$E_C$ ({field_label})")
     ax_left.plot(z_ef, EV_ef, "--", color="#d62728", linewidth=1.3,
-                alpha=0.8, label=r"$E_V$ (-70 kV/cm)")
+                alpha=0.8, label=rf"$E_V$ ({field_label})")
     # Mark well region
     ax_left.axvline(-30, color="grey", linewidth=0.5, linestyle=":")
     ax_left.axvline(30, color="grey", linewidth=0.5, linestyle=":")
     ax_left.set_xlabel(r"$z$ (\u00C5)")
     ax_left.set_ylabel("Energy (eV)")
-    ax_left.set_title("QCSE: Band-edge tilt under field")
+    ax_left.set_title(field_title)
     ax_left.legend(loc="best", fontsize=7)
 
     # Right panel: energy level diagram with horizontal lines
@@ -2161,7 +2254,7 @@ def fig_qcse_stark_shift(output_dir: Path) -> None:
 
         # Column labels
         ax_right.set_xticks([col_zero, col_field])
-        ax_right.set_xticklabels(["0 field", "-70 kV/cm"])
+        ax_right.set_xticklabels(["0 field", field_label])
         ax_right.set_ylabel("Energy (eV)")
         ax_right.set_title("Subband Stark shift (meV)")
 
@@ -2169,7 +2262,7 @@ def fig_qcse_stark_shift(output_dir: Path) -> None:
         from matplotlib.lines import Line2D
         legend_elements = [
             Line2D([0], [0], color="#1f77b4", linewidth=2, label="0 field"),
-            Line2D([0], [0], color="#ff7f0e", linewidth=2, label="-70 kV/cm"),
+            Line2D([0], [0], color="#ff7f0e", linewidth=2, label=field_label),
         ]
         ax_right.legend(handles=legend_elements, loc="best", fontsize=8)
     else:
@@ -2757,7 +2850,11 @@ def fig_qw_potential_profile_gaas(output_dir: Path) -> None:
 
 
 def fig_eigenvector_block_structure(output_dir: Path) -> None:
-    """eigenvector_block_structure.png: schematic of 8N eigenvector layout."""
+    """eigenvector_block_structure.png: schematic of 8N eigenvector layout.
+
+    Non-computed pedagogical figure. It is a hand-drawn layout aid, not an
+    output artifact from the eigensolver.
+    """
     print("[figure] eigenvector_block_structure")
     fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -2816,7 +2913,12 @@ def fig_eigenvector_block_structure(output_dir: Path) -> None:
 
 
 def fig_perband_density(output_dir: Path) -> None:
-    """perband_density.png: |psi_b(z)|^2 for each of 8 bands, CB1 state."""
+    """perband_density.png: |psi_b(z)|^2 for each of 8 bands, selected state.
+
+    Known-risk figure. The selected state and caption are currently under
+    dispute, so this plot should not be treated as a supported quantitative
+    workflow until the indexing and interpretation are revalidated.
+    """
     print("[figure] perband_density")
     cfg = CONFIG_DIR / "qw_alsbw_gasbw_inasw.cfg"
     result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="qw_alsbw_gasbw_inasw")
@@ -2824,7 +2926,9 @@ def fig_perband_density(output_dir: Path) -> None:
         print("  WARNING: broken-gap QW run failed, skipping.")
         return
     n_z = 101
-    n_ev = 11  # load states 1-11 so we can access CB1 = state 11 (0-indexed: 10)
+    numvb = read_config_int(cfg, "numvb")
+    cb1_state = numvb + 1
+    n_ev = cb1_state
     try:
         z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=n_ev, n_z=n_z)
     except FileNotFoundError:
@@ -2840,7 +2944,7 @@ def fig_perband_density(output_dir: Path) -> None:
     band_colors = ["#d62728", "#1f77b4", "#2ca02c", "#9467bd",
                    "#ff7f0e", "#e377c2", "#17becf", "#bcbd22"]
 
-    psi = wf[10]  # CB1 = state 11 (0-indexed), shape (n_z, 8)
+    psi = wf[cb1_state - 1]  # CB1 is the first conduction-like state in the selected window.
     psi2 = psi ** 2
 
     fig, axes = plt.subplots(2, 4, figsize=(12, 6), sharex=True, sharey=True)
@@ -2862,7 +2966,10 @@ def fig_perband_density(output_dir: Path) -> None:
     for ax in [axes[0], axes[4]]:
         ax.set_ylabel(r"$|\psi_b(z)|^2$")
 
-    fig.suptitle(r"Per-band probability density for CB1 (state 11, $k_{\parallel}=0$)", fontsize=11)
+    fig.suptitle(
+        rf"Per-band probability density for CB1 (state {cb1_state}, $k_{{\parallel}}=0$)",
+        fontsize=11,
+    )
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "perband_density.png", dpi=150)
     plt.close(fig)
@@ -3218,7 +3325,11 @@ def fig_qw_strained_bands(output_dir: Path) -> None:
 
 
 def fig_hh_lh_ordering(output_dir: Path) -> None:
-    """hh_lh_ordering.png: VB ordering under unstrained, compressive, tensile."""
+    """hh_lh_ordering.png: VB ordering under unstrained, compressive, tensile.
+
+    Derived qualitative figure. The displayed level shifts are illustrative and
+    must not be mistaken for direct solver output.
+    """
     print("[figure] hh_lh_ordering")
     fig, axes = plt.subplots(1, 3, figsize=(9, 4), sharey=True)
 
@@ -3264,7 +3375,11 @@ def fig_hh_lh_ordering(output_dir: Path) -> None:
 
 
 def fig_strained_unit_cell(output_dir: Path) -> None:
-    """strained_unit_cell.png: InAs unit cell before/after biaxial strain."""
+    """strained_unit_cell.png: InAs unit cell before/after biaxial strain.
+
+    Non-computed pedagogical figure. It sketches lattice distortion from
+    hard-coded strain values and is not solver-generated.
+    """
     print("[figure] strained_unit_cell")
     fig, (ax_free, ax_strained) = plt.subplots(1, 2, figsize=(8, 4))
 
@@ -3321,7 +3436,12 @@ def fig_strained_unit_cell(output_dir: Path) -> None:
 
 
 def fig_hh_lh_splitting_vs_mismatch(output_dir: Path) -> None:
-    """hh_lh_splitting_vs_mismatch.png: linear scaling of HH/LH splitting."""
+    """hh_lh_splitting_vs_mismatch.png: linear scaling of HH/LH splitting.
+
+    Derived summary plot. It re-plots chapter table values rather than reading
+    solver outputs directly, so it should not be treated as independent
+    validation evidence.
+    """
     print("[figure] hh_lh_splitting_vs_mismatch")
 
     # Data from Ch04 Sec 7.4 table (InAs under compressive strain)
@@ -3458,12 +3578,16 @@ def _read_absorption(output_dir: Path, polarization: str) -> Tuple[np.ndarray, n
 
 
 def fig_qw_absorption_spectrum(output_dir: Path) -> None:
-    """qw_absorption_spectrum.png: TE and TM interband absorption for a GaAs/AlGaAs QW."""
+    """qw_absorption_spectrum.png: TE and TM interband absorption for a GaAs/AlGaAs QW.
+
+    Known-risk figure. Current TE/TM behavior is under investigation and this
+    plot is not safe to use as validated polarization evidence.
+    """
     print("[figure] qw_absorption_spectrum")
 
-    # Always run with the interband config — ISBT runs may leave stale data
-    # with the wrong energy range (0.02-0.30 eV vs 1.3-2.0 eV).
-    cfg = CONFIG_DIR / "qw_gaas_algaas_optics_full.cfg"
+    # Use a dedicated interband-only config so the figure reflects just the
+    # TE/TM absorption physics instead of a heavier mixed optics workflow.
+    cfg = CONFIG_DIR / "qw_gaas_algaas_absorption.cfg"
     if cfg.exists():
         result = run_executable(EXE_BAND, cfg, REPO_ROOT,
                                label="qw_absorption_spectrum", timeout=600)
@@ -3500,7 +3624,12 @@ def fig_qw_absorption_spectrum(output_dir: Path) -> None:
 
 
 def fig_qw_absorption_strained(output_dir: Path) -> None:
-    """qw_absorption_strained.png: strained vs unstrained QW absorption (TE and TM panels)."""
+    """qw_absorption_strained.png: strained vs unstrained QW absorption (TE and TM panels).
+
+    Known-risk figure. This comparison depends on manually staged paired files
+    and currently does not support the strong polarization claims made in the
+    docs.
+    """
     print("[figure] qw_absorption_strained")
 
     # Look for strained/unstrained data pairs
@@ -3577,7 +3706,11 @@ def fig_qw_absorption_strained(output_dir: Path) -> None:
 
 
 def fig_qw_absorption_vs_width(output_dir: Path) -> None:
-    """qw_absorption_vs_width.png: absorption curves for different QW well widths."""
+    """qw_absorption_vs_width.png: absorption curves for different QW well widths.
+
+    Known-risk figure. The width sweep is ad hoc and the current outputs are
+    not benchmarked well enough for quantitative width-trend claims.
+    """
     print("[figure] qw_absorption_vs_width")
 
     # Check for any absorption data -- look for convention:
@@ -3997,7 +4130,9 @@ def fig_absorption_with_exciton(output_dir: Path) -> None:
       2. Coulomb enhancement only (Sommerfeld factor applied)
       3. Full excitonic (discrete peaks + continuum enhancement)
 
-    If data is missing, skip with warning.
+    Derived model figure. The excitonic enhancement and bound-state peak are
+    constructed in Python from heuristic assumptions rather than emitted by the
+    solver, so the result is not direct quantitative output.
     """
     print("[figure] absorption_with_exciton")
 
@@ -4060,6 +4195,8 @@ def fig_absorption_excitonic_TE(output_dir: Path) -> None:
 
     Runs the full optics config to generate absorption_TE.dat and exciton.dat,
     then plots alpha_TE vs E with a vertical dashed line at E_gap - E_binding.
+    Derived annotation figure: the dashed resonance is a post-processed marker,
+    not a computed excitonic peak shape.
     """
     print("[figure] absorption_excitonic_TE")
 
@@ -4113,7 +4250,7 @@ def fig_absorption_excitonic_TE(output_dir: Path) -> None:
 
     ax.set_xlabel("Photon Energy (eV)")
     ax.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
-    ax.set_title("Excitonic TE Absorption", fontsize=12)
+    ax.set_title("TE Absorption with Exciton Marker", fontsize=12)
     ax.legend(loc="best", fontsize=9, framealpha=0.9)
     ax.grid(True, alpha=0.3, linewidth=0.5)
     ax.set_axisbelow(True)
@@ -4127,7 +4264,11 @@ def fig_scattering_lifetime_vs_width(output_dir: Path) -> None:
     """scattering_lifetime_vs_width.png: LO-phonon scattering rate / lifetime vs subband transition.
 
     Reads output/scattering_rates.dat.  Plots scattering rate as a bar chart
-    grouped by subband transition.  If data is missing, skip with warning.
+    grouped by subband transition. This is currently a derived post-processing
+    figure and must not be treated as a validated lifetime-vs-width benchmark.
+    The current parser semantics in this function are provisional legacy
+    assumptions kept only for triage visibility while the scattering path is
+    being audited.
     """
     print("[figure] scattering_lifetime_vs_width")
 
@@ -4141,14 +4282,23 @@ def fig_scattering_lifetime_vs_width(output_dir: Path) -> None:
     if data.ndim == 1:
         data = data.reshape(1, -1)
 
-    # Expected columns: transition_index  transition_energy(eV)  rate(ps^-1)  [lifetime(ps)]
+    # PROVISIONAL LEGACY INTERPRETATION:
+    # This block still assumes a simple column layout for triage plotting only.
+    # Those assumptions are not trusted physics semantics yet, and the derived
+    # `rate` / `lifetime` arrays below must not be read as authoritative until
+    # the scattering parser is repaired and benchmarked.
+    #
+    # Assumed columns:
+    #   transition_index  transition_energy(eV)  rate(ps^-1)  [lifetime(ps)]
     if data.shape[1] < 3:
         print("  WARNING: scattering_rates.dat has fewer than 3 columns, skipping.")
         return
 
     idx = data[:, 0].astype(int)
     transition_energy = data[:, 1]
+    # Provisional legacy mapping for triage only; not validated semantics.
     rate = data[:, 2]
+    # Derived from the provisional `rate` column above; not authoritative.
     lifetime = 1.0 / np.maximum(rate, 1e-12)  # ps, avoid division by zero
 
     fig, (ax_rate, ax_life) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
@@ -4157,13 +4307,13 @@ def fig_scattering_lifetime_vs_width(output_dir: Path) -> None:
     colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(idx)))
     ax_rate.bar(range(len(idx)), rate, color=colors, edgecolor="black", linewidth=0.5)
     ax_rate.set_ylabel(r"Scattering Rate (ps$^{-1}$)")
-    ax_rate.set_title("LO-Phonon Scattering Rates by Subband Transition", fontsize=12)
+    ax_rate.set_title("Legacy Scattering Summary by Transition", fontsize=12)
     ax_rate.grid(True, alpha=0.3, linewidth=0.5, axis="y")
     ax_rate.set_axisbelow(True)
 
     # Bottom panel: lifetime vs transition energy
     ax_life.bar(range(len(idx)), lifetime, color=colors, edgecolor="black", linewidth=0.5)
-    ax_life.set_xlabel("Subband Transition Index")
+    ax_life.set_xlabel("Transition Energy Label (legacy parser)")
     ax_life.set_ylabel("Lifetime (ps)")
     ax_life.grid(True, alpha=0.3, linewidth=0.5, axis="y")
     ax_life.set_axisbelow(True)
@@ -4187,14 +4337,21 @@ def _run_scattering_field_sweep(fields_kVcm: list) -> list:
     overrides EFParams for each field value, and extracts the total scattering lifetime
     (inverse of sum of all emission + absorption rates) from output/scattering_rates.dat.
 
-    EFParams units: eV/Angstrom.  Conversion: 1 kV/cm = 1e-4 eV/A.
+    Known-risk helper. This sweep is part of a currently untrusted plotting
+    path: field conversion semantics and scattering parsing are under review, so
+    its outputs must be treated as provisional triage data, not a supported
+    benchmark workflow.
+
+    EFParams units are eV/Angstrom, numerically equal to V/Angstrom for an
+    electron.  Since 1 V/Angstrom = 1e5 kV/cm, the sweep uses
+    EFParams = field_kVcm * 1e-5.
     """
     template_path = CONFIG_DIR / "qw_gaas_algaas_qcse_scattering.cfg"
     template_text = template_path.read_text()
     results = []
     for field in fields_kVcm:
-        # Convert kV/cm -> eV/Angstrom
-        ef_value = field * 1e-4
+        # Convert kV/cm -> eV/Angstrom (same numeric value as V/Angstrom).
+        ef_value = field * 1e-5
         lines = []
         for line in template_text.splitlines():
             if line.strip().startswith("EFParams"):
@@ -4240,6 +4397,10 @@ def fig_scattering_lifetime_vs_field(output_dir: Path) -> None:
 
     Runs bandStructure for multiple electric field values with Scattering: T
     to build the curve.  Falls back to reading a pre-existing sweep file.
+
+    Known-risk figure. This is not a normal supported workflow at the moment:
+    the field conversion and total-rate interpretation are under active audit,
+    so the resulting curve should not be used as validated physics evidence.
     """
     print("[figure] scattering_lifetime_vs_field")
 
@@ -4282,7 +4443,7 @@ def _plot_scattering_lifetime_vs_field(fields: np.ndarray, tau: np.ndarray) -> N
     ax.semilogy(fields, tau, "o-", color="#1f77b4", linewidth=1.5, markersize=5)
     ax.set_xlabel("Electric field (kV/cm)")
     ax.set_ylabel("Scattering lifetime (ps)")
-    ax.set_title("LO-phonon scattering lifetime vs electric field", fontsize=12)
+    ax.set_title("Provisional LO-Phonon Lifetime vs Electric Field", fontsize=12)
     ax.grid(True, alpha=0.3, linewidth=0.5)
     ax.set_axisbelow(True)
 
@@ -4897,6 +5058,9 @@ def fig_wire_gfactor_vs_size(output_dir: Path) -> None:
     runs gfactorCalculation for each, and plots the three tensor
     components against wire width.  A horizontal reference line marks
     the bulk GaAs g-factor.
+
+    Known-risk figure. The wire g-factor sweep is still provisional and should
+    not be treated as a validated size-dependence benchmark.
     """
     print("[figure] wire_gfactor_vs_size")
 
@@ -5276,6 +5440,12 @@ def main() -> None:
         help="Skip cmake build step (assume executables exist).",
     )
     parser.add_argument(
+        "figures",
+        nargs="*",
+        metavar="FIG",
+        help="Optional positional figure names for single-figure regeneration.",
+    )
+    parser.add_argument(
         "--only",
         nargs="+",
         metavar="FIG",
@@ -5292,9 +5462,11 @@ def main() -> None:
     output_dir = REPO_ROOT / "output"
 
     # Determine which figures to generate
-    if args.only:
+    selected_names = args.only if args.only else args.figures
+
+    if selected_names:
         to_run = {}
-        for name in args.only:
+        for name in selected_names:
             if name in ALL_FIGURES:
                 to_run[name] = ALL_FIGURES[name]
             else:

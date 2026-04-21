@@ -476,25 +476,46 @@ For a QW grown along $z$, the absorption coefficient separates naturally into TE
 - **TE polarization** (electric field in the $x$--$y$ plane): $\quad M_{\text{TE}}^2 = |M_x|^2 + |M_y|^2$
 - **TM polarization** (electric field along $z$): $\quad M_{\text{TM}}^2 = |M_z|^2$
 
-At the zone center ($k_\parallel = 0$), the selection rules from Section 6.4 apply exactly. For a GaAs/Al$_{0.3}$Ga$_{0.7}$As QW (10 nm well), the zone-center matrix elements (from Section 6.6.6) give:
+At the zone center ($k_\parallel = 0$), the selection rules from Section 6.4
+apply exactly: HH-related transitions feed TE, while TM couples mainly to the
+LH/SO sector. In practice the plotted absorption curves are $k_\parallel$-
+integrated spectra, so the clean zone-center rules are softened by HH/LH mixing
+away from the zone center and by the chosen linewidth broadening.
 
-| Transition | $M_{\text{TE}}^2$ (eV$^2 \cdot$ angstrom$^2$) | $M_{\text{TM}}^2$ (eV$^2 \cdot$ angstrom$^2$) | TE/TM ratio |
-|---|---|---|---|
-| CB1 $\to$ VB1/2 (HH) | 103.2 | $\approx 0$ | $\infty$ (TM forbidden) |
-| CB1 $\to$ VB7/8 (LH) | $\approx 0.06$ | 64.8 | $\approx 1:1000$ (TM dominant) |
-| CB2 $\to$ VB7/8 (LH) | $\approx 0.06$ | 64.8 | $\approx 1:1000$ (TM dominant) |
+For the current GaAs/Al$_{0.3}$Ga$_{0.7}$As benchmark run, the robust statement
+is qualitative rather than fully quantitative:
 
-The HH-related transitions dominate the TE absorption spectrum near the fundamental gap ($\sim$1.56 eV), while the LH-related transitions produce a weaker TE contribution but a strong TM peak at slightly higher energy ($\sim$1.58 eV). The TE/TM splitting is a direct consequence of the angular momentum selection rule $\Delta J_z = \pm 1$ for dipole-allowed transitions: the HH states ($J_z = \pm 3/2$) couple to the CB ($J_z = \pm 1/2$) exclusively via the in-plane circular polarizations $p_\pm$, while the LH states ($J_z = \pm 1/2$) couple via $p_z$.
+1. The TE spectrum turns on at lower photon energy than TM.
+2. TE carries the larger total oscillator strength over the plotted range.
+3. The TM response remains visible and shifts its strongest features to higher
+   energy, consistent with larger LH/SO participation.
 
-At finite $k_\parallel$, the HH/LH mixing induced by the off-diagonal k.p terms relaxes these strict selection rules. The TM matrix element for HH transitions, which is exactly zero at $k_\parallel = 0$, grows as $k_\parallel^2$ near the zone center. For the 10 nm GaAs QW at $k_\parallel = 0.2$ angstrom$^{-1}$, $|M_z|^2$ for the CB1-to-HH1 transition reaches $\sim$1--2 eV$^2 \cdot$ angstrom$^2$, compared to $|M_{\text{TE}}^2| \approx 90$ eV$^2 \cdot$ angstrom$^2$ -- still small but no longer identically zero. The code captures this automatically because the eigenvectors of the full 8-band Hamiltonian already contain the correct band mixing at each $k_\parallel$.
+This is physically aligned with the nextnano absorption tutorial for a simple
+QW, which likewise shows an earlier, stronger TE edge and a weaker TM response
+whose main weight sits at higher energy. What we have **not** yet established
+for this code path is a tutorial-grade quantitative benchmark of the exact
+matrix-element magnitudes or TE/TM peak ratios.
 
 ![Interband absorption spectrum](../figures/qw_absorption_spectrum.png)
 
-**Figure 6.4:** Interband absorption coefficient $\alpha(\hbar\omega)$ for a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well at $T = 300$ K with Lorentzian broadening $\gamma_L = 30$ meV. The TE spectrum (blue) shows strong absorption near the HH band edge, while the TM spectrum (orange) is suppressed at the fundamental gap but grows at higher energies where LH-related transitions contribute.
+**Figure 6.4:** Interband absorption coefficient $\alpha(\hbar\omega)$ for a
+10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well at $T = 300$ K using the
+lightweight interband benchmark config. In the current solver output the TE
+curve turns on earlier and carries more total spectral weight, while the TM
+curve remains weaker and peaks at higher photon energy. This matches the
+expected HH-dominated TE edge qualitatively, but should still be treated as a
+qualitative validation figure rather than a precision benchmark.
 
 ![Excitonic TE absorption spectrum](../figures/absorption_excitonic_TE.png)
 
-**Figure 6.4b:** TE-polarized interband absorption spectrum with excitonic corrections for a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As QW. The exciton resonance appears as a sharp peak just below the band edge, shifted downward by the binding energy $E_b \approx 9.4$ meV from the free-carrier absorption onset. This is the Sommerfeld-enhanced absorption: the Coulomb attraction between the photoexcited electron and hole concentrates oscillator strength into a discrete spectral line below the continuum. Above the band edge, the absorption is enhanced by the 2D Sommerfeld factor $S_{2D}(E)$ (approaching 4 at the edge), smoothly merging the bound-state peak with the continuum. This excitonic peak is a hallmark of high-quality QW structures and is routinely observed in low-temperature photoluminescence excitation (PLE) and absorption measurements. Its energy position provides a direct experimental measure of the exciton binding energy.
+**Figure 6.4b:** TE-polarized interband absorption spectrum for a 10 nm
+GaAs/Al$_{0.3}$Ga$_{0.7}$As QW with a post-processed exciton-resonance marker.
+The underlying blue curve is the computed TE absorption, while the dashed
+vertical line marks $E_g - E_b$ using the binding energy written to
+`exciton.dat`. This figure is therefore useful as an annotation of where the
+lowest excitonic resonance is expected, but it is not a directly computed
+excitonic peak shape and should not be read as quantitative lineshape
+validation.
 
 ### 6.7.4 Lineshape broadening
 
@@ -538,7 +559,12 @@ The nextnano tutorial 5.9.9 reproduces the interband absorption spectrum of a st
 
 2. **Absorption formula.** The absorption coefficient is computed from the Fermi golden rule expression derived in Section 6.7.1, with Lorentzian broadening of $\gamma \approx 30$ meV at room temperature. The large linewidth reflects thermal broadening and alloy disorder in the InGaAs alloy.
 
-3. **TE/TM splitting.** The computed absorption spectrum shows a clear separation between the TE and TM polarized components. The TE spectrum has a sharp onset at the HH-related band gap, followed by a step-like increase (the signature of the 2D joint density of states). The TM spectrum is weaker at the band edge but becomes comparable at higher energies where the LH-related transitions contribute.
+3. **TE/TM splitting.** The nextnano benchmark shows the expected qualitative
+pattern: TE has the earlier, stronger absorption edge, while TM is weaker at
+the edge and becomes more visible only at higher energy where LH-related
+transitions contribute. Our current unstrained GaAs/AlGaAs benchmark reproduces
+that ordering qualitatively, but the strained InGaAs reproduction has not yet
+been validated to tutorial grade.
 
 4. **Strain effect.** The compressive strain in the InGaAs layer splits the HH and LH band edges at $k_\parallel = 0$, moving the HH above the LH. This increases the TE/TM polarization contrast at the band edge compared to an unstrained QW (where HH and LH are degenerate at $k_\parallel = 0$). The code reproduces this through the Bir-Pikus strain terms in `hamiltonianConstructor.f90`.
 
@@ -546,11 +572,19 @@ The physics in the Dumitras calculation is identical to what this code implement
 
 ![Strained QW absorption](../figures/qw_absorption_strained.png)
 
-**Figure 6.5:** Interband absorption for a strained In$_{0.53}$Ga$_{0.47}$As/Al$_{0.48}$In$_{0.52}$As QW. Compressive strain splits the HH and LH band edges, enhancing the TE/TM polarization contrast at the absorption edge. The TE onset is dominated by HH-CB transitions, while TM absorption peaks at the LH-related transitions.
+**Figure 6.5:** Interband absorption for a strained
+In$_{0.53}$Ga$_{0.47}$As/Al$_{0.48}$In$_{0.52}$As QW. This comparison is still a
+provisional figure: the expected physics is that compressive strain increases
+the TE/TM contrast by pushing HH above LH, but that specific benchmark has not
+yet been reproduced end-to-end against the nextnano tutorial in this codebase.
 
 ![Absorption vs well width](../figures/qw_absorption_vs_width.png)
 
-**Figure 6.6:** Interband absorption coefficient for GaAs/Al$_{0.3}$Ga$_{0.7}$As QWs of varying well width. Narrower wells show blue-shifted absorption edges and increased confinement energy, while wider wells approach the bulk GaAs band gap.
+**Figure 6.6:** Interband absorption coefficient for GaAs/Al$_{0.3}$Ga$_{0.7}$As
+QWs of varying well width. The qualitative expectation is a blue shift for
+narrower wells, but this width sweep is not yet backed by an automated
+parameter-sweep benchmark and should be treated as exploratory rather than
+validated.
 
 ---
 
@@ -764,11 +798,22 @@ The temperature dependence of the scattering rate has direct implications for de
 
 ![Scattering lifetime vs well width](../figures/scattering_lifetime_vs_width.png)
 
-**Figure 6.10:** LO-phonon scattering lifetime $\tau$ vs quantum well width for the CB1$\to$CB2 intersubband transition in GaAs/Al$_{0.3}$Ga$_{0.7}$As at $T = 300$ K. The lifetime increases for narrow wells (reduced form-factor overlap) and approaches the 3D Froehlich limit for wide wells.
+**Figure 6.10:** Legacy triage plot derived from a single
+`scattering_rates.dat` file. Despite the filename, the current generator does
+not perform a well-width sweep here; it visualizes per-transition rates and
+derived lifetimes under provisional parser assumptions. This figure is kept
+only to expose the scattering-output format during the audit and should not be
+interpreted as a validated lifetime-vs-width benchmark.
 
 ![LO-phonon scattering lifetime vs electric field](../figures/scattering_lifetime_vs_field.png)
 
-**Figure 6.10b:** LO-phonon scattering lifetime vs applied electric field for the CB1$\to$CB2 intersubband transition in a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As QW at $T = 300$ K. An electric field along the growth direction tilts the band edges (quantum-confined Stark effect), modifying the carrier envelope functions and hence the Froehlich form-factor overlap integrals $|I_{ij}(q_z)|^2$. As the field increases, the electron and hole wavefunctions are pulled toward opposite sides of the well, reducing their spatial overlap with the phonon field and altering the scattering matrix element. The resulting change in scattering rate has direct implications for device performance: in biased quantum well infrared photodetectors (QWIPs), the field-tunable scattering lifetime affects carrier capture and transport; in quantum cascade lasers, it modifies the upper-state lifetime that governs population inversion.
+**Figure 6.10b:** Provisional LO-phonon lifetime sweep versus applied electric
+field for a GaAs/Al$_{0.3}$Ga$_{0.7}$As QW. The qualitative idea is reasonable:
+an axial field tilts the well and changes the envelope-function overlap entering
+the Froehlich form factor. However, this plot is still part of the
+known-risk path because both the field conversion and the interpretation of
+`scattering_rates.dat` are under audit. It should be treated as exploratory,
+not as a validated device-level trend.
 
 ### 6.11.5 Excitonic effects in quantum wells
 
@@ -799,7 +844,13 @@ For a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As QW, the computed binding energy is appro
 
 ![Absorption with excitonic corrections](../figures/absorption_with_exciton.png)
 
-**Figure 6.12:** Interband absorption spectrum with (red) and without (blue dashed) excitonic corrections. The excitonic correction adds a sharp peak at $E = E_g - E_b$ and enhances the continuum absorption above the band edge by the 2D Sommerfeld factor. The enhancement is most pronounced near the absorption onset.
+**Figure 6.12:** Derived comparison between the computed free-carrier TE
+absorption and a heuristic excitonic post-processing model. The red curve is
+constructed in Python by applying a simplified Sommerfeld enhancement and a
+Lorentzian bound-state peak below the onset; it is not direct solver output.
+The figure is therefore best read as a schematic illustration of how excitonic
+physics should modify the spectrum, not as a quantitatively validated
+prediction.
 
 ### 6.11.6 Reference
 
@@ -856,23 +907,32 @@ The computation framework -- `compute_optical_matrix_wire`, the `optical_transit
 
 ## 6.12 Validation
 
-The optical properties computed by the code have been validated against analytical limits and published literature values. The dominant uncertainty comes from the material parameters (particularly $E_P$) rather than the numerical implementation.
+The optical-properties chapter is only partially validated at present. Some
+subsections now have good qualitative anchors, but several figures remain
+provisional because their generators are schematic or their parsers are still
+under audit. The table below therefore separates what is currently supported
+from what still needs a benchmark closure.
 
 **Table 6.6:** Optical properties validation summary.
 
 | Quantity | Published | Computed | Reference |
 |----------|-----------|----------|-----------|
-| GaAs QW exciton binding (100 A) | ~10 meV | 9--12 meV (variational) | Harrison, Ch. 6 |
-| GaAs QW Bohr radius (100 A) | ~100 A | 90--120 A (from sweep) | Harrison, Fig. 6.5 |
-| LO-phonon lifetime (GaAs QW) | ~7--10 ps | 6--12 ps (from scattering module) | Ferreira & Bastard (1989) |
+| GaAs QW exciton binding (100 A) | few-meV to ~10 meV scale, method-dependent | variational sweep exists but needs rerun/provenance refresh before quoting a benchmark number | Harrison, Ch. 6 |
+| GaAs QW Bohr radius (100 A) | order 10 nm | width-sweep generator exists but needs rerun/provenance refresh before quoting a benchmark range | Harrison, Fig. 6.5 |
+| LO-phonon lifetime (GaAs QW) | ~7--10 ps | current scattering figures are provisional; no benchmark-quality number retained yet | Ferreira & Bastard (1989) |
 | ISBT dipole moment (GaAs QW) | $z_{12} \sim 10$ A | 8--14 A (width-dependent) | Liu & Capasso (2000) |
 | GaAs interband absorption edge | $E_g = 1.519$ eV | 1.519 eV | Vurgaftman (2001) |
 
 **Notes:**
 
-1. The exciton binding energy is computed variationally (Section 6.9) and agrees with Harrison's semi-analytical results to within 10--20%, limited by the 1S Gaussian trial wave function. The agreement improves for wider wells where the 2D limit is better approximated.
+1. The exciton binding energy is computed variationally (Section 6.9), but this
+   audit has not yet rerun and provenance-stamped the width sweep needed to
+   retain a precise validation number in the table above.
 
-2. The LO-phonon Froehlich scattering rate (Section 6.10) is computed from first principles using the Froehlich coupling constant $\alpha_F$ and the wave function overlap integrals. The computed lifetimes of 6--12 ps for the CB1-CB2 transition in a GaAs QW are consistent with the 7--10 ps range reported by Ferreira and Bastard for intersubband scattering at 300 K.
+2. The LO-phonon Froehlich scattering kernel (Section 6.10) is implemented, but
+   the current plotting/parsing path for scattering outputs is still under
+   repair. Quantitative lifetime claims therefore remain withheld until that
+   audit closes.
 
 3. The ISBT dipole moments scale linearly with well width in the thin-well limit ($z_{ij} \propto L$), consistent with the analytically known behavior of infinite square-well wave functions.
 

@@ -551,6 +551,7 @@ program kpfdm
 
   ! Print profile for QW mode
   if (cfg%confDir == 'z') then
+    call ensure_output_dir()
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
     do i = 1, cfg%fdStep, 1

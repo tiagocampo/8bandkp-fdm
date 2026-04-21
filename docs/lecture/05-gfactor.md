@@ -16,6 +16,19 @@ In a crystal, the orbital angular momentum is no longer a good quantum number. T
 
 ![Zeeman splitting of the conduction band doublet](../figures/gfactor_zeeman.png)
 
+The figure above is a **derived visualization**, not a direct spectrum computed
+at finite magnetic field. It takes the computed bulk $g_z$ value and plots the
+linear Zeeman energy shift
+
+$$
+\Delta E_\pm(B) = \pm \frac{\mu_B g_z B}{2},
+$$
+
+so the line slope is reported in physical units of meV/T. For bulk GaAs with
+$g_z \approx -0.315$, the expected slope magnitude is
+$\mu_B |g_z|/2 \approx 0.0091\;\mathrm{meV/T}$, which is the scale shown in the
+plot.
+
 ### 5.1.2 The 8-band spin matrices
 
 The code defines $8 \times 8$ spin matrices $\Sigma_x$, $\Sigma_y$, $\Sigma_z$ in the zincblende Kane basis. Their explicit form is initialized in `init_spin_matrices()` within `gfactor_functions.f90`. The basis ordering is:
