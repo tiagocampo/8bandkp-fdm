@@ -218,6 +218,22 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# Bulk doped GaAs self-consistent (uniform n-type, no barriers)
+add_test(
+    NAME regression_sc_bulk_gaas_doped
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_sc_bulk_doped.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/sc_bulk_gaas_doped.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_bulk_gaas_doped
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_sc_bulk_gaas_doped
+    PROPERTIES LABELS "regression"
+)
+
 # Wire GaAs rectangular wire band structure
 add_test(
     NAME regression_wire_gaas_rectangle
