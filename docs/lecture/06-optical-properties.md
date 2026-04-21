@@ -492,6 +492,10 @@ At finite $k_\parallel$, the HH/LH mixing induced by the off-diagonal k.p terms 
 
 **Figure 6.4:** Interband absorption coefficient $\alpha(\hbar\omega)$ for a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well at $T = 300$ K with Lorentzian broadening $\gamma_L = 30$ meV. The TE spectrum (blue) shows strong absorption near the HH band edge, while the TM spectrum (orange) is suppressed at the fundamental gap but grows at higher energies where LH-related transitions contribute.
 
+![Excitonic TE absorption spectrum](../figures/absorption_excitonic_TE.png)
+
+**Figure 6.4b:** TE-polarized interband absorption spectrum with excitonic corrections for a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As QW. The exciton resonance appears as a sharp peak just below the band edge, shifted downward by the binding energy $E_b \approx 9.4$ meV from the free-carrier absorption onset. This is the Sommerfeld-enhanced absorption: the Coulomb attraction between the photoexcited electron and hole concentrates oscillator strength into a discrete spectral line below the continuum. Above the band edge, the absorption is enhanced by the 2D Sommerfeld factor $S_{2D}(E)$ (approaching 4 at the edge), smoothly merging the bound-state peak with the continuum. This excitonic peak is a hallmark of high-quality QW structures and is routinely observed in low-temperature photoluminescence excitation (PLE) and absorption measurements. Its energy position provides a direct experimental measure of the exciton binding energy.
+
 ### 6.7.4 Lineshape broadening
 
 The delta function $\delta(\hbar\omega - \Delta E_{cv})$ in the absorption formula represents an idealized transition with infinite lifetime. Real transitions are broadened by two distinct mechanisms:
@@ -762,6 +766,10 @@ The temperature dependence of the scattering rate has direct implications for de
 
 **Figure 6.10:** LO-phonon scattering lifetime $\tau$ vs quantum well width for the CB1$\to$CB2 intersubband transition in GaAs/Al$_{0.3}$Ga$_{0.7}$As at $T = 300$ K. The lifetime increases for narrow wells (reduced form-factor overlap) and approaches the 3D Froehlich limit for wide wells.
 
+![LO-phonon scattering lifetime vs electric field](../figures/scattering_lifetime_vs_field.png)
+
+**Figure 6.10b:** LO-phonon scattering lifetime vs applied electric field for the CB1$\to$CB2 intersubband transition in a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As QW at $T = 300$ K. An electric field along the growth direction tilts the band edges (quantum-confined Stark effect), modifying the carrier envelope functions and hence the Froehlich form-factor overlap integrals $|I_{ij}(q_z)|^2$. As the field increases, the electron and hole wavefunctions are pulled toward opposite sides of the well, reducing their spatial overlap with the phonon field and altering the scattering matrix element. The resulting change in scattering rate has direct implications for device performance: in biased quantum well infrared photodetectors (QWIPs), the field-tunable scattering lifetime affects carrier capture and transport; in quantum cascade lasers, it modifies the upper-state lifetime that governs population inversion.
+
 ### 6.11.5 Excitonic effects in quantum wells
 
 The independent-particle absorption coefficient derived in Section 6.7 neglects the Coulomb attraction between the photoexcited electron and hole. This attraction produces bound **excitonic states** below the band gap and a **Sommerfeld enhancement** of the continuum absorption above the gap. In 2D (quantum wells), the excitonic effects are significantly stronger than in 3D because the electron-hole overlap is enhanced by the confinement.
@@ -784,6 +792,10 @@ For a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As QW, the computed binding energy is appro
 ![Exciton binding vs well width](../figures/exciton_binding_vs_width.png)
 
 **Figure 6.11:** Exciton binding energy vs quantum well width for GaAs/Al$_{0.3}$Ga$_{0.7}$As, computed using the variational method. The binding energy increases for narrow wells (enhanced overlap) and decreases for wide wells (approaching the 3D bulk limit of $\sim$4.2 meV for GaAs).
+
+![Exciton Bohr radius vs well width](../figures/exciton_bohr_vs_width.png)
+
+**Figure 6.11b:** Exciton Bohr radius $\lambda$ vs quantum well width for GaAs/Al$_{0.3}$Ga$_{0.7}$As. In the strong-confinement regime ($L_w \lesssim 5$ nm), the Bohr radius is limited by the well width because the electron and hole envelope functions are squeezed into a region smaller than the natural 3D orbit. As the well width increases, the Bohr radius grows and asymptotically approaches the 3D bulk GaAs value ($a_B^{3D} \approx 11.3$ nm, shown as a horizontal dashed line). The crossover from confinement-dominated to bulk-like behavior occurs around $L_w \sim 10$--$15$ nm, where the well width becomes comparable to the bulk exciton diameter. This competition between quantum confinement (which compresses the exciton) and Coulomb attraction (which pulls the electron and hole together) is the central physics governing the well-width dependence of excitonic properties in QWs.
 
 ![Absorption with excitonic corrections](../figures/absorption_with_exciton.png)
 

@@ -872,7 +872,17 @@ but enables phenomena that are impossible in type-I structures, such as the elec
 field-tunable hybridization gap that can close and reopen -- the signature of a
 topological phase transition.
 
-### 4.2 Comparison with nextnano
+### 4.2 Coupled quantum wells and tunnel coupling
+
+When two quantum wells are separated by a thin barrier, the degenerate bound states of the individual wells hybridize into symmetric and antisymmetric combinations, analogous to molecular bonding and antibonding orbitals. This is the simplest manifestation of quantum mechanical tunneling in a heterostructure, and it produces a characteristic **anticrossing** pattern in the subband spectrum.
+
+![Double QW subband anticrossing](../figures/double_qw_anticrossing.png)
+
+**Figure 7:** Subband dispersion for a double GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well (two 50 A wells separated by a 20 A AlGaAs barrier). At $k_\parallel = 0$, the symmetric and antisymmetric combinations of the lowest confined state are split by approximately 42 meV. This splitting is the **tunnel coupling energy** $\Delta_{\text{SAS}}$, which reflects the transparency of the barrier: the overlap of the exponentially decaying wavefunctions in the barrier region determines the magnitude of the off-diagonal matrix element connecting the two wells. For a barrier of width $d$ and height $V_0$, the coupling scales as $\Delta_{\text{SAS}} \propto \exp(-\kappa d)$, where $\kappa = \sqrt{2m_b^*(V_0 - E)}/\hbar$ is the decay constant in the barrier. The 42 meV splitting for the 20 A barrier indicates strong coupling; increasing the barrier width to 40 A would reduce $\Delta_{\text{SAS}}$ by roughly a factor of $\exp(-\kappa \cdot 20\;\text{A}) \approx 3$--$5$.
+
+At finite $k_\parallel$, the subbands repel due to the off-diagonal coupling in the 8-band Hamiltonian. The anticrossing gap is preserved at all wave vectors: the two subbands never cross, a direct consequence of the von Neumann-Wigner theorem that forbids level crossings in a system with a nontrivial off-diagonal coupling. The $k_\parallel$-dependence of the splitting encodes the HH-LH mixing and nonparabolicity of the valence subbands. Coupled quantum wells are the building blocks of superlattices, where many wells are stacked to form minibands, and of resonant tunneling diodes, where the coupling between discrete states in adjacent wells enables negative differential resistance.
+
+### 4.3 Comparison with nextnano
 
 The results computed by this code are consistent with established software and published
 references:
@@ -892,7 +902,7 @@ references:
   and the relative strengths of CB-to-HH, CB-to-LH, and CB-to-SO transitions agree
   with the standard k.p predictions.
 
-### 4.3 Convergence considerations
+### 4.4 Convergence considerations
 
 The spatial discretization introduces two convergence parameters: the grid density
 ($N$ or `FDstep`) and the FD accuracy order (`FDorder`). For second-order FD, the
@@ -916,7 +926,7 @@ barrier that the wavefunction decays to negligible amplitude. A rule of thumb is
 3--5 decay lengths beyond the quantum well on each side, which typically means
 50--100 A of barrier for shallow wells and 100--200 A for deep wells.
 
-### 4.4 Connection to other chapters
+### 4.5 Connection to other chapters
 
 The quantum well band structure computed in this chapter provides the foundation
 for several subsequent topics:
@@ -942,7 +952,7 @@ for several subsequent topics:
   preserved, but the blocks become sparse CSR matrices built from Kronecker products
   of 1D FD operators.
 
-### 4.5 Limitations
+### 4.6 Limitations
 
 The standard QW mode assumes:
 
@@ -974,7 +984,7 @@ roadmap:
   require solving the Bethe-Salpeter equation or using a variational approach. This is
   planned for Phase 3.
 
-### 4.6 Variable material parameters at interfaces
+### 4.7 Variable material parameters at interfaces
 
 When the Luttinger parameters ($\gamma_1, \gamma_2, \gamma_3$) or the interband
 matrix element $P$ change abruptly at a heterointerface, the product
@@ -997,7 +1007,7 @@ handles sharp interfaces at all FD orders. The Foreman renormalization (disabled
 default via `renormalization = .False.` in `defs.f90`) provides an alternative
 treatment at the cost of additional complexity.
 
-### 4.7 Comparison with bulk mode
+### 4.8 Comparison with bulk mode
 
 The quantum well mode shares the same 8-band basis and block topology as the bulk
 Hamiltonian (Chapter 01). The key differences are:
