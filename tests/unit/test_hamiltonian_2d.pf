@@ -146,10 +146,10 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     ! Check array size
-    @assertEqual(15, size(kpterms_2d))
+    @assertEqual(17, size(kpterms_2d))
 
     ! Check all matrices have correct dimensions
-    do ij = 1, 15
+    do ij = 1, 17
       @assertEqual(ngrid, kpterms_2d(ij)%nrows)
       @assertEqual(ngrid, kpterms_2d(ij)%ncols)
     end do
@@ -174,6 +174,9 @@ contains
     @assertTrue(kpterms_2d(13)%nnz > 0, message="Term 13 (P*d/dy) has entries")
     @assertTrue(kpterms_2d(14)%nnz > 0, message="Term 14 (g3*d/dx) has entries")
     @assertTrue(kpterms_2d(15)%nnz > 0, message="Term 15 (g3*d/dy) has entries")
+
+    ! Anisotropic 2nd derivative terms (16-17) should have nonzeros
+    @assertTrue(kpterms_2d(16)%nnz > 0, message="Term 16 (g2*lap_diff) has entries")
 
     ! Check profile dimensions
     @assertEqual(ngrid, size(profile_2d, 1))
@@ -709,7 +712,7 @@ contains
 
     ! Cleanup
     call csr_free(H_csr)
-    do ij = 1, 15
+    do ij = 1, 17
       call csr_free(kpterms_2d(ij))
     end do
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
