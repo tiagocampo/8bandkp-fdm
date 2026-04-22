@@ -201,7 +201,15 @@ program gfactor
     allocate(gaps(eigen_res%nev_found - 1))
     gaps(:) = eigen_res%eigenvalues(2:eigen_res%nev_found) - &
       & eigen_res%eigenvalues(1:eigen_res%nev_found-1)
-    gap_idx = maxloc(gaps, dim=1)
+    gap_idx = 0
+    ! Find the largest gap that can accommodate numvb states below and numcb above
+    do while (gap_idx == 0)
+      gap_idx = maxloc(gaps, dim=1)
+      if (gap_idx - cfg%numvb + 1 >= 1 .and. &
+        & gap_idx + cfg%numcb <= eigen_res%nev_found) exit
+      gaps(gap_idx) = -1.0_dp  ! disqualify and retry
+      gap_idx = 0
+    end do
     deallocate(gaps)
 
     cb_start = gap_idx + 1
