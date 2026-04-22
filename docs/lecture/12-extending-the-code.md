@@ -198,7 +198,7 @@ If you need to change the kinetic terms or add new couplings, you must edit `ham
 
 - **Bulk**: `ZB8bandBulk` -- 8x8 matrix, all terms are explicit scalars. Add new off-diagonal elements directly.
 - **QW**: `ZB8bandQW` -- 8N x 8N block matrix. The `kpterms(:,:,:)` array holds the precomputed position-dependent FD operators. Index 1-4 are diagonal (gamma1, gamma2, gamma3, P), 5 is A times d^2/dz^2, 6 is P times d/dz, 7 is (gamma1-2gamma2) times d^2/dz^2, 8 is (gamma1+2gamma2) times d^2/dz^2, 9 is gamma3 times d/dz, 10 is A (diagonal).
-- **Wire**: `ZB8bandGeneralized` -- 8*Ngrid x 8*Ngrid sparse CSR. The `kpterms_2d(:)` array holds 15 CSR matrices (indices 1-15). Indices 1-4 diagonal, 5 A*Laplacian, 6 P*gradient, 7-8 Q/T kinetic terms, 9 gamma3*gradient, 10 A diagonal, 11 cross-derivative, 12-15 separate x/y gradients for g-factor.
+- **Wire**: `ZB8bandGeneralized` -- 8*Ngrid x 8*Ngrid sparse CSR. The `kpterms_2d(:)` array holds 17 CSR matrices (indices 1-17). Indices 1-4 diagonal, 5 A*Laplacian, 6 P*gradient, 7-8 Q/T kinetic terms, 9 gamma3*gradient (legacy), 10 A diagonal, 11 cross-derivative, 12-13 P*x/y gradients for g-factor, 14-15 gamma3*x/y gradients for S/SC terms and g-factor, 16 gamma2*(D2x-D2y) anisotropic Laplacian for R term, 17 placeholder (unused).
 
 To add a new k.p term (say, a strain-induced coupling), you would:
 

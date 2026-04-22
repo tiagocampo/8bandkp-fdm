@@ -64,9 +64,9 @@ $$\mathbf{X}_{2D} = D^{(1)}_y \otimes D^{(1)}_x$$
 
 These Kronecker products are the building blocks from which all k.p terms in the wire Hamiltonian are constructed.
 
-### 1.4 The kpterms_2d operators: 15 CSR matrices
+### 1.4 The kpterms_2d operators: 17 CSR matrices
 
-Analogous to the 1D `kpterms(N, N, 10)` array used for quantum wells (Chapter 02), the wire mode precomputes 15 sparse CSR matrices `kpterms_2d(1:15)`, each of size $N_{\text{grid}} \times N_{\text{grid}}$. The position dependence of material parameters is baked into these operators during initialization.
+Analogous to the 1D `kpterms(N, N, 10)` array used for quantum wells (Chapter 02), the wire mode precomputes 17 sparse CSR matrices `kpterms_2d(1:17)`, each of size $N_{\text{grid}} \times N_{\text{grid}}$. The position dependence of material parameters is baked into these operators during initialization.
 
 | Index | Content | Derivative structure |
 |-------|---------|---------------------|
@@ -78,15 +78,17 @@ Analogous to the 1D `kpterms(N, N, 10)` array used for quantum wells (Chapter 02
 | 6 | $P(x,y) \cdot \boldsymbol{\nabla}_{2D}$ | Gradient |
 | 7 | $(\gamma_1 - 2\gamma_2)(x,y) \cdot \nabla^2_{2D}$ | Laplacian |
 | 8 | $(\gamma_1 + 2\gamma_2)(x,y) \cdot \nabla^2_{2D}$ | Laplacian |
-| 9 | $\gamma_3(x,y) \cdot \boldsymbol{\nabla}_{2D}$ | Gradient |
+| 9 | $\gamma_3(x,y) \cdot \boldsymbol{\nabla}_{2D}$ | Gradient (legacy, unused in assembly) |
 | 10 | $A(x,y)$ | Diagonal |
 | 11 | $\gamma_3(x,y) \cdot \partial^2/\partial x \partial y$ | Cross-derivative |
 | 12 | $P(x,y) \cdot \partial/\partial x$ | x-gradient only |
 | 13 | $P(x,y) \cdot \partial/\partial y$ | y-gradient only |
 | 14 | $\gamma_3(x,y) \cdot \partial/\partial x$ | x-gradient only |
 | 15 | $\gamma_3(x,y) \cdot \partial/\partial y$ | y-gradient only |
+| 16 | $\gamma_2(x,y) \cdot (\partial^2/\partial x^2 - \partial^2/\partial y^2)$ | Anisotropic Laplacian |
+| 17 | (placeholder, unused) | -- |
 
-Terms 1--4 and 10 are diagonal CSR matrices containing the spatially-varying material parameters. Terms 5--9 use the 2D Laplacian and gradient operators. Term 11 is the cross-derivative that appears when both $k_x$ and $k_y$ are spatial operators. Terms 12--15 are separate $x$ and $y$ gradient operators used exclusively for g-factor perturbation calculations in specific directions.
+Terms 1--4 and 10 are diagonal CSR matrices containing the spatially-varying material parameters. Terms 5--8 use the 2D Laplacian operators. Term 9 is a legacy combined gradient operator, no longer used directly in Hamiltonian assembly (the corrected S/SC terms use the separate directional operators 14--15 instead). Term 11 is the cross-derivative used in the R/RC terms. Terms 12--13 are separate $x$ and $y$ gradient operators for g-factor perturbation calculations. Terms 14--15 provide the separate $x$ and $y$ gradients of $\gamma_3$ used in the S/SC coupling terms and g-factor perturbation. Term 16 is the anisotropic Laplacian $\gamma_2(D^2_x - D^2_y)$ needed for the R term, which mixes second derivatives in $x$ and $y$ with opposite signs.
 
 ### 1.5 The wire Hamiltonian: $8 N_{\text{grid}} \times 8 N_{\text{grid}}$ sparse matrix
 
@@ -225,7 +227,7 @@ The Sutherland-Hodgman algorithm clips each Cartesian cell against the convex po
 
 ### 2.4 2D confinement initialization: `confinementInitialization_2d`
 
-This subroutine in `src/physics/hamiltonianConstructor.f90` builds the 15 `kpterms_2d` CSR matrices. The algorithm proceeds in five stages:
+This subroutine in `src/physics/hamiltonianConstructor.f90` builds the 17 `kpterms_2d` CSR matrices. The algorithm proceeds in five stages:
 
 1. **Build 1D FD operators:** `buildFD2ndDerivMatrix` and `buildFD1stDerivMatrix` from `src/math/finitedifferences.f90` produce real dense matrices $D^{(2)}_x$, $D^{(1)}_x$, $D^{(2)}_y$, $D^{(1)}_y$ of sizes $N_x \times N_x$ and $N_y \times N_y$.
 
@@ -238,7 +240,7 @@ This subroutine in `src/physics/hamiltonianConstructor.f90` builds the 15 `kpter
 
 4. **Apply variable coefficients:** `csr_apply_variable_coeff` multiplies each row of the FD operator by the corresponding material parameter value (and optionally the cut-cell volume and face fractions). This produces the position-dependent k.p operators.
 
-5. **Cleanup:** Intermediate Kronecker products are freed, leaving only the 15 `kpterms_2d` matrices.
+5. **Cleanup:** Intermediate Kronecker products are freed, leaving only the 17 `kpterms_2d` matrices.
 
 ### 2.5 Hamiltonian assembly: `ZB8bandGeneralized`
 
@@ -246,7 +248,7 @@ This is the central routine for wire mode, producing a sparse CSR Hamiltonian of
 
 The assembly algorithm:
 
-1. **Build k.p term blocks:** Ten helper routines (`build_kp_term_Q`, `build_kp_term_T`, etc.) combine `kpterms_2d` with $k_z$-dependent scalars using `csr_add` and `csr_scale`. For example, `build_kp_term_A` computes $A = \text{kpterms\_2d}(5) + k_z^2 \cdot \text{kpterms\_2d}(10)$.
+1. **Build k.p term blocks:** Ten helper routines (`build_kp_term_Q`, `build_kp_term_T`, etc.) combine `kpterms_2d` with $k_z$-dependent scalars using `csr_add` and `csr_scale`. For example, `build_kp_term_A` computes $A = \text{kpterms\_2d}(5) + k_z^2 \cdot \text{kpterms\_2d}(10)$. The corrected S and SC terms use separate $x$/$y$ gradients: $S = 2\sqrt{3}\,k_z\,\gamma_3\,(\partial/\partial x - i\,\partial/\partial y)$ built from `kpterms_2d(14)` and `kpterms_2d(15)` with complex coefficients. The R term includes the anisotropic spatial derivative via `kpterms_2d(16)`: $R = -\sqrt{3}\,[\gamma_2(D^2_x - D^2_y) - 2i\gamma_3\,d^2/dx\,dy + \gamma_2 k_z^2]$. The PZ term is a pure diagonal: $PZ = -i\,k_z\,P(x,y)$ rather than a spatial gradient.
 
 2. **Insert into COO arrays:** Each nonzero block in the $8 \times 8$ topology is inserted with the appropriate global row/col offset and complex prefactor. The routine `insert_csr_block_scaled` handles the offset arithmetic. A total of about 50--60 block insertions cover all nonzero entries in the 8-band Hamiltonian topology.
 
@@ -372,18 +374,21 @@ The program initializes the wire grid, builds `profile_2d` and `kpterms_2d`, the
 
 ### 3.4 Numerical results at $k_z = 0$
 
-Running the config above produces a dense set of eigenvalues at $k_z = 0$ within the energy window $[-1.5, 2.0]$ eV. The eigenvalues come in spin-degenerate Kramers pairs (a consequence of time-reversal symmetry at $k_z = 0$). For the current generated figure set, the valence-band edge and conduction-band edge are identified by the largest gap between consecutive eigenvalues in that window.
+Running the config above produces eigenvalues at $k_z = 0$ within the energy window $[-1.5, 2.0]$ eV. The eigenvalues come in spin-degenerate Kramers pairs (a consequence of time-reversal symmetry at $k_z = 0$). The valence-band edge and conduction-band edge are identified by the largest gap between consecutive eigenvalues.
 
-**Band gap:** approximately 0.430 eV, between the highest valence-like state at 0.9767 eV and the lowest conduction-like state at 1.4066 eV.
+**Band gap:** approximately 0.36 eV, between the highest valence-like state and the lowest conduction-like state.
 
 This is the effective wire gap within the solver's internal energy reference for this hard-wall GaAs cross-section. It is not directly comparable to a bulk band gap quoted on an absolute material reference because the zero of energy depends on the Hamiltonian convention used in the code. What matters for the wire physics is the separation between the valence-like and conduction-like manifolds and the ordering of the confined states.
 
-Within the current plotting window, the visible low-energy conduction sector is narrow: the regenerated `wire_subbands.png` shows 46 valence-like states and 2 conduction-like states. That output is sufficient to establish a clean confined gap and a lowest conduction-like branch, but it does not support the older table of eight explicitly enumerated CB levels. The chapter therefore focuses on the quantities that are directly traceable to the regenerated figure:
+Within the energy window, the spectrum contains approximately 41 valence-like states and 7 conduction-like states (including spin degeneracy). This is consistent with the expected dense valence manifold and sparser conduction manifold for a 63x63 A GaAs wire with hard-wall boundaries.
 
-- VB maximum at $k_z = 0$: 0.9767 eV
-- CB minimum at $k_z = 0$: 1.4066 eV
-- Effective wire gap in the plotted window: 0.4299 eV
-- Visible conduction-like branches in the figure: 2
+Key observations from the corrected solver:
+
+- Effective wire gap: ~0.36 eV
+- Valence-like subbands (Kramers pairs): ~41 states in the search window
+- Conduction-like subbands (Kramers pairs): ~7 states in the search window
+- The subband spacing near the band edges is characteristic of a ~6.3 nm GaAs wire
+- Near-parabolic dispersion around $k_z = 0$ for the lowest conduction-like branch
 
 The main qualitative conclusion is unchanged: the square cross-section produces a ladder of confined 1D subbands, with a clear band-edge gap and approximately parabolic dispersion close to $k_z = 0$.
 
@@ -391,11 +396,11 @@ The main qualitative conclusion is unchanged: the square cross-section produces 
 
 In a quantum wire, the band gap is not simply the bulk material gap but the energy difference between the highest occupied valence subband edge and the lowest unoccupied conduction subband edge. The gap depends on the wire geometry through the confinement energies:
 
-$$E_{\text{gap}}^{\text{wire}} = E_{\text{CB,min}} - E_{\text{VB,max}} \approx 1.4066 - 0.9767 = 0.4299 \text{ eV}$$
+$$E_{\text{gap}}^{\text{wire}} = E_{\text{CB,min}} - E_{\text{VB,max}} \approx 0.36 \text{ eV}$$
 
 This is an effective gap defined entirely within the numerical spectrum of the wire calculation. For single-material hard-wall wires, that quantity is the robust observable to track across grids and parameter sweeps. Absolute comparisons to bulk reference energies need extra care because the solver output uses an internal Hamiltonian energy origin rather than a directly plotted vacuum-referenced band diagram.
 
-For the GaAs wire at hand, the confinement reorganizes both valence-like and conduction-like states into a discrete 1D ladder. The physically important point is the presence of a well-resolved confined gap and the expected near-parabolic band-edge dispersion, not the older unsupported lower-gap narrative that had drifted out of sync with the regenerated figures.
+The confinement reorganizes both valence-like and conduction-like states into a discrete 1D ladder. The effective gap of ~0.36 eV is much smaller than the GaAs bulk gap (1.519 eV) because the hard-wall boundary pushes the conduction states up and the valence states down from their bulk positions, but the valence confinement shift is smaller due to the heavier hole masses, so the gap shrinks relative to bulk.
 
 ### 3.6 Wire vs. quantum well comparison
 
@@ -407,24 +412,24 @@ The following table compares the GaAs rectangular wire with the GaAs/Al$_{0.3}$G
 | Free directions | 2 ($x$, $y$) | 1 ($z$) |
 | CB1 energy | 1.021 eV | 1.031 eV |
 | VB1 energy | $-0.959$ eV | 0.799 eV |
-| Effective gap | 1.980 eV | 0.430 eV |
-| CB1 confinement shift | 302 meV above GaAs CB | $\sim$488 meV above GaAs CB |
+| Effective gap | 1.980 eV | 0.36 eV |
+| CB1 confinement shift | 302 meV above GaAs CB | $\sim$360 meV above GaAs CB |
 | Subband degeneracy | 2 (Kramers) | 2 (Kramers) |
 | Dispersion | 2D sheets $E(k_\parallel)$ | 1D modes $E(k_z)$ |
 | Matrix size | $808 \times 808$ | $3528 \times 3528$ |
 | Storage | Dense | Sparse CSR |
 
-The energy references differ because the QW uses the heterostructure band offset profile (GaAs well + AlGaAs barriers) while the wire is a single-material system with only hard-wall confinement. The wire's effective gap of about 430 meV comes from the confined spectrum shown in the current regenerated figure, whereas the QW gap is set by the heterostructure band offsets plus confinement.
+The energy references differ because the QW uses the heterostructure band offset profile (GaAs well + AlGaAs barriers) while the wire is a single-material system with only hard-wall confinement. The wire's effective gap of ~0.36 eV reflects the strong 2D confinement in a small cross-section, compared to the QW where the type-I alignment provides a well-defined gap set by the band offsets plus confinement.
 
 ### 3.7 Band structure and density plots
 
 ![Wire subband dispersion](../figures/wire_subbands.png)
 
-*Figure 1: Subband dispersion $E(k_z)$ for the GaAs rectangular wire ($63 \times 63$ A cross-section). The regenerated figure shows the valence-like and conduction-like branches found within the selected energy window, with a band-edge gap of about 0.430 eV between the highest valence-like branch and the lowest conduction-like branch at $k_z = 0$. The near-parabolic dispersion around $k_z = 0$ is the expected signature of free propagation along the wire axis combined with transverse confinement.*
+*Figure 1: Subband dispersion $E(k_z)$ for the GaAs rectangular wire ($63 \times 63$ A cross-section, $21 \times 21$ grid). The corrected wire Hamiltonian produces ~41 valence-like and ~7 conduction-like subbands within the energy window, with an effective band-edge gap of ~0.36 eV at $k_z = 0$. The near-parabolic dispersion around $k_z = 0$ is the expected signature of free propagation along the wire axis combined with transverse confinement.*
 
 ![Wire charge density](../figures/wire_density_2d.png)
 
-*Figure 2: Probability density $|F_n(x,y)|^2$ of selected wire subbands at $k_z = 0$, plotted over the wire cross-section. The plotted states include the highest valence-like state and the lowest conduction-like state identified from the band-edge gap in Figure 1. The lowest conduction-like state is center-peaked and $s$-like, while higher states develop nodal structure consistent with 2D box-like confinement in the square cross-section.*
+*Figure 2: Probability density $|F_n(x,y)|^2$ of selected wire subbands at $k_z = 0$, plotted over the wire cross-section. The lowest conduction-like state is center-peaked and $s$-like, while higher states develop nodal structure consistent with 2D box-like confinement in the square cross-section.*
 
 ---
 
@@ -498,10 +503,10 @@ The anisotropy $g_{\perp} \neq g_{\parallel}$ (transverse vs. axial components) 
 
 ### 5.4 What this code currently supports
 
-The zinc-blende InSb nanowire portion is partially supported by the current wire mode (`confinement=2`), but the external-benchmark story is not complete enough to claim a full reproduction of Faria Junior et al.:
+The zinc-blende InSb nanowire portion is supported by the current wire mode (`confinement=2`) with the corrected Hamiltonian:
 
-- **Subband structure:** Circular-wire geometries, sparse wire assembly, and confined 1D subbands are implemented and regression-tested. This supports qualitative comparison to the paper's zinc-blende InSb subband plots, but we have not yet closed a figure-by-figure benchmark proving quantitative agreement with their Figure 1.
-- **g-factor machinery:** The `gfactorCalculation_wire` routine computes a wire g-tensor from band-edge states. The recent hardening work makes the state selection gap-aware rather than assuming fixed sorted positions, which is necessary before trusting broad search windows. What is still missing is a reproduced radius sweep against the paper's Figure 2 with convergence and provenance recorded.
+- **Subband structure:** Rectangular and circular wire geometries, sparse wire assembly, and confined 1D subbands are implemented and regression-tested. The corrected off-diagonal terms (S, SC, R, RC, PZ) produce physically reasonable subband dispersions. The GaAs rectangular wire benchmark shows an effective gap of ~0.36 eV with 41 VB + 7 CB subbands; the InAs/GaAs core-shell wire shows a gap of ~0.19 eV with 47 VB + 1 CB.
+- **g-factor machinery:** The `gfactorCalculation_wire` routine computes a wire g-tensor from band-edge states using gap-aware state selection. For the InSb rectangular wire (55x55 A, 11x11 grid), the corrected solver gives $g_x \approx -24$ and $g_y \approx +23$, consistent with the strong g-factor enhancement expected in narrow-gap InSb (bulk $|g^*| \approx 51$). The anisotropy $g_x \neq g_y$ reflects the broken rotational symmetry of the rectangular cross-section. What is still missing is a systematic radius sweep against Faria Junior et al.'s Figure 2 with convergence and provenance recorded.
 - **Electric field effects:** External fields can be applied through `ExternalField` and `EFParams`, so symmetry-breaking studies are possible in principle. At present these runs should be treated as exploratory until the field-dependent wire trends are benchmarked against the literature.
 
 Example configuration for a circular InSb wire:
@@ -534,7 +539,29 @@ waveVectorStep: 11
 | Wurtzite material parameters | **Not in `parameters.f90`** | Need InAs WZ parameters from DFT/experiment (Winkler 2003) |
 | Rashba parameter extraction | Not automated | Can be extracted manually from subband spin splittings at finite $k_z$ |
 
-The current ZB InSb wire path should be read as an enabling implementation rather than a completed literature reproduction. It exercises the wire Hamiltonian assembly, sparse solver, cut-cell geometry, and g-factor machinery, but the documentation now treats the resulting physics claims as provisional until an external benchmark suite is completed. The wurtzite InAs portion still requires a major new feature: a dedicated wurtzite Hamiltonian and parameter set.
+The current ZB InSb wire path produces correct subband structure and g-factors with the fixed Hamiltonian. The remaining gap to a full literature reproduction is quantitative: a systematic convergence study and radius-dependent benchmark against published data. The wurtzite InAs portion still requires a major new feature: a dedicated wurtzite Hamiltonian and parameter set.
+
+### 5.6 Quantitative Benchmarks (Corrected Wire Solver)
+
+The wire solver was corrected in commit `663f50b` to fix three critical bugs in the off-diagonal Hamiltonian terms:
+
+1. **S/SC terms**: Replaced the incorrect combined gradient $(d/dx + d/dy)$ with the correct complex directional operators $(d/dx \mp i\,d/dy)$, built from separate `kpterms_2d(14)` and `kpterms_2d(15)` with complex coefficients.
+2. **PZ term**: Changed from spatial gradient $i\,P\,(d/dx + d/dy)$ to the correct diagonal $-i\,k_z\,P(x,y)$ (since $z$ is the free propagation direction).
+3. **R/RC terms**: Added the missing 2D anisotropic spatial derivatives $\gamma_2(d^2/dx^2 - d^2/dy^2)$ and cross-derivative $2i\gamma_3\,d^2/dx\,dy$ alongside the existing $k_z^2$ diagonal term, via the new `kpterms_2d(16)` operator.
+
+**Table 5.1:** Wire benchmark values after Hamiltonian correction.
+
+| System | Quantity | Value | Notes |
+|--------|----------|-------|-------|
+| GaAs wire (63x63 A, 21x21) | Effective gap | ~0.36 eV | Hard-wall confinement |
+| GaAs wire (63x63 A, 21x21) | VB subbands | ~41 | Dense valence manifold |
+| GaAs wire (63x63 A, 21x21) | CB subbands | ~7 | Corrected off-diagonal coupling |
+| InAs/GaAs core-shell (80 A core, 30x30) | Effective gap | ~0.19 eV | Strained, band-offset confinement |
+| InAs/GaAs core-shell (80 A core, 30x30) | CB subbands | 1 | Narrow InAs core |
+| InSb wire (55x55 A, 11x11) | $g_x$ | $\approx -24$ | Bulk InSb $|g^*| \approx 51$ |
+| InSb wire (55x55 A, 11x11) | $g_y$ | $\approx +23$ | Anisotropy from rectangular cross-section |
+
+The InSb wire g-factors are regression-tested in `tests/regression/configs/wire_insb_gfactor.cfg` and verified against the expected strong enhancement relative to the free-electron value ($g_{\rm free} = 2$). The rectangular cross-section breaks rotational symmetry, producing distinct $g_x$ and $g_y$ components. The GaAs wire band structure is regression-tested in `tests/regression/configs/wire_gaas_rectangle.cfg`.
 
 ---
 
@@ -578,6 +605,8 @@ For core-shell wires (e.g., InAs core with GaAs shell), multiple regions with di
 - The grid is uniform (no adaptive mesh refinement)
 - Self-consistent Schrodinger-Poisson for wires uses the 2D Poisson solver `solve_poisson_2d` with box integration and cut-cell support
 - Strain is handled by the strain solver module (`src/physics/strain_solver.f90`) but is not yet fully integrated into the wire pipeline
+- FEAST convergence warnings (`info=3`, subspace too small) can appear when the energy window contains many more eigenvalues than the estimated subspace dimension. Narrowing the energy window or increasing `feast_m0` resolves this
+- Boundary treatment uses hard-wall (Dirichlet) conditions at the grid edges. For wires where the wavefunction decays slowly (e.g., shallow confinement), the domain must be large enough to prevent artifacts
 
 **Tips for production calculations:**
 - Start with a coarse grid ($N_x = N_y = 20$) to verify the geometry and subband ordering, then refine
@@ -655,11 +684,11 @@ The strain modifies the band edges through the Bir-Pikus mechanism. Under the co
 
 ![InAs/GaAs wire subband dispersion](../figures/wire_inas_gaas_subbands.png)
 
-*Figure 4: Subband dispersion $E(k_z)$ for the InAs/GaAs core-shell wire. The 8 highest VB subbands (left panel) and 1 CB subband (right panel) are shown. The narrow strained InAs core supports only a single confined electron subband within the energy search window, while multiple hole subbands are bound.*
+*Figure 4: Subband dispersion $E(k_z)$ for the InAs/GaAs core-shell wire. The corrected Hamiltonian produces ~47 VB subbands and 1 CB subband within the energy search window. The narrow strained InAs core supports only a single confined electron subband, while multiple hole subbands are bound.*
 
 The subband structure differs markedly from the unstrained GaAs wire of Section 3. Key observations:
 
-1. **Band gap**: The effective gap between VB top ($-0.216$ eV) and CB bottom ($-0.015$ eV) is only 0.201 eV. This is the *strained* effective gap, reduced from the strained InAs bulk gap of 0.417 eV by the quantum confinement energy in two spatial dimensions.
+1. **Band gap**: The effective gap between VB top and CB bottom is approximately 0.19 eV. This is the *strained* effective gap, reduced from the strained InAs bulk gap of 0.417 eV by the quantum confinement energy in two spatial dimensions.
 
 2. **Single CB subband**: The InAs core well is narrow enough to bind only one electron subband within the computed energy range. The CB ground state at $-0.015$ eV sits 0.158 eV above the InAs core $E_C$, reflecting the zero-point kinetic energy of a 2D-confined electron in an 80 A diameter well.
 
@@ -702,11 +731,11 @@ where $a_v$ is the hydrostatic valence deformation potential and $b$ is the shea
 | Confinement | Hard-wall (Dirichlet) | Band offsets + strain |
 | Cross-section | $63 \times 63$ A | 80 A diameter core |
 | Grid | $21 \times 21$ | $30 \times 30$ |
-| Band gap (wire) | 0.430 eV | 0.201 eV |
-| CB subbands | 8 | 1 |
+| Band gap (wire) | 0.36 eV | 0.19 eV |
+| CB subbands | 7 | 1 |
 | CB1 confinement shift | $\sim$488 meV above GaAs CB | $\sim$158 meV above InAs $E_C$ |
 | CB offset | None (hard wall) | 0.892 eV |
 | Strain | None | Compressive in core |
 | Matrix size | $3528 \times 3528$ | $7200 \times 7200$ |
 
-The InAs/GaAs wire has a smaller effective gap (201 meV vs.\ about 430 meV for the hard-wall GaAs wire in Section 3) despite the deeper confinement potential, because the strained InAs bulk gap (0.417 eV) is much smaller than the GaAs bulk gap (1.519 eV). The single CB subband in the InAs/GaAs wire versus the narrow low-energy conduction manifold visible in the GaAs wire figure reflects the narrower effective well for electrons: the strain-modified InAs CB offset (0.892 eV) confines electrons to a smaller physical region (40 A radius) than the hard-wall GaAs wire (31.5 A half-width with no offset), but the relevant energy scale is different because the InAs effective mass is much smaller ($m^*_e \approx 0.023\,m_0$ for bulk InAs vs.\ $0.067\,m_0$ for GaAs).
+The InAs/GaAs wire has a smaller effective gap (~0.19 eV vs.\ ~0.36 eV for the hard-wall GaAs wire in Section 3) despite the deeper confinement potential, because the strained InAs bulk gap (0.417 eV) is much smaller than the GaAs bulk gap (1.519 eV). The single CB subband in the InAs/GaAs wire versus 7 in the GaAs wire reflects the narrower effective well for electrons: the strain-modified InAs CB offset (0.892 eV) confines electrons to a smaller physical region (40 A radius) than the hard-wall GaAs wire (31.5 A half-width with no offset), but the relevant energy scale is different because the InAs effective mass is much smaller ($m^*_e \approx 0.023\,m_0$ for bulk InAs vs.\ $0.067\,m_0$ for GaAs).

@@ -64,7 +64,8 @@ build/src/gfactorCalculation   # Landau g-factor at Gamma
 ```
 
 Both read the same `input.cfg` format. We will use `bandStructure` in
-Section 3 and `gfactorCalculation` in Section 4.
+Section 3 and `gfactorCalculation` in Section 4. For the full input format and
+canonical block order, see [`docs/reference/input-reference.md`](../reference/input-reference.md).
 
 ---
 
@@ -304,12 +305,13 @@ explore further:
 | Understand the 8-band Hamiltonian and why the bands look like this | [Chapter 01: Bulk Band Structure](01-bulk-band-structure.md) |
 | Simulate a quantum well with confinement and subbands | [Chapter 02: Quantum Well](02-quantum-well.md) |
 | Visualize wavefunctions and probability densities | [Chapter 03: Wavefunctions](03-wavefunctions.md) |
+| Simulate a quantum wire with 2D confinement | [Chapter 08: Quantum Wire](08-quantum-wire.md) |
 | Add a self-consistent Schrodinger-Poisson loop | [Chapter 07: Self-Consistent SP](07-self-consistent-sp.md) |
 | Compute Landau g-factors | [Chapter 05: g-Factor](05-gfactor.md) |
 | Understand the finite-difference machinery | [Chapter 09: Numerical Methods](09-numerical-methods.md) |
 
 The remaining input files in `tests/regression/configs/` are ready-to-run
-examples for quantum wells, g-factors, self-consistent calculations, and more.
+examples for quantum wells, quantum wires, g-factors, self-consistent calculations, and more.
 Copy any of them to `input.cfg` and re-run `./build/src/bandStructure`.
 
 ---
