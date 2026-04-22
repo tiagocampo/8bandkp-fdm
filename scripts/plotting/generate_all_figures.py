@@ -270,6 +270,48 @@ def parse_parts(output_dir: Path, k_index: int = 0) -> np.ndarray:
     return blocks[k_index]
 
 
+def _normalized_parts(parts: np.ndarray) -> np.ndarray:
+    """Return parts normalized row-wise."""
+    if parts.size == 0:
+        return parts
+    norm = parts.copy()
+    row_sums = norm.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1.0
+    return norm / row_sums
+
+
+def _wire_state_groups_from_parts(
+    eig_k0: np.ndarray,
+    parts: np.ndarray,
+    cb_threshold: float = 0.5,
+) -> Optional[Tuple[List[int], List[int], np.ndarray]]:
+    """Classify wire states into valence-like and conduction-like sets.
+
+    Returns zero-based eigenvalue indices sorted by energy, plus the
+    conduction-band character per state. If parts are missing or do not
+    produce both manifolds, returns None.
+    """
+    if parts.size == 0 or parts.shape[0] < eig_k0.shape[0]:
+        return None
+
+    norm = _normalized_parts(parts[: eig_k0.shape[0]])
+    cb_char = norm[:, 6] + norm[:, 7]
+
+    vb_idx = [i for i, weight in enumerate(cb_char) if weight < cb_threshold]
+    cb_idx = [i for i, weight in enumerate(cb_char) if weight >= cb_threshold]
+
+    if not vb_idx or not cb_idx:
+        return None
+
+    vb_idx.sort(key=lambda idx: eig_k0[idx])
+    cb_idx.sort(key=lambda idx: eig_k0[idx])
+
+    if vb_idx[-1] >= cb_idx[0]:
+        return None
+
+    return vb_idx, cb_idx, cb_char
+
+
 def parse_parts_all_k(output_dir: Path) -> Tuple[np.ndarray, List[float]]:
     """
     Parse output/parts.dat returning ALL k-point blocks.
@@ -1748,61 +1790,72 @@ def fig_wire_subbands(output_dir: Path) -> None:
     n_bands = eig.shape[0]
     e0 = eig[:, 0]  # eigenvalues at k=0, sorted ascending
 
-    # Classify VB/CB by finding the largest gap in the eigenvalue spectrum.
-    # The band gap should be the largest gap between consecutive eigenvalues
-    # near the expected gap region (between -0.5 and 2.0 eV for GaAs).
-    gaps = np.diff(e0)
-    # Only consider gaps in the relevant energy range
-    gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.0)
-    if np.any(gap_mask):
-        gap_idx = np.argmax(gaps * gap_mask)  # largest gap in range
-        n_vb = gap_idx + 1
-        n_cb = n_bands - n_vb
+    parts = np.array([])
+    try:
+        parts = parse_parts(output_dir)
+    except (FileNotFoundError, ValueError, IndexError):
+        pass
+
+    groups = _wire_state_groups_from_parts(e0, parts)
+    if groups is not None:
+        vb_indices, cb_indices, cb_char = groups
+        classification = "parts.dat CB character"
     else:
-        # Fallback: use config values
-        n_vb = min(16, n_bands)
-        n_cb = n_bands - n_vb
+        gaps = np.diff(e0)
+        gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.0)
+        if np.any(gap_mask):
+            gap_idx = np.argmax(gaps * gap_mask)
+            vb_indices = list(range(gap_idx + 1))
+            cb_indices = list(range(gap_idx + 1, n_bands))
+        else:
+            n_vb_hint = min(16, n_bands)
+            vb_indices = list(range(n_vb_hint))
+            cb_indices = list(range(n_vb_hint, n_bands))
+        cb_char = np.full(n_bands, np.nan)
+        classification = "largest spectral gap fallback"
 
-    e_vb_max = e0[n_vb - 1] if n_vb > 0 else e0[0]
-    e_cb_min = e0[n_vb] if n_cb > 0 else e0[-1]
+    n_vb = len(vb_indices)
+    n_cb = len(cb_indices)
+    e_vb_max = e0[vb_indices[-1]] if vb_indices else e0[0]
+    e_cb_min = e0[cb_indices[0]] if cb_indices else e0[-1]
 
-    # Only plot a subset of bands near the gap (up to 10 VB + 10 CB)
-    max_plot_vb = min(n_vb, 10)
-    max_plot_cb = min(n_cb, 10)
-    plot_vb_start = n_vb - max_plot_vb  # highest VB states
+    plot_vb = vb_indices[-min(n_vb, 10):]
+    plot_cb = cb_indices[:min(n_cb, 10)]
 
-    print(f"  Classification: {n_vb} VB + {n_cb} CB ({n_bands} total)")
+    print(f"  Classification: {n_vb} VB + {n_cb} CB ({n_bands} total) via {classification}")
     print(f"  VB max={e_vb_max:.4f}, CB min={e_cb_min:.4f}, "
           f"gap={e_cb_min - e_vb_max:.4f} eV")
-    print(f"  Plotting {max_plot_vb} VB + {max_plot_cb} CB near the gap")
+    if groups is not None:
+        print(f"  Edge CB character: VB top={1.0 - cb_char[vb_indices[-1]]:.3f} VB, "
+              f"CB bottom={cb_char[cb_indices[0]]:.3f} CB")
+    print(f"  Plotting {len(plot_vb)} VB + {len(plot_cb)} CB near the gap")
 
     fig, (ax_vb, ax_cb) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=False)
 
     # VB subbands near the gap
-    if max_plot_vb > 0:
-        vb_colors = plt.cm.Reds_r(np.linspace(0.3, 0.8, max_plot_vb))
-        for i, band_i in enumerate(range(plot_vb_start, n_vb)):
+    if plot_vb:
+        vb_colors = plt.cm.Reds_r(np.linspace(0.3, 0.8, len(plot_vb)))
+        for i, band_i in enumerate(plot_vb):
             ax_vb.plot(k_vals, eig[band_i], color=vb_colors[i], linewidth=0.8)
 
     ax_vb.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
                label=f"VB top = {e_vb_max:.3f} eV")
     ax_vb.set_xlabel(r"$k_z$ (1/\u00C5)")
     ax_vb.set_ylabel(r"$E$ (eV)")
-    ax_vb.set_title(f"VB subbands ({max_plot_vb} shown)")
+    ax_vb.set_title(f"VB subbands ({len(plot_vb)} shown)")
     ax_vb.legend(loc="best", fontsize=7)
 
     # CB subbands near the gap
-    if max_plot_cb > 0:
-        cb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.8, max_plot_cb))
-        for i in range(max_plot_cb):
-            band_i = n_vb + i
+    if plot_cb:
+        cb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.8, len(plot_cb)))
+        for i, band_i in enumerate(plot_cb):
             ax_cb.plot(k_vals, eig[band_i], color=cb_colors[i], linewidth=0.8)
 
     ax_cb.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
                label=f"CB bottom = {e_cb_min:.3f} eV")
     ax_cb.set_xlabel(r"$k_z$ (1/\u00C5)")
     ax_cb.set_ylabel(r"$E$ (eV)")
-    ax_cb.set_title(f"CB subbands ({max_plot_cb} shown)")
+    ax_cb.set_title(f"CB subbands ({len(plot_cb)} shown)")
     ax_cb.legend(loc="best", fontsize=7)
 
     wire_w = float(
@@ -1858,33 +1911,39 @@ def fig_wire_density_2d(output_dir: Path) -> None:
         _, eig = parse_eigenvalues(output_dir)
 
     e0 = eig[:, 0]
-    n_bands = eig.shape[0]
+    parts = np.array([])
+    try:
+        parts = parse_parts(output_dir)
+    except (FileNotFoundError, ValueError, IndexError):
+        pass
 
-    # Classify VB/CB by finding the largest gap in the eigenvalue spectrum
-    # (same approach as fig_wire_subbands). The dense LAPACK solver in range
-    # mode returns ALL eigenvalues in [emin, emax], not just numcb+numvb.
-    gaps = np.diff(e0)
-    gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.0)
-    if np.any(gap_mask):
-        gap_idx = np.argmax(gaps * gap_mask)
-        n_vb = gap_idx + 1
-        n_cb = n_bands - n_vb
+    groups = _wire_state_groups_from_parts(e0, parts)
+    if groups is not None:
+        vb_indices, cb_indices, _ = groups
+        vb_edge_ev_idx = vb_indices[-1] + 1
+        cb_ground_ev_idx = cb_indices[0] + 1
     else:
-        n_vb = min(16, n_bands)
-        n_cb = n_bands - n_vb
+        gaps = np.diff(e0)
+        gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.0)
+        if np.any(gap_mask):
+          gap_idx = np.argmax(gaps * gap_mask)
+          vb_edge_ev_idx = gap_idx + 1
+          cb_ground_ev_idx = gap_idx + 2
+        else:
+          vb_edge_ev_idx = max(1, len(e0) - 1)
+          cb_ground_ev_idx = len(e0)
 
-    e_vb_max = e0[n_vb - 1] if n_vb > 0 else e0[0]
-    e_cb_min = e0[n_vb] if n_cb > 0 else e0[-1]
+    e_vb_max = e0[vb_edge_ev_idx - 1]
+    e_cb_min = e0[cb_ground_ev_idx - 1]
 
     # Plot two panels: VB-edge state (highest VB) and CB-ground state (lowest CB)
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
 
-    for panel, (target_eV, label) in enumerate([
-        (e_vb_max, r"VB-edge $|\psi|^2$"),
-        (e_cb_min, r"CB-ground $|\psi|^2$")
+    for panel, (ev_idx, target_eV, label) in enumerate([
+        (vb_edge_ev_idx, e_vb_max, r"VB-edge $|\psi|^2$"),
+        (cb_ground_ev_idx, e_cb_min, r"CB-ground $|\psi|^2$")
     ]):
         ax = axes[panel]
-        ev_idx = _find_ev_idx_nearest_to_energy(output_dir, target_eV)
         print(f"  Panel {panel+1}: ev_idx={ev_idx} (target E={target_eV:.4f} eV)")
 
         try:
@@ -4894,51 +4953,63 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
     n_bands = eig.shape[0]
     e0 = eig[:, 0]
 
-    # Classify VB/CB by largest gap
-    gaps = np.diff(e0)
-    gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.5)
-    if np.any(gap_mask):
-        gap_idx = np.argmax(gaps * gap_mask)
-        n_vb = gap_idx + 1
-        n_cb = n_bands - n_vb
+    parts = np.array([])
+    try:
+        parts = parse_parts(output_dir)
+    except (FileNotFoundError, ValueError, IndexError):
+        pass
+
+    groups = _wire_state_groups_from_parts(e0, parts)
+    if groups is not None:
+        vb_indices, cb_indices, _ = groups
+        classification = "parts.dat CB character"
     else:
-        n_vb = min(8, n_bands)
-        n_cb = n_bands - n_vb
+        gaps = np.diff(e0)
+        gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.5)
+        if np.any(gap_mask):
+            gap_idx = np.argmax(gaps * gap_mask)
+            vb_indices = list(range(gap_idx + 1))
+            cb_indices = list(range(gap_idx + 1, n_bands))
+        else:
+            vb_indices = list(range(min(8, n_bands)))
+            cb_indices = list(range(min(8, n_bands), n_bands))
+        classification = "largest spectral gap fallback"
 
-    e_vb_max = e0[n_vb - 1] if n_vb > 0 else e0[0]
-    e_cb_min = e0[n_vb] if n_cb > 0 else e0[-1]
+    e_vb_max = e0[vb_indices[-1]] if vb_indices else e0[0]
+    e_cb_min = e0[cb_indices[0]] if cb_indices else e0[-1]
 
-    max_plot_vb = min(n_vb, 8)
-    max_plot_cb = min(n_cb, 8)
-    plot_vb_start = n_vb - max_plot_vb
+    plot_vb = vb_indices[-min(len(vb_indices), 8):]
+    plot_cb = cb_indices[:min(len(cb_indices), 8)]
 
-    print(f"  {n_vb} VB + {n_cb} CB, gap={e_cb_min - e_vb_max:.4f} eV")
+    print(
+        f"  {len(vb_indices)} VB + {len(cb_indices)} CB, "
+        f"gap={e_cb_min - e_vb_max:.4f} eV via {classification}"
+    )
 
     fig, (ax_vb, ax_cb) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=False)
 
-    if max_plot_vb > 0:
-        vb_colors = plt.cm.Reds_r(np.linspace(0.3, 0.8, max_plot_vb))
-        for i, band_i in enumerate(range(plot_vb_start, n_vb)):
+    if plot_vb:
+        vb_colors = plt.cm.Reds_r(np.linspace(0.3, 0.8, len(plot_vb)))
+        for i, band_i in enumerate(plot_vb):
             ax_vb.plot(k_vals, eig[band_i], color=vb_colors[i], linewidth=0.8)
 
     ax_vb.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
                label=f"VB top = {e_vb_max:.3f} eV")
     ax_vb.set_xlabel(r"$k_z$ (1/\u00C5)")
     ax_vb.set_ylabel(r"$E$ (eV)")
-    ax_vb.set_title(f"VB subbands ({max_plot_vb} shown)")
+    ax_vb.set_title(f"VB subbands ({len(plot_vb)} shown)")
     ax_vb.legend(loc="best", fontsize=7)
 
-    if max_plot_cb > 0:
-        cb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.8, max_plot_cb))
-        for i in range(max_plot_cb):
-            band_i = n_vb + i
+    if plot_cb:
+        cb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.8, len(plot_cb)))
+        for i, band_i in enumerate(plot_cb):
             ax_cb.plot(k_vals, eig[band_i], color=cb_colors[i], linewidth=0.8)
 
     ax_cb.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
                label=f"CB bottom = {e_cb_min:.3f} eV")
     ax_cb.set_xlabel(r"$k_z$ (1/\u00C5)")
     ax_cb.set_ylabel(r"$E$ (eV)")
-    ax_cb.set_title(f"CB subbands ({max_plot_cb} shown)")
+    ax_cb.set_title(f"CB subbands ({len(plot_cb)} shown)")
     ax_cb.legend(loc="best", fontsize=7)
 
     fig.suptitle(
@@ -4973,20 +5044,28 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
     e0 = eig[:, 0]
     n_bands = eig.shape[0]
 
-    # Classify VB/CB
-    gaps = np.diff(e0)
-    gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.5)
-    if np.any(gap_mask):
-        gap_idx = np.argmax(gaps * gap_mask)
-        n_vb = gap_idx + 1
-    else:
-        n_vb = min(8, n_bands)
+    parts = np.array([])
+    try:
+        parts = parse_parts(output_dir)
+    except (FileNotFoundError, ValueError, IndexError):
+        pass
 
-    e_cb_min = e0[n_vb] if n_vb < n_bands else e0[-1]
+    groups = _wire_state_groups_from_parts(e0, parts)
+    if groups is not None:
+        vb_indices, cb_indices, _ = groups
+    else:
+        gaps = np.diff(e0)
+        gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.5)
+        if np.any(gap_mask):
+            gap_idx = np.argmax(gaps * gap_mask)
+            vb_indices = list(range(gap_idx + 1))
+            cb_indices = list(range(gap_idx + 1, n_bands))
+        else:
+            vb_indices = list(range(min(8, n_bands)))
+            cb_indices = list(range(min(8, n_bands), n_bands))
 
     # Plot a 2x2 panel: top 3 VB states + CB ground state
-    n_show = min(4, n_bands - n_vb)
-    n_vb_show = min(3, n_vb)
+    n_vb_show = min(3, len(vb_indices))
 
     core_outer = _wire_material_boundary(cfg)
 
@@ -4996,13 +5075,12 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
     # Select states: VB top-2, VB top-1, VB top, CB bottom
     state_indices = []
     state_labels = []
-    for i in range(n_vb_show):
-        idx = n_vb - n_vb_show + i  # 0-based eigenvalue index
-        state_indices.append(idx + 1)  # 1-based for file lookup
-        state_labels.append(f"VB{n_vb_show - i} (E = {e0[idx]:.3f} eV)")
-    if n_show > 0:
-        state_indices.append(n_vb + 1)  # 1-based CB ground
-        state_labels.append(f"CB1 (E = {e0[n_vb]:.3f} eV)")
+    for order, idx in enumerate(vb_indices[-n_vb_show:]):
+        state_indices.append(idx + 1)
+        state_labels.append(f"VB{n_vb_show - order} (E = {e0[idx]:.3f} eV)")
+    if cb_indices:
+        state_indices.append(cb_indices[0] + 1)
+        state_labels.append(f"CB1 (E = {e0[cb_indices[0]]:.3f} eV)")
 
     for panel_idx in range(4):
         ax = axes[panel_idx]
@@ -5042,7 +5120,7 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
                        linewidths=1.0, linestyles="--")
 
     fig.suptitle(
-        "InAs/GaAs wire CB wavefunctions ($k_z = 0$)",
+        "InAs/GaAs near-gap wire wavefunctions ($k_z = 0$)",
         fontsize=12,
     )
     fig.tight_layout()

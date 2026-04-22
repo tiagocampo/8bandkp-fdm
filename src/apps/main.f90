@@ -49,6 +49,8 @@ program kpfdm
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   real(kind=dp), allocatable       :: eig_wire(:,:)
+  real(kind=dp), allocatable       :: prev_wire_eval(:)
+  complex(kind=dp), allocatable    :: prev_wire_evec(:,:)
   integer                          :: Ngrid, Ntot, nev_wire, max_nev_found
 
   ! --- QW SC charge density output ---
@@ -350,99 +352,73 @@ program kpfdm
       print *, '  Wrote ', eigen_res%nev_found, ' 2D wavefunctions to output/eigenfunctions_k_00001_ev_*.dat'
     end if
 
+    if (allocated(prev_wire_eval)) deallocate(prev_wire_eval)
+    if (allocated(prev_wire_evec)) deallocate(prev_wire_evec)
+    if (eigen_res%nev_found > 0) then
+      allocate(prev_wire_eval(eigen_res%nev_found))
+      allocate(prev_wire_evec(Ntot, eigen_res%nev_found))
+      prev_wire_eval = eigen_res%eigenvalues
+      prev_wire_evec = eigen_res%eigenvectors
+    end if
+
     call eigensolver_result_free(eigen_res)
 
-    ! --- OpenMP parallel k=2..N ---
-    ! HT_csr (from k=1) provides the CSR sparsity template for each thread.
+    ! --- Serial k=2..N with branch tracking against the previous k-point ---
     if (cfg%waveVectorStep > 1) then
-      ! Disable MKL internal threading so each OpenMP thread calls
-      ! FEAST in serial — avoids oversubscription.
       info = mkl_set_num_threads_local(1)
 
       print '(A,I0,A)', ' Wire kz-sweep: k=2..', cfg%waveVectorStep, &
-        & ' (OpenMP parallel)'
+        & ' (serial branch tracking)'
 
-      block
-        type(csr_matrix)          :: HT_csr_loc
-        type(eigensolver_result)  :: eigen_res_loc
+      do k = 2, cfg%waveVectorStep
+        print *, 'k-point ', k, '/', cfg%waveVectorStep, ' kz=', smallk(k)%kz
 
-        !$omp parallel private(k, i, info, HT_csr_loc, eigen_res_loc)
-        ! Each thread constrains MKL to 1 thread locally
-        info = mkl_set_num_threads_local(1)
+        block
+          type(csr_matrix) :: HT_csr_step
 
-        !$omp do schedule(static)
-        do k = 2, cfg%waveVectorStep
-          ! Clone CSR sparsity structure for this k-point
-          call csr_clone_structure(HT_csr, HT_csr_loc)
-          ! Build sparse Hamiltonian (reuses read-only COO cache from k=1)
-          call ZB8bandGeneralized(HT_csr_loc, smallk(k)%kz, profile_2d, &
+          call csr_clone_structure(HT_csr, HT_csr_step)
+          call ZB8bandGeneralized(HT_csr_step, smallk(k)%kz, profile_2d, &
             & kpterms_2d, cfg, coo_cache)
+          call solve_sparse_evp(HT_csr_step, eigen_cfg, eigen_res)
+          call csr_free(HT_csr_step)
+        end block
 
-          ! Solve sparse eigenvalue problem
-          call solve_sparse_evp(HT_csr_loc, eigen_cfg, eigen_res_loc)
-
-          if (.not. eigen_res_loc%converged) then
-            if (eigen_res_loc%nev_found < nev_wire) then
-              !$omp critical
-              print *, '  ERROR: FEAST did not converge at k-point', k, &
-                'and found only', eigen_res_loc%nev_found, &
-                'eigenvalues (need', nev_wire, ')'
-              !$omp end critical
-              stop 1
-            end if
+        if (.not. eigen_res%converged) then
+          if (eigen_res%nev_found < nev_wire) then
+            print *, '  ERROR: FEAST did not converge at k-point', k, &
+              'and found only', eigen_res%nev_found, 'eigenvalues (need', nev_wire, ')'
+            stop 1
           end if
-
-          ! Store eigenvalues (each thread writes to its own k column)
-          if (eigen_res_loc%nev_found > 0) then
-            do i = 1, min(eigen_res_loc%nev_found, Ntot)
-              eig_wire(i, k) = eigen_res_loc%eigenvalues(i)
-            end do
-            !$omp critical
-            max_nev_found = max(max_nev_found, eigen_res_loc%nev_found)
-            !$omp end critical
-          end if
-
-          ! Clean up per-thread eigensolver result and CSR
-          call eigensolver_result_free(eigen_res_loc)
-          call csr_free(HT_csr_loc)
-        end do
-        !$omp end do
-
-        !$omp end parallel
-      end block
-    end if
-
-    ! --- Serial: write 2D eigenfunctions for middle and last k-points ---
-    ! (HT_csr still alive as CSR sparsity template)
-    block
-      type(csr_matrix)         :: HT_csr_wf
-      type(eigensolver_result) :: eigen_res_wf
-      integer :: k_wf
-
-      do k_wf = 1, cfg%waveVectorStep
-        if (k_wf /= 1 .and. &
-          & k_wf /= cfg%waveVectorStep/2 .and. &
-          & k_wf /= cfg%waveVectorStep) cycle
-        ! k=1 already written above
-        if (k_wf == 1) cycle
-
-        ! Clone CSR structure from k=1 template
-        call csr_clone_structure(HT_csr, HT_csr_wf)
-        call ZB8bandGeneralized(HT_csr_wf, smallk(k_wf)%kz, profile_2d, &
-          & kpterms_2d, cfg, coo_cache)
-        call solve_sparse_evp(HT_csr_wf, eigen_cfg, eigen_res_wf)
-
-        if (eigen_res_wf%nev_found > 0) then
-          call writeEigenfunctions2d(cfg%grid, eigen_res_wf%eigenvalues, &
-            & eigen_res_wf%eigenvectors, k_wf, eigen_res_wf%nev_found, write_parts=.true.)
-          print *, '  Wrote ', eigen_res_wf%nev_found, &
-            & ' 2D wavefunctions to output/eigenfunctions_k_', k_wf, '_ev_*.dat'
+          print *, '  WARNING: eigensolver subspace issue at k-point', k, &
+            ' but found enough eigenvalues'
         end if
 
-        call eigensolver_result_free(eigen_res_wf)
-        call csr_free(HT_csr_wf)
+        if (eigen_res%nev_found > 0) then
+          call reorder_wire_branches(prev_wire_eval, prev_wire_evec, &
+            eigen_res%eigenvalues, eigen_res%eigenvectors)
+          do i = 1, min(eigen_res%nev_found, Ntot)
+            eig_wire(i, k) = eigen_res%eigenvalues(i)
+          end do
+          max_nev_found = max(max_nev_found, eigen_res%nev_found)
+
+          if (allocated(prev_wire_eval)) deallocate(prev_wire_eval)
+          if (allocated(prev_wire_evec)) deallocate(prev_wire_evec)
+          allocate(prev_wire_eval(eigen_res%nev_found))
+          allocate(prev_wire_evec(Ntot, eigen_res%nev_found))
+          prev_wire_eval = eigen_res%eigenvalues
+          prev_wire_evec = eigen_res%eigenvectors
+
+          if (k == cfg%waveVectorStep/2 .or. k == cfg%waveVectorStep) then
+            call writeEigenfunctions2d(cfg%grid, eigen_res%eigenvalues, &
+              & eigen_res%eigenvectors, k, eigen_res%nev_found, write_parts=.false.)
+            print *, '  Wrote ', eigen_res%nev_found, &
+              & ' 2D wavefunctions to output/eigenfunctions_k_', k, '_ev_*.dat'
+          end if
+        end if
+
+        call eigensolver_result_free(eigen_res)
       end do
-    end block
+    end if
 
     ! Free Hamiltonian CSR and COO cache
     call csr_free(HT_csr)
@@ -459,6 +435,8 @@ program kpfdm
 
     ! Clean up wire mode allocations
     if (allocated(eig_wire))    deallocate(eig_wire)
+    if (allocated(prev_wire_eval)) deallocate(prev_wire_eval)
+    if (allocated(prev_wire_evec)) deallocate(prev_wire_evec)
     if (allocated(profile_2d))  deallocate(profile_2d)
     if (allocated(kpterms_2d)) then
       do i = 1, size(kpterms_2d)
@@ -908,5 +886,101 @@ program kpfdm
   if (allocated(rwork)) deallocate(rwork)
   if (allocated(ifail)) deallocate(ifail)
 
+
+contains
+
+  subroutine reorder_wire_branches(prev_eval, prev_evec, curr_eval, curr_evec)
+    real(kind=dp), intent(in) :: prev_eval(:)
+    complex(kind=dp), intent(in) :: prev_evec(:,:)
+    real(kind=dp), intent(inout) :: curr_eval(:)
+    complex(kind=dp), intent(inout) :: curr_evec(:,:)
+
+    integer :: n_prev, n_curr, n_match, i, j, best_j, next_slot
+    real(kind=dp) :: best_score, score, overlap_mag, energy_delta, parts_similarity
+    logical, allocatable :: used(:)
+    integer, allocatable :: perm(:)
+    real(kind=dp), allocatable :: eval_tmp(:)
+    complex(kind=dp), allocatable :: evec_tmp(:,:)
+    real(kind=dp), allocatable :: prev_parts(:,:), curr_parts(:,:)
+
+    n_prev = size(prev_eval)
+    n_curr = size(curr_eval)
+    if (n_prev <= 0 .or. n_curr <= 0) return
+
+    n_match = min(n_prev, n_curr)
+    allocate(used(n_curr), perm(n_curr))
+    allocate(prev_parts(8, n_prev), curr_parts(8, n_curr))
+    used = .false.
+    perm = 0
+
+    do i = 1, n_prev
+      call compute_wire_band_parts(prev_evec(:, i), prev_parts(:, i))
+    end do
+    do j = 1, n_curr
+      call compute_wire_band_parts(curr_evec(:, j), curr_parts(:, j))
+    end do
+
+    do i = 1, n_match
+      best_j = 0
+      best_score = -huge(1.0_dp)
+      do j = 1, n_curr
+        if (used(j)) cycle
+        overlap_mag = abs(sum(conjg(prev_evec(:, i)) * curr_evec(:, j)))
+        energy_delta = abs(curr_eval(j) - prev_eval(i))
+        parts_similarity = sum(prev_parts(:, i) * curr_parts(:, j))
+        score = overlap_mag + 0.25_dp * parts_similarity - 1.0e-3_dp * energy_delta
+        if (score > best_score) then
+          best_score = score
+          best_j = j
+        end if
+      end do
+      if (best_j > 0) then
+        perm(i) = best_j
+        used(best_j) = .true.
+      end if
+    end do
+
+    next_slot = n_match + 1
+    do j = 1, n_curr
+      if (.not. used(j)) then
+        perm(next_slot) = j
+        next_slot = next_slot + 1
+      end if
+    end do
+
+    allocate(eval_tmp(n_curr))
+    allocate(evec_tmp(size(curr_evec, 1), n_curr))
+    do i = 1, n_curr
+      eval_tmp(i) = curr_eval(perm(i))
+      evec_tmp(:, i) = curr_evec(:, perm(i))
+    end do
+
+    curr_eval = eval_tmp
+    curr_evec = evec_tmp
+
+    deallocate(eval_tmp, evec_tmp, prev_parts, curr_parts, perm, used)
+  end subroutine reorder_wire_branches
+
+  subroutine compute_wire_band_parts(state_vec, parts)
+    complex(kind=dp), intent(in) :: state_vec(:)
+    real(kind=dp), intent(out) :: parts(8)
+
+    integer :: band, ngrid_local, start_idx, end_idx
+    real(kind=dp) :: total_weight
+
+    ngrid_local = size(state_vec) / 8
+    parts = 0.0_dp
+    if (ngrid_local <= 0) return
+
+    do band = 1, 8
+      start_idx = (band - 1) * ngrid_local + 1
+      end_idx = band * ngrid_local
+      parts(band) = real(sum(conjg(state_vec(start_idx:end_idx)) * &
+        & state_vec(start_idx:end_idx)), kind=dp)
+    end do
+
+    total_weight = sum(parts)
+    if (total_weight > 0.0_dp) parts = parts / total_weight
+  end subroutine compute_wire_band_parts
 
 end program kpfdm
