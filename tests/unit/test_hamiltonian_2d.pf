@@ -6,6 +6,7 @@ module test_hamiltonian_2d
   use geometry
   use finitedifferences
   use hamiltonianConstructor
+  use linalg, only: zheevx, ilaenv, dlamch
   implicit none
 
 contains
@@ -680,10 +681,11 @@ contains
     @assertEqual(ntot, H_csr%ncols, message="H ncols = 8*N")
     @assertTrue(H_csr%nnz > 0, message="H has nonzeros")
 
-    ! Check Hermiticity (interior only — boundary stencils break exact Hermiticity)
+    ! For the default second-order hard-wall wire discretization, the full
+    ! Hamiltonian should now be Hermitian, including boundary rows.
     block
       complex(kind=dp), allocatable :: Hd(:,:)
-      real(kind=dp) :: herr
+      real(kind=dp) :: herr, herr_full
       integer :: i, j
       integer :: si, sj, six, siy, sjx, sjy
       logical :: i_interior, j_interior
@@ -691,6 +693,7 @@ contains
       allocate(Hd(H_csr%nrows, H_csr%ncols))
       call csr_to_dense(H_csr, Hd)
       herr = 0.0_dp
+      herr_full = 0.0_dp
       do j = 1, H_csr%ncols
         sj = mod(j-1, ngrid) + 1
         sjx = mod(sj-1, nx) + 1
@@ -701,13 +704,16 @@ contains
           six = mod(si-1, nx) + 1
           siy = (si-1)/nx + 1
           i_interior = (six > 1 .and. six < nx .and. siy > 1 .and. siy < ny)
+          herr_full = max(herr_full, abs(Hd(i,j) - conjg(Hd(j,i))))
           if (i_interior .and. j_interior) then
             herr = max(herr, abs(Hd(i,j) - conjg(Hd(j,i))))
           end if
         end do
       end do
+      print *, '  Wire full-Hermiticity max error (including boundaries): ', herr_full
       deallocate(Hd)
       @assertTrue(herr < 1.0e-10_dp, message="Interior wire Hamiltonian (nx=4,ny=6) Hermitian")
+      @assertTrue(herr_full < 1.0e-10_dp, message="Full wire Hamiltonian (nx=4,ny=6) Hermitian")
     end block
 
     ! Cleanup
@@ -861,5 +867,74 @@ contains
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
     call grid_free(grid)
   end subroutine test_wire_kane_couplings_at_kz_zero
+
+  @test
+  subroutine test_wire_cb_block_ground_state_centered()
+    integer, parameter :: nx = 11, ny = 11
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ngrid, ij, info, nb, lwork, m, il, iuu
+    real(kind=dp) :: abstol, vl, vu, center_prob, corner_prob
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    complex(kind=dp), allocatable :: Ablk(:,:), work(:), Z(:,:)
+    real(kind=dp), allocatable :: evals(:), rwork(:)
+    integer, allocatable :: iwork(:), ifail(:)
+    integer :: mat2d(nx, ny)
+
+    ngrid = nx * ny
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+
+    allocate(Ablk(ngrid, ngrid))
+    Ablk = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call csr_to_dense(kpterms_2d(5), Ablk)
+    do ij = 1, ngrid
+      Ablk(ij, ij) = Ablk(ij, ij) + cmplx(profile_2d(ij, 3), 0.0_dp, kind=dp)
+    end do
+
+    allocate(evals(ngrid), Z(ngrid, 1))
+    vl = 0.0_dp
+    vu = 0.0_dp
+    il = 1
+    iuu = 1
+    abstol = 2.0_dp * dlamch('S')
+    nb = ilaenv(1, 'ZHETRD', 'U', ngrid, -1, -1, -1)
+    lwork = max(1, (nb + 1) * ngrid)
+    allocate(work(lwork), rwork(7 * ngrid), iwork(5 * ngrid), ifail(ngrid))
+
+    call zheevx('V', 'I', 'U', ngrid, Ablk, ngrid, vl, vu, il, iuu, abstol, &
+      m, evals, Z, ngrid, work, lwork, rwork, iwork, ifail, info)
+
+    @assertEqual(0, info, message="CB block zheevx succeeds")
+    @assertEqual(1, m, message="CB block returns one eigenpair")
+
+    corner_prob = abs(Z(1, 1))**2
+    center_prob = abs(Z((ny / 2) * nx + (nx / 2) + 1, 1))**2
+
+    @assertTrue(center_prob > corner_prob, message="Isolated CB block ground state is center-enhanced")
+
+    deallocate(work, rwork, iwork, ifail, evals, Z, Ablk)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_wire_cb_block_ground_state_centered
 
 end module test_hamiltonian_2d

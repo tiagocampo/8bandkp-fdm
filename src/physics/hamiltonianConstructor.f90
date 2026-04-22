@@ -439,6 +439,19 @@ module hamiltonianConstructor
       call buildFD2ndDerivMatrix(ny, dy, order, D2y)
       call buildFD1stDerivMatrix(ny, dy, order, D1y)
 
+      ! For rectangular wires with hard-wall Dirichlet boundaries, the
+      ! default one-sided closures are problematic in the multiband wire
+      ! Hamiltonian. For the default second-order scheme, use cell-centered
+      ! Dirichlet closures:
+      !   D1: central interior stencil with ghost-cell elimination at walls
+      !   D2: symmetric cell-centered Laplacian
+      if (order == 2) then
+        call apply_dirichlet_order2_first_derivative(D1x, dx)
+        call apply_dirichlet_order2_first_derivative(D1y, dy)
+        call apply_dirichlet_order2_second_derivative(D2x, dx)
+        call apply_dirichlet_order2_second_derivative(D2y, dy)
+      end if
+
       ! Identity matrices
       call Identity(nx, Ix)
       call Identity(ny, Iy)
@@ -645,6 +658,48 @@ module hamiltonianConstructor
       deallocate(prof_P, prof_A, prof_gm12g2, prof_gp12g2)
 
     end subroutine confinementInitialization_2d
+
+    subroutine apply_dirichlet_order2_first_derivative(D1, dz)
+      real(kind=dp), intent(inout) :: D1(:,:)
+      real(kind=dp), intent(in) :: dz
+      integer :: n, i
+
+      n = size(D1, 1)
+      D1 = 0.0_dp
+      do i = 2, n - 1
+        D1(i, i - 1) = -0.5_dp / dz
+        D1(i, i + 1) =  0.5_dp / dz
+      end do
+      ! Cell-centered Dirichlet walls with ghost elimination:
+      ! u_ghost = -u_1 on the left, u_ghost = -u_n on the right.
+      if (n >= 2) then
+        D1(1, 1) =  0.5_dp / dz
+        D1(1, 2) =  0.5_dp / dz
+        D1(n, n - 1) = -0.5_dp / dz
+        D1(n, n)     = -0.5_dp / dz
+      end if
+    end subroutine apply_dirichlet_order2_first_derivative
+
+    subroutine apply_dirichlet_order2_second_derivative(D2, dz)
+      real(kind=dp), intent(inout) :: D2(:,:)
+      real(kind=dp), intent(in) :: dz
+      integer :: n, i
+
+      n = size(D2, 1)
+      D2 = 0.0_dp
+      do i = 1, n
+        D2(i, i) = -2.0_dp / dz**2
+      end do
+      do i = 1, n - 1
+        D2(i, i + 1) = 1.0_dp / dz**2
+        D2(i + 1, i) = 1.0_dp / dz**2
+      end do
+      ! Cell-centered grid with Dirichlet walls at the exterior faces:
+      ! the ghost-cell elimination increases the boundary diagonal from
+      ! -2/h^2 to -3/h^2 at the first and last interior points.
+      if (n >= 1) D2(1, 1) = -3.0_dp / dz**2
+      if (n >= 2) D2(n, n) = -3.0_dp / dz**2
+    end subroutine apply_dirichlet_order2_second_derivative
 
     !---------------------------------------------------------------------------
     !> Build a diagonal CSR matrix from a real profile vector.
@@ -1901,26 +1956,11 @@ module hamiltonianConstructor
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      type(csr_matrix) :: grad_y_scaled
-      ! blk = 2*sqrt(3)*kz * kpterms_2d(14) = 2*sqrt(3)*kz*(-gamma3*d/dx)
-      !     = -2*sqrt(3)*kz*gamma3*d/dx
-      call csr_scale(kpterms_2d(14), blk, &
-        cmplx(2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
-      ! grad_y_scaled = 2*sqrt(3)*kz*i * kpterms_2d(15)
-      !                = 2*sqrt(3)*kz*i*(-gamma3*d/dy)
-      !                = -2*sqrt(3)*kz*i*gamma3*d/dy
-      call csr_scale(kpterms_2d(15), grad_y_scaled, &
-        cmplx(0.0_dp, 2.0_dp * SQR3 * kz, kind=dp))
-      ! SC = blk + grad_y_scaled = -2*sqrt(3)*kz*gamma3*(d/dx + i*d/dy)
-      block
-        type(csr_matrix) :: tmp
-        call csr_add(blk, grad_y_scaled, tmp)
-        call csr_free(blk)
-        call csr_clone_structure(tmp, blk)
-        blk%values = tmp%values
-        call csr_free(tmp)
-      end block
-      call csr_free(grad_y_scaled)
+      type(csr_matrix) :: blk_s
+
+      call build_kp_term_S(kz, kpterms_2d, blk_s)
+      call csr_conjugate_transpose(blk_s, blk)
+      call csr_free(blk_s)
     end subroutine build_kp_term_SC
 
     ! ==================================================================
@@ -1970,28 +2010,11 @@ module hamiltonianConstructor
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      type(csr_matrix) :: cross_scaled, diag_kz2, tmp1, tmp2
+      type(csr_matrix) :: blk_r
 
-      ! cross_scaled = -sqrt(3) * (+2i) * kpterms_2d(11)
-      !              = -2i*sqrt(3) * gamma3 * d^2/dxdy
-      call csr_scale(kpterms_2d(11), cross_scaled, &
-        cmplx(0.0_dp, -2.0_dp * SQR3, kind=dp))
-
-      ! diag_kz2 = -sqrt(3)*kz^2 * gamma2 (diagonal)
-      call csr_scale(kpterms_2d(2), diag_kz2, &
-        cmplx(-SQR3 * kz2, 0.0_dp, kind=dp))
-
-      ! Spatial derivative part: -sqrt(3) * kpterms_2d(16)
-      call csr_scale(kpterms_2d(16), tmp1, &
-        cmplx(-SQR3, 0.0_dp, kind=dp))
-
-      ! Sum all three parts
-      call csr_add(tmp1, cross_scaled, tmp2)
-      call csr_free(tmp1)
-      call csr_free(cross_scaled)
-      call csr_add(tmp2, diag_kz2, blk)
-      call csr_free(tmp2)
-      call csr_free(diag_kz2)
+      call build_kp_term_R(kz2, kpterms_2d, blk_r)
+      call csr_conjugate_transpose(blk_r, blk)
+      call csr_free(blk_r)
     end subroutine build_kp_term_RC
 
     ! ==================================================================
@@ -2020,8 +2043,13 @@ module hamiltonianConstructor
 
       type(csr_matrix) :: grad_x_scaled, grad_y_scaled
 
-      call csr_scale(kpterms_2d(12), grad_x_scaled, cmplx(0.0_dp, -RQS2, kind=dp))
-      call csr_scale(kpterms_2d(13), grad_y_scaled, cmplx(RQS2, 0.0_dp, kind=dp))
+      ! kpterms_2d(12:13) already include the minus sign from
+      ! csr_apply_variable_coeff, i.e. kpterms_2d(12) = -P*d/dx and
+      ! kpterms_2d(13) = -P*d/dy. Therefore:
+      !   PP = P * (-i*d/dx + d/dy) / sqrt(2)
+      !      = +i * kpterms_2d(12) / sqrt(2) - kpterms_2d(13) / sqrt(2)
+      call csr_scale(kpterms_2d(12), grad_x_scaled, cmplx(0.0_dp, RQS2, kind=dp))
+      call csr_scale(kpterms_2d(13), grad_y_scaled, cmplx(-RQS2, 0.0_dp, kind=dp))
       call csr_add(grad_x_scaled, grad_y_scaled, blk)
       call csr_free(grad_x_scaled)
       call csr_free(grad_y_scaled)
@@ -2038,14 +2066,38 @@ module hamiltonianConstructor
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      type(csr_matrix) :: grad_x_scaled, grad_y_scaled
+      type(csr_matrix) :: blk_pp
 
-      call csr_scale(kpterms_2d(12), grad_x_scaled, cmplx(0.0_dp, -RQS2, kind=dp))
-      call csr_scale(kpterms_2d(13), grad_y_scaled, cmplx(-RQS2, 0.0_dp, kind=dp))
-      call csr_add(grad_x_scaled, grad_y_scaled, blk)
-      call csr_free(grad_x_scaled)
-      call csr_free(grad_y_scaled)
+      call build_kp_term_PP(kz, kpterms_2d, blk_pp)
+      call csr_conjugate_transpose(blk_pp, blk)
+      call csr_free(blk_pp)
     end subroutine build_kp_term_PM
+
+    subroutine csr_conjugate_transpose(A, AH)
+      type(csr_matrix), intent(in)  :: A
+      type(csr_matrix), intent(out) :: AH
+
+      integer :: row, k
+      integer, allocatable :: rows_coo(:), cols_coo(:)
+      complex(kind=dp), allocatable :: vals_coo(:)
+
+      if (A%nnz == 0) then
+        call csr_init(AH, A%ncols, A%nrows)
+        return
+      end if
+
+      allocate(rows_coo(A%nnz), cols_coo(A%nnz), vals_coo(A%nnz))
+      do row = 1, A%nrows
+        do k = A%rowptr(row), A%rowptr(row + 1) - 1
+          rows_coo(k) = A%colind(k)
+          cols_coo(k) = row
+          vals_coo(k) = conjg(A%values(k))
+        end do
+      end do
+
+      call csr_build_from_coo(AH, A%ncols, A%nrows, A%nnz, rows_coo, cols_coo, vals_coo)
+      deallocate(rows_coo, cols_coo, vals_coo)
+    end subroutine csr_conjugate_transpose
 
     ! ==================================================================
     ! Helper: Build kp-term A for wire

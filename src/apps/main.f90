@@ -896,12 +896,14 @@ contains
     complex(kind=dp), intent(inout) :: curr_evec(:,:)
 
     integer :: n_prev, n_curr, n_match, i, j, best_j, next_slot
+    integer :: block_start, block_end
     real(kind=dp) :: best_score, score, overlap_mag, energy_delta, parts_similarity
     logical, allocatable :: used(:)
     integer, allocatable :: perm(:)
     real(kind=dp), allocatable :: eval_tmp(:)
     complex(kind=dp), allocatable :: evec_tmp(:,:)
     real(kind=dp), allocatable :: prev_parts(:,:), curr_parts(:,:)
+    real(kind=dp), parameter :: degeneracy_tol = 1.0e-8_dp
 
     n_prev = size(prev_eval)
     n_curr = size(curr_eval)
@@ -948,6 +950,23 @@ contains
       end if
     end do
 
+    ! FEAST and dense LAPACK can choose different bases inside an exactly
+    ! degenerate manifold at the previous k-point. Keep the matched current
+    ! states in ascending-energy order inside those blocks so the first step
+    ! away from k=0 remains deterministic across solvers.
+    block_start = 1
+    do while (block_start <= n_match)
+      block_end = block_start
+      do while (block_end < n_match)
+        if (abs(prev_eval(block_end + 1) - prev_eval(block_start)) > degeneracy_tol) exit
+        block_end = block_end + 1
+      end do
+      if (block_end > block_start) then
+        call sort_perm_block_by_energy(perm(block_start:block_end), curr_eval)
+      end if
+      block_start = block_end + 1
+    end do
+
     allocate(eval_tmp(n_curr))
     allocate(evec_tmp(size(curr_evec, 1), n_curr))
     do i = 1, n_curr
@@ -960,6 +979,23 @@ contains
 
     deallocate(eval_tmp, evec_tmp, prev_parts, curr_parts, perm, used)
   end subroutine reorder_wire_branches
+
+  subroutine sort_perm_block_by_energy(block_perm, curr_eval)
+    integer, intent(inout) :: block_perm(:)
+    real(kind=dp), intent(in) :: curr_eval(:)
+
+    integer :: i, j, tmp_idx
+
+    do i = 1, size(block_perm) - 1
+      do j = i + 1, size(block_perm)
+        if (curr_eval(block_perm(j)) < curr_eval(block_perm(i))) then
+          tmp_idx = block_perm(i)
+          block_perm(i) = block_perm(j)
+          block_perm(j) = tmp_idx
+        end if
+      end do
+    end do
+  end subroutine sort_perm_block_by_energy
 
   subroutine compute_wire_band_parts(state_vec, parts)
     complex(kind=dp), intent(in) :: state_vec(:)
