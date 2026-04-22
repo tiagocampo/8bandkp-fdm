@@ -34,7 +34,7 @@ Executables: `build/src/bandStructure` and `build/src/gfactorCalculation`.
 
 ## Quick Start
 
-Write one of the configs below to `input.cfg`, then run `./build/src/bandStructure` or `./build/src/gfactorCalculation`. See `tests/regression/configs/` for more examples.
+Write one of the configs below to `input.cfg`, then run `./build/src/bandStructure` or `./build/src/gfactorCalculation`. See `tests/regression/configs/` for more examples and [docs/reference/input-reference.md](docs/reference/input-reference.md) for the full format.
 
 **Bulk** (GaAs, k along x):
 ```
@@ -93,6 +93,10 @@ numRegions: 1             region: GaAs 0.0 100.0  numcb: 4   numvb: 4
 [00 Quickstart](docs/lecture/00-quickstart.md) | [01 Bulk](docs/lecture/01-bulk-band-structure.md) | [02 QW](docs/lecture/02-quantum-well.md) | [03 Wavefunctions](docs/lecture/03-wavefunctions.md) | [04 Strain](docs/lecture/04-strain.md) | [05 g-Factor](docs/lecture/05-gfactor.md) | [06 Optical](docs/lecture/06-optical-properties.md) | [07 SC-SP](docs/lecture/07-self-consistent-sp.md) | [08 Wire](docs/lecture/08-quantum-wire.md) | [09 Numerics](docs/lecture/09-numerical-methods.md) | [10 QCSE](docs/lecture/10-qcse.md) | [11 Convergence](docs/lecture/11-convergence.md) | [12 Extending](docs/lecture/12-extending-the-code.md)
 
 **Reference** (`docs/reference/`): [Input parameters](docs/reference/input-reference.md) | [Output files](docs/reference/output-reference.md) | [Benchmarks](docs/reference/benchmarks.md)
+
+`input.cfg` guidance:
+- Follow the canonical block order used in `tests/regression/configs/`.
+- Optional block entry labels are name-based (`optics:`, `exciton:`, `scattering:`, `feast_emin:`, `strain:`), but parameters inside each block still use the documented order.
 
 ## Testing
 

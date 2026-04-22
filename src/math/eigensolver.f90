@@ -184,6 +184,7 @@ contains
         result%eigenvalues(i) = E(i)
         result%eigenvectors(:, i) = X(:, i)
       end do
+      call sort_eigenpairs_ascending(result%eigenvalues, result%eigenvectors)
     else
       result%nev_found = 0
     end if

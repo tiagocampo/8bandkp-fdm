@@ -57,7 +57,7 @@ Regression tests use shell scripts + Python (`tests/regression/compare_output.py
 ./build/src/gfactorCalculation  # Reads input.cfg, outputs to output/ (requires k=0)
 ```
 
-Write example config (`bulk.example`, `quantumwell.example`, or `gfactor.example`) contents to `input.cfg`.
+Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed examples in the canonical order documented in `docs/reference/input-reference.md`; optional block entry labels are name-aware (`optics:`, `exciton:`, `scattering:`, `feast_emin:`, `strain:`), but parameters inside each block still follow the documented sequence.
 
 ## Architecture
 

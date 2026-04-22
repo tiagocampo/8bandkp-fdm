@@ -2,7 +2,7 @@
 
 Complete reference for every parameter accepted by the `input.cfg` file, parsed by `src/io/input_parser.f90`. Parameters are read as label-value pairs; lines beginning with `!` are comments.
 
-Parameter order in the file is **positional** (the parser reads sequentially). The groupings below reflect logical purpose, not file order. See the example configs (`bulk.example`, `quantumwell.example`, `gfactor.example`) for correct ordering.
+The parser is still mostly sequential, but the optional block entry points are now label-aware. Missing `optics:`, `exciton:`, or `scattering:` blocks no longer consume later `feast_*` or `strain*` lines. Inside each block, parameters are still read in the documented order. See `tests/regression/configs/` for canonical examples.
 
 **Modes:** B = bulk (`confinement=0`), Q = quantum well (`confinement=1`), W = wire (`confinement=2`), G = g-factor, S = self-consistent.
 
@@ -186,9 +186,9 @@ Optional. Triggered by reading a strain-enabled line after the SC block. Uses de
 
 ---
 
-## File Order Summary
+## Canonical File Order
 
-Parameters must appear in the following sequence in `input.cfg`:
+Recommended order for committed `input.cfg` examples:
 
 ```
 waveVector: <k0|kx|ky|kz>
@@ -215,7 +215,7 @@ ExternalField: <0|1> EF
 EFParams: <float>
 ```
 
-Then **optional** blocks, in order:
+Then **optional** blocks, in this order when present:
 
 ```
 whichBand: <0|1>          ! g-factor (optional)
@@ -246,7 +246,9 @@ strain: <T|F>              ! strain (optional)
 
 ## Notes
 
-- The parser is **sequential**: lines must appear in the exact order shown above.
+- The required header and the contents inside each block are still sequential.
+- Optional block entry labels are matched by name: `optics:`, `exciton:`, `scattering:`, `feast_emin:`, and `strain:`.
+- Optional blocks should still follow the canonical order above in committed tests, benchmarks, and docs.
 - Optional blocks (g-factor, SC, strain) can be omitted entirely; defaults from `defs.f90` are used.
 - Comments use `!` prefix but are only reliable in positions the parser does not try to read.
 - Material names are case-sensitive and must match the database in `src/core/parameters.f90` (e.g. `GaAs`, `InAsW`, `Al20Ga80As`).
