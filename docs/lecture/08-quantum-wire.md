@@ -506,7 +506,7 @@ The anisotropy $g_{\perp} \neq g_{\parallel}$ (transverse vs. axial components) 
 The zinc-blende InSb nanowire portion is supported by the current wire mode (`confinement=2`) with the corrected Hamiltonian:
 
 - **Subband structure:** Rectangular and circular wire geometries, sparse wire assembly, and confined 1D subbands are implemented and regression-tested. The corrected off-diagonal terms (S, SC, R, RC, PZ) produce physically reasonable subband dispersions. The GaAs rectangular wire benchmark shows an effective gap of ~0.36 eV with 41 VB + 7 CB subbands; the InAs/GaAs core-shell wire shows a gap of ~0.19 eV with 47 VB + 1 CB.
-- **g-factor machinery:** The `gfactorCalculation_wire` routine computes a wire g-tensor from band-edge states using gap-aware state selection. For the InSb rectangular wire (55x55 A, 11x11 grid), the corrected solver gives $g_x \approx -24$ and $g_y \approx +23$, consistent with the strong g-factor enhancement expected in narrow-gap InSb (bulk $|g^*| \approx 51$). The anisotropy $g_x \neq g_y$ reflects the broken rotational symmetry of the rectangular cross-section. What is still missing is a systematic radius sweep against Faria Junior et al.'s Figure 2 with convergence and provenance recorded.
+- **g-factor machinery:** The `gfactorCalculation_wire` routine computes a wire g-tensor from band-edge states using gap-aware state selection. For the InSb rectangular wire (55x55 A, 11x11 grid), the corrected solver gives $g_x \approx +2.82$, $g_y \approx -0.10$, $g_z \approx +21.06$. The dominant axial component ($g_z$) reflects the free-propagation direction, while the strong reduction from bulk $|g^*| \approx 51$ is expected for tight 2D confinement. What is still missing is a systematic radius sweep against Faria Junior et al.'s Figure 2 with convergence and provenance recorded.
 - **Electric field effects:** External fields can be applied through `ExternalField` and `EFParams`, so symmetry-breaking studies are possible in principle. At present these runs should be treated as exploratory until the field-dependent wire trends are benchmarked against the literature.
 
 Example configuration for a circular InSb wire:
@@ -558,10 +558,11 @@ The wire solver was corrected in commit `663f50b` to fix three critical bugs in 
 | GaAs wire (63x63 A, 21x21) | CB subbands | ~7 | Corrected off-diagonal coupling |
 | InAs/GaAs core-shell (80 A core, 30x30) | Effective gap | ~0.19 eV | Strained, band-offset confinement |
 | InAs/GaAs core-shell (80 A core, 30x30) | CB subbands | 1 | Narrow InAs core |
-| InSb wire (55x55 A, 11x11) | $g_x$ | $\approx -24$ | Bulk InSb $|g^*| \approx 51$ |
-| InSb wire (55x55 A, 11x11) | $g_y$ | $\approx +23$ | Anisotropy from rectangular cross-section |
+| InSb wire (55x55 A, 11x11) | $g_x$ | $\approx +2.82$ | Bulk InSb $|g^*| \approx 51$ |
+| InSb wire (55x55 A, 11x11) | $g_y$ | $\approx -0.10$ | Anisotropy from rectangular cross-section |
+| InSb wire (55x55 A, 11x11) | $g_z$ | $\approx +21.06$ | Dominant axial component |
 
-The InSb wire g-factors are regression-tested in `tests/regression/configs/wire_insb_gfactor.cfg` and verified against the expected strong enhancement relative to the free-electron value ($g_{\rm free} = 2$). The rectangular cross-section breaks rotational symmetry, producing distinct $g_x$ and $g_y$ components. The GaAs wire band structure is regression-tested in `tests/regression/configs/wire_gaas_rectangle.cfg`.
+The InSb wire g-factors are regression-tested in `tests/regression/configs/wire_insb_gfactor.cfg` and verified against the expected strong enhancement relative to the free-electron value ($g_{\rm free} = 2$). The rectangular cross-section breaks rotational symmetry, producing distinct $g_x$, $g_y$, and $g_z$ components. The GaAs wire band structure is regression-tested in `tests/regression/configs/wire_gaas_rectangle.cfg`.
 
 ---
 

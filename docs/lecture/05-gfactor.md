@@ -557,7 +557,7 @@ The computed g-factors have been cross-checked against analytical Roth formula p
 | Bulk GaAs (CB) | -0.44 (expt.) / -0.32 (8-band) | -0.315 | Roth (1959); Weisbuch & Hermann (1977) |
 | Bulk InAsW (CB) | -14.86 | -14.858 | Winkler (2003) |
 | InAs/GaSb/AlSb QW (CB1) | $g_\perp = -16.2$, $g_\parallel = -11.3$ | $g_x = g_y = -16.23$, $g_z = -11.34$ | Pfeffer & Zawadzki (1999) |
-| InSbW wire (55 A sq.) | -- | $g_x = -2.88$, $g_y = -4.49$, $g_z = +1.79$ | -- |
+| InSbW wire (55 A sq.) | -- | $g_x = +2.82$, $g_y = -0.10$, $g_z = +21.06$ | -- |
 
 **Notes:**
 
@@ -565,4 +565,4 @@ The computed g-factors have been cross-checked against analytical Roth formula p
 
 2. The QW result uses the broken-gap InAs/GaSb system (Section 5.3.2), where the QW g-factor exceeds the bulk InAsW value due to complex VB mixing in the type-II alignment. The anisotropy $g_\perp \neq g_\parallel$ is a hallmark of quantum confinement.
 
-3. The InSb wire g-factor is fully anisotropic ($g_x \neq g_y \neq g_z$), reflecting the broken cubic symmetry of the 2D-confined cross-section. The magnitude of each component is reduced from the bulk InSbW value ($|g| \approx -51$) by the strong quantum confinement in a 55-A wire.
+3. The InSb wire g-factor is fully anisotropic ($g_x \neq g_y \neq g_z$), reflecting the broken cubic symmetry of the 2D-confined cross-section. The dominant component $g_z \approx +21$ is reduced in magnitude from the bulk InSbW value ($|g| \approx -51$) by the strong quantum confinement in a 55-A wire, while the transverse components are strongly quenched.

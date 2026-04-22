@@ -36,10 +36,12 @@ Date: 2026-04-21
 - Subbands: ~47 VB + 1 CB
 - Consistent with Type-I band alignment
 
-### InSb wire g-factor (30×30 grid)
-- gx ≈ **-24**, gy ≈ **+23**
-- Bulk InSb |g*| ≈ 51; wire confinement reduces magnitude and introduces anisotropy
-- Physically reasonable for 2D confined InSb
+### InSb wire g-factor (11×11 grid, 55×55 A)
+- gx ≈ **+2.82**, gy ≈ **-0.10**, gz ≈ **+21.06**
+- Bulk InSb |g*| ≈ 51; wire confinement reduces magnitude and introduces strong anisotropy
+- Dominant gz component reflects the free-propagation direction of the wire
+- Transverse components strongly quenched by 2D confinement
+- Updated after solver parity fix (commit 9af3329)
 
 ## Remaining Limitations
 
