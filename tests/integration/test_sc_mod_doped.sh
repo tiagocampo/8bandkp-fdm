@@ -37,3 +37,9 @@ fi
 
 # SC eigenvalues have larger tolerance due to iterative convergence paths
 python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" --tolerance 1e-5
+
+# Quantitative SC benchmark checks
+VERIFY_SC="$(dirname "$0")/verify_sc_benchmarks.py"
+if [ -f "$VERIFY_SC" ]; then
+    python3 "$VERIFY_SC" "$WORKDIR/test_output.log" "$WORKDIR/output/eigenvalues.dat" "$WORKDIR/input.cfg"
+fi

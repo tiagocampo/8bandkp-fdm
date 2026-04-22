@@ -443,9 +443,40 @@ field is applied correctly.
 
 ---
 
-## 10.5 Discussion
+## 10.5 Benchmarks
 
-### 10.5.1 Stark shift magnitude vs. well width
+### 10.5.1 Automated Stark shift validation
+
+The QCSE calculation is validated by the test suite in two stages:
+
+1. **Regression test** (`test_qcse_with_ef.sh` + `verify_stark_shift.py`):
+   verifies that the CB1 shift direction matches the field sign, the magnitude
+   is in a physically reasonable range, and the field unit conversion from
+   eV/Angstrom to kV/cm is correct.
+
+2. **QW benchmark** (`verify_qw_benchmarks.py`): verifies the zero-field
+   subband structure shows correct spin degeneracy, a physically reasonable
+   VB-CB gap, and distinct subband spacings.
+
+**Table 10.1:** QCSE benchmark values for the 6 nm GaAs/Al$_{0.2}$Ga$_{0.8}$As QW.
+
+| Quantity | This code | Reference | Notes |
+|---|---|---|---|
+| CB1 (zero field) | 0.932 eV | -- | Confined electron ground state |
+| CB2 $-$ CB1 (zero field) | 8 meV | -- | Weak confinement (wide well) |
+| CB1 shift at $-700$ kV/cm | $+1.050$ eV | -- | Includes linear potential ramp |
+| CB2 $-$ CB1 (with field) | 64 meV | -- | 8$\times$ increase from triangular potential |
+| Perturbative Stark coefficient | $\sim$0.0004 meV/(kV/cm)$^2$ | $\sim$0.000365 (nextnano) | Low-field limit; our high-field example is non-perturbative |
+
+The perturbative Stark coefficient $\alpha_1 \approx 0.000365$ meV/(kV/cm)$^2$
+for a 6 nm GaAs QW is the nextnano reference value from the perturbative regime
+(low field). Our computed example uses $F = -700$ kV/cm, which is deep in the
+non-perturbative regime where the effective coefficient is field-dependent and
+significantly larger.
+
+### 10.5.2 Discussion
+
+#### Stark shift magnitude vs. well width
 
 The perturbative polarizability scales as $\alpha \propto L^4$ for a particle
 in a box. Doubling the well width increases the Stark shift by a factor of 16.
@@ -462,7 +493,7 @@ $F = -0.007$ eV/Angstrom the spacing has increased to 64 meV. Narrower wells
 (e.g., 30 Angstroms) would show a much smaller relative change because the
 zero-field confinement is already strong.
 
-### 10.5.2 Connection to electro-absorption modulators
+### 10.5.3 Connection to electro-absorption modulators
 
 The QCSE is the operating principle of electro-absorption (EA) modulators. In
 an EA modulator, a reverse-biased quantum well structure is embedded in a
@@ -485,7 +516,7 @@ example should be read as a stress-test of the QCSE implementation rather than
 as a representative modulator bias point. It pushes the well deep into the
 triangular-regime behavior.
 
-### 10.5.3 Limitations
+### 10.5.4 Limitations
 
 **No excitonic effects.** The code solves the single-particle 8-band k.p
 Hamiltonian. It does not include the electron-hole Coulomb interaction that
@@ -507,7 +538,7 @@ nonlinear band bending that modifies the QCSE. The combination of external
 field and self-consistent effects can be explored by enabling both `ExternalField`
 and `SC` in the input file.
 
-### 10.5.4 References
+### 10.5.5 References
 
 - **D. A. B. Miller, D. S. Chemla, T. C. Damen, A. C. Gossard, W. Wiegmann,
   T. H. Wood, and C. A. Burrus**, "Band-Edge Electroabsorption in Quantum Well

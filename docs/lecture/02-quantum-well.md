@@ -906,6 +906,18 @@ references:
   and the relative strengths of CB-to-HH, CB-to-LH, and CB-to-SO transitions agree
   with the standard k.p predictions.
 
+**Table 4.1:** QW benchmark values (automated checks in `verify_qw_benchmarks.py`).
+
+| System | Quantity | Computed | Notes |
+|---|---|---|---|
+| GaAs/Al$_{0.2}$Ga$_{0.8}$As (6 nm) | CB1 | 0.932 eV | Zero-field QCSE reference |
+| GaAs/Al$_{0.2}$Ga$_{0.8}$As (6 nm) | VB-CB gap | 1.838 eV | Includes confinement shift |
+| GaAs/Al$_{0.2}$Ga$_{0.8}$As (6 nm) | CB2 $-$ CB1 | 8 meV | Weak confinement (wide well) |
+| GaAs/Al$_{0.3}$Ga$_{0.7}$As (10 nm) | CB1 (est.) | ~31 meV above EC | Consistent with nextnano E1 |
+
+The automated QW benchmark checks verify spin degeneracy (doubly degenerate
+pairs at $k=0$), physically reasonable gap, and distinct subband spacing.
+
 ### 4.4 Convergence considerations
 
 The spatial discretization introduces two convergence parameters: the grid density

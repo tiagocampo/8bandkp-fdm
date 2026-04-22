@@ -713,6 +713,18 @@ The self-consistent SP solver has been validated against published benchmarks an
 
 3. The InAsW/AlSbW QW converges in 16 SC iterations. The low doping ($5 \times 10^{17}$ cm$^{-3}$) at 77 K produces only modest band bending relative to the enormous band offsets ($\sim$2.15 eV CB offset). The CB1 energy of 0.097 eV includes the confinement shift above the InAsW conduction band edge in the 50-A well, consistent with the strong nonparabolicity of the narrow-gap system.
 
+### 7.11.1 Automated SC Benchmarks
+
+The SC validation values above are checked automatically in the regression test
+suite via `tests/integration/verify_sc_benchmarks.py`. For each SC test, the
+script verifies:
+
+1. **Convergence**: the "SC loop converged" message appears in the output log.
+2. **Physical gap**: the VB-CB separation is positive and within a reasonable
+   range for the material system (GaAs $\sim$1.5 eV, InAs/AlSb $\sim$0.5 eV).
+3. **Subband structure**: distinct CB subbands with positive spacing.
+4. **Spin degeneracy**: CB states appear in degenerate pairs at $k=0$.
+
 ---
 
 ## 7.12 Extensions and Limitations

@@ -32,3 +32,9 @@ fi
 
 python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" --tolerance 1e-8
 python3 "$VERIFY_STARK" "$CONFIG" "$ZERO_FIELD_REF" "$WORKDIR/output/eigenvalues.dat"
+
+# QW benchmark checks on the zero-field reference data
+VERIFY_QW="$(dirname "$0")/verify_qw_benchmarks.py"
+if [ -f "$VERIFY_QW" ] && [ -f "$ZERO_FIELD_REF" ]; then
+    python3 "$VERIFY_QW" "$ZERO_FIELD_REF" "$CONFIG"
+fi

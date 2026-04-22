@@ -29,3 +29,9 @@ if [ ! -f "$WORKDIR/output/eigenvalues.dat" ]; then
 fi
 
 python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" --tolerance 1e-8
+
+# QW benchmark checks against known GaAs/AlGaAs subband structure
+VERIFY_QW="$(dirname "$0")/verify_qw_benchmarks.py"
+if [ -f "$VERIFY_QW" ]; then
+    python3 "$VERIFY_QW" "$WORKDIR/output/eigenvalues.dat" "$CONFIG"
+fi

@@ -32,3 +32,9 @@ if [ ! -f "$WORKDIR/output/eigenvalues.dat" ]; then
 fi
 
 python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" --tolerance 1e-8
+
+# Quantitative benchmark checks against published material values
+VERIFY_BULK="$(dirname "$0")/verify_bulk_benchmarks.py"
+if [ -f "$VERIFY_BULK" ]; then
+    python3 "$VERIFY_BULK" "$WORKDIR/output/eigenvalues.dat" "$CONFIG"
+fi

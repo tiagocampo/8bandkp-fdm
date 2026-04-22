@@ -741,6 +741,25 @@ implementation even for [001] biaxial strain where the $R_\epsilon$ and
 $S_\epsilon$ terms are zero. This ensures physics consistency and produces the
 correct SO eigenvalues that differ from the simple diagonal prediction.
 
+### 4.4 Quantitative Benchmarks (Automated)
+
+The bulk eigenvalue benchmarks are checked automatically in the regression
+test suite (`tests/integration/verify_bulk_benchmarks.py`). The following
+values are verified at $\Gamma$ against published references:
+
+**Table 1.1:** Bulk benchmark values (k = 0, unstrained).
+
+| Material | $E_g$ (eV) | $\Delta_{\mathrm{SO}}$ (eV) | $m_e^*/m_0$ | Source |
+|---|---|---|---|---|
+| GaAs | 1.519 | 0.341 | 0.067 | Vurgaftman 2001 |
+| InAs | 0.417 | 0.390 | 0.026 | Vurgaftman 2001 / Winkler 2003 |
+
+The $E_g$ and $\Delta_{\mathrm{SO}}$ values are reproduced exactly (0% error)
+because the 8-band Hamiltonian diagonal contains the parameterized gaps. The
+effective mass is checked from the CB dispersion at the smallest available
+$k$-point; at finite $k$, the 8-band non-parabolicity causes the apparent mass
+to be 25--30% lighter than the parabolic limit, which is expected physics.
+
 ---
 
 ## 5. Discussion

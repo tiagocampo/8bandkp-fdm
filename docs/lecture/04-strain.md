@@ -736,9 +736,30 @@ changes that directly impact device performance.
 
 ---
 
-## 8. Limitations and Extensions
+## 8. Validation
 
-### 8.1 Current assumptions
+The strain implementation is validated through the worked examples above and
+cross-checked against the nextnano strained GaAs tutorial (Section 4.3 of
+Chapter 01). Key quantitative checks:
+
+**Table 8.1:** Strain benchmark values.
+
+| System | Quantity | Expected | Source |
+|---|---|---|---|
+| GaAs on InP ($\varepsilon = -3.7\%$) | HH/LH splitting | 111 meV | nextnano tutorial |
+| GaAs on InP | CB shift | $-294$ meV | nextnano tutorial |
+| InAs on GaAs ($\varepsilon = -6.7\%$) | HH/LH splitting | 252 meV | Bir-Pikus formula |
+| InAs on GaAs | $\Delta E_g$ | 498 meV | Bir-Pikus formula |
+
+The Bir-Pikus diagonal shifts are verified by the unit tests
+(`tests/unit/test_strain_solver.pf`), which check the deformation potential
+calculations against analytical Bir-Pikus formula values.
+
+---
+
+## 9. Limitations and Extensions
+
+### 9.1 Current assumptions
 
 - **Pseudomorphic growth**: no plastic relaxation (no misfit dislocations).  The
   code does not compute critical thickness; the user must ensure the layer is
@@ -756,7 +777,7 @@ changes that directly impact device performance.
   internal electric field.  This can be important for nitride and some III-V
   heterostructures.
 
-### 8.2 Extending the strain model
+### 9.2 Extending the strain model
 
 - **Piezoelectric polarization**: add $P_{\text{piezo}} = e_{14}(\varepsilon_{xy} +
   \varepsilon_{yz} + \varepsilon_{zx})$ and solve Poisson with the resulting
@@ -772,7 +793,7 @@ changes that directly impact device performance.
 
 ---
 
-## 9. Code Reference
+## 10. Code Reference
 
 | Subroutine | File | Purpose |
 |---|---|---|
@@ -795,7 +816,7 @@ changes that directly impact device performance.
 
 ---
 
-## 10. Summary
+## 11. Summary
 
 Strain in semiconductor heterostructures arises from lattice mismatch between
 epitaxial layers.  For quantum wells, the strain is biaxial and computed
