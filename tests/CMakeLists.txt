@@ -142,6 +142,15 @@ add_test(
 )
 
 add_test(
+    NAME regression_qw_absorption_strained_polarization
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_absorption_polarization.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/qw_ingaas_algaas_strained_absorption.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_absorption_polarization.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
     NAME regression_scattering_transition_sanity
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_scattering_transition_sanity.sh
         $<TARGET_FILE:bandStructure>
@@ -183,6 +192,7 @@ add_test(
 set_tests_properties(
     regression_bulk_gaas regression_qw_alsbw_gasbw_inasw
     regression_qw_character_and_output_dir regression_qw_absorption_polarization
+    regression_qw_absorption_strained_polarization
     regression_scattering_transition_sanity regression_gfactor_cb
     regression_gfactor_no_optics regression_bulk_inas
     PROPERTIES LABELS "regression"
@@ -217,6 +227,19 @@ add_test(
 
 set_tests_properties(
     regression_sc_qw_inas_alsb
+    PROPERTIES LABELS "regression"
+)
+
+add_test(
+    NAME regression_qw_optical_matrix_selection
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_optical_matrix_selection.sh
+        $<TARGET_FILE:gfactorCalculation>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/qw_gaas_algaas_optics_selection.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_qw_optical_matrix_selection
     PROPERTIES LABELS "regression"
 )
 

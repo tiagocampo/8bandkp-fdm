@@ -44,7 +44,7 @@ Date: 2026-04-22 (updated with nextnano benchmark comparisons)
 |-----------|-------------------|------------|--------|
 | HH→CB selection rule | Pure TE (|pz|^2=0) | Correct | Validated |
 | LH→CB selection rule | TE+TM, TM dominant | Correct | Validated |
-| TE/TM edge contrast (k-integrated) | Clear separation | Lost in integration | Blocked (FL-007) |
+| TE/TM edge contrast (k-integrated) | Clear separation | Unstrained and stripped-down strained absorption benchmarks pass; legacy figure provenance still needs cleanup | Partial (FL-007 downgraded) |
 | LO-phonon scattering lifetime | 6-12 ps | 10^9 ps | Blocked (FL-016) |
 
 ### Quantum Wire (Chapter 08)
@@ -92,7 +92,7 @@ Date: 2026-04-22 (updated with nextnano benchmark comparisons)
 
 - Wire g-factor quantitative comparison: our InSb wire (55x55 A, 11x11 grid) gives gx=+2.82, gy=-0.10, gz=+21.06 vs bulk |g|~51. No direct nextnano wire g-factor tutorial available. The 11x11 grid is too coarse for quantitative g-factor work; a grid convergence study is the most important next step.
 - Bulk GaAs g-factor: Roth formula gives -0.44 (experiment), our 8-band Lowdin result gives -0.315. The discrepancy is the known 8-band model limit from missing remote p-like CB states. Not a code bug.
-- Optical TE/TM k-integrated contrast: zone-center matrix elements are correct, but the k_parallel integration pipeline loses the contrast. FL-007 remains open.
+- Optical TE/TM status: zone-center matrix elements are now backed by a dedicated regression again, and both the unstrained GaAs/AlGaAs and stripped-down strained InGaAs k_parallel-integrated absorption benchmarks preserve the expected TE-dominant edge. The remaining optics risk is figure/data provenance, not the basic TE/TM absorption path.
 - Scattering lifetimes: Kramers-pair double-counting in the scattering kernel produces lifetimes of 10^9 ps instead of the expected 6-12 ps. FL-016 remains open.
 - Exciton binding energy quantitative check: not automated (requires separate variational calculation).
 

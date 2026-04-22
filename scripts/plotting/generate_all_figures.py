@@ -3636,6 +3636,20 @@ def _read_absorption(output_dir: Path, polarization: str) -> Tuple[np.ndarray, n
     return E, alpha
 
 
+def _stage_absorption_pair(src_dir: Path, dst_dir: Path, suffix: str) -> bool:
+    """Copy TE/TM absorption outputs into suffixed filenames.
+
+    Returns True when both source files exist and were copied.
+    """
+    te_src = src_dir / "absorption_TE.dat"
+    tm_src = src_dir / "absorption_TM.dat"
+    if not te_src.exists() or not tm_src.exists():
+        return False
+    shutil.copy2(te_src, dst_dir / f"absorption_TE_{suffix}.dat")
+    shutil.copy2(tm_src, dst_dir / f"absorption_TM_{suffix}.dat")
+    return True
+
+
 def fig_qw_absorption_spectrum(output_dir: Path) -> None:
     """qw_absorption_spectrum.png: TE and TM interband absorption for a GaAs/AlGaAs QW.
 
@@ -3691,63 +3705,63 @@ def fig_qw_absorption_strained(output_dir: Path) -> None:
     """
     print("[figure] qw_absorption_strained")
 
-    # Look for strained/unstrained data pairs
-    # Naming convention: absorption_TE.dat (current run), or
-    # user may have saved paired runs as absorption_TE_unstrained.dat / absorption_TE_strained.dat
+    # Regenerate both datasets deterministically instead of relying on
+    # manually staged output files from previous runs.
+    cfg_unstr = CONFIG_DIR / "qw_gaas_algaas_absorption.cfg"
+    cfg_str = CONFIG_DIR / "qw_ingaas_algaas_strained_absorption.cfg"
+
+    if cfg_unstr.exists():
+        result = run_executable(EXE_BAND, cfg_unstr, REPO_ROOT,
+                                label="qw_absorption_unstrained", timeout=600)
+        if result.returncode == 0:
+            if not _stage_absorption_pair(output_dir, output_dir, "unstrained"):
+                print("  WARNING: unstrained absorption files missing after run.")
+        else:
+            print("  WARNING: unstrained absorption run failed.")
+    else:
+        print("  WARNING: unstrained absorption config not found.")
+
+    if cfg_str.exists():
+        result = run_executable(EXE_BAND, cfg_str, REPO_ROOT,
+                                label="qw_absorption_strained", timeout=600)
+        if result.returncode == 0:
+            if not _stage_absorption_pair(output_dir, output_dir, "strained"):
+                print("  WARNING: strained absorption files missing after run.")
+        else:
+            print("  WARNING: strained absorption run failed.")
+    else:
+        print("  WARNING: strained absorption config not found.")
+
+    # Look for strained/unstrained data pairs.
     te_unstr = output_dir / "absorption_TE_unstrained.dat"
     tm_unstr = output_dir / "absorption_TM_unstrained.dat"
     te_str = output_dir / "absorption_TE_strained.dat"
     tm_str = output_dir / "absorption_TM_strained.dat"
 
-    # Also accept the default naming if only one dataset exists
-    te_default = output_dir / "absorption_TE.dat"
-    tm_default = output_dir / "absorption_TM.dat"
-
     have_strained_pair = (te_unstr.exists() and tm_unstr.exists()
                           and te_str.exists() and tm_str.exists())
-    have_single = te_default.exists() and tm_default.exists()
 
-    if not have_strained_pair and not have_single:
-        print("  WARNING: No absorption data files found. Run bandStructure with "
-              "Optics: T for unstrained and strained configs to generate data.")
-        print("  Expected files: absorption_TE_unstrained.dat, absorption_TE_strained.dat, "
-              "etc., or absorption_TE.dat / absorption_TM.dat")
+    if not have_strained_pair:
+        print("  WARNING: Could not assemble fresh strained/unstrained absorption pairs.")
         return
 
     fig, (ax_te, ax_tm) = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+    E_u_te, a_u_te = _read_absorption(output_dir, "TE_unstrained")
+    E_s_te, a_s_te = _read_absorption(output_dir, "TE_strained")
+    E_u_tm, a_u_tm = _read_absorption(output_dir, "TM_unstrained")
+    E_s_tm, a_s_tm = _read_absorption(output_dir, "TM_strained")
 
-    if have_strained_pair:
-        # Plot both unstrained and strained
-        E_u_te, a_u_te = _read_absorption(output_dir, "TE_unstrained")
-        E_s_te, a_s_te = _read_absorption(output_dir, "TE_strained")
-        E_u_tm, a_u_tm = _read_absorption(output_dir, "TM_unstrained")
-        E_s_tm, a_s_tm = _read_absorption(output_dir, "TM_strained")
+    ax_te.plot(E_u_te, a_u_te, color="#1f77b4", linewidth=1.5,
+               label="Unstrained")
+    ax_te.plot(E_s_te, a_s_te, color="#d62728", linewidth=1.5,
+               linestyle="--", label="Strained")
+    ax_tm.plot(E_u_tm, a_u_tm, color="#1f77b4", linewidth=1.5,
+               label="Unstrained")
+    ax_tm.plot(E_s_tm, a_s_tm, color="#d62728", linewidth=1.5,
+               linestyle="--", label="Strained")
 
-        ax_te.plot(E_u_te, a_u_te, color="#1f77b4", linewidth=1.5,
-                   label="Unstrained")
-        ax_te.plot(E_s_te, a_s_te, color="#d62728", linewidth=1.5,
-                   linestyle="--", label="Strained")
-        ax_tm.plot(E_u_tm, a_u_tm, color="#1f77b4", linewidth=1.5,
-                   label="Unstrained")
-        ax_tm.plot(E_s_tm, a_s_tm, color="#d62728", linewidth=1.5,
-                   linestyle="--", label="Strained")
-
-        ax_te.set_title("TE Polarization", fontsize=11)
-        ax_tm.set_title("TM Polarization", fontsize=11)
-    else:
-        # Single dataset -- plot it with a note
-        E_te, a_te = _read_absorption(output_dir, "TE")
-        E_tm, a_tm = _read_absorption(output_dir, "TM")
-
-        ax_te.plot(E_te, a_te, color="#1f77b4", linewidth=1.5, label="Available data")
-        ax_tm.plot(E_tm, a_tm, color="#d62728", linewidth=1.5, label="Available data")
-
-        ax_te.set_title("TE Polarization (single dataset)", fontsize=11)
-        ax_tm.set_title("TM Polarization (single dataset)", fontsize=11)
-
-        ax_te.text(0.5, 0.92, "Run with strained InGaAs config\nfor comparison",
-                   transform=ax_te.transAxes, fontsize=8, ha="center", va="top",
-                   color="grey", style="italic")
+    ax_te.set_title("TE Polarization", fontsize=11)
+    ax_tm.set_title("TM Polarization", fontsize=11)
 
     for ax in (ax_te, ax_tm):
         ax.set_xlabel("Photon Energy (eV)")

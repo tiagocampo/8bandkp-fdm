@@ -304,7 +304,7 @@ The optics path has several blocking issues documented in the failure ledger:
 
 | ID | Issue | Impact on benchmarks |
 |---|---|---|
-| FL-007 | TE/TM curves nearly identical in some figures | The k_parallel-integrated absorption spectra do not show the expected contrast. Zone-center matrix elements are correct. |
+| FL-007 | Legacy TE/TM figures were built from non-deterministic workflows | The dedicated unstrained GaAs/AlGaAs and strained InGaAs absorption-only benchmarks both preserve the expected TE-dominant edge. The remaining issue is to regenerate figures and prose from these controlled configs instead of older mixed/staged outputs. |
 | FL-008 | Validation prose runs ahead of evidence | Chapter 6 claims need downgrading until FL-007 is resolved. |
 | FL-009 | Excitonic figures use hardcoded E_b = 10 meV vs. computed 4.82 meV | Excitonic corrections overclaimed visually. |
 | FL-016 | Scattering module treats Kramers pairs as distinct subbands | Scattering lifetimes are wrong (10^9 ps vs. expected 6-12 ps). |
