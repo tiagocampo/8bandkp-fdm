@@ -1274,13 +1274,13 @@ module hamiltonianConstructor
         ! RC = conjg(R) = R (real diagonal)
         call build_kp_term_RC(kz2, kpterms_2d, blk_RC)
 
-        ! PZ = -IU * kz * P (diagonal)
+        ! PZ = P * kz (diagonal, free wire axis)
         call build_kp_term_PZ(kz, kpterms_2d, blk_PZ)
 
-        ! PP = kpterms_2d(4) * kz * RQS2  (diagonal)
+        ! PP = P * (kx + i ky) / sqrt(2) mapped to transverse operators
         call build_kp_term_PP(kz, kpterms_2d, blk_PP)
 
-        ! PM = kpterms_2d(4) * kz * RQS2  (same as PP for wire)
+        ! PM = P * (kx - i ky) / sqrt(2) mapped to transverse operators
         call build_kp_term_PM(kz, kpterms_2d, blk_PM)
 
         ! A = kpterms_2d(5) + kz^2 * kpterms_2d(10)
@@ -1669,15 +1669,15 @@ module hamiltonianConstructor
         ! (7,1): -IU * PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 0, blk_PM, N, -IU)
-        ! (7,2): -SQR2 * RQS3 * PZ  (lower triangle: -conjg of upper for anti-Hermitian PZ)
+        ! (7,2): SQR2 * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 6, 1, blk_PZ, N, cmplx(-SQR2 * RQS3, 0.0_dp, kind=dp))
+          coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
         ! (7,3): -IU * RQS3 * PP
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 2, blk_PP, N, -IU * RQS3)
-        ! (7,5): IU * RQS3 * PZ  (lower triangle: -conjg(IU*RQS3) = +IU*RQS3 for anti-Herm PZ)
+        ! (7,5): -IU * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 6, 4, blk_PZ, N, IU * RQS3)
+          coo_idx, 6, 4, blk_PZ, N, -IU * RQS3)
         ! (7,6): SQR2 * RQS3 * PP
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 5, blk_PP, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
@@ -1689,18 +1689,18 @@ module hamiltonianConstructor
         ! (8,2): -RQS3 * PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 1, blk_PM, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-        ! (8,3): IU * SQR2 * RQS3 * PZ  (lower triangle: -conjg(IU*SQR2*RQS3) = +IU*SQR2*RQS3)
+        ! (8,3): -IU * SQR2 * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 7, 2, blk_PZ, N, IU * SQR2 * RQS3)
+          coo_idx, 7, 2, blk_PZ, N, -IU * SQR2 * RQS3)
         ! (8,4): -PP
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 3, blk_PP, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
         ! (8,5): -IU * SQR2 * RQS3 * PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 4, blk_PM, N, -IU * SQR2 * RQS3)
-        ! (8,6): RQS3 * PZ  (lower triangle: -conjg(-RQS3) = +RQS3 for anti-Herm PZ)
+        ! (8,6): -RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 7, 5, blk_PZ, N, cmplx(RQS3, 0.0_dp, kind=dp))
+          coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
         ! (8,8): A
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 7, blk_A, N)
@@ -1779,44 +1779,67 @@ module hamiltonianConstructor
 
     ! ==================================================================
     ! Helper: Build kp-term Q for wire
-    ! Q = -((gamma1+gamma2)*kz^2*I + kpterms_2d(7))
-    ! kpterms_2d(1) = gamma1 diag, kpterms_2d(2) = gamma2 diag
-    ! kpterms_2d(7) = -(gamma1-2gamma2)*Laplacian
+    ! Bulk zinc-blende:
+    !   Q = -[(gamma1 + gamma2)*(kx^2 + ky^2) + (gamma1 - 2*gamma2)*kz^2]
+    !
+    ! In the wire, x/y are confined directions:
+    !   kx^2 + ky^2 -> -Laplacian_xy
+    !
+    ! Available 2-D operators:
+    !   kpterms_2d(7) = -(gamma1 - 2*gamma2) * Laplacian_xy
+    !   kpterms_2d(8) = -(gamma1 + 2*gamma2) * Laplacian_xy
+    !
+    ! Solve for the required transverse combination:
+    !   -(gamma1 + gamma2) * Laplacian_xy
+    !     = 1/4 * kpterms_2d(7) + 3/4 * kpterms_2d(8)
+    !
+    ! The free-axis kz term remains diagonal:
+    !   (gamma1 - 2*gamma2) * kz^2 * I
     ! ==================================================================
     subroutine build_kp_term_Q(kz2, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      type(csr_matrix) :: diag_sum, kz2_diag
+      type(csr_matrix) :: qxy, kz_diag
 
-      ! gamma1 + gamma2 diagonal, scaled by kz^2
-      call csr_add(kpterms_2d(1), kpterms_2d(2), diag_sum, &
-        cmplx(kz2, 0.0_dp, kind=dp), cmplx(kz2, 0.0_dp, kind=dp))
-      ! Add kpterms_2d(7)
-      call csr_add(diag_sum, kpterms_2d(7), blk, UM, UM)
-      call csr_free(diag_sum)
-      ! Negate
+      call csr_add(kpterms_2d(7), kpterms_2d(8), qxy, &
+        cmplx(0.25_dp, 0.0_dp, kind=dp), cmplx(0.75_dp, 0.0_dp, kind=dp))
+
+      call csr_add(kpterms_2d(1), kpterms_2d(2), kz_diag, &
+        cmplx(kz2, 0.0_dp, kind=dp), cmplx(-2.0_dp * kz2, 0.0_dp, kind=dp))
+
+      call csr_add(qxy, kz_diag, blk, UM, UM)
+      call csr_free(qxy)
+      call csr_free(kz_diag)
       call negate_csr(blk)
     end subroutine build_kp_term_Q
 
     ! ==================================================================
     ! Helper: Build kp-term T for wire
-    ! T = -((gamma1-gamma2)*kz^2*I + kpterms_2d(8))
+    ! Bulk zinc-blende:
+    !   T = -[(gamma1 - gamma2)*(kx^2 + ky^2) + (gamma1 + 2*gamma2)*kz^2]
+    !
+    ! Required transverse combination:
+    !   -(gamma1 - gamma2) * Laplacian_xy
+    !     = 3/4 * kpterms_2d(7) + 1/4 * kpterms_2d(8)
     ! ==================================================================
     subroutine build_kp_term_T(kz2, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      type(csr_matrix) :: diag_sum
+      type(csr_matrix) :: txy, kz_diag
 
-      ! (gamma1 - gamma2)*kz^2 diagonal
-      call csr_add(kpterms_2d(1), kpterms_2d(2), diag_sum, &
-        cmplx(kz2, 0.0_dp, kind=dp), cmplx(-kz2, 0.0_dp, kind=dp))
-      ! Add kpterms_2d(8) and negate
-      call csr_add(diag_sum, kpterms_2d(8), blk, UM, UM)
-      call csr_free(diag_sum)
+      call csr_add(kpterms_2d(7), kpterms_2d(8), txy, &
+        cmplx(0.75_dp, 0.0_dp, kind=dp), cmplx(0.25_dp, 0.0_dp, kind=dp))
+
+      call csr_add(kpterms_2d(1), kpterms_2d(2), kz_diag, &
+        cmplx(kz2, 0.0_dp, kind=dp), cmplx(2.0_dp * kz2, 0.0_dp, kind=dp))
+
+      call csr_add(txy, kz_diag, blk, UM, UM)
+      call csr_free(txy)
+      call csr_free(kz_diag)
       call negate_csr(blk)
     end subroutine build_kp_term_T
 
@@ -1838,15 +1861,15 @@ module hamiltonianConstructor
       type(csr_matrix), intent(out) :: blk
 
       type(csr_matrix) :: grad_y_scaled
-      ! blk = 2*sqrt(3)*kz * kpterms_2d(14) = 2*sqrt(3)*kz*(-gamma3*d/dx)
+      ! blk = -2*sqrt(3)*kz * kpterms_2d(14) = 2*sqrt(3)*kz*gamma3*d/dx
       call csr_scale(kpterms_2d(14), blk, &
-        cmplx(2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
-      ! grad_y_scaled = -2*sqrt(3)*kz*i * kpterms_2d(15)
-      !                = -2*sqrt(3)*kz*i*(-gamma3*d/dy)
-      !                = 2*sqrt(3)*kz*i*gamma3*d/dy
+        cmplx(-2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
+      ! grad_y_scaled = +2*sqrt(3)*kz*i * kpterms_2d(15)
+      !                = +2*sqrt(3)*kz*i*(-gamma3*d/dy)
+      !                = -2*sqrt(3)*kz*i*gamma3*d/dy
       call csr_scale(kpterms_2d(15), grad_y_scaled, &
-        cmplx(0.0_dp, -2.0_dp * SQR3 * kz, kind=dp))
-      ! S = blk + grad_y_scaled = -2*sqrt(3)*kz*gamma3*(d/dx - i*d/dy)
+        cmplx(0.0_dp, 2.0_dp * SQR3 * kz, kind=dp))
+      ! S = blk + grad_y_scaled = 2*sqrt(3)*kz*gamma3*(d/dx - i*d/dy)
       block
         type(csr_matrix) :: tmp
         call csr_add(blk, grad_y_scaled, tmp)
@@ -1879,16 +1902,16 @@ module hamiltonianConstructor
       type(csr_matrix), intent(out) :: blk
 
       type(csr_matrix) :: grad_y_scaled
-      ! blk = -2*sqrt(3)*kz * kpterms_2d(14) = -2*sqrt(3)*kz*(-gamma3*d/dx)
-      !     = 2*sqrt(3)*kz*gamma3*d/dx
+      ! blk = 2*sqrt(3)*kz * kpterms_2d(14) = 2*sqrt(3)*kz*(-gamma3*d/dx)
+      !     = -2*sqrt(3)*kz*gamma3*d/dx
       call csr_scale(kpterms_2d(14), blk, &
-        cmplx(-2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
-      ! grad_y_scaled = -2*sqrt(3)*kz*i * kpterms_2d(15)
-      !                = -2*sqrt(3)*kz*i*(-gamma3*d/dy)
-      !                = 2*sqrt(3)*kz*i*gamma3*d/dy
+        cmplx(2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
+      ! grad_y_scaled = 2*sqrt(3)*kz*i * kpterms_2d(15)
+      !                = 2*sqrt(3)*kz*i*(-gamma3*d/dy)
+      !                = -2*sqrt(3)*kz*i*gamma3*d/dy
       call csr_scale(kpterms_2d(15), grad_y_scaled, &
-        cmplx(0.0_dp, -2.0_dp * SQR3 * kz, kind=dp))
-      ! SC = blk + grad_y_scaled = 2*sqrt(3)*kz*gamma3*(d/dx + i*d/dy)
+        cmplx(0.0_dp, 2.0_dp * SQR3 * kz, kind=dp))
+      ! SC = blk + grad_y_scaled = -2*sqrt(3)*kz*gamma3*(d/dx + i*d/dy)
       block
         type(csr_matrix) :: tmp
         call csr_add(blk, grad_y_scaled, tmp)
@@ -1973,43 +1996,55 @@ module hamiltonianConstructor
 
     ! ==================================================================
     ! Helper: Build kp-term PZ for wire
-    ! PZ = -i * P * kz  (diagonal term, z is the free direction)
-    ! kpterms_2d(4) = P (diagonal), multiply by kz and -IU
+    ! PZ = P * kz  (diagonal term, z is the free direction)
+    ! kpterms_2d(4) = P (diagonal)
     ! ==================================================================
     subroutine build_kp_term_PZ(kz, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      ! PZ = -IU * kz * P_diagonal
-      call csr_scale(kpterms_2d(4), blk, cmplx(0.0_dp, -kz, kind=dp))
+      call csr_scale(kpterms_2d(4), blk, cmplx(kz, 0.0_dp, kind=dp))
     end subroutine build_kp_term_PZ
 
     ! ==================================================================
-    ! Helper: Build kp-term PP for wire (diagonal only)
-    ! PP = P * kz / sqrt(2)  (kplus = kz for wire)
-    ! kpterms_2d(4) = P diagonal
+    ! Helper: Build kp-term PP for wire
+    ! PP = P * (kx + i ky) / sqrt(2)
+    !    = P * (-i d/dx + d/dy) / sqrt(2)
+    ! using kpterms_2d(12) = P*d/dx and kpterms_2d(13) = P*d/dy
     ! ==================================================================
     subroutine build_kp_term_PP(kz, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_scale(kpterms_2d(4), blk, &
-        cmplx(kz * RQS2, 0.0_dp, kind=dp))
+      type(csr_matrix) :: grad_x_scaled, grad_y_scaled
+
+      call csr_scale(kpterms_2d(12), grad_x_scaled, cmplx(0.0_dp, -RQS2, kind=dp))
+      call csr_scale(kpterms_2d(13), grad_y_scaled, cmplx(RQS2, 0.0_dp, kind=dp))
+      call csr_add(grad_x_scaled, grad_y_scaled, blk)
+      call csr_free(grad_x_scaled)
+      call csr_free(grad_y_scaled)
     end subroutine build_kp_term_PP
 
     ! ==================================================================
-    ! Helper: Build kp-term PM for wire (diagonal only)
-    ! PM = P * kz / sqrt(2)  (kminus = kz for wire)
+    ! Helper: Build kp-term PM for wire
+    ! PM = P * (kx - i ky) / sqrt(2)
+    !    = P * (-i d/dx - d/dy) / sqrt(2)
+    ! using kpterms_2d(12) = P*d/dx and kpterms_2d(13) = P*d/dy
     ! ==================================================================
     subroutine build_kp_term_PM(kz, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_scale(kpterms_2d(4), blk, &
-        cmplx(kz * RQS2, 0.0_dp, kind=dp))
+      type(csr_matrix) :: grad_x_scaled, grad_y_scaled
+
+      call csr_scale(kpterms_2d(12), grad_x_scaled, cmplx(0.0_dp, -RQS2, kind=dp))
+      call csr_scale(kpterms_2d(13), grad_y_scaled, cmplx(-RQS2, 0.0_dp, kind=dp))
+      call csr_add(grad_x_scaled, grad_y_scaled, blk)
+      call csr_free(grad_x_scaled)
+      call csr_free(grad_y_scaled)
     end subroutine build_kp_term_PM
 
     ! ==================================================================

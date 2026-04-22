@@ -803,4 +803,63 @@ contains
     call grid_free(grid)
   end subroutine test_wire_hamiltonian_diagonal_units
 
+  @test
+  subroutine test_wire_kane_couplings_at_kz_zero()
+    integer, parameter :: nx = 5, ny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ngrid, ij
+    real(kind=dp) :: pz_27, pz_57, pp_17, pm_48
+
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    complex(kind=dp), allocatable :: Hd(:,:)
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+
+    ngrid = nx * ny
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+    allocate(Hd(HT_csr%nrows, HT_csr%ncols))
+    call csr_to_dense(HT_csr, Hd)
+
+    pz_27 = maxval(abs(Hd(ngrid + 1:2*ngrid, 6*ngrid + 1:7*ngrid)))
+    pz_57 = maxval(abs(Hd(4*ngrid + 1:5*ngrid, 6*ngrid + 1:7*ngrid)))
+    pp_17 = maxval(abs(Hd(1:ngrid, 6*ngrid + 1:7*ngrid)))
+    pm_48 = maxval(abs(Hd(3*ngrid + 1:4*ngrid, 7*ngrid + 1:8*ngrid)))
+    @assertTrue(pz_27 < 1.0e-12_dp, message="Wire PZ coupling vanishes at kz=0")
+    @assertTrue(pz_57 < 1.0e-12_dp, message="Wire SO-CB PZ coupling vanishes at kz=0")
+    @assertTrue(pp_17 > 1.0e-8_dp, message="Wire PP transverse coupling survives at kz=0")
+    @assertTrue(pm_48 > 1.0e-8_dp, message="Wire PM transverse coupling survives at kz=0")
+
+    deallocate(Hd)
+    call csr_free(HT_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_wire_kane_couplings_at_kz_zero
+
 end module test_hamiltonian_2d
