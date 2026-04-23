@@ -51,10 +51,10 @@ Date: 2026-04-22 (updated with nextnano benchmark comparisons)
 
 | System | Observable | Reference | Our Result | Status |
 |--------|-----------|-----------|------------|--------|
-| GaAs wire (63x63 A) | Wire gap | PIB: 168 meV | 232 meV | Reasonable (8-band coupling) |
-| GaAs wire (63x63 A) | CB1-CB2 spacing | PIB: 566 meV | 61 meV | Qualitatively correct (non-parabolic) |
+| GaAs wire (63x63 A) | Near-gap split | PIB: 168 meV | 818 meV | Recomputed from clean figure run; needs re-benchmark |
+| GaAs wire (63x63 A) | CB edge | -- | 0.980 eV | Recomputed from clean figure run |
 | GaAs wire (63x63 A) | Kramers degeneracy | Required at kz=0 | Confirmed | Validated |
-| InAs/GaAs core-shell | Wire gap | -- | 0.19 eV | Qualitatively correct |
+| InAs/GaAs core-shell | Near-edge split | -- | 0.059 eV | Qualitative figure output |
 | InSb wire (55x55 A) | gz | ~-25 at 30nm (Faria Jr.) | +21.06 at 5.5nm | Provisional (coarse grid) |
 | InSb wire (55x55 A) | gx, gy | Isotropic (cylindrical) | +2.82, -0.10 | Provisional (rectangular, coarse) |
 

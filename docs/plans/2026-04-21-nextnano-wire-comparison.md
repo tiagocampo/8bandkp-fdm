@@ -26,7 +26,7 @@ At kz = 0:
 | CB3 | 1.154 eV |
 | CB4 | 1.229 eV |
 | CB5 | 1.348 eV |
-| Effective wire gap | 0.232 eV (232 meV) |
+| Effective near-gap split | 0.818 eV (818 meV) |
 | Total VB states | 534 (267 Kramers pairs) |
 | Total CB states | 28 (14 Kramers pairs) |
 | CB1-CB2 spacing | 60.6 meV |
@@ -44,9 +44,9 @@ For a 2D square infinite well with side L = 6.3 nm:
 | 2 | (1,2)=(2,1) | 707 meV | 135 meV |
 | 3 | (2,2) | 1132 meV | 216 meV |
 
-The PIB CB1 confinement energy of 141 meV is smaller than our computed gap (232 meV) because the 8-band model includes VB-CB coupling that renormalizes the effective masses and shifts the band edges. The HH confinement energy (27 meV) is much smaller than the CB confinement due to the heavier hole mass, as expected.
+The current clean figure run reports a near-gap split of 818 meV. This replaces the stale 232 meV value from the earlier figure-generation pass. Because the wire state classification is now based on a spectral split rather than a fully benchmarked external reference, this number should be re-benchmarked before being used as a quantitative nextnano comparison.
 
-The CB1-CB2 PIB spacing (566 meV) is much larger than the computed spacing (61 meV), which reflects the strong non-parabolicity and band mixing in the 8-band model. The effective mass near the CB edge is larger than the bulk value due to VB admixture, reducing the subband spacing.
+The earlier CB1-CB2 spacing number is no longer carried as a validated benchmark in the lecture figures. The current figures prioritize robust near-gap state selection and avoid connecting untracked eigenvalue branches across $k_z$.
 
 ### 2.3 Comparison with nextnano InAs wire (10 x 10 nm)
 
@@ -73,7 +73,7 @@ The nextnano energies are measured from the InAs VB edge (set to 0), so these ar
 
 The 6x6 k.p lifts the degeneracy of the (1,2) and (2,1) states through the LH-HH mixing encoded in the off-diagonal Luttinger parameters. Our 8-band code produces the same qualitative effect: nearly-degenerate Kramers pairs with small splittings from the off-diagonal k.p terms.
 
-**Key comparison point:** Our GaAs wire CB spacing (~61 meV) is smaller than the PIB estimate (566 meV) by a factor of ~9. The nextnano InAs wire shows similar behavior: the effective mass model spacing between (1,1) and (1,2) is 27.5 meV vs PIB of 654 meV. This massive reduction is the hallmark of 8-band physics -- band mixing dramatically renormalizes the confinement energy scale.
+**Key comparison point:** The old 61 meV CB-spacing statement came from a stale figure-generation pass and is no longer used as a validated benchmark. The current figure set instead reports the selected GaAs near-gap split and leaves detailed CB-spacing validation as follow-up work.
 
 ## 3. InAs/GaAs Core-Shell Wire: Strained Heterostructure
 
@@ -90,7 +90,7 @@ The InAs core is under compressive biaxial strain (matched to GaAs lattice const
 | GaAs shell EV | -0.800 eV |
 | CB offset (Delta_EC) | 0.892 eV |
 | VB offset (Delta_EV) | 0.210 eV |
-| Effective wire gap | ~0.19 eV |
+| Effective near-edge split | ~0.059 eV |
 | CB subbands | 1 (within search window) |
 | VB subbands | ~24 |
 
@@ -205,7 +205,7 @@ Our GaAs wire at kz = 0 produces subbands in the following energy ranges:
 |-----------|-------------------|---------------|-----------|
 | Deep VB | -1.498 to -0.385 | ~130 pairs | Predominantly HH/LH mixed |
 | Upper VB | -0.385 to 0.799 | ~135 pairs | Strongly mixed HH/LH/SO |
-| **Band gap** | **0.799 to 1.031** | **--** | **232 meV** |
+| **Near-gap split** | **0.162 to 0.980** | **--** | **818 meV** |
 | CB1 | 1.031 | 1 pair | s-like ground state |
 | CB2 | 1.092 | 1 pair | p-like (degenerate) |
 | CB3 | 1.154 | 1 pair | p-like (degenerate) |
@@ -256,10 +256,10 @@ Our wavefunctions follow this pattern, as documented in the lecture notes (Chapt
 
 | Quantity | Our Code | nextnano | Literature (Faria Jr.) | Assessment |
 |----------|---------|----------|----------------------|------------|
-| **GaAs wire gap (6.3 nm)** | 0.232 eV | -- | -- | Reasonable (reduced from 1.52 eV bulk) |
-| **GaAs CB1-CB2 spacing** | 61 meV | -- | -- | Consistent with strong non-parabolicity |
+| **GaAs wire near-gap split (6.3 nm)** | 0.818 eV | -- | -- | Recomputed; needs external benchmark |
+| **GaAs CB edge** | 0.980 eV | -- | -- | Current clean figure run |
 | **GaAs Kramers degeneracy** | Yes (all kz=0 states) | Yes | Yes | Correct |
-| **InAs/GaAs gap (8 nm core)** | ~0.19 eV | -- | -- | Strain-reduced from unstrained 0.417 eV |
+| **InAs/GaAs near-edge split (8 nm core)** | ~0.059 eV | -- | -- | Qualitative current figure output |
 | **InAs/GaAs CB subbands** | 1 | -- | -- | Consistent with deep confinement |
 | **InSb gx (5.5 nm)** | 2.82 | -- | ~-25 (30 nm) | Needs convergence study |
 | **InSb gz (5.5 nm)** | 21.06 | -- | ~-25 (30 nm) | Needs convergence study |
@@ -275,7 +275,7 @@ Our wavefunctions follow this pattern, as documented in the lecture notes (Chapt
 
 3. **14-band comparison**: Investigate whether the 8-band model systematically underestimates or overestimates the g-factor relative to the 14-band Kane model for narrow-gap materials.
 
-4. **CB subband spacing validation**: Compare the GaAs CB1-CB2 spacing (61 meV) with an independent effective-mass calculation using the energy-dependent effective mass from the 8-band dispersion.
+4. **CB subband spacing validation**: Compare GaAs CB subband spacings with an independent effective-mass calculation using the energy-dependent effective mass from the 8-band dispersion.
 
 5. **nextnano wire reproduction**: Attempt to reproduce the nextnano InAs 10x10 nm wire tutorial results directly, using the same material parameters and grid resolution, to establish a precise numerical benchmark.
 

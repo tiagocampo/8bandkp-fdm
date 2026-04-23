@@ -167,6 +167,40 @@ def run_executable(
     return result
 
 
+def snapshot_output_dir(output_dir: Path, snapshot_dir: Path) -> Path:
+    """Copy the current output directory to a disposable snapshot directory."""
+    if snapshot_dir.exists():
+        shutil.rmtree(snapshot_dir)
+    snapshot_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(output_dir, snapshot_dir)
+    return snapshot_dir
+
+
+def config_with_overrides(config_path: Path, overrides: Dict[str, str], tag: str) -> Path:
+    """Write a temporary config with simple `key: value` overrides."""
+    lines = config_path.read_text().splitlines()
+    updated = []
+    seen: set[str] = set()
+    for line in lines:
+        stripped = line.strip()
+        replaced = False
+        for key, value in overrides.items():
+            if stripped.startswith(f"{key}:"):
+                updated.append(f"{key}: {value}")
+                seen.add(key)
+                replaced = True
+                break
+        if not replaced:
+            updated.append(line)
+    for key, value in overrides.items():
+        if key not in seen:
+            updated.append(f"{key}: {value}")
+    tmp_cfg = REPO_ROOT / "tmp" / f"{tag}.cfg"
+    tmp_cfg.parent.mkdir(parents=True, exist_ok=True)
+    tmp_cfg.write_text("\n".join(updated) + "\n")
+    return tmp_cfg
+
+
 def parse_eigenvalues(output_dir: Path) -> Tuple[np.ndarray, np.ndarray]:
     """
     Parse output/eigenvalues.dat.
@@ -310,6 +344,75 @@ def _wire_state_groups_from_parts(
         return None
 
     return vb_idx, cb_idx, cb_char
+
+
+def _spectral_gap_split(
+    eig_k0: np.ndarray,
+    energy_min: float = -1.0,
+    energy_max: float = 2.0,
+) -> Tuple[int, float, float]:
+    """Return the largest spectral gap split in an energy window."""
+    if eig_k0.size < 2:
+        return 0, eig_k0[0], eig_k0[0]
+    gaps = np.diff(eig_k0)
+    mask = (eig_k0[:-1] >= energy_min) & (eig_k0[1:] <= energy_max)
+    if np.any(mask):
+        score = np.where(mask, gaps, -np.inf)
+        gap_idx = int(np.argmax(score))
+    else:
+        gap_idx = int(np.argmax(gaps))
+    return gap_idx, eig_k0[gap_idx], eig_k0[gap_idx + 1]
+
+
+def _near_gap_indices_for_column(
+    eig_col: np.ndarray,
+    n_vb: int,
+    n_cb: int,
+    energy_min: float = -1.0,
+    energy_max: float = 2.0,
+) -> Tuple[np.ndarray, np.ndarray, int, int]:
+    """Select sorted near-gap eigenvalues for one k-point."""
+    sorted_idx = np.argsort(eig_col)
+    sorted_e = eig_col[sorted_idx]
+    gap_idx, _, _ = _spectral_gap_split(sorted_e, energy_min, energy_max)
+    vb_start = max(0, gap_idx - n_vb + 1)
+    vb_idx = sorted_idx[vb_start : gap_idx + 1]
+    cb_idx = sorted_idx[gap_idx + 1 : gap_idx + 1 + n_cb]
+    return vb_idx, cb_idx, gap_idx, gap_idx + 1
+
+
+def _plot_near_gap_scatter(
+    ax: plt.Axes,
+    k_vals: np.ndarray,
+    eig: np.ndarray,
+    n_states: int,
+    side: str,
+    cmap_name: str,
+    energy_min: float,
+    energy_max: float,
+) -> None:
+    """Plot sorted near-gap states without implying branch continuity."""
+    cmap = plt.get_cmap(cmap_name)
+    colors = cmap(np.linspace(0.3, 0.85, n_states))
+    for k_i, k in enumerate(k_vals):
+        vb_idx, cb_idx, _, _ = _near_gap_indices_for_column(
+            eig[:, k_i], n_states, n_states, energy_min, energy_max
+        )
+        selected = vb_idx if side == "vb" else cb_idx
+        selected = selected[-n_states:] if side == "vb" else selected[:n_states]
+        energies = eig[selected, k_i]
+        order = np.argsort(energies)
+        for rank, local_i in enumerate(order):
+            ax.scatter(k, energies[local_i], s=12, color=colors[min(rank, n_states - 1)], alpha=0.85)
+
+
+def _wire_boundary_mesh(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return X/Y/R with R measured from the plotted wire-domain center."""
+    X, Y = np.meshgrid(x, y)
+    xc = 0.5 * (float(np.min(x)) + float(np.max(x)))
+    yc = 0.5 * (float(np.min(y)) + float(np.max(y)))
+    R = np.sqrt((X - xc) ** 2 + (Y - yc) ** 2)
+    return X, Y, R
 
 
 def parse_parts_all_k(output_dir: Path) -> Tuple[np.ndarray, List[float]]:
@@ -1779,10 +1882,18 @@ def fig_sc_convergence(output_dir: Path) -> None:
 def fig_wire_subbands(output_dir: Path) -> None:
     """wire_subbands.png: E(k_z) dispersion for GaAs rectangular wire near the gap."""
     print("[figure] wire_subbands")
-    cfg = CONFIG_DIR / "wire_gaas_rectangle.cfg"
-    run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_gaas", timeout=300)
+    cfg = config_with_overrides(
+        CONFIG_DIR / "wire_gaas_rectangle.cfg",
+        {"waveVectorStep": "11"},
+        "wire_gaas_subbands_sweep",
+    )
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_gaas", timeout=600)
+    if result.returncode != 0:
+        print("  SKIP: wire_gaas run failed")
+        return
+    run_dir = snapshot_output_dir(output_dir, REPO_ROOT / "tmp" / "wire_gaas_subbands")
     try:
-        k_vals, eig = parse_eigenvalues(output_dir)
+        k_vals, eig = parse_eigenvalues(run_dir)
     except FileNotFoundError:
         print("  WARNING: eigenvalues.dat not found for wire, skipping.")
         return
@@ -1792,70 +1903,51 @@ def fig_wire_subbands(output_dir: Path) -> None:
 
     parts = np.array([])
     try:
-        parts = parse_parts(output_dir)
+        parts = parse_parts(run_dir)
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
-    groups = _wire_state_groups_from_parts(e0, parts)
-    if groups is not None:
-        vb_indices, cb_indices, cb_char = groups
-        classification = "parts.dat CB character"
-    else:
-        gaps = np.diff(e0)
-        gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.0)
-        if np.any(gap_mask):
-            gap_idx = np.argmax(gaps * gap_mask)
-            vb_indices = list(range(gap_idx + 1))
-            cb_indices = list(range(gap_idx + 1, n_bands))
-        else:
-            n_vb_hint = min(16, n_bands)
-            vb_indices = list(range(n_vb_hint))
-            cb_indices = list(range(n_vb_hint, n_bands))
-        cb_char = np.full(n_bands, np.nan)
-        classification = "largest spectral gap fallback"
+    gap_idx, e_vb_max, e_cb_min = _spectral_gap_split(e0, -0.5, 1.5)
+    vb_indices = list(range(gap_idx + 1))
+    cb_indices = list(range(gap_idx + 1, n_bands))
+    cb_char = np.full(n_bands, np.nan)
+    if parts.size >= n_bands:
+        cb_char = _normalized_parts(parts[:n_bands])[:, 6] + _normalized_parts(parts[:n_bands])[:, 7]
+    classification = "largest near-gap spectral gap"
 
     n_vb = len(vb_indices)
     n_cb = len(cb_indices)
-    e_vb_max = e0[vb_indices[-1]] if vb_indices else e0[0]
-    e_cb_min = e0[cb_indices[0]] if cb_indices else e0[-1]
-
-    plot_vb = vb_indices[-min(n_vb, 10):]
-    plot_cb = cb_indices[:min(n_cb, 10)]
+    n_plot_vb = min(n_vb, 10)
+    n_plot_cb = min(n_cb, 10)
 
     print(f"  Classification: {n_vb} VB + {n_cb} CB ({n_bands} total) via {classification}")
     print(f"  VB max={e_vb_max:.4f}, CB min={e_cb_min:.4f}, "
           f"gap={e_cb_min - e_vb_max:.4f} eV")
-    if groups is not None:
+    if np.all(np.isfinite(cb_char)):
         print(f"  Edge CB character: VB top={1.0 - cb_char[vb_indices[-1]]:.3f} VB, "
               f"CB bottom={cb_char[cb_indices[0]]:.3f} CB")
-    print(f"  Plotting {len(plot_vb)} VB + {len(plot_cb)} CB near the gap")
+    print(f"  Plotting {n_plot_vb} VB + {n_plot_cb} CB near the gap")
 
     fig, (ax_vb, ax_cb) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=False)
 
     # VB subbands near the gap
-    if plot_vb:
-        vb_colors = plt.cm.Reds_r(np.linspace(0.3, 0.8, len(plot_vb)))
-        for i, band_i in enumerate(plot_vb):
-            ax_vb.plot(k_vals, eig[band_i], color=vb_colors[i], linewidth=0.8)
+    _plot_near_gap_scatter(ax_vb, k_vals, eig, n_plot_vb, "vb", "Reds_r", -0.5, 1.5)
 
     ax_vb.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
                label=f"VB top = {e_vb_max:.3f} eV")
-    ax_vb.set_xlabel(r"$k_z$ (1/\u00C5)")
+    ax_vb.set_xlabel(r"$k_z$ (1/$\mathrm{\AA}$)")
     ax_vb.set_ylabel(r"$E$ (eV)")
-    ax_vb.set_title(f"VB subbands ({len(plot_vb)} shown)")
+    ax_vb.set_title(f"VB subbands ({n_plot_vb} shown)")
     ax_vb.legend(loc="best", fontsize=7)
 
     # CB subbands near the gap
-    if plot_cb:
-        cb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.8, len(plot_cb)))
-        for i, band_i in enumerate(plot_cb):
-            ax_cb.plot(k_vals, eig[band_i], color=cb_colors[i], linewidth=0.8)
+    _plot_near_gap_scatter(ax_cb, k_vals, eig, n_plot_cb, "cb", "Blues_r", -0.5, 1.5)
 
     ax_cb.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
                label=f"CB bottom = {e_cb_min:.3f} eV")
-    ax_cb.set_xlabel(r"$k_z$ (1/\u00C5)")
+    ax_cb.set_xlabel(r"$k_z$ (1/$\mathrm{\AA}$)")
     ax_cb.set_ylabel(r"$E$ (eV)")
-    ax_cb.set_title(f"CB subbands ({len(plot_cb)} shown)")
+    ax_cb.set_title(f"CB subbands ({n_plot_cb} shown)")
     ax_cb.legend(loc="best", fontsize=7)
 
     wire_w = float(
@@ -1901,37 +1993,34 @@ def _find_ev_idx_nearest_to_energy(output_dir: Path, target_eV: float) -> int:
 def fig_wire_density_2d(output_dir: Path) -> None:
     """wire_density_2d.png: 2D |psi(x,y)|^2 for CB-ground and VB-edge states."""
     print("[figure] wire_density_2d")
+    cfg = config_with_overrides(
+        CONFIG_DIR / "wire_gaas_rectangle.cfg",
+        {"waveVectorMax": "0.01", "waveVectorStep": "2"},
+        "wire_gaas_density_k0",
+    )
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_gaas_density", timeout=300)
+    if result.returncode != 0:
+        print("  SKIP: wire_gaas_density run failed")
+        return
+    run_dir = snapshot_output_dir(output_dir, REPO_ROOT / "tmp" / "wire_gaas_density")
 
     # Read eigenvalues to find VB max and CB min
     try:
-        _, eig = parse_eigenvalues(output_dir)
+        _, eig = parse_eigenvalues(run_dir)
     except FileNotFoundError:
-        cfg = CONFIG_DIR / "wire_gaas_rectangle.cfg"
-        run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_gaas", timeout=300)
-        _, eig = parse_eigenvalues(output_dir)
+        print("  WARNING: eigenvalues.dat not found for wire density, skipping.")
+        return
 
     e0 = eig[:, 0]
     parts = np.array([])
     try:
-        parts = parse_parts(output_dir)
+        parts = parse_parts(run_dir)
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
-    groups = _wire_state_groups_from_parts(e0, parts)
-    if groups is not None:
-        vb_indices, cb_indices, _ = groups
-        vb_edge_ev_idx = vb_indices[-1] + 1
-        cb_ground_ev_idx = cb_indices[0] + 1
-    else:
-        gaps = np.diff(e0)
-        gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.0)
-        if np.any(gap_mask):
-          gap_idx = np.argmax(gaps * gap_mask)
-          vb_edge_ev_idx = gap_idx + 1
-          cb_ground_ev_idx = gap_idx + 2
-        else:
-          vb_edge_ev_idx = max(1, len(e0) - 1)
-          cb_ground_ev_idx = len(e0)
+    gap_idx, _, _ = _spectral_gap_split(e0, -0.5, 1.5)
+    vb_edge_ev_idx = gap_idx + 1
+    cb_ground_ev_idx = gap_idx + 2
 
     e_vb_max = e0[vb_edge_ev_idx - 1]
     e_cb_min = e0[cb_ground_ev_idx - 1]
@@ -1947,7 +2036,7 @@ def fig_wire_density_2d(output_dir: Path) -> None:
         print(f"  Panel {panel+1}: ev_idx={ev_idx} (target E={target_eV:.4f} eV)")
 
         try:
-            x, y, psi2 = parse_wire_eigenfunction_2d(output_dir, k_idx=1, ev_idx=ev_idx)
+            x, y, psi2 = parse_wire_eigenfunction_2d(run_dir, k_idx=1, ev_idx=ev_idx)
         except FileNotFoundError:
             ax.text(0.5, 0.5, "No data", transform=ax.transAxes, ha="center")
             continue
@@ -1957,7 +2046,7 @@ def fig_wire_density_2d(output_dir: Path) -> None:
             continue
 
         state_energy = ""
-        ev_file = output_dir / f"eigenfunctions_k_00001_ev_{ev_idx:05d}.dat"
+        ev_file = run_dir / f"eigenfunctions_k_00001_ev_{ev_idx:05d}.dat"
         if ev_file.exists():
             with open(ev_file) as f:
                 for line in f:
@@ -1966,8 +2055,8 @@ def fig_wire_density_2d(output_dir: Path) -> None:
                         break
 
         im = ax.pcolormesh(x, y, psi2, shading="auto", cmap="viridis")
-        ax.set_xlabel(r"$x$ (\u00C5)")
-        ax.set_ylabel(r"$y$ (\u00C5)")
+        ax.set_xlabel("x (Å)")
+        ax.set_ylabel("y (Å)")
         title = label
         if state_energy:
             title += f" (E = {state_energy} eV)"
@@ -4863,11 +4952,19 @@ def _wire_material_boundary(cfg_path: Path) -> float:
 def fig_wire_inas_gaas_profile(output_dir: Path) -> None:
     """wire_inas_gaas_profile.png: EC 2D colormap for InAs/GaAs core-shell wire."""
     print("[figure] wire_inas_gaas_profile")
-    cfg = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
-    run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_inas_gaas_profile", timeout=600)
+    cfg = config_with_overrides(
+        CONFIG_DIR / "wire_inas_gaas_strain.cfg",
+        {"waveVectorMax": "0.01", "waveVectorStep": "2"},
+        "wire_inas_gaas_profile_k0",
+    )
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_inas_gaas_profile", timeout=600)
+    if result.returncode != 0:
+        print("  SKIP: wire_inas_gaas_profile run failed")
+        return
+    run_dir = snapshot_output_dir(output_dir, REPO_ROOT / "tmp" / "wire_inas_gaas_profile")
 
     try:
-        x, y, EV, EV_SO, EC = _parse_wire_potential_profile(output_dir)
+        x, y, EV, EV_SO, EC = _parse_wire_potential_profile(run_dir)
     except FileNotFoundError:
         print("  SKIP: output/potential_profile.dat not found")
         return
@@ -4891,20 +4988,18 @@ def fig_wire_inas_gaas_profile(output_dir: Path) -> None:
     cbar = fig.colorbar(im, ax=ax, label=r"$E_C$ (eV)")
 
     # Overlay material boundary as contour
-    X, Y = np.meshgrid(x, y)
-    R = np.sqrt(X**2 + Y**2)
+    X, Y, R = _wire_boundary_mesh(x, y)
     if core_outer > 0:
         ax.contour(X, Y, R, levels=[core_outer], colors="white", linewidths=1.5,
                    linestyles="--")
         # Wire outer boundary (rectangle)
-        hw = wire_w / 2.0
-        rect = plt.Rectangle((-hw, -hw), wire_w, wire_w,
+        rect = plt.Rectangle((0.0, 0.0), wire_w, wire_w,
                              linewidth=1.0, edgecolor="white",
                              facecolor="none", linestyle=":")
         ax.add_patch(rect)
 
-    ax.set_xlabel(r"$x$ (\u00C5)")
-    ax.set_ylabel(r"$y$ (\u00C5)")
+    ax.set_xlabel("x (Å)")
+    ax.set_ylabel("y (Å)")
     ax.set_title("InAs/GaAs core-shell wire band-edge profile")
     ax.set_aspect("equal")
     fig.tight_layout()
@@ -4930,7 +5025,7 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
         if stripped.startswith("waveVectorMax:"):
             modified_lines.append("waveVectorMax: 0.05")
         elif stripped.startswith("waveVectorStep:"):
-            modified_lines.append("waveVectorStep: 11")
+            modified_lines.append("waveVectorStep: 2")
         elif stripped.startswith("feast_emin:"):
             modified_lines.append("feast_emin: -3.0")
         elif stripped.startswith("feast_emax:"):
@@ -4957,9 +5052,10 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
     if result.returncode != 0:
         print(f"  WARNING: wire run failed (rc={result.returncode}), skipping.")
         return
+    run_dir = snapshot_output_dir(output_dir, REPO_ROOT / "tmp" / "wire_inas_gaas_subbands")
 
     try:
-        k_vals, eig = parse_eigenvalues(output_dir)
+        k_vals, eig = parse_eigenvalues(run_dir)
     except FileNotFoundError:
         print("  SKIP: eigenvalues.dat not found")
         return
@@ -4969,31 +5065,17 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
 
     parts = np.array([])
     try:
-        parts = parse_parts(output_dir)
+        parts = parse_parts(run_dir)
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
-    groups = _wire_state_groups_from_parts(e0, parts)
-    if groups is not None:
-        vb_indices, cb_indices, _ = groups
-        classification = "parts.dat CB character"
-    else:
-        gaps = np.diff(e0)
-        gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.5)
-        if np.any(gap_mask):
-            gap_idx = np.argmax(gaps * gap_mask)
-            vb_indices = list(range(gap_idx + 1))
-            cb_indices = list(range(gap_idx + 1, n_bands))
-        else:
-            vb_indices = list(range(min(8, n_bands)))
-            cb_indices = list(range(min(8, n_bands), n_bands))
-        classification = "largest spectral gap fallback"
+    gap_idx, e_vb_max, e_cb_min = _spectral_gap_split(e0, -0.1, 0.2)
+    vb_indices = list(range(gap_idx + 1))
+    cb_indices = list(range(gap_idx + 1, n_bands))
+    classification = "largest near-edge spectral gap"
 
-    e_vb_max = e0[vb_indices[-1]] if vb_indices else e0[0]
-    e_cb_min = e0[cb_indices[0]] if cb_indices else e0[-1]
-
-    plot_vb = vb_indices[-min(len(vb_indices), 8):]
-    plot_cb = cb_indices[:min(len(cb_indices), 8)]
+    n_plot_vb = min(len(vb_indices), 8)
+    n_plot_cb = min(len(cb_indices), 8)
 
     print(
         f"  {len(vb_indices)} VB + {len(cb_indices)} CB, "
@@ -5002,28 +5084,22 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
 
     fig, (ax_vb, ax_cb) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=False)
 
-    if plot_vb:
-        vb_colors = plt.cm.Reds_r(np.linspace(0.3, 0.8, len(plot_vb)))
-        for i, band_i in enumerate(plot_vb):
-            ax_vb.plot(k_vals, eig[band_i], color=vb_colors[i], linewidth=0.8)
+    _plot_near_gap_scatter(ax_vb, k_vals, eig, n_plot_vb, "vb", "Reds_r", -0.1, 0.2)
 
     ax_vb.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
                label=f"VB top = {e_vb_max:.3f} eV")
-    ax_vb.set_xlabel(r"$k_z$ (1/\u00C5)")
+    ax_vb.set_xlabel(r"$k_z$ (1/$\mathrm{\AA}$)")
     ax_vb.set_ylabel(r"$E$ (eV)")
-    ax_vb.set_title(f"VB subbands ({len(plot_vb)} shown)")
+    ax_vb.set_title(f"VB subbands ({n_plot_vb} shown)")
     ax_vb.legend(loc="best", fontsize=7)
 
-    if plot_cb:
-        cb_colors = plt.cm.Blues_r(np.linspace(0.3, 0.8, len(plot_cb)))
-        for i, band_i in enumerate(plot_cb):
-            ax_cb.plot(k_vals, eig[band_i], color=cb_colors[i], linewidth=0.8)
+    _plot_near_gap_scatter(ax_cb, k_vals, eig, n_plot_cb, "cb", "Blues_r", -0.1, 0.2)
 
     ax_cb.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
                label=f"CB bottom = {e_cb_min:.3f} eV")
-    ax_cb.set_xlabel(r"$k_z$ (1/\u00C5)")
+    ax_cb.set_xlabel(r"$k_z$ (1/$\mathrm{\AA}$)")
     ax_cb.set_ylabel(r"$E$ (eV)")
-    ax_cb.set_title(f"CB subbands ({len(plot_cb)} shown)")
+    ax_cb.set_title(f"CB subbands ({n_plot_cb} shown)")
     ax_cb.legend(loc="best", fontsize=7)
 
     fig.suptitle(
@@ -5040,17 +5116,20 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
     """wire_inas_gaas_wavefunctions.png: 2x2 panel of |psi(x,y)|^2 for first few states."""
     print("[figure] wire_inas_gaas_wavefunctions")
 
-    cfg = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
-
-    # Run if needed (reuse output from subband run if present)
-    eigenval_path = output_dir / "eigenvalues.dat"
-    eigfunc_path = output_dir / "eigenfunctions_k_00001_ev_00001.dat"
-    if not eigenval_path.exists() or not eigfunc_path.exists():
-        run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_inas_gaas_wf", timeout=600)
+    cfg = config_with_overrides(
+        CONFIG_DIR / "wire_inas_gaas_strain.cfg",
+        {"waveVectorMax": "0.01", "waveVectorStep": "2"},
+        "wire_inas_gaas_wf_k0",
+    )
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_inas_gaas_wf", timeout=600)
+    if result.returncode != 0:
+        print("  SKIP: wire_inas_gaas_wf run failed")
+        return
+    run_dir = snapshot_output_dir(output_dir, REPO_ROOT / "tmp" / "wire_inas_gaas_wf")
 
     # Read eigenvalues to get energies at k=0
     try:
-        _, eig = parse_eigenvalues(output_dir)
+        _, eig = parse_eigenvalues(run_dir)
     except FileNotFoundError:
         print("  SKIP: eigenvalues.dat not found")
         return
@@ -5060,23 +5139,13 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
 
     parts = np.array([])
     try:
-        parts = parse_parts(output_dir)
+        parts = parse_parts(run_dir)
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
-    groups = _wire_state_groups_from_parts(e0, parts)
-    if groups is not None:
-        vb_indices, cb_indices, _ = groups
-    else:
-        gaps = np.diff(e0)
-        gap_mask = (e0[:-1] > -1.0) & (e0[:-1] < 2.5)
-        if np.any(gap_mask):
-            gap_idx = np.argmax(gaps * gap_mask)
-            vb_indices = list(range(gap_idx + 1))
-            cb_indices = list(range(gap_idx + 1, n_bands))
-        else:
-            vb_indices = list(range(min(8, n_bands)))
-            cb_indices = list(range(min(8, n_bands), n_bands))
+    gap_idx, _, _ = _spectral_gap_split(e0, -0.1, 0.2)
+    vb_indices = list(range(gap_idx + 1))
+    cb_indices = list(range(gap_idx + 1, n_bands))
 
     # Plot a 2x2 panel: top 3 VB states + CB ground state
     n_vb_show = min(3, len(vb_indices))
@@ -5107,7 +5176,7 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
         ev_idx = state_indices[panel_idx]
 
         try:
-            x, y, psi2 = parse_wire_eigenfunction_2d(output_dir, k_idx=1, ev_idx=ev_idx)
+            x, y, psi2 = parse_wire_eigenfunction_2d(run_dir, k_idx=1, ev_idx=ev_idx)
         except FileNotFoundError:
             ax.text(0.5, 0.5, "No data", transform=ax.transAxes, ha="center", va="center")
             ax.set_aspect("equal")
@@ -5119,8 +5188,8 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
             continue
 
         im = ax.pcolormesh(x, y, psi2, shading="auto", cmap="inferno")
-        ax.set_xlabel(r"$x$ (\u00C5)")
-        ax.set_ylabel(r"$y$ (\u00C5)")
+        ax.set_xlabel("x (Å)")
+        ax.set_ylabel("y (Å)")
 
         ax.set_title(state_labels[panel_idx], fontsize=10)
         ax.set_aspect("equal")
@@ -5128,8 +5197,7 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
 
         # Overlay material boundary
         if core_outer > 0:
-            X, Y = np.meshgrid(x, y)
-            R = np.sqrt(X**2 + Y**2)
+            X, Y, R = _wire_boundary_mesh(x, y)
             ax.contour(X, Y, R, levels=[core_outer], colors="white",
                        linewidths=1.0, linestyles="--")
 
