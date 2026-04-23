@@ -51,12 +51,12 @@ Date: 2026-04-22 (updated with nextnano benchmark comparisons)
 
 | System | Observable | Reference | Our Result | Status |
 |--------|-----------|-----------|------------|--------|
-| GaAs wire (63x63 A) | Near-gap split | PIB: 168 meV | 818 meV | Recomputed from clean figure run; needs re-benchmark |
-| GaAs wire (63x63 A) | CB edge | -- | 0.980 eV | Recomputed from clean figure run |
+| GaAs wire (63x63 A) | Near-gap split | PIB: 168 meV | 2.035 eV | Recomputed after boundary-operator fix; needs external benchmark |
+| GaAs wire (63x63 A) | CB edge | -- | 1.150 eV | Character-selected from `parts.dat` |
 | GaAs wire (63x63 A) | Kramers degeneracy | Required at kz=0 | Confirmed | Validated |
-| InAs/GaAs core-shell | Near-edge split | -- | 0.059 eV | Qualitative figure output |
-| InSb wire (55x55 A) | gz | ~-25 at 30nm (Faria Jr.) | +21.06 at 5.5nm | Provisional (coarse grid) |
-| InSb wire (55x55 A) | gx, gy | Isotropic (cylindrical) | +2.82, -0.10 | Provisional (rectangular, coarse) |
+| InAs/GaAs core-shell | Near-edge split | -- | 0.017 eV | Mixed/interface-weighted qualitative output |
+| InSb wire (55x55 A) | gz | ~-25 at 30nm (Faria Jr.) | -49.97 at 5.5nm | Provisional (coarse grid) |
+| InSb wire (55x55 A) | gx, gy | Isotropic (cylindrical) | -49.94, -50.05 | Provisional; band-character selected |
 
 **Notes:**
 - No public nextnano 8-band k.p quantum wire tutorial exists for direct comparison.
@@ -90,7 +90,7 @@ Date: 2026-04-22 (updated with nextnano benchmark comparisons)
 
 ## Intentionally Downgraded or Removed
 
-- Wire g-factor quantitative comparison: our InSb wire (55x55 A, 11x11 grid) gives gx=+2.82, gy=-0.10, gz=+21.06 vs bulk |g|~51. No direct nextnano wire g-factor tutorial available. The 11x11 grid is too coarse for quantitative g-factor work; a grid convergence study is the most important next step.
+- Wire g-factor quantitative comparison: our InSb wire (55x55 A, 11x11 grid) gives gx=-49.94, gy=-50.05, gz=-49.97 vs bulk |g|~51. No direct nextnano wire g-factor tutorial is available. The 11x11 grid is too coarse for quantitative g-factor work; a grid convergence study is the most important next step.
 - Bulk GaAs g-factor: Roth formula gives -0.44 (experiment), our 8-band Lowdin result gives -0.315. The discrepancy is the known 8-band model limit from missing remote p-like CB states. Not a code bug.
 - Optical TE/TM status: zone-center matrix elements are now backed by a dedicated regression again, and both the unstrained GaAs/AlGaAs and stripped-down strained InGaAs k_parallel-integrated absorption benchmarks preserve the expected TE-dominant edge. The remaining optics risk is figure/data provenance, not the basic TE/TM absorption path.
 - Scattering lifetimes: Kramers-pair double-counting in the scattering kernel produces lifetimes of 10^9 ps instead of the expected 6-12 ps. FL-016 remains open.

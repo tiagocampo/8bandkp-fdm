@@ -376,15 +376,16 @@ The program initializes the wire grid, builds `profile_2d` and `kpterms_2d`, the
 
 Running the config above produces eigenvalues at $k_z = 0$ within the energy window $[-1.5, 2.0]$ eV. The eigenvalues come in spin-degenerate Kramers pairs (a consequence of time-reversal symmetry at $k_z = 0$). The valence-band edge and conduction-band edge are identified by the largest gap between consecutive eigenvalues.
 
-**Band gap:** approximately 0.818 eV in the current clean figure run, between the highest valence-like state and the lowest conduction-like state selected by the near-gap spectral split.
+**Band gap:** approximately 2.035 eV in the current clean figure run, between the highest valence-like state ($E_V \approx -0.885$ eV) and the lowest conduction-like state ($E_C \approx 1.150$ eV) selected from the `parts.dat` band-character weights.
 
 This is the effective wire gap within the solver's internal energy reference for this hard-wall GaAs cross-section. It is not directly comparable to a bulk band gap quoted on an absolute material reference because the zero of energy depends on the Hamiltonian convention used in the code. What matters for the wire physics is the separation between the valence-like and conduction-like manifolds and the ordering of the confined states.
 
 Key observations from the corrected solver:
 
-- Effective wire gap: ~0.818 eV
+- Effective wire gap: ~2.035 eV
 - Kramers degeneracy at $k_z = 0$: confirmed
-- Lowest selected conduction edge: about 0.980 eV
+- Lowest selected conduction edge: about 1.150 eV
+- Highest selected valence edge: about -0.885 eV
 - The subband spacing near the band edges is characteristic of a ~6.3 nm GaAs wire
 - Near-parabolic dispersion around $k_z = 0$ for the lowest conduction-like branch
 
@@ -394,11 +395,11 @@ The main qualitative conclusion is unchanged: the square cross-section produces 
 
 In a quantum wire, the band gap is not simply the bulk material gap but the energy difference between the highest occupied valence subband edge and the lowest unoccupied conduction subband edge. The gap depends on the wire geometry through the confinement energies:
 
-$$E_{\text{gap}}^{\text{wire}} = E_{\text{CB,min}} - E_{\text{VB,max}} \approx 0.818 \text{ eV}$$
+$$E_{\text{gap}}^{\text{wire}} = E_{\text{CB,min}} - E_{\text{VB,max}} \approx 2.035 \text{ eV}$$
 
 This is an effective gap defined entirely within the numerical spectrum of the wire calculation. For single-material hard-wall wires, that quantity is the robust observable to track across grids and parameter sweeps. Absolute comparisons to bulk reference energies need extra care because the solver output uses an internal Hamiltonian energy origin rather than a directly plotted vacuum-referenced band diagram.
 
-The confinement reorganizes both valence-like and conduction-like states into a discrete 1D ladder. The GaAs rectangular wire gives an effective near-gap split of about 0.818 eV at $k_z = 0$ in the current figure run. This should be treated as a solver-internal confinement observable rather than a bulk-referenced band diagram. The key robust point is the appearance of a discrete near-gap ladder with Kramers-degenerate states at $k_z = 0$.
+The confinement reorganizes both valence-like and conduction-like states into a discrete 1D ladder. The GaAs rectangular wire gives an effective near-gap split of about 2.035 eV at $k_z = 0$ in the current figure run. This should be treated as a solver-internal confinement observable rather than a bulk-referenced band diagram. The key robust point is the appearance of a discrete near-gap ladder with Kramers-degenerate states at $k_z = 0$.
 
 ### 3.6 Wire vs. quantum well comparison
 
@@ -408,16 +409,16 @@ The following table compares the GaAs rectangular wire with the GaAs/Al$_{0.3}$G
 |----------|-------------------------------------------|-------------------------------|
 | Confinement | 1D ($z$) | 2D ($x$, $y$) |
 | Free directions | 2 ($x$, $y$) | 1 ($z$) |
-| CB1 energy | 1.021 eV | 1.031 eV |
-| VB1 energy | $-0.959$ eV | 0.799 eV |
-| Effective gap | 1.980 eV | 0.818 eV |
-| CB edge | 1.021 eV | 0.980 eV |
+| CB1 energy | 1.021 eV | 1.150 eV |
+| VB1 energy | $-0.959$ eV | -0.885 eV |
+| Effective gap | 1.980 eV | 2.035 eV |
+| CB edge | 1.021 eV | 1.150 eV |
 | Subband degeneracy | 2 (Kramers) | 2 (Kramers) |
 | Dispersion | 2D sheets $E(k_\parallel)$ | 1D modes $E(k_z)$ |
 | Matrix size | $808 \times 808$ | $3528 \times 3528$ |
 | Storage | Dense | Sparse CSR |
 
-The energy references differ because the QW uses the heterostructure band offset profile (GaAs well + AlGaAs barriers) while the wire is a single-material system with only hard-wall confinement. The wire's effective split of 0.818 eV is therefore best read as a confinement observable from the current sparse wire solve, not as a directly comparable heterostructure band gap.
+The energy references differ because the QW uses the heterostructure band offset profile (GaAs well + AlGaAs barriers) while the wire is a single-material system with only hard-wall confinement. The wire's effective split of 2.035 eV is therefore best read as a confinement observable from the current sparse wire solve, not as a directly comparable heterostructure band gap.
 
 ### 3.7 Band structure and density plots
 
@@ -425,7 +426,7 @@ The wire figures below are computed from the current solver path. For the GaAs h
 
 ![Wire subband dispersion](../figures/wire_subbands.png)
 
-*Figure 1: Subband dispersion $E(k_z)$ for the GaAs rectangular wire ($63 \times 63$ A cross-section, $21 \times 21$ grid). The corrected wire Hamiltonian produces a discrete near-gap ladder with an effective split of about 0.818 eV at $k_z = 0$. Points are plotted as sorted near-gap eigenvalues at each $k_z$ so the figure does not imply branch continuity that the current output does not track robustly.*
+*Figure 1: Subband dispersion $E(k_z)$ for the GaAs rectangular wire ($63 \times 63$ A cross-section, $21 \times 21$ grid). The corrected wire Hamiltonian produces a discrete near-gap ladder with an effective split of about 2.035 eV at $k_z = 0$. Points are plotted as sorted near-gap eigenvalues at each $k_z$ with zero-padding removed, so the figure does not imply branch continuity that the current output writer does not track robustly.*
 
 ![Wire charge density](../figures/wire_density_2d.png)
 
@@ -506,7 +507,7 @@ The anisotropy $g_{\perp} \neq g_{\parallel}$ (transverse vs. axial components) 
 The zinc-blende InSb nanowire portion is supported by the current wire mode (`confinement=2`) with the corrected Hamiltonian:
 
 - **Subband structure:** Rectangular and circular wire geometries, sparse wire assembly, and confined 1D subbands are implemented and regression-tested. The corrected off-diagonal terms (S, SC, R, RC, PZ) produce qualitatively reasonable subband dispersions. The GaAs rectangular-wire gap scale and Kramers degeneracy are already supported by the current validation suite, while the InAs/GaAs core-shell example remains qualitative until the external wire benchmark suite is completed.
-- **g-factor machinery:** The `gfactorCalculation_wire` routine computes a wire g-tensor from band-edge states using gap-aware state selection. For the InSb rectangular wire (55x55 A, 11x11 grid), the corrected solver gives $g_x \approx +2.82$, $g_y \approx -0.10$, $g_z \approx +21.06$. The dominant axial component ($g_z$) reflects the free-propagation direction, while the strong reduction from bulk $|g^*| \approx 51$ is expected for tight 2D confinement. What is still missing is a systematic radius sweep against Faria Junior et al.'s Figure 2 with convergence and provenance recorded.
+- **g-factor machinery:** The `gfactorCalculation_wire` routine computes a wire g-tensor from band-edge states using band-character-aware state selection. For the InSb rectangular wire (55x55 A, 11x11 grid), the corrected regression gives $g_x \approx -49.94$, $g_y \approx -50.05$, $g_z \approx -49.97$. This is close to the bulk InSb scale and remains provisional because the grid is very coarse and no radius sweep has been reproduced against Faria Junior et al.'s Figure 2.
 - **Electric field effects:** External fields can be applied through `ExternalField` and `EFParams`, so symmetry-breaking studies are possible in principle. At present these runs should be treated as exploratory until the field-dependent wire trends are benchmarked against the literature.
 
 Example configuration for a circular InSb wire:
@@ -543,24 +544,25 @@ The current ZB InSb wire path now produces regression-backed subband structure a
 
 ### 5.6 Quantitative Benchmarks (Corrected Wire Solver)
 
-The wire solver was corrected in commit `663f50b` to fix three critical bugs in the off-diagonal Hamiltonian terms:
+The wire solver was corrected in two stages: first the off-diagonal 8-band terms were fixed, then the 2D boundary/operator initialization was audited against the regenerated figures. The relevant corrections are:
 
 1. **S/SC terms**: Replaced the incorrect combined gradient $(d/dx + d/dy)$ with the correct complex directional operators $(d/dx \mp i\,d/dy)$, built from separate `kpterms_2d(14)` and `kpterms_2d(15)` with complex coefficients.
 2. **PZ term**: Changed from spatial gradient $i\,P\,(d/dx + d/dy)$ to the correct diagonal $-i\,k_z\,P(x,y)$ (since $z$ is the free propagation direction).
 3. **R/RC terms**: Added the missing 2D anisotropic spatial derivatives $\gamma_2(d^2/dx^2 - d^2/dy^2)$ and cross-derivative $2i\gamma_3\,d^2/dx\,dy$ alongside the existing $k_z^2$ diagonal term, via the new `kpterms_2d(16)` operator.
+4. **2D boundary operators**: Rectangular all-one face fractions are no longer passed through the cut-cell row-sum path, first-derivative boundary signs are preserved, and inactive cells in non-rectangular grids are moved outside the physical eigenvalue window so they cannot appear as zero-energy modes.
 
-**Table 5.1:** Wire benchmark values after Hamiltonian correction.
+**Table 5.1:** Wire benchmark values after Hamiltonian and boundary-operator correction.
 
 | System | Quantity | Value | Notes |
 |--------|----------|-------|-------|
-| GaAs wire (63x63 A, 21x21) | Effective near-gap split | 0.818 eV | Current clean figure run |
+| GaAs wire (63x63 A, 21x21) | Effective near-gap split | 2.035 eV | Current clean figure run; character-selected edges |
 | GaAs wire (63x63 A, 21x21) | Kramers degeneracy at $k_z=0$ | Confirmed | Most robust near-gap validation point |
-| InAs/GaAs core-shell (80 A core, 30x30) | Effective near-edge split | ~0.059 eV | Current clean figure run; qualitative |
-| InAs/GaAs core-shell (80 A core, 30x30) | CB subbands | 1 | Narrow InAs core |
-| InAs/GaAs core-shell (80 A core, 30x30) | VB subbands in current window | ~24 | Qualitative count from current solver summary |
-| InSb wire (55x55 A, 11x11) | $g_x$ | $\approx +2.82$ | Bulk InSb $|g^*| \approx 51$ |
-| InSb wire (55x55 A, 11x11) | $g_y$ | $\approx -0.10$ | Anisotropy from rectangular cross-section |
-| InSb wire (55x55 A, 11x11) | $g_z$ | $\approx +21.06$ | Dominant axial component |
+| InAs/GaAs core-shell (80 A core, 30x30) | Effective near-edge split | ~0.017 eV | Character-selected mixed states; qualitative |
+| InAs/GaAs core-shell (80 A core, 30x30) | CB-like states in current window | 24 | `CB` character $\geq 0.5$ in the subband run |
+| InAs/GaAs core-shell (80 A core, 30x30) | Wavefunction localization | Interface-weighted | Coarse strained heterostructure diagnostic, not a nextnano benchmark |
+| InSb wire (55x55 A, 11x11) | $g_x$ | $\approx -49.94$ | Band-character-selected CB edge |
+| InSb wire (55x55 A, 11x11) | $g_y$ | $\approx -50.05$ | Coarse-grid provisional |
+| InSb wire (55x55 A, 11x11) | $g_z$ | $\approx -49.97$ | Close to bulk InSb scale |
 
 The InSb wire g-factors are regression-tested in `tests/regression/configs/wire_insb_gfactor.cfg` and verified against the expected strong enhancement relative to the free-electron value ($g_{\rm free} = 2$). The rectangular cross-section breaks rotational symmetry, producing distinct $g_x$, $g_y$, and $g_z$ components. The GaAs wire band structure is regression-tested in `tests/regression/configs/wire_gaas_rectangle.cfg`.
 
@@ -685,13 +687,13 @@ The strain modifies the band edges through the Bir-Pikus mechanism. Under the co
 
 ![InAs/GaAs wire subband dispersion](../figures/wire_inas_gaas_subbands.png)
 
-*Figure 4: Subband dispersion $E(k_z)$ for the InAs/GaAs core-shell wire. The current run shows a single confined electron subband within the search window and a dense valence manifold, consistent with a narrow strained InAs core.*
+*Figure 4: Subband dispersion $E(k_z)$ for the InAs/GaAs core-shell wire. The plot shows sorted near-edge eigenvalues at each $k_z$ with zero-padding removed; it should not be read as branch-continuous tracking. The $k_z = 0$ edge labels come from band-character weights in `parts.dat`.*
 
 The subband structure differs markedly from the unstrained GaAs wire of Section 3. Key observations:
 
-1. **Band gap**: The near-edge split selected for the current figure is approximately 0.059 eV. This is a run-derived spectral split for the strained finite wire, not yet an externally benchmarked nanowire gap.
+1. **Band gap**: The near-edge split selected for the current figure is approximately 0.017 eV. This is a run-derived, character-selected split between mixed near-edge states in the strained finite wire, not yet an externally benchmarked nanowire gap.
 
-2. **Single CB subband**: The InAs core well is narrow enough to bind only one electron subband within the computed energy range. The current figure supports that qualitative conclusion even though the precise confinement energy should still be treated as provisional.
+2. **CB-like manifold**: The current energy window contains multiple CB-like states by character threshold (`CB` weight $\geq 0.5$), but the lowest selected CB-like edge has only about 60% CB character. Treat this figure as a diagnostic of the coarse strained heterostructure calculation rather than a clean one-band electron ladder.
 
 3. **VB subband spacing**: The near-gap valence states span a broad, non-uniform energy range, with pairs of nearly degenerate states reflecting the approximate square symmetry of the wire cross-section (analogous to the unstrained GaAs wire in Section 3).
 
@@ -701,19 +703,15 @@ The subband structure differs markedly from the unstrained GaAs wire of Section 
 
 ![InAs/GaAs wire wavefunctions](../figures/wire_inas_gaas_wavefunctions.png)
 
-*Figure 5: Probability density $|\psi(x,y)|^2$ for the top 3 VB subbands and the CB ground state at $k_z = 0$. The dashed white circle marks the InAs/GaAs material boundary. The current output shows strong localization inside the InAs core, consistent with Type-I confinement.*
+*Figure 5: Probability density $|\psi(x,y)|^2$ for selected near-edge mixed states at $k_z = 0$. The dashed white circle marks the InAs/GaAs material boundary. These states are interface-weighted on the current coarse strained grid; this panel is a diagnostic output, not yet a validated nextnano-style nanowire reproduction.*
 
-The wavefunction plots support the Type-I confinement picture:
+The wavefunction plots show that this coarse strained core-shell configuration is not yet a clean Type-I benchmark:
 
-- **Deep valence state**: The lowest panel among the plotted VB states has a more spread-out distribution with multiple nodes, characteristic of a higher excited state. The wavefunction extends somewhat toward the InAs/GaAs interface.
+- **Near-edge VB-like states**: The plotted VB-like states are mixed and interface-weighted rather than simple centered envelope modes. Individual states in near-degenerate manifolds can choose arbitrary orientations, so these panels should be interpreted as representative basis vectors, not unique angular-momentum eigenstates.
 
-- **Intermediate valence state**: A higher VB state with a different nodal pattern, showing how the increasing confinement energy produces more complex spatial structures.
+- **CB-like state**: The selected CB-like edge state has about 60% CB character and is localized near the core/shell interface on this grid. It should not be described as an $s$-like centered electron ground state.
 
-- **Valence-band edge state**: The highest valence subband has a broad distribution concentrated in the InAs core. Its spatial extent fills much of the core diameter, reflecting the relatively weak hole confinement (smaller VB offset than the electron offset).
-
-- **CB1**: The sole conduction subband has an $s$-like ground state pattern concentrated at the wire center. The deep electron well produces tighter confinement than for the hole states, squeezing the electron wavefunction into a smaller region.
-
-The contrast between CB1 and the valence-band edge illustrates the asymmetric confinement: electrons see a deeper narrow well, producing a compact ground state, while holes see a shallower well, allowing the wavefunction to spread more toward the interface. This asymmetry has important consequences for optical matrix elements and exciton binding energies in wire-based devices.
+The single-material GaAs hard-wall wire in Figure 2 is currently the reliable wavefunction sanity check: its VB-edge and CB-ground densities are centered and box-like, matching the qualitative expectation for a square quantum wire. The InAs/GaAs heterostructure figure is intentionally retained as a warning that the strained, mixed-material wire path still needs a dedicated benchmark and convergence study before being used for quantitative nanowire physics.
 
 ### 7.6 Strain effects: HH-LH splitting
 
@@ -732,11 +730,11 @@ where $a_v$ is the hydrostatic valence deformation potential and $b$ is the shea
 | Confinement | Hard-wall (Dirichlet) | Band offsets + strain |
 | Cross-section | $63 \times 63$ A | 80 A diameter core |
 | Grid | $21 \times 21$ | $30 \times 30$ |
-| Band gap (wire) | 0.818 eV | 0.059 eV |
-| CB subbands | 7 | 1 |
-| CB1 confinement shift | $\sim$488 meV above GaAs CB | $\sim$158 meV above InAs $E_C$ |
+| Band gap (wire) | 2.035 eV | 0.017 eV |
+| CB-like states in plotted window | 6 | 24 |
+| CB1 confinement shift | Character-selected edge at 1.150 eV | Mixed CB-like edge at 0.674 eV |
 | CB offset | None (hard wall) | 0.892 eV |
 | Strain | None | Compressive in core |
 | Matrix size | $3528 \times 3528$ | $7200 \times 7200$ |
 
-The InAs/GaAs wire has a smaller selected near-edge split (~0.059 eV vs.\ ~0.818 eV for the hard-wall GaAs wire in Section 3) despite the deeper confinement potential, because the strained InAs bulk gap is much smaller than the GaAs bulk gap (1.519 eV). The single selected CB edge in the InAs/GaAs wire versus the richer GaAs conduction ladder reflects the narrower effective well for electrons: the strain-modified InAs CB offset confines electrons to a smaller physical region (40 A radius) than the hard-wall GaAs wire (31.5 A half-width with no offset), but the relevant energy scale is different because the InAs effective mass is much smaller ($m^*_e \approx 0.023\,m_0$ for bulk InAs vs.\ $0.067\,m_0$ for GaAs).
+The InAs/GaAs wire has a smaller selected near-edge split (~0.017 eV vs.\ ~2.035 eV for the hard-wall GaAs wire in Section 3), but this should not be over-interpreted as a validated nanowire band gap. The current strained heterostructure output contains strongly mixed, interface-weighted states, so the next step is a dedicated nextnano-style circular or core-shell benchmark with grid convergence and a branch-tracking/parts output that remains reliable at every $k_z$ point.

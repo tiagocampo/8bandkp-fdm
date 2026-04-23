@@ -390,6 +390,9 @@ module hamiltonianConstructor
 
       integer :: order, nx, ny, ngrid, ij, mid
       real(kind=dp) :: dx, dy
+      logical :: use_cut_cell_faces
+      real(kind=dp), parameter :: face_tol = 1.0e-12_dp
+      real(kind=dp), parameter :: inactive_barrier_ev = 1.0e3_dp
 
       ! 1D FD matrices (real, dense)
       real(kind=dp), allocatable :: D2x(:,:), D1x(:,:)
@@ -424,6 +427,15 @@ module hamiltonianConstructor
       ngrid = nx * ny
       dx    = grid%dx
       dy    = grid%dy
+      use_cut_cell_faces = .false.
+      if (allocated(grid%face_fraction_x) .and. allocated(grid%face_fraction_y)) then
+        use_cut_cell_faces = any(abs(grid%face_fraction_x - 1.0_dp) > face_tol) .or. &
+          any(abs(grid%face_fraction_y - 1.0_dp) > face_tol)
+        if (allocated(grid%cell_volume)) then
+          use_cut_cell_faces = use_cut_cell_faces .or. &
+            any(abs(grid%cell_volume - 1.0_dp) > face_tol)
+        end if
+      end if
 
       ! Validate grid
       if (nx < 3 .or. ny < 3) then
@@ -503,7 +515,11 @@ module hamiltonianConstructor
       do ij = 1, ngrid
         mid = grid%material_id(ij)
         if (mid < 1 .or. mid > size(params)) then
-          ! Inactive cell or outside domain -- leave zeros
+          ! Inactive cells are kept in the rectangular sparse storage.  Move
+          ! them out of the physical window so they do not appear as zero modes.
+          profile_2d(ij, 1) = -inactive_barrier_ev
+          profile_2d(ij, 2) = -inactive_barrier_ev
+          profile_2d(ij, 3) =  inactive_barrier_ev
           cycle
         end if
 
@@ -548,18 +564,16 @@ module hamiltonianConstructor
       call build_diagonal_csr(ngrid, prof_gamma3, kpterms_2d(3))
       call build_diagonal_csr(ngrid, prof_P, kpterms_2d(4))
 
-      ! Apply cut-cell face fractions to differential operators.
-      ! For rectangular grids all face fractions are 1.0 (no-op).
+      ! Apply cut-cell face fractions only to second-derivative operators.
+      ! Rectangular grids allocate all-one face fractions, but those are not a
+      ! no-op for csr_apply_variable_coeff because it reconstructs diagonals.
+      ! First-derivative operators must keep their explicit Dirichlet signs.
       ! Terms 5,7,8: Laplacian;  Terms 6,9: Gradient.
       ! Term 11 (cross-derivative) mixes x/y connections so face fractions
       ! are not applied (they remain 1.0 by default).
-      if (allocated(grid%face_fraction_x) .and. allocated(grid%face_fraction_y)) then
+      if (use_cut_cell_faces) then
         ! Term 5: A * Laplacian
         call csr_apply_variable_coeff(laplacian_2d, prof_A, kpterms_2d(5), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
-        ! Term 6: P * Gradient
-        call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6), &
           face_frac_x=grid%face_fraction_x, &
           face_frac_y=grid%face_fraction_y, grid_nx=nx)
         ! Term 7: (gamma1 - 2*gamma2) * Laplacian
@@ -570,18 +584,16 @@ module hamiltonianConstructor
         call csr_apply_variable_coeff(laplacian_2d, prof_gp12g2, kpterms_2d(8), &
           face_frac_x=grid%face_fraction_x, &
           face_frac_y=grid%face_fraction_y, grid_nx=nx)
-        ! Term 9: gamma3 * Gradient
-        call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
       else
         ! No face fractions (rectangular grid or QW mode): standard path
         call csr_apply_variable_coeff(laplacian_2d, prof_A, kpterms_2d(5))
-        call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6))
         call csr_apply_variable_coeff(laplacian_2d, prof_gm12g2, kpterms_2d(7))
         call csr_apply_variable_coeff(laplacian_2d, prof_gp12g2, kpterms_2d(8))
-        call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9))
       end if
+      ! Term 6: P * Gradient
+      call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6))
+      ! Term 9: gamma3 * Gradient
+      call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9))
 
       ! Term 10: A (diagonal only)
       call build_diagonal_csr(ngrid, prof_A, kpterms_2d(10))
@@ -592,37 +604,21 @@ module hamiltonianConstructor
       ! Terms 12-15: separate x/y gradient operators for g-factor perturbation.
       ! These use the same kron products as grad_2d but split by direction.
       ! kron_Iy_D1x = Iy x D1x (x-gradient), kron_D1y_Ix = D1y x Ix (y-gradient).
-      if (allocated(grid%face_fraction_x) .and. allocated(grid%face_fraction_y)) then
-        ! Term 12: P * d/dx (x-gradient only)
-        call csr_apply_variable_coeff(kron_Iy_D1x, prof_P, kpterms_2d(12), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
-        ! Term 13: P * d/dy (y-gradient only)
-        call csr_apply_variable_coeff(kron_D1y_Ix, prof_P, kpterms_2d(13), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
-        ! Term 14: gamma3 * d/dx (x-gradient only)
-        call csr_apply_variable_coeff(kron_Iy_D1x, prof_gamma3, kpterms_2d(14), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
-        ! Term 15: gamma3 * d/dy (y-gradient only)
-        call csr_apply_variable_coeff(kron_D1y_Ix, prof_gamma3, kpterms_2d(15), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
-      else
-        ! No face fractions (rectangular grid)
-        call csr_apply_variable_coeff(kron_Iy_D1x, prof_P, kpterms_2d(12))
-        call csr_apply_variable_coeff(kron_D1y_Ix, prof_P, kpterms_2d(13))
-        call csr_apply_variable_coeff(kron_Iy_D1x, prof_gamma3, kpterms_2d(14))
-        call csr_apply_variable_coeff(kron_D1y_Ix, prof_gamma3, kpterms_2d(15))
-      end if
+      ! Term 12: P * d/dx (x-gradient only)
+      call csr_apply_variable_coeff(kron_Iy_D1x, prof_P, kpterms_2d(12))
+      ! Term 13: P * d/dy (y-gradient only)
+      call csr_apply_variable_coeff(kron_D1y_Ix, prof_P, kpterms_2d(13))
+      ! Term 14: gamma3 * d/dx (x-gradient only)
+      call csr_apply_variable_coeff(kron_Iy_D1x, prof_gamma3, kpterms_2d(14))
+      ! Term 15: gamma3 * d/dy (y-gradient only)
+      call csr_apply_variable_coeff(kron_D1y_Ix, prof_gamma3, kpterms_2d(15))
 
       ! Terms 16-17: separate x/y second-derivative operators for R term.
       ! Term 16: gamma2 * (d^2/dx^2 - d^2/dy^2) for R anisotropic part
       ! Term 17: (unused -- term 16 is sufficient, built from kron_Iy_D2x and kron_D2y_Ix)
       block
         type(csr_matrix) :: tmp_D2x, tmp_D2y
-        if (allocated(grid%face_fraction_x) .and. allocated(grid%face_fraction_y)) then
+        if (use_cut_cell_faces) then
           call csr_apply_variable_coeff(kron_Iy_D2x, prof_gamma2, tmp_D2x, &
             face_frac_x=grid%face_fraction_x, &
             face_frac_y=grid%face_fraction_y, grid_nx=nx)

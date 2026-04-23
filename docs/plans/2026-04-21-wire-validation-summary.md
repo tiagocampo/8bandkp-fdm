@@ -37,8 +37,8 @@ Date: 2026-04-21
 - Consistent with Type-I band alignment
 
 ### InSb wire g-factor (11×11 grid, 55×55 A)
-- gx ≈ **+2.82**, gy ≈ **-0.10**, gz ≈ **+21.06**
-- Bulk InSb |g*| ≈ 51; wire confinement reduces magnitude and introduces strong anisotropy
+- gx ≈ **-49.94**, gy ≈ **-50.05**, gz ≈ **-49.97**
+- Bulk InSb |g*| ≈ 51; this coarse regression now checks band-character selection and bulk-scale magnitude, not a converged wire-radius trend
 - Dominant gz component reflects the free-propagation direction of the wire
 - Transverse components strongly quenched by 2D confinement
 - Updated after solver parity fix (commit 9af3329)

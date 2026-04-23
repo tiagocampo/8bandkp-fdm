@@ -192,16 +192,14 @@ Config: `wire_insb_gfactor` (11x11 grid, 5 A spacing).
 
 | Component | Our code | Notes |
 |---|---|---|
-| g_x | +2.819 | x-direction confinement |
-| g_y | -0.103 | y-direction confinement |
-| g_z | +21.057 | free propagation axis |
+| g_x | -49.939 | x-direction; band-character-selected CB edge |
+| g_y | -50.049 | y-direction; band-character-selected CB edge |
+| g_z | -49.969 | free propagation axis |
 
-The wire g-factor is fully anisotropic, reflecting the broken cubic symmetry.
-All three components are dramatically reduced from the bulk InSbW value
-(|g| ~ -51 to -77 depending on parameter set), consistent with the strong
-quantum confinement in a 55 A wire pushing the effective gap larger. The
-positive g_x and g_z components indicate that confinement has pushed these
-directions past the sign-change threshold.
+The wire g-factor is now selected from states with explicit CB character in
+the widened FEAST window. The coarse 55 A square regression remains close to
+the bulk InSbW scale (|g| ~ 51), so it should be treated as a state-selection
+sanity check rather than a converged confinement trend.
 
 **Caveat (from failure ledger FL-015):** The wire g-factor has not been
 externally benchmarked. The qualitative trend (confinement reduces |g| and
@@ -217,7 +215,7 @@ as provisional until validated against literature for an identical structure.
 | InAs/GaSb/AlSb QW g_x | -16.227 | -16.2 (Pfeffer) | ~0.01 | **validated** |
 | InAs/GaSb/AlSb QW g_z | -11.339 | -11.3 (Pfeffer) | ~0.04 | **validated** |
 | Bulk GaAs vs experiment | -0.315 | -0.44 (expt.) | 0.125 | known 8-band limit |
-| InSbW wire | g_x=+2.8, g_y=-0.1, g_z=+21.1 | no lit. match | -- | **provisional** |
+| InSbW wire | g_x=-49.9, g_y=-50.0, g_z=-50.0 | no lit. match | -- | **provisional** |
 
 ---
 

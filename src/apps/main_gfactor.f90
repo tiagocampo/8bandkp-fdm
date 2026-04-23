@@ -57,6 +57,10 @@ program gfactor
   integer                          :: Ngrid, Ntot, nev_wire
   integer                          :: gap_idx, cb_start, vb_start
   real(kind=dp), allocatable       :: gaps(:)
+  real(kind=dp), allocatable       :: band_parts(:,:), cb_char(:)
+  real(kind=dp), parameter         :: cb_threshold = 0.5_dp
+  integer                          :: first_cb_idx
+  logical                          :: used_character_gap
 
   ! Ensure MKL routines run single-threaded (sequential) regardless of
   ! MKL_THREADING setting.  Prevents thread oversubscription when
@@ -193,30 +197,63 @@ program gfactor
     ! Extract CB/VB states from the band edge, not from fixed sorted positions.
     ! FEAST may return many states in the search window, so the user-supplied
     ! numvb/numcb should be interpreted as counts around the actual gap.
+    ! Prefer band character over a raw largest-gap split: wide wire windows can
+    ! contain remote valence manifolds whose largest spectral gap is not the
+    ! fundamental VB/CB edge.
     allocate(cb_value(cfg%numcb))
     allocate(vb_value(cfg%numvb))
     allocate(cb_state(N, cfg%numcb))
     allocate(vb_state(N, cfg%numvb))
 
-    allocate(gaps(eigen_res%nev_found - 1))
-    gaps(:) = eigen_res%eigenvalues(2:eigen_res%nev_found) - &
-      & eigen_res%eigenvalues(1:eigen_res%nev_found-1)
-    gap_idx = 0
-    ! Find the largest gap that can accommodate numvb states below and numcb above
-    do while (gap_idx == 0)
-      gap_idx = maxloc(gaps, dim=1)
-      if (gap_idx - cfg%numvb + 1 >= 1 .and. &
-        & gap_idx + cfg%numcb <= eigen_res%nev_found) exit
-      gaps(gap_idx) = -1.0_dp  ! disqualify and retry
-      gap_idx = 0
+    allocate(band_parts(8, eigen_res%nev_found))
+    allocate(cb_char(eigen_res%nev_found))
+    do i = 1, eigen_res%nev_found
+      call compute_wire_band_parts(eigen_res%eigenvectors(:, i), band_parts(:, i))
+      cb_char(i) = band_parts(7, i) + band_parts(8, i)
     end do
-    deallocate(gaps)
+
+    first_cb_idx = 0
+    do i = 1, eigen_res%nev_found
+      if (cb_char(i) >= cb_threshold) then
+        first_cb_idx = i
+        exit
+      end if
+    end do
+
+    used_character_gap = .false.
+    if (first_cb_idx > 0 .and. first_cb_idx - cfg%numvb >= 1 .and. &
+      & first_cb_idx + cfg%numcb - 1 <= eigen_res%nev_found) then
+      gap_idx = first_cb_idx - 1
+      used_character_gap = .true.
+    else
+      allocate(gaps(eigen_res%nev_found - 1))
+      gaps(:) = eigen_res%eigenvalues(2:eigen_res%nev_found) - &
+        & eigen_res%eigenvalues(1:eigen_res%nev_found-1)
+      gap_idx = 0
+      ! Find the largest gap that can accommodate numvb states below and numcb above
+      do while (gap_idx == 0)
+        gap_idx = maxloc(gaps, dim=1)
+        if (gap_idx - cfg%numvb + 1 >= 1 .and. &
+          & gap_idx + cfg%numcb <= eigen_res%nev_found) exit
+        gaps(gap_idx) = -1.0_dp  ! disqualify and retry
+        gap_idx = 0
+      end do
+      deallocate(gaps)
+    end if
 
     cb_start = gap_idx + 1
     vb_start = gap_idx - cfg%numvb + 1
 
     if (vb_start >= 1 .and. cb_start + cfg%numcb - 1 <= eigen_res%nev_found) then
-      print *, '  Wire band edge detected between eigenvalues ', gap_idx, ' and ', gap_idx + 1
+      if (used_character_gap) then
+        print *, '  Wire band edge selected by band character between eigenvalues ', &
+          gap_idx, ' and ', gap_idx + 1
+        print *, '  Edge characters: VB top CB-weight=', cb_char(gap_idx), &
+          ' CB bottom CB-weight=', cb_char(cb_start)
+      else
+        print *, '  Wire band edge detected by largest spectral gap between eigenvalues ', &
+          gap_idx, ' and ', gap_idx + 1
+      end if
       print *, '  Selecting VB indices ', vb_start, ':', gap_idx, &
         & ' and CB indices ', cb_start, ':', cb_start + cfg%numcb - 1
 
@@ -237,6 +274,8 @@ program gfactor
       cb_state(:,:) = eigen_res%eigenvectors(:, cfg%numvb+1:cfg%numvb+cfg%numcb)
       vb_state(:,:) = eigen_res%eigenvectors(:, cfg%numvb:1:-1)
     end if
+
+    deallocate(band_parts, cb_char)
 
     ! Compute g-factor tensor
     allocate(tensor(2,2,3))
@@ -508,5 +547,28 @@ program gfactor
   if (allocated(vb_value)) deallocate(vb_value)
   if (allocated(tensor)) deallocate(tensor)
 
+contains
+
+  subroutine compute_wire_band_parts(state_vec, parts)
+    complex(kind=dp), intent(in) :: state_vec(:)
+    real(kind=dp), intent(out) :: parts(8)
+
+    integer :: band, ngrid_local, start_idx, end_idx
+    real(kind=dp) :: total_weight
+
+    ngrid_local = size(state_vec) / 8
+    parts = 0.0_dp
+    if (ngrid_local <= 0) return
+
+    do band = 1, 8
+      start_idx = (band - 1) * ngrid_local + 1
+      end_idx = band * ngrid_local
+      parts(band) = real(sum(conjg(state_vec(start_idx:end_idx)) * &
+        & state_vec(start_idx:end_idx)), kind=dp)
+    end do
+
+    total_weight = sum(parts)
+    if (total_weight > 0.0_dp) parts = parts / total_weight
+  end subroutine compute_wire_band_parts
 
 end program gfactor

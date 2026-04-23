@@ -20,13 +20,13 @@ At kz = 0:
 
 | Quantity | Value |
 |----------|-------|
-| VB top | 0.799 eV |
-| CB1 (ground) | 1.031 eV |
-| CB2 | 1.092 eV |
-| CB3 | 1.154 eV |
-| CB4 | 1.229 eV |
-| CB5 | 1.348 eV |
-| Effective near-gap split | 0.818 eV (818 meV) |
+| VB top | -0.885 eV |
+| CB1 (character-selected edge) | 1.150 eV |
+| CB2 | 1.150 eV |
+| CB3 | 1.705 eV |
+| CB4 | 1.708 eV |
+| CB5 | 1.715 eV |
+| Effective near-gap split | 2.035 eV |
 | Total VB states | 534 (267 Kramers pairs) |
 | Total CB states | 28 (14 Kramers pairs) |
 | CB1-CB2 spacing | 60.6 meV |
@@ -44,7 +44,7 @@ For a 2D square infinite well with side L = 6.3 nm:
 | 2 | (1,2)=(2,1) | 707 meV | 135 meV |
 | 3 | (2,2) | 1132 meV | 216 meV |
 
-The current clean figure run reports a near-gap split of 818 meV. This replaces the stale 232 meV value from the earlier figure-generation pass. Because the wire state classification is now based on a spectral split rather than a fully benchmarked external reference, this number should be re-benchmarked before being used as a quantitative nextnano comparison.
+The current clean figure run reports a near-gap split of 2.035 eV after the 2D boundary-operator fix. This replaces the stale 818 meV value from the earlier figure-generation pass. Because the wire state classification is now based on band-character weights and still lacks a direct external wire benchmark, this number should be re-benchmarked before being used as a quantitative nextnano comparison.
 
 The earlier CB1-CB2 spacing number is no longer carried as a validated benchmark in the lecture figures. The current figures prioritize robust near-gap state selection and avoid connecting untracked eigenvalue branches across $k_z$.
 
@@ -90,11 +90,11 @@ The InAs core is under compressive biaxial strain (matched to GaAs lattice const
 | GaAs shell EV | -0.800 eV |
 | CB offset (Delta_EC) | 0.892 eV |
 | VB offset (Delta_EV) | 0.210 eV |
-| Effective near-edge split | ~0.059 eV |
-| CB subbands | 1 (within search window) |
-| VB subbands | ~24 |
+| Effective near-edge split | ~0.017 eV |
+| CB-like states | 24 (`CB` character >= 0.5 in the subband run) |
+| Wavefunction localization | Interface-weighted mixed states on this coarse strained grid |
 
-Band alignment: Type-I (both electrons and holes confined in InAs core).
+Band alignment: Type-I by band-edge profile, but the current near-edge eigenstates are strongly mixed and interface-weighted. Do not use this coarse strained run as a validated nextnano nanowire benchmark.
 
 ### 3.2 nextnano core-shell nanowires
 
@@ -126,10 +126,10 @@ These strain-induced modifications are essential for accurate core-shell wire ca
 
 | Component | Value | Notes |
 |-----------|-------|-------|
-| gx | 2.82 | Transverse (x) |
-| gy | -0.10 | Transverse (y) |
-| gz | 21.06 | Axial (z, free direction) |
-| |g| (RMS) | ~12.1 | sqrt(gx^2 + gy^2 + gz^2) |
+| gx | -49.94 | Transverse (x), band-character-selected CB edge |
+| gy | -50.05 | Transverse (y), band-character-selected CB edge |
+| gz | -49.97 | Axial (z, free direction) |
+| |g| (RMS) | ~86.6 | sqrt(gx^2 + gy^2 + gz^2) |
 | Bulk InSb |g*| | ~51 | All directions |
 
 ### 4.2 Faria Junior et al. (PRB 97, 245402, 2018)
@@ -159,17 +159,17 @@ The g-factor is **isotropic in the transverse plane** for cylindrical wires (gx 
 | Grid | 11x11 (very coarse) | Plane-wave (converged) | Coarse grid in ours |
 | Diameter | 5.5 nm | 30-100 nm | Much thinner wire |
 | Model | 8-band k.p + Lowdin | 14-band Kane | Fewer bands in ours |
-| |g| (transverse) | ~2.8 | ~25-42 (30-100 nm) | Smaller in ours |
-| gz (axial) | ~21 | Not separately reported | - |
+| |g| (transverse) | ~50 | ~25-42 (30-100 nm) | Bulk-scale; not converged |
+| gz (axial) | ~50 | Not separately reported | - |
 | Bulk limit | ~51 | ~51 | Agreement |
 
 **Analysis of discrepancies:**
 
-1. **Wire diameter**: Our wire is 5.5 nm, much smaller than the 30-100 nm range studied by Faria Junior. For thin wires, the g-factor should be *closer to g_free = 2*, because the orbital contribution (which enhances |g|) is quenched by strong confinement. The observed |gz| = 21 at 5.5 nm is actually *larger* than the expected ~2-5 for such a thin wire.
+1. **Wire diameter**: Our wire is 5.5 nm, much smaller than the 30-100 nm range studied by Faria Junior. For thin wires, the g-factor should generally move toward $g_{\rm free}=2$ as confinement quenches orbital mixing. The current coarse-grid regression remains close to the bulk value, so it should be treated as a state-selection sanity check rather than a converged confinement trend.
 
 2. **Coarse grid**: Our 11x11 grid is extremely coarse. The g-factor is sensitive to wavefunction accuracy near the boundary. Convergence studies with finer grids (41x41 or higher) are needed.
 
-3. **Rectangular vs cylindrical**: The rectangular cross-section breaks rotational symmetry, producing gx != gy. The paper's cylindrical wires always have gx = gy. The large anisotropy (gx = 2.82 vs gz = 21.06) is a real physical effect of the rectangular geometry with [001] orientation.
+3. **Rectangular vs cylindrical**: The rectangular cross-section breaks rotational symmetry, while the paper's cylindrical wires have $g_x = g_y$. The present coarse 11x11 regression is nearly isotropic, so it does not yet validate the expected rectangular anisotropy.
 
 4. **8-band vs 14-band**: Our 8-band model may miss contributions from higher bands that affect the g-factor, especially in narrow-gap materials like InSb. The 14-band model includes explicit Dresselhaus BIA terms from higher conduction bands.
 
@@ -177,7 +177,7 @@ The g-factor is **isotropic in the transverse plane** for cylindrical wires (gx 
 
 | Source | System | Diameter | g-factor | Method |
 |--------|--------|----------|----------|--------|
-| **Our code** | InSb rect. wire | 5.5 nm | gz=21, gx=2.8 | 8-band k.p + Lowdin |
+| **Our code** | InSb rect. wire | 5.5 nm | gx≈gy≈gz≈-50 | 8-band k.p + Lowdin |
 | Faria Jr. et al. 2018 | InSb cyl. NW | 30 nm | ~-25 | 14-band Kane |
 | Faria Jr. et al. 2018 | InSb cyl. NW | 100 nm | ~-42 | 14-band Kane |
 | Nilsson et al. 2009 (Nano Lett.) | InSb NW QD | ~100 nm | up to ~70 | Transport measurement |
@@ -188,10 +188,10 @@ Nilsson et al. (Nano Lett. 9, 3151, 2009) report **giant, level-dependent g-fact
 
 ### 4.5 Assessment
 
-Our gz ~ 21 for a 5.5 nm InSb wire is:
-- **Below bulk** (51): Correct direction -- confinement reduces |g|
-- **Above the naive expectation** for 5.5 nm (~2): The g-factor enhancement from VB-CB mixing is strong even in very thin wires
-- **Inconsistent with Faria Junior's trend**: At 5.5 nm (much thinner than their 30 nm minimum), the g-factor should be smaller than 25. Our value of 21 is actually in the right ballpark but the comparison is complicated by (a) different geometry, (b) coarse grid, (c) different Hamiltonian (8-band vs 14-band).
+Our $g \approx -50$ for a 5.5 nm InSb wire is:
+- **Bulk-scale**: The sign and magnitude are now consistent with InSb material scale after band-character selection.
+- **Not a confinement benchmark**: A 5.5 nm wire should require a convergence/radius study before any trend claim.
+- **Still not a Faria Junior reproduction**: The comparison is complicated by different geometry, a very coarse grid, and 8-band vs 14-band Hamiltonians.
 
 The coarse 11x11 grid is the primary concern. A convergence study with progressively finer grids is essential before drawing quantitative conclusions.
 
@@ -205,14 +205,13 @@ Our GaAs wire at kz = 0 produces subbands in the following energy ranges:
 |-----------|-------------------|---------------|-----------|
 | Deep VB | -1.498 to -0.385 | ~130 pairs | Predominantly HH/LH mixed |
 | Upper VB | -0.385 to 0.799 | ~135 pairs | Strongly mixed HH/LH/SO |
-| **Near-gap split** | **0.162 to 0.980** | **--** | **818 meV** |
-| CB1 | 1.031 | 1 pair | s-like ground state |
-| CB2 | 1.092 | 1 pair | p-like (degenerate) |
-| CB3 | 1.154 | 1 pair | p-like (degenerate) |
-| CB4-CB7 | 1.229-1.502 | 4 pairs | Higher modes |
-| Above CB7 | 1.590-1.992 | 6 pairs | Weakly confined |
+| **Near-gap split** | **-0.885 to 1.150** | **--** | **2.035 eV** |
+| CB1/CB2 | 1.150 | 1 near-degenerate pair | centered square-wire ground density |
+| CB3/CB4 | 1.705-1.708 | 1 near-degenerate pair | higher confined modes |
+| CB5/CB6 | 1.715-1.716 | 1 near-degenerate pair | higher confined modes |
+| Higher CB-like states | >1.7 | several | window-dependent |
 
-The near-degeneracy of CB2/CB3 (1.092 vs 1.154 eV, 62 meV splitting) reflects the approximate square symmetry of the cross-section. In a perfect square, the (1,2) and (2,1) modes would be exactly degenerate. The small splitting arises from the finite grid resolution and the slight asymmetry in the 8-band coupling terms.
+The lowest CB-like pair is nearly degenerate at 1.150 eV, consistent with Kramers symmetry at $k_z=0$. The detailed excited-state ordering remains a follow-up benchmark item because the current wire output writer pads missing states at later $k_z$ values and does not yet provide robust branch-resolved character at every point.
 
 ### 5.2 nextnano InAs wire ordering comparison
 
@@ -248,22 +247,22 @@ For a rectangular wire with Dirichlet boundaries, the wavefunctions should be:
 - **CB4**: d-like (two nodal lines), approximately (2,2) mode
 - **VB states**: More complex due to HH-LH mixing and the anisotropic effective masses
 
-The nextnano tutorial confirms identical patterns for their InAs wire: the ground state is center-peaked, and higher states develop nodal structure consistent with 2D box quantum numbers.
+The nextnano tutorial expectation for simple square/cylindrical wells is a center-peaked ground state with higher nodal modes. Our homogeneous GaAs hard-wall wire now follows that qualitative pattern in the regenerated density figure. The strained InAs/GaAs heterostructure output does not: its selected near-edge states are mixed and interface-weighted, so it remains a diagnostic rather than a validated nextnano reproduction.
 
-Our wavefunctions follow this pattern, as documented in the lecture notes (Chapter 08, Section 3.4).
+Do not use the current InAs/GaAs wavefunction panel as evidence of a clean centered CB ground state.
 
 ## 7. Summary Comparison Table
 
 | Quantity | Our Code | nextnano | Literature (Faria Jr.) | Assessment |
 |----------|---------|----------|----------------------|------------|
-| **GaAs wire near-gap split (6.3 nm)** | 0.818 eV | -- | -- | Recomputed; needs external benchmark |
-| **GaAs CB edge** | 0.980 eV | -- | -- | Current clean figure run |
+| **GaAs wire near-gap split (6.3 nm)** | 2.035 eV | -- | -- | Recomputed after boundary fix; needs external benchmark |
+| **GaAs CB edge** | 1.150 eV | -- | -- | Current clean figure run |
 | **GaAs Kramers degeneracy** | Yes (all kz=0 states) | Yes | Yes | Correct |
-| **InAs/GaAs near-edge split (8 nm core)** | ~0.059 eV | -- | -- | Qualitative current figure output |
-| **InAs/GaAs CB subbands** | 1 | -- | -- | Consistent with deep confinement |
-| **InSb gx (5.5 nm)** | 2.82 | -- | ~-25 (30 nm) | Needs convergence study |
-| **InSb gz (5.5 nm)** | 21.06 | -- | ~-25 (30 nm) | Needs convergence study |
-| **InSb anisotropy** | gx != gy (broken symmetry) | -- | gx = gy (cylindrical) | Correct for rectangular |
+| **InAs/GaAs near-edge split (8 nm core)** | ~0.017 eV | -- | -- | Mixed/interface-weighted qualitative output |
+| **InAs/GaAs CB-like states** | 24 | -- | -- | Not yet a validated nextnano reproduction |
+| **InSb gx (5.5 nm)** | -49.94 | -- | ~-25 (30 nm) | Needs convergence study |
+| **InSb gz (5.5 nm)** | -49.97 | -- | ~-25 (30 nm) | Needs convergence study |
+| **InSb anisotropy** | weak in coarse regression | -- | gx = gy (cylindrical) | Not yet validated |
 | **VB band mixing** | Strong HH/LH/SO mixing | 6x6 k.p shows similar | 14-band shows similar | Correct qualitative behavior |
 | **Subband ordering** | Kramers pairs, square symmetry | Same pattern | -- | Consistent |
 

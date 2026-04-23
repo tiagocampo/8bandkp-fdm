@@ -331,17 +331,25 @@ def _wire_state_groups_from_parts(
     norm = _normalized_parts(parts[: eig_k0.shape[0]])
     cb_char = norm[:, 6] + norm[:, 7]
 
-    vb_idx = [i for i, weight in enumerate(cb_char) if weight < cb_threshold]
     cb_idx = [i for i, weight in enumerate(cb_char) if weight >= cb_threshold]
+    if not cb_idx:
+        return None
 
-    if not vb_idx or not cb_idx:
+    cb_idx.sort(key=lambda idx: eig_k0[idx])
+    cb_edge_e = eig_k0[cb_idx[0]]
+
+    # In multiband k.p spectra, high-energy remote states can remain
+    # valence-like by character.  For near-edge plots, use the valence-like
+    # ladder below the first conduction-like state instead of requiring a
+    # globally ordered VB/CB partition.
+    vb_idx = [
+        i for i, weight in enumerate(cb_char)
+        if weight < cb_threshold and eig_k0[i] < cb_edge_e
+    ]
+    if not vb_idx:
         return None
 
     vb_idx.sort(key=lambda idx: eig_k0[idx])
-    cb_idx.sort(key=lambda idx: eig_k0[idx])
-
-    if vb_idx[-1] >= cb_idx[0]:
-        return None
 
     return vb_idx, cb_idx, cb_char
 
@@ -372,7 +380,15 @@ def _near_gap_indices_for_column(
     energy_max: float = 2.0,
 ) -> Tuple[np.ndarray, np.ndarray, int, int]:
     """Select sorted near-gap eigenvalues for one k-point."""
-    sorted_idx = np.argsort(eig_col)
+    # The writer pads columns with exact zeros when one k-point returns fewer
+    # states than k=0.  Those are not physical eigenvalues and must not enter
+    # near-gap plots.
+    valid_idx = np.where(np.abs(eig_col) > 1.0e-14)[0]
+    if valid_idx.size < 2:
+        empty = np.array([], dtype=int)
+        return empty, empty, 0, 0
+
+    sorted_idx = valid_idx[np.argsort(eig_col[valid_idx])]
     sorted_e = eig_col[sorted_idx]
     gap_idx, _, _ = _spectral_gap_split(sorted_e, energy_min, energy_max)
     vb_start = max(0, gap_idx - n_vb + 1)
@@ -399,6 +415,8 @@ def _plot_near_gap_scatter(
             eig[:, k_i], n_states, n_states, energy_min, energy_max
         )
         selected = vb_idx if side == "vb" else cb_idx
+        if selected.size == 0:
+            continue
         selected = selected[-n_states:] if side == "vb" else selected[:n_states]
         energies = eig[selected, k_i]
         order = np.argsort(energies)
@@ -1907,13 +1925,18 @@ def fig_wire_subbands(output_dir: Path) -> None:
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
-    gap_idx, e_vb_max, e_cb_min = _spectral_gap_split(e0, -0.5, 1.5)
-    vb_indices = list(range(gap_idx + 1))
-    cb_indices = list(range(gap_idx + 1, n_bands))
-    cb_char = np.full(n_bands, np.nan)
-    if parts.size >= n_bands:
-        cb_char = _normalized_parts(parts[:n_bands])[:, 6] + _normalized_parts(parts[:n_bands])[:, 7]
-    classification = "largest near-gap spectral gap"
+    groups = _wire_state_groups_from_parts(e0, parts)
+    if groups is not None:
+        vb_indices, cb_indices, cb_char = groups
+        e_vb_max = e0[vb_indices[-1]]
+        e_cb_min = e0[cb_indices[0]]
+        classification = "band-character weights"
+    else:
+        gap_idx, e_vb_max, e_cb_min = _spectral_gap_split(e0, -0.5, 1.5)
+        vb_indices = list(range(gap_idx + 1))
+        cb_indices = list(range(gap_idx + 1, n_bands))
+        cb_char = np.full(n_bands, np.nan)
+        classification = "largest near-gap spectral gap fallback"
 
     n_vb = len(vb_indices)
     n_cb = len(cb_indices)
@@ -1924,14 +1947,14 @@ def fig_wire_subbands(output_dir: Path) -> None:
     print(f"  VB max={e_vb_max:.4f}, CB min={e_cb_min:.4f}, "
           f"gap={e_cb_min - e_vb_max:.4f} eV")
     if np.all(np.isfinite(cb_char)):
-        print(f"  Edge CB character: VB top={1.0 - cb_char[vb_indices[-1]]:.3f} VB, "
+        print(f"  Edge character: VB top={1.0 - cb_char[vb_indices[-1]]:.3f} VB, "
               f"CB bottom={cb_char[cb_indices[0]]:.3f} CB")
     print(f"  Plotting {n_plot_vb} VB + {n_plot_cb} CB near the gap")
 
     fig, (ax_vb, ax_cb) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=False)
 
     # VB subbands near the gap
-    _plot_near_gap_scatter(ax_vb, k_vals, eig, n_plot_vb, "vb", "Reds_r", -0.5, 1.5)
+    _plot_near_gap_scatter(ax_vb, k_vals, eig, n_plot_vb, "vb", "Reds_r", -1.2, 2.1)
 
     ax_vb.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
                label=f"VB top = {e_vb_max:.3f} eV")
@@ -1941,7 +1964,7 @@ def fig_wire_subbands(output_dir: Path) -> None:
     ax_vb.legend(loc="best", fontsize=7)
 
     # CB subbands near the gap
-    _plot_near_gap_scatter(ax_cb, k_vals, eig, n_plot_cb, "cb", "Blues_r", -0.5, 1.5)
+    _plot_near_gap_scatter(ax_cb, k_vals, eig, n_plot_cb, "cb", "Blues_r", -1.2, 2.1)
 
     ax_cb.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
                label=f"CB bottom = {e_cb_min:.3f} eV")
@@ -2018,9 +2041,21 @@ def fig_wire_density_2d(output_dir: Path) -> None:
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
-    gap_idx, _, _ = _spectral_gap_split(e0, -0.5, 1.5)
-    vb_edge_ev_idx = gap_idx + 1
-    cb_ground_ev_idx = gap_idx + 2
+    groups = _wire_state_groups_from_parts(e0, parts)
+    if groups is not None:
+        vb_indices, cb_indices, cb_char = groups
+        vb_edge_ev_idx = vb_indices[-1] + 1
+        cb_ground_ev_idx = cb_indices[0] + 1
+        print(
+            f"  Classification: band-character weights "
+            f"(VB edge {1.0 - cb_char[vb_indices[-1]]:.3f} VB, "
+            f"CB edge {cb_char[cb_indices[0]]:.3f} CB)"
+        )
+    else:
+        gap_idx, _, _ = _spectral_gap_split(e0, -0.5, 1.5)
+        vb_edge_ev_idx = gap_idx + 1
+        cb_ground_ev_idx = gap_idx + 2
+        print("  Classification: largest near-gap spectral gap fallback")
 
     e_vb_max = e0[vb_edge_ev_idx - 1]
     e_cb_min = e0[cb_ground_ev_idx - 1]
@@ -5015,9 +5050,8 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
     cfg_src = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
     cfg_text = cfg_src.read_text()
 
-    # Modify config for a kz sweep: use fewer k-points to stay within time budget.
-    # The 30x30 strained wire is expensive; 11 k-points is a reasonable tradeoff.
-    # Also widen the energy window to capture CB states.
+    # Modify config for a kz sweep.  The 30x30 strained wire is expensive, so
+    # keep the sweep short but widen the window enough to include CB states.
     lines = cfg_text.splitlines()
     modified_lines = []
     for line in lines:
@@ -5069,10 +5103,18 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
-    gap_idx, e_vb_max, e_cb_min = _spectral_gap_split(e0, -0.1, 0.2)
-    vb_indices = list(range(gap_idx + 1))
-    cb_indices = list(range(gap_idx + 1, n_bands))
-    classification = "largest near-edge spectral gap"
+    groups = _wire_state_groups_from_parts(e0, parts)
+    if groups is not None:
+        vb_indices, cb_indices, cb_char = groups
+        e_vb_max = e0[vb_indices[-1]]
+        e_cb_min = e0[cb_indices[0]]
+        classification = "band-character weights"
+    else:
+        gap_idx, e_vb_max, e_cb_min = _spectral_gap_split(e0, -0.1, 0.2)
+        vb_indices = list(range(gap_idx + 1))
+        cb_indices = list(range(gap_idx + 1, n_bands))
+        cb_char = np.full(n_bands, np.nan)
+        classification = "largest near-edge spectral gap fallback"
 
     n_plot_vb = min(len(vb_indices), 8)
     n_plot_cb = min(len(cb_indices), 8)
@@ -5081,10 +5123,13 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
         f"  {len(vb_indices)} VB + {len(cb_indices)} CB, "
         f"gap={e_cb_min - e_vb_max:.4f} eV via {classification}"
     )
+    if np.all(np.isfinite(cb_char)):
+        print(f"  Edge character: VB top={1.0 - cb_char[vb_indices[-1]]:.3f} VB, "
+              f"CB bottom={cb_char[cb_indices[0]]:.3f} CB")
 
     fig, (ax_vb, ax_cb) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=False)
 
-    _plot_near_gap_scatter(ax_vb, k_vals, eig, n_plot_vb, "vb", "Reds_r", -0.1, 0.2)
+    _plot_near_gap_scatter(ax_vb, k_vals, eig, n_plot_vb, "vb", "Reds_r", 0.0, 1.2)
 
     ax_vb.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
                label=f"VB top = {e_vb_max:.3f} eV")
@@ -5093,7 +5138,7 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
     ax_vb.set_title(f"VB subbands ({n_plot_vb} shown)")
     ax_vb.legend(loc="best", fontsize=7)
 
-    _plot_near_gap_scatter(ax_cb, k_vals, eig, n_plot_cb, "cb", "Blues_r", -0.1, 0.2)
+    _plot_near_gap_scatter(ax_cb, k_vals, eig, n_plot_cb, "cb", "Blues_r", 0.0, 1.2)
 
     ax_cb.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
                label=f"CB bottom = {e_cb_min:.3f} eV")
@@ -5143,9 +5188,19 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
-    gap_idx, _, _ = _spectral_gap_split(e0, -0.1, 0.2)
-    vb_indices = list(range(gap_idx + 1))
-    cb_indices = list(range(gap_idx + 1, n_bands))
+    groups = _wire_state_groups_from_parts(e0, parts)
+    if groups is not None:
+        vb_indices, cb_indices, cb_char = groups
+        print(
+            f"  Classification: band-character weights "
+            f"(VB edge {1.0 - cb_char[vb_indices[-1]]:.3f} VB, "
+            f"CB edge {cb_char[cb_indices[0]]:.3f} CB)"
+        )
+    else:
+        gap_idx, _, _ = _spectral_gap_split(e0, -0.1, 0.2)
+        vb_indices = list(range(gap_idx + 1))
+        cb_indices = list(range(gap_idx + 1, n_bands))
+        print("  Classification: largest near-edge spectral gap fallback")
 
     # Plot a 2x2 panel: top 3 VB states + CB ground state
     n_vb_show = min(3, len(vb_indices))

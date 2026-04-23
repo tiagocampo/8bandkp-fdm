@@ -518,6 +518,174 @@ contains
     call grid_free(grid)
   end subroutine test_laplacian_2d_eigenvalue_sanity
 
+  @test
+  subroutine test_rect_wire_keeps_dirichlet_boundary_laplacian()
+    ! Rectangular wires use explicit Dirichlet boundary closures.  The
+    ! variable-coefficient application must not replace those boundary
+    ! diagonals with a row-sum-conserving Neumann-style diagonal.
+    integer, parameter :: nnx = 5, nny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ij, corner_idx
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    integer :: mat2d(nnx, nny)
+    real(kind=dp) :: diag_val, expected_diag
+    real(kind=dp) :: gaas_A
+
+    mat2d = 1
+    call grid_init_rect(grid, nnx, nny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    gaas_A = params(1)%A
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    corner_idx = 1
+    diag_val = 0.0_dp
+    do ij = kpterms_2d(5)%rowptr(corner_idx), kpterms_2d(5)%rowptr(corner_idx + 1) - 1
+      if (kpterms_2d(5)%colind(ij) == corner_idx) then
+        diag_val = real(kpterms_2d(5)%values(ij))
+        exit
+      end if
+    end do
+
+    expected_diag = gaas_A * const * (3.0_dp/dx**2 + 3.0_dp/dy**2)
+    @assertEqual(expected_diag, diag_val, tolerance=1.0e-12_dp * expected_diag)
+
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_rect_wire_keeps_dirichlet_boundary_laplacian
+
+  @test
+  subroutine test_rect_wire_first_derivative_boundary_sign()
+    ! First-derivative operators are not conservative Laplacians.  Their
+    ! diagonal entries must retain the explicit Dirichlet closure sign.
+    integer, parameter :: nnx = 5, nny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ij, corner_idx
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    integer :: mat2d(nnx, nny)
+    real(kind=dp) :: diag_val, expected_diag
+    real(kind=dp) :: gaas_P
+
+    mat2d = 1
+    call grid_init_rect(grid, nnx, nny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    gaas_P = params(1)%P
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    corner_idx = 1
+    diag_val = 0.0_dp
+    do ij = kpterms_2d(12)%rowptr(corner_idx), kpterms_2d(12)%rowptr(corner_idx + 1) - 1
+      if (kpterms_2d(12)%colind(ij) == corner_idx) then
+        diag_val = real(kpterms_2d(12)%values(ij))
+        exit
+      end if
+    end do
+
+    expected_diag = -gaas_P * 0.5_dp / dx
+    @assertEqual(expected_diag, diag_val, tolerance=1.0e-12_dp * abs(expected_diag))
+
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_rect_wire_first_derivative_boundary_sign
+
+  @test
+  subroutine test_inactive_wire_cells_are_hard_wall_barriers()
+    ! Non-rectangular wire grids keep the rectangular storage layout, so cells
+    ! outside the active cross-section must not remain zero-energy states.
+    integer, parameter :: nnx = 7, nny = 7
+    real(kind=dp), parameter :: dx = 1.0_dp, dy = 1.0_dp
+    integer :: ij, corner_idx, cb_diag_idx, vb_diag_idx, ngrid
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nnx, nny)
+    complex(kind=dp) :: cb_diag, vb_diag
+
+    mat2d = 1
+    call grid_init_circle(grid, nnx, nny, dx, dy, 0.5_dp * nnx * dx, &
+      0.5_dp * nny * dy, 2.0_dp, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+
+    ngrid = nnx * nny
+    corner_idx = 1
+    vb_diag_idx = corner_idx
+    cb_diag_idx = 6 * ngrid + corner_idx
+    vb_diag = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    cb_diag = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    do ij = HT_csr%rowptr(vb_diag_idx), HT_csr%rowptr(vb_diag_idx + 1) - 1
+      if (HT_csr%colind(ij) == vb_diag_idx) then
+        vb_diag = HT_csr%values(ij)
+        exit
+      end if
+    end do
+    do ij = HT_csr%rowptr(cb_diag_idx), HT_csr%rowptr(cb_diag_idx + 1) - 1
+      if (HT_csr%colind(ij) == cb_diag_idx) then
+        cb_diag = HT_csr%values(ij)
+        exit
+      end if
+    end do
+
+    @assertTrue(real(vb_diag) < -100.0_dp, message="Inactive valence cell has hard-wall barrier")
+    @assertTrue(real(cb_diag) > 100.0_dp, message="Inactive conduction cell has hard-wall barrier")
+
+    call csr_free(HT_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_inactive_wire_cells_are_hard_wall_barriers
+
   ! ==================================================================
   ! Helper subroutines
   ! ==================================================================
