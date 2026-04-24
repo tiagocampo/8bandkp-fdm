@@ -847,7 +847,7 @@ contains
 
     integer :: i, k, row, col, nnz_out, nx_grid
     integer :: col_offset, abs_offset, row_band, col_band
-    real(kind=dp) :: scale, ff_scale
+    real(kind=dp) :: scale, ff_scale, coeff
     logical :: use_face_frac
     integer, allocatable :: rows_coo(:), cols_coo(:)
     complex(kind=dp), allocatable :: vals_coo(:)
@@ -924,10 +924,12 @@ contains
               ff_scale = (face_frac_y(row, 1) + face_frac_y(row, 2)) * 0.5_dp
             end if
 
+            coeff = 0.5_dp * (profile(row) + profile(col))
+            if (present(cell_volume)) coeff = coeff * cell_volume(row)
             k = k + 1
             rows_coo(k) = row
             cols_coo(k) = col
-            vals_coo(k) = scale * ff_scale * A%values(i)
+            vals_coo(k) = -coeff * ff_scale * A%values(i)
             diag_sum = diag_sum + real(vals_coo(k), kind=dp)
           end do
 
@@ -940,13 +942,22 @@ contains
           end if
         end block
       else
-        ! --- No face fractions: original formula (diagonal gets same scale) ---
+        ! --- No face fractions: preserve hard-wall diagonals and average
+        ! material coefficients on off-diagonal connections.  The averaging
+        ! keeps heterogeneous derivative operators compatible with Hermitian
+        ! eigensolvers that read only one matrix triangle.
         do i = A%rowptr(row), A%rowptr(row + 1) - 1
           col = A%colind(i)
+          if (col == row) then
+            coeff = profile(row)
+          else
+            coeff = 0.5_dp * (profile(row) + profile(col))
+          end if
+          if (present(cell_volume)) coeff = coeff * cell_volume(row)
           k = k + 1
           rows_coo(k) = row
           cols_coo(k) = col
-          vals_coo(k) = scale * A%values(i)
+          vals_coo(k) = -coeff * A%values(i)
         end do
       end if
     end do

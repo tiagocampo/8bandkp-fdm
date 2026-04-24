@@ -341,7 +341,9 @@ contains
 
   @test
   subroutine test_csr_apply_variable_coeff()
-    ! Test row scaling: result(i,j) = -profile(i) * A(i,j)
+    ! Test variable-coefficient scaling:
+    !   diagonal:     result(i,i) = -profile(i) * A(i,i)
+    !   off-diagonal: result(i,j) = -0.5*(profile(i)+profile(j)) * A(i,j)
     integer, parameter :: n = 3
     type(csr_matrix) :: A, result_mat
     complex(kind=dp) :: vals(7)
@@ -361,11 +363,11 @@ contains
     call csr_to_dense(result_mat, dense)
 
     @assertEqual(cmplx(-10.0_dp,0,dp), dense(1,1), tolerance=1.0e-14_dp)
-    @assertEqual(cmplx(-20.0_dp,0,dp), dense(1,2), tolerance=1.0e-14_dp)
-    @assertEqual(cmplx(-60.0_dp,0,dp), dense(2,1), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-30.0_dp,0,dp), dense(1,2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-45.0_dp,0,dp), dense(2,1), tolerance=1.0e-14_dp)
     @assertEqual(cmplx(-80.0_dp,0,dp), dense(2,2), tolerance=1.0e-14_dp)
-    @assertEqual(cmplx(-100.0_dp,0,dp), dense(2,3), tolerance=1.0e-14_dp)
-    @assertEqual(cmplx(-180.0_dp,0,dp), dense(3,2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-125.0_dp,0,dp), dense(2,3), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-150.0_dp,0,dp), dense(3,2), tolerance=1.0e-14_dp)
     @assertEqual(cmplx(-210.0_dp,0,dp), dense(3,3), tolerance=1.0e-14_dp)
 
     call csr_free(A)
@@ -685,6 +687,53 @@ contains
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
     call grid_free(grid)
   end subroutine test_inactive_wire_cells_are_hard_wall_barriers
+
+  @test
+  subroutine test_heterostructure_wire_hamiltonian_is_hermitian()
+    ! Material discontinuities must not make the wire Hamiltonian depend on
+    ! which triangle the Hermitian eigensolver reads.
+    integer, parameter :: nnx = 5, nny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nnx, nny)
+
+    mat2d = 1
+    mat2d(3:5, :) = 2
+    call grid_init_rect(grid, nnx, nny, dx, dy, mat2d)
+
+    allocate(material_names(2))
+    material_names(1) = "GaAs"
+    material_names(2) = "InAs"
+    allocate(params(2))
+    call paramDatabase(material_names, 2, params)
+
+    allocate(regions(2))
+    regions(1)%material = "GaAs"
+    regions(2)%material = "InAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+
+    call assert_csr_hermitian(HT_csr, "Heterostructure wire Hamiltonian")
+
+    call csr_free(HT_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_heterostructure_wire_hamiltonian_is_hermitian
 
   ! ==================================================================
   ! Helper subroutines

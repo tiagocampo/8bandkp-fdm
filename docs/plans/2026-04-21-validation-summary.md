@@ -54,7 +54,8 @@ Date: 2026-04-22 (updated with nextnano benchmark comparisons)
 | GaAs wire (63x63 A) | Near-gap split | PIB: 168 meV | 2.035 eV | Recomputed after boundary-operator fix; needs external benchmark |
 | GaAs wire (63x63 A) | CB edge | -- | 1.150 eV | Character-selected from `parts.dat` |
 | GaAs wire (63x63 A) | Kramers degeneracy | Required at kz=0 | Confirmed | Validated |
-| InAs/GaAs core-shell | Near-edge split | -- | 0.017 eV | Mixed/interface-weighted qualitative output |
+| InAs/GaAs core-shell | Near-edge split | -- | 0.775 eV | Corrected after heterostructure Hermiticity fix; still needs convergence |
+| InAs/GaAs core-shell | Dense vs FEAST near-edge parity | Required | VB top -0.482732 eV, CB bottom 0.292126 eV in both paths | Validated on 30x30 grid |
 | InSb wire (55x55 A) | gz | ~-25 at 30nm (Faria Jr.) | -49.97 at 5.5nm | Provisional (coarse grid) |
 | InSb wire (55x55 A) | gx, gy | Isotropic (cylindrical) | -49.94, -50.05 | Provisional; band-character selected |
 

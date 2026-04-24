@@ -557,9 +557,9 @@ The wire solver was corrected in two stages: first the off-diagonal 8-band terms
 |--------|----------|-------|-------|
 | GaAs wire (63x63 A, 21x21) | Effective near-gap split | 2.035 eV | Current clean figure run; character-selected edges |
 | GaAs wire (63x63 A, 21x21) | Kramers degeneracy at $k_z=0$ | Confirmed | Most robust near-gap validation point |
-| InAs/GaAs core-shell (80 A core, 30x30) | Effective near-edge split | ~0.017 eV | Character-selected mixed states; qualitative |
-| InAs/GaAs core-shell (80 A core, 30x30) | CB-like states in current window | 24 | `CB` character $\geq 0.5$ in the subband run |
-| InAs/GaAs core-shell (80 A core, 30x30) | Wavefunction localization | Interface-weighted | Coarse strained heterostructure diagnostic, not a nextnano benchmark |
+| InAs/GaAs core-shell (80 A core, 30x30) | Effective near-edge split | ~0.775 eV | Character-selected VB top and CB bottom |
+| InAs/GaAs core-shell (80 A core, 30x30) | Lowest CB-like state | 0.292 eV, ~94% CB | Core-confined electron ground state |
+| InAs/GaAs core-shell (80 A core, 30x30) | Wavefunction localization | Core-confined | Qualitative nextnano-style sanity check; still needs convergence |
 | InSb wire (55x55 A, 11x11) | $g_x$ | $\approx -49.94$ | Band-character-selected CB edge |
 | InSb wire (55x55 A, 11x11) | $g_y$ | $\approx -50.05$ | Coarse-grid provisional |
 | InSb wire (55x55 A, 11x11) | $g_z$ | $\approx -49.97$ | Close to bulk InSb scale |
@@ -664,24 +664,24 @@ The `strain: T` flag activates the continuum elasticity solver, which computes t
 
 *Figure 3: Conduction band edge $E_C(x,y)$ for the strained InAs/GaAs core-shell wire. The InAs core (interior of the dashed white circle, radius 40 A) forms a deep potential well for electrons due to the large conduction band offset between strained InAs and GaAs.*
 
-The band-edge profile reveals the physics of strained heterostructure confinement. In the current run summary, the InAs core center sits near:
+The band-edge profile reveals the physics of strained heterostructure confinement. The plotted profile is the **effective strained band-edge profile** used by the Hamiltonian, not the raw unstrained material offsets. In the current run summary, the InAs core center sits near:
 
-- $E_C \approx -0.173$ eV (InAs conduction band, shifted by strain)
-- $E_V \approx -0.590$ eV (InAs valence band, shifted by strain)
-- Effective band gap in the core $\approx 0.417$ eV
+- $E_C^{\rm strained} \approx -0.021$ eV
+- $E_V^{\rm strained} \approx -0.578$ eV for the top valence edge
+- Effective local core gap $\approx 0.557$ eV
 
 At the GaAs shell (far from the core), the same run reports approximately:
 
-- $E_C \approx 0.719$ eV
-- $E_V \approx -0.800$ eV
-- GaAs band gap: 1.519 eV
+- $E_C^{\rm strained} \approx 0.67$ eV away from the outer corners
+- $E_V^{\rm strained} \approx -0.78$ eV
+- Local shell gap $\approx 1.45$ eV
 
 The resulting band offsets are:
 
-- **Conduction band offset** $\Delta E_C \approx 0.892$ eV (Type I, electrons confined in InAs)
-- **Valence band offset** $\Delta E_V \approx 0.210$ eV (Type I, holes confined in InAs)
+- **Conduction band offset** $\Delta E_C \approx 0.69$ eV (Type I, electrons confined in InAs)
+- **Valence band offset** $\Delta E_V \approx 0.20$ eV (Type I, holes confined in InAs)
 
-The strain modifies the band edges through the Bir-Pikus mechanism. Under the compressive biaxial strain in the InAs core (the core is squeezed to match the GaAs lattice in the cross-section plane), the hydrostatic component shifts both $E_C$ and $E_V$, while the shear component splits the heavy-hole and light-hole valence bands. In the current run set this corresponds to a strained-core gap near 0.417 eV, compared with the unstrained InAs value of 0.354 eV (Vurgaftman 2001). That shift is qualitatively consistent with the expected Bir-Pikus response, but the exact offsets should still be treated as run-derived rather than externally benchmarked values.
+The strain modifies the band edges through the Bir-Pikus mechanism. Under the compressive biaxial strain in the InAs core (the core is squeezed to match the GaAs lattice in the cross-section plane), the hydrostatic component shifts both $E_C$ and $E_V$, while the shear component splits the heavy-hole and light-hole valence bands. In the current run set this corresponds to a local strained-core gap near 0.557 eV, compared with the unstrained InAs value of 0.354 eV (Vurgaftman 2001). That shift is qualitatively consistent with the expected Bir-Pikus response, but the exact offsets should still be treated as run-derived rather than externally benchmarked values.
 
 ### 7.4 Subband dispersion
 
@@ -691,9 +691,9 @@ The strain modifies the band edges through the Bir-Pikus mechanism. Under the co
 
 The subband structure differs markedly from the unstrained GaAs wire of Section 3. Key observations:
 
-1. **Band gap**: The near-edge split selected for the current figure is approximately 0.017 eV. This is a run-derived, character-selected split between mixed near-edge states in the strained finite wire, not yet an externally benchmarked nanowire gap.
+1. **Band gap**: The character-selected near-edge split in the current figure is approximately 0.775 eV, with the VB top near -0.483 eV and the CB bottom near 0.292 eV at $k_z=0$. This is a run-derived strained-wire gap on a coarse 30x30 grid, not yet a converged nextnano benchmark.
 
-2. **CB-like manifold**: The current energy window contains multiple CB-like states by character threshold (`CB` weight $\geq 0.5$), but the lowest selected CB-like edge has only about 60% CB character. Treat this figure as a diagnostic of the coarse strained heterostructure calculation rather than a clean one-band electron ladder.
+2. **CB-like manifold**: The lowest selected CB-like edge has about 94% CB character and is confined in the InAs core. This fixes the previous non-Hermitian interface artifact, where the nominal CB edge was an interface-weighted mixed state.
 
 3. **VB subband spacing**: The near-gap valence states span a broad, non-uniform energy range, with pairs of nearly degenerate states reflecting the approximate square symmetry of the wire cross-section (analogous to the unstrained GaAs wire in Section 3).
 
@@ -703,15 +703,15 @@ The subband structure differs markedly from the unstrained GaAs wire of Section 
 
 ![InAs/GaAs wire wavefunctions](../figures/wire_inas_gaas_wavefunctions.png)
 
-*Figure 5: Probability density $|\psi(x,y)|^2$ for selected near-edge mixed states at $k_z = 0$. The dashed white circle marks the InAs/GaAs material boundary. These states are interface-weighted on the current coarse strained grid; this panel is a diagnostic output, not yet a validated nextnano-style nanowire reproduction.*
+*Figure 5: Probability density $|\psi(x,y)|^2$ for selected near-edge states at $k_z = 0$. The dashed white circle marks the InAs/GaAs material boundary. The lowest CB-like state is now centered and core-confined, as expected for a Type-I InAs/GaAs core-shell wire.*
 
-The wavefunction plots show that this coarse strained core-shell configuration is not yet a clean Type-I benchmark:
+The wavefunction plots now show the expected Type-I confinement pattern:
 
-- **Near-edge VB-like states**: The plotted VB-like states are mixed and interface-weighted rather than simple centered envelope modes. Individual states in near-degenerate manifolds can choose arbitrary orientations, so these panels should be interpreted as representative basis vectors, not unique angular-momentum eigenstates.
+- **Near-edge VB-like states**: The plotted VB-like states are confined in and around the InAs core, with shapes affected by HH-LH-SO mixing and the approximate square grid symmetry. Individual states in near-degenerate manifolds can choose arbitrary orientations, so these panels should be interpreted as representative basis vectors, not unique angular-momentum eigenstates.
 
-- **CB-like state**: The selected CB-like edge state has about 60% CB character and is localized near the core/shell interface on this grid. It should not be described as an $s$-like centered electron ground state.
+- **CB-like state**: The selected CB-like edge state has about 94% CB character and is centered in the core. This is the same qualitative behavior expected in nextnano-style 2D core-shell nanowire examples: a bound electron state follows the lower conduction-band region rather than accumulating at a numerical interface artifact.
 
-The single-material GaAs hard-wall wire in Figure 2 is currently the reliable wavefunction sanity check: its VB-edge and CB-ground densities are centered and box-like, matching the qualitative expectation for a square quantum wire. The InAs/GaAs heterostructure figure is intentionally retained as a warning that the strained, mixed-material wire path still needs a dedicated benchmark and convergence study before being used for quantitative nanowire physics.
+This figure is now a qualitative sanity check for the strained heterostructure path. It is still not a quantitative nanowire benchmark: the grid is coarse, the $k_z$ sweep has only two points, and a full comparison requires convergence against grid spacing, energy window, and sparse subspace size.
 
 ### 7.6 Strain effects: HH-LH splitting
 
@@ -730,11 +730,11 @@ where $a_v$ is the hydrostatic valence deformation potential and $b$ is the shea
 | Confinement | Hard-wall (Dirichlet) | Band offsets + strain |
 | Cross-section | $63 \times 63$ A | 80 A diameter core |
 | Grid | $21 \times 21$ | $30 \times 30$ |
-| Band gap (wire) | 2.035 eV | 0.017 eV |
-| CB-like states in plotted window | 6 | 24 |
-| CB1 confinement shift | Character-selected edge at 1.150 eV | Mixed CB-like edge at 0.674 eV |
-| CB offset | None (hard wall) | 0.892 eV |
+| Band gap (wire) | 2.035 eV | 0.775 eV |
+| CB-like states in plotted window | 6 | 26 |
+| CB1 confinement shift | Character-selected edge at 1.150 eV | Core-confined edge at 0.292 eV |
+| CB offset | None (hard wall) | ~0.69 eV |
 | Strain | None | Compressive in core |
 | Matrix size | $3528 \times 3528$ | $7200 \times 7200$ |
 
-The InAs/GaAs wire has a smaller selected near-edge split (~0.017 eV vs.\ ~2.035 eV for the hard-wall GaAs wire in Section 3), but this should not be over-interpreted as a validated nanowire band gap. The current strained heterostructure output contains strongly mixed, interface-weighted states, so the next step is a dedicated nextnano-style circular or core-shell benchmark with grid convergence and a branch-tracking/parts output that remains reliable at every $k_z$ point.
+The InAs/GaAs wire has a smaller selected near-edge split (~0.775 eV vs.\ ~2.035 eV for the hard-wall GaAs wire in Section 3), consistent with its narrow-gap InAs core and finite GaAs barriers. The next step is a dedicated nextnano-style circular or core-shell benchmark with grid convergence and branch tracking that remains reliable at every $k_z$ point.

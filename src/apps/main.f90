@@ -291,13 +291,26 @@ program kpfdm
     call ensure_output_dir()
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
-    write(iounit, '(A)') '# x(A) y(A) EV EV_DeltaSO EC'
+    if (allocated(cfg%strain_blocks%delta_Ec)) then
+      write(iounit, '(A)') '# x(A) y(A) EV_top_strained ESO_strained EC_strained'
+    else
+      write(iounit, '(A)') '# x(A) y(A) EV EV_DeltaSO EC'
+    end if
     do jj = 1, cfg%grid%ny
       do ii = 1, cfg%grid%nx
         k = (jj - 1) * cfg%grid%nx + ii
-        write(unit=iounit, fmt='(5(g14.6,1x))') &
-          & cfg%grid%x(ii), cfg%grid%z(jj), &
-          & profile_2d(k, 1), profile_2d(k, 2), profile_2d(k, 3)
+        if (allocated(cfg%strain_blocks%delta_Ec)) then
+          write(unit=iounit, fmt='(5(g14.6,1x))') &
+            & cfg%grid%x(ii), cfg%grid%z(jj), &
+            & max(profile_2d(k, 1) + cfg%strain_blocks%delta_EHH(k), &
+                  profile_2d(k, 1) + cfg%strain_blocks%delta_ELH(k)), &
+            & profile_2d(k, 2) + cfg%strain_blocks%delta_ESO(k), &
+            & profile_2d(k, 3) + cfg%strain_blocks%delta_Ec(k)
+        else
+          write(unit=iounit, fmt='(5(g14.6,1x))') &
+            & cfg%grid%x(ii), cfg%grid%z(jj), &
+            & profile_2d(k, 1), profile_2d(k, 2), profile_2d(k, 3)
+        end if
       end do
       ! Blank line between y-rows for gnuplot splot
       write(iounit, '(A)') ''

@@ -1920,8 +1920,10 @@ def fig_wire_subbands(output_dir: Path) -> None:
     e0 = eig[:, 0]  # eigenvalues at k=0, sorted ascending
 
     parts = np.array([])
+    all_parts: list[np.ndarray] = []
     try:
         parts = parse_parts(run_dir)
+        _, all_parts = parse_parts_all_k(run_dir)
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
@@ -2036,8 +2038,10 @@ def fig_wire_density_2d(output_dir: Path) -> None:
 
     e0 = eig[:, 0]
     parts = np.array([])
+    all_parts: list[np.ndarray] = []
     try:
         parts = parse_parts(run_dir)
+        _, all_parts = parse_parts_all_k(run_dir)
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
@@ -3722,8 +3726,8 @@ def fig_wire_strain_tensor(output_dir: Path) -> None:
         im = ax.pcolormesh(X, Y, vals, cmap="RdBu_r", shading="auto",
                            vmin=-vmax, vmax=vmax)
         ax.set_title(f"{label} ({subtitle})", fontsize=10)
-        ax.set_xlabel(r"$x$ (\u00C5)")
-        ax.set_ylabel(r"$y$ (\u00C5)")
+        ax.set_xlabel("x (Å)")
+        ax.set_ylabel("y (Å)")
         ax.set_aspect("equal")
         fig.colorbar(im, ax=ax, label=label, shrink=0.8)
 
@@ -5051,7 +5055,8 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
     cfg_text = cfg_src.read_text()
 
     # Modify config for a kz sweep.  The 30x30 strained wire is expensive, so
-    # keep the sweep short but widen the window enough to include CB states.
+    # keep the sweep short and only solve the near-edge window needed for the
+    # figure.
     lines = cfg_text.splitlines()
     modified_lines = []
     for line in lines:
@@ -5061,7 +5066,7 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
         elif stripped.startswith("waveVectorStep:"):
             modified_lines.append("waveVectorStep: 2")
         elif stripped.startswith("feast_emin:"):
-            modified_lines.append("feast_emin: -3.0")
+            modified_lines.append("feast_emin: -0.8")
         elif stripped.startswith("feast_emax:"):
             modified_lines.append("feast_emax: 1.5")
         elif stripped.startswith("numcb:"):
@@ -5098,8 +5103,10 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
     e0 = eig[:, 0]
 
     parts = np.array([])
+    all_parts: list[np.ndarray] = []
     try:
         parts = parse_parts(run_dir)
+        _, all_parts = parse_parts_all_k(run_dir)
     except (FileNotFoundError, ValueError, IndexError):
         pass
 
@@ -5128,8 +5135,41 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
               f"CB bottom={cb_char[cb_indices[0]]:.3f} CB")
 
     fig, (ax_vb, ax_cb) = plt.subplots(1, 2, figsize=(8, 4.5), sharey=False)
+    gap_mid = 0.5 * (e_vb_max + e_cb_min)
 
-    _plot_near_gap_scatter(ax_vb, k_vals, eig, n_plot_vb, "vb", "Reds_r", 0.0, 1.2)
+    def plot_character_selected(ax: plt.Axes, side: str, cmap_name: str) -> bool:
+        if len(all_parts) != len(k_vals):
+            return False
+        cmap = plt.get_cmap(cmap_name)
+        n_states = n_plot_vb if side == "vb" else n_plot_cb
+        colors = cmap(np.linspace(0.3, 0.85, n_states))
+        for k_i, k in enumerate(k_vals):
+            if k_i >= len(all_parts):
+                return False
+            part_block = all_parts[k_i]
+            if part_block.shape[0] < eig.shape[0]:
+                return False
+            norm = _normalized_parts(part_block[: eig.shape[0]])
+            cb_char_k = norm[:, 6] + norm[:, 7]
+            valid_idx = np.where(np.abs(eig[:, k_i]) > 1.0e-14)[0]
+            if side == "vb":
+                selected = [
+                    idx for idx in valid_idx
+                    if cb_char_k[idx] < 0.5 and eig[idx, k_i] < gap_mid
+                ]
+                selected = sorted(selected, key=lambda idx: eig[idx, k_i])[-n_states:]
+            else:
+                selected = [
+                    idx for idx in valid_idx
+                    if cb_char_k[idx] >= 0.5 and eig[idx, k_i] > gap_mid
+                ]
+                selected = sorted(selected, key=lambda idx: eig[idx, k_i])[:n_states]
+            for rank, idx in enumerate(selected):
+                ax.scatter(k, eig[idx, k_i], s=12, color=colors[min(rank, n_states - 1)], alpha=0.85)
+        return True
+
+    if not plot_character_selected(ax_vb, "vb", "Reds_r"):
+        _plot_near_gap_scatter(ax_vb, k_vals, eig, n_plot_vb, "vb", "Reds_r", -0.8, 1.2)
 
     ax_vb.axhline(e_vb_max, color="#d62728", linewidth=0.8, linestyle=":",
                label=f"VB top = {e_vb_max:.3f} eV")
@@ -5138,7 +5178,8 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
     ax_vb.set_title(f"VB subbands ({n_plot_vb} shown)")
     ax_vb.legend(loc="best", fontsize=7)
 
-    _plot_near_gap_scatter(ax_cb, k_vals, eig, n_plot_cb, "cb", "Blues_r", 0.0, 1.2)
+    if not plot_character_selected(ax_cb, "cb", "Blues_r"):
+        _plot_near_gap_scatter(ax_cb, k_vals, eig, n_plot_cb, "cb", "Blues_r", -0.8, 1.2)
 
     ax_cb.axhline(e_cb_min, color="#17becf", linewidth=0.8, linestyle="--",
                label=f"CB bottom = {e_cb_min:.3f} eV")

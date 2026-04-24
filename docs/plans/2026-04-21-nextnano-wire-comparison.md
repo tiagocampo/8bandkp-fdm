@@ -83,18 +83,20 @@ The InAs core is under compressive biaxial strain (matched to GaAs lattice const
 
 | Quantity | Value |
 |----------|-------|
-| InAs core EC | -0.173 eV |
-| InAs core EV | -0.590 eV |
-| Strained InAs gap (core center) | 0.417 eV |
-| GaAs shell EC | 0.719 eV |
-| GaAs shell EV | -0.800 eV |
-| CB offset (Delta_EC) | 0.892 eV |
-| VB offset (Delta_EV) | 0.210 eV |
-| Effective near-edge split | ~0.017 eV |
-| CB-like states | 24 (`CB` character >= 0.5 in the subband run) |
-| Wavefunction localization | Interface-weighted mixed states on this coarse strained grid |
+| InAs core strained EC | -0.021 eV |
+| InAs core strained EV top | -0.578 eV |
+| Strained InAs local gap (core center) | 0.557 eV |
+| GaAs shell strained EC | ~0.67 eV |
+| GaAs shell strained EV top | ~-0.78 eV |
+| CB offset (Delta_EC) | ~0.69 eV |
+| VB offset (Delta_EV) | ~0.20 eV |
+| Effective near-edge split | ~0.775 eV |
+| Lowest CB-like state | 0.292 eV, ~94% CB |
+| Wavefunction localization | Core-confined CB ground state; VB states confined/mixed by HH-LH-SO coupling |
 
-Band alignment: Type-I by band-edge profile, but the current near-edge eigenstates are strongly mixed and interface-weighted. Do not use this coarse strained run as a validated nextnano nanowire benchmark.
+Band alignment: Type-I by band-edge profile, and the corrected heterostructure Hamiltonian now gives a core-confined CB ground state. Do not use this coarse strained run as a quantitative nextnano nanowire benchmark until grid and sparse-window convergence are complete.
+
+Dense LAPACK and FEAST give the same near-edge classification on the 30 x 30 grid with the `[-0.8, 1.5]` eV window: VB top = -0.482732 eV, CB bottom = 0.292126 eV, gap = 0.774858 eV.
 
 ### 3.2 nextnano core-shell nanowires
 
@@ -247,9 +249,9 @@ For a rectangular wire with Dirichlet boundaries, the wavefunctions should be:
 - **CB4**: d-like (two nodal lines), approximately (2,2) mode
 - **VB states**: More complex due to HH-LH mixing and the anisotropic effective masses
 
-The nextnano tutorial expectation for simple square/cylindrical wells is a center-peaked ground state with higher nodal modes. Our homogeneous GaAs hard-wall wire now follows that qualitative pattern in the regenerated density figure. The strained InAs/GaAs heterostructure output does not: its selected near-edge states are mixed and interface-weighted, so it remains a diagnostic rather than a validated nextnano reproduction.
+The nextnano tutorial expectation for simple square/cylindrical wells is a center-peaked ground state with higher nodal modes. Our homogeneous GaAs hard-wall wire follows that qualitative pattern in the regenerated density figure. After the heterostructure Hermiticity fix, the strained InAs/GaAs output also has a core-confined CB ground state rather than the previous artificial interface state.
 
-Do not use the current InAs/GaAs wavefunction panel as evidence of a clean centered CB ground state.
+The current InAs/GaAs wavefunction panel can be used as a qualitative sanity check, but not as a quantitative nextnano reproduction until grid convergence is documented.
 
 ## 7. Summary Comparison Table
 
@@ -258,8 +260,8 @@ Do not use the current InAs/GaAs wavefunction panel as evidence of a clean cente
 | **GaAs wire near-gap split (6.3 nm)** | 2.035 eV | -- | -- | Recomputed after boundary fix; needs external benchmark |
 | **GaAs CB edge** | 1.150 eV | -- | -- | Current clean figure run |
 | **GaAs Kramers degeneracy** | Yes (all kz=0 states) | Yes | Yes | Correct |
-| **InAs/GaAs near-edge split (8 nm core)** | ~0.017 eV | -- | -- | Mixed/interface-weighted qualitative output |
-| **InAs/GaAs CB-like states** | 24 | -- | -- | Not yet a validated nextnano reproduction |
+| **InAs/GaAs near-edge split (8 nm core)** | ~0.775 eV | -- | -- | Corrected qualitative output; needs convergence |
+| **InAs/GaAs CB ground state** | 0.292 eV, ~94% CB | -- | -- | Core-confined after Hermiticity fix |
 | **InSb gx (5.5 nm)** | -49.94 | -- | ~-25 (30 nm) | Needs convergence study |
 | **InSb gz (5.5 nm)** | -49.97 | -- | ~-25 (30 nm) | Needs convergence study |
 | **InSb anisotropy** | weak in coarse regression | -- | gx = gy (cylindrical) | Not yet validated |

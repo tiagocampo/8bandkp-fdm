@@ -23,6 +23,11 @@ Date: 2026-04-21
 - Term 16: `gamma2*(D2x - D2y)` anisotropic Laplacian for R term
 - Term 17: placeholder
 
+### Bug 5: heterostructure variable-coefficient operators were non-Hermitian
+- Root cause: `csr_apply_variable_coeff` row-scaled derivative/Laplacian stencils by the material coefficient at the row grid point
+- Impact: GaAs/InAs material jumps produced a non-Hermitian wire Hamiltonian, so Hermitian eigensolvers read an arbitrary triangle and generated artificial interface states
+- Fix: off-diagonal stencil entries now use the arithmetic average of the row and column material coefficients, with a regression test that asserts heterostructure wire Hamiltonian Hermiticity
+
 ## Post-Fix Results
 
 ### GaAs rectangular wire (63×63 Å, 21×21 grid)
@@ -32,9 +37,10 @@ Date: 2026-04-21
 - Wavefunctions localized in wire region
 
 ### InAs/GaAs core-shell wire (40 Å InAs core, GaAs shell, 30×30 grid)
-- Band gap: **0.19 eV** (InAs narrow-gap, reduced by confinement)
-- Subbands: ~47 VB + 1 CB
-- Consistent with Type-I band alignment
+- Character-selected gap: **0.775 eV** at $k_z=0$
+- VB top: **-0.483 eV**
+- CB bottom: **0.292 eV**, about **94% CB** character
+- Wavefunction: corrected CB ground state is centered/core-confined, consistent with Type-I band alignment
 
 ### InSb wire g-factor (11×11 grid, 55×55 A)
 - gx ≈ **-49.94**, gy ≈ **-50.05**, gz ≈ **-49.97**
@@ -47,7 +53,7 @@ Date: 2026-04-21
 
 1. **FEAST convergence**: `info=3` warnings for many kz-points. The subspace dimension (feast_m0) is often insufficient for the dense wire spectrum. Increasing feast_m0 or narrowing the energy window helps.
 
-2. **Boundary treatment**: The `csr_apply_variable_coeff` diagonal reconstruction at boundaries uses `-sum(off-diagonal)` which differs from the exact FD stencil for non-central stencils. Effect is O(1/N) and localized to boundary cells.
+2. **Boundary treatment**: The `csr_apply_variable_coeff` diagonal reconstruction at cut-cell boundaries uses `-sum(off-diagonal)` which differs from the exact FD stencil for non-central stencils. Rectangular full-cell wires preserve the exact hard-wall diagonal. The cut-cell effect is O(1/N) and localized to boundary cells.
 
 3. **Hard-wall boundaries only**: No open or absorbing boundary conditions. Wire states near the boundary may have unphysical confinement.
 
