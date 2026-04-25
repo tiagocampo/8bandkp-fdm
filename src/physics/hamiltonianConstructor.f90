@@ -35,6 +35,7 @@ module hamiltonianConstructor
   end type wire_coo_cache
 
   public :: wire_coo_cache, wire_coo_cache_free
+  public :: build_velocity_matrices
 
   contains
 
@@ -1771,6 +1772,66 @@ module hamiltonianConstructor
       call csr_free(blk_PM)
 
     end subroutine ZB8bandGeneralized
+
+    ! ==================================================================
+    ! Build commutator-based velocity operator matrices from the full wire
+    ! Hamiltonian.
+    !
+    ! Physics:  v_alpha = [r_alpha, H] / (i hbar)
+    !           dH/dk_alpha = -i [r_alpha, H]
+    !
+    ! For each nonzero entry H(row, col), the velocity matrix entry is:
+    !   vel_alpha(row, col) = -i * (r_alpha(i) - r_alpha(j)) * H(row, col)
+    ! where i, j are spatial grid indices extracted from the 8*Ntot basis:
+    !   spatial_idx = mod(basis_idx - 1, Ngrid) + 1
+    !
+    ! Key properties:
+    !   - Same spatial point (diagonal in space): r_i - r_j = 0, so band
+    !     offsets and on-site k.p terms give zero velocity (correct).
+    !   - x-neighbors: r_i - r_j = +/-dx, scaling FD stencil entries.
+    !   - z-direction (free axis): all points share same z, so
+    !     [z, H] = 0 (handled separately via dH/dkz for g3).
+    !
+    ! Uses csr_clone_structure to replicate H's sparsity pattern into
+    ! vel_x and vel_y, then fills values via position-difference scaling.
+    ! ==================================================================
+    subroutine build_velocity_matrices(H_csr, grid, vel_x, vel_y)
+      type(csr_matrix), intent(in)    :: H_csr
+      type(spatial_grid), intent(in)  :: grid
+      type(csr_matrix), intent(out)   :: vel_x
+      type(csr_matrix), intent(out)   :: vel_y
+
+      integer :: k, row, col, sp_row, sp_col, Ngrid
+      real(kind=dp) :: dx_diff, dy_diff
+
+      Ngrid = grid%nx * grid%ny
+
+      ! Clone sparsity pattern from H (same rowptr, colind; values zeroed)
+      call csr_clone_structure(H_csr, vel_x)
+      call csr_clone_structure(H_csr, vel_y)
+
+      ! Loop over all nonzero entries via CSR structure
+      do row = 1, H_csr%nrows
+        do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
+          col = H_csr%colind(k)
+
+          ! Extract spatial grid index from the 8*Ntot basis index.
+          ! Basis ordering: band 1 spatial(1..N), band 2 spatial(1..N), ...
+          ! so spatial_idx = mod(basis_idx - 1, Ngrid) + 1
+          sp_row = mod(row - 1, Ngrid) + 1
+          sp_col = mod(col - 1, Ngrid) + 1
+
+          ! Position difference between spatial points
+          dx_diff = grid%coords(1, sp_row) - grid%coords(1, sp_col)
+          dy_diff = grid%coords(2, sp_row) - grid%coords(2, sp_col)
+
+          ! vel_alpha = -i * (r_alpha_i - r_alpha_j) * H(i,j)
+          vel_x%values(k) = cmplx(0.0_dp, -dx_diff, kind=dp) * H_csr%values(k)
+          vel_y%values(k) = cmplx(0.0_dp, -dy_diff, kind=dp) * H_csr%values(k)
+        end do
+      end do
+
+    end subroutine build_velocity_matrices
 
     ! ==================================================================
     ! Helper: Build kp-term Q for wire

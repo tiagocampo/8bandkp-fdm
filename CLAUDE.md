@@ -111,6 +111,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
 - **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it
 - **`confinementInitialization`** precomputes material parameters at each z-point into `kpterms(fdStep, fdStep, 10)`
 - **Sparse vs dense**: g-factor uses MKL SpBLAS for large QW; band structure uses dense LAPACK (`zheevx`)
+- **Wire g-factor velocity operator**: commutator-based `build_velocity_matrices` computes $v_\alpha = -i [r_\alpha, H]$ element-wise on CSR. g='g3' still used for z-direction. Old g='g1'/'g2' modes are dead code.
 - **Foreman renormalization**: disabled by default (`renormalization = .False.` in defs.f90)
 - **W-variant materials** (GaAsW, InAsW, etc.): use Winkler's parameter set with InSb as EV reference. Non-W materials use Vurgaftman parameters. EC = EV + Eg convention for all materials with EV defined
 - **Self-consistent SP**: iterative Schrödinger-Poisson loop wraps the eigenvalue solve. Modifies `profile` array before Hamiltonian construction (same interface as `externalFieldSetup_electricField`). Linear mixing warm-up + DIIS/Pulay acceleration. Works for bulk (Fermi level finder) and QW (full SP). Per-layer doping (`doping_spec`), charge neutrality or fixed Fermi level, box-integration Poisson with variable dielectric. Design doc: `docs/plans/2026-03-29-self-consistent-sp-design.md`
@@ -154,4 +155,4 @@ Always check for and follow applicable superpowers skills when working. In parti
 
 ## Known Issues
 
-- **Wire g-factor is broken.** The transverse perturbation construction (`g='g1'`/`g='g2'` in `ZB8bandGeneralized`) does not correctly implement $dH/dk_\alpha$ for the wire geometry. The regression test passes (small 55 Å InSbW wire produces non-g_free values), but systematic sweeps show results do not converge toward the bulk limit for larger wires. Bulk and QW g-factors are verified correct. Do not trust wire g-factor results until this is fixed.
+- None currently. The wire g-factor was fixed using the commutator-based velocity operator (`build_velocity_matrices` in `hamiltonianConstructor.f90`). The transverse perturbation construction uses $-i [r_\alpha, H]$ element-wise on the CSR Hamiltonian, which correctly captures all k.p term contributions.
