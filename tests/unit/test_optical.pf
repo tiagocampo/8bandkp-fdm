@@ -38,6 +38,7 @@ contains
     integer :: mat2d(nx, ny)
     type(simulation_config) :: cfg
     type(csr_matrix) :: H_csr
+    type(csr_matrix) :: vel(3)
     type(wire_coo_cache) :: coo_cache
     type(eigensolver_config) :: eigen_cfg
     type(eigensolver_result) :: eigen_res
@@ -55,6 +56,7 @@ contains
 
     ! Build grid
     call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    call grid_build_coords(grid)
 
     ! Setup materials
     allocate(material_names(1))
@@ -74,6 +76,10 @@ contains
 
     ! Build full Hamiltonian at kz=0
     call ZB8bandGeneralized(H_csr, 0.0_dp, profile_2d, kpterms_2d, cfg, coo_cache)
+
+    ! Build velocity matrices for optical transitions
+    call build_velocity_matrices(H_csr, cfg%grid, vel(1), vel(2))
+    call ZB8bandGeneralized(vel(3), 1.0_dp, profile_2d, kpterms_2d, cfg, g='g3')
 
     ! Solve for eigenvalues
     numcb = 2
@@ -108,7 +114,7 @@ contains
     ! Compute optical matrix elements
     call compute_optical_matrix_wire(transitions, num_trans, &
       & cb_state, vb_state, cb_value, vb_value, numcb, numvb, &
-      & profile_2d, kpterms_2d, cfg)
+      & vel)
 
     ! Check number of transitions
     @assertEqual(numcb * numvb, num_trans)
@@ -150,6 +156,9 @@ contains
     ! Cleanup
     deallocate(transitions, cb_state, vb_state, cb_value, vb_value)
     call csr_free(H_csr)
+    do ij = 1, 3
+      call csr_free(vel(ij))
+    end do
     call wire_coo_cache_free(coo_cache)
     call eigensolver_result_free(eigen_res)
     do ij = 1, 15

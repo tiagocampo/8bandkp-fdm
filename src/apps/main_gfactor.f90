@@ -55,6 +55,7 @@ program gfactor
   type(wire_coo_cache)             :: coo_cache
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
+  type(csr_matrix)                 :: vel(3)
   integer                          :: Ngrid, Ntot, nev_wire
   integer                          :: gap_idx, cb_start, vb_start
   real(kind=dp), allocatable       :: gaps(:)
@@ -148,6 +149,12 @@ program gfactor
 
     ! Build wire Hamiltonian at kz=0
     call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg, coo_cache)
+
+    ! Build commutator-based velocity matrices for x,y directions
+    call build_velocity_matrices(HT_csr, cfg%grid, vel(1), vel(2))
+
+    ! Build velocity matrix for z direction (free axis, uses existing dH/dkz)
+    call ZB8bandGeneralized(vel(3), 1.0_dp, profile_2d, kpterms_2d, cfg, g='g3')
 
     ! Configure FEAST: use config energy window if provided, else auto
     eigen_cfg%method   = 'FEAST'
@@ -283,8 +290,7 @@ program gfactor
     tensor = 0
 
     call gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, cfg%numcb, &
-      & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg, &
-      & profile_2d, kpterms_2d)
+      & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg, vel)
 
     if (cfg%optics%enabled) then
       ! Compute optical transitions only for optics-enabled runs.
@@ -294,7 +300,7 @@ program gfactor
 
         call compute_optical_matrix_wire(transitions, num_trans, &
           cb_state, vb_state, cb_value, vb_value, cfg%numcb, cfg%numvb, &
-          profile_2d, kpterms_2d, cfg)
+          vel)
 
         ! Write to file
         call ensure_output_dir()
@@ -317,6 +323,9 @@ program gfactor
 
     ! Free wire-specific resources
     call csr_free(HT_csr)
+    do i = 1, 3
+      call csr_free(vel(i))
+    end do
     call wire_coo_cache_free(coo_cache)
     call eigensolver_result_free(eigen_res)
     if (allocated(profile_2d)) deallocate(profile_2d)

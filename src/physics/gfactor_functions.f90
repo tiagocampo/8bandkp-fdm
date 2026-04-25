@@ -719,62 +719,37 @@ end function sigmaElem_2d
 
 
 ! ----------------------------------------------------------------------
-! pMatrixEleCalc_2d: Compute <state1|H_pert_d|state2> for wire mode.
+! pMatrixEleCalc_2d: Compute <state1|vel_d|state2> for wire mode.
 !
-! Builds a wire perturbation Hamiltonian in CSR format using
-! ZB8bandGeneralized with g='g' at unit kz, then uses CSR SpMV
-! to compute the matrix element.
+! Uses a precomputed velocity CSR matrix for the specified direction
+! to compute the matrix element via CSR SpMV.
 ! ----------------------------------------------------------------------
 subroutine pMatrixEleCalc_2d(Pele, direction, state1, state2, &
-  & profile_2d, kpterms_2d, cfg)
+  & vel)
 
   complex(kind=dp), intent(inout) :: Pele
   integer, intent(in) :: direction
   complex(kind=dp), intent(in), dimension(:) :: state1, state2
-  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
-  type(csr_matrix), intent(in) :: kpterms_2d(:)
-  type(simulation_config), intent(in) :: cfg
+  type(csr_matrix), intent(in) :: vel(3)
 
-  type(csr_matrix) :: HT_csr
   complex(kind=dp), allocatable :: Y(:)
   complex(kind=dp) :: alpha, beta, zdotc
   integer :: dimax
 
-  real(kind=dp) :: kz_pert
-
   dimax = size(state1, 1)
 
-  ! Set unit perturbation in the specified direction.
-  ! For wire mode, directions 1 (x) and 2 (y) are confinement directions
-  ! with separate d/dx and d/dy gradient operators. Direction 3 (z) is the
-  ! free wire axis with kz perturbation.
-  kz_pert = 0.0_dp
-  select case(direction)
-  case(1)
-    call ZB8bandGeneralized(HT_csr, kz_pert, profile_2d, kpterms_2d, cfg, g='g1')
-  case(2)
-    call ZB8bandGeneralized(HT_csr, kz_pert, profile_2d, kpterms_2d, cfg, g='g2')
-  case(3)
-    kz_pert = 1.0_dp
-    call ZB8bandGeneralized(HT_csr, kz_pert, profile_2d, kpterms_2d, cfg, g='g3')
-  case default
-    print *, 'Error: pMatrixEleCalc_2d: direction must be 1, 2, or 3, got:', direction
-    stop 1
-  end select
-
-  ! SpMV: Y = HT_csr * state2
+  ! SpMV: Y = vel(direction) * state2
   allocate(Y(dimax))
   Y = cmplx(0.0_dp, 0.0_dp, kind=dp)
   alpha = cmplx(1.0_dp, 0.0_dp, kind=dp)
   beta = cmplx(0.0_dp, 0.0_dp, kind=dp)
 
-  call csr_spmv(HT_csr, state2, Y, alpha, beta)
+  call csr_spmv(vel(direction), state2, Y, alpha, beta)
 
   ! Matrix element: <state1|Y>
   Pele = zdotc(dimax, state1, 1, Y, 1)
 
   deallocate(Y)
-  call csr_free(HT_csr)
 
 end subroutine pMatrixEleCalc_2d
 
@@ -784,17 +759,14 @@ end subroutine pMatrixEleCalc_2d
 ! Calls pMatrixEleCalc_2d for the specified direction.
 ! ----------------------------------------------------------------------
 subroutine compute_pele_2d(Pele, direction, state_a, state_b, &
-  & profile_2d, kpterms_2d, cfg)
+  & vel)
 
   complex(kind=dp), intent(inout) :: Pele
   integer, intent(in) :: direction
   complex(kind=dp), intent(in), dimension(:) :: state_a, state_b
-  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
-  type(csr_matrix), intent(in) :: kpterms_2d(:)
-  type(simulation_config), intent(in) :: cfg
+  type(csr_matrix), intent(in) :: vel(3)
 
-  call pMatrixEleCalc_2d(Pele, direction, state_a, state_b, &
-    profile_2d, kpterms_2d, cfg)
+  call pMatrixEleCalc_2d(Pele, direction, state_a, state_b, vel)
 
 end subroutine compute_pele_2d
 
@@ -807,7 +779,7 @@ end subroutine compute_pele_2d
 ! momentum matrix elements.  Works with 2D sparse wire Hamiltonians.
 ! ----------------------------------------------------------------------
 subroutine gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, numcb, numvb, &
-  & cb_state, vb_state, cb_value, vb_value, cfg, profile_2d, kpterms_2d)
+  & cb_state, vb_state, cb_value, vb_value, cfg, vel)
 
   implicit none
 
@@ -819,8 +791,7 @@ subroutine gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, numcb, num
   complex(kind=dp), intent(in), dimension(:,:) :: cb_state, vb_state
   real(kind=dp), intent(in), dimension(:) :: cb_value, vb_value
   type(simulation_config), intent(in) :: cfg
-  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
-  type(csr_matrix), intent(in) :: kpterms_2d(:)
+  type(csr_matrix), intent(in) :: vel(3)
 
   integer :: d, i, j, k, n, m, l, ii, jj
   integer :: mod1, mod2
@@ -893,13 +864,13 @@ subroutine gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, numcb, num
             Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
 
             call compute_pele_2d(Pele1, mod1, cb_state(:,n), vb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele2, mod2, vb_state(:,l), cb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele3, mod2, cb_state(:,n), vb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele4, mod1, vb_state(:,l), cb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
 
             denom = (cb_value(n) - vb_value(l)) + (cb_value(m) - vb_value(l))
             if (abs(denom) > tolerance) then
@@ -928,13 +899,13 @@ subroutine gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, numcb, num
             Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
 
             call compute_pele_2d(Pele1, mod1, cb_state(:,n), cb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele2, mod2, cb_state(:,l), cb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele3, mod2, cb_state(:,n), cb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele4, mod1, cb_state(:,l), cb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
 
             denom = (cb_value(n) - cb_value(l)) + (cb_value(m) - cb_value(l))
             if (abs(denom) > tolerance) then
@@ -1003,13 +974,13 @@ subroutine gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, numcb, num
             Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
 
             call compute_pele_2d(Pele1, mod1, vb_state(:,n), cb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele2, mod2, cb_state(:,l), vb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele3, mod2, vb_state(:,n), cb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele4, mod1, cb_state(:,l), vb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
 
             denom = (vb_value(n) - cb_value(l)) + (vb_value(m) - cb_value(l))
             if (abs(denom) > tolerance) then
@@ -1038,13 +1009,13 @@ subroutine gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, numcb, num
             Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
 
             call compute_pele_2d(Pele1, mod1, vb_state(:,n), vb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele2, mod2, vb_state(:,l), vb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele3, mod2, vb_state(:,n), vb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele4, mod1, vb_state(:,l), vb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
 
             denom = (vb_value(n) - vb_value(l)) + (vb_value(m) - vb_value(l))
             if (abs(denom) > tolerance) then
@@ -1090,16 +1061,14 @@ end subroutine gfactorCalculation_wire
 ! ----------------------------------------------------------------------
 subroutine compute_optical_matrix_wire(transitions, num_trans, &
   & cb_state, vb_state, cb_value, vb_value, numcb, numvb, &
-  & profile_2d, kpterms_2d, cfg)
+  & vel)
 
   type(optical_transition), allocatable, intent(out) :: transitions(:)
   integer, intent(out) :: num_trans
   complex(kind=dp), intent(in), dimension(:,:) :: cb_state, vb_state
   real(kind=dp), intent(in), dimension(:) :: cb_value, vb_value
   integer, intent(in) :: numcb, numvb
-  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
-  type(csr_matrix), intent(in) :: kpterms_2d(:)
-  type(simulation_config), intent(in) :: cfg
+  type(csr_matrix), intent(in) :: vel(3)
 
   integer :: i, j, dir, idx
   real(kind=dp) :: dE, sum_p
@@ -1128,7 +1097,7 @@ subroutine compute_optical_matrix_wire(transitions, num_trans, &
         do dir = 1, 3
           Pele = ZERO
           call compute_pele_2d(Pele, dir, cb_state(:,i), vb_state(:,j), &
-            & profile_2d, kpterms_2d, cfg)
+            & vel)
 
           select case(dir)
           case(1)
