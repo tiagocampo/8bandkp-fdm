@@ -2,6 +2,7 @@ module test_hamiltonian
   use funit
   use definitions
   use parameters
+  use sparse_matrices
   use hamiltonianConstructor
   implicit none
 
@@ -227,5 +228,152 @@ contains
     @assertTrue(abs(vb1_order4 - vb1_order2) < 0.05_dp, message="FDorder=4 VB1 matches FDorder=2 within 50 meV")
 
   end subroutine test_qw_variable_coeff_order4
+
+  @test
+  subroutine test_build_velocity_1d_diagonal()
+    ! For a diagonal Hamiltonian (no off-diagonal couplings),
+    ! all spatial position differences are zero, so velocity must be zero.
+
+    type(csr_matrix) :: H_csr, vel(3)
+    type(spatial_grid) :: grid
+
+    integer, parameter :: Ngrid = 3
+    integer, parameter :: matSize = 8 * Ngrid  ! 24x24
+    integer :: i, nnz_count
+    integer, allocatable  :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    ! Setup 1D grid with non-zero z-coordinates
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = Ngrid
+    grid%dx = 0.0_dp
+    grid%dy = 0.0_dp
+    allocate(grid%z(Ngrid))
+    grid%z = [0.0_dp, 5.0_dp, 10.0_dp]
+
+    ! Build diagonal CSR matrix (identity * some energy)
+    nnz_count = matSize
+    allocate(rows(nnz_count), cols(nnz_count), vals(nnz_count))
+    do i = 1, matSize
+      rows(i) = i
+      cols(i) = i
+      vals(i) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    end do
+    call csr_build_from_coo(H_csr, matSize, matSize, nnz_count, rows, cols, vals)
+    deallocate(rows, cols, vals)
+
+    ! Build velocity matrices
+    call build_velocity_matrices(H_csr, grid, vel)
+
+    ! All velocity entries should be zero (diagonal: z_diff = 0)
+    block
+      real(kind=dp) :: maxvel
+      integer :: vi
+      do vi = 1, 3
+        maxvel = maxval(abs(vel(vi)%values))
+        @assertTrue(maxvel < 1.0e-14_dp, message="velocity diagonal entries should be zero")
+      end do
+    end block
+
+    call csr_free(H_csr)
+    do i = 1, 3
+      call csr_free(vel(i))
+    end do
+  end subroutine test_build_velocity_1d_diagonal
+
+  @test
+  subroutine test_build_velocity_1d_offdiag()
+    ! For off-diagonal entries connecting different z-points,
+    ! vel(3) (z-velocity) should be -i * dz * H(i,j).
+    ! vel(1) and vel(2) should remain zero (no x/y grid in QW).
+
+    type(csr_matrix) :: H_csr, vel(3)
+    type(spatial_grid) :: grid
+
+    integer, parameter :: Ngrid = 2
+    integer, parameter :: matSize = 8 * Ngrid  ! 16x16
+    integer :: nnz_count, idx
+    integer, allocatable  :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    ! Setup 1D grid
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = Ngrid
+    grid%dx = 0.0_dp
+    grid%dy = 0.0_dp
+    allocate(grid%z(Ngrid))
+    grid%z = [0.0_dp, 5.0_dp]  ! dz = 5 Angstrom
+
+    ! Build H with diagonal + one off-diagonal coupling between z-adjacent points.
+    ! QW basis ordering: idx = (band-1)*Ngrid + z_idx, sp_idx = mod(idx-1, Ngrid) + 1
+    ! So rows 1,2 are band-1 at z=0 and z=5 respectively.
+    nnz_count = matSize + 2  ! diagonal + one symmetric pair
+    allocate(rows(nnz_count), cols(nnz_count), vals(nnz_count))
+
+    ! Diagonal entries
+    do idx = 1, matSize
+      rows(idx) = idx
+      cols(idx) = idx
+      vals(idx) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    end do
+
+    ! Off-diagonal: (1,2) and (2,1) -- same band, adjacent z-points
+    rows(matSize + 1) = 1;  cols(matSize + 1) = 2
+    vals(matSize + 1) = cmplx(0.5_dp, 0.0_dp, kind=dp)
+    rows(matSize + 2) = 2;  cols(matSize + 2) = 1
+    vals(matSize + 2) = cmplx(0.5_dp, 0.0_dp, kind=dp)
+
+    call csr_build_from_coo(H_csr, matSize, matSize, nnz_count, rows, cols, vals)
+    deallocate(rows, cols, vals)
+
+    ! Build velocity matrices
+    call build_velocity_matrices(H_csr, grid, vel)
+
+    ! vel(1) and vel(2) should be entirely zero (no x/y in QW)
+    block
+      real(kind=dp) :: maxvel_x, maxvel_y
+      maxvel_x = maxval(abs(vel(1)%values))
+      maxvel_y = maxval(abs(vel(2)%values))
+      @assertTrue(maxvel_x < 1.0e-14_dp, message="vel_x should be zero for 1D QW")
+      @assertTrue(maxvel_y < 1.0e-14_dp, message="vel_y should be zero for 1D QW")
+    end block
+
+    ! vel(3) should have non-zero off-diagonal entries:
+    ! For entry (1,2): sp_row=1 (z=0), sp_col=2 (z=5), z_diff = -5
+    !   vel(3) = -i * (-5) * 0.5 = i*2.5 = cmplx(0, 2.5)
+    ! For entry (2,1): sp_row=2 (z=5), sp_col=1 (z=0), z_diff = +5
+    !   vel(3) = -i * 5 * 0.5 = cmplx(0, -2.5)
+    ! Diagonal entries of vel(3) should be zero (z_diff = 0)
+
+    ! Check that at least some vel(3) entries are non-zero
+    block
+      real(kind=dp) :: maxvel_z
+      maxvel_z = maxval(abs(vel(3)%values))
+      @assertTrue(maxvel_z > 0.1_dp, message="vel_z should have non-zero off-diagonal entries")
+    end block
+
+    ! Check diagonal vel(3) entries are zero (z_diff = 0 on diagonal)
+    block
+      integer :: k, row_d, col_d
+      real(kind=dp) :: diag_max
+      diag_max = 0.0_dp
+      do row_d = 1, H_csr%nrows
+        do k = H_csr%rowptr(row_d), H_csr%rowptr(row_d + 1) - 1
+          col_d = H_csr%colind(k)
+          if (row_d == col_d) then
+            diag_max = max(diag_max, abs(vel(3)%values(k)))
+          end if
+        end do
+      end do
+      @assertTrue(diag_max < 1.0e-14_dp, message="diagonal vel_z entries should be zero")
+    end block
+
+    call csr_free(H_csr)
+    do idx = 1, 3
+      call csr_free(vel(idx))
+    end do
+  end subroutine test_build_velocity_1d_offdiag
 
 end module test_hamiltonian
