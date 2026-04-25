@@ -64,6 +64,7 @@ set_source_files_properties(
     physics/scattering.f90
     apps/main.f90
     apps/main_gfactor.f90
+    apps/main_optics.f90
     PROPERTIES
     Fortran_PREPROCESS ON
 )
@@ -78,8 +79,14 @@ add_executable(gfactorCalculation
 )
 target_link_libraries(gfactorCalculation PRIVATE 8bandkp_common OpenMP::OpenMP_Fortran)
 
+# Optical properties executable
+add_executable(opticalProperties
+    apps/main_optics.f90
+)
+target_link_libraries(opticalProperties PRIVATE 8bandkp_common OpenMP::OpenMP_Fortran)
+
 # Set module output directory for all targets
-set_target_properties(8bandkp_common bandStructure gfactorCalculation
+set_target_properties(8bandkp_common bandStructure gfactorCalculation opticalProperties
     PROPERTIES
     Fortran_MODULE_DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}
 )
