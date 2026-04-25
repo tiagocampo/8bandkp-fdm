@@ -679,6 +679,70 @@ $\Delta E_{\text{HH}} < 0$) while the light-hole band moves downward
 ($\Delta E_{\text{LH}} > 0$).  This is the well-known result that compressive
 strain favors heavy-hole states at the valence band maximum.
 
+### 7.2b Example C: In$_{0.2}$Ga$_{0.8}$As/GaAs quantum well
+
+The InGaAs/GaAs system is the textbook example of a strained quantum well.
+In$_x$Ga$_{1-x}$As has a larger lattice constant than GaAs for any $x > 0$,
+so a pseudomorphic InGaAs layer grown on GaAs is under compressive biaxial
+strain.  The classic composition $x = 0.2$ provides a lattice mismatch of
+about 1.4%, well within the pseudomorphic growth regime for typical well
+widths, and produces a clear HH/LH splitting at the zone center.
+
+**Vegard interpolation.** Alloy parameters are obtained by linear
+interpolation (Vegard's law) between GaAs and InAs endpoint values from
+Vurgaftman (2001):
+
+| Parameter | GaAs | InAs | In$_{0.2}$Ga$_{0.8}$As |
+|---|---|---|---|
+| $a_0$ (A) | 5.653 | 6.058 | 5.734 |
+| $C_{11}$ (GPa) | 1221 | 833 | 1143 |
+| $C_{12}$ (GPa) | 566 | 453 | 543 |
+| $a_c$ (eV) | $-7.17$ | $-5.08$ | $-6.75$ |
+| $a_v$ (eV) | 1.16 | 1.00 | 1.13 |
+| $b$ (eV) | $-2.0$ | $-1.8$ | $-1.96$ |
+| $E_g$ (eV) | 1.424 | 0.354 | 1.08$^\dagger$ |
+
+$^\dagger$With bowing parameter $C = 0.477$ eV.
+
+**Bir-Pikus shifts.** With GaAs as the substrate reference:
+
+$$
+\varepsilon_{xx} = \frac{5.653 - 5.734}{5.734} = -0.0141 \approx -1.4\%\,,
+$$
+
+$$
+\varepsilon_{zz} = -\frac{2 \times 543}{1143}\times(-0.0141) = +0.0134\,,
+$$
+
+$$
+\mathrm{Tr}(\varepsilon) = 2(-0.0141) + 0.0134 = -0.0148\,.
+$$
+
+The resulting band edge shifts in the InGaAs well are:
+
+| Band | Shift formula | Value (meV) |
+|---|---|---|
+| CB | $a_c\,\mathrm{Tr}(\varepsilon)$ | $+100$ |
+| HH | $-P_\varepsilon + Q_\varepsilon$ | $-27$ |
+| LH | $-P_\varepsilon - Q_\varepsilon$ | $+27$ |
+| SO | $-P_\varepsilon$ | $0$ |
+
+The HH/LH splitting is $2|Q_\varepsilon| = \mathbf{54\;\text{meV}}$ -- a
+moderate but physically significant splitting.  This is comparable to $2k_BT$
+at room temperature, meaning strain has a direct impact on the thermal
+occupation of HH versus LH subbands.  The compressive strain pushes the
+HH band up toward the CB and the LH band down, making the valence band
+maximum purely HH in character.
+
+![Band edge profiles for an In$_{0.2}$Ga$_{0.8}$As/GaAs quantum well: unstrained (left) vs strained (right). The left panel shows the unstrained well where HH and LH are degenerate. The right panel shows the effect of biaxial compressive strain, which lifts the HH/LH degeneracy by 54 meV via the Bir-Pikus shear term. All parameters computed from Vegard-interpolated Vurgaftman values.](../figures/strained_ingaas_qw_band_edges.png){ width=90% }
+
+This system is experimentally realizable for well widths up to the
+critical thickness of approximately 150--200 A for $x = 0.2$.  The
+54 meV HH/LH splitting is one of the reasons strained InGaAs quantum wells
+are used in strained-layer quantum well lasers: the splitting reduces the
+valence band density of states at the band edge by removing the HH/LH
+degeneracy, lowering the threshold current density.
+
 ### 7.3 Comparison: strained vs unstrained band gaps
 
 The band gap change under strain is $\Delta E_g = \Delta E_c - \Delta

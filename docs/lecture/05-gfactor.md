@@ -476,7 +476,25 @@ The terminal output also shows the intermediate quantities:
 2. **Tensor** -- the full orbital contribution before normalization ($2 \times 2$ complex for each direction).
 3. **g-factor** extracted via $g_d = -2\,\mathrm{Re}[\mathrm{Tr}(G^{(d)}\Sigma^{(d)\dagger})] / \mathrm{Tr}(\Sigma^{(d)}\Sigma^{(d)\dagger})$ for each direction.
 
-### 5.3.3 Wire g-factor: all three spatial directions
+### 5.3.3 QW g-factor vs well width
+
+The dependence of $g^*$ on the quantum well width $L_w$ provides direct insight into how confinement modifies the effective g-factor. For the InAsW/GaSbW/AlSbW broken-gap system, we sweep the InAsW well half-width from 10 to 120 Å (total widths 20 to 240 Å) while keeping the GaSbW layer wide enough to always surround the well by at least 50 Å. The `bandIdx: 1` parameter selects the ground-state CB Kramers doublet.
+
+![QW g-factor vs well width](../figures/qw_gfactor_vs_width.png)
+
+**Figure 5.3:** Conduction-band g-factor components $g_x = g_y$ (in-plane) and $g_z$ (growth direction) as a function of well width $L_w$ for the InAsW/GaSbW/AlSbW broken-gap quantum well. The dashed line marks the bulk InAsW value $g^* = -14.858$.
+
+The figure reveals several important physical trends:
+
+1. **Narrow-well limit ($L_w \to 0$).** As the well narrows, both $g_x$ and $g_z$ move toward more negative values. The tighter confinement compresses the electron wave function, increasing the overlap with the GaSbW valence-band states in this broken-gap system. This enhanced inter-band coupling amplifies $\Delta g$, driving $g^*$ further from $g_0$. The anisotropy between in-plane and growth-direction components also grows because the $P_z$ and $P_\pm$ momentum matrix elements are affected differently by the one-dimensional confinement.
+
+2. **Wide-well limit ($L_w \to \infty$).** For wide wells, the electron wave function is predominantly confined within the InAsW layer and the effective gap approaches the bulk InAsW value. Both g-factor components converge toward the bulk InAsW value of $-14.858$, with $g_z$ approaching this limit faster than $g_x = g_y$. The residual anisotropy at large $L_w$ is due to the finite penetration of the wave function into the GaSbW barriers, which breaks the cubic symmetry even for wide wells.
+
+3. **In-plane vs growth-direction anisotropy.** The in-plane component $g_x = g_y$ is always more negative than $g_z$, reflecting the axial symmetry of the QW ($C_{\infty v}$). The perturbation operators $P_x$ and $P_y$ (in-plane) couple the CB state to VB states via $P_\pm = P(k_x \pm ik_y)/\sqrt{2}$, while $P_z$ couples via the axial term $P_z = Pk_z$. The one-dimensional confinement along $z$ breaks the equivalence between these coupling channels, producing a g-tensor anisotropy that is absent in bulk zincblende.
+
+These results are consistent with the general discussion in Section 5.4.3 and confirm that the 8-band Lowdin partitioning correctly captures the smooth crossover from bulk to strong-confinement regimes.
+
+### 5.3.4 Wire g-factor: all three spatial directions
 
 > **WARNING: The wire g-factor calculation is currently broken.** The transverse perturbation construction in `ZB8bandGeneralized` (g1/g2 modes) does not correctly implement $dH/dk_\alpha$ for the wire geometry. The code compiles and runs without errors, and the regression test passes (the small 55 Å InSbW wire produces non-g_free values), but systematic sweep studies show that the results do not converge toward the bulk limit for larger wires. The root cause is under investigation. Bulk and QW g-factors (Sections 5.3.1 and 5.3.2) are verified correct and should be trusted.
 
@@ -493,7 +511,7 @@ The detailed wire g-factor calculation is presented in Chapter 8 (Quantum Wires)
 
 ![Wire g-factor vs cross-section size (InSbW)](../figures/wire_gfactor_vs_size.png)
 
-**Figure 5.2:** Wire g-factor components $g_x$, $g_y$, $g_z$ as a function of square cross-section width for an InSbW wire. **This figure is unreliable — the wire g-factor calculation is broken (see Section 5.3.3).** The results do not converge toward the bulk value ($g^* \approx -51$, dashed line) for larger wire cross-sections.
+**Figure 5.4:** Wire g-factor components $g_x$, $g_y$, $g_z$ as a function of square cross-section width for an InSbW wire. **This figure is unreliable — the wire g-factor calculation is broken (see Section 5.3.4).** The results do not converge toward the bulk value ($g^* \approx -51$, dashed line) for larger wire cross-sections.
 
 ![g-factor components for different confinement geometries](../figures/gfactor_components.png)
 
@@ -551,7 +569,7 @@ The Vurgaftman and Winkler parameter sets can give slightly different g-factors 
 - The momentum matrix elements used in the g-factor computation (this chapter) are the same operators that determine optical transition strengths (Chapter 6). The inter-band coupling that renormalizes $g$ also sets the oscillator strength.
 - The self-consistent Schrodinger-Poisson solver (Chapter 7) modifies the band profiles and thus the wave functions, which in turn affect the g-factor. For doped structures, running the SP loop before the g-factor calculation is essential.
 - Strain (Chapter 4) changes the band offsets and mixes the VB states, modifying the inter-band contributions to $\Delta g$.
-- The quantum wire g-factor calculation (this chapter, Section 5.3.3) is treated in full detail in Chapter 8, including convergence studies and cross-section geometry effects.
+- The quantum wire g-factor calculation (this chapter, Section 5.3.4) is treated in full detail in Chapter 8, including convergence studies and cross-section geometry effects.
 
 ### 5.4.7 Validation
 

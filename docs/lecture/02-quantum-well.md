@@ -971,10 +971,13 @@ for several subsequent topics:
   each subband. Visualizing the envelope functions $F_n(z)$ reveals how carriers are
   distributed across the heterostructure.
 
-- **Chapter 04 (Strain):** Lattice-mismatched heterostructures (e.g., InGaAs/GaAs)
-  develop strain that shifts band edges through deformation potentials. Strain adds
-  terms to the diagonal blocks of the Hamiltonian, effectively modifying the
-  `profile` array and the k.p coupling strengths.
+- **Chapter 04 (Strain):** Lattice-mismatched heterostructures (e.g.,
+  In$_{0.2}$Ga$_{0.8}$As/GaAs) develop biaxial strain that shifts band edges
+  through deformation potentials and lifts the HH/LH degeneracy at $\Gamma$.
+  For the classic InGaAs/GaAs system, a 1.4% lattice mismatch produces a
+  54 meV HH/LH splitting (see Figure in Section 7.2b of Chapter 04). Strain
+  adds Bir-Pikus correction terms to the diagonal blocks of the Hamiltonian,
+  effectively modifying the `profile` array and the k.p coupling strengths.
 
 - **Chapter 07 (Self-Consistent SP):** For doped structures, the charge density from
   occupied subbands creates an electrostatic potential that feeds back into the band

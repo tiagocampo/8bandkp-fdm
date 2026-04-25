@@ -1422,6 +1422,178 @@ def fig_qw_strained_band_edges(output_dir: Path) -> None:
     print("  -> docs/figures/qw_strained_band_edges.png")
 
 
+def fig_strained_ingaas_qw(output_dir: Path) -> None:
+    """strained_ingaas_qw_band_edges.png: In0.2Ga0.8As/GaAs QW unstrained vs strained.
+
+    Fully analytical figure -- no Fortran execution needed.  The unstrained band
+    edges are constructed from Vegard-interpolated InGaAs parameters, and Bir-Pikus
+    shifts are applied analytically to produce the strained profile.  The key
+    physics is the HH/LH splitting at the zone center caused by biaxial compressive
+    strain in the InGaAs well.
+    """
+    print("[figure] strained_ingaas_qw")
+
+    # --- Material parameters (Vurgaftman 2001) ---
+    # GaAs (substrate/barrier)
+    mat_gaas = dict(
+        a0=5.65325, C11=1221.0, C12=566.0, ac=-7.17, av=1.16, b=-2.0,
+        Eg=1.424, EV=-0.800, EC=0.719, DeltaSO=0.341,
+    )
+    # InAs (endpoint for Vegard interpolation)
+    mat_inas = dict(
+        a0=6.0583, C11=832.9, C12=452.6, ac=-5.08, av=1.00, b=-1.8,
+        Eg=0.354, DeltaSO=0.38,
+    )
+    # In0.2Ga0.8As (Vegard interpolation, x = 0.2)
+    x = 0.2
+    mat_ingaas = dict(
+        a0=(1 - x) * mat_gaas["a0"] + x * mat_inas["a0"],
+        C11=(1 - x) * mat_gaas["C11"] + x * mat_inas["C11"],
+        C12=(1 - x) * mat_gaas["C12"] + x * mat_inas["C12"],
+        ac=(1 - x) * mat_gaas["ac"] + x * mat_inas["ac"],
+        av=(1 - x) * mat_gaas["av"] + x * mat_inas["av"],
+        b=(1 - x) * mat_gaas["b"] + x * mat_inas["b"],
+        # Eg with bowing parameter C = 0.477 eV (Vurgaftman 2001)
+        Eg=(1 - x) * mat_gaas["Eg"] + x * mat_inas["Eg"] - x * (1 - x) * 0.477,
+        DeltaSO=(1 - x) * mat_gaas["DeltaSO"] + x * mat_inas["DeltaSO"],
+    )
+
+    # Band offsets: assume 67/33 CB/VB split of the band gap difference
+    dEg = mat_ingaas["Eg"] - mat_gaas["Eg"]  # negative (InGaAs has smaller gap)
+    dEC = 0.67 * dEg  # CB offset (negative = well for electrons)
+    dEV = 0.33 * dEg  # VB offset (negative = well for holes, i.e. EV goes up)
+
+    # Reference GaAs band edges
+    EV_gaas = mat_gaas["EV"]   # -0.800 eV
+    EC_gaas = mat_gaas["EC"]   #  0.719 eV
+    DSO_gaas = mat_gaas["DeltaSO"]  # 0.341 eV
+
+    # InGaAs well band edges (relative to GaAs)
+    EV_ingaas = EV_gaas + dEV
+    EC_ingaas = EC_gaas + dEC
+    DSO_ingaas = mat_ingaas["DeltaSO"]
+
+    # --- QW geometry ---
+    # 100 A InGaAs well centered in GaAs barrier, total domain 500 A
+    z_min, z_max = -250.0, 250.0
+    well_half = 50.0  # half-width of the 100 A well
+    N = 501
+    z = np.linspace(z_min, z_max, N)
+
+    # --- Construct unstrained band edge profiles ---
+    EV_profile   = np.full(N, EV_gaas)
+    EC_profile   = np.full(N, EC_gaas)
+    DSO_profile  = np.full(N, DSO_gaas)
+    DSO_profile_ingaas = np.full(N, DSO_ingaas)
+
+    for i, zi in enumerate(z):
+        if -well_half <= zi <= well_half:
+            EV_profile[i] = EV_ingaas
+            EC_profile[i] = EC_ingaas
+            DSO_profile[i] = DSO_ingaas
+
+    EV_SO_profile = EV_profile - DSO_profile
+
+    # --- Bir-Pikus shifts for [001] biaxial strain ---
+    a_ref = mat_gaas["a0"]  # GaAs substrate is the reference
+
+    def bir_pikus_shifts(mat):
+        eps_xx = (a_ref - mat["a0"]) / mat["a0"]
+        eps_zz = -2.0 * mat["C12"] / mat["C11"] * eps_xx
+        Tr_eps = 2.0 * eps_xx + eps_zz
+        P_eps = -mat["av"] * Tr_eps
+        Q_eps = mat["b"] / 2.0 * (eps_zz - eps_xx)
+        return dict(
+            dEc=mat["ac"] * Tr_eps,
+            dEHH=P_eps + Q_eps,
+            dELH=P_eps - Q_eps,
+            dESO=P_eps,
+            eps_xx=eps_xx,
+            eps_zz=eps_zz,
+            Tr_eps=Tr_eps,
+            Q_eps=Q_eps,
+        )
+
+    # GaAs barrier: zero strain (reference)
+    shifts_barrier = dict(dEc=0.0, dEHH=0.0, dELH=0.0, dESO=0.0)
+    shifts_well = bir_pikus_shifts(mat_ingaas)
+
+    # HH-LH splitting in the well (absolute value, in meV)
+    hhlh_split_meV = abs(shifts_well["dEHH"] - shifts_well["dELH"]) * 1000.0
+
+    # --- Apply Bir-Pikus shifts per-layer ---
+    dEc  = np.zeros(N)
+    dEHH = np.zeros(N)
+    dELH = np.zeros(N)
+    dESO = np.zeros(N)
+
+    for i, zi in enumerate(z):
+        if -well_half <= zi <= well_half:
+            dEc[i]  = shifts_well["dEc"]
+            dEHH[i] = shifts_well["dEHH"]
+            dELH[i] = shifts_well["dELH"]
+            dESO[i] = shifts_well["dESO"]
+
+    # Strained band edges
+    EC_s    = EC_profile   + dEc
+    EV_HH   = EV_profile   + dEHH
+    EV_LH   = EV_profile   + dELH
+    EV_SO_s = EV_SO_profile + dESO
+
+    # --- Plot: side-by-side unstrained vs strained ---
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(10, 5), sharey=True)
+
+    # Left: unstrained (HH = LH degenerate)
+    ax_left.plot(z, EC_profile, "b-", linewidth=1.5, label="CB")
+    ax_left.plot(z, EV_profile, "r-", linewidth=1.5, label="HH = LH")
+    ax_left.plot(z, EV_SO_profile, color="orange", linewidth=1.5, label="SO")
+    ax_left.set_xlabel(r"$z$ ($\AA$)")
+    ax_left.set_ylabel(r"$E$ (eV)")
+    ax_left.set_title(r"Unstrained In$_{0.2}$Ga$_{0.8}$As/GaAs QW")
+    ax_left.legend(fontsize=8, loc="upper right")
+
+    # Right: strained (HH != LH)
+    ax_right.plot(z, EC_s, "b-", linewidth=1.5, label=r"CB ($\delta E_c$)")
+    ax_right.plot(z, EV_HH, "r-", linewidth=1.5, label="HH")
+    ax_right.plot(z, EV_LH, "g-", linewidth=1.5, label="LH")
+    ax_right.plot(z, EV_SO_s, color="orange", linewidth=1.5, label="SO")
+    ax_right.set_xlabel(r"$z$ ($\AA$)")
+    ax_right.set_title("Strained (Bir–Pikus)")
+    ax_right.legend(fontsize=8, loc="upper right")
+
+    # Add layer boundaries
+    for ax in [ax_left, ax_right]:
+        for boundary in [-well_half, well_half]:
+            ax.axvline(boundary, color="grey", linewidth=0.5, linestyle="--")
+
+    # Annotate HH-LH splitting in the well region
+    z_mid = 0.0
+    # Pick a y-position midway between HH and LH in the strained panel
+    y_hh = EV_HH[N // 2]
+    y_lh = EV_LH[N // 2]
+    ax_right.annotate(
+        "",
+        xy=(z_mid + 12, y_hh),
+        xytext=(z_mid + 12, y_lh),
+        arrowprops=dict(arrowstyle="<->", color="black", linewidth=1.0),
+    )
+    ax_right.text(
+        z_mid + 18,
+        0.5 * (y_hh + y_lh),
+        f"{hhlh_split_meV:.0f} meV",
+        fontsize=8,
+        va="center",
+        ha="left",
+        color="black",
+    )
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "strained_ingaas_qw_band_edges.png", dpi=150)
+    plt.close(fig)
+    print(f"  -> docs/figures/strained_ingaas_qw_band_edges.png  "
+          f"(HH-LH split = {hhlh_split_meV:.1f} meV)")
+
+
 def fig_wire_strain_2d(output_dir: Path) -> None:
     """wire_strain_2d.png: wire cross-section strain colormap.
 
@@ -5608,6 +5780,109 @@ def fig_sc_inas_alsb_convergence(output_dir: Path) -> None:
         print("  -> docs/figures/sc_inas_alsb_convergence.png")
 
 
+def fig_qw_gfactor_vs_width(output_dir: Path) -> None:
+    """qw_gfactor_vs_width.png: QW g-factor (gx, gy, gz) vs well width.
+
+    Sweeps the InAsW well half-width in the InAs/GaSb/AlSb broken-gap QW
+    system, running gfactorCalculation for each width.  The InAsW layer
+    is centered at z=0; the surrounding GaSbW layer always extends at
+    least 50 A beyond the well edge.  A fixed FDstep=201 gives good
+    spatial resolution across all widths.
+    """
+    print("[figure] qw_gfactor_vs_width")
+
+    half_widths = [10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 100, 120]
+    gx_list: List[float] = []
+    gy_list: List[float] = []
+    gz_list: List[float] = []
+    valid_widths: List[float] = []
+
+    # Bulk InAsW g-factor (computed by the code, isotropic)
+    bulk_inasw_g = -14.858
+
+    base_cfg = CONFIG_DIR / "gfactor_qw_cb.cfg"
+    if not base_cfg.exists():
+        print("  WARNING: gfactor_qw_cb.cfg not found, skipping.")
+        return
+
+    for hw in half_widths:
+        well_width = 2 * hw
+        # GaSbW half-width: always at least 135, but extend beyond InAsW
+        gasb_hw = max(135, hw + 50)
+
+        cfg_text = (
+            "waveVector: k0\n"
+            "waveVectorMax: 0.1\n"
+            "waveVectorStep: 0\n"
+            "confinement:  1\n"
+            "FDstep: 201\n"
+            "FDorder: 2\n"
+            "numLayers:  3\n"
+            "material1: AlSbW -250  250 0\n"
+            f"material2: GaSbW -{gasb_hw}  {gasb_hw} 0.2414\n"
+            f"material3: InAsW  -{hw}   {hw} -0.0914\n"
+            "numcb: 32\n"
+            "numvb: 32\n"
+            "ExternalField: 0  EF\n"
+            "EFParams: 0.0005\n"
+            "whichBand: 0\n"
+            "bandIdx: 1\n"
+        )
+        tmp_cfg = REPO_ROOT / "input.cfg"
+        tmp_cfg.write_text(cfg_text)
+
+        print(f"  [QW L_w={well_width}A, hw={hw}] Running gfactorCalculation ...")
+        result = subprocess.run(
+            [str(EXE_GFACTOR)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            print(f"  [QW {well_width}A] FAILED (rc={result.returncode}), skipping.")
+            print(f"    stderr: {result.stderr[:300]}")
+            continue
+
+        try:
+            gx, gy, gz = parse_gfactor(output_dir)
+            gx_list.append(gx)
+            gy_list.append(gy)
+            gz_list.append(gz)
+            valid_widths.append(float(well_width))
+            print(f"  [QW {well_width}A] gx={gx:.4f} gy={gy:.4f} gz={gz:.4f}")
+        except FileNotFoundError:
+            print(f"  [QW {well_width}A] gfactor.dat not found, skipping.")
+
+    if len(valid_widths) < 2:
+        print("  WARNING: not enough QW g-factor data for plot, skipping.")
+        return
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.plot(valid_widths, gx_list, "o-", color="#1f77b4", linewidth=1.3,
+            markersize=5, label=r"$g_x = g_y$ (in-plane)")
+    ax.plot(valid_widths, gz_list, "s-", color="#2ca02c", linewidth=1.3,
+            markersize=5, label=r"$g_z$ (growth)")
+
+    # Bulk InAsW reference
+    ax.axhline(bulk_inasw_g, color="grey", linewidth=1.0, linestyle="--",
+               label=f"Bulk InAsW $g$ = {bulk_inasw_g:.3f}")
+    # Free-electron reference
+    ax.axhline(2.0023, color="black", linewidth=0.8, linestyle=":",
+               label=r"$g_0 = 2.002$")
+
+    ax.set_xlabel(r"Well width $L_w$ (Å)")
+    ax.set_ylabel("g-factor")
+    ax.set_title(r"InAsW/GaSbW/AlSbW QW: $g^*$ vs well width")
+    ax.legend(loc="best")
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_gfactor_vs_width.png")
+    plt.close(fig)
+    print("  -> docs/figures/qw_gfactor_vs_width.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -5623,6 +5898,7 @@ ALL_FIGURES = {
     "eigenvector_block_structure": fig_eigenvector_block_structure,
     "perband_density": fig_perband_density,
     "qw_strained_band_edges": fig_qw_strained_band_edges,
+    "strained_ingaas_qw": fig_strained_ingaas_qw,
     "qw_strained_bands": fig_qw_strained_bands,
     "wire_strain_2d": fig_wire_strain_2d,
     "wire_strain_tensor": fig_wire_strain_tensor,
@@ -5675,6 +5951,7 @@ ALL_FIGURES = {
     "wire_gfactor_vs_size": fig_wire_gfactor_vs_size,
     "sc_inas_alsb_potential": fig_sc_inas_alsb_potential,
     "sc_inas_alsb_convergence": fig_sc_inas_alsb_convergence,
+    "qw_gfactor_vs_width": fig_qw_gfactor_vs_width,
 }
 
 
