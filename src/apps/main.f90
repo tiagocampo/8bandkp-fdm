@@ -14,6 +14,7 @@ program kpfdm
   use optical_spectra
   use exciton_solver
   use scattering_solver
+  use utils, only: dnscsr_z_mkl
   use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch
 
   implicit none
@@ -762,52 +763,105 @@ program kpfdm
         simpson_w(i) = simpson_w(i) * 2.0_dp * pi_dp * real(i - 1, kind=dp) * dk
       end do
 
-      ! Initialize optics accumulation arrays
-      call optics_init(cfg%optics)
+      ! Build velocity matrices for optical transitions.
+      ! For a QW (1D confinement along z):
+      !   vel(1) = dH/dk_x at k=0  (in-plane, Kane P matrix)
+      !   vel(2) = dH/dk_y at k=0  (in-plane, Kane P matrix)
+      !   vel(3) = -i [r_z, H]     (confinement, commutator on CSR)
+      ! All three are k-independent, built once.
+      block
+        type(csr_matrix) :: vel_opt(3)
+        type(csr_matrix) :: H_csr_tmp
+        complex(kind=dp), allocatable :: H_k0(:,:)
+        type(wavevector) :: pert_kx, pert_ky
+        integer :: nzmax_tmp
 
-      ! Reset gain quasi-Fermi state if gain is enabled
-      if (cfg%optics%gain_enabled) then
-        call gain_reset()
-      end if
+        ! --- vel(3): z-direction via commutator ---
+        allocate(H_k0(N, N))
+        H_k0 = (0.0_dp, 0.0_dp)
+        call ZB8bandQW(H_k0, smallk(1), profile, kpterms, cfg=cfg)
+        nzmax_tmp = N * N
+        call dnscsr_z_mkl(nzmax_tmp, N, H_k0, H_csr_tmp)
+        deallocate(H_k0)
 
-      print '(A)', ' Computing optical absorption...'
-      if (cfg%optics%gain_enabled) then
-        print '(A)', ' Computing gain spectrum alongside absorption...'
-      end if
-      do k = 1, npts
-        call optics_accumulate(cfg%optics, &
-          & eigvals=eig(:, k), &
-          & eigvecs=eigv(:, :, k), &
-          & k_weight=simpson_w(k), &
-          & nlayers=cfg%numLayers, params=cfg%params, &
-          & profile=profile, kpterms=kpterms, &
-          & startz=cfg%startPos(1), endz=cfg%endPos(1), dz=cfg%dz, &
-          & numcb=cfg%numcb, numvb=cfg%numvb, &
-          & fermi_level=cfg%sc%fermi_level)
+        ! Build commutator velocity (only vel(3) is non-zero for 1D QW)
+        call build_velocity_matrices(H_csr_tmp, cfg%grid, vel_opt)
+        call csr_free(H_csr_tmp)
 
-        ! Gain spectrum accumulation (uses separate quasi-Fermi levels)
+        ! --- vel(1): x-direction via dH/dk_x ---
+        pert_kx%kx = 1.0_dp
+        pert_kx%ky = 0.0_dp
+        pert_kx%kz = 0.0_dp
+        allocate(H_k0(N, N))
+        H_k0 = (0.0_dp, 0.0_dp)
+        call ZB8bandQW(H_k0, pert_kx, profile, kpterms, cfg=cfg, g='g')
+        nzmax_tmp = N * N
+        call dnscsr_z_mkl(nzmax_tmp, N, H_k0, H_csr_tmp)
+        deallocate(H_k0)
+        call csr_clone_structure(H_csr_tmp, vel_opt(1))
+        vel_opt(1)%values = H_csr_tmp%values
+        call csr_free(H_csr_tmp)
+
+        ! --- vel(2): y-direction via dH/dk_y ---
+        pert_ky%kx = 0.0_dp
+        pert_ky%ky = 1.0_dp
+        pert_ky%kz = 0.0_dp
+        allocate(H_k0(N, N))
+        H_k0 = (0.0_dp, 0.0_dp)
+        call ZB8bandQW(H_k0, pert_ky, profile, kpterms, cfg=cfg, g='g')
+        nzmax_tmp = N * N
+        call dnscsr_z_mkl(nzmax_tmp, N, H_k0, H_csr_tmp)
+        deallocate(H_k0)
+        call csr_clone_structure(H_csr_tmp, vel_opt(2))
+        vel_opt(2)%values = H_csr_tmp%values
+        call csr_free(H_csr_tmp)
+
+        ! Initialize optics accumulation arrays
+        call optics_init(cfg%optics)
+
+        ! Reset gain quasi-Fermi state if gain is enabled
         if (cfg%optics%gain_enabled) then
-          call compute_gain_qw(cfg%optics, &
-            & eigvals=eig(:, k), &
-            & eigvecs=eigv(:, :, k), &
-            & k_weight=simpson_w(k), &
-            & nlayers=cfg%numLayers, params=cfg%params, &
-            & profile=profile, kpterms=kpterms, &
-            & startz=cfg%startPos(1), endz=cfg%endPos(1), dz=cfg%dz, &
-            & numcb=cfg%numcb, numvb=cfg%numvb, &
-            & carrier_density=cfg%optics%gain_carrier_density)
+          call gain_reset()
         end if
 
-        ! ISBT accumulation
-        if (cfg%optics%isbt_enabled) then
-          call compute_isbt_absorption(cfg%optics, &
-            & eigvals=eig(:, k), &
-            & eigvecs=eigv(:, :, k), &
-            & z_grid=cfg%z, dz=cfg%dz, &
-            & numcb=cfg%numcb, numvb=cfg%numvb, fdstep=cfg%fdstep, &
-            & k_weight=simpson_w(k), fermi_level=cfg%sc%fermi_level)
+        print '(A)', ' Computing optical absorption...'
+        if (cfg%optics%gain_enabled) then
+          print '(A)', ' Computing gain spectrum alongside absorption...'
         end if
-      end do
+        do k = 1, npts
+          call optics_accumulate(cfg%optics, &
+            & eig(:, k), eigv(:, :, k), simpson_w(k), &
+            & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+
+          ! Gain spectrum accumulation (uses separate quasi-Fermi levels)
+          if (cfg%optics%gain_enabled) then
+            call compute_gain_qw(cfg%optics, &
+              & eigvals=eig(:, k), &
+              & eigvecs=eigv(:, :, k), &
+              & k_weight=simpson_w(k), &
+              & nlayers=cfg%numLayers, params=cfg%params, &
+              & profile=profile, kpterms=kpterms, &
+              & startz=cfg%startPos(1), endz=cfg%endPos(1), dz=cfg%dz, &
+              & numcb=cfg%numcb, numvb=cfg%numvb, &
+              & carrier_density=cfg%optics%gain_carrier_density)
+          end if
+
+          ! ISBT accumulation
+          if (cfg%optics%isbt_enabled) then
+            call compute_isbt_absorption(cfg%optics, &
+              & eigvals=eig(:, k), &
+              & eigvecs=eigv(:, :, k), &
+              & z_grid=cfg%z, dz=cfg%dz, &
+              & numcb=cfg%numcb, numvb=cfg%numvb, fdstep=cfg%fdstep, &
+              & k_weight=simpson_w(k), fermi_level=cfg%sc%fermi_level)
+          end if
+        end do
+
+        ! Free velocity matrices
+        do i = 1, 3
+          call csr_free(vel_opt(i))
+        end do
+      end block
 
       ! ISBT transition table at k=0
       if (cfg%optics%isbt_enabled) then
