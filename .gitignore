@@ -1,5 +1,5 @@
 # Build directories
-build/
+build*/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
@@ -21,12 +21,26 @@ gfactorCalculation
 *.dat
 fort.*
 
-# IDE specific files
+# IDE / AI tool files
 .vscode/
 .idea/
 *.swp
 *~
 .cursorrules
+.clinerules
+.codex/
+
+# Temporary / scratch
+tmp/
+# Only root-level orphaned plots
+/band_structure.png
+1tail
+
+# Local scratch configs (use tests/regression/configs/ instead)
+/input.cfg
+/input_*.cfg
+/test_*.cfg
+/*.example
 
 # Debug files
 gmon.out
@@ -44,7 +58,19 @@ Thumbs.db
 *.old
 *.orig
 
+# Documentation (large/generated)
+docs/papers/
+docs/articles/
+
+# Python
+__pycache__/
+*.pyc
+
+# Test/debug artifacts
+test_debug_*
+test_staggered
+
 # CMake generated files
 Makefile
 *.cmake
-Testing/ 
+Testing/

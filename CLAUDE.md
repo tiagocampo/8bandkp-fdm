@@ -57,7 +57,7 @@ Regression tests use shell scripts + Python (`tests/regression/compare_output.py
 ./build/src/gfactorCalculation  # Reads input.cfg, outputs to output/ (requires k=0)
 ```
 
-Write example config (`bulk.example`, `quantumwell.example`, or `gfactor.example`) contents to `input.cfg`.
+Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed examples in the canonical order documented in `docs/reference/input-reference.md`; optional block entry labels are name-aware (`optics:`, `exciton:`, `scattering:`, `feast_emin:`, `strain:`), but parameters inside each block still follow the documented sequence.
 
 ## Architecture
 
@@ -111,6 +111,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
 - **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it
 - **`confinementInitialization`** precomputes material parameters at each z-point into `kpterms(fdStep, fdStep, 10)`
 - **Sparse vs dense**: g-factor uses MKL SpBLAS for large QW; band structure uses dense LAPACK (`zheevx`)
+- **Wire g-factor velocity operator**: commutator-based `build_velocity_matrices` computes $v_\alpha = -i [r_\alpha, H]$ element-wise on CSR. g='g3' still used for z-direction. Old g='g1'/'g2' modes are dead code.
 - **Foreman renormalization**: disabled by default (`renormalization = .False.` in defs.f90)
 - **W-variant materials** (GaAsW, InAsW, etc.): use Winkler's parameter set with InSb as EV reference. Non-W materials use Vurgaftman parameters. EC = EV + Eg convention for all materials with EV defined
 - **Self-consistent SP**: iterative Schrödinger-Poisson loop wraps the eigenvalue solve. Modifies `profile` array before Hamiltonian construction (same interface as `externalFieldSetup_electricField`). Linear mixing warm-up + DIIS/Pulay acceleration. Works for bulk (Fermi level finder) and QW (full SP). Per-layer doping (`doping_spec`), charge neutrality or fixed Fermi level, box-integration Poisson with variable dielectric. Design doc: `docs/plans/2026-03-29-self-consistent-sp-design.md`
@@ -136,9 +137,22 @@ g-factor additional fields: `whichBand` (0=CB, 1=VB) and `bandIdx` (subband inde
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`)
 - **PRs:** All tests must pass before merge. Use `gh pr create` from feature branches.
 
+## Superpowers Skills
+
+Always check for and follow applicable superpowers skills when working. In particular:
+- **brainstorming** — for design decisions and scoping before implementation
+- **writing-plans** — for creating implementation plans before coding
+- **subagent-driven-development** — for executing plans task-by-task with review
+- **test-driven-development** — subagents follow TDD for each task
+
 ## Boundaries
 
 - **NEVER** modify material parameters in `parameters.f90` without verifying against published references (Vurgaftman 2001, Winkler 2003)
 - **NEVER** change the basis ordering (bands 1-4 valence, 5-6 split-off, 7-8 conduction) — it is hardcoded throughout
+- **NEVER** change the Bir-Pikus sign convention: VB diagonal shifts all contain `-P_eps` (which equals `av * Tr(eps)` due to the sign flip in the helper), so delta_EHH = -P_eps + Q_eps, delta_ELH = -P_eps - Q_eps, delta_ESO = -P_eps. The helper `P_eps = -av * Tr(eps)` introduces a sign flip — every consumer must negate it. Single source of truth: `compute_bp_scalar` in `strain_solver.f90`.
 - **NEVER** commit `input.cfg` with personal test configs — use `tests/regression/configs/` for test configs
 - **Require approval** for: changes to `defs.f90` derived types, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`, Poisson solver in `poisson.f90`, SC loop convergence logic in `sc_loop.f90`
+
+## Known Issues
+
+- None currently. The wire g-factor was fixed using the commutator-based velocity operator (`build_velocity_matrices` in `hamiltonianConstructor.f90`). The transverse perturbation construction uses $-i [r_\alpha, H]$ element-wise on the CSR Hamiltonian, which correctly captures all k.p term contributions.

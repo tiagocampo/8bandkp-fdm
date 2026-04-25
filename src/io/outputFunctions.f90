@@ -6,7 +6,7 @@ module outputFunctions
   implicit NONE
 
   private
-  public :: writeEigenfunctions, writeEigenfunctions2d, writeEigenvalues, get_unit, ensure_output_dir
+  public :: writeEigenfunctions, writeEigenfunctions2d, writeParts2d, writeEigenvalues, get_unit, ensure_output_dir
 
   character(len=*), parameter :: OUTPUT_DIR = 'output'
 
@@ -26,19 +26,24 @@ module outputFunctions
       end if
     end subroutine
 
-    subroutine writeEigenfunctions(N, evnum, A, k, fdstep, z, is_bulk)
+    subroutine writeEigenfunctions(N, evnum, A, k, fdstep, z, is_bulk, k_magnitude)
 
       integer, intent(in) :: N, evnum, k, fdstep
       real(kind=dp), intent(in) :: z(:)
       complex(kind=dp), intent(in) :: A(:,:)
       logical, intent(in) :: is_bulk
+      real(kind=dp), intent(in), optional :: k_magnitude  ! |k| for gnuplot header
 
       integer (kind=4) :: iounit, iounit2, ios
       character (len = 255) :: filename
       integer :: i, j, m
+      real(kind=dp) :: kmag
       real(kind=dp), allocatable :: parts(:,:)
       real(kind=dp), allocatable :: eigv_abs(:,:)
       real(kind=dp), allocatable :: component(:)
+
+      kmag = 0.0_dp
+      if (present(k_magnitude)) kmag = k_magnitude
 
       ! Ensure output directory exists
       call ensure_output_dir()
@@ -81,7 +86,6 @@ module outputFunctions
 
       ! Calculate and write parts
       call get_unit(iounit2)
-      open(unit=iounit2, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
 
       if (is_bulk) then
         ! For bulk, calculate probability density for parts
@@ -90,8 +94,30 @@ module outputFunctions
             parts(j,i) = abs(A(i,j))**2
           end do
         end do
+
+        ! Write parts in multi-block gnuplot format (append for k > 1)
+        if (k <= 1) then
+          open(unit=iounit2, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
+        else
+          open(unit=iounit2, file=OUTPUT_DIR//'/parts.dat', position='append', action='write')
+        end if
+
+        ! k-point header (gnuplot index separator)
+        write(unit=iounit2, fmt='("# k = ", g14.6)', iostat=ios) kmag
+
+        ! Write parts for this k-point
+        do j = 1, evnum
+          write(unit=iounit2, fmt="(8(g14.6))", iostat=ios) (parts(j,m), m=1,8)
+        end do
+
+        ! Blank line as gnuplot block separator
+        write(unit=iounit2, fmt='("")', iostat=ios)
+
+        close(iounit2)
       else
         ! For quantum well, integrate over z
+        open(unit=iounit2, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
+
         do j = 1, evnum
           ! Initialize parts for this eigenstate
           parts(j,:) = 0.0_dp
@@ -104,14 +130,14 @@ module outputFunctions
             parts(j,m) = sum(eigv_abs(:,m)**2) * (z(2)-z(1))
           end do
         end do
+
+        ! Write parts
+        do j = 1, evnum
+          write(unit=iounit2, fmt="(8(g14.6))", iostat=ios) (parts(j,m), m=1,8)
+        end do
+
+        close(iounit2)
       end if
-
-      ! Write parts
-      do j = 1, evnum
-        write(unit=iounit2, fmt="(8(g14.6))", iostat=ios) (parts(j,m), m=1,8)
-      end do
-
-      close(iounit2)
       if (.not. is_bulk) deallocate(eigv_abs)
       deallocate(parts)
       deallocate(component)
@@ -269,8 +295,6 @@ module outputFunctions
       character(len=255) :: filename
       integer :: n, band, ix, iy, Ngrid, flat_idx, nev_actual
       real(kind=dp) :: prob
-      real(kind=dp), allocatable :: parts(:,:)
-      real(kind=dp) :: dA
       logical :: do_parts
 
       ! Ensure output directory exists
@@ -280,36 +304,13 @@ module outputFunctions
       if (Ngrid == 0) return
 
       nev_actual = min(nev, size(eigenvectors, 2))
-      dA = grid%dx * grid%dy
 
       do_parts = .false.
       if (present(write_parts)) do_parts = write_parts
 
-      ! Compute band decomposition if requested
+      ! Compute band decomposition if requested (delegate to writeParts2d)
       if (do_parts) then
-        allocate(parts(nev_actual, 8))
-        parts = 0.0_dp
-        do n = 1, nev_actual
-          do band = 1, 8
-            prob = 0.0_dp
-            do iy = 1, grid%ny
-              do ix = 1, grid%nx
-                flat_idx = (band - 1) * Ngrid + (iy - 1) * grid%nx + ix
-                prob = prob + abs(eigenvectors(flat_idx, n))**2
-              end do
-            end do
-            parts(n, band) = prob * dA
-          end do
-        end do
-
-        ! Write parts.dat
-        call get_unit(iounit)
-        open(unit=iounit, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
-        do n = 1, nev_actual
-          write(unit=iounit, fmt='(8(g14.6))', iostat=ios) (parts(n, band), band=1, 8)
-        end do
-        close(iounit)
-        deallocate(parts)
+        call writeParts2d(grid, eigenvectors, nev_actual)
       end if
 
       do n = 1, nev_actual
@@ -339,5 +340,67 @@ module outputFunctions
       end do
 
     end subroutine writeEigenfunctions2d
+
+    ! ==================================================================
+    ! Write 8-band decomposition (parts.dat) for wire eigenstates.
+    !
+    ! Decomposes each eigenvector into contributions from each of the
+    ! 8 basis bands by integrating |psi_b(x,y)|^2 over the 2D grid.
+    ! The flat index layout matches the Hamiltonian construction:
+    !   flat_idx = (band-1)*Ngrid + (iy-1)*nx + ix
+    !
+    ! Output: output/parts.dat with 8 columns (one row per eigenstate).
+    ! Values are band fractions that sum to 1.0 for each eigenstate.
+    ! ==================================================================
+    subroutine writeParts2d(grid, eigenvectors, nev)
+      type(spatial_grid), intent(in)  :: grid
+      complex(kind=dp), intent(in)    :: eigenvectors(:,:)
+      integer, intent(in)             :: nev
+
+      integer(kind=4) :: iounit, ios
+      integer :: n, band, ix, iy, Ngrid, flat_idx, nev_actual
+      real(kind=dp) :: dA
+      real(kind=dp), allocatable :: parts(:,:)
+
+      ! Ensure output directory exists
+      call ensure_output_dir()
+
+      Ngrid = grid%nx * grid%ny
+      if (Ngrid == 0) return
+
+      nev_actual = min(nev, size(eigenvectors, 2))
+      dA = grid%dx * grid%dy
+
+      allocate(parts(nev_actual, 8))
+      parts = 0.0_dp
+
+      do n = 1, nev_actual
+        do band = 1, 8
+          do iy = 1, grid%ny
+            do ix = 1, grid%nx
+              flat_idx = (band - 1) * Ngrid + (iy - 1) * grid%nx + ix
+              parts(n, band) = parts(n, band) + abs(eigenvectors(flat_idx, n))**2 * dA
+            end do
+          end do
+        end do
+        ! Normalize so band fractions sum to 1
+        if (sum(parts(n, :)) > 0.0_dp) then
+          parts(n, :) = parts(n, :) / sum(parts(n, :))
+        end if
+      end do
+
+      ! Write parts.dat
+      call get_unit(iounit)
+      open(unit=iounit, file=OUTPUT_DIR//'/parts.dat', status='replace', action='write')
+      write(iounit, '(A)') '# Band decomposition (wire eigenstates)'
+      write(iounit, '(A)') '# HH1  HH2  LH1  LH2  SO1  SO2  CB1  CB2'
+      do n = 1, nev_actual
+        write(unit=iounit, fmt='(8(g14.6))', iostat=ios) (parts(n, band), band=1, 8)
+      end do
+      close(iounit)
+
+      deallocate(parts)
+
+    end subroutine writeParts2d
 
 end module outputFunctions

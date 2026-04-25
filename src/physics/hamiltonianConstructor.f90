@@ -4,6 +4,7 @@ module hamiltonianConstructor
   use finitedifferences
   use sparse_matrices
   use utils
+  use strain_solver, only: compute_bp_scalar, bir_pikus_blocks_free
 
   implicit none
 
@@ -34,6 +35,7 @@ module hamiltonianConstructor
   end type wire_coo_cache
 
   public :: wire_coo_cache, wire_coo_cache_free
+  public :: build_velocity_matrices
 
   contains
 
@@ -109,9 +111,10 @@ module hamiltonianConstructor
       real(kind=dp), allocatable, dimension(:,:) :: ScnDer, FstDer, kptermsProfile
       real(kind=dp), allocatable, dimension(:,:) :: forward, central, backward
       real(kind=dp), allocatable, dimension(:) :: diag, offup, offdown
-      real(kind=dp), allocatable, dimension(:,:) :: D2, D1
+      real(kind=dp), allocatable, dimension(:,:) :: D_inner, D_outer
+      real(kind=dp), allocatable, dimension(:) :: g_half
 
-      integer :: i, initIDX, endIDX, N, ii, jj
+      integer :: i, initIDX, endIDX, N, ii, jj, j
       integer :: order
       real(kind = dp) :: delta
 
@@ -144,19 +147,20 @@ module hamiltonianConstructor
           end if
         end do
 
+        ! Last-layer-wins assignment: later layers overwrite earlier ones.
+        ! This allows 2-layer configs where barrier covers the full domain
+        ! and the well layer overwrites the central region.
         do i = 1, nlayers, 1
-
-
-          profile(startPos(i):endPos(i),1) = params(i)%EV
-          profile(startPos(i):endPos(i),2) = params(i)%EV - params(i)%DeltaSO
-          profile(startPos(i):endPos(i),3) =  params(i)%EC
-
-          kptermsProfile(startPos(i):endPos(i),1) = params(i)%gamma1
-          kptermsProfile(startPos(i):endPos(i),2) = params(i)%gamma2
-          kptermsProfile(startPos(i):endPos(i),3) = params(i)%gamma3
-          kptermsProfile(startPos(i):endPos(i),4) = params(i)%A
-          kptermsProfile(startPos(i):endPos(i),5) = params(i)%P
-
+          do j = startPos(i), endPos(i)
+            profile(j, 1) = params(i)%EV
+            profile(j, 2) = params(i)%EV - params(i)%DeltaSO
+            profile(j, 3) = params(i)%EC
+            kptermsProfile(j, 1) = params(i)%gamma1
+            kptermsProfile(j, 2) = params(i)%gamma2
+            kptermsProfile(j, 3) = params(i)%gamma3
+            kptermsProfile(j, 4) = params(i)%A
+            kptermsProfile(j, 5) = params(i)%P
+          end do
         end do
 
       else
@@ -221,27 +225,62 @@ module hamiltonianConstructor
           & backward, diag, offup, offdown, N, 9, 1.0_dp/(4.0_dp*delta), .False.)
 
       else
-        ! ---- Higher order: use FD matrix approach ----
-        ! Build 2nd-derivative and 1st-derivative FD matrices
-        call buildFD2ndDerivMatrix(N, delta, order, D2)
-        call buildFD1stDerivMatrix(N, delta, order, D1)
+        ! ---- Higher order: conservative variable-coefficient FD ----
+        !
+        ! Strategy: use the same tridiagonal structure as FDorder=2
+        ! (build_kpterm_block), but with higher-order half-point
+        ! interpolation of g for the 2nd-derivative terms.
+        ! This gives identical results to FDorder=2 for uniform g,
+        ! and improved accuracy at interfaces for FDorder>=4.
+        !
+        ! Build the same averaging matrices as FDorder=2
+        allocate(forward(N,N))
+        allocate(backward(N,N))
+        allocate(central(N,N))
+        forward = 0.0_dp
+        backward = 0.0_dp
+        central = 0.0_dp
 
-        ! A*kz**2 (term 5): profile = A(z), operator = d^2/dz^2
-        call applyVariableCoeff(kpterms, kptermsProfile(1:N,4), D2, N, 5)
+        forall(ii=1:N-1)
+          forward(ii,ii) = 1
+          forward(ii,ii+1) = 1
+        end forall
+        forward(N,N) = 1
+        backward = transpose(forward)
+        central = backward + forward
 
-        ! Q (term 7): profile = gamma1 - 2*gamma2, operator = d^2/dz^2
-        call applyVariableCoeff(kpterms, kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), &
-          & D2, N, 7)
+        ! 2nd-derivative terms: use higher-order g_half interpolation
+        ! with the staggered grid (2-point D_inner/D_outer)
+        call buildStaggeredD1Inner(N, delta, 2, D_inner)
+        call buildStaggeredD1Outer(N, delta, 2, D_outer)
+        allocate(g_half(N - 1))
 
-        ! T (term 8): profile = gamma1 + 2*gamma2, operator = d^2/dz^2
-        call applyVariableCoeff(kpterms, kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), &
-          & D2, N, 8)
+        ! A*kz**2 (term 5)
+        call interpolateToHalfPoints(kptermsProfile(1:N,4), N, order, g_half)
+        call applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, 5)
 
-        ! P*kz (term 6): profile = P(z), operator = d/dz
-        call applyVariableCoeff(kpterms, kptermsProfile(1:N,5), D1, N, 6)
+        ! Q (term 7): (gamma1-2*gamma2)
+        call interpolateToHalfPoints(kptermsProfile(1:N,1) - 2.0_dp*kptermsProfile(1:N,2), &
+          & N, order, g_half)
+        call applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, 7)
 
-        ! S -> gamma3*kz (term 9): profile = gamma3(z), operator = d/dz
-        call applyVariableCoeff(kpterms, kptermsProfile(1:N,3), D1, N, 9)
+        ! T (term 8): (gamma1+2*gamma2)
+        call interpolateToHalfPoints(kptermsProfile(1:N,1) + 2.0_dp*kptermsProfile(1:N,2), &
+          & N, order, g_half)
+        call applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, 8)
+
+        ! 1st-derivative terms: use same build_kpterm_block approach
+        allocate(diag(N))
+        allocate(offup(N))
+        allocate(offdown(N))
+
+        ! P*kz (term 6)
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,5), central, forward, &
+          & backward, diag, offup, offdown, N, 6, 1.0_dp/(4.0_dp*delta), .False.)
+
+        ! S -> gamma3*kz (term 9)
+        call build_kpterm_block(kpterms, kptermsProfile(1:N,3), central, forward, &
+          & backward, diag, offup, offdown, N, 9, 1.0_dp/(4.0_dp*delta), .False.)
 
       end if
 
@@ -252,8 +291,9 @@ module hamiltonianConstructor
       if (allocated(diag)) deallocate(diag)
       if (allocated(offup)) deallocate(offup)
       if (allocated(offdown)) deallocate(offdown)
-      if (allocated(D2)) deallocate(D2)
-      if (allocated(D1)) deallocate(D1)
+      if (allocated(D_inner)) deallocate(D_inner)
+      if (allocated(D_outer)) deallocate(D_outer)
+      if (allocated(g_half)) deallocate(g_half)
 
     end subroutine confinementInitialization_raw
 
@@ -311,7 +351,7 @@ module hamiltonianConstructor
     !---------------------------------------------------------------------------
     !> 2D confinement initialization for quantum wire mode (ndim=2).
     !>
-    !> Builds kpterms_2d (11 CSR matrices) from 1D FD operators and
+    !> Builds kpterms_2d CSR matrices from 1D FD operators and
     !> Kronecker products, then applies position-dependent material
     !> parameters from the spatial_grid.
     !>
@@ -324,13 +364,15 @@ module hamiltonianConstructor
     !>   6: P * (d/dx + d/dy)            -- 1st derivative, momentum coupling
     !>   7: (gamma1 - 2*gamma2) * Laplacian -- Q term kinetic
     !>   8: (gamma1 + 2*gamma2) * Laplacian -- T term kinetic
-    !>   9: gamma3 * (d/dx + d/dy)       -- S term, linear-k coupling
+    !>   9: gamma3 * (d/dx + d/dy)       -- S term, linear-k coupling (LEGACY: not used in H assembly)
     !>  10: A (diagonal only, k^2 coefficient for CB)
-    !>  11: gamma3 * d^2/dxdy             -- cross-derivative (NEW for 2D)
+    !>  11: gamma3 * d^2/dxdy             -- cross-derivative (for R term)
     !>  12: P * d/dx   (x-gradient only, for g-factor perturbation)
     !>  13: P * d/dy   (y-gradient only, for g-factor perturbation)
-    !>  14: gamma3 * d/dx  (x-gradient only, for g-factor perturbation)
-    !>  15: gamma3 * d/dy  (y-gradient only, for g-factor perturbation)
+    !>  14: gamma3 * d/dx  (x-gradient only, for S term and g-factor perturbation)
+    !>  15: gamma3 * d/dy  (y-gradient only, for S term and g-factor perturbation)
+    !>  16: gamma2 * (d^2/dx^2 - d^2/dy^2) -- anisotropic Laplacian (for R term)
+    !>  17: unused placeholder
     !>
     !> Also builds profile_2d(Ngrid, 3) with band edges:
     !>   profile_2d(:,1) = EV
@@ -349,6 +391,9 @@ module hamiltonianConstructor
 
       integer :: order, nx, ny, ngrid, ij, mid
       real(kind=dp) :: dx, dy
+      logical :: use_cut_cell_faces
+      real(kind=dp), parameter :: face_tol = 1.0e-12_dp
+      real(kind=dp), parameter :: inactive_barrier_ev = 1.0e3_dp
 
       ! 1D FD matrices (real, dense)
       real(kind=dp), allocatable :: D2x(:,:), D1x(:,:)
@@ -383,6 +428,15 @@ module hamiltonianConstructor
       ngrid = nx * ny
       dx    = grid%dx
       dy    = grid%dy
+      use_cut_cell_faces = .false.
+      if (allocated(grid%face_fraction_x) .and. allocated(grid%face_fraction_y)) then
+        use_cut_cell_faces = any(abs(grid%face_fraction_x - 1.0_dp) > face_tol) .or. &
+          any(abs(grid%face_fraction_y - 1.0_dp) > face_tol)
+        if (allocated(grid%cell_volume)) then
+          use_cut_cell_faces = use_cut_cell_faces .or. &
+            any(abs(grid%cell_volume - 1.0_dp) > face_tol)
+        end if
+      end if
 
       ! Validate grid
       if (nx < 3 .or. ny < 3) then
@@ -397,6 +451,19 @@ module hamiltonianConstructor
       call buildFD1stDerivMatrix(nx, dx, order, D1x)
       call buildFD2ndDerivMatrix(ny, dy, order, D2y)
       call buildFD1stDerivMatrix(ny, dy, order, D1y)
+
+      ! For rectangular wires with hard-wall Dirichlet boundaries, the
+      ! default one-sided closures are problematic in the multiband wire
+      ! Hamiltonian. For the default second-order scheme, use cell-centered
+      ! Dirichlet closures:
+      !   D1: central interior stencil with ghost-cell elimination at walls
+      !   D2: symmetric cell-centered Laplacian
+      if (order == 2) then
+        call apply_dirichlet_order2_first_derivative(D1x, dx)
+        call apply_dirichlet_order2_first_derivative(D1y, dy)
+        call apply_dirichlet_order2_second_derivative(D2x, dx)
+        call apply_dirichlet_order2_second_derivative(D2y, dy)
+      end if
 
       ! Identity matrices
       call Identity(nx, Ix)
@@ -428,9 +495,8 @@ module hamiltonianConstructor
       call kron_dense_dense(cD1y, ny, ny, cD1x, nx, nx, kron_D1y_D1x)
 
       ! Free intermediate Kronecker products (keep kron_Iy_D1x, kron_D1y_Ix
-      ! for building kpterms_2d(12-15) below)
-      call csr_free(kron_Iy_D2x)
-      call csr_free(kron_D2y_Ix)
+      ! for building kpterms_2d(12-15) and kron_Iy_D2x, kron_D2y_Ix for
+      ! building kpterms_2d(16-17) below)
 
       ! ====================================================================
       ! 3. Build material profiles on the 2D grid
@@ -450,7 +516,11 @@ module hamiltonianConstructor
       do ij = 1, ngrid
         mid = grid%material_id(ij)
         if (mid < 1 .or. mid > size(params)) then
-          ! Inactive cell or outside domain -- leave zeros
+          ! Inactive cells are kept in the rectangular sparse storage.  Move
+          ! them out of the physical window so they do not appear as zero modes.
+          profile_2d(ij, 1) = -inactive_barrier_ev
+          profile_2d(ij, 2) = -inactive_barrier_ev
+          profile_2d(ij, 3) =  inactive_barrier_ev
           cycle
         end if
 
@@ -465,21 +535,28 @@ module hamiltonianConstructor
         profile_2d(ij, 2) = params(mid)%EV - params(mid)%DeltaSO
         profile_2d(ij, 3) = params(mid)%EC
 
-        ! Material parameter profiles
-        prof_gamma1(ij) = params(mid)%gamma1
-        prof_gamma2(ij) = params(mid)%gamma2
-        prof_gamma3(ij) = params(mid)%gamma3
+        ! Convention: Unlike the 1D QW path where const is applied at Hamiltonian assembly,
+        ! the wire path bakes const = hbar^2/(2*m_0) into the gamma/A profiles so that
+        ! kpterms_2d operators directly have energy units (eV).
+
+        ! Material parameter profiles (scaled by const = hbar^2/(2m_0))
+        ! The gamma and A parameters are dimensionless; multiplying by const
+        ! converts the kpterms operators to energy units (eV).
+        ! P is NOT scaled because it already includes const: P = sqrt(EP*const).
+        prof_gamma1(ij) = params(mid)%gamma1 * const
+        prof_gamma2(ij) = params(mid)%gamma2 * const
+        prof_gamma3(ij) = params(mid)%gamma3 * const
         prof_P(ij)      = params(mid)%P
-        prof_A(ij)      = params(mid)%A
-        prof_gm12g2(ij) = params(mid)%gamma1 - 2.0_dp * params(mid)%gamma2
-        prof_gp12g2(ij) = params(mid)%gamma1 + 2.0_dp * params(mid)%gamma2
+        prof_A(ij)      = params(mid)%A * const
+        prof_gm12g2(ij) = (params(mid)%gamma1 - 2.0_dp * params(mid)%gamma2) * const
+        prof_gp12g2(ij) = (params(mid)%gamma1 + 2.0_dp * params(mid)%gamma2) * const
       end do
 
       ! ====================================================================
-      ! 4. Build kpterms_2d (15 CSR matrices)
+      ! 4. Build kpterms_2d (17 CSR matrices)
       ! ====================================================================
       if (allocated(kpterms_2d)) deallocate(kpterms_2d)
-      allocate(kpterms_2d(15))
+      allocate(kpterms_2d(17))
 
       ! Terms 1-4: diagonal-only (gamma1, gamma2, gamma3, P)
       ! Build a diagonal CSR from the profile and store directly
@@ -488,18 +565,16 @@ module hamiltonianConstructor
       call build_diagonal_csr(ngrid, prof_gamma3, kpterms_2d(3))
       call build_diagonal_csr(ngrid, prof_P, kpterms_2d(4))
 
-      ! Apply cut-cell face fractions to differential operators.
-      ! For rectangular grids all face fractions are 1.0 (no-op).
+      ! Apply cut-cell face fractions only to second-derivative operators.
+      ! Rectangular grids allocate all-one face fractions, but those are not a
+      ! no-op for csr_apply_variable_coeff because it reconstructs diagonals.
+      ! First-derivative operators must keep their explicit Dirichlet signs.
       ! Terms 5,7,8: Laplacian;  Terms 6,9: Gradient.
       ! Term 11 (cross-derivative) mixes x/y connections so face fractions
       ! are not applied (they remain 1.0 by default).
-      if (allocated(grid%face_fraction_x) .and. allocated(grid%face_fraction_y)) then
+      if (use_cut_cell_faces) then
         ! Term 5: A * Laplacian
         call csr_apply_variable_coeff(laplacian_2d, prof_A, kpterms_2d(5), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
-        ! Term 6: P * Gradient
-        call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6), &
           face_frac_x=grid%face_fraction_x, &
           face_frac_y=grid%face_fraction_y, grid_nx=nx)
         ! Term 7: (gamma1 - 2*gamma2) * Laplacian
@@ -510,18 +585,16 @@ module hamiltonianConstructor
         call csr_apply_variable_coeff(laplacian_2d, prof_gp12g2, kpterms_2d(8), &
           face_frac_x=grid%face_fraction_x, &
           face_frac_y=grid%face_fraction_y, grid_nx=nx)
-        ! Term 9: gamma3 * Gradient
-        call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
       else
         ! No face fractions (rectangular grid or QW mode): standard path
         call csr_apply_variable_coeff(laplacian_2d, prof_A, kpterms_2d(5))
-        call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6))
         call csr_apply_variable_coeff(laplacian_2d, prof_gm12g2, kpterms_2d(7))
         call csr_apply_variable_coeff(laplacian_2d, prof_gp12g2, kpterms_2d(8))
-        call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9))
       end if
+      ! Term 6: P * Gradient
+      call csr_apply_variable_coeff(grad_2d, prof_P, kpterms_2d(6))
+      ! Term 9: gamma3 * Gradient
+      call csr_apply_variable_coeff(grad_2d, prof_gamma3, kpterms_2d(9))
 
       ! Term 10: A (diagonal only)
       call build_diagonal_csr(ngrid, prof_A, kpterms_2d(10))
@@ -532,30 +605,39 @@ module hamiltonianConstructor
       ! Terms 12-15: separate x/y gradient operators for g-factor perturbation.
       ! These use the same kron products as grad_2d but split by direction.
       ! kron_Iy_D1x = Iy x D1x (x-gradient), kron_D1y_Ix = D1y x Ix (y-gradient).
-      if (allocated(grid%face_fraction_x) .and. allocated(grid%face_fraction_y)) then
-        ! Term 12: P * d/dx (x-gradient only)
-        call csr_apply_variable_coeff(kron_Iy_D1x, prof_P, kpterms_2d(12), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
-        ! Term 13: P * d/dy (y-gradient only)
-        call csr_apply_variable_coeff(kron_D1y_Ix, prof_P, kpterms_2d(13), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
-        ! Term 14: gamma3 * d/dx (x-gradient only)
-        call csr_apply_variable_coeff(kron_Iy_D1x, prof_gamma3, kpterms_2d(14), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
-        ! Term 15: gamma3 * d/dy (y-gradient only)
-        call csr_apply_variable_coeff(kron_D1y_Ix, prof_gamma3, kpterms_2d(15), &
-          face_frac_x=grid%face_fraction_x, &
-          face_frac_y=grid%face_fraction_y, grid_nx=nx)
-      else
-        ! No face fractions (rectangular grid)
-        call csr_apply_variable_coeff(kron_Iy_D1x, prof_P, kpterms_2d(12))
-        call csr_apply_variable_coeff(kron_D1y_Ix, prof_P, kpterms_2d(13))
-        call csr_apply_variable_coeff(kron_Iy_D1x, prof_gamma3, kpterms_2d(14))
-        call csr_apply_variable_coeff(kron_D1y_Ix, prof_gamma3, kpterms_2d(15))
-      end if
+      ! Term 12: P * d/dx (x-gradient only)
+      call csr_apply_variable_coeff(kron_Iy_D1x, prof_P, kpterms_2d(12))
+      ! Term 13: P * d/dy (y-gradient only)
+      call csr_apply_variable_coeff(kron_D1y_Ix, prof_P, kpterms_2d(13))
+      ! Term 14: gamma3 * d/dx (x-gradient only)
+      call csr_apply_variable_coeff(kron_Iy_D1x, prof_gamma3, kpterms_2d(14))
+      ! Term 15: gamma3 * d/dy (y-gradient only)
+      call csr_apply_variable_coeff(kron_D1y_Ix, prof_gamma3, kpterms_2d(15))
+
+      ! Terms 16-17: separate x/y second-derivative operators for R term.
+      ! Term 16: gamma2 * (d^2/dx^2 - d^2/dy^2) for R anisotropic part
+      ! Term 17: placeholder (unused -- term 16 is sufficient, built from kron_Iy_D2x and kron_D2y_Ix)
+      block
+        type(csr_matrix) :: tmp_D2x, tmp_D2y
+        if (use_cut_cell_faces) then
+          call csr_apply_variable_coeff(kron_Iy_D2x, prof_gamma2, tmp_D2x, &
+            face_frac_x=grid%face_fraction_x, &
+            face_frac_y=grid%face_fraction_y, grid_nx=nx)
+          call csr_apply_variable_coeff(kron_D2y_Ix, prof_gamma2, tmp_D2y, &
+            face_frac_x=grid%face_fraction_x, &
+            face_frac_y=grid%face_fraction_y, grid_nx=nx)
+        else
+          call csr_apply_variable_coeff(kron_Iy_D2x, prof_gamma2, tmp_D2x)
+          call csr_apply_variable_coeff(kron_D2y_Ix, prof_gamma2, tmp_D2y)
+        end if
+        ! R_diff = gamma2*D2x - gamma2*D2y
+        call csr_add(tmp_D2x, tmp_D2y, kpterms_2d(16), UM, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        call csr_free(tmp_D2x)
+        call csr_free(tmp_D2y)
+      end block
+
+      ! Term 17: placeholder (unused)
+      call csr_init(kpterms_2d(17), ngrid, ngrid)
 
       ! ====================================================================
       ! 5. Cleanup
@@ -565,6 +647,8 @@ module hamiltonianConstructor
       call csr_free(kron_D1y_D1x)
       call csr_free(kron_Iy_D1x)
       call csr_free(kron_D1y_Ix)
+      call csr_free(kron_Iy_D2x)
+      call csr_free(kron_D2y_Ix)
 
       deallocate(D2x, D1x, D2y, D1y, Ix, Iy)
       deallocate(cD2x, cD1x, cD2y, cD1y, cIx, cIy)
@@ -572,6 +656,48 @@ module hamiltonianConstructor
       deallocate(prof_P, prof_A, prof_gm12g2, prof_gp12g2)
 
     end subroutine confinementInitialization_2d
+
+    subroutine apply_dirichlet_order2_first_derivative(D1, dz)
+      real(kind=dp), intent(inout) :: D1(:,:)
+      real(kind=dp), intent(in) :: dz
+      integer :: n, i
+
+      n = size(D1, 1)
+      D1 = 0.0_dp
+      do i = 2, n - 1
+        D1(i, i - 1) = -0.5_dp / dz
+        D1(i, i + 1) =  0.5_dp / dz
+      end do
+      ! Cell-centered Dirichlet walls with ghost elimination:
+      ! u_ghost = -u_1 on the left, u_ghost = -u_n on the right.
+      if (n >= 2) then
+        D1(1, 1) =  0.5_dp / dz
+        D1(1, 2) =  0.5_dp / dz
+        D1(n, n - 1) = -0.5_dp / dz
+        D1(n, n)     = -0.5_dp / dz
+      end if
+    end subroutine apply_dirichlet_order2_first_derivative
+
+    subroutine apply_dirichlet_order2_second_derivative(D2, dz)
+      real(kind=dp), intent(inout) :: D2(:,:)
+      real(kind=dp), intent(in) :: dz
+      integer :: n, i
+
+      n = size(D2, 1)
+      D2 = 0.0_dp
+      do i = 1, n
+        D2(i, i) = -2.0_dp / dz**2
+      end do
+      do i = 1, n - 1
+        D2(i, i + 1) = 1.0_dp / dz**2
+        D2(i + 1, i) = 1.0_dp / dz**2
+      end do
+      ! Cell-centered grid with Dirichlet walls at the exterior faces:
+      ! the ghost-cell elimination increases the boundary diagonal from
+      ! -2/h^2 to -3/h^2 at the first and last interior points.
+      if (n >= 1) D2(1, 1) = -3.0_dp / dz**2
+      if (n >= 2) D2(n, n) = -3.0_dp / dz**2
+    end subroutine apply_dirichlet_order2_second_derivative
 
     !---------------------------------------------------------------------------
     !> Build a diagonal CSR matrix from a real profile vector.
@@ -598,28 +724,57 @@ module hamiltonianConstructor
     end subroutine build_diagonal_csr
 
     !---------------------------------------------------------------------------
-    !> Apply variable coefficient to FD matrix and store in kpterms.
-    !> Computes: kpterms(:,:,term_idx) = -diag(profile) @ FD
-    !> This gives the correct sign for both 1st and 2nd derivative terms
-    !> in the k.p Hamiltonian.
+    !> Apply variable coefficient using staggered-grid conservative form.
+    !> Computes: kpterms(:,:,term_idx) = -D_outer * diag(g_half) * D_inner
+    !>
+    !> This correctly discretizes d/dz[g(z)*d/dz] at heterointerfaces
+    !> for any FD order, using the staggered-grid (half-point) approach.
+    !>
+    !> @param[in]  D_inner   (N-1) x N forward half-point 1st-derivative matrix
+    !> @param[in]  D_outer   N x (N-1) backward half-point 1st-derivative matrix
+    !> @param[in]  g_half    (N-1) coefficient values interpolated to half-points
     !---------------------------------------------------------------------------
-    subroutine applyVariableCoeff(kpterms, profile_vec, FD, N, term_idx)
+    subroutine applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, term_idx)
 
       real(kind=dp), intent(inout), dimension(:,:,:) :: kpterms
-      real(kind=dp), intent(in), dimension(:) :: profile_vec
-      real(kind=dp), intent(in), dimension(:,:) :: FD
+      real(kind=dp), intent(in) :: g_half(:)
+      real(kind=dp), intent(in) :: D_inner(:,:), D_outer(:,:)
       integer, intent(in) :: N, term_idx
 
+      real(kind=dp), allocatable :: temp(:,:), result(:,:)
       integer :: ii, jj
 
-      ! kpterms(j,i) = -profile_vec(j) * FD(j,i)
-      forall(ii=1:N, jj=1:N)
-        kpterms(jj, ii, term_idx) = -profile_vec(jj) * FD(jj, ii)
-      end forall
+      ! temp(N-1, N) = diag(g_half) * D_inner
+      ! Scale each row of D_inner by g_half
+      allocate(temp(N-1, N))
+      temp = 0.0_dp
+      do jj = 1, N
+        do ii = 1, N - 1
+          temp(ii, jj) = g_half(ii) * D_inner(ii, jj)
+        end do
+      end do
 
-    end subroutine applyVariableCoeff
+      ! result(N, N) = D_outer * temp
+      allocate(result(N, N))
+      result = 0.0_dp
+      do ii = 1, N
+        do jj = 1, N
+          result(ii, jj) = dot_product(D_outer(ii, :), temp(:, jj))
+        end do
+      end do
 
-    subroutine ZB8bandQW(HT, wv, profile, kpterms, sparse, HT_csr, g)
+      ! Store with negative sign (kinetic energy operator convention)
+      do jj = 1, N
+        do ii = 1, N
+          kpterms(ii, jj, term_idx) = -result(ii, jj)
+        end do
+      end do
+
+      deallocate(temp, result)
+
+    end subroutine applyVariableCoeffStaggered
+
+    subroutine ZB8bandQW(HT, wv, profile, kpterms, cfg, sparse, HT_csr, g)
 
       implicit none
 
@@ -629,6 +784,7 @@ module hamiltonianConstructor
       type(wavevector), intent(in) :: wv
       real(kind = dp), intent(in), dimension(:,:) :: profile
       real(kind = dp), intent(in), dimension(:,:,:) :: kpterms
+      type(simulation_config), intent(in), optional :: cfg
       logical, intent(in), optional:: sparse
       character(len=1), intent(in), optional :: g
 
@@ -795,6 +951,15 @@ module hamiltonianConstructor
         HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + profile(ii,3)
         HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + profile(ii,3)
       end forall
+
+      ! Full Bir-Pikus strain (k-independent, not in g-mode)
+      if (present(cfg)) then
+        if (.not. present(g) .and. allocated(cfg%strain_blocks%delta_Ec)) then
+          do ii = 1, N
+            call add_bp_strain_dense(HT, ii, N, cfg%strain_blocks)
+          end do
+        end if
+      end if
 
 
       deallocate(Q)
@@ -976,6 +1141,66 @@ module hamiltonianConstructor
       HT(7,7) = HT(7,7) + params(1)%Eg
       HT(8,8) = HT(8,8) + params(1)%Eg
 
+      ! ---------------------------------------------------------------
+      ! Full Bir-Pikus strain Hamiltonian for bulk.
+      !
+      ! When strainSubstrate > 0, apply uniform biaxial [001] strain:
+      !   eps_xx = eps_yy = eps_par = (a_sub - a_film) / a_film
+      !   eps_zz = eps_perp = -2 C12/C11 * eps_par
+      !   eps_xy = eps_xz = eps_yz = 0  (for [001] biaxial)
+      !
+      ! The strain Hamiltonian has the SAME matrix structure as the
+      ! k-dependent terms but with eps_ij replacing k_i*k_j and
+      ! deformation potentials (av, b_dp, d_dp) replacing Luttinger
+      ! parameters (gamma1, gamma2, gamma3):
+      !
+      !   P_eps     = -av * Tr(eps)                           (hydrostatic)
+      !   Q_eps     =  b_dp/2 * (eps_zz - 0.5*(eps_xx+eps_yy)) (tetragonal shear)
+      !   R_eps     = -sqrt(3) * [b_dp/2*(eps_xx-eps_yy) - i*d_dp*eps_xy]
+      !   S_eps     =  i*2*sqrt(3) * d_dp * (eps_xz - i*eps_yz)
+      !   S_eps_bar = -i*2*sqrt(3) * d_dp * (eps_xz + i*eps_yz)
+      !
+      ! Diagonal:
+      !   CB:  +ac * Tr(eps)
+      !   HH:  -P_eps + Q_eps
+      !   LH:  -P_eps - Q_eps
+      !   SO:  -P_eps
+      !
+      ! Off-diagonal: same pattern as k-terms R, S, S_bar.
+      ! For [001] biaxial: R_eps = S_eps = 0, only Q_eps survives.
+      ! All terms included for physics consistency.
+      ! ---------------------------------------------------------------
+      if (params(1)%strainSubstrate > 0.0_dp) then
+        block
+          real(kind=dp) :: a_film, eps_xx, eps_zz
+          type(bir_pikus_blocks) :: bp_bulk
+
+          a_film = params(1)%a0
+          if (a_film > 0.0_dp) then
+            eps_xx = (params(1)%strainSubstrate - a_film) / a_film
+            eps_zz = -2.0_dp * params(1)%C12 / params(1)%C11 * eps_xx
+
+            allocate(bp_bulk%delta_Ec(1), bp_bulk%delta_EHH(1), &
+              bp_bulk%delta_ELH(1), bp_bulk%delta_ESO(1), &
+              bp_bulk%R_eps(1), bp_bulk%S_eps(1), bp_bulk%QT2_eps(1))
+
+            associate(s => compute_bp_scalar(params(1), eps_xx, eps_xx, eps_zz, &
+                                              0.0_dp, 0.0_dp, 0.0_dp))
+              bp_bulk%delta_Ec(1)  = s%delta_Ec
+              bp_bulk%delta_EHH(1) = s%delta_EHH
+              bp_bulk%delta_ELH(1) = s%delta_ELH
+              bp_bulk%delta_ESO(1) = s%delta_ESO
+              bp_bulk%R_eps(1)     = s%R_eps
+              bp_bulk%S_eps(1)     = s%S_eps
+              bp_bulk%QT2_eps(1)   = s%QT2_eps
+            end associate
+
+            call add_bp_strain_dense(HT, 1, 1, bp_bulk)
+            call bir_pikus_blocks_free(bp_bulk)
+          end if
+        end block
+      end if
+
 
     end subroutine ZB8bandBulk
 
@@ -1040,44 +1265,38 @@ module hamiltonianConstructor
 
       if (gmode_dir == 3) then
         ! ==================================================================
-        ! g='g3' mode (z direction): kz-linear perturbation terms.
-        ! PP, PM, S, SC at unit kz.  All other blocks are zero.
-        ! No band-offset profile is added.
+        ! g='g3' mode (z direction): dH/dkz at kz=0.
+        ! The kz-linear terms are PZ (= P*kz) and S, SC (= kz * FD ops).
+        ! PP/PM are kz-independent (FD operators) and do NOT contribute
+        ! to dH/dkz.  Band-offset profile not added.
         ! ==================================================================
-        call build_kp_term_PP(kz, kpterms_2d, blk_PP)
-        call build_kp_term_PM(kz, kpterms_2d, blk_PM)
-        call build_kp_term_S(kz, kpterms_2d, blk_S)
-        call build_kp_term_SC(kz, kpterms_2d, blk_SC)
+        call build_kp_term_PZ(1.0_dp, kpterms_2d, blk_PZ)
+        call build_kp_term_S(1.0_dp, kpterms_2d, blk_S)
+        call build_kp_term_SC(1.0_dp, kpterms_2d, blk_SC)
 
       else if (gmode_dir == 1) then
         ! ==================================================================
-        ! g='g1' mode (x direction): perturbation via d/dx spatial gradient.
-        ! PZ uses kpterms_2d(12) = P * d/dx, S uses kpterms_2d(14) = gamma3 * d/dx.
-        ! No PP/PM (those are kz-dependent; kz=0 for x perturbation).
+        ! g='g1' mode (x direction): dH/dkx at k=0.
+        ! Differentiate the linear Kane P terms with respect to the external
+        ! wavevector kx.  This gives diagonal P blocks; using spatial
+        ! gradients here differentiates the envelope operator instead.
+        !   d(PP)/dkx = P/sqrt(2)
+        !   d(PM)/dkx = P/sqrt(2)
         ! ==================================================================
-        ! PZ = -IU * kpterms_2d(12)  (same prefactor as normal mode PZ)
-        call csr_scale(kpterms_2d(12), blk_PZ, -IU)
-        ! S = 2*sqrt(3) * kpterms_2d(14)
-        call csr_scale(kpterms_2d(14), blk_S, &
-          cmplx(2.0_dp * SQR3, 0.0_dp, kind=dp))
-        ! SC = -S  (antisymmetric gradient)
-        call csr_scale(kpterms_2d(14), blk_SC, &
-          cmplx(-2.0_dp * SQR3, 0.0_dp, kind=dp))
+        call csr_scale(kpterms_2d(4), blk_PP, cmplx(RQS2, 0.0_dp, kind=dp))
+        call csr_scale(kpterms_2d(4), blk_PM, cmplx(RQS2, 0.0_dp, kind=dp))
 
       else if (gmode_dir == 2) then
         ! ==================================================================
-        ! g='g2' mode (y direction): perturbation via d/dy spatial gradient.
-        ! PZ uses kpterms_2d(13) = P * d/dy, S uses kpterms_2d(15) = gamma3 * d/dy.
-        ! No PP/PM (those are kz-dependent; kz=0 for y perturbation).
+        ! g='g2' mode (y direction): dH/dky at k=0.
+        ! Differentiate the linear Kane P terms with respect to the external
+        ! wavevector ky.  This gives diagonal P blocks; using spatial
+        ! gradients here differentiates the envelope operator instead.
+        !   d(PP)/dky = i*P/sqrt(2)
+        !   d(PM)/dky = -i*P/sqrt(2)
         ! ==================================================================
-        ! PZ = -IU * kpterms_2d(13)
-        call csr_scale(kpterms_2d(13), blk_PZ, -IU)
-        ! S = 2*sqrt(3) * kpterms_2d(15)
-        call csr_scale(kpterms_2d(15), blk_S, &
-          cmplx(2.0_dp * SQR3, 0.0_dp, kind=dp))
-        ! SC = -S  (antisymmetric gradient)
-        call csr_scale(kpterms_2d(15), blk_SC, &
-          cmplx(-2.0_dp * SQR3, 0.0_dp, kind=dp))
+        call csr_scale(kpterms_2d(4), blk_PP, cmplx(0.0_dp, RQS2, kind=dp))
+        call csr_scale(kpterms_2d(4), blk_PM, cmplx(0.0_dp, -RQS2, kind=dp))
 
       else
         ! ==================================================================
@@ -1102,13 +1321,13 @@ module hamiltonianConstructor
         ! RC = conjg(R) = R (real diagonal)
         call build_kp_term_RC(kz2, kpterms_2d, blk_RC)
 
-        ! PZ = -IU * kpterms_2d(6)  (P * gradient * (-IU))
-        call build_kp_term_PZ(kpterms_2d, blk_PZ)
+        ! PZ = P * kz (diagonal, free wire axis)
+        call build_kp_term_PZ(kz, kpterms_2d, blk_PZ)
 
-        ! PP = kpterms_2d(4) * kz * RQS2  (diagonal)
+        ! PP = P * (kx + i ky) / sqrt(2) mapped to transverse operators
         call build_kp_term_PP(kz, kpterms_2d, blk_PP)
 
-        ! PM = kpterms_2d(4) * kz * RQS2  (same as PP for wire)
+        ! PM = P * (kx - i ky) / sqrt(2) mapped to transverse operators
         call build_kp_term_PM(kz, kpterms_2d, blk_PM)
 
         ! A = kpterms_2d(5) + kz^2 * kpterms_2d(10)
@@ -1120,125 +1339,15 @@ module hamiltonianConstructor
       ! ==================================================================
       if (gmode_dir == 3) then
         ! ==================================================================
-        ! g='g3' mode (z direction): PP, PM, S, SC blocks only.
-        ! Same block topology as the original g='g' mode.
-        ! ==================================================================
-        ! PP:6, PM:5, S:6, SC:6
-        nnz_est = 6*blk_PP%nnz + 5*blk_PM%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
-        coo_capacity = nnz_est
-
-        allocate(coo_rows(coo_capacity))
-        allocate(coo_cols(coo_capacity))
-        allocate(coo_vals(coo_capacity))
-        coo_idx = 0
-
-        ! --- Row 1 (HH1) ---
-        ! (1,2): SC
-        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 0, 1, blk_SC, N)
-        ! (1,5): -IU * RQS2 * SC
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 0, 4, blk_SC, N, -IU * RQS2)
-        ! (1,7): IU * PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 0, 6, blk_PP, N, IU)
-
-        ! --- Row 2 (HH2) ---
-        ! (2,1): S
-        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 1, 0, blk_S, N)
-        ! (2,6): -IU * SQR3 * RQS2 * SC
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 1, 5, blk_SC, N, -IU * SQR3 * RQS2)
-        ! (2,8): -RQS3 * PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 1, 7, blk_PP, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-
-        ! --- Row 3 (LH1) ---
-        ! (3,4): -SC
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        ! (3,5): IU * SQR3 * RQS2 * S
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 2, 4, blk_S, N, IU * SQR3 * RQS2)
-        ! (3,7): IU * RQS3 * PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 2, 6, blk_PM, N, IU * RQS3)
-
-        ! --- Row 4 (LH2) ---
-        ! (4,3): -S
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        ! (4,6): IU * RQS2 * S
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 3, 5, blk_S, N, IU * RQS2)
-        ! (4,8): -PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 3, 7, blk_PM, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-
-        ! --- Row 5 (SO1) ---
-        ! (5,1): IU * RQS2 * S
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 4, 0, blk_S, N, IU * RQS2)
-        ! (5,3): -IU * SQR3 * RQS2 * SC
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 4, 2, blk_SC, N, -IU * SQR3 * RQS2)
-        ! (5,8): IU * SQR2 * RQS3 * PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 4, 7, blk_PP, N, IU * SQR2 * RQS3)
-
-        ! --- Row 6 (SO2) ---
-        ! (6,2): IU * SQR3 * RQS2 * S
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 5, 1, blk_S, N, IU * SQR3 * RQS2)
-        ! (6,4): -IU * RQS2 * SC
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 5, 3, blk_SC, N, -IU * RQS2)
-        ! (6,7): SQR2 * RQS3 * PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 5, 6, blk_PM, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
-
-        ! --- Row 7 (CB1) ---
-        ! (7,1): -IU * PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 6, 0, blk_PM, N, -IU)
-        ! (7,3): -IU * RQS3 * PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 6, 2, blk_PP, N, -IU * RQS3)
-        ! (7,6): SQR2 * RQS3 * PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 6, 5, blk_PP, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
-
-        ! --- Row 8 (CB2) ---
-        ! (8,2): -RQS3 * PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 7, 1, blk_PM, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-        ! (8,4): -PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 7, 3, blk_PP, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        ! (8,5): -IU * SQR2 * RQS3 * PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 7, 4, blk_PM, N, -IU * SQR2 * RQS3)
-
-        ! No profile diagonal in g3 mode
-
-      else if (gmode_dir == 1 .or. gmode_dir == 2) then
-        ! ==================================================================
-        ! g='g1' or g='g2' mode (x or y direction): PZ, S, SC blocks only.
-        ! PZ uses the separate d/dx or d/dy operator (kpterms_2d(12) or (13)).
-        ! S/SC use the separate d/dx or d/dy operator (kpterms_2d(14) or (15)).
-        ! Block topology matches the normal mode's PZ and S/SC insertions.
-        ! PZ:8, S:6, SC:6
-        ! ==================================================================
+        ! g='g3' mode (z direction): PZ + S + SC (kz-linear perturbation).
+        ! PZ:8, S:6, SC:6  (+ 20% safety margin)
         nnz_est = 8*blk_PZ%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
-        coo_capacity = nnz_est
+        coo_capacity = nnz_est + nnz_est / 5
 
         allocate(coo_rows(coo_capacity))
         allocate(coo_cols(coo_capacity))
         allocate(coo_vals(coo_capacity))
         coo_idx = 0
-
-        ! --- S/SC blocks (same positions as normal mode S/SC) ---
 
         ! --- Row 1 (HH1) ---
         ! (1,2): SC
@@ -1316,6 +1425,73 @@ module hamiltonianConstructor
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
 
+      else if (gmode_dir == 1 .or. gmode_dir == 2) then
+        ! ==================================================================
+        ! g='g1' or g='g2' mode (x or y direction): PP + PM blocks.
+        ! The transverse velocity perturbation for the Kane P terms is
+        ! diagonal in envelope space and uses the normal PP/PM block topology.
+        ! PP:6, PM:6
+        ! ==================================================================
+        nnz_est = 6*blk_PP%nnz + 6*blk_PM%nnz
+        coo_capacity = nnz_est + nnz_est / 5
+
+        allocate(coo_rows(coo_capacity))
+        allocate(coo_cols(coo_capacity))
+        allocate(coo_vals(coo_capacity))
+        coo_idx = 0
+
+        ! --- Row 1 (HH1) ---
+        ! (1,7): IU * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 6, blk_PP, N, IU)
+
+        ! --- Row 2 (HH2) ---
+        ! (2,8): -RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 7, blk_PP, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 3 (LH1) ---
+        ! (3,7): IU * RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 6, blk_PM, N, IU * RQS3)
+
+        ! --- Row 4 (LH2) ---
+        ! (4,8): -PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 7, blk_PM, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+
+        ! --- Row 5 (SO1) ---
+        ! (5,8): IU * SQR2 * RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 7, blk_PP, N, IU * SQR2 * RQS3)
+
+        ! --- Row 6 (SO2) ---
+        ! (6,7): SQR2 * RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 6, blk_PM, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 7 (CB1) ---
+        ! (7,1): -IU * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 0, blk_PM, N, -IU)
+        ! (7,3): -IU * RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 2, blk_PP, N, -IU * RQS3)
+        ! (7,6): SQR2 * RQS3 * PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 5, blk_PP, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 8 (CB2) ---
+        ! (8,2): -RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 1, blk_PM, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+        ! (8,4): -PP
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 3, blk_PP, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        ! (8,5): -IU * SQR2 * RQS3 * PM
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 4, blk_PM, N, -IU * SQR2 * RQS3)
+
         ! No profile diagonal in g1/g2 mode
 
       else
@@ -1335,7 +1511,11 @@ module hamiltonianConstructor
         nnz_est = nnz_est + 2*(blk_Q%nnz + blk_T%nnz)
         ! Profile diagonal: 8 bands * N
         nnz_est = nnz_est + 8 * N
-        coo_capacity = nnz_est
+        ! Strain: 32 entries per grid point (8 diag + 4 S_eps + 4 R_eps + 16 VB-SO)
+        if (allocated(cfg%strain_blocks%delta_Ec)) then
+          nnz_est = nnz_est + 32 * N
+        end if
+        coo_capacity = nnz_est + nnz_est / 5  ! 20% safety margin
 
         allocate(coo_rows(coo_capacity))
         allocate(coo_cols(coo_capacity))
@@ -1386,7 +1566,7 @@ module hamiltonianConstructor
         ! (2,6): -IU * SQR3 * RQS2 * SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 5, blk_SC, N, -IU * SQR3 * RQS2)
-        ! (2,7): SQR2 * RQS3 * PZ
+        ! (2,7): SQR2 * RQS3 * PZ  (upper triangle, same sign as 1D QW)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
         ! (2,8): -RQS3 * PP
@@ -1412,7 +1592,7 @@ module hamiltonianConstructor
         ! (3,7): IU * RQS3 * PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 6, blk_PM, N, IU * RQS3)
-        ! (3,8): IU * SQR2 * RQS3 * PZ
+        ! (3,8): IU * SQR2 * RQS3 * PZ  (upper triangle, same sign as 1D QW)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 7, blk_PZ, N, IU * SQR2 * RQS3)
 
@@ -1455,7 +1635,7 @@ module hamiltonianConstructor
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 4, blk_temp, N)
         call csr_free(blk_temp)
-        ! (5,7): IU * RQS3 * PZ
+        ! (5,7): IU * RQS3 * PZ  (upper triangle, same sign as 1D QW)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 6, blk_PZ, N, IU * RQS3)
         ! (5,8): IU * SQR2 * RQS3 * PP
@@ -1484,7 +1664,7 @@ module hamiltonianConstructor
         ! (6,7): SQR2 * RQS3 * PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 6, blk_PM, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
-        ! (6,8): -RQS3 * PZ
+        ! (6,8): -RQS3 * PZ  (upper triangle, same sign as 1D QW)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
 
@@ -1534,6 +1714,18 @@ module hamiltonianConstructor
         call insert_profile_diagonal(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, profile_2d, N)
 
+        ! ==================================================================
+        ! Add Bir-Pikus strain corrections (diagonal + off-diagonal)
+        !
+        ! Strain is k-independent so NOT added in g-mode.
+        ! All strain terms are per-grid-point scalars (diagonal in spatial
+        ! indices), inserted as individual COO entries.
+        ! ==================================================================
+        if (allocated(cfg%strain_blocks%delta_Ec)) then
+          call insert_strain_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
+            coo_idx, cfg%strain_blocks, N)
+        end if
+
       end if
 
       ! ==================================================================
@@ -1566,21 +1758,14 @@ module hamiltonianConstructor
       ! Cleanup
       ! ==================================================================
       deallocate(coo_rows, coo_cols, coo_vals)
-      if (gmode_dir == 0) then
-        ! Normal mode: free all blocks
-        call csr_free(blk_Q)
-        call csr_free(blk_T)
-        call csr_free(blk_R)
-        call csr_free(blk_RC)
-        call csr_free(blk_PZ)
-        call csr_free(blk_A)
-        call csr_free(blk_diff)
-      else if (gmode_dir == 1 .or. gmode_dir == 2) then
-        ! g1/g2 mode: PZ, S, SC were built
-        call csr_free(blk_PZ)
-      end if
-      ! S, SC, PP, PM are always built except in g1/g2 mode for PP/PM.
-      ! csr_free on an uninitialized csr_matrix is safe (checks allocated).
+      call csr_free(blk_Q)
+      call csr_free(blk_T)
+      call csr_free(blk_R)
+      call csr_free(blk_RC)
+      call csr_free(blk_PZ)
+      call csr_free(blk_A)
+      call csr_free(blk_diff)
+      call csr_free(blk_temp)
       call csr_free(blk_S)
       call csr_free(blk_SC)
       call csr_free(blk_PP)
@@ -1589,148 +1774,331 @@ module hamiltonianConstructor
     end subroutine ZB8bandGeneralized
 
     ! ==================================================================
+    ! Build commutator-based velocity operator matrices from the full wire
+    ! Hamiltonian.
+    !
+    ! Physics:  v_alpha = [r_alpha, H] / (i hbar)
+    !           dH/dk_alpha = -i [r_alpha, H]
+    !
+    ! For each nonzero entry H(row, col), the velocity matrix entry is:
+    !   vel_alpha(row, col) = -i * (r_alpha(i) - r_alpha(j)) * H(row, col)
+    ! where i, j are spatial grid indices extracted from the 8*Ntot basis:
+    !   spatial_idx = mod(basis_idx - 1, Ngrid) + 1
+    !
+    ! Key properties:
+    !   - Same spatial point (diagonal in space): r_i - r_j = 0, so band
+    !     offsets and on-site k.p terms give zero velocity (correct).
+    !   - x-neighbors: r_i - r_j = +/-dx, scaling FD stencil entries.
+    !   - z-direction (free axis): all points share same z, so
+    !     [z, H] = 0 (handled separately via dH/dkz for g3).
+    !
+    ! Uses csr_clone_structure to replicate H's sparsity pattern into
+    ! vel_x and vel_y, then fills values via position-difference scaling.
+    ! ==================================================================
+    subroutine build_velocity_matrices(H_csr, grid, vel_x, vel_y)
+      type(csr_matrix), intent(in)    :: H_csr
+      type(spatial_grid), intent(in)  :: grid
+      type(csr_matrix), intent(out)   :: vel_x
+      type(csr_matrix), intent(out)   :: vel_y
+
+      integer :: k, row, col, sp_row, sp_col, Ngrid
+      real(kind=dp) :: dx_diff, dy_diff
+
+      Ngrid = grid%nx * grid%ny
+
+      ! Clone sparsity pattern from H (same rowptr, colind; values zeroed)
+      call csr_clone_structure(H_csr, vel_x)
+      call csr_clone_structure(H_csr, vel_y)
+
+      ! Loop over all nonzero entries via CSR structure
+      do row = 1, H_csr%nrows
+        do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
+          col = H_csr%colind(k)
+
+          ! Extract spatial grid index from the 8*Ntot basis index.
+          ! Basis ordering: band 1 spatial(1..N), band 2 spatial(1..N), ...
+          ! so spatial_idx = mod(basis_idx - 1, Ngrid) + 1
+          sp_row = mod(row - 1, Ngrid) + 1
+          sp_col = mod(col - 1, Ngrid) + 1
+
+          ! Position difference between spatial points
+          dx_diff = grid%coords(1, sp_row) - grid%coords(1, sp_col)
+          dy_diff = grid%coords(2, sp_row) - grid%coords(2, sp_col)
+
+          ! vel_alpha = -i * (r_alpha_i - r_alpha_j) * H(i,j)
+          vel_x%values(k) = cmplx(0.0_dp, -dx_diff, kind=dp) * H_csr%values(k)
+          vel_y%values(k) = cmplx(0.0_dp, -dy_diff, kind=dp) * H_csr%values(k)
+        end do
+      end do
+
+    end subroutine build_velocity_matrices
+
+    ! ==================================================================
     ! Helper: Build kp-term Q for wire
-    ! Q = -((gamma1+gamma2)*kz^2*I + kpterms_2d(7))
-    ! kpterms_2d(1) = gamma1 diag, kpterms_2d(2) = gamma2 diag
-    ! kpterms_2d(7) = -(gamma1-2gamma2)*Laplacian
+    ! Bulk zinc-blende:
+    !   Q = -[(gamma1 + gamma2)*(kx^2 + ky^2) + (gamma1 - 2*gamma2)*kz^2]
+    !
+    ! In the wire, x/y are confined directions:
+    !   kx^2 + ky^2 -> -Laplacian_xy
+    !
+    ! Available 2-D operators:
+    !   kpterms_2d(7) = -(gamma1 - 2*gamma2) * Laplacian_xy
+    !   kpterms_2d(8) = -(gamma1 + 2*gamma2) * Laplacian_xy
+    !
+    ! Solve for the required transverse combination:
+    !   -(gamma1 + gamma2) * Laplacian_xy
+    !     = 1/4 * kpterms_2d(7) + 3/4 * kpterms_2d(8)
+    !
+    ! The free-axis kz term remains diagonal:
+    !   (gamma1 - 2*gamma2) * kz^2 * I
     ! ==================================================================
     subroutine build_kp_term_Q(kz2, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      type(csr_matrix) :: diag_sum, kz2_diag
+      type(csr_matrix) :: qxy, kz_diag
 
-      ! gamma1 + gamma2 diagonal, scaled by kz^2
-      call csr_add(kpterms_2d(1), kpterms_2d(2), diag_sum, &
-        cmplx(kz2, 0.0_dp, kind=dp), cmplx(kz2, 0.0_dp, kind=dp))
-      ! Add kpterms_2d(7)
-      call csr_add(diag_sum, kpterms_2d(7), blk, UM, UM)
-      call csr_free(diag_sum)
-      ! Negate
+      call csr_add(kpterms_2d(7), kpterms_2d(8), qxy, &
+        cmplx(0.25_dp, 0.0_dp, kind=dp), cmplx(0.75_dp, 0.0_dp, kind=dp))
+
+      call csr_add(kpterms_2d(1), kpterms_2d(2), kz_diag, &
+        cmplx(kz2, 0.0_dp, kind=dp), cmplx(-2.0_dp * kz2, 0.0_dp, kind=dp))
+
+      call csr_add(qxy, kz_diag, blk, UM, UM)
+      call csr_free(qxy)
+      call csr_free(kz_diag)
       call negate_csr(blk)
     end subroutine build_kp_term_Q
 
     ! ==================================================================
     ! Helper: Build kp-term T for wire
-    ! T = -((gamma1-gamma2)*kz^2*I + kpterms_2d(8))
+    ! Bulk zinc-blende:
+    !   T = -[(gamma1 - gamma2)*(kx^2 + ky^2) + (gamma1 + 2*gamma2)*kz^2]
+    !
+    ! Required transverse combination:
+    !   -(gamma1 - gamma2) * Laplacian_xy
+    !     = 3/4 * kpterms_2d(7) + 1/4 * kpterms_2d(8)
     ! ==================================================================
     subroutine build_kp_term_T(kz2, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      type(csr_matrix) :: diag_sum
+      type(csr_matrix) :: txy, kz_diag
 
-      ! (gamma1 - gamma2)*kz^2 diagonal
-      call csr_add(kpterms_2d(1), kpterms_2d(2), diag_sum, &
-        cmplx(kz2, 0.0_dp, kind=dp), cmplx(-kz2, 0.0_dp, kind=dp))
-      ! Add kpterms_2d(8) and negate
-      call csr_add(diag_sum, kpterms_2d(8), blk, UM, UM)
-      call csr_free(diag_sum)
+      call csr_add(kpterms_2d(7), kpterms_2d(8), txy, &
+        cmplx(0.75_dp, 0.0_dp, kind=dp), cmplx(0.25_dp, 0.0_dp, kind=dp))
+
+      call csr_add(kpterms_2d(1), kpterms_2d(2), kz_diag, &
+        cmplx(kz2, 0.0_dp, kind=dp), cmplx(2.0_dp * kz2, 0.0_dp, kind=dp))
+
+      call csr_add(txy, kz_diag, blk, UM, UM)
+      call csr_free(txy)
+      call csr_free(kz_diag)
       call negate_csr(blk)
     end subroutine build_kp_term_T
 
     ! ==================================================================
     ! Helper: Build kp-term S for wire
-    ! S = 2*sqrt(3) * kz * kpterms_2d(9)
-    ! (In QW: S = 2*sqrt(3)*kminus*kpterms(9) with kminus = kx-i*ky.
-    !  For wire, kx,ky are spatial so kminus = kz.)
+    ! S = 2*sqrt(3)*kz*gamma3*(d/dx - i*d/dy)
+    !   = 2*sqrt(3)*kz*(kpterms_2d(14) - i*kpterms_2d(15))
+    ! where kpterms_2d(14) = -gamma3*d/dx, kpterms_2d(15) = -gamma3*d/dy
+    ! so S = 2*sqrt(3)*kz*(-gamma3*d/dx + i*gamma3*d/dy)
+    !      = -2*sqrt(3)*kz*(gamma3*d/dx - i*gamma3*d/dy)
+    !
+    ! In the 1D QW: S = 2*sqrt(3)*kminus*kpterms(9) with kminus = kx-i*ky
+    ! and kpterms(9) = -gamma3*d/dz.  The wire replaces kx-i*ky by spatial
+    ! operators d/dx - i*d/dy and the 1D spatial derivative by kz (scalar).
     ! ==================================================================
     subroutine build_kp_term_S(kz, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_scale(kpterms_2d(9), blk, &
-        cmplx(2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
+      type(csr_matrix) :: grad_y_scaled
+      ! blk = -2*sqrt(3)*kz * kpterms_2d(14) = 2*sqrt(3)*kz*gamma3*d/dx
+      call csr_scale(kpterms_2d(14), blk, &
+        cmplx(-2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
+      ! grad_y_scaled = +2*sqrt(3)*kz*i * kpterms_2d(15)
+      !                = +2*sqrt(3)*kz*i*(-gamma3*d/dy)
+      !                = -2*sqrt(3)*kz*i*gamma3*d/dy
+      call csr_scale(kpterms_2d(15), grad_y_scaled, &
+        cmplx(0.0_dp, 2.0_dp * SQR3 * kz, kind=dp))
+      ! S = blk + grad_y_scaled = 2*sqrt(3)*kz*gamma3*(d/dx - i*d/dy)
+      block
+        type(csr_matrix) :: tmp
+        call csr_add(blk, grad_y_scaled, tmp)
+        call csr_free(blk)
+        call csr_clone_structure(tmp, blk)
+        blk%values = tmp%values
+        call csr_free(tmp)
+      end block
+      call csr_free(grad_y_scaled)
     end subroutine build_kp_term_S
 
     ! ==================================================================
     ! Helper: Build kp-term SC for wire
-    ! SC = -S = -2*sqrt(3) * kz * kpterms_2d(9)
+    ! SC is the Hermitian conjugate of S, matching the 1D QW convention
+    ! where SC(jj,ii) = 2*sqrt(3)*kplus*kpterms(ii,jj,9).
     !
-    ! In QW: SC(jj,ii) = 2*sqrt(3)*kplus*kpterms(ii,jj,9), where
-    ! kplus = kx+i*ky is the conjugate of kminus.  For diagonal kpterms,
-    ! SC = conjg(S).  For wire, kpterms_2d(9) = -gamma3*grad_2d is
-    ! antisymmetric, so SC = S^H = S^T = -S.
+    ! In 1D QW: SC = 2*sqrt(3)*kplus*gamma3*d/dz  (after accounting for
+    ! the transpose trick and kpterms(9) = -gamma3*d/dz antisymmetry).
+    ! Wire mapping: kplus -> (d/dx + i*d/dy), d/dz -> kz:
+    !   SC = 2*sqrt(3)*kz*gamma3*(d/dx + i*d/dy)
+    !      = -2*sqrt(3)*kz*(-gamma3*(d/dx + i*d/dy))
+    !      = -2*sqrt(3)*kz*(kpterms_2d(14) + i*kpterms_2d(15))
+    !
+    ! The sign differs from S because kpterms_2d(14) = -gamma3*d/dx
+    ! includes a negative sign that cancels differently for SC.
     ! ==================================================================
     subroutine build_kp_term_SC(kz, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_scale(kpterms_2d(9), blk, &
-        cmplx(-2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
+      type(csr_matrix) :: blk_s
+
+      call build_kp_term_S(kz, kpterms_2d, blk_s)
+      call csr_conjugate_transpose(blk_s, blk)
+      call csr_free(blk_s)
     end subroutine build_kp_term_SC
 
     ! ==================================================================
-    ! Helper: Build kp-term R for wire (diagonal only)
-    ! R = -sqrt(3) * gamma2 * kz^2 * I
-    ! (kx^2,ky^2 contribution absorbed into 2D operators)
+    ! Helper: Build kp-term R for wire
+    ! R = -sqrt(3) * [gamma2*(d^2/dx^2 - d^2/dy^2) - 2i*gamma3*d^2/dxdy + gamma2*kz^2*I]
+    !   = -sqrt(3) * [kpterms_2d(16) - 2i*kpterms_2d(11) + kz^2*kpterms_2d(2)]
+    ! where kpterms_2d(16) = gamma2*(d^2/dx^2 - d^2/dy^2)
+    !       kpterms_2d(11) = gamma3*d^2/dxdy
+    !       kpterms_2d(2)  = gamma2 (diagonal)
     ! ==================================================================
     subroutine build_kp_term_R(kz2, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      ! Scale gamma2 diagonal by -sqrt(3)*kz^2
-      call csr_scale(kpterms_2d(2), blk, &
+      type(csr_matrix) :: cross_scaled, diag_kz2, tmp1, tmp2
+
+      ! cross_scaled = -sqrt(3) * (-2i) * kpterms_2d(11)
+      !              = 2i*sqrt(3) * gamma3 * d^2/dxdy
+      call csr_scale(kpterms_2d(11), cross_scaled, &
+        cmplx(0.0_dp, 2.0_dp * SQR3, kind=dp))
+
+      ! diag_kz2 = -sqrt(3)*kz^2 * gamma2 (diagonal)
+      call csr_scale(kpterms_2d(2), diag_kz2, &
         cmplx(-SQR3 * kz2, 0.0_dp, kind=dp))
+
+      ! Spatial derivative part: -sqrt(3) * kpterms_2d(16)
+      call csr_scale(kpterms_2d(16), tmp1, &
+        cmplx(-SQR3, 0.0_dp, kind=dp))
+
+      ! Sum all three parts
+      call csr_add(tmp1, cross_scaled, tmp2)
+      call csr_free(tmp1)
+      call csr_free(cross_scaled)
+      call csr_add(tmp2, diag_kz2, blk)
+      call csr_free(tmp2)
+      call csr_free(diag_kz2)
     end subroutine build_kp_term_R
 
     ! ==================================================================
     ! Helper: Build kp-term RC for wire
-    ! RC = R (real, so conjugate is same)
+    ! RC = -sqrt(3) * [gamma2*(d^2/dx^2 - d^2/dy^2) + 2i*gamma3*d^2/dxdy + gamma2*kz^2*I]
+    !    = R^H: flips sign of the imaginary part (cross-derivative term).
     ! ==================================================================
     subroutine build_kp_term_RC(kz2, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_scale(kpterms_2d(2), blk, &
-        cmplx(-SQR3 * kz2, 0.0_dp, kind=dp))
+      type(csr_matrix) :: blk_r
+
+      call build_kp_term_R(kz2, kpterms_2d, blk_r)
+      call csr_conjugate_transpose(blk_r, blk)
+      call csr_free(blk_r)
     end subroutine build_kp_term_RC
 
     ! ==================================================================
     ! Helper: Build kp-term PZ for wire
-    ! PZ = -IU * kpterms_2d(6)
-    ! kpterms_2d(6) = -P*(d/dx + d/dy) (already negative from coeff application)
-    ! So PZ = -IU * (-P*grad) = IU * P*grad
+    ! PZ = P * kz  (diagonal term, z is the free direction)
+    ! kpterms_2d(4) = P (diagonal)
     ! ==================================================================
-    subroutine build_kp_term_PZ(kpterms_2d, blk)
+    subroutine build_kp_term_PZ(kz, kpterms_2d, blk)
+      real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_scale(kpterms_2d(6), blk, -IU)
+      call csr_scale(kpterms_2d(4), blk, cmplx(kz, 0.0_dp, kind=dp))
     end subroutine build_kp_term_PZ
 
     ! ==================================================================
-    ! Helper: Build kp-term PP for wire (diagonal only)
-    ! PP = P * kz / sqrt(2)  (kplus = kz for wire)
-    ! kpterms_2d(4) = P diagonal
+    ! Helper: Build kp-term PP for wire
+    ! PP = P * (kx + i ky) / sqrt(2)
+    !    = P * (-i d/dx + d/dy) / sqrt(2)
+    ! using kpterms_2d(12) = P*d/dx and kpterms_2d(13) = P*d/dy
     ! ==================================================================
     subroutine build_kp_term_PP(kz, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_scale(kpterms_2d(4), blk, &
-        cmplx(kz * RQS2, 0.0_dp, kind=dp))
+      type(csr_matrix) :: grad_x_scaled, grad_y_scaled
+
+      ! kpterms_2d(12:13) already include the minus sign from
+      ! csr_apply_variable_coeff, i.e. kpterms_2d(12) = -P*d/dx and
+      ! kpterms_2d(13) = -P*d/dy. Therefore:
+      !   PP = P * (-i*d/dx + d/dy) / sqrt(2)
+      !      = +i * kpterms_2d(12) / sqrt(2) - kpterms_2d(13) / sqrt(2)
+      call csr_scale(kpterms_2d(12), grad_x_scaled, cmplx(0.0_dp, RQS2, kind=dp))
+      call csr_scale(kpterms_2d(13), grad_y_scaled, cmplx(-RQS2, 0.0_dp, kind=dp))
+      call csr_add(grad_x_scaled, grad_y_scaled, blk)
+      call csr_free(grad_x_scaled)
+      call csr_free(grad_y_scaled)
     end subroutine build_kp_term_PP
 
     ! ==================================================================
-    ! Helper: Build kp-term PM for wire (diagonal only)
-    ! PM = P * kz / sqrt(2)  (kminus = kz for wire)
+    ! Helper: Build kp-term PM for wire
+    ! PM = P * (kx - i ky) / sqrt(2)
+    !    = P * (-i d/dx - d/dy) / sqrt(2)
+    ! using kpterms_2d(12) = P*d/dx and kpterms_2d(13) = P*d/dy
     ! ==================================================================
     subroutine build_kp_term_PM(kz, kpterms_2d, blk)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
       type(csr_matrix), intent(out) :: blk
 
-      call csr_scale(kpterms_2d(4), blk, &
-        cmplx(kz * RQS2, 0.0_dp, kind=dp))
+      type(csr_matrix) :: blk_pp
+
+      call build_kp_term_PP(kz, kpterms_2d, blk_pp)
+      call csr_conjugate_transpose(blk_pp, blk)
+      call csr_free(blk_pp)
     end subroutine build_kp_term_PM
+
+    subroutine csr_conjugate_transpose(A, AH)
+      type(csr_matrix), intent(in)  :: A
+      type(csr_matrix), intent(out) :: AH
+
+      integer :: row, k
+      integer, allocatable :: rows_coo(:), cols_coo(:)
+      complex(kind=dp), allocatable :: vals_coo(:)
+
+      if (A%nnz == 0) then
+        call csr_init(AH, A%ncols, A%nrows)
+        return
+      end if
+
+      allocate(rows_coo(A%nnz), cols_coo(A%nnz), vals_coo(A%nnz))
+      do row = 1, A%nrows
+        do k = A%rowptr(row), A%rowptr(row + 1) - 1
+          rows_coo(k) = A%colind(k)
+          cols_coo(k) = row
+          vals_coo(k) = conjg(A%values(k))
+        end do
+      end do
+
+      call csr_build_from_coo(AH, A%ncols, A%nrows, A%nnz, rows_coo, cols_coo, vals_coo)
+      deallocate(rows_coo, cols_coo, vals_coo)
+    end subroutine csr_conjugate_transpose
 
     ! ==================================================================
     ! Helper: Build kp-term A for wire
@@ -1845,6 +2213,289 @@ module hamiltonianConstructor
         end do
       end do
     end subroutine insert_profile_diagonal
+
+    ! ==================================================================
+    ! Helper: Insert Bir-Pikus strain corrections into dense 8Nx8N matrix.
+    !
+    ! Adds all 32 entries (8 diagonal + 4 S + 4 R + 16 VB-SO) for grid
+    ! point ii. Works for both bulk (N=1, ii=1) and QW (any N).
+    ! ==================================================================
+    subroutine add_bp_strain_dense(HT, ii, N, bp)
+      complex(kind=dp), intent(inout) :: HT(:,:)
+      integer, intent(in) :: ii, N
+      type(bir_pikus_blocks), intent(in) :: bp
+
+      complex(kind=dp) :: R_eps_c, S_eps_c
+
+      R_eps_c = conjg(bp%R_eps(ii))
+      S_eps_c = conjg(bp%S_eps(ii))
+
+      ! === Diagonal per-band ===
+      HT(      ii,      ii) = HT(      ii,      ii) + bp%delta_EHH(ii)
+      HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + bp%delta_ELH(ii)
+      HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + bp%delta_ELH(ii)
+      HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + bp%delta_EHH(ii)
+      HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + bp%delta_ESO(ii)
+      HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + bp%delta_ESO(ii)
+      HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + bp%delta_Ec(ii)
+      HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + bp%delta_Ec(ii)
+
+      ! === Off-diagonal: S_eps (HH-LH) ===
+      HT(      ii,  N + ii) = HT(      ii,  N + ii) + S_eps_c
+      HT(  N + ii,      ii) = HT(  N + ii,      ii) + bp%S_eps(ii)
+      HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - S_eps_c
+      HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - bp%S_eps(ii)
+
+      ! === Off-diagonal: R_eps (HH-LH) ===
+      HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + R_eps_c
+      HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + bp%R_eps(ii)
+      HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + R_eps_c
+      HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + bp%R_eps(ii)
+
+      ! === Off-diagonal: VB-SO coupling ===
+      HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU * RQS2 * S_eps_c
+      HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU * RQS2 * bp%S_eps(ii)
+      HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU * SQR2 * R_eps_c
+      HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU * SQR2 * bp%R_eps(ii)
+
+      HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU * RQS2 * bp%QT2_eps(ii)
+      HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU * RQS2 * bp%QT2_eps(ii)
+      HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU * SQR3o2 * S_eps_c
+      HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU * SQR3o2 * bp%S_eps(ii)
+
+      HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU * SQR3o2 * bp%S_eps(ii)
+      HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU * SQR3o2 * S_eps_c
+      HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU * RQS2 * bp%QT2_eps(ii)
+      HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU * RQS2 * bp%QT2_eps(ii)
+
+      HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU * SQR2 * bp%R_eps(ii)
+      HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU * SQR2 * R_eps_c
+      HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU * RQS2 * bp%S_eps(ii)
+      HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU * RQS2 * S_eps_c
+    end subroutine add_bp_strain_dense
+
+    ! ==================================================================
+    ! Helper: Insert Bir-Pikus strain corrections as COO entries.
+    !
+    ! Adds per-band diagonal shifts and off-diagonal coupling following
+    ! the same block topology as ZB8bandBulk.  All terms are per-grid-point
+    ! scalars (diagonal in spatial indices).
+    !
+    ! Block topology (alpha_off, beta_off are 0-based band indices):
+    !   Diagonal: bands 1-8, per-band shift
+    !   S_eps: (0,1),(1,0),(2,3),(3,2) with sign
+    !   R_eps: (0,2),(2,0),(1,3),(3,1)
+    !   VB-SO: 16 entries with RQS2, SQR2, sqrt(1.5), QT2 prefactors
+    ! ==================================================================
+    subroutine insert_strain_coo(coo_r, coo_c, coo_v, coo_cap, &
+        coo_idx, bp, N)
+      integer, intent(inout) :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(in) :: coo_cap
+      integer, intent(inout) :: coo_idx
+      type(bir_pikus_blocks), intent(in) :: bp
+      integer, intent(in) :: N
+
+      integer :: ii
+
+      do ii = 1, N
+        ! === Diagonal per-band ===
+        ! band 1 (HH): delta_EHH
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = ii; coo_c(coo_idx) = ii
+        coo_v(coo_idx) = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
+
+        ! band 2 (LH): delta_ELH
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
+
+        ! band 3 (LH): delta_ELH
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 2*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
+
+        ! band 4 (HH): delta_EHH
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 3*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
+
+        ! band 5 (SO): delta_ESO
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = 4*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
+
+        ! band 6 (SO): delta_ESO
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = 5*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
+
+        ! band 7 (CB): delta_Ec
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 6*N + ii; coo_c(coo_idx) = 6*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
+
+        ! band 8 (CB): delta_Ec
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 7*N + ii; coo_c(coo_idx) = 7*N + ii
+        coo_v(coo_idx) = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
+
+        ! === Off-diagonal: S_eps (HH-LH coupling) ===
+        ! (1,2): S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = ii; coo_c(coo_idx) = N + ii
+        coo_v(coo_idx) = conjg(bp%S_eps(ii))
+
+        ! (2,1): S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = ii
+        coo_v(coo_idx) = bp%S_eps(ii)
+
+        ! (3,4): -S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 3*N + ii
+        coo_v(coo_idx) = -conjg(bp%S_eps(ii))
+
+        ! (4,3): -S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 2*N + ii
+        coo_v(coo_idx) = -bp%S_eps(ii)
+
+        ! === Off-diagonal: R_eps (HH-LH coupling) ===
+        ! (1,3): R_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = ii; coo_c(coo_idx) = 2*N + ii
+        coo_v(coo_idx) = conjg(bp%R_eps(ii))
+
+        ! (3,1): R_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = ii
+        coo_v(coo_idx) = bp%R_eps(ii)
+
+        ! (2,4): R_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = 3*N + ii
+        coo_v(coo_idx) = conjg(bp%R_eps(ii))
+
+        ! (4,2): R_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = N + ii
+        coo_v(coo_idx) = bp%R_eps(ii)
+
+        ! === Off-diagonal: VB-SO coupling ===
+        ! (1,5): -i/sqrt(2) * S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = ii; coo_c(coo_idx) = 4*N + ii
+        coo_v(coo_idx) = -IU * RQS2 * conjg(bp%S_eps(ii))
+
+        ! (5,1): +i/sqrt(2) * S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = ii
+        coo_v(coo_idx) = IU * RQS2 * bp%S_eps(ii)
+
+        ! (1,6): +i*sqrt(2) * R_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = ii; coo_c(coo_idx) = 5*N + ii
+        coo_v(coo_idx) = IU * SQR2 * conjg(bp%R_eps(ii))
+
+        ! (6,1): -i*sqrt(2) * R_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = ii
+        coo_v(coo_idx) = -IU * SQR2 * bp%R_eps(ii)
+
+        ! (2,5): +i/sqrt(2) * QT2_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = 4*N + ii
+        coo_v(coo_idx) = cmplx(IU * RQS2 * bp%QT2_eps(ii), kind=dp)
+
+        ! (5,2): -i/sqrt(2) * QT2_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = N + ii
+        coo_v(coo_idx) = cmplx(-IU * RQS2 * bp%QT2_eps(ii), kind=dp)
+
+        ! (2,6): -i*sqrt(3/2) * S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = 5*N + ii
+        coo_v(coo_idx) = -IU * SQR3o2 * conjg(bp%S_eps(ii))
+
+        ! (6,2): +i*sqrt(3/2) * S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = N + ii
+        coo_v(coo_idx) = IU * SQR3o2 * bp%S_eps(ii)
+
+        ! (3,5): +i*sqrt(3/2) * S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 4*N + ii
+        coo_v(coo_idx) = IU * SQR3o2 * bp%S_eps(ii)
+
+        ! (5,3): -i*sqrt(3/2) * S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = 2*N + ii
+        coo_v(coo_idx) = -IU * SQR3o2 * conjg(bp%S_eps(ii))
+
+        ! (3,6): +i/sqrt(2) * QT2_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 5*N + ii
+        coo_v(coo_idx) = cmplx(IU * RQS2 * bp%QT2_eps(ii), kind=dp)
+
+        ! (6,3): -i/sqrt(2) * QT2_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = 2*N + ii
+        coo_v(coo_idx) = cmplx(-IU * RQS2 * bp%QT2_eps(ii), kind=dp)
+
+        ! (4,5): -i*sqrt(2) * R_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 4*N + ii
+        coo_v(coo_idx) = -IU * SQR2 * bp%R_eps(ii)
+
+        ! (5,4): +i*sqrt(2) * R_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = 3*N + ii
+        coo_v(coo_idx) = IU * SQR2 * conjg(bp%R_eps(ii))
+
+        ! (4,6): +i/sqrt(2) * S_eps
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 5*N + ii
+        coo_v(coo_idx) = IU * RQS2 * bp%S_eps(ii)
+
+        ! (6,4): -i/sqrt(2) * S_eps_c
+        coo_idx = coo_idx + 1
+        if (coo_idx > coo_cap) return
+        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = 3*N + ii
+        coo_v(coo_idx) = -IU * RQS2 * conjg(bp%S_eps(ii))
+      end do
+    end subroutine insert_strain_coo
 
     ! ==================================================================
     ! Helper: Negate a CSR matrix in-place (multiply all values by -1)

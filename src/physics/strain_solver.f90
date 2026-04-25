@@ -13,7 +13,8 @@ module strain_solver
   ! band edges in the profile array.
   ! ==============================================================================
 
-  use definitions, only: dp, paramStruct, spatial_grid, strain_config, grid_ngrid
+  use definitions, only: dp, paramStruct, spatial_grid, strain_config, &
+    & grid_ngrid, SQR3, IU, bir_pikus_blocks, bp_scalar
 
   implicit none
 
@@ -24,7 +25,9 @@ module strain_solver
   public :: strain_result
   public :: strain_result_free
   public :: compute_strain
-  public :: apply_pikus_bir
+  public :: bir_pikus_blocks_free
+  public :: compute_bir_pikus_blocks
+  public :: compute_bp_scalar
 
   ! ------------------------------------------------------------------
   ! Strain tensor at each grid point.
@@ -107,7 +110,7 @@ contains
   ! QW biaxial strain (confinement=1).
   !
   ! For each layer with lattice constant a0, relative to reference a0_ref:
-  !   eps_0 = (a0 - a0_ref) / a0_ref
+  !   eps_0 = (a0_ref - a0) / a0
   !   eps_xx = eps_yy = eps_0           (in-plane)
   !   eps_zz = -2*C12/C11 * eps_0       (growth direction)
   !   eps_yz = 0
@@ -142,7 +145,7 @@ contains
       a0_mat = params(mid)%a0
       if (a0_mat <= 0.0_dp) cycle
 
-      eps_0 = (a0_mat - a0_ref) / a0_ref
+      eps_0 = (a0_ref - a0_mat) / a0_mat
 
       ! In-plane (x-y) biaxial strain
       strain_out%eps_xx(ij) = eps_0
@@ -253,7 +256,7 @@ contains
       C44(ij) = params(mid)%C44
 
       if (params(mid)%a0 > 0.0_dp) then
-        eps_xx_fixed(ij) = (params(mid)%a0 - a0_ref) / a0_ref
+        eps_xx_fixed(ij) = (a0_ref - params(mid)%a0) / params(mid)%a0
       end if
     end do
 
@@ -701,51 +704,65 @@ contains
   end subroutine compute_strain_wire
 
   ! ==================================================================
-  ! Apply Pikus-Bir strain Hamiltonian to profile_2d band offsets.
+  ! Compute full Bir-Pikus strain Hamiltonian components per grid point.
   !
-  ! Modifies profile_2d in-place to include diagonal strain shifts:
-  !   delta_Ec  = ac * Tr(eps)
-  !   delta_EHH = -P_eps + Q_eps
-  !   delta_ELH = -P_eps - Q_eps
-  !   delta_ESO = -P_eps
+  ! Returns a bir_pikus_blocks type with per-band diagonal shifts and
+  ! off-diagonal coupling terms, ready for insertion into the 8-band
+  ! Hamiltonian by ZB8bandQW or ZB8bandGeneralized.
   !
-  ! where:
-  !   Tr_eps = eps_xx + eps_yy + eps_zz
-  !   P_eps  = -av * Tr_eps    (positive av convention)
-  !   Q_eps  = b/2 * (eps_zz - 0.5*(eps_yy + eps_xx))
+  ! The diagonal shifts are:
+  !   HH (bands 1,4): -P_eps + Q_eps
+  !   LH (bands 2,3): -P_eps - Q_eps
+  !   SO (bands 5,6): -P_eps
+  !   CB (bands 7,8): ac * Tr(eps)
   !
-  ! profile_2d convention (from hamiltonianConstructor):
-  !   profile_2d(:,1) = EV          (bands 1-4: HH, LH, LH, HH)
-  !   profile_2d(:,2) = EV-DeltaSO  (bands 5-6: SO)
-  !   profile_2d(:,3) = EC          (bands 7-8: CB)
+  ! where P_eps = -av * Tr(eps), Q_eps = b/2 * (ezz - 0.5*(exx+eyy)).
   !
-  ! The Pikus-Bir shifts modify EV and EC:
-  !   EV_new = EV + delta_EHH (for HH) or EV + delta_ELH (for LH)
-  !   EC_new = EC + delta_Ec
+  ! Off-diagonal terms (same structure as k-dependent R, S in bulk):
+  !   R_eps = -sqrt(3) * [b/2*(exx-eyy) - i*d*exy]
+  !   S_eps =  i*2*sqrt(3) * d * (exz - i*eyz)
   !
-  ! Since profile_2d(:,1) is used for all 4 VB bands (HH, LH, LH, HH)
-  ! we apply the HH shift. The LH correction is a sub-band splitting
-  ! handled in the off-diagonal Hamiltonian terms, not in profile.
-  ! For SO bands, delta_ESO is applied to profile_2d(:,2).
+  ! Note: for [001] biaxial strain, exx=eyy and exy=exz=eyz=0,
+  ! so R_eps=0, S_eps=0, but QT2_eps = 2*Q_eps != 0 (LH-SO coupling).
+  !
+  ! eps_xz is not stored in strain_result (only xx,yyzz,yz for QW).
+  ! For QW (ndim=1), eps_xz = eps_xy = 0 (pure [001] biaxial).
+  ! For wire (ndim=2), we approximate eps_xz ~ 0 (plane strain in xy).
   ! ==================================================================
-  subroutine apply_pikus_bir(strain_out, params, material_id, grid, profile_2d)
+  subroutine compute_bir_pikus_blocks(strain_out, params, material_id, grid, bp)
 
     type(strain_result), intent(in)    :: strain_out
     type(paramStruct), intent(in)      :: params(:)
     integer, intent(in)                :: material_id(:)
     type(spatial_grid), intent(in)     :: grid
-    real(kind=dp), intent(inout)       :: profile_2d(:,:)
+    type(bir_pikus_blocks), intent(out) :: bp
 
     integer :: ngrid, ij, mid
-    real(kind=dp) :: Tr_eps, P_eps, Q_eps
-    real(kind=dp) :: delta_Ec, delta_EHH, delta_ESO
-    real(kind=dp) :: av, ac, b_dp
+    real(kind=dp) :: Tr_eps
+    real(kind=dp) :: eps_xx, eps_yy, eps_zz, eps_xy, eps_xz, eps_yz
 
     ngrid = grid_ngrid(grid)
 
     ! Early exit if no strain data
     if (.not. allocated(strain_out%eps_xx)) return
     if (size(strain_out%eps_xx) < ngrid) return
+
+    ! Allocate all arrays
+    allocate(bp%delta_Ec(ngrid))
+    allocate(bp%delta_EHH(ngrid))
+    allocate(bp%delta_ELH(ngrid))
+    allocate(bp%delta_ESO(ngrid))
+    allocate(bp%R_eps(ngrid))
+    allocate(bp%S_eps(ngrid))
+    allocate(bp%QT2_eps(ngrid))
+
+    bp%delta_Ec  = 0.0_dp
+    bp%delta_EHH = 0.0_dp
+    bp%delta_ELH = 0.0_dp
+    bp%delta_ESO = 0.0_dp
+    bp%R_eps     = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    bp%S_eps     = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    bp%QT2_eps   = 0.0_dp
 
     do ij = 1, ngrid
       mid = material_id(ij)
@@ -758,36 +775,80 @@ contains
         cycle
       end if
 
-      Tr_eps = strain_out%eps_xx(ij) + strain_out%eps_yy(ij) + strain_out%eps_zz(ij)
+      eps_xx = strain_out%eps_xx(ij)
+      eps_yy = strain_out%eps_yy(ij)
+      eps_zz = strain_out%eps_zz(ij)
+      eps_yz = strain_out%eps_yz(ij)
+      eps_xy = 0.0_dp  ! not stored; zero for [001] biaxial
+      eps_xz = 0.0_dp  ! not stored; zero for [001] biaxial
+
+      Tr_eps = eps_xx + eps_yy + eps_zz
 
       ! Check if strain is negligible
-      if (abs(Tr_eps) < 1.0e-20_dp .and. &
-          abs(strain_out%eps_yz(ij)) < 1.0e-20_dp) cycle
+      if (abs(Tr_eps) < 1.0e-20_dp .and. abs(eps_yz) < 1.0e-20_dp) cycle
 
-      av   = params(mid)%av
-      ac   = params(mid)%ac
-      b_dp = params(mid)%b_dp
-
-      ! Pikus-Bir deformation potentials
-      P_eps = -av * Tr_eps
-      Q_eps = b_dp * 0.5_dp * (strain_out%eps_zz(ij) - &
-        0.5_dp * (strain_out%eps_yy(ij) + strain_out%eps_xx(ij)))
-
-      delta_Ec  = ac * Tr_eps
-      delta_EHH = -P_eps + Q_eps
-      delta_ESO = -P_eps
-
-      ! Apply to profile_2d:
-      ! Column 1 (EV, bands 1-4): shift by delta_EHH
-      ! Column 2 (EV-DeltaSO, bands 5-6): shift by delta_ESO
-      ! Column 3 (EC, bands 7-8): shift by delta_Ec
-      profile_2d(ij, 1) = profile_2d(ij, 1) + delta_EHH
-      profile_2d(ij, 2) = profile_2d(ij, 2) + delta_ESO
-      profile_2d(ij, 3) = profile_2d(ij, 3) + delta_Ec
-
+      ! Single source of truth for Bir-Pikus formulas
+      associate(s => compute_bp_scalar(params(mid), eps_xx, eps_yy, eps_zz, &
+                                        eps_xy, eps_xz, eps_yz))
+        bp%delta_Ec(ij)  = s%delta_Ec
+        bp%delta_EHH(ij) = s%delta_EHH
+        bp%delta_ELH(ij) = s%delta_ELH
+        bp%delta_ESO(ij) = s%delta_ESO
+        bp%R_eps(ij)     = s%R_eps
+        bp%S_eps(ij)     = s%S_eps
+        bp%QT2_eps(ij)   = s%QT2_eps
+      end associate
     end do
 
-  end subroutine apply_pikus_bir
+  end subroutine compute_bir_pikus_blocks
+
+  ! ==================================================================
+  ! Deallocate bir_pikus_blocks arrays
+  ! ==================================================================
+  subroutine bir_pikus_blocks_free(bp)
+    type(bir_pikus_blocks), intent(inout) :: bp
+
+    if (allocated(bp%delta_Ec))  deallocate(bp%delta_Ec)
+    if (allocated(bp%delta_EHH)) deallocate(bp%delta_EHH)
+    if (allocated(bp%delta_ELH)) deallocate(bp%delta_ELH)
+    if (allocated(bp%delta_ESO)) deallocate(bp%delta_ESO)
+    if (allocated(bp%R_eps))     deallocate(bp%R_eps)
+    if (allocated(bp%S_eps))     deallocate(bp%S_eps)
+    if (allocated(bp%QT2_eps))   deallocate(bp%QT2_eps)
+  end subroutine bir_pikus_blocks_free
+
+  ! ==================================================================
+  ! Pure function: single source of truth for Bir-Pikus formulas.
+  !
+  ! Computes all diagonal and off-diagonal strain Hamiltonian components
+  ! for a single grid point from the strain tensor and material parameters.
+  ! ==================================================================
+  pure function compute_bp_scalar(params, eps_xx, eps_yy, eps_zz, &
+      eps_xy, eps_xz, eps_yz) result(s)
+    type(paramStruct), intent(in) :: params
+    real(kind=dp), intent(in) :: eps_xx, eps_yy, eps_zz
+    real(kind=dp), intent(in) :: eps_xy, eps_xz, eps_yz
+    type(bp_scalar) :: s
+
+    real(kind=dp) :: Tr_eps, P_eps, Q_eps, T_eps
+
+    Tr_eps = eps_xx + eps_yy + eps_zz
+    P_eps = -params%av * Tr_eps
+    Q_eps = params%b_dp * 0.5_dp * (eps_zz - 0.5_dp * (eps_yy + eps_xx))
+    T_eps = -Q_eps
+
+    s%delta_Ec  = params%ac * Tr_eps
+    s%delta_EHH = -P_eps + Q_eps
+    s%delta_ELH = -P_eps - Q_eps
+    s%delta_ESO = -P_eps
+    s%QT2_eps   = Q_eps - T_eps
+
+    s%R_eps = -SQR3 * (params%b_dp * 0.5_dp * (eps_xx - eps_yy) &
+                       - IU * params%d_dp * eps_xy)
+    s%S_eps = IU * 2.0_dp * SQR3 * params%d_dp * &
+              cmplx(eps_xz, -eps_yz, kind=dp)
+
+  end function compute_bp_scalar
 
   ! ==================================================================
   ! Deallocate strain_result arrays

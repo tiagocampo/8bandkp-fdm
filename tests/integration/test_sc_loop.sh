@@ -36,3 +36,9 @@ if ! grep -q "SC loop converged" test_output.log; then
 fi
 
 python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" --tolerance 1e-8
+
+# Quantitative SC benchmark checks
+VERIFY_SC="$(dirname "$0")/verify_sc_benchmarks.py"
+if [ -f "$VERIFY_SC" ]; then
+    python3 "$VERIFY_SC" "$WORKDIR/test_output.log" "$WORKDIR/output/eigenvalues.dat" "$WORKDIR/input.cfg"
+fi

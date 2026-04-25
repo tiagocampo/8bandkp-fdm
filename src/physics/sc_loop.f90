@@ -50,7 +50,7 @@ contains
   ! Main self-consistent loop for QW simulations
   ! ------------------------------------------------------------------
   subroutine self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv, &
-      & smallk, N, il, iuu)
+      & smallk, N, il, iuu, n_electron_out, n_hole_out)
 
     real(kind=dp), allocatable, intent(inout) :: profile(:,:)
     type(simulation_config), intent(in) :: cfg
@@ -60,6 +60,8 @@ contains
     complex(kind=dp), allocatable, intent(inout) :: eigv(:,:,:)
     type(wavevector), allocatable, intent(in) :: smallk(:)
     integer, intent(in) :: N, il, iuu
+    real(kind=dp), allocatable, intent(out), optional :: n_electron_out(:)
+    real(kind=dp), allocatable, intent(out), optional :: n_hole_out(:)
 
     ! SC loop variables
     integer :: iter, niter, info
@@ -210,7 +212,7 @@ contains
         wv%ky = 0.0_dp
         wv%kz = 0.0_dp
 
-        call ZB8bandQW(HT, wv, profile, kpterms)
+        call ZB8bandQW(HT, wv, profile, kpterms, cfg=cfg)
 
         call zheevx('V', 'I', 'U', N, HT, N, 0.0_dp, 0.0_dp, il, iuu, abstol, &
           & M_out, eig_kpar(:, k_idx), HT, N, work, lwork, rwork, &
@@ -287,6 +289,20 @@ contains
 
     ! Copy final eigenvalues at k_par=0 back to eig
     eig(:, 1) = eig_kpar(:, 1)
+
+    ! --- Copy charge densities to optional outputs before cleanup ---
+    if (present(n_electron_out)) then
+      if (allocated(n_electron)) then
+        allocate(n_electron_out(nz))
+        n_electron_out = n_electron
+      end if
+    end if
+    if (present(n_hole_out)) then
+      if (allocated(n_hole)) then
+        allocate(n_hole_out(nz))
+        n_hole_out = n_hole
+      end if
+    end if
 
     ! --- Cleanup ---
     deallocate(kpar_grid, phi_old, phi_new, phi_poisson)

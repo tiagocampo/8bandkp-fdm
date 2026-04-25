@@ -731,9 +731,10 @@ contains
     ! Strain disabled
     cfg%strain%enabled = .false.
 
-    ! SC parameters: loose tolerance, few iterations, linear mixing
+    ! SC parameters: loose tolerance, linear mixing.  The corrected wire
+    ! boundary operators need a few extra iterations on this tiny 3x3 harness.
     cfg%sc%enabled = 1
-    cfg%sc%max_iterations = 10
+    cfg%sc%max_iterations = 20
     cfg%sc%tolerance = 1.0e-4_dp
     cfg%sc%mixing_alpha = 0.3_dp
     cfg%sc%diis_history = 1   ! minimal DIIS history (linear mixing with diis_history < 2)

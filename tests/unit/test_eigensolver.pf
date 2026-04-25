@@ -122,9 +122,11 @@ contains
 
     call build_tridiag_csr(2.0_dp/grid_dx**2, -1.0_dp/grid_dx**2, n, Hmat)
 
-    ! First verify with ARPACK dense solver that the matrix is correct
+    ! First verify with dense LAPACK that the matrix is correct
     cfg%method = 'ARPACK'
     cfg%nev = 3
+    cfg%emin = 0.0_dp
+    cfg%emax = 0.0_dp
     call solve_dense_lapack(Hmat, cfg, res)
 
     @assertTrue(res%converged)
@@ -292,6 +294,8 @@ contains
 
     cfg%method = 'ARPACK'
     cfg%nev = 3
+    cfg%emin = 0.0_dp
+    cfg%emax = 0.0_dp
 
     call solve_dense_lapack(H, cfg, res)
 

@@ -6,6 +6,7 @@ module test_hamiltonian_2d
   use geometry
   use finitedifferences
   use hamiltonianConstructor
+  use linalg, only: zheevx, ilaenv, dlamch
   implicit none
 
 contains
@@ -146,10 +147,10 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     ! Check array size
-    @assertEqual(15, size(kpterms_2d))
+    @assertEqual(17, size(kpterms_2d))
 
     ! Check all matrices have correct dimensions
-    do ij = 1, 15
+    do ij = 1, 17
       @assertEqual(ngrid, kpterms_2d(ij)%nrows)
       @assertEqual(ngrid, kpterms_2d(ij)%ncols)
     end do
@@ -174,6 +175,9 @@ contains
     @assertTrue(kpterms_2d(13)%nnz > 0, message="Term 13 (P*d/dy) has entries")
     @assertTrue(kpterms_2d(14)%nnz > 0, message="Term 14 (g3*d/dx) has entries")
     @assertTrue(kpterms_2d(15)%nnz > 0, message="Term 15 (g3*d/dy) has entries")
+
+    ! Anisotropic 2nd derivative terms (16-17) should have nonzeros
+    @assertTrue(kpterms_2d(16)%nnz > 0, message="Term 16 (g2*lap_diff) has entries")
 
     ! Check profile dimensions
     @assertEqual(ngrid, size(profile_2d, 1))
@@ -337,7 +341,9 @@ contains
 
   @test
   subroutine test_csr_apply_variable_coeff()
-    ! Test row scaling: result(i,j) = -profile(i) * A(i,j)
+    ! Test variable-coefficient scaling:
+    !   diagonal:     result(i,i) = -profile(i) * A(i,i)
+    !   off-diagonal: result(i,j) = -0.5*(profile(i)+profile(j)) * A(i,j)
     integer, parameter :: n = 3
     type(csr_matrix) :: A, result_mat
     complex(kind=dp) :: vals(7)
@@ -357,11 +363,11 @@ contains
     call csr_to_dense(result_mat, dense)
 
     @assertEqual(cmplx(-10.0_dp,0,dp), dense(1,1), tolerance=1.0e-14_dp)
-    @assertEqual(cmplx(-20.0_dp,0,dp), dense(1,2), tolerance=1.0e-14_dp)
-    @assertEqual(cmplx(-60.0_dp,0,dp), dense(2,1), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-30.0_dp,0,dp), dense(1,2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-45.0_dp,0,dp), dense(2,1), tolerance=1.0e-14_dp)
     @assertEqual(cmplx(-80.0_dp,0,dp), dense(2,2), tolerance=1.0e-14_dp)
-    @assertEqual(cmplx(-100.0_dp,0,dp), dense(2,3), tolerance=1.0e-14_dp)
-    @assertEqual(cmplx(-180.0_dp,0,dp), dense(3,2), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-125.0_dp,0,dp), dense(2,3), tolerance=1.0e-14_dp)
+    @assertEqual(cmplx(-150.0_dp,0,dp), dense(3,2), tolerance=1.0e-14_dp)
     @assertEqual(cmplx(-210.0_dp,0,dp), dense(3,3), tolerance=1.0e-14_dp)
 
     call csr_free(A)
@@ -491,7 +497,7 @@ contains
 
     ! For interior point, the 2nd derivative FD stencil gives -2/h^2 on diagonal.
     ! csr_apply_variable_coeff scales by -profile, so:
-    ! diagonal = -A * (-2/dx^2 + -2/dy^2) = A * (2/dx^2 + 2/dy^2)
+    ! diagonal = -(A*const) * (-2/dx^2 + -2/dy^2) = A*const * (2/dx^2 + 2/dy^2)
     ! Pick an interior point (e.g. row at center of grid)
     diag_idx = (nny/2 - 1) * nnx + nnx/2  ! interior grid point
     diag_val = 0.0_dp
@@ -502,7 +508,7 @@ contains
       end if
     end do
 
-    expected_diag = gaas_A * (2.0_dp/dx**2 + 2.0_dp/dy**2)
+    expected_diag = gaas_A * const * (2.0_dp/dx**2 + 2.0_dp/dy**2)
 
     @assertTrue(diag_val > 0.0_dp, message="Term 5 interior diagonal is positive")
     @assertEqual(expected_diag, diag_val, tolerance=0.01_dp * expected_diag)
@@ -513,6 +519,221 @@ contains
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
     call grid_free(grid)
   end subroutine test_laplacian_2d_eigenvalue_sanity
+
+  @test
+  subroutine test_rect_wire_keeps_dirichlet_boundary_laplacian()
+    ! Rectangular wires use explicit Dirichlet boundary closures.  The
+    ! variable-coefficient application must not replace those boundary
+    ! diagonals with a row-sum-conserving Neumann-style diagonal.
+    integer, parameter :: nnx = 5, nny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ij, corner_idx
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    integer :: mat2d(nnx, nny)
+    real(kind=dp) :: diag_val, expected_diag
+    real(kind=dp) :: gaas_A
+
+    mat2d = 1
+    call grid_init_rect(grid, nnx, nny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    gaas_A = params(1)%A
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    corner_idx = 1
+    diag_val = 0.0_dp
+    do ij = kpterms_2d(5)%rowptr(corner_idx), kpterms_2d(5)%rowptr(corner_idx + 1) - 1
+      if (kpterms_2d(5)%colind(ij) == corner_idx) then
+        diag_val = real(kpterms_2d(5)%values(ij))
+        exit
+      end if
+    end do
+
+    expected_diag = gaas_A * const * (3.0_dp/dx**2 + 3.0_dp/dy**2)
+    @assertEqual(expected_diag, diag_val, tolerance=1.0e-12_dp * expected_diag)
+
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_rect_wire_keeps_dirichlet_boundary_laplacian
+
+  @test
+  subroutine test_rect_wire_first_derivative_boundary_sign()
+    ! First-derivative operators are not conservative Laplacians.  Their
+    ! diagonal entries must retain the explicit Dirichlet closure sign.
+    integer, parameter :: nnx = 5, nny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ij, corner_idx
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    integer :: mat2d(nnx, nny)
+    real(kind=dp) :: diag_val, expected_diag
+    real(kind=dp) :: gaas_P
+
+    mat2d = 1
+    call grid_init_rect(grid, nnx, nny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    gaas_P = params(1)%P
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    corner_idx = 1
+    diag_val = 0.0_dp
+    do ij = kpterms_2d(12)%rowptr(corner_idx), kpterms_2d(12)%rowptr(corner_idx + 1) - 1
+      if (kpterms_2d(12)%colind(ij) == corner_idx) then
+        diag_val = real(kpterms_2d(12)%values(ij))
+        exit
+      end if
+    end do
+
+    expected_diag = -gaas_P * 0.5_dp / dx
+    @assertEqual(expected_diag, diag_val, tolerance=1.0e-12_dp * abs(expected_diag))
+
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_rect_wire_first_derivative_boundary_sign
+
+  @test
+  subroutine test_inactive_wire_cells_are_hard_wall_barriers()
+    ! Non-rectangular wire grids keep the rectangular storage layout, so cells
+    ! outside the active cross-section must not remain zero-energy states.
+    integer, parameter :: nnx = 7, nny = 7
+    real(kind=dp), parameter :: dx = 1.0_dp, dy = 1.0_dp
+    integer :: ij, corner_idx, cb_diag_idx, vb_diag_idx, ngrid
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nnx, nny)
+    complex(kind=dp) :: cb_diag, vb_diag
+
+    mat2d = 1
+    call grid_init_circle(grid, nnx, nny, dx, dy, 0.5_dp * nnx * dx, &
+      0.5_dp * nny * dy, 2.0_dp, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+
+    ngrid = nnx * nny
+    corner_idx = 1
+    vb_diag_idx = corner_idx
+    cb_diag_idx = 6 * ngrid + corner_idx
+    vb_diag = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    cb_diag = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    do ij = HT_csr%rowptr(vb_diag_idx), HT_csr%rowptr(vb_diag_idx + 1) - 1
+      if (HT_csr%colind(ij) == vb_diag_idx) then
+        vb_diag = HT_csr%values(ij)
+        exit
+      end if
+    end do
+    do ij = HT_csr%rowptr(cb_diag_idx), HT_csr%rowptr(cb_diag_idx + 1) - 1
+      if (HT_csr%colind(ij) == cb_diag_idx) then
+        cb_diag = HT_csr%values(ij)
+        exit
+      end if
+    end do
+
+    @assertTrue(real(vb_diag) < -100.0_dp, message="Inactive valence cell has hard-wall barrier")
+    @assertTrue(real(cb_diag) > 100.0_dp, message="Inactive conduction cell has hard-wall barrier")
+
+    call csr_free(HT_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_inactive_wire_cells_are_hard_wall_barriers
+
+  @test
+  subroutine test_heterostructure_wire_hamiltonian_is_hermitian()
+    ! Material discontinuities must not make the wire Hamiltonian depend on
+    ! which triangle the Hermitian eigensolver reads.
+    integer, parameter :: nnx = 5, nny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nnx, nny)
+
+    mat2d = 1
+    mat2d(3:5, :) = 2
+    call grid_init_rect(grid, nnx, nny, dx, dy, mat2d)
+
+    allocate(material_names(2))
+    material_names(1) = "GaAs"
+    material_names(2) = "InAs"
+    allocate(params(2))
+    call paramDatabase(material_names, 2, params)
+
+    allocate(regions(2))
+    regions(1)%material = "GaAs"
+    regions(2)%material = "InAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+
+    call assert_csr_hermitian(HT_csr, "Heterostructure wire Hamiltonian")
+
+    call csr_free(HT_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_heterostructure_wire_hamiltonian_is_hermitian
 
   ! ==================================================================
   ! Helper subroutines
@@ -677,10 +898,11 @@ contains
     @assertEqual(ntot, H_csr%ncols, message="H ncols = 8*N")
     @assertTrue(H_csr%nnz > 0, message="H has nonzeros")
 
-    ! Check Hermiticity (interior only — boundary stencils break exact Hermiticity)
+    ! For the default second-order hard-wall wire discretization, the full
+    ! Hamiltonian should now be Hermitian, including boundary rows.
     block
       complex(kind=dp), allocatable :: Hd(:,:)
-      real(kind=dp) :: herr
+      real(kind=dp) :: herr, herr_full
       integer :: i, j
       integer :: si, sj, six, siy, sjx, sjy
       logical :: i_interior, j_interior
@@ -688,6 +910,7 @@ contains
       allocate(Hd(H_csr%nrows, H_csr%ncols))
       call csr_to_dense(H_csr, Hd)
       herr = 0.0_dp
+      herr_full = 0.0_dp
       do j = 1, H_csr%ncols
         sj = mod(j-1, ngrid) + 1
         sjx = mod(sj-1, nx) + 1
@@ -698,22 +921,237 @@ contains
           six = mod(si-1, nx) + 1
           siy = (si-1)/nx + 1
           i_interior = (six > 1 .and. six < nx .and. siy > 1 .and. siy < ny)
+          herr_full = max(herr_full, abs(Hd(i,j) - conjg(Hd(j,i))))
           if (i_interior .and. j_interior) then
             herr = max(herr, abs(Hd(i,j) - conjg(Hd(j,i))))
           end if
         end do
       end do
+      print *, '  Wire full-Hermiticity max error (including boundaries): ', herr_full
       deallocate(Hd)
       @assertTrue(herr < 1.0e-10_dp, message="Interior wire Hamiltonian (nx=4,ny=6) Hermitian")
+      @assertTrue(herr_full < 1.0e-10_dp, message="Full wire Hamiltonian (nx=4,ny=6) Hermitian")
     end block
 
     ! Cleanup
     call csr_free(H_csr)
-    do ij = 1, 15
+    do ij = 1, 17
       call csr_free(kpterms_2d(ij))
     end do
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
     call grid_free(grid)
   end subroutine test_ZB8bandGeneralized_nonsquare
+
+  ! ==================================================================
+  ! Wire Hamiltonian diagonal units test
+  !
+  ! Verifies that the wire Hamiltonian CB diagonal includes the
+  ! hbar^2/(2*m0) conversion factor.  Without it, the kinetic term
+  ! is ~3.8x too small because gamma/A are dimensionless while the FD
+  ! operators have units Ang^-2.
+  ! ==================================================================
+
+  @test
+  subroutine test_wire_hamiltonian_diagonal_units()
+    integer, parameter :: nx = 5, ny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ngrid, ij, band7_diag_idx
+    real(kind=dp) :: actual_cb_diag, expected_min
+
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+
+    ngrid = nx * ny
+    mat2d = 1  ! all GaAs
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+
+    ! Minimal config for ZB8bandGeneralized
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+
+    ! Interior grid point (ix=3, iy=3) in column-major flat index:
+    !   ij = (iy-1)*nx + ix = 2*5 + 3 = 13
+    ! Band 7 (CB1) offset: 6 * ngrid = 150
+    ! Global index: 150 + 13 = 163
+    band7_diag_idx = 6 * ngrid + 13
+
+    ! Without const: CB_diag ~ EC + A*(2/dx^2+2/dy^2) ~ 0.72 + 6.6 ~ 7.3
+    ! With const:    CB_diag ~ EC + A*const*(2/dx^2+2/dy^2) ~ 0.72 + 25.2 ~ 26.0
+    ! Threshold: must exceed EC + 10 = 10.72 to confirm const is present
+    expected_min = params(1)%EC + 10.0_dp
+
+    actual_cb_diag = 0.0_dp
+    do ij = HT_csr%rowptr(band7_diag_idx), HT_csr%rowptr(band7_diag_idx + 1) - 1
+      if (HT_csr%colind(ij) == band7_diag_idx) then
+        actual_cb_diag = real(HT_csr%values(ij), kind=dp)
+        exit
+      end if
+    end do
+
+    @assertTrue(actual_cb_diag > expected_min, message="Wire CB diagonal includes const factor")
+
+    ! Also verify exact expected value: EC + A*const*(2/dx² + 2/dy²)
+    block
+      real(kind=dp) :: expected_exact
+      expected_exact = params(1)%EC + params(1)%A * hbar2O2m0 * (2.0_dp/dx**2 + 2.0_dp/dy**2)
+      @assertEqual(expected_exact, actual_cb_diag, tolerance=0.5_dp)
+    end block
+
+    call csr_free(HT_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_wire_hamiltonian_diagonal_units
+
+  @test
+  subroutine test_wire_kane_couplings_at_kz_zero()
+    integer, parameter :: nx = 5, ny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ngrid, ij
+    real(kind=dp) :: pz_27, pz_57, pp_17, pm_48
+
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    complex(kind=dp), allocatable :: Hd(:,:)
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+
+    ngrid = nx * ny
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+    allocate(Hd(HT_csr%nrows, HT_csr%ncols))
+    call csr_to_dense(HT_csr, Hd)
+
+    pz_27 = maxval(abs(Hd(ngrid + 1:2*ngrid, 6*ngrid + 1:7*ngrid)))
+    pz_57 = maxval(abs(Hd(4*ngrid + 1:5*ngrid, 6*ngrid + 1:7*ngrid)))
+    pp_17 = maxval(abs(Hd(1:ngrid, 6*ngrid + 1:7*ngrid)))
+    pm_48 = maxval(abs(Hd(3*ngrid + 1:4*ngrid, 7*ngrid + 1:8*ngrid)))
+    @assertTrue(pz_27 < 1.0e-12_dp, message="Wire PZ coupling vanishes at kz=0")
+    @assertTrue(pz_57 < 1.0e-12_dp, message="Wire SO-CB PZ coupling vanishes at kz=0")
+    @assertTrue(pp_17 > 1.0e-8_dp, message="Wire PP transverse coupling survives at kz=0")
+    @assertTrue(pm_48 > 1.0e-8_dp, message="Wire PM transverse coupling survives at kz=0")
+
+    deallocate(Hd)
+    call csr_free(HT_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_wire_kane_couplings_at_kz_zero
+
+  @test
+  subroutine test_wire_cb_block_ground_state_centered()
+    integer, parameter :: nx = 11, ny = 11
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ngrid, ij, info, nb, lwork, m, il, iuu
+    real(kind=dp) :: abstol, vl, vu, center_prob, corner_prob
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    complex(kind=dp), allocatable :: Ablk(:,:), work(:), Z(:,:)
+    real(kind=dp), allocatable :: evals(:), rwork(:)
+    integer, allocatable :: iwork(:), ifail(:)
+    integer :: mat2d(nx, ny)
+
+    ngrid = nx * ny
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+
+    allocate(Ablk(ngrid, ngrid))
+    Ablk = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call csr_to_dense(kpterms_2d(5), Ablk)
+    do ij = 1, ngrid
+      Ablk(ij, ij) = Ablk(ij, ij) + cmplx(profile_2d(ij, 3), 0.0_dp, kind=dp)
+    end do
+
+    allocate(evals(ngrid), Z(ngrid, 1))
+    vl = 0.0_dp
+    vu = 0.0_dp
+    il = 1
+    iuu = 1
+    abstol = 2.0_dp * dlamch('S')
+    nb = ilaenv(1, 'ZHETRD', 'U', ngrid, -1, -1, -1)
+    lwork = max(1, (nb + 1) * ngrid)
+    allocate(work(lwork), rwork(7 * ngrid), iwork(5 * ngrid), ifail(ngrid))
+
+    call zheevx('V', 'I', 'U', ngrid, Ablk, ngrid, vl, vu, il, iuu, abstol, &
+      m, evals, Z, ngrid, work, lwork, rwork, iwork, ifail, info)
+
+    @assertEqual(0, info, message="CB block zheevx succeeds")
+    @assertEqual(1, m, message="CB block returns one eigenpair")
+
+    corner_prob = abs(Z(1, 1))**2
+    center_prob = abs(Z((ny / 2) * nx + (nx / 2) + 1, 1))**2
+
+    @assertTrue(center_prob > corner_prob, message="Isolated CB block ground state is center-enhanced")
+
+    deallocate(work, rwork, iwork, ifail, evals, Z, Ablk)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_wire_cb_block_ground_state_centered
 
 end module test_hamiltonian_2d

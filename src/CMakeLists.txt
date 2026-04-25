@@ -16,6 +16,9 @@ set(COMMON_SOURCES
     physics/sc_loop.f90
     physics/strain_solver.f90
     physics/gfactor_functions.f90
+    physics/optical_spectra.f90
+    physics/exciton.f90
+    physics/scattering.f90
 )
 
 # Create library of common code
@@ -31,6 +34,12 @@ target_include_directories(8bandkp_common PUBLIC
 
 # Enable MKL FEAST eigensolver (available when building with Intel MKL)
 target_compile_definitions(8bandkp_common PUBLIC USE_MKL_FEAST)
+
+# Enable ARPACK-NG eigensolver (optional, provides shift-invert sparse solver)
+if(ARPACK_FOUND)
+    target_compile_definitions(8bandkp_common PUBLIC USE_ARPACK)
+    target_link_libraries(8bandkp_common PUBLIC ARPACK::ARPACK)
+endif()
 
 # Preprocessor for files with #ifdef/#include
 set_source_files_properties(
@@ -50,6 +59,9 @@ set_source_files_properties(
     physics/sc_loop.f90
     physics/strain_solver.f90
     physics/gfactor_functions.f90
+    physics/optical_spectra.f90
+    physics/exciton.f90
+    physics/scattering.f90
     apps/main.f90
     apps/main_gfactor.f90
     PROPERTIES

@@ -1,243 +1,126 @@
 # 8bandkp-fdm
-Fortran implementation of 8band ZB k·p-method using finite difference method, working for bulk and quantum-wells
 
-## Disclaim:
- * This software is for my personal usage only. It comes with no warranty at all.
-Author: Tiago de Campos
+Fortran 90 solver for the **8-band zinc-blende k.p Hamiltonian** via finite differences.
 
-## Description:
- * Solves k·p Hamiltonian by finite differences method for zinc-blende semiconductors;
- * Implements a full 8-band model (6 valence bands + 2 conduction bands) using modern Fortran;
- * Based on Chuang, S. L. and Chang, C. S., Semiconductor Science and Technology, 12, 252, 1997;
- * For a description of the derivatives see https://www.wias-berlin.de/people/john/LEHRE/NUM_PDE_FUB/num_pde_fub_2.pdf;
- * Uses renormalization of the Kane interband momentum matrix element, P, suggested by Foreman B A 1997 Physical Review B 56 R12748;
- * g-factor calculation using second order Lowdin partitioning, following:
-   - Winkler, R. Spin-orbit coupling effects in two-dimensional electron and hole systems; Physics and Astronomy online Library 191; Springer, 2003
-   - Tadjine, A; Niquet, Y.-M.; Delerue, C. Universal behavior of electron g-factors in semiconductor nanostructures. Physical Review B 2017, 95, 235437
- * Supports external electric field (non-self-consistent calculation)
- * Self-consistent Schrödinger-Poisson solver with DIIS acceleration (bulk and QW, with/without electric field)
- * Parallel processing support through OpenMP
- * High-performance linear algebra operations using LAPACK/MKL
- * Selective eigenvalue computation for improved performance
- * Automatic band structure visualization with customizable plotting
+Computes electronic band structures for bulk semiconductors, quantum wells, and quantum wires. Calculates Landau g-factors via second-order Lowdin partitioning. Includes a self-consistent Schrodinger-Poisson solver with DIIS acceleration.
 
-## Project Structure
+Based on Chuang & Chang (1997) with Foreman renormalization and Winkler g-factor formalism. GPL v3.0, authored by Tiago de Campos.
 
-The project is organized into the following directories:
+If you use this code, please cite: [10.1021/acsaelm.0c00269](https://doi.org/10.1021/acsaelm.0c00269)
 
-### Source Code (`src/`)
-* `core/`: Core functionality and definitions
-  - `defs.f90`: Type definitions and constants
-  - `parameters.f90`: Material parameters and configuration
-  - `utils.f90`: Utility functions and common operations
+## Build
 
-* `math/`: Mathematical operations and numerical methods
-  - `mkl_spblas.f90`: MKL sparse BLAS interface
-  - `mkl_sparse_handle.f90`: MKL sparse matrix handling
-  - `finitedifferences.f90`: Finite difference method implementation
+**Prerequisites:** Fortran compiler (gfortran), BLAS/LAPACK, FFTW3, CMake >= 3.15. For best performance use Intel MKL.
 
-* `physics/`: Physics calculations and models
-  - `hamiltonianConstructor.f90`: k·p Hamiltonian construction
-  - `gfactor_functions.f90`: g-factor calculations
-  - `poisson.f90`: Poisson solver (box-integration FD, Thomas algorithm)
-  - `charge_density.f90`: Charge density from k.p eigenstates with k_∥ sampling
-  - `sc_loop.f90`: Self-consistent Schrödinger-Poisson iteration driver
-
-* `io/`: Input/Output operations
-  - `outputFunctions.f90`: File I/O and data output
-  - `input_parser.f90`: Input configuration parser
-
-* `apps/`: Main applications
-  - `main.f90`: Band structure calculation program
-  - `main_gfactor.f90`: g-factor calculation program
-
-### Tests (`tests/`)
-* `unit/`: pFUnit unit tests for individual modules (defs, FD, utils, parameters, Hamiltonian)
-* `integration/`: Shell scripts for full-executable regression tests
-* `regression/`: Reference configs, golden data, and `compare_output.py`
-
-### Documentation (`docs/`)
-* `api/`: API documentation and code reference
-* `user/`: User guides and tutorials
-* `examples/`: Example configurations and use cases
-
-### Build System
-* `CMakeLists.txt`: Main CMake configuration
-* `src/CMakeLists.txt`: Source build configuration
-* `cmake/`: CMake modules and find scripts
-
-### Other
-* `scripts/`: Utility and plotting scripts
-* `output/`: Generated data and results
-* `build/`: Build directory (created during compilation)
-
-## Key Features:
- * Full 8-band k·p Hamiltonian implementation
- * Support for both bulk and quantum well calculations
- * Finite difference method for spatial discretization
- * Multiple material layer support for heterostructures
- * Band structure calculations along arbitrary k-vector directions
- * g-factor calculations for spin-related properties
- * External electric field effects
- * Self-consistent Schrödinger-Poisson calculations:
-   - Iterative SP loop with linear + DIIS/Pulay mixing
-   - Explicit k_∥ sampling for charge density (handles nonparabolicity)
-   - Per-layer doping specification (n-type and p-type)
-   - Fermi level via charge neutrality or fixed value
-   - Box-integration Poisson solver with variable dielectric
-   - Dirichlet-Dirichlet and Dirichlet-Neumann boundary conditions
-   - Works for both bulk and QW, with and without external field
- * Efficient sparse matrix techniques
- * OpenMP parallelization for improved performance
- * Selective eigenvalue computation:
-   - Bulk: Up to 8 bands (2 CB + 6 VB)
-   - Quantum wells: Up to 2×fdStep CB and 6×fdStep VB states
- * Automated visualization tools for band structure and wavefunctions
-
-## Use:
-
-### General info
-
- * makefile provided with MKL and standard LAPACK/BLAS options
- * example input.cfg provided
- * Built-in material parameters for common semiconductors (check parameters.f90)
- * Additional material parameters can be found in Vurgaftman, I. Meyer, J. R. and Ram-Mohan, L. R., Journal of Applied Physics, 11, 5815, 2001
-
-### Compilation steps
-
-#### Using CMake (Recommended)
+Ubuntu:
 ```bash
-# Configure (requires Intel MKL)
+sudo apt install gfortran gcc g++ liblapack-dev libblas-dev libfftw3-dev
+```
+
+```bash
+# Configure (with MKL)
 cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl
 
 # Build
 cmake --build build
 
-# Executables are at build/src/bandStructure and build/src/gfactorCalculation
-```
-
-#### Using Make (thin CMake wrapper)
-```bash
+# Or use the Make wrapper
 make all       # Configure + build both executables
 make run       # Build and run bandStructure
-make gfactor   # Build and run gfactorCalculation
 make clean     # Remove build/ directory
 ```
 
-#### Running Tests
-```bash
-# Configure with tests enabled (pFUnit optional — regression tests work without it)
-cmake -G Ninja -B build \
-    -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
-    -DBUILD_TESTING=ON \
-    -DPFUNIT_DIR=$HOME/.local/pfunit/PFUNIT-<ver>/cmake
+Executables: `build/src/bandStructure` and `build/src/gfactorCalculation`.
 
+## Quick Start
+
+Write one of the configs below to `input.cfg`, then run `./build/src/bandStructure` or `./build/src/gfactorCalculation`. See `tests/regression/configs/` for more examples and [docs/reference/input-reference.md](docs/reference/input-reference.md) for the full format.
+
+**Bulk** (GaAs, k along x):
+```
+waveVector: kx            waveVectorMax: 0.1      waveVectorStep: 11
+confinement: 0            FDstep: 101             FDorder: 2
+numLayers: 1              material1: GaAs
+numcb: 2                  numvb: 6
+ExternalField: 0 EF       EFParams: 0.0005
+```
+
+**Quantum well** (AlSbW/GaSbW/InAsW):
+```
+waveVector: kx            waveVectorMax: 0.1      waveVectorStep: 11
+confinement: 1            FDstep: 101             FDorder: 2
+numLayers: 3              numcb: 32               numvb: 32
+material1: AlSbW -250  250 0
+material2: GaSbW -135  135 0.2414
+material3: InAsW  -35   35 -0.0914
+ExternalField: 0 EF       EFParams: 0.0005
+```
+
+**g-factor** (bulk GaAs conduction band):
+```
+waveVector: k0            waveVectorMax: 0.1      waveVectorStep: 0
+confinement: 0            FDstep: 1               FDorder: 2
+numLayers: 1              material1: GaAs
+numcb: 2                  numvb: 6                whichBand: 0   bandIdx: 1
+ExternalField: 0 EF       EFParams: 0.0005
+```
+
+**Self-consistent SP** (GaAs/AlAs QW, n-doped well):
+```
+waveVector: k0            waveVectorMax: 0.0      waveVectorStep: 1
+confinement: 1            FDstep: 101             FDorder: 2
+numLayers: 3              numcb: 4                numvb: 8
+material1: AlAs -150 150 0   material2: GaAs -50 50 0   material3: AlAs -150 150 0
+ExternalField: 0 EF       EFParams: 0.0005
+SC: 1   max_iter: 50   tolerance: 1.0e-6   mixing_alpha: 0.3   diis_history: 7
+temperature: 300.0   fermi_mode: 1   fermi_level: 1.5   num_kpar: 21   kpar_max: 0.1
+bc_type: DD   doping1: 0.0 0.0   doping2: 1.0e18 0.0   doping3: 0.0 0.0
+```
+
+**Quantum wire** (GaAs rectangular cross section):
+```
+waveVector: kz            waveVectorMax: 0.1      waveVectorStep: 5
+confinement: 2            wire_nx: 11             wire_ny: 11
+wire_dx: 2.0              wire_dy: 2.0            wire_shape: rectangle
+wire_width: 22.0          wire_height: 22.0
+numRegions: 1             region: GaAs 0.0 100.0  numcb: 4   numvb: 4
+```
+
+## Documentation
+
+**Lectures** (`docs/lecture/`) -- pedagogical progression from k.p theory to quantum wires:
+
+[00 Quickstart](docs/lecture/00-quickstart.md) | [01 Bulk](docs/lecture/01-bulk-band-structure.md) | [02 QW](docs/lecture/02-quantum-well.md) | [03 Wavefunctions](docs/lecture/03-wavefunctions.md) | [04 Strain](docs/lecture/04-strain.md) | [05 g-Factor](docs/lecture/05-gfactor.md) | [06 Optical](docs/lecture/06-optical-properties.md) | [07 SC-SP](docs/lecture/07-self-consistent-sp.md) | [08 Wire](docs/lecture/08-quantum-wire.md) | [09 Numerics](docs/lecture/09-numerical-methods.md) | [10 QCSE](docs/lecture/10-qcse.md) | [11 Convergence](docs/lecture/11-convergence.md) | [12 Extending](docs/lecture/12-extending-the-code.md)
+
+**Reference** (`docs/reference/`): [Input parameters](docs/reference/input-reference.md) | [Output files](docs/reference/output-reference.md) | [Benchmarks](docs/reference/benchmarks.md)
+
+`input.cfg` guidance:
+- Follow the canonical block order used in `tests/regression/configs/`.
+- Optional block entry labels are name-based (`optics:`, `exciton:`, `scattering:`, `feast_emin:`, `strain:`), but parameters inside each block still use the documented order.
+
+## Testing
+
+```bash
+cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
+    -DBUILD_TESTING=ON -DPFUNIT_DIR=$HOME/.local/pfunit/PFUNIT-<ver>/cmake
 cmake --build build
-
-ctest --test-dir build              # all tests
-ctest --test-dir build -L unit      # pFUnit unit tests only
-ctest --test-dir build -L regression  # regression tests only
-ctest --test-dir build -L sc          # self-consistent Poisson tests only
-ctest --test-dir build -V           # verbose output
+make test
+# or: ctest --test-dir build              # all
+#     ctest --test-dir build -L unit      # pFUnit unit tests
+#     ctest --test-dir build -L regression  # regression vs golden output
 ```
 
-pFUnit can be installed from source:
-```bash
-git clone https://github.com/Goddard-Fortran-Ecosystem/pFUnit
-cd pFUnit && mkdir build && cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/.local/pfunit && make install
+## Architecture
+
+```
+defs -> parameters -> utils -> finitedifferences -> hamiltonianConstructor -> gfactor_functions
+                                  finitedifferences -> poisson
+                                  finitedifferences -> charge_density -> sc_loop
+                   input_parser    outputFunctions
 ```
 
-CMake build options:
-* BUILD_TESTING: Enable/disable tests (default: OFF)
+Executables: `bandStructure` (band structure vs k), `gfactorCalculation` (g-factor at k=0).
 
-This will generate two executable files:
- * bandStructure: for electronic band structure calculations
- * gfactorCalculation: for g-factor computations
+## License
 
-### Input file structure
-
- * waveVector: reciprocal space direction (kx, ky, or kz). For confined systems, use kx or ky (kz is the confined direction)
- * waveVectorMax: percentage of Brillouin Zone to compute (keep close to zone center for k·p validity)
- * waveVectorStep: number of k-points between k=0 and k=kmax
- * confinement: 0 for bulk, 1 for quantum well
- * FDStep: number of spatial discretization points
- * numLayers: number of layers in the quantum well structure (centered at 0)
- * material definitions:
-    * material1: host material (defines outer regions)
-    * material2...N: well/barrier materials with positions and band offsets
- * numcb: number of conduction bands to compute
-    * For bulk: maximum 2
-    * For quantum wells: maximum 2 × fdstep
- * numvb: number of valence bands to compute
-    * For bulk: maximum 6
-    * For quantum wells: maximum 6 × fdstep
- * ExternalField: 0/1 and type (EF for electric field)
- * EFParams: field strength parameter
- * SC: self-consistency enable flag (0/1) and parameters
- * doping: per-layer donor (ND) and acceptor (NA) concentrations
-
-### Output files
-
-The program generates several output files depending on the calculation type:
-
-#### Band Structure Calculation (bandStructure):
-1. `eigenvalues.dat`: Contains the energy eigenvalues for each k-point
-   * Format: k-vector value followed by energy values
-   * For bulk: outputs 8 bands
-   * For quantum wells: outputs all requested bands (numcb + numvb)
-
-2. `eigenfunctions_k_#####_ev_#####.dat`: Wavefunctions at k=0
-   * Generated for each eigenstate
-   * For bulk: only the 8 main bands
-   * For quantum wells: includes position (z) and wavefunction components for all bands
-   * Format: z-position followed by wavefunction components for each band
-
-3. `parts.dat`: Band character analysis
-   * For bulk: direct eigenvector components
-   * For quantum wells: integrated probability densities for each band component
-   * Format: 8 columns representing contribution from each band
-
-4. `fort.101`: Potential profile (quantum wells only)
-   * Contains the potential profile along the growth direction
-   * Format: z-position and potential values for different bands
-
-#### G-factor Calculation (gfactorCalculation):
-* Similar output structure to band structure calculation
-* Additional g-factor specific results for magnetic field effects
-* Includes Zeeman splitting information
-
-### Pre-requisits
-
- * Fortran compiler (gfortran recommended)
- * BLAS and LAPACK libraries
- * FFTW3 library
- * OpenMP support (included in most compilers)
-
-#### Ubuntu installation:
-```bash
-sudo apt install gfortran gcc g++ liblapack-dev libblas-dev libfftw3-dev
-```
-
-For optimal performance, Intel MKL is recommended (see Intel's website for installation)
-
-# Citation
-
-This code has been used in several published works. If you use it, please cite:
-
-Primary citation: 10.1021/acsaelm.0c00269
-
-Additional relevant works:
- * 10.1063/1.5096970 
- * 10.1088/1361-648X/ab38a1
- * 10.1103/PhysRevB.97.245402
- * 10.1088/0268-1242/31/10/105002
- * 10.1103/PhysRevB.93.235204
- * 10.1063/1.4901209
-
-# LICENSE
 GNU General Public License v3.0
-Please cite 10.1021/acsaelm.0c00269 or one of the other listed articles if it better suits your work.
-
-
-

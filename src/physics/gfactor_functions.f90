@@ -216,6 +216,13 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
   complex(kind=dp) :: aux(8,8), aux_v(8), aux1_v(8), Y(8)
   complex(kind=dp), allocatable, dimension(:) :: v, Y1
 
+  if (present(dz)) then
+    if (abs(dz) < tolerance) then
+      print *, 'Error: pMatrixEleCalc called with dz=0. Grid spacing is zero.'
+      stop 1
+    end if
+  end if
+
   dimax = size(state1,1)
   fdstep = dimax/8
 
@@ -284,7 +291,7 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
 
 end subroutine pMatrixEleCalc
 
-subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
+subroutine gfactorCalculation(tensor, g_eff, whichBand, bandIdx, numcb, numvb, &
   & cb_state, vb_state, cb_value, vb_value, nlayers, params, startz, endz, &
   & profile, kpterms, dz)
 
@@ -292,6 +299,7 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
 
 
   complex(kind=dp), intent(inout), dimension(:,:,:) :: tensor
+  real(kind=dp), intent(out), dimension(3) :: g_eff
   integer, intent(in) :: whichBand !=0 cb, =1 vb
   integer, intent(in) :: bandIdx !idx of band to compute. 1, 2, 3 ... (mostly for confined systems)
   integer, intent(in) :: numcb, numvb ! total number of cb and vb bands
@@ -637,6 +645,15 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
   tensor(1:2,1:2,1:3) = -cmplx(0.0_dp, 1.0_dp, kind=dp)*tensor(1:2,1:2,1:3)/hbar2O2m0
   tensor(1:2,1:2,1:3) = tensor(1:2,1:2,1:3) - (g_free/2.0_dp)*sigma(1:2,1:2,1:3)
 
+  ! Extract g-factor via trace projection: g_d = -2 * Re[Tr(G*sigma^dag)] / Tr(sigma*sigma^dag)
+  do d = 1,3
+    denom = sum(abs(sigma(1:2,1:2,d))**2)
+    if (denom > 1.0e-12_dp) then
+      g_eff(d) = -2.0_dp * sum(real(tensor(1:2,1:2,d) * conjg(sigma(1:2,1:2,d)), kind=dp)) / denom
+    else
+      g_eff(d) = 0.0_dp
+    end if
+  end do
 
 end subroutine gfactorCalculation
 
@@ -696,69 +713,43 @@ complex(kind=dp) function sigmaElem_2d(state1, state2, dir, grid)
     end do
   end do
 
-  ! Integrate with dx*dy (uniform grid)
-  sigmaElem_2d = sigmaElem_2d * cmplx(grid%dx * grid%dy, 0.0_dp, kind=dp)
+  ! Bare sum — no dx*dy weight, consistent with pMatrixEleCalc_2d (bare zdotc).
 
 end function sigmaElem_2d
 
 
 ! ----------------------------------------------------------------------
-! pMatrixEleCalc_2d: Compute <state1|H_pert_d|state2> for wire mode.
+! pMatrixEleCalc_2d: Compute <state1|vel_d|state2> for wire mode.
 !
-! Builds a wire perturbation Hamiltonian in CSR format using
-! ZB8bandGeneralized with g='g' at unit kz, then uses CSR SpMV
-! to compute the matrix element.
+! Uses a precomputed velocity CSR matrix for the specified direction
+! to compute the matrix element via CSR SpMV.
 ! ----------------------------------------------------------------------
 subroutine pMatrixEleCalc_2d(Pele, direction, state1, state2, &
-  & profile_2d, kpterms_2d, cfg)
+  & vel)
 
   complex(kind=dp), intent(inout) :: Pele
   integer, intent(in) :: direction
   complex(kind=dp), intent(in), dimension(:) :: state1, state2
-  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
-  type(csr_matrix), intent(in) :: kpterms_2d(:)
-  type(simulation_config), intent(in) :: cfg
+  type(csr_matrix), intent(in) :: vel(3)
 
-  type(csr_matrix) :: HT_csr
   complex(kind=dp), allocatable :: Y(:)
   complex(kind=dp) :: alpha, beta, zdotc
   integer :: dimax
 
-  real(kind=dp) :: kz_pert
-
   dimax = size(state1, 1)
 
-  ! Set unit perturbation in the specified direction.
-  ! For wire mode, directions 1 (x) and 2 (y) are confinement directions
-  ! with separate d/dx and d/dy gradient operators. Direction 3 (z) is the
-  ! free wire axis with kz perturbation.
-  kz_pert = 0.0_dp
-  select case(direction)
-  case(1)
-    call ZB8bandGeneralized(HT_csr, kz_pert, profile_2d, kpterms_2d, cfg, g='g1')
-  case(2)
-    call ZB8bandGeneralized(HT_csr, kz_pert, profile_2d, kpterms_2d, cfg, g='g2')
-  case(3)
-    kz_pert = 1.0_dp
-    call ZB8bandGeneralized(HT_csr, kz_pert, profile_2d, kpterms_2d, cfg, g='g3')
-  case default
-    print *, 'Error: pMatrixEleCalc_2d: direction must be 1, 2, or 3, got:', direction
-    stop 1
-  end select
-
-  ! SpMV: Y = HT_csr * state2
+  ! SpMV: Y = vel(direction) * state2
   allocate(Y(dimax))
   Y = cmplx(0.0_dp, 0.0_dp, kind=dp)
   alpha = cmplx(1.0_dp, 0.0_dp, kind=dp)
   beta = cmplx(0.0_dp, 0.0_dp, kind=dp)
 
-  call csr_spmv(HT_csr, state2, Y, alpha, beta)
+  call csr_spmv(vel(direction), state2, Y, alpha, beta)
 
   ! Matrix element: <state1|Y>
   Pele = zdotc(dimax, state1, 1, Y, 1)
 
   deallocate(Y)
-  call csr_free(HT_csr)
 
 end subroutine pMatrixEleCalc_2d
 
@@ -768,17 +759,14 @@ end subroutine pMatrixEleCalc_2d
 ! Calls pMatrixEleCalc_2d for the specified direction.
 ! ----------------------------------------------------------------------
 subroutine compute_pele_2d(Pele, direction, state_a, state_b, &
-  & profile_2d, kpterms_2d, cfg)
+  & vel)
 
   complex(kind=dp), intent(inout) :: Pele
   integer, intent(in) :: direction
   complex(kind=dp), intent(in), dimension(:) :: state_a, state_b
-  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
-  type(csr_matrix), intent(in) :: kpterms_2d(:)
-  type(simulation_config), intent(in) :: cfg
+  type(csr_matrix), intent(in) :: vel(3)
 
-  call pMatrixEleCalc_2d(Pele, direction, state_a, state_b, &
-    profile_2d, kpterms_2d, cfg)
+  call pMatrixEleCalc_2d(Pele, direction, state_a, state_b, vel)
 
 end subroutine compute_pele_2d
 
@@ -790,20 +778,20 @@ end subroutine compute_pele_2d
 ! sigmaElem_2d for spatial integration and compute_pele_2d for
 ! momentum matrix elements.  Works with 2D sparse wire Hamiltonians.
 ! ----------------------------------------------------------------------
-subroutine gfactorCalculation_wire(tensor, whichBand, bandIdx, numcb, numvb, &
-  & cb_state, vb_state, cb_value, vb_value, cfg, profile_2d, kpterms_2d)
+subroutine gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, numcb, numvb, &
+  & cb_state, vb_state, cb_value, vb_value, cfg, vel)
 
   implicit none
 
   complex(kind=dp), intent(inout), dimension(:,:,:) :: tensor
+  real(kind=dp), intent(out), dimension(3) :: g_eff
   integer, intent(in) :: whichBand
   integer, intent(in) :: bandIdx
   integer, intent(in) :: numcb, numvb
   complex(kind=dp), intent(in), dimension(:,:) :: cb_state, vb_state
   real(kind=dp), intent(in), dimension(:) :: cb_value, vb_value
   type(simulation_config), intent(in) :: cfg
-  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
-  type(csr_matrix), intent(in) :: kpterms_2d(:)
+  type(csr_matrix), intent(in) :: vel(3)
 
   integer :: d, i, j, k, n, m, l, ii, jj
   integer :: mod1, mod2
@@ -876,13 +864,13 @@ subroutine gfactorCalculation_wire(tensor, whichBand, bandIdx, numcb, numvb, &
             Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
 
             call compute_pele_2d(Pele1, mod1, cb_state(:,n), vb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele2, mod2, vb_state(:,l), cb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele3, mod2, cb_state(:,n), vb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele4, mod1, vb_state(:,l), cb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
 
             denom = (cb_value(n) - vb_value(l)) + (cb_value(m) - vb_value(l))
             if (abs(denom) > tolerance) then
@@ -911,13 +899,13 @@ subroutine gfactorCalculation_wire(tensor, whichBand, bandIdx, numcb, numvb, &
             Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
 
             call compute_pele_2d(Pele1, mod1, cb_state(:,n), cb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele2, mod2, cb_state(:,l), cb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele3, mod2, cb_state(:,n), cb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele4, mod1, cb_state(:,l), cb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
 
             denom = (cb_value(n) - cb_value(l)) + (cb_value(m) - cb_value(l))
             if (abs(denom) > tolerance) then
@@ -986,13 +974,13 @@ subroutine gfactorCalculation_wire(tensor, whichBand, bandIdx, numcb, numvb, &
             Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
 
             call compute_pele_2d(Pele1, mod1, vb_state(:,n), cb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele2, mod2, cb_state(:,l), vb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele3, mod2, vb_state(:,n), cb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele4, mod1, cb_state(:,l), vb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
 
             denom = (vb_value(n) - cb_value(l)) + (vb_value(m) - cb_value(l))
             if (abs(denom) > tolerance) then
@@ -1021,13 +1009,13 @@ subroutine gfactorCalculation_wire(tensor, whichBand, bandIdx, numcb, numvb, &
             Pele1 = ZERO; Pele2 = ZERO; Pele3 = ZERO; Pele4 = ZERO
 
             call compute_pele_2d(Pele1, mod1, vb_state(:,n), vb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele2, mod2, vb_state(:,l), vb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele3, mod2, vb_state(:,n), vb_state(:,l), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
             call compute_pele_2d(Pele4, mod1, vb_state(:,l), vb_state(:,m), &
-              profile_2d, kpterms_2d, cfg)
+              vel)
 
             denom = (vb_value(n) - vb_value(l)) + (vb_value(m) - vb_value(l))
             if (abs(denom) > tolerance) then
@@ -1050,6 +1038,16 @@ subroutine gfactorCalculation_wire(tensor, whichBand, bandIdx, numcb, numvb, &
   tensor(1:2,1:2,1:3) = -cmplx(0.0_dp, 1.0_dp, kind=dp)*tensor(1:2,1:2,1:3)/hbar2O2m0
   tensor(1:2,1:2,1:3) = tensor(1:2,1:2,1:3) - (g_free/2.0_dp)*sigma(1:2,1:2,1:3)
 
+  ! Extract g-factor via trace projection: g_d = -2 * Re[Tr(G*sigma^dag)] / Tr(sigma*sigma^dag)
+  do d=1,3
+    denom = sum(abs(sigma(1:2,1:2,d))**2)
+    if (denom > 1.0e-12_dp) then
+      g_eff(d) = -2.0_dp * sum(real(tensor(1:2,1:2,d) * conjg(sigma(1:2,1:2,d)), kind=dp)) / denom
+    else
+      g_eff(d) = 0.0_dp
+    end if
+  end do
+
 end subroutine gfactorCalculation_wire
 
 
@@ -1063,16 +1061,14 @@ end subroutine gfactorCalculation_wire
 ! ----------------------------------------------------------------------
 subroutine compute_optical_matrix_wire(transitions, num_trans, &
   & cb_state, vb_state, cb_value, vb_value, numcb, numvb, &
-  & profile_2d, kpterms_2d, cfg)
+  & vel)
 
   type(optical_transition), allocatable, intent(out) :: transitions(:)
   integer, intent(out) :: num_trans
   complex(kind=dp), intent(in), dimension(:,:) :: cb_state, vb_state
   real(kind=dp), intent(in), dimension(:) :: cb_value, vb_value
   integer, intent(in) :: numcb, numvb
-  real(kind=dp), intent(in), dimension(:,:) :: profile_2d
-  type(csr_matrix), intent(in) :: kpterms_2d(:)
-  type(simulation_config), intent(in) :: cfg
+  type(csr_matrix), intent(in) :: vel(3)
 
   integer :: i, j, dir, idx
   real(kind=dp) :: dE, sum_p
@@ -1101,7 +1097,7 @@ subroutine compute_optical_matrix_wire(transitions, num_trans, &
         do dir = 1, 3
           Pele = ZERO
           call compute_pele_2d(Pele, dir, cb_state(:,i), vb_state(:,j), &
-            & profile_2d, kpterms_2d, cfg)
+            & vel)
 
           select case(dir)
           case(1)
@@ -1130,6 +1126,89 @@ subroutine compute_optical_matrix_wire(transitions, num_trans, &
   end do
 
 end subroutine compute_optical_matrix_wire
+
+
+! ----------------------------------------------------------------------
+! compute_optical_matrix_qw: Compute inter-subband optical transitions
+! for 1D-confined quantum wells.
+!
+! For each CB-VB pair, computes the transition energy, momentum matrix
+! elements |<psi_CB|p_dir|psi_VB>|^2 in x, y, z directions, and the
+! oscillator strength f = sum(|dH/dk|^2) / (hbar2O2m0 * dE).
+! Uses pMatrixEleCalc for momentum matrix elements.
+! ----------------------------------------------------------------------
+subroutine compute_optical_matrix_qw(transitions, num_trans, &
+  & cb_state, vb_state, cb_value, vb_value, numcb, numvb, &
+  & nlayers, params, profile, kpterms, startz, endz, dz)
+
+  type(optical_transition), allocatable, intent(out) :: transitions(:)
+  integer, intent(out) :: num_trans
+  complex(kind=dp), intent(in), dimension(:,:) :: cb_state, vb_state
+  real(kind=dp), intent(in), dimension(:) :: cb_value, vb_value
+  integer, intent(in) :: numcb, numvb
+  integer, intent(in) :: nlayers
+  type(paramStruct), intent(in) :: params(nlayers)
+  real(kind=dp), intent(in), dimension(:,:) :: profile
+  real(kind=dp), intent(in), dimension(:,:,:) :: kpterms
+  real(kind=dp), intent(in) :: startz, endz, dz
+
+  integer :: i, j, dir, idx
+  real(kind=dp) :: dE, sum_p
+  complex(kind=dp) :: Pele
+
+  num_trans = numcb * numvb
+  allocate(transitions(num_trans))
+
+  idx = 0
+  do i = 1, numcb
+    do j = 1, numvb
+      idx = idx + 1
+
+      ! Transition energy
+      dE = cb_value(i) - vb_value(j)
+      transitions(idx)%cb_idx = i
+      transitions(idx)%vb_idx = j
+      transitions(idx)%energy = dE
+
+      ! Momentum matrix elements in each direction
+      transitions(idx)%px = 0.0_dp
+      transitions(idx)%py = 0.0_dp
+      transitions(idx)%pz = 0.0_dp
+
+      if (dE > 0.0_dp) then
+        do dir = 1, 3
+          Pele = ZERO
+          call pMatrixEleCalc(Pele, dir, cb_state(:,i), vb_state(:,j), &
+            & nlayers, params, &
+            & profile=profile, kpterms=kpterms, &
+            & startz=startz, endz=endz, dz=dz)
+
+          select case(dir)
+          case(1)
+            transitions(idx)%px = real(Pele * conjg(Pele), kind=dp)
+          case(2)
+            transitions(idx)%py = real(Pele * conjg(Pele), kind=dp)
+          case(3)
+            transitions(idx)%pz = real(Pele * conjg(Pele), kind=dp)
+          end select
+        end do
+      end if
+
+      ! Oscillator strength: f = sum(|dH/dk|^2) / (hbar^2/(2*m0) * dE)
+      sum_p = transitions(idx)%px + transitions(idx)%py + transitions(idx)%pz
+      if (dE > tolerance) then
+        transitions(idx)%oscillator_strength = sum_p / (hbar2O2m0 * dE)
+      else
+        transitions(idx)%oscillator_strength = 0.0_dp
+        if (dE > 0.0_dp .and. dE <= tolerance) then
+          print *, 'WARNING: near-zero transition energy, cb=', i, 'vb=', j, 'dE=', dE
+        end if
+      end if
+
+    end do
+  end do
+
+end subroutine compute_optical_matrix_qw
 
 
 end module gfactorFunctions

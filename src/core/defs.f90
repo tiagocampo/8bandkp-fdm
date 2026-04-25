@@ -36,9 +36,32 @@ module definitions
   real(kind=dp), parameter :: SQR2o3 = dsqrt(2.0_dp/3.0_dp)
   real(kind=dp), parameter :: RQS3 = 1.0_dp/SQR3
   real(kind=dp), parameter :: RQS2 = 1.0_dp/SQR2
+  real(kind=dp), parameter :: SQR3o2 = dsqrt(1.5_dp)   ! sqrt(3/2) = SQR3 * RQS2
   complex(kind=dp), parameter :: ZERO = cmplx(0.0_dp, 0.0_dp, kind=dp)
   complex(kind=dp), parameter :: UM = cmplx(1.0_dp, 0.0_dp, kind=dp)
 
+  ! Scalar Bir-Pikus strain result for a single grid point.
+  type :: bp_scalar
+    real(kind=dp) :: delta_Ec    = 0.0_dp   ! CB: ac*Tr(eps)
+    real(kind=dp) :: delta_EHH   = 0.0_dp   ! HH: -P_eps + Q_eps
+    real(kind=dp) :: delta_ELH   = 0.0_dp   ! LH: -P_eps - Q_eps
+    real(kind=dp) :: delta_ESO   = 0.0_dp   ! SO: -P_eps
+    complex(kind=dp) :: R_eps    = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    complex(kind=dp) :: S_eps    = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    real(kind=dp) :: QT2_eps     = 0.0_dp   ! Q_eps - T_eps = 2*Q_eps
+  end type bp_scalar
+
+  ! Per-grid-point Bir-Pikus strain Hamiltonian components.
+  ! Arrays have length ngrid; unallocated when unstrained.
+  type :: bir_pikus_blocks
+    real(kind=dp), allocatable :: delta_Ec(:)    ! CB bands 7,8
+    real(kind=dp), allocatable :: delta_EHH(:)   ! HH bands 1,4
+    real(kind=dp), allocatable :: delta_ELH(:)   ! LH bands 2,3
+    real(kind=dp), allocatable :: delta_ESO(:)   ! SO bands 5,6
+    complex(kind=dp), allocatable :: R_eps(:)    ! VB-VB coupling
+    complex(kind=dp), allocatable :: S_eps(:)    ! VB-VB coupling
+    real(kind=dp), allocatable :: QT2_eps(:)     ! VB-SO coupling (2*Q_eps)
+  end type bir_pikus_blocks
 
   type wavevector
 
@@ -62,6 +85,7 @@ module definitions
     real(kind=dp) :: av    = 0.0_dp    ! VB hydrostatic deformation potential (eV)
     real(kind=dp) :: b_dp  = 0.0_dp    ! shear deformation potential, tetragonal (eV)
     real(kind=dp) :: d_dp  = 0.0_dp    ! shear deformation potential, rhombohedral (eV)
+    real(kind=dp) :: strainSubstrate = 0.0_dp  ! substrate lattice constant for bulk biaxial strain (Angstrom)
 
   end type paramStruct
 
@@ -168,6 +192,45 @@ module definitions
     real(kind=dp) :: oscillator_strength  ! dimensionless, = sum|p|^2 / (hbar2O2m0 * dE)
   end type
 
+  ! ------------------------------------------------------------------
+  ! Optical spectra parameters (Tier 1: absorption, gain, ISBT).
+  ! Default values correspond to a typical GaAs-based QW at 300 K.
+  ! ------------------------------------------------------------------
+  type optics_config
+    logical          :: enabled = .false.
+    real(kind=dp)    :: linewidth_lorentzian = 0.030_dp   ! eV FWHM
+    real(kind=dp)    :: linewidth_gaussian = 0.005_dp     ! eV FWHM
+    real(kind=dp)    :: refractive_index = 3.3_dp
+    real(kind=dp)    :: temperature = 300.0_dp            ! K
+    integer          :: num_energy_points = 200
+    real(kind=dp)    :: E_min = 0.5_dp                    ! eV
+    real(kind=dp)    :: E_max = 2.0_dp                    ! eV
+    real(kind=dp)    :: carrier_density = 0.0_dp          ! 2D cm^-2 (0=equilibrium)
+    ! Gain
+    logical          :: gain_enabled = .false.
+    real(kind=dp)    :: gain_carrier_density = 3.0e12_dp  ! 2D cm^-2
+    ! ISBT
+    logical          :: isbt_enabled = .false.
+  end type optics_config
+
+  ! ------------------------------------------------------------------
+  ! Exciton solver parameters (Tier 2).
+  ! ------------------------------------------------------------------
+  type exciton_config
+    logical          :: enabled = .false.
+    character(len=20) :: method = 'variational'
+  end type exciton_config
+
+  ! ------------------------------------------------------------------
+  ! Phonon scattering parameters (Tier 3).
+  ! ------------------------------------------------------------------
+  type scattering_config
+    logical          :: enabled = .false.
+    real(kind=dp)    :: phonon_energy = 0.036_dp   ! eV (LO phonon)
+    real(kind=dp)    :: eps_inf = 10.9_dp          ! high-freq dielectric
+    real(kind=dp)    :: eps_0 = 12.9_dp            ! static dielectric
+  end type scattering_config
+
   type simulation_config
     integer :: confinement = 0
     integer :: fdStep = 1
@@ -178,7 +241,7 @@ module definitions
     integer :: evnum = 8
     integer :: waveVectorStep = 100
     integer :: ExternalField = 0
-    character(len=2) :: waveVector = 'k0'
+    character(len=4) :: waveVector = 'k0'
     character(len=1) :: confDir = 'n'
     character(len=2) :: EFtype = '  '
     real(kind=dp) :: waveVectorMax = 0.0_dp
@@ -208,6 +271,18 @@ module definitions
     type(wire_geometry) :: wire_geom             ! shape + dimensions
     integer            :: numRegions = 0         ! number of material regions
     type(region_spec), allocatable :: regions(:) ! region specifications
+
+    ! ---- FEAST eigensolver tuning ----
+    real(kind=dp)      :: feast_emin = 0.0_dp   ! manual energy window (0=auto)
+    real(kind=dp)      :: feast_emax = 0.0_dp   ! manual energy window (0=auto)
+    integer            :: feast_m0 = 0           ! manual subspace size (0=auto: 2*nev)
+
+    type(bir_pikus_blocks)     :: strain_blocks    ! precomputed strain data
+
+    ! ---- Optical spectra / gain / exciton / scattering ----
+    type(optics_config)      :: optics       ! optical spectra parameters
+    type(exciton_config)     :: exciton      ! exciton solver parameters
+    type(scattering_config)  :: scattering   ! phonon scattering parameters
   end type simulation_config
 
   type group

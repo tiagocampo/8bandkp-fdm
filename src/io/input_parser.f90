@@ -13,6 +13,110 @@ module input_parser
 
 contains
 
+  pure function to_lower_ascii(text) result(lowered)
+    character(len=*), intent(in) :: text
+    character(len=len(text)) :: lowered
+    integer :: i, code
+
+    lowered = text
+    do i = 1, len(text)
+      code = iachar(text(i:i))
+      if (code >= iachar('A') .and. code <= iachar('Z')) then
+        lowered(i:i) = achar(code + 32)
+      end if
+    end do
+  end function to_lower_ascii
+
+  subroutine read_next_data_line(data_unit, line, status)
+    integer(kind=4), intent(in) :: data_unit
+    character(len=*), intent(out) :: line
+    integer, intent(out) :: status
+
+    do
+      read(data_unit, '(A)', iostat=status) line
+      if (status /= 0) return
+      if (len_trim(line) == 0) cycle
+      if (line(1:1) == '!') cycle
+      return
+    end do
+  end subroutine read_next_data_line
+
+  subroutine read_optional_logical_flag(data_unit, expected_label, value, found, label)
+    integer(kind=4), intent(in) :: data_unit
+    character(len=*), intent(in) :: expected_label
+    logical, intent(inout) :: value
+    logical, intent(out) :: found
+    character(len=*), intent(out) :: label
+
+    integer :: status
+    character(len=512) :: line
+    character(len=255) :: label_read
+    logical :: value_read
+
+    found = .false.
+    call read_next_data_line(data_unit, line, status)
+    if (status /= 0) return
+
+    read(line, *, iostat=status) label_read
+    if (status /= 0) then
+      backspace(data_unit)
+      return
+    end if
+
+    if (trim(to_lower_ascii(label_read)) /= trim(to_lower_ascii(expected_label))) then
+      backspace(data_unit)
+      return
+    end if
+
+    read(line, *, iostat=status) label_read, value_read
+    if (status /= 0) then
+      backspace(data_unit)
+      return
+    end if
+
+    label = label_read
+    value = value_read
+    found = .true.
+  end subroutine read_optional_logical_flag
+
+  subroutine read_optional_real_flag(data_unit, expected_label, value, found, label)
+    integer(kind=4), intent(in) :: data_unit
+    character(len=*), intent(in) :: expected_label
+    real(kind=dp), intent(inout) :: value
+    logical, intent(out) :: found
+    character(len=*), intent(out) :: label
+
+    integer :: status
+    character(len=512) :: line
+    character(len=255) :: label_read
+    real(kind=dp) :: value_read
+
+    found = .false.
+    call read_next_data_line(data_unit, line, status)
+    if (status /= 0) return
+
+    read(line, *, iostat=status) label_read
+    if (status /= 0) then
+      backspace(data_unit)
+      return
+    end if
+
+    if (trim(to_lower_ascii(label_read)) /= trim(to_lower_ascii(expected_label))) then
+      backspace(data_unit)
+      return
+    end if
+
+    read(line, *, iostat=status) label_read, value_read
+    if (status /= 0) then
+      backspace(data_unit)
+      return
+    end if
+
+    label = label_read
+    value = value_read
+    found = .true.
+  end subroutine read_optional_real_flag
+
   subroutine read_and_setup(cfg, profile, kpterms)
     type(simulation_config), intent(out) :: cfg
     real(kind=dp), allocatable, intent(out) :: profile(:,:)
@@ -22,6 +126,7 @@ contains
     integer(kind=4) :: data_unit
     integer :: status
     character(len=255) :: data_filename, label
+    logical :: found_optional
 
     ! Local iteration
     integer :: i
@@ -463,9 +568,128 @@ contains
     end if
 100 continue
 
+    ! --- Optical spectra parameters (backward compatible: uses defaults if missing) ---
+    call read_optional_logical_flag(data_unit, 'optics:', cfg%optics%enabled, found_optional, label)
+    if (found_optional .and. cfg%optics%enabled) then
+      print *, trim(label), cfg%optics%enabled
+
+      read(data_unit, *, iostat=status) label, cfg%optics%linewidth_lorentzian
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%linewidth_lorentzian
+
+      read(data_unit, *, iostat=status) label, cfg%optics%linewidth_gaussian
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%linewidth_gaussian
+
+      read(data_unit, *, iostat=status) label, cfg%optics%refractive_index
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%refractive_index
+
+      read(data_unit, *, iostat=status) label, cfg%optics%E_min
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%E_min
+
+      read(data_unit, *, iostat=status) label, cfg%optics%E_max
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%E_max
+
+      read(data_unit, *, iostat=status) label, cfg%optics%num_energy_points
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%num_energy_points
+
+      read(data_unit, *, iostat=status) label, cfg%optics%temperature
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%temperature
+
+      read(data_unit, *, iostat=status) label, cfg%optics%carrier_density
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%carrier_density
+
+      ! Gain parameters
+      read(data_unit, *, iostat=status) label, cfg%optics%gain_enabled
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%gain_enabled
+
+      read(data_unit, *, iostat=status) label, cfg%optics%gain_carrier_density
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%gain_carrier_density
+
+      ! ISBT
+      read(data_unit, *, iostat=status) label, cfg%optics%isbt_enabled
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%isbt_enabled
+
+    else if (found_optional) then
+      ! Optics=F, skip remaining optics lines
+      print *, trim(label), cfg%optics%enabled
+    end if
+101 continue
+
+    ! --- Exciton parameters (backward compatible: uses defaults if missing) ---
+    call read_optional_logical_flag(data_unit, 'exciton:', cfg%exciton%enabled, found_optional, label)
+    if (found_optional .and. cfg%exciton%enabled) then
+      print *, trim(label), cfg%exciton%enabled
+
+      read(data_unit, *, iostat=status) label, cfg%exciton%method
+      if (status /= 0) goto 102
+      print *, trim(label), trim(cfg%exciton%method)
+
+    else if (found_optional) then
+      print *, trim(label), cfg%exciton%enabled
+    end if
+102 continue
+
+    ! --- Scattering parameters (backward compatible: uses defaults if missing) ---
+    call read_optional_logical_flag(data_unit, 'scattering:', cfg%scattering%enabled, found_optional, label)
+    if (found_optional .and. cfg%scattering%enabled) then
+      print *, trim(label), cfg%scattering%enabled
+
+      read(data_unit, *, iostat=status) label, cfg%scattering%phonon_energy
+      if (status /= 0) goto 103
+      print *, trim(label), cfg%scattering%phonon_energy
+
+      read(data_unit, *, iostat=status) label, cfg%scattering%eps_inf
+      if (status /= 0) goto 103
+      print *, trim(label), cfg%scattering%eps_inf
+
+      read(data_unit, *, iostat=status) label, cfg%scattering%eps_0
+      if (status /= 0) goto 103
+      print *, trim(label), cfg%scattering%eps_0
+
+    else if (found_optional) then
+      print *, trim(label), cfg%scattering%enabled
+    end if
+103 continue
+
+    ! --- FEAST eigensolver tuning (backward compatible: uses defaults if missing) ---
+    call read_optional_real_flag(data_unit, 'feast_emin:', cfg%feast_emin, found_optional, label)
+    if (found_optional) then
+      print *, trim(label), cfg%feast_emin
+      read(data_unit, *, iostat=status) label, cfg%feast_emax
+      if (status == 0) then
+        print *, trim(label), cfg%feast_emax
+        read(data_unit, *, iostat=status) label, cfg%feast_m0
+        if (status == 0) then
+          print *, trim(label), cfg%feast_m0
+        else
+          cfg%feast_m0 = 0
+          status = 0
+        end if
+      else
+        cfg%feast_emax = 0.0_dp
+        cfg%feast_m0 = 0
+        status = 0
+      end if
+    else
+      ! feast_emin not found -- use auto window
+      cfg%feast_emin = 0.0_dp
+      cfg%feast_emax = 0.0_dp
+      cfg%feast_m0 = 0
+    end if
+
     ! --- Strain parameters (backward compatible: uses defaults if missing) ---
-    read(data_unit, *, iostat=status) label, cfg%strain%enabled
-    if (status == 0 .and. cfg%strain%enabled) then
+    call read_optional_logical_flag(data_unit, 'strain:', cfg%strain%enabled, found_optional, label)
+    if (found_optional .and. cfg%strain%enabled) then
       print *, trim(label), cfg%strain%enabled
 
       read(data_unit, *, iostat=status) label, cfg%strain%reference
@@ -480,13 +704,11 @@ contains
       if (status /= 0) goto 200
       print *, trim(label), cfg%strain%piezoelectric
 
-    else if (status == 0) then
+    else if (found_optional) then
       ! strain=.false., skip remaining strain lines
       print *, trim(label), cfg%strain%enabled
-    else
-      ! Could not read strain flag -- use defaults (strain off)
-      status = 0
     end if
+
 200 continue
 
     print *, ' '
@@ -494,6 +716,17 @@ contains
     !----------------------------------------------------------------------------
     ! Material parameter setup
     call paramDatabase(cfg%materialN, cfg%numLayers, cfg%params)
+
+    ! --- Bulk strain substrate (backward compatible: 0 = no strain) ---
+    ! Must come AFTER paramDatabase so the value is not overwritten.
+    read(data_unit, *, iostat=status) label, cfg%params(1)%strainSubstrate
+    if (status /= 0) then
+      ! Not found -- default to 0 (no bulk strain), reset status
+      cfg%params(1)%strainSubstrate = 0.0_dp
+      status = 0
+    else
+      print *, trim(label), cfg%params(1)%strainSubstrate
+    end if
 
     ! Initialize the unified spatial grid from config fields
     call init_grid_from_config(cfg)
