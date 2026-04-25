@@ -6,6 +6,8 @@ program opticalProperties
   use input_parser
   use optical_spectra
   use sparse_matrices
+  use eigensolver
+  use strain_solver
   use linalg, only: zheevx, ilaenv, dlamch, mkl_set_num_threads_local
   use utils, only: dnscsr_z_mkl
   use outputFunctions, only: ensure_output_dir, get_unit
@@ -43,6 +45,16 @@ program opticalProperties
   complex(kind=dp), allocatable :: H_k0(:,:)
   type(wavevector) :: pert_kx, pert_ky
   integer :: nzmax_tmp
+
+  ! Wire-specific variables (confinement=2)
+  real(kind=dp), allocatable       :: profile_2d(:,:)
+  type(csr_matrix), allocatable    :: kpterms_2d(:)
+  type(csr_matrix)                 :: HT_csr
+  type(wire_coo_cache)             :: coo_cache
+  type(eigensolver_config)         :: eigen_cfg
+  type(eigensolver_result)         :: eigen_res
+  type(csr_matrix)                 :: vel_wire(3)
+  integer                          :: Ngrid, Ntot, nev_wire
 
   ! File handling
   integer(kind=4) :: iounit
@@ -489,8 +501,185 @@ program opticalProperties
   ! WIRE (confinement=2)
   ! ==================================================================
   case (2)
-    print '(a)', 'Wire optics: TODO (Phase 3)'
-    stop 0
+
+    ! ----------------------------------------------------------------
+    ! Initialize 2D confinement operators (sparse CSR kpterms)
+    ! ----------------------------------------------------------------
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+      & profile_2d, kpterms_2d, cfg%FDorder)
+
+    ! Optional strain
+    if (cfg%strain%enabled) then
+      block
+        type(strain_result) :: strain_out
+        real(kind=dp) :: a0_ref
+
+        a0_ref = cfg%params(1)%a0
+        call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
+          cfg%strain, a0_ref, strain_out)
+        call compute_bir_pikus_blocks(strain_out, cfg%params, &
+          cfg%grid%material_id, cfg%grid, cfg%strain_blocks)
+        call strain_result_free(strain_out)
+        print '(a)', '  Wire strain calculation complete'
+      end block
+    end if
+
+    Ngrid = grid_ngrid(cfg%grid)
+    Ntot  = 8 * Ngrid
+    nev_wire = cfg%numcb + cfg%numvb
+    if (nev_wire > Ntot) then
+      print '(a,i0,a,i0)', ' Warning: requesting ', nev_wire, &
+        & ' bands but matrix size is ', Ntot
+      nev_wire = Ntot
+    end if
+
+    print '(a)', ''
+    print '(a)', '=== Wire optical properties (2D confinement) ==='
+    print '(a,i0,a,i0,a,i0)', '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, &
+      & ' Ngrid=', Ngrid
+    print '(a,i0,a,i0)', '  Matrix size: ', Ntot, 'x', Ntot
+    print '(a,i0,a,i0)', '  numcb=', cfg%numcb, ' numvb=', cfg%numvb
+    print '(a)', ''
+
+    ! ----------------------------------------------------------------
+    ! Build wire Hamiltonian at kz=0
+    ! ----------------------------------------------------------------
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, &
+      & cfg, coo_cache)
+
+    ! Build commutator-based velocity matrices for x,y directions
+    call build_velocity_matrices(HT_csr, cfg%grid, vel_wire(1), vel_wire(2))
+
+    ! Build velocity matrix for z direction (free axis, uses dH/dkz)
+    call ZB8bandGeneralized(vel_wire(3), 1.0_dp, profile_2d, kpterms_2d, &
+      & cfg, g='g3')
+
+    ! Keep HT_csr alive: the COO cache fast path in the kz sweep reuses its CSR structure
+
+    print '(a)', ' Wire velocity matrices built successfully'
+
+    ! ----------------------------------------------------------------
+    ! Configure FEAST eigensolver
+    ! ----------------------------------------------------------------
+    eigen_cfg%method   = 'FEAST'
+    eigen_cfg%nev      = nev_wire
+    eigen_cfg%max_iter = 100
+    eigen_cfg%tol      = 1.0e-10_dp
+    eigen_cfg%feast_m0 = cfg%feast_m0
+
+    ! Set energy window once (before the kz sweep)
+    if (cfg%feast_emin /= 0.0_dp .and. cfg%feast_emax /= 0.0_dp) then
+      eigen_cfg%emin = cfg%feast_emin
+      eigen_cfg%emax = cfg%feast_emax
+    else
+      call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
+    end if
+
+    ! ----------------------------------------------------------------
+    ! Initialize optics accumulation
+    ! ----------------------------------------------------------------
+    call optics_init(cfg%optics)
+
+    ! ----------------------------------------------------------------
+    ! Simpson integration weights for 1D kz integration
+    ! int dkz  =>  weight = Simpson * 1 / (2*pi)
+    ! ----------------------------------------------------------------
+    npts = cfg%waveVectorStep
+    if (mod(npts, 2) == 0) then
+      npts = npts - 1  ! Simpson requires odd number of points
+      print '(a,i0,a)', ' Warning: optics integration uses ', npts, &
+        & ' k-points (Simpson requires odd count)'
+    end if
+    allocate(simpson_w(npts))
+    dk = cfg%waveVectorMax / real(cfg%waveVectorStep - 1, kind=dp)
+    do i = 1, npts
+      ! Base Simpson 1/3 rule weight
+      if (i == 1 .or. i == npts) then
+        simpson_w(i) = dk / 3.0_dp
+      else if (mod(i, 2) == 0) then
+        simpson_w(i) = 4.0_dp * dk / 3.0_dp
+      else
+        simpson_w(i) = 2.0_dp * dk / 3.0_dp
+      end if
+      ! 1D BZ: weight / (2*pi) normalization
+      simpson_w(i) = simpson_w(i) / (2.0_dp * pi_dp)
+    end do
+
+    ! ----------------------------------------------------------------
+    ! kz sweep: build H(kz), diagonalize with FEAST, accumulate spectra
+    ! ----------------------------------------------------------------
+    ! The COO cache preserves the CSR sparsity pattern across kz values,
+    ! so only the values are updated on subsequent calls (fast path).
+    ! We keep HT_csr allocated throughout the sweep.
+    ! ----------------------------------------------------------------
+    print '(a,i0,a)', ' Wire optics kz-sweep: ', npts, ' k-points'
+
+    do k = 1, npts
+      ! Build kz value for this sweep point
+      block
+        real(kind=dp) :: kz_val
+
+        kz_val = real(k - 1, kind=dp) * dk
+
+        ! Build wire Hamiltonian at this kz (cache reuses CSR structure)
+        call ZB8bandGeneralized(HT_csr, kz_val, profile_2d, kpterms_2d, &
+          & cfg, coo_cache)
+
+        ! Solve eigenvalue problem
+        call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
+
+        if (eigen_res%nev_found == 0) then
+          print '(a,i0,a)', ' WARNING: FEAST found no eigenvalues at kz-point ', k
+          call eigensolver_result_free(eigen_res)
+          cycle
+        end if
+
+        if (eigen_res%nev_found < cfg%numcb + cfg%numvb) then
+          print '(a,i0,a,i0,a,i0)', ' WARNING: FEAST found only ', &
+            eigen_res%nev_found, ' eigenvalues at kz-point ', k, &
+            ' (need ', cfg%numcb + cfg%numvb, ')'
+          call eigensolver_result_free(eigen_res)
+          cycle
+        end if
+
+        ! Accumulate optical spectra for this kz
+        call optics_accumulate(cfg%optics, &
+          & eigen_res%eigenvalues(1:nev_wire), &
+          & eigen_res%eigenvectors(:, 1:nev_wire), &
+          & simpson_w(k), &
+          & vel_wire, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+
+        ! Free eigensolver result for next kz
+        call eigensolver_result_free(eigen_res)
+      end block
+    end do
+
+    ! Free Hamiltonian CSR after sweep completes
+    call csr_free(HT_csr)
+
+    ! ----------------------------------------------------------------
+    ! Finalize: apply prefactor, write output files
+    ! ----------------------------------------------------------------
+    call optics_finalize(cfg%optics)
+    call optics_cleanup()
+
+    ! Free velocity matrices
+    do i = 1, 3
+      call csr_free(vel_wire(i))
+    end do
+
+    ! Free wire-specific resources
+    call wire_coo_cache_free(coo_cache)
+    if (allocated(profile_2d)) deallocate(profile_2d)
+    if (allocated(kpterms_2d)) then
+      do i = 1, size(kpterms_2d)
+        call csr_free(kpterms_2d(i))
+      end do
+      deallocate(kpterms_2d)
+    end if
+
+    deallocate(simpson_w)
+    print '(a)', ' Wire optical spectra written to output/'
 
   case default
     print '(a,i0)', 'ERROR: unknown confinement mode ', cfg%confinement
