@@ -68,8 +68,207 @@ program opticalProperties
   ! BULK (confinement=0)
   ! ==================================================================
   case (0)
-    print '(a)', 'Bulk optics: TODO (Phase 3)'
-    stop 0
+    N = 8  ! 8x8 bulk Hamiltonian
+
+    ! For bulk: 6 VB-like + 2 CB-like states
+    il = 1
+    iuu = N
+    print '(a)', ' Bulk optics: 8x8 Hamiltonian, all 8 states'
+
+    ! LAPACK workspace query parameters
+    vl = 0.0_dp
+    vu = 0.0_dp
+    NB = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
+    NB = MAX(NB, N)
+    ABSTOL = DLAMCH('P')
+
+    ! Allocate workspace
+    allocate(rwork(7*N))
+    allocate(iwork(5*N))
+    allocate(ifail(N))
+    allocate(eig(iuu - il + 1, cfg%waveVectorStep))
+    allocate(eigv(N, iuu - il + 1, cfg%waveVectorStep))
+    eig(:,:) = 0.0_dp
+    eigv(:,:,:) = (0.0_dp, 0.0_dp)
+
+    allocate(HT(N, N))
+    HT = (0.0_dp, 0.0_dp)
+
+    ! Build k-sweep array: 1D sweep from 0 to waveVectorMax
+    npts = cfg%waveVectorStep
+    allocate(smallk(npts))
+    smallk%kx = 0.0_dp
+    smallk%ky = 0.0_dp
+    smallk%kz = 0.0_dp
+    do k = 1, npts
+      smallk(k)%kz = real(k - 1, kind=dp) * cfg%waveVectorMax &
+        & / real(npts - 1, kind=dp)
+    end do
+
+    ! ================================================================
+    ! Workspace query (k=1)
+    ! ================================================================
+    call ZB8bandBulk(HT, smallk(1), cfg%params(1:1))
+    allocate(work(1))
+    lwork = -1
+    call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, &
+      eig(:,1), HT, N, work, lwork, rwork, iwork, ifail, info)
+    if (info /= 0) then
+      print '(a,i0)', 'ERROR: zheevx workspace query failed, info = ', info
+      stop 1
+    end if
+    lwork = int(real(work(1)))
+    deallocate(work)
+    allocate(work(lwork))
+
+    ! ================================================================
+    ! Build velocity matrices at unit wavevector (k-independent)
+    ! ================================================================
+    ! For bulk, ZB8bandBulk(g='g') zeros gamma and A, keeping only
+    ! the Kane P term. The resulting matrix is dH/dk_alpha which is
+    ! k-independent (linear in k-derivative).
+
+    ! vel(1): x-direction
+    pert_kx%kx = 1.0_dp
+    pert_kx%ky = 0.0_dp
+    pert_kx%kz = 0.0_dp
+    allocate(H_k0(N, N))
+    H_k0 = (0.0_dp, 0.0_dp)
+    call ZB8bandBulk(H_k0, pert_kx, cfg%params(1:1), g='g')
+    nzmax_tmp = N * N
+    call dnscsr_z_mkl(nzmax_tmp, N, H_k0, vel_opt(1))
+    deallocate(H_k0)
+
+    ! vel(2): y-direction
+    pert_ky%kx = 0.0_dp
+    pert_ky%ky = 1.0_dp
+    pert_ky%kz = 0.0_dp
+    allocate(H_k0(N, N))
+    H_k0 = (0.0_dp, 0.0_dp)
+    call ZB8bandBulk(H_k0, pert_ky, cfg%params(1:1), g='g')
+    nzmax_tmp = N * N
+    call dnscsr_z_mkl(nzmax_tmp, N, H_k0, vel_opt(2))
+    deallocate(H_k0)
+
+    ! vel(3): z-direction
+    block
+      type(wavevector) :: pert_kz
+      pert_kz%kx = 0.0_dp
+      pert_kz%ky = 0.0_dp
+      pert_kz%kz = 1.0_dp
+      allocate(H_k0(N, N))
+      H_k0 = (0.0_dp, 0.0_dp)
+      call ZB8bandBulk(H_k0, pert_kz, cfg%params(1:1), g='g')
+      nzmax_tmp = N * N
+      call dnscsr_z_mkl(nzmax_tmp, N, H_k0, vel_opt(3))
+      deallocate(H_k0)
+    end block
+
+    print '(a)', ' Bulk velocity matrices built successfully'
+
+    ! ================================================================
+    ! Initialize optics accumulation
+    ! ================================================================
+    call optics_init(cfg%optics)
+
+    ! ================================================================
+    ! Simpson integration weights for 3D spherical k-space integration
+    !
+    ! For bulk, the absorption involves a 3D BZ integral.
+    ! Using spherical symmetry along the z-sweep direction:
+    !   int d^3k = 4*pi * int k^2 dk
+    ! with additional (2*pi)^3 normalization.
+    !
+    ! weight = Simpson * 4*pi*k^2 / (2*pi)^3
+    ! ================================================================
+    if (mod(npts, 2) == 0) then
+      npts = npts - 1  ! Simpson requires odd number of points
+      print '(a,i0,a)', ' Warning: optics integration uses ', npts, &
+        & ' k-points (Simpson requires odd count)'
+    end if
+    allocate(simpson_w(npts))
+    dk = cfg%waveVectorMax / real(cfg%waveVectorStep - 1, kind=dp)
+    do i = 1, npts
+      ! Base Simpson 1/3 rule weight
+      if (i == 1 .or. i == npts) then
+        simpson_w(i) = dk / 3.0_dp
+      else if (mod(i, 2) == 0) then
+        simpson_w(i) = 4.0_dp * dk / 3.0_dp
+      else
+        simpson_w(i) = 2.0_dp * dk / 3.0_dp
+      end if
+      ! Multiply by 4*pi*k^2 / (2*pi)^3 for 3D spherical integration
+      simpson_w(i) = simpson_w(i) * 4.0_dp * pi_dp &
+        & * (real(i - 1, kind=dp) * dk)**2 / (2.0_dp * pi_dp)**3
+    end do
+
+    ! ================================================================
+    ! k-sweep: diagonalize and accumulate spectra
+    ! ================================================================
+    info = mkl_set_num_threads_local(1)
+
+    print '(a,i0,a)', ' Bulk optics k-sweep: ', npts, ' k-points'
+
+    block
+      complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
+      real(kind=dp), allocatable    :: rwork_loc(:)
+      integer, allocatable          :: iwork_loc(:), ifail_loc(:)
+      integer :: info_loc, M_loc
+
+      !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
+      allocate(HT_loc(N, N))
+      allocate(work_loc(lwork))
+      allocate(rwork_loc(7*N))
+      allocate(iwork_loc(5*N))
+      allocate(ifail_loc(N))
+      HT_loc = (0.0_dp, 0.0_dp)
+
+      !$omp do schedule(static)
+      do k = 1, npts
+        ! Build 8x8 bulk Hamiltonian at this k
+        call ZB8bandBulk(HT_loc, smallk(k), cfg%params(1:1))
+
+        ! Diagonalize all 8 eigenvalues
+        call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
+          eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
+          ifail_loc, info_loc)
+        if (info_loc /= 0) then
+          !$omp critical
+          print '(a,i0,a,i0)', ' ERROR: diagonalization failed at k=', k, ' info=', info_loc
+          !$omp end critical
+          stop 1
+        end if
+
+        ! Store eigenvectors (zheevx overwrites HT_loc with them)
+        eigv(:,:,k) = HT_loc(:, 1:N)
+      end do
+      !$omp end do
+
+      deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
+      !$omp end parallel
+    end block
+
+    ! Accumulate optical spectra (serial, uses shared vel_opt)
+    print '(a)', ' Accumulating optical spectra...'
+    do k = 1, npts
+      call optics_accumulate(cfg%optics, &
+        & eig(:, k), eigv(:, :, k), simpson_w(k), &
+        & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+    end do
+
+    ! ================================================================
+    ! Finalize: apply prefactor, write output files
+    ! ================================================================
+    call optics_finalize(cfg%optics)
+    call optics_cleanup()
+
+    ! Free velocity matrices
+    do i = 1, 3
+      call csr_free(vel_opt(i))
+    end do
+
+    deallocate(simpson_w)
+    print '(a)', ' Bulk optical spectra written to output/'
 
   ! ==================================================================
   ! QUANTUM WELL (confinement=1)
