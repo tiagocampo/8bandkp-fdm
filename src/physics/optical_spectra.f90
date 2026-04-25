@@ -1,6 +1,7 @@
 module optical_spectra
 
   use definitions
+  use sparse_matrices, only: csr_matrix, csr_spmv
   use gfactorFunctions
   use charge_density, only: fermi_dirac
   use outputFunctions, only: ensure_output_dir, get_unit
@@ -71,33 +72,36 @@ contains
   ! Accumulate contributions from one k_par point into the absorption
   ! spectrum.  Called inside the k_sweep loop after diagonalization.
   !
-  ! For each CB-VB pair:
-  !   1. Compute |px|^2, |py|^2, |pz|^2 via pMatrixEleCalc
+  ! Uses commutator-based velocity matrices v_alpha = -i [r_alpha, H]
+  ! computed on CSR sparse format.  For each CB-VB pair:
+  !   1. Compute |<CB|v_x|VB>|^2, |<CB|v_y|VB>|^2, |<CB|v_z|VB>|^2
+  !      via CSR SpMV + zdotc
   !   2. Compute transition energy dE = E_CB - E_VB
   !   3. Compute Fermi occupation factor (f_V - f_C)
   !   4. Broaden: add weighted lineshape to alpha_te and alpha_tm
   ! ------------------------------------------------------------------
   subroutine optics_accumulate(optcfg, eigvals, eigvecs, k_weight, &
-    & nlayers, params, profile, kpterms, startz, endz, dz, numcb, numvb, &
-    & fermi_level)
+    & vel, numcb, numvb, fermi_level)
 
     type(optics_config), intent(in) :: optcfg
     real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
     complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
-    integer, intent(in) :: nlayers
-    type(paramStruct), intent(in) :: params(nlayers)
-    real(kind=dp), intent(in), dimension(:,:) :: profile
-    real(kind=dp), intent(in), dimension(:,:,:) :: kpterms
-    real(kind=dp), intent(in) :: startz, endz, dz
+    type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in) :: numcb, numvb
     real(kind=dp), intent(in) :: fermi_level       ! Fermi energy (eV)
 
-    integer :: i, j, dir, ie
+    integer :: i, j, dir, ie, dim
     real(kind=dp) :: dE, f_c, f_v, occ_factor
     real(kind=dp) :: px, py, pz
     real(kind=dp) :: gamma_l, gamma_g
     complex(kind=dp) :: Pele
+    complex(kind=dp), allocatable :: Ytmp(:)
+    complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    complex(kind=dp), external :: zdotc
+
+    dim = size(eigvecs, 1)
+    allocate(Ytmp(dim))
 
     ! Half-widths at half-maximum from FWHM
     gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
@@ -122,18 +126,16 @@ contains
         dE = eigvals(numvb + j) - eigvals(i)
         if (dE < DE_MIN) cycle
 
-        ! Momentum matrix elements in each direction
+        ! Velocity matrix elements via commutator v_alpha = -i [r_alpha, H]
+        ! |<CB| v_alpha |VB>|^2 computed as SpMV: Ytmp = vel(dir) * |VB>,
+        ! then Pele = <CB| Ytmp>.
         px = 0.0_dp
         py = 0.0_dp
         pz = 0.0_dp
 
         do dir = 1, 3
-          Pele = ZERO
-          call pMatrixEleCalc(Pele, dir, eigvecs(:,numvb+j), &
-            & eigvecs(:,i), nlayers, params, &
-            & profile=profile, kpterms=kpterms, &
-            & startz=startz, endz=endz, dz=dz)
-
+          call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
+          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
@@ -154,6 +156,8 @@ contains
 
       end do
     end do
+
+    deallocate(Ytmp)
 
   end subroutine optics_accumulate
 
