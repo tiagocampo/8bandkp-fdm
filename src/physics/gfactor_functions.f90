@@ -291,7 +291,7 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
 
 end subroutine pMatrixEleCalc
 
-subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
+subroutine gfactorCalculation(tensor, g_eff, whichBand, bandIdx, numcb, numvb, &
   & cb_state, vb_state, cb_value, vb_value, nlayers, params, startz, endz, &
   & profile, kpterms, dz)
 
@@ -299,6 +299,7 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
 
 
   complex(kind=dp), intent(inout), dimension(:,:,:) :: tensor
+  real(kind=dp), intent(out), dimension(3) :: g_eff
   integer, intent(in) :: whichBand !=0 cb, =1 vb
   integer, intent(in) :: bandIdx !idx of band to compute. 1, 2, 3 ... (mostly for confined systems)
   integer, intent(in) :: numcb, numvb ! total number of cb and vb bands
@@ -644,6 +645,15 @@ subroutine gfactorCalculation(tensor, whichBand, bandIdx, numcb, numvb, &
   tensor(1:2,1:2,1:3) = -cmplx(0.0_dp, 1.0_dp, kind=dp)*tensor(1:2,1:2,1:3)/hbar2O2m0
   tensor(1:2,1:2,1:3) = tensor(1:2,1:2,1:3) - (g_free/2.0_dp)*sigma(1:2,1:2,1:3)
 
+  ! Extract g-factor via trace projection: g_d = -2 * Re[Tr(G*sigma^dag)] / Tr(sigma*sigma^dag)
+  do d = 1,3
+    denom = sum(abs(sigma(1:2,1:2,d))**2)
+    if (denom > 1.0e-12_dp) then
+      g_eff(d) = -2.0_dp * sum(real(tensor(1:2,1:2,d) * conjg(sigma(1:2,1:2,d)), kind=dp)) / denom
+    else
+      g_eff(d) = 0.0_dp
+    end if
+  end do
 
 end subroutine gfactorCalculation
 
@@ -703,8 +713,7 @@ complex(kind=dp) function sigmaElem_2d(state1, state2, dir, grid)
     end do
   end do
 
-  ! Integrate with dx*dy (uniform grid)
-  sigmaElem_2d = sigmaElem_2d * cmplx(grid%dx * grid%dy, 0.0_dp, kind=dp)
+  ! Bare sum — no dx*dy weight, consistent with pMatrixEleCalc_2d (bare zdotc).
 
 end function sigmaElem_2d
 
@@ -797,12 +806,13 @@ end subroutine compute_pele_2d
 ! sigmaElem_2d for spatial integration and compute_pele_2d for
 ! momentum matrix elements.  Works with 2D sparse wire Hamiltonians.
 ! ----------------------------------------------------------------------
-subroutine gfactorCalculation_wire(tensor, whichBand, bandIdx, numcb, numvb, &
+subroutine gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, numcb, numvb, &
   & cb_state, vb_state, cb_value, vb_value, cfg, profile_2d, kpterms_2d)
 
   implicit none
 
   complex(kind=dp), intent(inout), dimension(:,:,:) :: tensor
+  real(kind=dp), intent(out), dimension(3) :: g_eff
   integer, intent(in) :: whichBand
   integer, intent(in) :: bandIdx
   integer, intent(in) :: numcb, numvb
@@ -1056,6 +1066,16 @@ subroutine gfactorCalculation_wire(tensor, whichBand, bandIdx, numcb, numvb, &
 
   tensor(1:2,1:2,1:3) = -cmplx(0.0_dp, 1.0_dp, kind=dp)*tensor(1:2,1:2,1:3)/hbar2O2m0
   tensor(1:2,1:2,1:3) = tensor(1:2,1:2,1:3) - (g_free/2.0_dp)*sigma(1:2,1:2,1:3)
+
+  ! Extract g-factor via trace projection: g_d = -2 * Re[Tr(G*sigma^dag)] / Tr(sigma*sigma^dag)
+  do d=1,3
+    denom = sum(abs(sigma(1:2,1:2,d))**2)
+    if (denom > 1.0e-12_dp) then
+      g_eff(d) = -2.0_dp * sum(real(tensor(1:2,1:2,d) * conjg(sigma(1:2,1:2,d)), kind=dp)) / denom
+    else
+      g_eff(d) = 0.0_dp
+    end if
+  end do
 
 end subroutine gfactorCalculation_wire
 

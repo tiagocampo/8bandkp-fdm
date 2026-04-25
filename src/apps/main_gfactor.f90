@@ -41,6 +41,7 @@ program gfactor
   real(kind=dp), allocatable, dimension(:) :: cb_value, vb_value
   integer :: whichBand, bandIdx
   complex(kind=dp), allocatable, dimension(:,:,:) :: tensor
+  real(kind=dp) :: g_eff(3)
   complex(kind=dp) :: aa, bb, cc, dd
   real(kind=dp) :: gfac(2,3)
 
@@ -281,7 +282,7 @@ program gfactor
     allocate(tensor(2,2,3))
     tensor = 0
 
-    call gfactorCalculation_wire(tensor, whichBand, bandIdx, cfg%numcb, &
+    call gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, cfg%numcb, &
       & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg, &
       & profile_2d, kpterms_2d)
 
@@ -442,10 +443,10 @@ program gfactor
     allocate(tensor(2,2,3))
     tensor = 0
 
-    if (cfg%numLayers == 1) call gfactorCalculation(tensor, whichBand, bandIdx, cfg%numcb, &
+    if (cfg%numLayers == 1) call gfactorCalculation(tensor, g_eff, whichBand, bandIdx, cfg%numcb, &
     & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg%numLayers, cfg%params, &
     & cfg%startPos(1), cfg%endPos(1), dz=cfg%dz)
-    if (cfg%numLayers > 1)  call gfactorCalculation(tensor, whichBand, bandIdx, cfg%numcb, &
+    if (cfg%numLayers > 1)  call gfactorCalculation(tensor, g_eff, whichBand, bandIdx, cfg%numcb, &
     & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg%numLayers, cfg%params, &
     & cfg%startPos(1), cfg%endPos(1), profile=profile, kpterms=kpterms, dz=cfg%dz)
 
@@ -473,35 +474,20 @@ program gfactor
   allocate(work(lwork))
 
   print *, 'gx'
-  aa = tensor(1,1,1)
-  bb = tensor(1,2,1)
-  cc = tensor(2,1,1)
-  dd = tensor(2,2,1)
-  print *, (0.5 * ( -sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ) - 0.5 * ( sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ))
-  call zheev('N', 'U', 2, tensor(:,:,1), 2, gfac(:,1), work, lwork, rwork, info)
-  print *, 2*gfac(1,1) !+ free-electron g-factor (included via sigma tensor)
+  print *, 0.0_dp
+  print *, g_eff(1)
 
   print *, 'gy'
-  aa = tensor(1,1,2)
-  bb = tensor(1,2,2)
-  cc = tensor(2,1,2)
-  dd = tensor(2,2,2)
-  print *, (0.5 * ( -sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ) - 0.5 * ( sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ))
-  call zheev('N', 'U', 2, tensor(:,:,2), 2, gfac(:,2), work, lwork, rwork, info)
-  print *, 2*gfac(1,2) !+ free-electron g-factor (included via sigma tensor)
+  print *, 0.0_dp
+  print *, g_eff(2)
 
   print *, 'gz'
-  aa = tensor(1,1,3)
-  bb = tensor(1,2,3)
-  cc = tensor(2,1,3)
-  dd = tensor(2,2,3)
-  print *, (0.5 * ( -sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ) - 0.5 * ( sqrt(aa**2 -2*aa*dd+4*bb*cc + dd**2) + aa + dd ))
-  call zheev('N', 'U', 2, tensor(:,:,3), 2, gfac(:,3), work, lwork, rwork, info)
-  print *, 2*gfac(1,3) !+ free-electron g-factor (included via sigma tensor)
+  print *, 0.0_dp
+  print *, g_eff(3)
 
   call get_unit(iounit)
   open(unit=iounit, file='output/gfactor.dat', status="replace", action="write")
-  write(iounit,*) 2*gfac(1,1), 2*gfac(1,2), 2*gfac(1,3)
+  write(iounit,*) g_eff(1), g_eff(2), g_eff(3)
   close(iounit)
 
   ! QW optical transitions

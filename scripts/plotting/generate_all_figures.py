@@ -5310,36 +5310,37 @@ def fig_wire_inas_gaas_wavefunctions(output_dir: Path) -> None:
 def fig_wire_gfactor_vs_size(output_dir: Path) -> None:
     """wire_gfactor_vs_size.png: wire g-factor (gx, gy, gz) vs cross-section size.
 
-    Sweeps square GaAs wire sizes [20, 30, 40, 50, 60, 80, 100] A,
-    runs gfactorCalculation for each, and plots the three tensor
-    components against wire width.  A horizontal reference line marks
-    the bulk GaAs g-factor.
+    Sweeps square InSbW wire sizes, runs gfactorCalculation for each, and
+    plots the three tensor components against wire width.  A horizontal
+    reference line marks the bulk InSbW g-factor.  Uses InSbW rather than
+    GaAs because |g*| ~ 51 is large and produces a robust Lowdin signal.
 
     Known-risk figure. The wire g-factor sweep is still provisional and should
     not be treated as a validated size-dependence benchmark.
     """
     print("[figure] wire_gfactor_vs_size")
 
-    sizes = [20, 30, 40, 50, 60, 80, 100]
+    sizes = [40, 50, 60, 80, 100, 120, 150]
     gx_list: List[float] = []
     gy_list: List[float] = []
     gz_list: List[float] = []
     valid_sizes: List[float] = []
 
-    # Bulk GaAs reference — known value from Roth formula (Ch05 Section 5.3.1)
-    # The bulk executable currently segfaults on some systems, so use the
-    # well-validated analytical value directly.
-    bulk_g = -0.315
+    # Bulk InSbW reference — computed value from Roth formula / code
+    bulk_g = -51.1
 
     for width in sizes:
-        # Build a GaAs wire config dynamically
-        # Use a square cross-section with ~3 A grid spacing (same as wire_gaas_rectangle.cfg)
-        # Minimum nx=11 for adequate resolution
-        dx_target = 3.0  # Angstrom, similar to wire_gaas_rectangle.cfg
-        nx = max(11, int(width / dx_target))
+        # Build an InSbW wire config dynamically.
+        # Use fixed 2.0 A grid spacing for consistent resolution across sizes.
+        dx = 2.0  # Angstrom, fixed spacing
+        nx = int(width / dx)
         if nx % 2 == 0:
             nx += 1  # keep odd for symmetry
+        # Recompute dx so that nx*dx = width exactly
         dx = width / nx
+        ngrid = nx * nx
+        numcb = 4
+        numvb = 16
         cfg_text = (
             "waveVector: k0\n"
             "waveVectorMax: 0.1\n"
@@ -5356,16 +5357,16 @@ def fig_wire_gfactor_vs_size(output_dir: Path) -> None:
             f"wire_width: {width:.1f}\n"
             f"wire_height: {width:.1f}\n"
             "numRegions: 1\n"
-            "region: GaAs 0.0 100.0\n"
-            "numcb: 4\n"
-            "numvb: 8\n"
+            "region: InSbW 0.0 100.0\n"
+            f"numcb: {numcb}\n"
+            f"numvb: {numvb}\n"
             "ExternalField: 0 EF\n"
             "EFParams: 0.0005\n"
             "whichBand: 0\n"
             "bandIdx: 1\n"
             "SC: 0\n"
-            "feast_emin: -1.5\n"
-            "feast_emax: 2.0\n"
+            "feast_emin: -3.0\n"
+            "feast_emax: 6.0\n"
             "feast_m0: -1\n"
         )
         tmp_cfg = REPO_ROOT / "input.cfg"
@@ -5412,7 +5413,7 @@ def fig_wire_gfactor_vs_size(output_dir: Path) -> None:
 
     ax.set_xlabel(r"Wire width (\u00C5)")
     ax.set_ylabel("g-factor")
-    ax.set_title("Wire g-factor vs cross-section size (GaAs)")
+    ax.set_title("Wire g-factor vs cross-section size (InSbW)")
     ax.legend(loc="best")
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "wire_gfactor_vs_size.png")

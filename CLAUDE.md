@@ -151,3 +151,7 @@ Always check for and follow applicable superpowers skills when working. In parti
 - **NEVER** change the Bir-Pikus sign convention: VB diagonal shifts all contain `-P_eps` (which equals `av * Tr(eps)` due to the sign flip in the helper), so delta_EHH = -P_eps + Q_eps, delta_ELH = -P_eps - Q_eps, delta_ESO = -P_eps. The helper `P_eps = -av * Tr(eps)` introduces a sign flip — every consumer must negate it. Single source of truth: `compute_bp_scalar` in `strain_solver.f90`.
 - **NEVER** commit `input.cfg` with personal test configs — use `tests/regression/configs/` for test configs
 - **Require approval** for: changes to `defs.f90` derived types, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`, Poisson solver in `poisson.f90`, SC loop convergence logic in `sc_loop.f90`
+
+## Known Issues
+
+- **Wire g-factor is broken.** The transverse perturbation construction (`g='g1'`/`g='g2'` in `ZB8bandGeneralized`) does not correctly implement $dH/dk_\alpha$ for the wire geometry. The regression test passes (small 55 Å InSbW wire produces non-g_free values), but systematic sweeps show results do not converge toward the bulk limit for larger wires. Bulk and QW g-factors are verified correct. Do not trust wire g-factor results until this is fixed.
