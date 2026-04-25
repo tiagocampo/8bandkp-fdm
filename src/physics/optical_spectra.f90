@@ -9,7 +9,7 @@ module optical_spectra
 
   private
 
-  public :: optics_init, optics_accumulate, optics_finalize, optics_cleanup
+  public :: optics_init, optics_accumulate, optics_accumulate_spontaneous, optics_finalize, optics_cleanup
   public :: compute_intersubband_transitions, compute_isbt_absorption
   public :: compute_gain_qw, gain_reset
   public :: E_grid, alpha_te, alpha_tm, nE
@@ -20,6 +20,8 @@ module optical_spectra
   real(kind=dp), allocatable, save :: alpha_isbt(:)  ! ISBT accumulation on E_grid
   real(kind=dp), allocatable, save :: alpha_gain_te(:)  ! Gain TE accumulation on E_grid
   real(kind=dp), allocatable, save :: alpha_gain_tm(:)  ! Gain TM accumulation on E_grid
+  real(kind=dp), allocatable, save :: spont_te(:)   ! Spontaneous TE accumulation
+  real(kind=dp), allocatable, save :: spont_tm(:)   ! Spontaneous TM accumulation
   real(kind=dp), allocatable, save :: E_grid(:)      ! photon energy grid (eV)
   integer, save :: nE = 0                            ! number of energy points
 
@@ -63,6 +65,13 @@ contains
       allocate(alpha_gain_te(nE), alpha_gain_tm(nE))
       alpha_gain_te = 0.0_dp
       alpha_gain_tm = 0.0_dp
+    end if
+
+    ! Spontaneous emission arrays: allocated when spontaneous is enabled
+    if (optcfg%spontaneous_enabled) then
+      allocate(spont_te(nE), spont_tm(nE))
+      spont_te = 0.0_dp
+      spont_tm = 0.0_dp
     end if
 
   end subroutine optics_init
@@ -160,6 +169,92 @@ contains
     deallocate(Ytmp)
 
   end subroutine optics_accumulate
+
+
+  ! ------------------------------------------------------------------
+  ! Accumulate spontaneous emission contributions from one k_par point.
+  ! Identical to optics_accumulate except the occupation factor is
+  !   f_c * (1 - f_v)   (radiative recombination rate)
+  ! instead of (f_v - f_c) used for absorption.
+  ! ------------------------------------------------------------------
+  subroutine optics_accumulate_spontaneous(optcfg, eigvals, eigvecs, k_weight, &
+    & vel, numcb, numvb, fermi_level)
+
+    type(optics_config), intent(in) :: optcfg
+    real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
+    complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
+    real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
+    type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
+    integer, intent(in) :: numcb, numvb
+    real(kind=dp), intent(in) :: fermi_level       ! Fermi energy (eV)
+
+    integer :: i, j, dir, ie, dim
+    real(kind=dp) :: dE, f_c, f_v, occ_factor
+    real(kind=dp) :: px, py, pz
+    real(kind=dp) :: gamma_l, gamma_g
+    complex(kind=dp) :: Pele
+    complex(kind=dp), allocatable :: Ytmp(:)
+    complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    complex(kind=dp), external :: zdotc
+
+    if (nE == 0) return
+    if (.not. allocated(spont_te)) return
+
+    dim = size(eigvecs, 1)
+    allocate(Ytmp(dim))
+
+    ! Half-widths at half-maximum from FWHM
+    gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
+    gamma_g = optcfg%linewidth_gaussian / 2.0_dp
+
+    do i = 1, numvb
+      ! VB eigenvalue
+      f_v = fermi_dirac(eigvals(i), fermi_level, optcfg%temperature)
+
+      do j = 1, numcb
+        ! CB eigenvalue (offset by numvb)
+        f_c = fermi_dirac(eigvals(numvb + j), fermi_level, optcfg%temperature)
+
+        ! Spontaneous emission: f_c * (1 - f_v)
+        occ_factor = f_c * (1.0_dp - f_v)
+        if (occ_factor < 1.0e-30_dp) cycle
+
+        ! Transition energy: E_CB - E_VB > 0
+        dE = eigvals(numvb + j) - eigvals(i)
+        if (dE < DE_MIN) cycle
+
+        ! Velocity matrix elements via commutator v_alpha = -i [r_alpha, H]
+        px = 0.0_dp
+        py = 0.0_dp
+        pz = 0.0_dp
+
+        do dir = 1, 3
+          call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
+          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
+          select case(dir)
+          case(1)
+            px = real(Pele * conjg(Pele), kind=dp)
+          case(2)
+            py = real(Pele * conjg(Pele), kind=dp)
+          case(3)
+            pz = real(Pele * conjg(Pele), kind=dp)
+          end select
+        end do
+
+        ! Broaden and accumulate onto the energy grid
+        do ie = 1, nE
+          spont_te(ie) = spont_te(ie) + occ_factor * (px + py) &
+            & * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+          spont_tm(ie) = spont_tm(ie) + occ_factor * pz &
+            & * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+        end do
+
+      end do
+    end do
+
+    deallocate(Ytmp)
+
+  end subroutine optics_accumulate_spontaneous
 
 
   ! ------------------------------------------------------------------
@@ -310,6 +405,42 @@ contains
       print '(a)', 'Gain spectra written to output/gain_TE.dat and output/gain_TM.dat'
     end if
 
+    ! --- Spontaneous emission output ---
+    if (optcfg%spontaneous_enabled .and. allocated(spont_te)) then
+      ! Apply prefactor
+      do ie = 1, nE
+        if (E_grid(ie) > 0.0_dp) then
+          prefactor_E = (2.0_dp * pi_dp * e**2) &
+            & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
+        else
+          prefactor_E = 0.0_dp
+        end if
+        spont_te(ie) = prefactor_E * spont_te(ie) * AA_TO_CM
+        spont_tm(ie) = prefactor_E * spont_tm(ie) * AA_TO_CM
+      end do
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+
+      open(unit=iounit, file='output/spontaneous_TE.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spontaneous emission TE spectrum'
+      write(iounit, '(a)') '# E(eV)  rate(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), spont_te(ie)
+      end do
+      close(iounit)
+
+      open(unit=iounit, file='output/spontaneous_TM.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spontaneous emission TM spectrum'
+      write(iounit, '(a)') '# E(eV)  rate(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), spont_tm(ie)
+      end do
+      close(iounit)
+
+      print '(a)', 'Spontaneous emission written to output/spontaneous_TE.dat and output/spontaneous_TM.dat'
+    end if
+
   end subroutine optics_finalize
 
 
@@ -326,6 +457,8 @@ contains
     if (allocated(alpha_isbt))   deallocate(alpha_isbt)
     if (allocated(alpha_gain_te)) deallocate(alpha_gain_te)
     if (allocated(alpha_gain_tm)) deallocate(alpha_gain_tm)
+    if (allocated(spont_te))      deallocate(spont_te)
+    if (allocated(spont_tm))      deallocate(spont_tm)
     nE = 0
     gain_fermi_computed = .false.
     mu_e = 0.0_dp
