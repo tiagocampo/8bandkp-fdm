@@ -619,6 +619,16 @@ contains
       if (status /= 0) goto 101
       print *, trim(label), cfg%optics%isbt_enabled
 
+      ! Spontaneous emission
+      read(data_unit, *, iostat=status) label, cfg%optics%spontaneous_enabled
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%spontaneous_enabled
+
+      ! Spin resolution
+      read(data_unit, *, iostat=status) label, cfg%optics%spin_resolved
+      if (status /= 0) goto 101
+      print *, trim(label), cfg%optics%spin_resolved
+
     else if (found_optional) then
       ! Optics=F, skip remaining optics lines
       print *, trim(label), cfg%optics%enabled
