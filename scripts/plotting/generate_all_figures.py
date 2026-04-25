@@ -2703,9 +2703,9 @@ def fig_convergence_grid_spacing(output_dir: Path) -> None:
     energies_at_gamma: Dict[int, np.ndarray] = {}
     dz_values: Dict[int, float] = {}
 
-    # Total z-range from config: -150 to 150 = 300 A
-    # dz = 300 / (FDstep - 1)
-    total_range = 300.0
+    # Total z-range from config: -250 to 250 = 500 A
+    # dz = 500 / (FDstep - 1)
+    total_range = 500.0
 
     for step in fd_steps:
         lines = base_text.splitlines()

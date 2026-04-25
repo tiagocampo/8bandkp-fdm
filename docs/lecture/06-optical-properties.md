@@ -138,7 +138,7 @@ $$
 \frac{m_0}{m^*} \approx 1 + \frac{E_P}{3} \left(\frac{2}{E_g} + \frac{1}{E_g + \Delta_{SO}}\right)
 $$
 
-This shows that the oscillator strength is intimately connected to the band effective mass through the same Kane parameter that appears in the Hamiltonian. For GaAs ($E_P = 28.8$ eV, $E_g = 1.519$ eV, $\Delta_{SO} = 0.341$ eV), the right-hand side evaluates to $\approx 14.1$, meaning $m^* \approx 0.071\,m_0$, close to the accepted value $0.067\,m_0$.
+This shows that the oscillator strength is intimately connected to the band effective mass through the same Kane parameter that appears in the Hamiltonian. For GaAs ($E_P = 28.8$ eV, $E_g = 1.519$ eV, $\Delta_{SO} = 0.341$ eV), the right-hand side evaluates to $\approx 18.8$, meaning $m^* \approx 0.053\,m_0$. The accepted value $0.067\,m_0$ includes remote-band contributions beyond the 8-band model.
 
 ---
 
@@ -206,7 +206,7 @@ $$
 using $P = \sqrt{28.8 \times 3.80998} = 10.47$ eV*angstrom for GaAs. The oscillator strength for this single transition is
 
 $$
-f_{\text{CB} \to \text{HH}} = \frac{P^2/2 + P^2/2}{(\hbar^2/2m_0) \cdot E_g} = \frac{P^2}{3.810 \times 1.519} \approx 1.90
+f_{\text{CB} \to \text{HH}} = \frac{P^2/2 + P^2/2}{(\hbar^2/2m_0) \cdot E_g} = \frac{P^2}{3.810 \times 1.519} \approx 19.0
 $$
 
 This exceeds unity because only one spin channel is considered. When both spin channels are summed, the total CB-to-HH oscillator strength is $f_{\text{total}} = 2 \times P^2 / (3.810 \times E_g)$, consistent with the f-sum rule requiring contributions from all transitions to sum to unity for each initial state.
@@ -339,13 +339,13 @@ Table 6.3 lists the computed subband eigenvalues at $k_z = 0$ near the band edge
 
 ### 6.6.3 Wire optical transitions: current status
 
-The optical transition calculation for wires (`compute_optical_matrix_wire` in `gfactor_functions.f90`) requires the `gfactorCalculation` executable, which uses FEAST (sparse eigensolver) for the $3528 \times 3528$ Hamiltonian. Two issues currently prevent reliable wire oscillator strengths from being computed:
+The optical transition calculation for wires (`compute_optical_matrix_wire` in `gfactor_functions.f90`) requires the `gfactorCalculation` executable, which uses FEAST (sparse eigensolver) for the $3528 \times 3528$ Hamiltonian.
 
-1. **State selection.** The code selects CB and VB states by position from the sorted eigenvalue list: the bottom `numvb` eigenvalues become "VB" and the next `numcb` become "CB." For a wire with 86 unique subbands spanning $-1.5$ to $+2.0$ eV, this selects deep valence states rather than the states near the band edges ($E_V = 0$, $E_C = 1.519$). The actual CB states start at eigenvalue index $\sim$70 from the bottom. A band-edge-aware selection strategy is needed.
+**State selection.** The code selects CB and VB states using band-character-based gap detection. For each eigenstate, the CB character is computed as the sum of the CB-band (7--8) weights from the eigenvector decomposition. The first eigenstate whose CB weight exceeds the threshold of 0.5 is identified as the band edge, and the requested `numvb` and `numcb` states are taken around this gap. If the band-character criterion fails (no state meets the threshold), the code falls back to finding the largest spectral gap between consecutive eigenvalues that can accommodate the requested number of VB and CB states.
 
-2. **FEAST convergence.** The FEAST subspace ($m_0 = 2 \times 24 = 48$) is too small for the 3528-dimensional problem, producing the warning "FEAST subspace too small (info=3). Missing eigenvalues." Additionally, the COO cache for the perturbation Hamiltonian overflows (`WARNING: COO capacity exceeded in insert_csr_block_scaled`), causing entries to be dropped.
+**FEAST convergence.** The FEAST subspace ($m_0 = 2 \times 24 = 48$) may be too small for the 3528-dimensional problem, producing the warning "FEAST subspace too small (info=3). Missing eigenvalues." Additionally, the COO cache for the perturbation Hamiltonian can overflow (`WARNING: COO capacity exceeded in insert_csr_block_scaled`), causing entries to be dropped.
 
-These are code-level issues that will be addressed in a future update. The QW optical transitions (Section 6.6.5) use dense LAPACK and do not suffer from these problems.
+The QW optical transitions (Section 6.6.5) use dense LAPACK and do not suffer from these problems.
 
 ### 6.6.4 Expected wire selection rules
 
@@ -670,7 +670,7 @@ $$
 z_{ij} = \sum_{n=1}^{N_{\text{FD}}} \psi_i^*(z_n) \, z_n \, \psi_j(z_n) \, \Delta z
 $$
 
-using the same FD grid and Simpson integration as the charge density calculation. The ISBT oscillator strength is then computed from the $f_{ij}$ formula above. This routine (`compute_isbt_dipole` in `gfactor_functions.f90`) operates on the CB envelope functions extracted from the 8-band eigenvectors.
+using the same FD grid and Simpson integration as the charge density calculation. The ISBT oscillator strength is then computed from the $f_{ij}$ formula above. The $z$-dipole evaluation and ISBT absorption are implemented in `optical_spectra.f90`: `z_dipole` computes the position matrix element, `compute_intersubband_transitions` assembles the transition table for all CB subband pairs, and `compute_isbt_absorption` evaluates the full absorption spectrum including Fermi factors and broadening.
 
 ![ISBT dipole moments](../figures/isbt_dipole_moments.png)
 
@@ -830,7 +830,7 @@ $$
 S_{2D}(E) = \frac{\exp(\pi/\sqrt{D})}{\cosh(\pi/\sqrt{D})}, \quad D = \frac{E - E_g}{E_b/4}
 $$
 
-At the band edge ($E \to E_g$), $S_{2D} \to 4$ in the ideal 2D limit, meaning the absorption is enhanced by a factor of 4 compared to the non-interacting case. This is a hallmark of 2D excitonic physics.
+At the band edge ($E \to E_g$), $S_{2D} \to 2$ in the ideal 2D limit, meaning the absorption is enhanced by a factor of 2 compared to the non-interacting case. This is a hallmark of 2D excitonic physics.
 
 For a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As QW, the computed binding energy is approximately 3--5 meV, with the exciton Bohr radius $\lambda \approx 100$--$200$ angstrom. The binding energy increases for narrower wells due to the enhanced electron-hole overlap, following the well-known trend of Bastard (1982).
 
@@ -889,7 +889,7 @@ In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") g
 
 4. **No direct Im[$\epsilon$] computation.** The code computes individual transition matrix elements and oscillator strengths for both wire and QW modes but does not assemble them into the imaginary part of the dielectric function $\text{Im}[\epsilon(\omega)]$. This requires a post-processing step that sums over all transitions with appropriate Fermi occupation factors, k_parallel integration (for QWs), and broadening (Section 6.7). A future extension could output $\text{Im}[\epsilon(\omega)]$ directly -- this is planned for Phase 2 of the development roadmap.
 
-5. **Wire state selection.** The `gfactorCalculation` wire mode selects CB/VB states by their position in the sorted eigenvalue list (bottom `numvb` as VB, next `numcb` as CB) rather than by proximity to the band edges. For wires with many subbands, this selects deep valence states instead of the actual band-edge states, producing incorrect optical transitions. A band-edge-aware selection (identifying the gap and selecting states adjacent to it) is needed for correct wire oscillator strengths.
+5. **Wire state selection.** The `gfactorCalculation` wire mode selects CB/VB states using band-character-based gap detection (CB weight threshold at 0.5, with fallback to largest spectral gap). For wires with many subbands where the band character is well-defined, this correctly identifies the band edge. The fallback gap-based heuristic may still misidentify the edge in pathological cases with strongly mixed character.
 
 ### 6.12.4 Wurtzite limitation
 
@@ -974,3 +974,10 @@ from what still needs a benchmark closure.
 | Matrix element computation (QW) | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_qw` |
 | Per-direction computation (QW) | `src/physics/gfactor_functions.f90` | `pMatrixEleCalc` |
 | Output writing (QW) | `src/apps/main_gfactor.f90` | QW optical block |
+| Interband absorption/gain | `src/physics/optical_spectra.f90` | `optics_init`, `optics_accumulate`, `optics_finalize` |
+| ISBT dipole moment | `src/physics/optical_spectra.f90` | `z_dipole` |
+| ISBT transition table | `src/physics/optical_spectra.f90` | `compute_intersubband_transitions` |
+| ISBT absorption spectrum | `src/physics/optical_spectra.f90` | `compute_isbt_absorption` |
+| Exciton binding energy | `src/physics/exciton.f90` | `compute_exciton_binding` |
+| 2D Sommerfeld enhancement | `src/physics/exciton.f90` | `sommerfeld_2d` |
+| LO-phonon scattering rates | `src/physics/scattering.f90` | `compute_phonon_scattering` |

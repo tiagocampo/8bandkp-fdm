@@ -90,8 +90,8 @@ than the true discretization error.
 ### 11.3.1 Setup
 
 We use the broken-gap AlSbW/GaSbW/InAsW quantum well from
-`tests/regression/configs/qw_alsbw_gasbw_inasw.cfg` with a fixed fine grid
-(FDstep = 461, $\Delta z \approx 1.09$ A) and vary the FD order from 2 to 8.
+`tests/regression/configs/qw_alsbw_gasbw_inasw.cfg` with a fixed grid
+(FDstep = 101, $\Delta z = 5$ A) and vary the FD order from 2 to 8.
 The eigenvalues are computed at $k_\parallel = 0$ (Gamma point). Order 8 serves
 as the reference.
 

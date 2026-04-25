@@ -103,9 +103,9 @@ H_{81} & H_{82} & \cdots & H_{88}
 
 The k.p blocks are built from the `kpterms_2d` operators combined with $k_z$-dependent scalar multipliers. For example, the Q term becomes:
 
-$$Q = -\bigl[(\gamma_1 + \gamma_2)\, k_z^2\, I + \text{kpterms\_2d}(7)\bigr]$$
+$$Q = -\bigl[(\gamma_1 - 2\gamma_2)\, k_z^2\, I + \text{kpterms\_2d}(7)\bigr]$$
 
-where `kpterms_2d(7)` already contains the 2D kinetic operator $-(\gamma_1 - 2\gamma_2) \cdot \nabla^2_{2D}$. The factor $k_z^2$ is a scalar (the free propagation direction), while the spatial derivatives in $x$ and $y$ are encoded in the sparse operator.
+where `kpterms_2d(7)` already contains the 2D kinetic operator $-(\gamma_1 - 2\gamma_2) \cdot \nabla^2_{2D}$. The $k_z^2$ coefficient $(\gamma_1 - 2\gamma_2)$ matches the bulk Q-term's $k_z^2$ coefficient and differs from its in-plane coefficient $(\gamma_1 + \gamma_2)$, which has been absorbed into the spatial derivative operator. The factor $k_z^2$ is a scalar (the free propagation direction), while the spatial derivatives in $x$ and $y$ are encoded in the sparse operator.
 
 The band-offset profile is stored as `profile_2d(Ngrid, 3)`:
 - `profile_2d(:, 1)` = $E_V(x,y)$ applied to valence bands 1--4
@@ -143,9 +143,9 @@ $$g_{ij} = g_{\text{free}} \, \delta_{ij} - \frac{2}{m_0} \sum_{l \in \text{remo
 
 where $|0\rangle$ is the target subband state and the sum runs over remote subbands. For wire mode, the spatial integrals are 2D integrals over the wire cross-section:
 
-$$\langle n | \hat{O} | m \rangle = \sum_{i_x, i_y} F_n^*(i_x, i_y) \, \hat{O}[F_m](i_x, i_y) \, \Delta x \, \Delta y$$
+$$\langle n | \hat{O} | m \rangle = \sum_{i_x, i_y} F_n^*(i_x, i_y) \, \hat{O}[F_m](i_x, i_y)$$
 
-where $\hat{O}$ is the perturbation Hamiltonian in the appropriate direction. The perturbation Hamiltonian $\partial H / \partial k_i$ is built by calling `ZB8bandGeneralized` with the appropriate `g` flag (`g1` for $x$, `g2` for $y$, `g3` for $z$), which uses the separate directional gradient operators `kpterms_2d(12:15)`.
+where $\hat{O}$ is the perturbation Hamiltonian in the appropriate direction. Note that the code uses a **bare dot product** (no $\Delta x \cdot \Delta y$ spatial integration weight), consistent with `sigmaElem_2d` and `pMatrixEleCalc_2d` using bare `zdotc` calls. The perturbation Hamiltonian $\partial H / \partial k_i$ is built by calling `ZB8bandGeneralized` with the appropriate `g` flag (`g1` for $x$, `g2` for $y$, `g3` for $z$), which uses the separate directional gradient operators `kpterms_2d(12:15)`.
 
 ### 1.9 Optical transitions in wire geometry
 
@@ -717,11 +717,11 @@ This figure is now a qualitative sanity check for the strained heterostructure p
 
 The strain tensor in the InAs core has a strong biaxial component (compressive in the $x$-$y$ plane) and a tensile component along the wire axis $z$ (via the Poisson effect). The resulting Bir-Pikus shifts split the heavy-hole (HH, $J_z = \pm 3/2$) and light-hole (LH, $J_z = \pm 1/2$) bands:
 
-$$\Delta E_{\text{HH}} = -a_v \,\text{Tr}(\varepsilon) - b \,(\varepsilon_{xx} + \varepsilon_{yy} - 2\varepsilon_{zz})$$
+$$P_\varepsilon = -a_v \,\text{Tr}(\varepsilon), \qquad Q_\varepsilon = \tfrac{b}{2}\bigl(\varepsilon_{zz} - \tfrac{1}{2}(\varepsilon_{xx} + \varepsilon_{yy})\bigr)$$
 
-$$\Delta E_{\text{LH}} = -a_v \,\text{Tr}(\varepsilon) + b \,(\varepsilon_{xx} + \varepsilon_{yy} - 2\varepsilon_{zz})$$
+$$\Delta E_{\text{HH}} = -P_\varepsilon + Q_\varepsilon, \qquad \Delta E_{\text{LH}} = -P_\varepsilon - Q_\varepsilon$$
 
-where $a_v$ is the hydrostatic valence deformation potential and $b$ is the shear deformation potential. For compressive strain ($\varepsilon_{xx}, \varepsilon_{yy} < 0$, $\varepsilon_{zz} > 0$), the HH band moves up relative to LH, pushing the HH-LH splitting to positive values. This means the top of the valence band in the strained InAs core is predominantly heavy-hole in character, which affects the optical selection rules and polarization dependence of interband transitions in the wire.
+where $a_v$ is the hydrostatic valence deformation potential and $b$ is the shear deformation potential. The code's convention (from `compute_bp_scalar` in `strain_solver.f90`) defines $P_\varepsilon = -a_v \,\text{Tr}(\varepsilon)$ with an explicit sign flip, so every consumer negates it. $Q_\varepsilon$ uses $b/2$ (not the full $b$) and the form $\varepsilon_{zz} - (\varepsilon_{xx}+\varepsilon_{yy})/2$ rather than $\varepsilon_{xx}+\varepsilon_{yy}-2\varepsilon_{zz}$. For compressive strain ($\varepsilon_{xx}, \varepsilon_{yy} < 0$, $\varepsilon_{zz} > 0$), $Q_\varepsilon > 0$ so the HH band moves up relative to LH, pushing the HH-LH splitting to positive values. This means the top of the valence band in the strained InAs core is predominantly heavy-hole in character, which affects the optical selection rules and polarization dependence of interband transitions in the wire.
 
 ### 7.7 Comparison with unstrained GaAs wire
 

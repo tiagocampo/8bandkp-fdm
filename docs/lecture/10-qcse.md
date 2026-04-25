@@ -215,9 +215,10 @@ $$
 $$
 
 where $L$ is the total size of the computational domain and $z_1$ is the left
-boundary coordinate. At $z = z_1$ (left boundary), the shift is zero; at
-$z = -z_1$ (right boundary, by symmetry), the shift is $-F \cdot L$. This
-produces a linear ramp across the domain.
+boundary coordinate. At $z = z_1$ (left boundary), the factor $(z_1 + z_1)/(2z_1)
+= 1$, giving a shift of $-F \cdot L$; at $z = -z_1$ (right boundary, by
+symmetry), the factor vanishes and the shift is zero. This produces a linear
+ramp from $-F \cdot L$ at the left edge to zero at the right edge.
 
 The field is applied **after** `confinementInitialization` has built the
 material-dependent band-edge profile but **before** the Hamiltonian is
@@ -431,9 +432,9 @@ $$
            = 3.22 \cdot \frac{z - 230}{-460}
 $$
 
-At $z = -230$: $\Delta V = 0$. At $z = +230$: $\Delta V = 3.22 \cdot
-(-460/460) = -3.22$ eV. At $z = 0$ (well center): $\Delta V = 3.22 \cdot
-(-230/460) = -1.61$ eV.
+At $z = -230$: $\Delta V = 3.22 \cdot 1 = +3.22$ eV. At $z = +230$:
+$\Delta V = 3.22 \cdot 0 = 0$ eV. At $z = 0$ (well center): $\Delta V =
+3.22 \cdot 0.5 = +1.61$ eV.
 
 Checking against the well-center CB shift: $2.539 - 0.929 = +1.610$ eV.
 The band edge at the well center shifts by $+1.610$ eV, matching the formula

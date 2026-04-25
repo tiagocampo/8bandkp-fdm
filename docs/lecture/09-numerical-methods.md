@@ -383,8 +383,9 @@ E_{\min} = \min_i \left(H_{ii} - \sum_{j\ne i}|H_{ij}|\right), \qquad
 E_{\max} = \max_i \left(H_{ii} + \sum_{j\ne i}|H_{ij}|\right)
 $$
 
-and adds a 10% safety margin. This is cheap ($O(\text{nnz})$) and guarantees
-that all eigenvalues are captured.
+and adds a safety margin of $\max(0.1 |E_{\text{bound}}|, \; 0.5\;\text{eV})$.
+This is cheap ($O(\text{nnz})$) and guarantees that all eigenvalues are
+captured.
 
 ### 9.5.4 Dense Fallback
 
@@ -444,37 +445,42 @@ large wire Hamiltonians.
 The k.p Hamiltonian has terms of the form $g(z) \cdot d^2/dz^2$ or
 $P(z) \cdot d/dz$, where $g(z)$ and $P(z)$ are position-dependent material
 parameters that change at heterointerfaces. The code applies these via the
-subroutine `applyVariableCoeff` (for 1D) and `csr_apply_variable_coeff`
+subroutine `applyVariableCoeffStaggered` (for 1D) and `csr_apply_variable_coeff`
 (for 2D CSR).
 
 ### 9.7.1 1D Variable Coefficients
 
 For terms like $d/dz[g(z) \cdot d/dz]$, the correct discretization requires
 **midpoint averaging** of the coefficient at the half-grid point between coupled
-cells $i$ and $j$: $g_{(i+j)/2} \approx (g_i + g_j)/2$. The code implements
-this via `applyVariableCoeff`, which computes an element-wise averaged coefficient
-matrix:
+cells. The code uses a staggered-grid approach via `applyVariableCoeffStaggered`:
+the coefficient profile is first interpolated to half-grid points
+($g_{i+1/2} \approx (g_i + g_{i+1})/2$), and then combined with inner/outer
+first-derivative operators $D_{\text{inner}}$ and $D_{\text{outer}}$ that
+naturally encode the 2-point stencil structure:
 
 ```
-G_avg(i,j) = profile(i)         if i == j  (diagonal: local value)
-G_avg(i,j) = (profile(i) + profile(j)) / 2  if i != j  (off-diagonal: midpoint)
-kpterms(:,:,term) = -G_avg .* FD_matrix
+call interpolateToHalfPoints(profile, N, order, g_half)
+call applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, term_idx)
 ```
 
-This is the standard approach for conservative discretization of variable-
-coefficient operators and ensures that the kinetic energy operator is Hermitian
-across heterointerfaces. For FDorder=2, the same averaging is implicit in the
-`dgemv`-based construction, which naturally computes the 2-point average of
-neighbor values.
+This produces the conservative form $d/dz[g(z) \cdot d/dz]$ discretized as
+$D_{\text{outer}} \cdot \text{diag}(g_{1/2}) \cdot D_{\text{inner}}$, which
+guarantees Hermiticity across heterointerfaces. The QW Hamiltonian always uses
+this tridiagonal staggered structure regardless of the requested FD order ---
+higher FD orders only improve the half-point interpolation accuracy, not the
+matrix bandwidth.
 
 ### 9.7.2 2D Variable Coefficients in CSR
 
-For 2D, `csr_apply_variable_coeff` scales each row $i$ by $-\text{profile}(i)$,
-an $O(\text{nnz})$ operation. An optional `cell_volume` parameter provides
-box-integration weights for cut-cell geometries. For boundary cells with
-fractional face areas, a two-pass algorithm ensures exact row-sum
-conservation (diagonal = negative sum of off-diagonals), guaranteeing that a
-constant function is a null mode of the discrete Laplacian.
+For 2D, `csr_apply_variable_coeff` applies position-dependent coefficients to
+the sparse CSR operator. The basic operation scales each row $i$ by
+$-\text{profile}(i)$, an $O(\text{nnz})$ operation. Optional parameters provide
+box-integration weights: `cell_volume` for per-cell volumes and `face_frac_x`/
+`face_frac_y` for fractional face areas at boundaries. When face fractions are
+active, a two-pass algorithm ensures exact row-sum conservation (diagonal =
+negative sum of off-diagonals), guaranteeing that a constant function is a null
+mode of the discrete Laplacian --- essential for the Poisson solver's charge
+conservation.
 
 ---
 
@@ -629,7 +635,7 @@ MKL PARDISO, using the same box-integration discretization on a 2D grid.
 | Eigensolver | `zheevx` (dense LAPACK) | `zfeast_hcsrev` (sparse FEAST) |
 | Hamiltonian size | $8N_z$ | $8N_xN_y$ |
 | Typical $N$ | 50--500 | 2500--50000 |
-| Variable coefficients | `applyVariableCoeff` (BLAS) | `csr_apply_variable_coeff` (CSR row scaling) |
+| Variable coefficients | `applyVariableCoeffStaggered` (staggered grid) | `csr_apply_variable_coeff` (CSR with face fractions) |
 | Poisson | Thomas algorithm (tridiag) | PARDISO (sparse direct) |
 | k-point parallelism | OpenMP over k-points | FEAST internal threading |
 | COO-to-CSR cache | Not needed | `csr_build_from_coo_cached` |

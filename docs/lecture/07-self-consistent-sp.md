@@ -118,7 +118,7 @@ $$\Phi(z_1) = V_{\text{left}}, \quad \frac{d\Phi}{dz}\bigg|_{z_N} = 0$$
 
 The Neumann condition is implemented by replacing the last row of the tridiagonal system with $\Phi_N - \Phi_{N-1} = 0$. This is useful for symmetric structures where only half the domain is simulated.
 
-In the code, these are encoded as integer constants `BC_DD = 1` and `BC_DN = 2`, selectable via the `SC_bc` input parameter.
+In the code, these are encoded as integer constants `BC_DD = 1` and `BC_DN = 2`, selectable via the `bc_type` input parameter.
 
 ---
 
@@ -156,11 +156,11 @@ The $k_\parallel$ integral is evaluated numerically using **Simpson's rule**. Th
 
 $$k_\parallel^{(j)} = j \cdot \frac{k_{\max}}{N_k - 1}, \quad j = 0, 1, \ldots, N_k - 1$$
 
-where $N_k$ is chosen to be odd (required by Simpson's rule; if even, the last point is dropped). The default is 201 points, but the user can specify any value via `SC_num_kpar`.
+where $N_k$ is chosen to be odd (required by Simpson's rule; if even, the last point is dropped). The default is 201 points, but the user can specify any value via `num_kpar`.
 
 At each $k_\parallel$ point, the full 8-band QW Hamiltonian is built and diagonalized. This is the computational bottleneck of the SP loop: each iteration requires $N_k$ eigensolves of the $8N \times 8N$ Hamiltonian.
 
-The upper limit $k_{\max}$ is set by `SC_kpar_max`. If left at the default (0), the code auto-selects it from the `waveVectorMax` parameter or falls back to 0.5 inverse Angstroms.
+The upper limit $k_{\max}$ is set by `kpar_max`. If left at the default (0), the code auto-selects it from the `waveVectorMax` parameter or falls back to 0.5 inverse Angstroms.
 
 ### 7.4.4 Subband classification
 
@@ -244,9 +244,9 @@ The code encodes these as named constants `CM3_TO_PER_NM3 = 1.0e-21` and `ANGSTR
 
 The code supports two ways to set the Fermi level $\mu$:
 
-**Fixed Fermi level** (`SC_fermi_mode: 1`): The user specifies $\mu$ directly via `SC_fermi_level`. This is appropriate when the Fermi level is known (e.g., from an external contact, or when studying a specific doping scenario where $\mu$ is pinned).
+**Fixed Fermi level** (`fermi_mode: 1`): The user specifies $\mu$ directly via `fermi_level`. This is appropriate when the Fermi level is known (e.g., from an external contact, or when studying a specific doping scenario where $\mu$ is pinned).
 
-**Charge neutrality** (`SC_fermi_mode: 0`): The code finds $\mu$ such that the total charge integrates to zero:
+**Charge neutrality** (`fermi_mode: 0`): The code finds $\mu$ such that the total charge integrates to zero:
 
 $$\int_0^L \big[n(z) - p(z)\big]\, dz = \int_0^L \big[N_D(z) - N_A(z)\big]\, dz$$
 
@@ -309,7 +309,7 @@ and the final update blends it with linear mixing:
 
 $$\Phi_{n+1} = (1 - \alpha)\,\Phi_n + \alpha\,\Phi_{\text{extrap}}$$
 
-The history length $m$ is controlled by `SC_diis` (default 7). The circular buffer is managed by `update_diis_history`, which shifts the oldest entry out when the buffer is full.
+The history length $m$ is controlled by `diis_history` (default 7). The circular buffer is managed by `update_diis_history`, which shifts the oldest entry out when the buffer is full.
 
 ### 7.7.4 Convergence criterion
 
@@ -319,7 +319,7 @@ $$|\Phi_{n+1} - \Phi_n|_\infty = \max_z |\Phi_{n+1}(z) - \Phi_n(z)| < \text{tol}
 
 The default tolerance is $10^{-6}$ eV. Since the potential is in volts and 1 V = 1 eV for a single electron charge, this is a 1 microvolt convergence threshold.
 
-If convergence is not reached within `SC_max_iter` iterations (default 100), the loop exits with a warning and returns the best available potential.
+If convergence is not reached within `max_iter` iterations (default 100), the loop exits with a warning and returns the best available potential.
 
 ### 7.7.5 Practical considerations
 
@@ -346,7 +346,7 @@ This means `confinementInitialization` and `ZB8bandQW` are called identically wh
 
 ### 7.9.1 Uniformly doped GaAs/AlAs quantum well
 
-**Physical setup.** We simulate a 300-Angstrom structure with a 100-Angstrom GaAs well clad by AlAs barriers. The GaAs well is n-doped at $N_D = 5 \times 10^{18}$ cm$^{-3}$. The Fermi level is found self-consistently by charge neutrality. Temperature is 300 K. A small external electric field of $E = 0.0005$ (5 kV/cm) is applied.
+**Physical setup.** We simulate a 300-Angstrom structure with a 100-Angstrom GaAs well clad by AlAs barriers. The GaAs well is n-doped at $N_D = 5 \times 10^{18}$ cm$^{-3}$. The Fermi level is found self-consistently by charge neutrality. Temperature is 300 K.
 
 **Config:** `tests/regression/configs/sc_gaas_alas_qw.cfg`
 
@@ -687,7 +687,7 @@ The derived types are defined in `src/core/defs.f90`:
 - `sc_config` --- all SP parameters (enabled, iterations, tolerance, mixing, DIIS, temperature, Fermi mode, BCs)
 - `doping_spec` --- per-layer donor/acceptor concentrations (ND, NA in cm$^{-3}$)
 
-The input parser (`src/io/input_parser.f90`) reads the `SC_*` and `doping*` lines and populates these types.
+The input parser (`src/io/input_parser.f90`) reads the `SC` enable flag and all SC-related lines (e.g., `max_iter`, `diis_history`, `num_kpar`, `bc_type`, `doping*`) and populates these types.
 
 ---
 

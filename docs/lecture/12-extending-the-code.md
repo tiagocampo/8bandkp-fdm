@@ -23,12 +23,13 @@ src/physics/
   hamiltonianConstructor.f90
     |-> finitedifferences  (FD stencil matrices)
     |-> sparse_matrices    (CSR operations for wire mode)
+    |-> strain_solver      (Bir-Pikus strain blocks)
     |-> utils              (dense-to-sparse conversion)
   gfactor_functions.f90
     |-> hamiltonianConstructor
-    |-> mkl_spblas
+    |-> sparse_matrices    (CSR SpMV for QW/wire perturbation)
   poisson.f90
-    |-> finitedifferences
+    |-> definitions        (types, constants only)
   charge_density.f90
     |-> utils
     |-> definitions
@@ -37,14 +38,19 @@ src/physics/
     |-> charge_density
     |-> hamiltonianConstructor
   strain_solver.f90
-    |-> finitedifferences
-    |-> sparse_matrices
+    |-> definitions        (types, constants only)
 
 src/math/
   finitedifferences.f90
-    |-> utils
-  mkl_spblas.f90            (vendor: Intel MKL sparse BLAS)
+    |-> definitions
   sparse_matrices.f90       (CSR type, Kronecker, cut-cell ops)
+    |-> definitions
+  linalg.f90                (zheevx wrapper, ILAENV, DLAMCH)
+    |-> definitions
+  eigensolver.f90           (FEAST contour eigensolver)
+    |-> definitions
+    |-> sparse_matrices
+  geometry.f90              (wire grid, cut-cells, immersed boundary)
     |-> definitions
 
 src/io/
@@ -60,8 +66,6 @@ src/core/
   parameters.f90             (material database)
     |-> definitions
   utils.f90                  (dense-to-sparse, Simpson integration)
-    |-> definitions
-  geometry.f90               (wire grid, cut-cells, immersed boundary)
     |-> definitions
 ```
 
@@ -122,8 +126,8 @@ All materials live in `src/core/parameters.f90` inside the `paramDatabase` subro
 |-------|-------|-------------|
 | `meff` | m0 | Effective mass (informational, not used directly) |
 | `gamma1`, `gamma2`, `gamma3` | dimensionless | Luttinger parameters |
-| `P` | eV^(1/2) A^(-1) | Momentum matrix element (from EP: P = sqrt(EP*hbar2O2m0)) |
-| `A` | dimensionless | Conduction band kinetic coefficient |
+| `P` | eV^(1/2) A^(-1) | Momentum matrix element (from EP: P = sqrt(EP*const)) |
+| `A` | dimensionless | Conduction band kinetic coefficient (A = 1/meff) |
 | `EP` | eV | Kane energy |
 | `Eg` | eV | Band gap |
 | `deltaSO` | eV | Spin-orbit splitting |
@@ -166,8 +170,8 @@ case ("InP")
 ```
 
 3. Compute `A` and `P` from `EP`:
-   - `P = sqrt(EP * hbar2O2m0)` where `hbar2O2m0` is defined in `defs.f90` (3.809982... eV A^2).
-   - `A = 1 + EP / Eg` (approximately; the exact relation follows from the k.p definition).
+   - `P = sqrt(EP * const)` where `const` is defined in `defs.f90` (3.809982... eV A^2).
+   - `A = 1/meff` (the default; for W-variant materials, A follows a more complex formula involving EP, Eg, deltaSO, and the gamma parameters).
    These are used inside `confinementInitialization`, which reads `params(i)%P` and `params(i)%A` from the `paramStruct`. If you set them explicitly in the case block, make sure they are consistent with EP.
 
 4. Set `EV` and `EC` with the correct band offsets relative to the other materials in your heterostructure. The code uses the convention `EC = EV + Eg`. For W-variant materials (suffix `W`), EV uses Winkler's InSb reference. For non-W materials, Vurgaftman's reference is used.
@@ -371,7 +375,7 @@ The table below lists the major features needed to reproduce the full set of res
 Before submitting any change, run through this checklist:
 
 1. `cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl && cmake --build build` -- clean build.
-2. `ctest --test-dir build` -- all tests pass (currently 13 unit + 10 regression = 23 tests total).
+2. `ctest --test-dir build` -- all tests pass (currently 38 tests: 15 unit + 23 regression).
 3. Check for stale `.mod` files in the project root: `rm -f *.mod` if you see type mismatch errors.
 4. Verify that `input.cfg` is not committed with personal test configs (use `tests/regression/configs/` instead).
 5. If you changed `defs.f90` derived types or `hamiltonianConstructor.f90` Hamiltonian construction, flag for review per project policy.
