@@ -5493,7 +5493,9 @@ def fig_wire_gfactor_vs_size(output_dir: Path) -> None:
     """
     print("[figure] wire_gfactor_vs_size")
 
-    sizes = [40, 50, 60, 80, 100]
+    # Very narrow wires (<50 Å) give ill-conditioned sigma matrices with
+    # tiny transverse spin components, producing spurious gx >> 100.
+    sizes = [50, 60, 80, 100]
     gx_list: List[float] = []
     gy_list: List[float] = []
     gz_list: List[float] = []
@@ -5793,7 +5795,11 @@ def fig_qw_gfactor_vs_width(output_dir: Path) -> None:
     """
     print("[figure] qw_gfactor_vs_width")
 
-    half_widths = [10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 100, 120]
+    # Wide wells (hw>40) hit near-zero energy denominators in Lowdin
+    # partitioning due to the InAsW/GaSbW broken-gap alignment: CB and VB
+    # states become nearly degenerate, contaminating gz.  Restrict to
+    # half-widths where the denominators stay well-behaved.
+    half_widths = [10, 15, 20, 25, 30, 40]
     gx_list: List[float] = []
     gy_list: List[float] = []
     gz_list: List[float] = []
