@@ -211,6 +211,10 @@ module definitions
     real(kind=dp)    :: gain_carrier_density = 3.0e12_dp  ! 2D cm^-2
     ! ISBT
     logical          :: isbt_enabled = .false.
+    ! Spontaneous emission
+    logical          :: spontaneous_enabled = .false.
+    ! Spin resolution
+    logical          :: spin_resolved = .false.
   end type optics_config
 
   ! ------------------------------------------------------------------
