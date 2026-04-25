@@ -144,11 +144,11 @@ conduction band.
 
 | Parameter | GaAs | InAs | InSb |
 |---|---|---|---|
-| $E_g$ (eV) | 1.519 | 0.417 | 0.236 |
+| $E_g$ (eV) | 1.519 | 0.417 | 0.235 |
 | $\Delta_{\mathrm{SO}}$ (eV) | 0.341 | 0.390 | 0.810 |
-| $E_P$ (eV) | 28.8 | 21.5 | 25.0 |
-| $m^*/m_0$ | 0.067 | 0.026 | 0.014 |
-| $\gamma_1$ | 6.98 | 20.0 | 35.1 |
+| $E_P$ (eV) | 28.8 | 21.5 | 23.3 |
+| $m^*/m_0$ | 0.067 | 0.026 | 0.0135 |
+| $\gamma_1$ | 6.98 | 20.0 | 34.8 |
 
 **Parameter sources.** The code uses two families of parameters:
 
@@ -265,9 +265,9 @@ $$
 $$
 
 $$
-\delta E_{\mathrm{HH}} = P_\epsilon + Q_\epsilon, \qquad
-\delta E_{\mathrm{LH}} = P_\epsilon - Q_\epsilon, \qquad
-\delta E_{\mathrm{SO}} = P_\epsilon,
+\delta E_{\mathrm{HH}} = -P_\epsilon + Q_\epsilon, \qquad
+\delta E_{\mathrm{LH}} = -P_\epsilon - Q_\epsilon, \qquad
+\delta E_{\mathrm{SO}} = -P_\epsilon,
 $$
 
 where $a_c$ is the CB deformation potential and:
@@ -560,7 +560,7 @@ $$
 $$
 
 $$
-P_\epsilon = -a_v \cdot \mathrm{Tr}(\epsilon) = -1.16 \times 0.0410 = -0.048 \text{ eV},
+-P_\epsilon = a_v \cdot \mathrm{Tr}(\epsilon) = 1.16 \times 0.0410 = +0.048 \text{ eV},
 $$
 
 $$
@@ -571,16 +571,16 @@ The computed eigenvalues at $\Gamma$ confirm these shifts:
 
 | Band | Unstrained (eV) | Strained (eV) | Shift (eV) |
 |---|---|---|---|
-| HH (1, 4) | 0.000 | +0.026 | +0.026 |
-| LH (2, 3) | 0.000 | -0.085 | -0.085 |
-| SO (5, 6) | -0.341 | -0.424 | -0.083 |
+| HH (1, 4) | 0.000 | +0.121 | +0.121 |
+| LH (2, 3) | 0.000 | +0.010 | +0.010 |
+| SO (5, 6) | -0.341 | -0.329 | +0.012 |
 | CB (7, 8) | 1.519 | 1.225 | -0.294 |
 
 The CB shift of -0.294 eV matches the analytical prediction exactly. The HH/LH
 splitting of 0.111 eV at $\Gamma$ is the hallmark of biaxial strain: the heavy
-holes move up (tensile strain pushes HH above LH) while light holes move down.
+holes move up (tensile strain pushes HH above LH) while light holes move up much less.
 Note that the SO eigenvalue differs from the simple diagonal prediction
-($P_\epsilon = -0.048$) because the full off-diagonal Bir-Pikus Hamiltonian
+($-P_\epsilon = +0.048$) because the full off-diagonal Bir-Pikus Hamiltonian
 couples LH and SO bands through the $(Q_\epsilon - T_\epsilon)$ terms.
 
 **Configuration for strained bulk GaAs:**
@@ -598,6 +598,9 @@ numcb: 2
 numvb: 6
 ExternalField: 0  EF
 EFParams: 0.0005
+whichBand: 0
+bandIdx: 1
+SC: 0
 strainSubstrate: 5.869
 ```
 
@@ -699,6 +702,28 @@ $\Delta E = C_0 \cdot A \cdot k^2 = 3.810 \times 14.93 \times 0.05^2 = 0.142$
 eV. The actual shift is larger because the 8-band coupling introduces
 nonparabolic corrections. This highlights the advantage of the full 8-band
 model over a single-band effective mass approximation.
+
+### 3.8 Parameter Stability: Vurgaftman vs Winkler Sets
+
+The codebase provides two parameter sets for standard materials: the standard
+**Vurgaftman** parameters (e.g., `GaAs`) and the **Winkler** parameters
+(e.g., `GaAsW`). While both parameterizations enforce the identical fundamental
+band gap ($E_g=1.519$ eV) and spin-orbit splitting ($\Delta_{\mathrm{SO}}=0.341$ eV),
+they have slightly different Kane energies and Luttinger parameters:
+
+| Material | $E_P$ (eV) | $\gamma_1$ | $\gamma_2$ | $\gamma_3$ |
+|---|---|---|---|---|
+| `GaAs` | 28.80 | 6.98 | 2.06 | 2.93 |
+| `GaAsW`| 28.89 | 6.85 | 2.10 | 2.90 |
+
+Because of these differences, the finite-$\mathbf{k}$ dispersion varies slightly.
+For instance, at $k=0.10$ \AA$^{-1}$ along [100]:
+- **GaAs**: CB is at 2.129 eV, HH is at -0.215 eV.
+- **GaAsW**: CB is at 2.131 eV, HH is at -0.213 eV.
+
+This built-in redundancy allows you to easily test the robustness of your
+calculated quantities (such as effective masses or optical matrix elements)
+against standard variations in the literature parameter sets.
 
 ---
 

@@ -187,7 +187,7 @@ The Hamiltonian construction is the primary hook point for new physics. There ar
 If your physics changes the on-site energies but not the kinetic terms, modify the `profile` array before the k-sweep. The existing examples are:
 
 - **Electric field**: `externalFieldSetup_electricField` in `hamiltonianConstructor.f90` adds a linear potential `-E * z` to the profile.
-- **Strain**: `apply_pikus_bir` in `strain_solver.f90` modifies the profile using deformation potentials.
+- **Strain**: `compute_bir_pikus_blocks` in `strain_solver.f90` computes Bir-Pikus shifts from the strain tensor.
 - **Self-consistent SP**: The SC loop updates `profile` iteratively via the Poisson potential.
 
 The profile is a 2D array with shape `(Ngrid, 3)` where column 1 is EV, column 2 is EV minus DeltaSO (SO band edge), and column 3 is EC. In QW mode it has shape `(fdStep, 3)`. Modify it any time before the Hamiltonian is built for a given k-point.

@@ -137,6 +137,8 @@ $$
 \sum_{b=1}^{8} P_b^{(n)} \approx \Delta z \qquad \text{(QW raw output)}.
 $$
 
+**Important: wire vs QW normalization.** In QW mode, `parts.dat` writes the raw quadrature weights described above, and the row sums scale with the grid spacing. In wire mode (2D confinement), the code normalizes each row to sum to unity before writing: $\sum_b P_b^{(n)} = 1$. This difference means wire `parts.dat` values can be read directly as band fractions, while QW values must first be divided by the row sum.
+
 For physics interpretation we therefore use the normalized fractions
 
 $$
@@ -555,7 +557,76 @@ preserved. To obtain k-resolved parts, one must either:
 1. **Integrate the eigenfunction files** at each k-step (as done above), using $P_b = \Delta z \sum_i |\psi_b(z_i)|^2$.
 2. **Modify the output routine** to append rather than replace, or write a separate parts file per k-step.
 
-The eigenfunction files are preserved at all k-steps, so option 1 is always available for post-processing.
+The eigenfunction files are written at only three k-points --- the first, middle, and last step of the sweep --- so option 1 is available only at those k-steps. If you need k-resolved parts at intermediate k-points, you must modify the output routine to write eigenfunctions at additional k-steps (or at every k-step).
+
+## 7d. Quantum-Confined Stark Effect
+
+The wavefunction profiles discussed so far were computed at zero external electric
+field. Applying a uniform electric field $F$ along the growth direction $z$ adds a
+linear potential $V_F(z) = -eFz$ that tilts the band edges. In a bulk semiconductor
+this simply shifts all states uniformly (the Wannier-Stark ladder), but in a
+quantum well the confinement potential prevents the electron from escaping, and the
+field distorts the envelope function inside the well. This is the **quantum-confined
+Stark effect** (QCSE).
+
+The field is activated through the `ExternalField` input parameter:
+
+```
+ExternalField: 1  EF
+EFParams: -0.007    ! Electric field in eV/Angstrom
+```
+
+A positive `EFParams` value corresponds to a field pointing in the $+z$ direction,
+which shifts the conduction band edge downward on the right side of the well and
+upward on the left. The code adds this linear potential directly to the diagonal
+of the Hamiltonian before diagonalization, so all wavefunctions and parts are
+computed self-consistently with the tilted profile.
+
+### 7d.1 Band-edge distortion and subband shifts
+
+The figure below compares the GaAs/Al$_{0.2}$Ga$_{0.8}$As QW at zero field and
+at $F = -7 \times 10^{-3}$ eV/A (corresponding to approximately $-70$ kV/cm). The
+left panel shows the band-edge profiles: under zero field the conduction and valence
+band edges are flat within each layer; under the applied field they tilt linearly,
+preserving the well shape but breaking the inversion symmetry. The right panel shows
+the resulting subband energy shifts as horizontal lines, with annotated Stark shifts
+in meV.
+
+![QCSE band-edge tilt and subband Stark shifts for the GaAs/Al$_{0.2}$Ga$_{0.8}$As QW. Left: band-edge profiles at zero field (solid) and at $F = -7\times10^{-3}$ eV/A (dashed). Right: subband energy levels at zero field (blue) and under field (orange), with annotated energy shifts in meV.](../figures/qcse_stark_shift.png){ width=95% }
+
+The Stark shift $\Delta E_n = E_n(F) - E_n(0)$ is negative for the electron
+ground state (CB1 shifts to lower energy) because the field pushes the wavefunction
+toward one side of the well, reducing its kinetic energy. The shift is quadratic in
+the field for small fields, $\Delta E_n \propto -\alpha_n F^2$, where $\alpha_n$ is
+the static polarizability of subband $n$. For the first excited state, the shift can
+be positive or negative depending on the field direction and the symmetry of the
+state.
+
+### 7d.2 Wavefunction distortion
+
+Under the applied field, the wavefunctions lose their inversion symmetry. The CB1
+ground state, which is an even function centered at $z = 0$ at zero field, shifts its
+peak toward the downhill side of the tilted potential. This has two important
+consequences:
+
+1. **Reduced overlap.** In a type-I QW, the electron and hole wavefunctions are both
+   pushed toward the same side of the well, but by different amounts because their
+   effective masses and confinement energies differ. The electron-hole overlap
+   integral $\int \psi_e(z)\,\psi_h(z)\, dz$ decreases, reducing the oscillator
+   strength of the interband transition. This is the basis of QCSE electro-absorption
+   modulators.
+
+2. **Broken-gap asymmetry.** In the type-III AlSbW/GaSbW/InAsW structure, the
+   electron and hole are already spatially separated (CB in InAs, VB in GaSb). An
+   applied field can either increase or decrease the electron-hole overlap depending
+   on the field direction, providing an electrically tunable optical matrix element.
+
+The QCSE connects directly to the `ExternalField` and `EFParams` input parameters.
+By sweeping `EFParams` from 0 to some maximum value and recomputing the wavefunctions
+and parts, one can trace the full evolution from a symmetric state to a strongly
+asymmetric, field-polarized state. The parts vector provides a complementary
+view: as the field increases, the band character of each state can change because the
+wavefunction samples different material regions at different energies.
 
 ## 8. Discussion
 
@@ -603,6 +674,14 @@ plot 'output/eigenfunctions_k_00001_ev_00011.dat' \
 **Tracking band mixing with k**: The eigenfunction files are written at each k-step. By plotting the parts as a function of $k$, you can visualize the evolution from pure HH character at $k = 0$ to mixed HH/LH character at finite $k$, and identify anticrossings where two states swap character.
 
 **Cross-referencing with eigenvalues**: The file `eigenvalues.dat` contains `waveVectorStep` rows with $|\mathbf{k}|$ in the first column and the sorted eigenvalues in the remaining columns. By matching eigenvalue indices to the parts file, you can track which subband each eigenstate belongs to across the Brillouin zone.
+
+### 8.4 The Phase Information Pitfall
+
+A common pitfall when analyzing the code's output is attempting to use the `eigenfunctions_k_XXXXX_ev_YYYYY.dat` files to compute interference effects or transition matrix elements. **You cannot do this.**
+
+As discussed in Section 3.1, the code writes the *absolute values* $|\psi_b(z)|$ of the complex wavefunction components. The global phase of an eigenstate is arbitrary, but the *relative* phase between the 8 band components $\psi_b(z)$ and $\psi_{b'}(z)$ encodes the crucial orbital mixing physics. By taking the absolute value before writing to disk, this relative phase information is lost. 
+
+The output files are designed strictly for visualizing the probability density $\rho(z)$. If you need to compute optical matrix elements or other observables that depend on the relative phases, you must do so internally within the Fortran code (as done by the `gfactorCalculation` executable) before the phase is discarded.
 
 ## 9. Summary
 

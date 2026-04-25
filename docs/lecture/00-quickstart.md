@@ -230,9 +230,15 @@ Cartesian direction, and the resulting g-factor eigenvalues:
 
    0.1575   -0.0000   0.0000   -0.0000
    0.0000   -0.0000  -0.1575   -0.0000
- gx  -0.3150
- gy  -0.3150
- gz  -0.3150
+ gx
+   0.0000000000000000
+  -0.31500390136823286
+ gy
+   0.0000000000000000
+  -0.31500390136823286
+ gz
+   0.0000000000000000
+  -0.31500390136822709
 ```
 
 The file `output/gfactor.dat` contains three values — the g-factor along $x$,

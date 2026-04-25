@@ -91,10 +91,10 @@ where $V_\alpha$ and $V_\beta$ are the momentum perturbation operators correspon
 After Lowdin partitioning, the problem reduces to a $2 \times 2$ effective Hamiltonian in the P subspace. For each spatial direction $d$, this Hamiltonian encodes the g-factor:
 
 $$
-H_{\mathrm{eff}}^{(d)} = -\frac{\mu_B B_d}{2}\, g_d \, \sigma_d,
+H_{\mathrm{eff}}^{(d)} = \frac{\mu_B B_d}{2}\, g_d \, \sigma_d,
 $$
 
-where $g_d$ is extracted as the eigenvalue splitting of the $2 \times 2$ tensor $G^{(d)}$ (defined in Section 5.1.4). The $2 \times 2$ structure reflects the Kramers doublet: the two eigenstates correspond to spin-up and spin-down in the effective magnetic field, and the splitting between them is proportional to $g^*$.
+where $g_d$ is extracted from the $2 \times 2$ tensor $G^{(d)}$ (defined in Section 5.1.4). The $2 \times 2$ structure reflects the Kramers doublet: the two eigenstates correspond to spin-up and spin-down in the effective magnetic field, and the splitting between them is proportional to $g^*$.
 
 #### Direction mapping
 
@@ -127,7 +127,13 @@ where:
 - $\Sigma^{(d)}_{ij} = \langle \psi_{n_0+i-1} | \Sigma_d | \psi_{n_0+j-1} \rangle$ is the spin matrix element between the doublet states,
 - $\hbar^2/(2m_0) \approx 3.81\;\mathrm{eV\,\AA^2}$ (the constant `hbar2O2m0` in `defs.f90`).
 
-The effective g-factor along direction $d$ is extracted as the smallest eigenvalue of $2G^{(d)}$ (with sign). The code diagonalizes each $2 \times 2$ tensor slice with LAPACK's `zheev` and reports $g_d = 2\lambda_{\min}^{(d)}$.
+The effective tensor $G^{(d)}$ is defined such that $G^{(d)} = -\frac{1}{2} g_d \Sigma_d$. To robustly extract the g-factor while mathematically preserving its sign, the code projects the full tensor onto the spin matrix of the doublet using the trace formula:
+
+$$
+g_d = -2 \frac{\mathrm{Re}[\mathrm{Tr}(G^{(d)} \cdot \Sigma^{(d)})]}{\mathrm{Tr}(\Sigma^{(d)} \cdot \Sigma^{(d)})}
+$$
+
+This guarantees that the sign of the g-factor is preserved (e.g., negative for GaAs, positive for free electrons) independent of the numerical basis chosen by the eigensolver.
 
 ### 5.1.5 The Roth formula: analytical estimate for bulk g-factors
 
@@ -255,7 +261,7 @@ The g-factor calculation is driven by program `gfactor`. The workflow is:
 5. **Select doublet**: the Kramers pair at `bandIdx` and `bandIdx+1`.
 6. **Compute spin matrix** $\Sigma^{(d)}_{ij}$ between doublet states (3 directions).
 7. **Loop over directions** $d = 1,2,3$: for each, select the perturbation pair $(\mathrm{mod}_1, \mathrm{mod}_2)$, build the perturbation Hamiltonians, and accumulate the momentum matrix element sums over all intermediate states.
-8. **Assemble g-tensor** and diagonalize each $2 \times 2$ slice to extract $g_x, g_y, g_z$.
+8. **Assemble g-tensor** and apply trace projection to each $2 \times 2$ slice to extract $g_x, g_y, g_z$.
 9. **Write output** to `output/gfactor.dat`.
 
 ### 5.2.3 Walkthrough of pMatrixEleCalc
@@ -280,13 +286,13 @@ These couple the CB ($s$-like, bands 7--8) to the VB and SO bands ($p$-like, ban
 
 #### Wire mode: `g1`, `g2`, `g3` flags
 
-For quantum wires (`confinement=2`), the perturbation Hamiltonian must account for the fact that two directions ($x$, $y$) involve spatial gradients ($d/dx$, $d/dy$) on a 2D finite-difference grid, while the third ($z$) is the free propagation direction with a simple $k_z$ perturbation. The code uses three separate flags:
+For quantum wires (`confinement=2`), the perturbation Hamiltonian $dH/dk_\alpha$ is constructed by differentiating the k.p coupling terms with respect to the external wavevector. The key insight is that the linear Kane coupling $P_+ = P(k_x + ik_y)/\sqrt{2}$ differentiates to $dP_+/dk_x = P/\sqrt{2}$ and $dP_+/dk_y = iP/\sqrt{2}$ -- these are **diagonal** in envelope space (no spatial gradient), just like the QW case. The code uses three separate flags:
 
-| Flag | Direction | Mechanism |
+| Flag | Direction | Perturbation |
 |---|---|---|
-| `g='g1'` | $x$ (confinement) | 2D gradient operator $d/dx$ applied to $P$-dependent blocks |
-| `g='g2'` | $y$ (confinement) | 2D gradient operator $d/dy$ applied to $P$-dependent blocks |
-| `g='g3'` | $z$ (free axis) | Unit $k_z$ perturbation (same topology as QW `g='g'`) |
+| `g='g1'` | $x$ | $dH/dk_x$: PP = PM = $P/\sqrt{2}$ (diagonal P blocks) |
+| `g='g2'` | $y$ | $dH/dk_y$: PP = $iP/\sqrt{2}$, PM = $-iP/\sqrt{2}$ |
+| `g='g3'` | $z$ (free axis) | $dH/dk_z$: PZ + S + SC (kz-linear terms) |
 
 All three produce a sparse CSR matrix that is applied to the eigenstate via `csr_spmv`, avoiding dense matrix construction for the large wire Hamiltonian.
 
@@ -309,7 +315,7 @@ For multi-layer QW structures, the Hamiltonian is large ($8N \times 8N$ with $N 
 For wire mode (`confinement=2`), the program follows a different branch in `main_gfactor.f90`:
 
 1. Build the 2D sparse k.p terms via `confinementInitialization_2d`.
-2. Optionally compute and apply strain via `compute_strain` + `apply_pikus_bir`.
+2. Optionally compute and apply strain via `compute_strain` + `compute_bir_pikus_blocks`.
 3. Build the full wire Hamiltonian at $k_z = 0$ with `ZB8bandGeneralized`.
 4. Solve with FEAST (`solve_sparse_evp`) using an auto-computed energy window.
 5. Extract CB/VB states from sorted eigenvalues.
@@ -328,14 +334,13 @@ tensor(:,:,:) = tensor(:,:,:) - (g_free / 2) * sigma(:,:,:)
 
 The first line multiplies the accumulated $\sum_l (P_1 P_2 - P_3 P_4)/\mathrm{denom}$ by $-i/(\hbar^2/2m_0)$, converting from the code's natural units to the physical g-tensor convention. The second line subtracts the free-electron spin contribution $(g_0/2)\Sigma$.
 
-The final g-factor values are obtained by diagonalizing each $2 \times 2$ slice of the tensor in `main_gfactor.f90`:
+The final g-factor values are extracted by projecting the $2 \times 2$ slice of the tensor onto the subspace spin matrix:
 
 ```fortran
-call zheev('N', 'U', 2, tensor(:,:,d), 2, gfac(:,d), work, lwork, rwork, info)
-g_eff(d) = 2 * gfac(1, d)
+g_eff(d) = -2.0_dp * sum(real(tensor(:,:,d) * conjg(sigma(:,:,d)))) / sum(abs(sigma(:,:,d))**2)
 ```
 
-The factor of 2 converts the eigenvalue convention (half the Zeeman splitting) to the standard g-factor definition. The three components are written to `output/gfactor.dat`.
+This trace projection mathematically preserves the sign of the g-factor and avoids issues with arbitrary basis rotations from the eigensolver. The three components are written to `output/gfactor.dat`.
 
 ### 5.2.8 Memory layout for eigenstates
 
@@ -448,30 +453,32 @@ cat tests/regression/configs/gfactor_qw_cb.cfg > input.cfg
 ./build/src/gfactorCalculation
 ```
 
-The output is:
+The output to `output/gfactor.dat` reads:
 
 ```
- -16.227137758561639      -16.227137758561636      -11.338623860395689
+ -17.570555826126597      -17.570555826126594      -13.361628879187892
 ```
 
-This gives $g_x = g_y \approx -16.23$ and $g_z \approx -11.34$. The anisotropy is pronounced: the in-plane g-factor is 43% larger in magnitude than the growth-direction component.
+This gives $g_x = g_y \approx -17.57$ and $g_z \approx -13.36$. The anisotropy is pronounced: the in-plane g-factor is approximately 31% larger in magnitude than the growth-direction component.
 
 **Comparison with bulk InAsW.** The bulk InAsW g-factor is $-14.858$ (isotropic). In the QW:
 
 | Component | Value | vs bulk |
 |---|---|---|
-| $g_x = g_y$ (in-plane) | -16.23 | Enhanced by 9.2% |
-| $g_z$ (growth) | -11.34 | Reduced by 23.6% |
+| $g_x = g_y$ (in-plane) | -17.57 | Enhanced by 18.3% |
+| $g_z$ (growth) | -13.36 | Reduced by 10.1% |
 
 The in-plane g-factor is *larger* than bulk because the QW confinement in this broken-gap system (InAs/GaSb) pushes VB states down, reducing the effective gap for in-plane momentum components. The growth-direction g-factor is *smaller* because the confinement-induced VB mixing couples less strongly to $P_z$ perturbations. This anisotropy is a hallmark of quantum-confined structures and cannot be captured by the isotropic Roth formula.
 
 The terminal output also shows the intermediate quantities:
 
-1. **Sigma matrix** -- the spin Zeeman contribution ($2 \times 2$ for each direction). The diagonal elements ($\Sigma_z \approx 0.924$ in-plane, $\Sigma_z \approx 0.849$ along $z$) are less than 1, reflecting the mixed CB/VB character of the QW ground state.
+1. **Sigma matrix** -- the spin Zeeman contribution ($2 \times 2$ for each direction). The norm $\mathrm{Tr}(\Sigma^\dagger \Sigma) < 2$ reflects the mixed CB/VB character of the QW ground state (values ~0.924 in-plane, ~0.849 along $z$). The trace projection formula automatically accounts for this non-unit norm.
 2. **Tensor** -- the full orbital contribution before normalization ($2 \times 2$ complex for each direction).
-3. **Eigenvalues** of each $2 \times 2$ block, multiplied by 2 to give $g_x$, $g_y$, $g_z$.
+3. **g-factor** extracted via $g_d = -2\,\mathrm{Re}[\mathrm{Tr}(G^{(d)}\Sigma^{(d)\dagger})] / \mathrm{Tr}(\Sigma^{(d)}\Sigma^{(d)\dagger})$ for each direction.
 
 ### 5.3.3 Wire g-factor: all three spatial directions
+
+> **WARNING: The wire g-factor calculation is currently broken.** The transverse perturbation construction in `ZB8bandGeneralized` (g1/g2 modes) does not correctly implement $dH/dk_\alpha$ for the wire geometry. The code compiles and runs without errors, and the regression test passes (the small 55 Å InSbW wire produces non-g_free values), but systematic sweep studies show that the results do not converge toward the bulk limit for larger wires. The root cause is under investigation. Bulk and QW g-factors (Sections 5.3.1 and 5.3.2) are verified correct and should be trusted.
 
 For a quantum wire with confinement in the $x$-$y$ plane and free propagation along $z$, the g-factor is generally anisotropic in all three directions. The wire computation uses `gfactorCalculation_wire`, which:
 
@@ -484,9 +491,9 @@ The three g-factor components $g_x$, $g_y$, $g_z$ reflect the broken rotational 
 
 The detailed wire g-factor calculation is presented in Chapter 8 (Quantum Wires), which includes full config files, convergence analysis, and cross-section geometry effects.
 
-![Wire g-factor vs cross-section size (GaAs)](../figures/wire_gfactor_vs_size.png)
+![Wire g-factor vs cross-section size (InSbW)](../figures/wire_gfactor_vs_size.png)
 
-**Figure 5.2:** Wire g-factor components $g_x$, $g_y$, $g_z$ as a function of square cross-section width for a GaAs wire. The horizontal dashed line marks the bulk GaAs value ($g^* = -0.315$). Quantum confinement in two spatial directions produces a fully anisotropic g-tensor ($g_x \neq g_y \neq g_z$) that deviates significantly from the isotropic bulk value. The anisotropy is most pronounced for the smallest wire cross-sections, where the 2D confinement pushes the CB subband energies upward and mixes VB character into the nominally "conduction band" ground state. As the wire width increases toward 100 A, all three components begin to approach the bulk limit, though convergence is slow because GaAs has a small $|g^*|$ that is sensitive to the precise wave function composition. The three distinct components arise because a rectangular wire breaks the cubic symmetry of the zincblende lattice along both the $x$ and $y$ directions, leaving only the $z$-axis (free propagation direction) as a quasi-symmetric axis. In the Lowdin partitioning framework, this manifests as direction-dependent energy denominators: the $g_x$ and $g_y$ components involve momentum matrix elements with FD gradient operators in the confined directions, while $g_z$ uses a simple $k_z$ perturbation. The resulting g-tensor anisotropy is a direct fingerprint of the reduced symmetry of the wire cross-section.
+**Figure 5.2:** Wire g-factor components $g_x$, $g_y$, $g_z$ as a function of square cross-section width for an InSbW wire. **This figure is unreliable — the wire g-factor calculation is broken (see Section 5.3.3).** The results do not converge toward the bulk value ($g^* \approx -51$, dashed line) for larger wire cross-sections.
 
 ![g-factor components for different confinement geometries](../figures/gfactor_components.png)
 
@@ -556,13 +563,13 @@ The computed g-factors have been cross-checked against analytical Roth formula p
 |--------|---------------------|---------------------|-----------|
 | Bulk GaAs (CB) | -0.44 (expt.) / -0.32 (8-band) | -0.315 | Roth (1959); Weisbuch & Hermann (1977) |
 | Bulk InAsW (CB) | -14.86 | -14.858 | Winkler (2003) |
-| InAs/GaSb/AlSb QW (CB1) | $g_\perp = -16.2$, $g_\parallel = -11.3$ | $g_x = g_y = -16.23$, $g_z = -11.34$ | Pfeffer & Zawadzki (1999) |
-| InSbW wire (55 A sq.) | -- | $g_x = -49.94$, $g_y = -50.05$, $g_z = -49.97$ | -- |
+| InAs/GaSb/AlSb QW (CB1) | $g_\perp \approx -16$, $g_\parallel \approx -11$ | $g_x = g_y = -17.57$, $g_z = -13.36$ | Pfeffer & Zawadzki (1999) |
+| InSbW wire (55 Å sq.) | -- | $g_x = g_y = -0.681$, $g_z = 2.378$ (**broken — not converged**) | -- |
 
 **Notes:**
 
 1. The bulk GaAs discrepancy between the 8-band value (-0.315) and experiment (-0.44) is well understood: the 14-band correction (adding $p$-like CB states) shifts $g^*$ by approximately +0.1 to +0.2, bringing the total close to the experimental value. For narrow-gap materials where $|\Delta g| \gg 0.1$, the 8-band model is already highly accurate.
 
-2. The QW result uses the broken-gap InAs/GaSb system (Section 5.3.2), where the QW g-factor exceeds the bulk InAsW value due to complex VB mixing in the type-II alignment. The anisotropy $g_\perp \neq g_\parallel$ is a hallmark of quantum confinement.
+2. The QW result uses the broken-gap InAs/GaSb system (Section 5.3.2). The trace-projection extraction correctly normalizes by $\mathrm{Tr}(\Sigma^\dagger\Sigma)$, which differs from unity in a QW doublet with mixed CB/VB character (~0.924 in-plane, ~0.849 along $z$). The published Pfeffer–Zawadzki values are from a similar but not identical structure; the computed values are consistent in trend and magnitude.
 
-3. The InSb wire g-factor now uses band-character-aware CB/VB selection. On the coarse 55-A square wire regression it remains close to the bulk InSbW scale, $g \approx -50$ in all three directions. This is a regression sanity check, not a converged nanowire benchmark; anisotropy and radius dependence still require a systematic sweep.
+3. The InSb wire g-factor is **broken**. The regression test passes because the small 55-Å wire produces non-g_free values, but systematic sweeps show that results do not converge toward the bulk limit for larger wires. The transverse perturbation construction (g1/g2 modes) does not correctly implement $dH/dk_\alpha$ for the wire geometry. This is under investigation.

@@ -335,36 +335,37 @@ the routine returns zero strain immediately -- no unnecessary work.
 
 ### 5.2 Applying the Bir--Pikus shifts
 
-After the strain tensor is computed, the `apply_pikus_bir` subroutine modifies
-the band edge profile (`profile_2d`) in-place.  The profile array has three
-columns:
-
-| Column | Bands | Meaning |
-|---|---|---|
-| `profile_2d(:,1)` | 1--4 (HH, LH, LH, HH) | $E_V$ (valence band edge) |
-| `profile_2d(:,2)` | 5--6 (SO) | $E_V - \Delta_{\text{SO}}$ |
-| `profile_2d(:,3)` | 7--8 (CB) | $E_C$ (conduction band edge) |
-
-The Bir--Pikus corrections are applied as:
+After the strain tensor is computed, the diagonal and off-diagonal Bir--Pikus terms are evaluated at each grid point using the pure function `compute_bp_scalar` in `src/physics/strain_solver.f90`. This acts as the single source of truth for the strain physics:
 
 ```fortran
-P_eps = -av * Tr_eps
-Q_eps = b_dp * 0.5 * (eps_zz - 0.5 * (eps_yy + eps_xx))
+P_eps = -params%av * Tr_eps
+Q_eps = params%b_dp * 0.5_dp * (eps_zz - 0.5_dp * (eps_yy + eps_xx))
 
-delta_Ec  =  ac * Tr_eps
-delta_EHH = -P_eps + Q_eps        ! = av*Tr_eps + Q_eps
-delta_ESO = -P_eps                 ! = av*Tr_eps
-
-profile_2d(ij, 1) = profile_2d(ij, 1) + delta_EHH   ! EV for HH
-profile_2d(ij, 2) = profile_2d(ij, 2) + delta_ESO   ! EV - DeltaSO
-profile_2d(ij, 3) = profile_2d(ij, 3) + delta_Ec    ! EC
+s%delta_Ec  = params%ac * Tr_eps
+s%delta_EHH = -P_eps + Q_eps
+s%delta_ELH = -P_eps - Q_eps
+s%delta_ESO = -P_eps
 ```
 
-Note that column 1 receives the **HH** shift.  The LH correction ($-Q_\varepsilon$
-relative to HH) is a sub-band splitting handled by off-diagonal terms in the
-k.p Hamiltonian, not by a separate profile column.  The four valence bands
-(1--4) share a common profile value; the Hamiltonian itself resolves the HH/LH
-splitting through the $k_\parallel$-dependent matrix elements.
+During the assembly of the $8N \times 8N$ Hamiltonian (`ZB8bandGeneralized` in `hamiltonianConstructor.f90`), these diagonal shifts are added directly to the matrix diagonal for the corresponding band blocks.
+
+In addition to the diagonal shifts, `compute_bp_scalar` evaluates the **off-diagonal** Bir--Pikus terms that couple different valence-band blocks:
+
+$$
+R_\varepsilon = -\sqrt{3}\left[\frac{b}{2}(\varepsilon_{xx} - \varepsilon_{yy}) - i\,d\,\varepsilon_{xy}\right],
+$$
+
+$$
+S_\varepsilon = i\,2\sqrt{3}\,d\,(\varepsilon_{xz} - i\,\varepsilon_{yz}),
+$$
+
+$$
+QT2_\varepsilon = Q_\varepsilon - T_\varepsilon\,.
+$$
+
+For [001] biaxial strain, $\varepsilon_{xx} = \varepsilon_{yy}$ and all shear components vanish, so $R_\varepsilon = S_\varepsilon = 0$ and only the diagonal $Q_\varepsilon$ and $QT2_\varepsilon$ survive. These off-diagonal terms become important for non-[001] growth directions or whenever shear strain is present (e.g., in the wire geometry where $\varepsilon_{yz} \neq 0$).
+
+Note that while the unstrained profile array (`profile_2d`) groups all four $\Gamma_8$ valence bands (1--4) under a single $E_V$ value, the Bir--Pikus shifts explicitly apply different corrections for HH (`delta_EHH`) and LH (`delta_ELH`) directly at the matrix construction level.
 
 ### 5.3 Strain configuration
 
@@ -378,7 +379,7 @@ Strain is enabled via the `strain_config` type in `defs.f90`:
 | `piezoelectric` | `.false.` | Piezoelectric polarization (not yet implemented) |
 
 When strain is disabled, `compute_strain` returns zero arrays and
-`apply_pikus_bir` exits early.
+`compute_bir_pikus_blocks` exits early.
 
 ---
 
@@ -397,7 +398,7 @@ $x$ (**plane strain** approximation).  However, the axial strain $\varepsilon_{x
 is non-zero at each point, determined by the local lattice mismatch:
 
 $$
-\varepsilon_{xx}(y,z) = \frac{a_0(y,z) - a_0^{\text{ref}}}{a_0^{\text{ref}}}\,.
+\varepsilon_{xx}(y,z) = \frac{a_0^{\text{ref}} - a_0(y,z)}{a_0(y,z)}\,.
 $$
 
 The unknowns are the in-plane displacements $u_y(y,z)$ and $u_z(y,z)$, from
@@ -501,7 +502,7 @@ components come from the PDE solution.  The shear strain $\varepsilon_{yz}$ is
 generally non-zero in the wire geometry, reflecting the lower symmetry compared
 to the biaxial QW case.
 
-This strain tensor is then fed to `apply_pikus_bir` exactly as in the QW case.
+This strain tensor is then fed to `compute_bir_pikus_blocks` exactly as in the QW case.
 The Bir--Pikus formulas are local: they depend only on the strain components at
 each point, not on how those components were obtained.
 
@@ -830,6 +831,4 @@ shifts, with three key effects:
 3. **Shear strain** (wire only, $\varepsilon_{yz} \neq 0$): further modifies
    band mixing and optical properties.
 
-The code handles both geometries transparently through `compute_strain` and
-`apply_pikus_bir`, with the same Bir--Pikus formulas applied locally at each
-grid point regardless of how the strain tensor was obtained.
+The code handles both geometries transparently through `compute_strain`, with the same Bir--Pikus formulas evaluated via `compute_bp_scalar` locally at each grid point regardless of how the strain tensor was obtained.

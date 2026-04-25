@@ -56,11 +56,11 @@ are:
 
 | Symbol | Bulk form | QW form |
 |--------|-----------|---------|
-| $Q$ | $-(\gamma_1 + \gamma_2)(k_x^2 + k_y^2) - (\gamma_1 - 2\gamma_2)k_z^2$ | $-(\gamma_1 + \gamma_2)k_\parallel^2 - (\gamma_1 - 2\gamma_2)\,d^2/dz^2$ |
-| $T$ | $-(\gamma_1 - \gamma_2)(k_x^2 + k_y^2) - (\gamma_1 + 2\gamma_2)k_z^2$ | $-(\gamma_1 - \gamma_2)k_\parallel^2 - (\gamma_1 + 2\gamma_2)\,d^2/dz^2$ |
+| $Q$ | $-(\gamma_1 + \gamma_2)(k_x^2 + k_y^2) - (\gamma_1 - 2\gamma_2)k_z^2$ | $-(\gamma_1 + \gamma_2)k_\parallel^2 + (\gamma_1 - 2\gamma_2)\,d^2/dz^2$ |
+| $T$ | $-(\gamma_1 - \gamma_2)(k_x^2 + k_y^2) - (\gamma_1 + 2\gamma_2)k_z^2$ | $-(\gamma_1 - \gamma_2)k_\parallel^2 + (\gamma_1 + 2\gamma_2)\,d^2/dz^2$ |
 | $S$ | $i2\sqrt{3}\,\gamma_3\, k_- k_z$ | $2\sqrt{3}\,\gamma_3\, k_-\, d/dz$ |
 | $R$ | $-\sqrt{3}\bigl(\gamma_2(k_x^2 - k_y^2) - 2i\gamma_3 k_x k_y\bigr)$ | unchanged (no $k_z$ dependence) |
-| $A$ | $A \, k^2$ | $A\bigl(k_\parallel^2 + d^2/dz^2\bigr)$ |
+| $A$ | $A \, k^2$ | $A\bigl(k_\parallel^2 - d^2/dz^2\bigr)$ |
 | $P_z$ | $P \, k_z$ | $-i P\, d/dz$ |
 
 where $k_\pm = k_x \pm i k_y$ and the Luttinger parameters $\gamma_1, \gamma_2,
@@ -298,8 +298,10 @@ Hamiltonian:
                  + kpterms(ii,jj,7))
    ```
    where `kpterms(:,:,1) = gamma1`, `kpterms(:,:,2) = gamma2`, and
-   `kpterms(:,:,7)` already contains the discretized
-   $-(\gamma_1 - 2\gamma_2) \cdot d^2/dz^2$ operator.
+   `kpterms(:,:,7)` already contains the discretized **negative Laplacian**
+   operator $-\frac{d}{dz} \left[ (\gamma_1 - 2\gamma_2) \frac{d}{dz} \right]$.
+   Notice that the code subtracts this term (via the outer minus sign), yielding
+   the mathematically correct $+ (\gamma_1 - 2\gamma_2) d^2/dz^2$ behavior.
 
 2. **Populate the 8x8 block matrix:** The code fills the Hamiltonian using Fortran
    array sections:
@@ -625,7 +627,7 @@ The key features of the profile are:
 
 - **Split-off offset:** The SO band edge $E_V - \Delta_{\text{SO}}$ follows the VB
   edge shifted by the material-specific $\Delta_{\text{SO}}$, which is 0.34 eV for GaAs
-  and 0.28 eV for Al$_{0.3}$Ga$_{0.7}$As. The offset in the SO band is a combination
+  and 0.353 eV for Al$_{0.3}$Ga$_{0.7}$As. The offset in the SO band is a combination
   of the VB offset and the $\Delta_{\text{SO}}$ difference.
 
 The abrupt transitions at $z = \pm 50$ A reflect the idealized step-function profile
@@ -936,6 +938,23 @@ Practical guidelines:
 | Critical (hybridization gaps) | 200--400 | 4 | sub-0.1 meV |
 | Production + strain | 300--500 | 4--6 | < 0.01 meV |
 
+To illustrate the importance of grid density, consider the lowest conduction
+subband (CB1) energy of the deep 70 A InAsW well from Example B, computed
+on a 500 A domain:
+
+| `FDstep` (Grid points) | $\Delta z$ (\AA) | `FDorder` | CB1 Energy (eV) |
+|---|---|---|---|
+| 101 | 5.00 | 2 | +0.0205 |
+| 101 | 5.00 | 4 | +0.0206 |
+| 401 | 1.25 | 2 | +0.0319 |
+| 401 | 1.25 | 4 | +0.0319 |
+
+With $N=101$, the 70 A well is resolved by only 14 grid points. The resulting
+confinement energy is drastically underestimated due to discretization error.
+Increasing to $N=401$ (56 points in the well) recovers the converged value of
+$\approx +0.0319$ eV. This highlights that deep, sharp wells demand high grid
+density, regardless of the finite difference order used.
+
 The boundary conditions are hard-wall (Dirichlet): the wavefunction is forced to
 zero at the grid boundaries. The simulation domain must extend far enough into the
 barrier that the wavefunction decays to negligible amplitude. A rule of thumb is
@@ -974,7 +993,7 @@ The standard QW mode assumes:
 
 - Growth along $z$ (enforced by `confDir = 'z'`)
 - Uniform grid spacing across the entire domain
-- No strain (though strain parameters are in the material database for future use)
+- No strain applied by default in this example (strain is supported via the `strain:` input block; see Chapter 04 for strained QW calculations)
 - No self-consistent charge treatment (the SC loop is a separate module; see
   Chapter 07)
 - Hard-wall boundary conditions (the wavefunction vanishes at the domain edges)
