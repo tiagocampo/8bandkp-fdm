@@ -3,6 +3,7 @@ module optical_spectra
   use definitions
   use sparse_matrices, only: csr_matrix, csr_spmv
   use charge_density, only: fermi_dirac
+  use spin_projection, only: spin_weights
   use outputFunctions, only: ensure_output_dir, get_unit
   implicit none
 
@@ -22,6 +23,10 @@ module optical_spectra
   real(kind=dp), allocatable, save :: spont_te(:)   ! Spontaneous TE accumulation
   real(kind=dp), allocatable, save :: spont_tm(:)   ! Spontaneous TM accumulation
   real(kind=dp), allocatable, save :: E_grid(:)      ! photon energy grid (eV)
+  real(kind=dp), allocatable, save :: alpha_te_up(:)  ! spin-up TE accumulation
+  real(kind=dp), allocatable, save :: alpha_te_dw(:)  ! spin-down TE accumulation
+  real(kind=dp), allocatable, save :: alpha_tm_up(:)  ! spin-up TM accumulation
+  real(kind=dp), allocatable, save :: alpha_tm_dw(:)  ! spin-down TM accumulation
   integer, save :: nE = 0                            ! number of energy points
 
   ! Gain quasi-Fermi level state (set once per k_sweep)
@@ -73,6 +78,14 @@ contains
       spont_tm = 0.0_dp
     end if
 
+    ! Spin-resolved absorption arrays: allocated when spin_resolved is enabled
+    if (optcfg%spin_resolved) then
+      allocate(alpha_te_up(nE), alpha_te_dw(nE))
+      allocate(alpha_tm_up(nE), alpha_tm_dw(nE))
+      alpha_te_up = 0.0_dp; alpha_te_dw = 0.0_dp
+      alpha_tm_up = 0.0_dp; alpha_tm_dw = 0.0_dp
+    end if
+
   end subroutine optics_init
 
 
@@ -99,16 +112,18 @@ contains
     integer, intent(in) :: numcb, numvb
     real(kind=dp), intent(in) :: fermi_level       ! Fermi energy (eV)
 
-    integer :: i, j, dir, ie, dim
+    integer :: i, j, dir, ie, dim, Ngrid
     real(kind=dp) :: dE, f_c, f_v, occ_factor
     real(kind=dp) :: px, py, pz
     real(kind=dp) :: gamma_l, gamma_g
+    real(kind=dp) :: w_up_i, w_dw_i, w_up_j, w_dw_j
     complex(kind=dp) :: Pele
     complex(kind=dp), allocatable :: Ytmp(:)
     complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
     complex(kind=dp), external :: zdotc
 
     dim = size(eigvecs, 1)
+    Ngrid = dim / 8
     allocate(Ytmp(dim))
 
     ! Half-widths at half-maximum from FWHM
@@ -161,6 +176,24 @@ contains
           alpha_tm(ie) = alpha_tm(ie) + occ_factor * pz &
             & * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
         end do
+
+        ! Spin-resolved accumulation (factorized approximation)
+        if (optcfg%spin_resolved) then
+          call spin_weights(eigvecs(:,numvb+j), Ngrid, w_up_j, w_dw_j)
+          call spin_weights(eigvecs(:,i), Ngrid, w_up_i, w_dw_i)
+          do ie = 1, nE
+            ! Spin-up channel
+            alpha_te_up(ie) = alpha_te_up(ie) + occ_factor * (px + py) &
+              & * w_up_i * w_up_j * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+            alpha_tm_up(ie) = alpha_tm_up(ie) + occ_factor * pz &
+              & * w_up_i * w_up_j * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+            ! Spin-down channel
+            alpha_te_dw(ie) = alpha_te_dw(ie) + occ_factor * (px + py) &
+              & * w_dw_i * w_dw_j * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+            alpha_tm_dw(ie) = alpha_tm_dw(ie) + occ_factor * pz &
+              & * w_dw_i * w_dw_j * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+          end do
+        end if
 
       end do
     end do
@@ -440,6 +473,60 @@ contains
       print '(a)', 'Spontaneous emission written to output/spontaneous_TE.dat and output/spontaneous_TM.dat'
     end if
 
+    ! --- Spin-resolved absorption output ---
+    if (optcfg%spin_resolved .and. allocated(alpha_te_up)) then
+      ! Apply the same prefactor to spin-resolved arrays
+      do ie = 1, nE
+        if (E_grid(ie) > 0.0_dp) then
+          prefactor_E = (2.0_dp * pi_dp * e**2) &
+            & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
+        else
+          prefactor_E = 0.0_dp
+        end if
+        alpha_te_up(ie) = prefactor_E * alpha_te_up(ie) * AA_TO_CM
+        alpha_te_dw(ie) = prefactor_E * alpha_te_dw(ie) * AA_TO_CM
+        alpha_tm_up(ie) = prefactor_E * alpha_tm_up(ie) * AA_TO_CM
+        alpha_tm_dw(ie) = prefactor_E * alpha_tm_dw(ie) * AA_TO_CM
+      end do
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+
+      open(unit=iounit, file='output/absorption_TE_up.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spin-up TE absorption spectrum (alpha_TE_up vs E)'
+      write(iounit, '(a)') '# E(eV)  alpha(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_te_up(ie)
+      end do
+      close(iounit)
+
+      open(unit=iounit, file='output/absorption_TE_dw.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spin-down TE absorption spectrum (alpha_TE_dw vs E)'
+      write(iounit, '(a)') '# E(eV)  alpha(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_te_dw(ie)
+      end do
+      close(iounit)
+
+      open(unit=iounit, file='output/absorption_TM_up.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spin-up TM absorption spectrum (alpha_TM_up vs E)'
+      write(iounit, '(a)') '# E(eV)  alpha(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_tm_up(ie)
+      end do
+      close(iounit)
+
+      open(unit=iounit, file='output/absorption_TM_dw.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spin-down TM absorption spectrum (alpha_TM_dw vs E)'
+      write(iounit, '(a)') '# E(eV)  alpha(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_tm_dw(ie)
+      end do
+      close(iounit)
+
+      print '(a)', 'Spin-resolved spectra written to output/absorption_TE_up.dat, output/absorption_TE_dw.dat, output/absorption_TM_up.dat, output/absorption_TM_dw.dat'
+    end if
+
   end subroutine optics_finalize
 
 
@@ -458,6 +545,10 @@ contains
     if (allocated(alpha_gain_tm)) deallocate(alpha_gain_tm)
     if (allocated(spont_te))      deallocate(spont_te)
     if (allocated(spont_tm))      deallocate(spont_tm)
+    if (allocated(alpha_te_up)) deallocate(alpha_te_up)
+    if (allocated(alpha_te_dw)) deallocate(alpha_te_dw)
+    if (allocated(alpha_tm_up)) deallocate(alpha_tm_up)
+    if (allocated(alpha_tm_dw)) deallocate(alpha_tm_dw)
     nE = 0
     gain_fermi_computed = .false.
     mu_e = 0.0_dp
