@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Fortran 90 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning. Includes self-consistent Schrödinger-Poisson solver with DIIS acceleration. GPL v3.0, authored by Tiago de Campos.
+Fortran 90 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning with commutator-based velocity operators. Computes optical absorption, gain, spontaneous emission, and intersubband transitions using commutator-based velocity matrices $v_\alpha = -i [r_\alpha, H]$. Includes self-consistent Schrödinger-Poisson solver with DIIS acceleration. GPL v3.0, authored by Tiago de Campos.
 
 ## Build Commands
 
@@ -13,17 +13,17 @@ Fortran 90 code solving the **8-band zinc-blende k.p Hamiltonian** via finite di
 cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl
 
 # Build
-cmake --build build                # builds both executables into build/src/
+cmake --build build                # builds all three executables into build/src/
 
 # Or use the Make wrapper
-make all            # Configure + build both executables
+make all            # Configure + build all executables
 make run            # Build and run bandStructure
 make clean          # Remove build/ directory
 make clean_all      # Also remove output files
 make test           # Configure with BUILD_TESTING=ON, build, run ctest
 ```
 
-**Executables** at `build/src/bandStructure` and `build/src/gfactorCalculation`.
+**Executables** at `build/src/bandStructure`, `build/src/gfactorCalculation`, and `build/src/opticalProperties`.
 
 **Prerequisites:** gfortran, Intel MKL (sequential, LP64 interface), FFTW3, CMake >= 3.15, Ninja (optional). MKL defaults: `MKL_INTERFACE=lp64`, `MKL_THREADING=sequential` (set in root `CMakeLists.txt`).
 
@@ -40,7 +40,7 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all 13 tests (8 unit + 5 regression)
+ctest --test-dir build                    # all tests (15 unit + 24 regression)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
 ctest --test-dir build -V                 # verbose output
@@ -55,6 +55,7 @@ Regression tests use shell scripts + Python (`tests/regression/compare_output.py
 ```bash
 ./build/src/bandStructure       # Reads input.cfg, outputs to output/
 ./build/src/gfactorCalculation  # Reads input.cfg, outputs to output/ (requires k=0)
+./build/src/opticalProperties   # Reads input.cfg with optics: block, outputs to output/
 ```
 
 Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed examples in the canonical order documented in `docs/reference/input-reference.md`; optional block entry labels are name-aware (`optics:`, `exciton:`, `scattering:`, `feast_emin:`, `strain:`), but parameters inside each block still follow the documented sequence.
@@ -68,8 +69,8 @@ src/
   core/       defs.f90, parameters.f90, utils.f90
   math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90
   io/         outputFunctions.f90, input_parser.f90
-  physics/    hamiltonianConstructor.f90, gfactor_functions.f90, poisson.f90, charge_density.f90, sc_loop.f90
-  apps/       main.f90, main_gfactor.f90
+  physics/    hamiltonianConstructor.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90
+  apps/       main.f90, main_gfactor.f90, main_optics.f90
 tests/
   unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_poisson, test_charge_density, test_sc_loop)
   integration/  shell scripts for full-executable tests
@@ -79,12 +80,13 @@ build/        .o, .mod, executables (created by cmake)
 scripts/      gnuplot plotting scripts
 ```
 
-### Two executables
+### Three executables
 
 | Executable | Entry Point | Purpose |
 |---|---|---|
 | `bandStructure` | `src/apps/main.f90` (`program kpfdm`) | Band structure vs. k-vector sweep |
 | `gfactorCalculation` | `src/apps/main_gfactor.f90` (`program gfactor`) | g-factor at Gamma point (k=0) |
+| `opticalProperties` | `src/apps/main_optics.f90` (`program opticalProperties`) | Optical spectra (absorption, gain, spontaneous emission, ISBT) for bulk/QW/wire |
 
 ### Module dependency graph
 
@@ -94,8 +96,10 @@ defs.f90                      (kinds, constants, derived types — no deps)
   <- mkl_spblas.f90           (vendor: Intel MKL sparse BLAS interface)
        <- utils.f90           (dense-to-sparse conversion, Simpson integration)
             <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices)
-                 <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian)
+                 <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian, commutator velocity matrices)
                       <- gfactor_functions.f90  (Lowdin partitioning, spin/momentum matrix elements)
+                      <- optical_spectra.f90    (absorption, gain, spontaneous emission, ISBT accumulation)
+                      <- spin_projection.f90     (Clebsch-Gordan spin-up/down decomposition)
                  <- poisson.f90           (box-integration Poisson solver, Thomas algorithm)
                  <- charge_density.f90    (n(z), p(z) from k.p eigenstates + k_∥ sampling)
                       <- sc_loop.f90           (self-consistent SP loop, linear + DIIS mixing)
@@ -111,7 +115,8 @@ defs.f90                      (kinds, constants, derived types — no deps)
 - **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it
 - **`confinementInitialization`** precomputes material parameters at each z-point into `kpterms(fdStep, fdStep, 10)`
 - **Sparse vs dense**: g-factor uses MKL SpBLAS for large QW; band structure uses dense LAPACK (`zheevx`)
-- **Wire g-factor velocity operator**: commutator-based `build_velocity_matrices` computes $v_\alpha = -i [r_\alpha, H]$ element-wise on CSR. g='g3' still used for z-direction. Old g='g1'/'g2' modes are dead code.
+- **Wire g-factor velocity operator**: commutator-based `build_velocity_matrices` computes $v_\alpha = -i [r_\alpha, H]$ element-wise on CSR. Generic interface dispatches to `_2d` (wire, 4 scalar CSR args) or `_1d` (QW, 3-element CSR array). For QW: z-velocity from commutator, in-plane from `ZB8bandQW(g='g')`. g='g3' still used for z-direction in wire. Old g='g1'/'g2' modes are dead code.
+- **Optical properties**: standalone `opticalProperties` executable computes absorption, gain, spontaneous emission, and ISBT spectra for bulk (8x8, spherical 3D k-integration), QW (dense, 2D cylindrical), and wire (CSR/FEAST, 1D kz-sweep). All use commutator-based velocity matrices via CSR SpMV + zdotc pattern. Unified accumulation framework in `optical_spectra.f90` shares velocity matrices across all quantities; only the occupation factor differs. Spin-resolved spectra via Clebsch-Gordan projection in `spin_projection.f90`.
 - **Foreman renormalization**: disabled by default (`renormalization = .False.` in defs.f90)
 - **W-variant materials** (GaAsW, InAsW, etc.): use Winkler's parameter set with InSb as EV reference. Non-W materials use Vurgaftman parameters. EC = EV + Eg convention for all materials with EV defined
 - **Self-consistent SP**: iterative Schrödinger-Poisson loop wraps the eigenvalue solve. Modifies `profile` array before Hamiltonian construction (same interface as `externalFieldSetup_electricField`). Linear mixing warm-up + DIIS/Pulay acceleration. Works for bulk (Fermi level finder) and QW (full SP). Per-layer doping (`doping_spec`), charge neutrality or fixed Fermi level, box-integration Poisson with variable dielectric. Design doc: `docs/plans/2026-03-29-self-consistent-sp-design.md`
@@ -123,6 +128,8 @@ Label-value format with comments (`!`). Key fields: `waveVector` (kx/ky/kz/k0), 
 SC additional fields: `SC` (enable flag), `SC_max_iter`, `SC_tolerance`, `SC_mixing`, `SC_diis`, `SC_temperature`, `SC_fermi_mode` (0=charge_neutrality, 1=fixed), `SC_fermi_level`, `SC_num_kpar`, `SC_kpar_max`, `SC_bc` (DD/DN), `SC_bc_left`, `SC_bc_right`. Per-layer `doping: ND NA` lines.
 
 g-factor additional fields: `whichBand` (0=CB, 1=VB) and `bandIdx` (subband index, default 1).
+
+Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzian`, `linewidth_gaussian`, `refractive_index`, `E_min E_max num_energy_points`, `temperature`, `carrier_density`, `gain_enabled`, `gain_carrier_density`, `ISBT`, `SpontaneousEnabled`, `SpinResolved`. See `docs/reference/input-reference.md` for full format.
 
 ## Code Conventions
 

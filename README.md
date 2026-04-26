@@ -2,7 +2,7 @@
 
 Fortran 90 solver for the **8-band zinc-blende k.p Hamiltonian** via finite differences.
 
-Computes electronic band structures for bulk semiconductors, quantum wells, and quantum wires. Calculates Landau g-factors via second-order Lowdin partitioning. Includes a self-consistent Schrodinger-Poisson solver with DIIS acceleration.
+Computes electronic band structures for bulk semiconductors, quantum wells, and quantum wires. Calculates Landau g-factors via second-order Lowdin partitioning with commutator-based velocity operators. Computes optical absorption, gain, spontaneous emission, and intersubband transitions using commutator-based velocity matrices. Includes a self-consistent Schrodinger-Poisson solver with DIIS acceleration.
 
 Based on Chuang & Chang (1997) with Foreman renormalization and Winkler g-factor formalism. GPL v3.0, authored by Tiago de Campos.
 
@@ -30,11 +30,11 @@ make run       # Build and run bandStructure
 make clean     # Remove build/ directory
 ```
 
-Executables: `build/src/bandStructure` and `build/src/gfactorCalculation`.
+Executables: `build/src/bandStructure`, `build/src/gfactorCalculation`, and `build/src/opticalProperties`.
 
 ## Quick Start
 
-Write one of the configs below to `input.cfg`, then run `./build/src/bandStructure` or `./build/src/gfactorCalculation`. See `tests/regression/configs/` for more examples and [docs/reference/input-reference.md](docs/reference/input-reference.md) for the full format.
+Write one of the configs below to `input.cfg`, then run `./build/src/bandStructure`, `./build/src/gfactorCalculation`, or `./build/src/opticalProperties`. See `tests/regression/configs/` for more examples and [docs/reference/input-reference.md](docs/reference/input-reference.md) for the full format.
 
 **Bulk** (GaAs, k along x):
 ```
@@ -63,6 +63,19 @@ confinement: 0            FDstep: 1               FDorder: 2
 numLayers: 1              material1: GaAs
 numcb: 2                  numvb: 6                whichBand: 0   bandIdx: 1
 ExternalField: 0 EF       EFParams: 0.0005
+```
+
+**Optical properties** (GaAs/AlGaAs QW absorption):
+```
+waveVector: kx            waveVectorMax: 0.3      waveVectorStep: 51
+confinement: 1            FDstep: 201             FDorder: 4
+numLayers: 2              numcb: 4                numvb: 12
+material1: Al30Ga70As -200 200 0   material2: GaAs -50 50 0
+optics: T
+linewidth_lorentzian 0.030   linewidth_gaussian 0.005   refractive_index 3.3
+1.2  2.2  300   temperature 300.0   carrier_density 0.0
+gain_enabled F   gain_carrier_density 3.0e12
+ISBT: F   SpontaneousEnabled: F   SpinResolved: F
 ```
 
 **Self-consistent SP** (GaAs/AlAs QW, n-doped well):
@@ -119,7 +132,7 @@ defs -> parameters -> utils -> finitedifferences -> hamiltonianConstructor -> gf
                    input_parser    outputFunctions
 ```
 
-Executables: `bandStructure` (band structure vs k), `gfactorCalculation` (g-factor at k=0).
+Executables: `bandStructure` (band structure vs k), `gfactorCalculation` (g-factor at k=0), `opticalProperties` (optical spectra for bulk/QW/wire).
 
 ## License
 
