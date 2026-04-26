@@ -619,15 +619,31 @@ contains
       if (status /= 0) goto 101
       print *, trim(label), cfg%optics%isbt_enabled
 
-      ! Spontaneous emission
-      read(data_unit, *, iostat=status) label, cfg%optics%spontaneous_enabled
+      ! Spontaneous emission (optional — backward compatible with configs
+      ! that omit these lines).  Peek at the label; if it doesn't match
+      ! the expected field name, push the line back with BACKSPACE.
+      read(data_unit, *, iostat=status) label
       if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%spontaneous_enabled
+      if (trim(adjustl(label)) == 'SpontaneousEnabled:') then
+        backspace(data_unit)
+        read(data_unit, *, iostat=status) label, cfg%optics%spontaneous_enabled
+        if (status /= 0) goto 101
+        print *, trim(label), cfg%optics%spontaneous_enabled
 
-      ! Spin resolution
-      read(data_unit, *, iostat=status) label, cfg%optics%spin_resolved
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%spin_resolved
+        ! Spin resolution (also optional)
+        read(data_unit, *, iostat=status) label
+        if (status /= 0) goto 101
+        if (trim(adjustl(label)) == 'SpinResolved:') then
+          backspace(data_unit)
+          read(data_unit, *, iostat=status) label, cfg%optics%spin_resolved
+          if (status /= 0) goto 101
+          print *, trim(label), cfg%optics%spin_resolved
+        else
+          backspace(data_unit)
+        end if
+      else
+        backspace(data_unit)
+      end if
 
     else if (found_optional) then
       ! Optics=F, skip remaining optics lines

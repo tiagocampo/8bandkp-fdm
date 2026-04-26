@@ -3,7 +3,6 @@ program kpfdm
   use definitions
   use parameters
   use hamiltonianConstructor
-  use finitedifferences
   use OMP_lib
   use outputFunctions
   use input_parser
@@ -11,10 +10,8 @@ program kpfdm
   use sparse_matrices
   use eigensolver
   use strain_solver
-  use optical_spectra
   use exciton_solver
   use scattering_solver
-  use utils, only: dnscsr_z_mkl
   use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch
 
   implicit none
@@ -729,192 +726,11 @@ program kpfdm
   end if
   call writeEigenvalues(smallk, eig(:,:), cfg%waveVectorStep)
 
-  ! ====================================================================
-  ! Post-sweep optical absorption (QW only, serial)
-  ! ====================================================================
-  if (cfg%optics%enabled .and. cfg%confDir == 'z') then
-    block
-      real(kind=dp), allocatable :: simpson_w(:)
-      real(kind=dp) :: dk
-      integer :: npts
-
-      ! Simpson 1/3 rule weights for k_sweep integration.
-      ! For a QW, the k_parallel integral over 2D BZ with cylindrical
-      ! symmetry is: int d^2k = 2*pi * int k dk.  The 1D kx sweep
-      ! needs an additional 2*pi*k factor per point.
-      npts = cfg%waveVectorStep
-      if (mod(npts, 2) == 0) then
-        npts = npts - 1  ! Simpson requires odd number of points
-        print '(A,I0,A)', ' Warning: optics integration uses ', npts, &
-          & ' k-points (Simpson requires odd count)'
-      end if
-      allocate(simpson_w(npts))
-      dk = cfg%waveVectorMax / real(cfg%waveVectorStep - 1, kind=dp)  ! true grid spacing
-      do i = 1, npts
-        ! Base Simpson weight
-        if (i == 1 .or. i == npts) then
-          simpson_w(i) = dk / 3.0_dp
-        else if (mod(i, 2) == 0) then
-          simpson_w(i) = 4.0_dp * dk / 3.0_dp
-        else
-          simpson_w(i) = 2.0_dp * dk / 3.0_dp
-        end if
-        ! Multiply by 2*pi*k for 2D cylindrical integration
-        simpson_w(i) = simpson_w(i) * 2.0_dp * pi_dp * real(i - 1, kind=dp) * dk
-      end do
-
-      ! Build velocity matrices for optical transitions.
-      ! For a QW (1D confinement along z):
-      !   vel(1) = dH/dk_x at k=0  (in-plane, Kane P matrix)
-      !   vel(2) = dH/dk_y at k=0  (in-plane, Kane P matrix)
-      !   vel(3) = -i [r_z, H]     (confinement, commutator on CSR)
-      ! All three are k-independent, built once.
-      block
-        type(csr_matrix) :: vel_opt(3)
-        type(csr_matrix) :: H_csr_tmp
-        complex(kind=dp), allocatable :: H_k0(:,:)
-        type(wavevector) :: pert_kx, pert_ky
-        integer :: nzmax_tmp
-
-        ! --- vel(3): z-direction via commutator ---
-        allocate(H_k0(N, N))
-        H_k0 = (0.0_dp, 0.0_dp)
-        call ZB8bandQW(H_k0, smallk(1), profile, kpterms, cfg=cfg)
-        nzmax_tmp = N * N
-        call dnscsr_z_mkl(nzmax_tmp, N, H_k0, H_csr_tmp)
-        deallocate(H_k0)
-
-        ! Build commutator velocity (only vel(3) is non-zero for 1D QW)
-        call build_velocity_matrices(H_csr_tmp, cfg%grid, vel_opt)
-        call csr_free(H_csr_tmp)
-
-        ! --- vel(1): x-direction via dH/dk_x ---
-        pert_kx%kx = 1.0_dp
-        pert_kx%ky = 0.0_dp
-        pert_kx%kz = 0.0_dp
-        allocate(H_k0(N, N))
-        H_k0 = (0.0_dp, 0.0_dp)
-        call ZB8bandQW(H_k0, pert_kx, profile, kpterms, cfg=cfg, g='g')
-        nzmax_tmp = N * N
-        call dnscsr_z_mkl(nzmax_tmp, N, H_k0, H_csr_tmp)
-        deallocate(H_k0)
-        call csr_clone_structure(H_csr_tmp, vel_opt(1))
-        vel_opt(1)%values = H_csr_tmp%values
-        call csr_free(H_csr_tmp)
-
-        ! --- vel(2): y-direction via dH/dk_y ---
-        pert_ky%kx = 0.0_dp
-        pert_ky%ky = 1.0_dp
-        pert_ky%kz = 0.0_dp
-        allocate(H_k0(N, N))
-        H_k0 = (0.0_dp, 0.0_dp)
-        call ZB8bandQW(H_k0, pert_ky, profile, kpterms, cfg=cfg, g='g')
-        nzmax_tmp = N * N
-        call dnscsr_z_mkl(nzmax_tmp, N, H_k0, H_csr_tmp)
-        deallocate(H_k0)
-        call csr_clone_structure(H_csr_tmp, vel_opt(2))
-        vel_opt(2)%values = H_csr_tmp%values
-        call csr_free(H_csr_tmp)
-
-        ! Initialize optics accumulation arrays
-        call optics_init(cfg%optics)
-
-        ! Reset gain quasi-Fermi state if gain is enabled
-        if (cfg%optics%gain_enabled) then
-          call gain_reset()
-        end if
-
-        print '(A)', ' Computing optical absorption...'
-        if (cfg%optics%gain_enabled) then
-          print '(A)', ' Computing gain spectrum alongside absorption...'
-        end if
-        do k = 1, npts
-          call optics_accumulate(cfg%optics, &
-            & eig(:, k), eigv(:, :, k), simpson_w(k), &
-            & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
-
-          ! Gain spectrum accumulation (uses separate quasi-Fermi levels)
-          if (cfg%optics%gain_enabled) then
-            call compute_gain_qw(cfg%optics, &
-              & eig(:, k), eigv(:, :, k), simpson_w(k), &
-              & vel_opt, cfg%numcb, cfg%numvb, &
-              & cfg%optics%gain_carrier_density)
-          end if
-
-          ! ISBT accumulation
-          if (cfg%optics%isbt_enabled) then
-            call compute_isbt_absorption(cfg%optics, &
-              & eig(:, k), eigv(:, :, k), &
-              & vel_opt, cfg%numcb, cfg%numvb, &
-              & simpson_w(k), cfg%sc%fermi_level)
-          end if
-        end do
-
-        ! Free velocity matrices
-        do i = 1, 3
-          call csr_free(vel_opt(i))
-        end do
-      end block
-
-      ! ISBT transition table at k=0
-      if (cfg%optics%isbt_enabled) then
-        call compute_intersubband_transitions(eig(:, 1), eigv(:, :, 1), &
-          & cfg%z, cfg%dz, cfg%numcb, cfg%numvb, cfg%fdstep, &
-          & 'output/isbt_transitions.dat')
-        print '(A)', ' ISBT transitions written to output/isbt_transitions.dat'
-      end if
-
-      call optics_finalize(cfg%optics)
-
-      ! Exciton corrections (applied before cleanup to access alpha arrays)
-      if (cfg%exciton%enabled) then
-        block
-          real(kind=dp) :: E_binding_ex, lambda_opt_ex
-          real(kind=dp) :: E_gap_ex
-          integer :: ie, iounit_ex, cb_st, vb_st
-          cb_st = cfg%numvb + 1
-          vb_st = cfg%numvb
-          E_gap_ex = eig(cb_st, 1) - eig(vb_st, 1)
-          call compute_exciton_binding(eig(:, 1), eigv(:, :, 1), &
-            & cfg%z, cfg%dz, cfg%numLayers, cfg%params, &
-            & cfg%numcb, cfg%numvb, cfg%fdstep, E_binding_ex, lambda_opt_ex, &
-            & cfg%grid%material_id)
-          print '(A,F8.3,A)', ' Exciton binding energy: ', E_binding_ex, ' meV'
-          call apply_excitonic_corrections(E_grid, alpha_te, alpha_tm, &
-            & E_gap_ex, E_binding_ex, cfg%optics)
-          ! Rewrite absorption files with excitonic corrections
-          call ensure_output_dir()
-          call get_unit(iounit_ex)
-          open(unit=iounit_ex, file='output/absorption_TE.dat', &
-            & status='replace', action='write')
-          write(iounit_ex, '(a)') '# TE absorption with excitonic corrections'
-          write(iounit_ex, '(a)') '# E(eV)  alpha(cm^-1)'
-          do ie = 1, nE
-            write(iounit_ex, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_te(ie)
-          end do
-          close(iounit_ex)
-          open(unit=iounit_ex, file='output/absorption_TM.dat', &
-            & status='replace', action='write')
-          write(iounit_ex, '(a)') '# TM absorption with excitonic corrections'
-          write(iounit_ex, '(a)') '# E(eV)  alpha(cm^-1)'
-          do ie = 1, nE
-            write(iounit_ex, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_tm(ie)
-          end do
-          close(iounit_ex)
-          print '(A)', ' Excitonic corrections applied to absorption spectra'
-        end block
-      end if
-
-      call optics_cleanup()
-      deallocate(simpson_w)
-      print '(A)', ' Absorption spectra written to output/'
-    end block
-  end if
 
   ! ====================================================================
-  ! Exciton binding energy (standalone, when optics is disabled)
+  ! Exciton binding energy (standalone)
   ! ====================================================================
-  if (cfg%exciton%enabled .and. cfg%confDir == 'z' .and. .not. cfg%optics%enabled) then
+  if (cfg%exciton%enabled .and. cfg%confDir == 'z') then
     block
       real(kind=dp) :: E_binding_sa, lambda_opt_sa
       call compute_exciton_binding(eig(:, 1), eigv(:, :, 1), &

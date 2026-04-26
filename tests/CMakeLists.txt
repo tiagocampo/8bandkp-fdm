@@ -135,7 +135,7 @@ add_test(
 add_test(
     NAME regression_qw_absorption_polarization
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_absorption_polarization.sh
-        $<TARGET_FILE:bandStructure>
+        $<TARGET_FILE:opticalProperties>
         ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/qw_gaas_algaas_absorption.cfg
         ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_absorption_polarization.py
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -144,7 +144,7 @@ add_test(
 add_test(
     NAME regression_qw_absorption_strained_polarization
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_absorption_polarization.sh
-        $<TARGET_FILE:bandStructure>
+        $<TARGET_FILE:opticalProperties>
         ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/qw_ingaas_algaas_strained_absorption.cfg
         ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_absorption_polarization.py
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}

@@ -5,6 +5,7 @@ program opticalProperties
   use hamiltonianConstructor
   use input_parser
   use optical_spectra
+  use exciton_solver, only: compute_exciton_binding, apply_excitonic_corrections
   use sparse_matrices
   use eigensolver
   use strain_solver
@@ -272,6 +273,20 @@ program opticalProperties
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
           & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
       end if
+
+      if (cfg%optics%gain_enabled) then
+        call compute_gain_qw(cfg%optics, &
+          & eig(:, k), eigv(:, :, k), simpson_w(k), &
+          & vel_opt, cfg%numcb, cfg%numvb, &
+          & cfg%optics%gain_carrier_density)
+      end if
+
+      if (cfg%optics%isbt_enabled) then
+        call compute_isbt_absorption(cfg%optics, &
+          & eig(:, k), eigv(:, :, k), &
+          & vel_opt, cfg%numcb, cfg%numvb, &
+          & simpson_w(k), cfg%sc%fermi_level)
+      end if
     end do
 
     ! ================================================================
@@ -493,12 +508,65 @@ program opticalProperties
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
           & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
       end if
+
+      if (cfg%optics%gain_enabled) then
+        call compute_gain_qw(cfg%optics, &
+          & eig(:, k), eigv(:, :, k), simpson_w(k), &
+          & vel_opt, cfg%numcb, cfg%numvb, &
+          & cfg%optics%gain_carrier_density)
+      end if
+
+      if (cfg%optics%isbt_enabled) then
+        call compute_isbt_absorption(cfg%optics, &
+          & eig(:, k), eigv(:, :, k), &
+          & vel_opt, cfg%numcb, cfg%numvb, &
+          & simpson_w(k), cfg%sc%fermi_level)
+      end if
     end do
 
     ! ================================================================
     ! Finalize: apply prefactor, write output files
     ! ================================================================
     call optics_finalize(cfg%optics)
+
+    ! Exciton corrections (applied after finalize, before cleanup)
+    if (cfg%exciton%enabled) then
+      block
+        real(kind=dp) :: E_binding_ex, lambda_opt_ex, E_gap_ex
+        integer :: ie, iounit_ex, cb_st, vb_st
+        cb_st = cfg%numvb + 1
+        vb_st = cfg%numvb
+        E_gap_ex = eig(cb_st, 1) - eig(vb_st, 1)
+        call compute_exciton_binding(eig(:, 1), eigv(:, :, 1), &
+          & cfg%z, cfg%dz, cfg%numLayers, cfg%params, &
+          & cfg%numcb, cfg%numvb, cfg%fdstep, E_binding_ex, lambda_opt_ex, &
+          & cfg%grid%material_id)
+        print '(a,f8.3,a)', ' Exciton binding energy: ', E_binding_ex, ' meV'
+        call apply_excitonic_corrections(E_grid, alpha_te, alpha_tm, &
+          & E_gap_ex, E_binding_ex, cfg%optics)
+        ! Rewrite absorption files with excitonic corrections
+        call ensure_output_dir()
+        call get_unit(iounit_ex)
+        open(unit=iounit_ex, file='output/absorption_TE.dat', &
+          & status='replace', action='write')
+        write(iounit_ex, '(a)') '# TE absorption with excitonic corrections'
+        write(iounit_ex, '(a)') '# E(eV)  alpha(cm^-1)'
+        do ie = 1, nE
+          write(iounit_ex, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_te(ie)
+        end do
+        close(iounit_ex)
+        open(unit=iounit_ex, file='output/absorption_TM.dat', &
+          & status='replace', action='write')
+        write(iounit_ex, '(a)') '# TM absorption with excitonic corrections'
+        write(iounit_ex, '(a)') '# E(eV)  alpha(cm^-1)'
+        do ie = 1, nE
+          write(iounit_ex, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_tm(ie)
+        end do
+        close(iounit_ex)
+        print '(a)', ' Excitonic corrections applied to absorption spectra'
+      end block
+    end if
+
     call optics_cleanup()
 
     ! Free velocity matrices
@@ -667,6 +735,23 @@ program opticalProperties
             & eigen_res%eigenvectors(:, 1:nev_wire), &
             & simpson_w(k), &
             & vel_wire, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+        end if
+
+        if (cfg%optics%gain_enabled) then
+          call compute_gain_qw(cfg%optics, &
+            & eigen_res%eigenvalues(1:nev_wire), &
+            & eigen_res%eigenvectors(:, 1:nev_wire), &
+            & simpson_w(k), &
+            & vel_wire, cfg%numcb, cfg%numvb, &
+            & cfg%optics%gain_carrier_density)
+        end if
+
+        if (cfg%optics%isbt_enabled) then
+          call compute_isbt_absorption(cfg%optics, &
+            & eigen_res%eigenvalues(1:nev_wire), &
+            & eigen_res%eigenvectors(:, 1:nev_wire), &
+            & vel_wire, cfg%numcb, cfg%numvb, &
+            & simpson_w(k), cfg%sc%fermi_level)
         end if
 
         ! Free eigensolver result for next kz
