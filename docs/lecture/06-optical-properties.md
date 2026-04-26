@@ -2,11 +2,11 @@
 
 ## 6.1 Introduction
 
-When light interacts with a semiconductor, photons are absorbed by promoting electrons from occupied valence band states to empty conduction band states. The strength of these inter-band transitions -- and their dependence on the polarization direction of the incident light -- is entirely governed by the **momentum matrix elements** between the initial and final Bloch states.
+When light interacts with a semiconductor, photons are absorbed by promoting electrons from occupied valence band states to empty conduction band states. The strength of these inter-band transitions -- and their dependence on the polarization direction of the incident light -- is entirely governed by the **velocity matrix elements** between the initial and final Bloch states.
 
-In the 8-band k.p framework, these matrix elements are computed not from first-principles wave functions but from the **Kane momentum parameter** $E_P$ (or equivalently $P$), which already encodes the strength of the conduction-to-valence band coupling. The k.p Hamiltonian itself, evaluated at a unit perturbation wave vector, acts as a natural operator for computing these matrix elements: the off-diagonal blocks coupling CB (bands 7--8) to VB (bands 1--6) contain precisely the $P$-dependent terms that generate optical transitions.
+In the 8-band k.p framework, these matrix elements are computed from the **Heisenberg velocity operator** $v_\alpha = -i [r_\alpha, H] / \hbar$, evaluated element-wise on the finite-difference Hamiltonian. This commutator-based approach captures all k.p coupling terms -- including both the Kane momentum parameter $E_P$ (which encodes the conduction-to-valence band coupling strength) and the spatial gradient contributions from the finite-difference stencil -- in a single, geometry-independent formalism.
 
-This chapter derives the oscillator strength formula from Fermi's golden rule, explains the polarization-dependent selection rules that emerge from the 8-band zincblende basis with a comprehensive TE/TM table, describes the implementation in `compute_optical_matrix_wire` and `compute_pele_2d`, presents computed wire subband eigenvalues and quantum well oscillator strength data, and discusses the connection to measurable absorption spectra.
+This chapter derives the oscillator strength formula from Fermi's golden rule, explains the polarization-dependent selection rules that emerge from the 8-band zincblende basis with a comprehensive TE/TM table, describes the commutator-based velocity operator implementation in `build_velocity_matrices` and the unified accumulation framework in `optical_spectra.f90`, presents computed wire subband eigenvalues and quantum well oscillator strength data, and discusses the connection to measurable absorption, spontaneous emission, and gain spectra.
 
 ---
 
@@ -22,31 +22,33 @@ $$
 
 where $\hat{\mathbf{p}} = -i\hbar\nabla$ is the canonical momentum operator. The three Cartesian components $p_x$, $p_y$, $p_z$ determine the coupling strength for light polarized along each direction.
 
-### 6.2.2 Connection to the k.p Hamiltonian
+### 6.2.2 Velocity operator from the Heisenberg equation of motion
 
-The k.p Hamiltonian is obtained from the $\mathbf{k}\cdot\mathbf{p}$ term of the Bloch Hamiltonian by replacing $\mathbf{k} \to -i\nabla$ in the envelope function sector. Its linear (in $\mathbf{k}$) part can be written as
-
-$$
-H^{(1)}(\mathbf{k}) = \frac{\hbar}{m_0} \mathbf{k} \cdot \mathbf{p}
-$$
-
-Therefore, the momentum operator along direction $\alpha$ is related to the $\mathbf{k}$-derivative of the Hamiltonian by
+The velocity operator in quantum mechanics is defined by the Heisenberg equation of motion:
 
 $$
-p_\alpha = \frac{m_0}{\hbar} \frac{\partial H}{\partial k_\alpha}
+\hat{v}_\alpha = \frac{i}{\hbar} \left[ \hat{H}, \hat{r}_\alpha \right]
 $$
 
-In the code, this is exploited directly: to compute $\langle \psi_i | p_\alpha | \psi_f \rangle$, the routine builds a perturbation Hamiltonian at a **unit wave vector** along direction $\alpha$ (setting only $\gamma_1 = \gamma_2 = \gamma_3 = 0$, $A = 0$ while keeping $P$ finite, via the `g='g'` flag in `ZB8bandBulk` or `g='g1'`/`g='g2'`/`g='g3'` in `ZB8bandGeneralized`), then evaluates
+In a discretized finite-difference representation of the k.p Hamiltonian, the position operator $\hat{r}_\alpha$ is represented by the spatial grid coordinates. The Hamiltonian $H$ is stored as a sparse (CSR) matrix whose rows and columns are indexed by spatial grid points. The commutator $-i [\hat{r}_\alpha, H]$ is evaluated element-wise on the CSR matrix:
 
 $$
-P_\alpha^{if} = \langle \psi_i | H_{\text{pert},\alpha} | \psi_f \rangle
+\text{vel}_\alpha(i,j) = -i \left( r_\alpha(i) - r_\alpha(j) \right) \cdot H(i,j)
 $$
 
-The result $P_\alpha^{if}$ is in "dH/dk" units (eV*angstrom). To convert to canonical momentum (eV*s/A), one would divide by $\hbar$. However, the oscillator strength formula uses $|P_\alpha^{if}|^2 / (\hbar^2 / 2m_0)$, so the $\hbar$ cancels and the code works directly in dH/dk units.
+where $r_\alpha(i)$ and $r_\alpha(j)$ are the spatial coordinates of grid points $i$ and $j$ along direction $\alpha$. This formula produces a new CSR matrix with the **same sparsity pattern** as $H$, making it computationally efficient: a single pass over the nonzero entries of $H$ generates all three velocity components ($\alpha = x, y, z$).
+
+**Why this is more correct than the diagonal-P approximation.** The traditional approach used in earlier versions of this code (and still common in many k.p codes) computes the velocity matrix element from the k-derivative of the Hamiltonian: $p_\alpha = (m_0/\hbar) \partial H / \partial k_\alpha$, evaluated by constructing a perturbation Hamiltonian at unit wave vector along direction $\alpha$. This yields the **Kane P parameter** on the diagonal blocks but misses contributions from spatial gradient operators in confined systems. For quantum wells and wires, the off-diagonal blocks of $H$ couple grid points at different spatial locations. The diagonal-P approximation treats these as if they were purely k-dependent, ignoring the fact that the finite-difference stencil generates nonlocal spatial couplings. The commutator $-i [r_\alpha, H]$ captures **all** k.p coupling terms (PP, PM, Q, T, R, RC, A, S, SC) automatically, including the gradient terms that the diagonal-P approximation misses.
+
+**Connection to the wire g-factor fix.** The same commutator-based velocity operator was originally developed to fix the wire g-factor calculation (Chapter 05). In the wire geometry, the transverse velocity operators $v_x$ and $v_y$ must correctly account for the 2D spatial confinement. The `build_velocity_matrices` subroutine in `hamiltonianConstructor.f90` computes $-i [r_\alpha, H]$ on the CSR Hamiltonian and is shared between the g-factor and optical properties codes.
+
+**Bulk special case.** For bulk semiconductors ($\text{confinement} = 0$), the Hamiltonian is an $8 \times 8$ matrix with no spatial discretization. In this case $[r, H] = 0$ because there is no spatial grid. The velocity matrix elements are instead computed analytically from $\partial H / \partial k_\alpha$ using `ZB8bandBulk(g='g')`, which returns the Kane P-dependent terms at a unit wave vector. The result is stored as a dense $8 \times 8$ matrix and converted to CSR format for uniform treatment in the accumulation loop.
+
+**Units.** The velocity matrix elements $P_\alpha^{if} = \langle \psi_i | v_\alpha | \psi_f \rangle$ from the commutator approach are in "dH/dk" units (eV*angstrom), identical to the old approach. The oscillator strength formula uses $|P_\alpha^{if}|^2 / (\hbar^2 / 2m_0)$, where the $\hbar$ cancels appropriately.
 
 ### 6.2.3 Bulk limit
 
-For a bulk semiconductor at $\mathbf{k} = 0$, the 8-band Hamiltonian is diagonal and the eigenvectors are the basis states themselves. The momentum matrix elements are then determined entirely by the off-diagonal $P$-dependent terms. For example, the CB spin-up state $|7\rangle = |S, +1/2\rangle$ couples to:
+For a bulk semiconductor at $\mathbf{k} = 0$, the 8-band Hamiltonian is diagonal and the eigenvectors are the basis states themselves. The velocity matrix elements are then determined entirely by the off-diagonal $P$-dependent terms from $\partial H / \partial k_\alpha$ (the bulk limit of the commutator, since $[r, H] = 0$ for the 8x8 matrix). For example, the CB spin-up state $|7\rangle = |S, +1/2\rangle$ couples to:
 
 - $|1\rangle = |3/2, +3/2\rangle$ (HH spin-up) via $p_+$:
 $$p_+ = \langle S,+1/2 | p_+ | 3/2,+3/2 \rangle = i P / \sqrt{2}$$
@@ -246,43 +248,129 @@ end type
 
 For each CB-VB pair, the routine stores the three polarization-resolved matrix elements squared and the total dimensionless oscillator strength.
 
-### 6.5.2 compute_optical_matrix_wire
+### 6.5.2 Commutator-based velocity matrices
 
-The routine `compute_optical_matrix_wire` in `gfactor_functions.f90` computes oscillator strengths for all $N_{\text{CB}} \times N_{\text{VB}}$ CB-VB pairs:
+The velocity operator matrices are computed by `build_velocity_matrices` in `hamiltonianConstructor.f90`. This subroutine is overloaded for two geometries:
+
+- **`build_velocity_matrices_2d(H_csr, grid, vel_x, vel_y)`** for wire confinement (2D grid). Computes $-i [x, H]$ and $-i [y, H]$ from the 2D spatial grid coordinates. The z-direction velocity uses the analytical $\partial H / \partial k_z$ via `ZB8bandGeneralized(g='g3')`.
+
+- **`build_velocity_matrices_1d(H_csr, grid, vel)`** for QW confinement (1D grid). Computes $-i [z, H]$ from the z-grid coordinates, returning all three components (vel(1) and vel(2) remain zero since the QW has no x/y grid). The in-plane velocities vel(1) and vel(2) are set from $\partial H / \partial k_x$ and $\partial H / \partial k_y$ via `ZB8bandQW(g='g')`.
+
+The velocity matrices are **built once at $k = 0$** and reused for all $k$-points in the sweep. This is correct because the commutator $-i [r_\alpha, H]$ depends on the spatial grid structure and the Hamiltonian's off-diagonal couplings, but not on the wave vector at which the Hamiltonian is evaluated -- the spatial discretization pattern is the same for all $k$.
+
+For bulk, the velocity matrices are constructed analytically via `ZB8bandBulk(g='g')` and converted to CSR format.
+
+### 6.5.3 Matrix element evaluation via CSR SpMV
+
+Given the velocity matrices $\text{vel}_\alpha$ (CSR format) and a pair of eigenvectors $\psi_i$ and $\psi_j$, the velocity matrix element is computed by sparse matrix-vector multiplication:
+
+$$
+P_\alpha^{ij} = \psi_i^\dagger \cdot \text{vel}_\alpha \cdot \psi_j
+$$
+
+In the code:
 
 ```fortran
-subroutine compute_optical_matrix_wire(transitions, num_trans, &
-  & cb_state, vb_state, cb_value, vb_value, numcb, numvb, &
-  & profile_2d, kpterms_2d, cfg)
+do dir = 1, 3
+  call csr_spmv(vel(dir), eigvecs(:,j), Ytmp)
+  Pele = zdotc(dim, eigvecs(:,i), 1, Ytmp, 1)
+  p_abs2(dir) = real(Pele * conjg(Pele), dp)
+end do
 ```
 
-The algorithm loops over all CB-VB pairs and for each pair:
+The polarization decomposition is:
+- TE: $|p_x|^2 + |p_y|^2$ (in-plane components)
+- TM: $|p_z|^2$ (growth/free-axis component)
 
-1. Computes the transition energy $\Delta E = E_{\text{CB}} - E_{\text{VB}}$.
-2. Skips transitions with $\Delta E \leq 0$ (degenerate or inverted bands).
-3. For each direction $\alpha = x, y, z$, calls `compute_pele_2d` to evaluate $P_\alpha = \langle \psi_{\text{CB}} | \partial H / \partial k_\alpha | \psi_{\text{VB}} \rangle$.
-4. Stores $|P_\alpha|^2$ as `px`, `py`, `pz`.
-5. Computes the oscillator strength: `f = (px + py + pz) / (hbar2O2m0 * dE)`.
+The same `csr_spmv` + `zdotc` pattern is used for all optical quantities (absorption, spontaneous emission, gain, ISBT), differing only in the occupation factor applied to each transition pair.
 
-### 6.5.3 compute_pele_2d and the perturbation Hamiltonian
+### 6.5.4 The optical_transition derived type (g-factor program)
 
-The routine `compute_pele_2d` dispatches to `pMatrixEleCalc_2d`, which constructs the perturbation Hamiltonian for the specified direction by calling `ZB8bandGeneralized` with the appropriate `g` flag:
+The `gfactorCalculation` program uses the `optical_transition` type to store per-transition data for oscillator strength analysis. This type stores the three polarization-resolved matrix elements squared and the total dimensionless oscillator strength, computed using the same `compute_pele_2d` / `pMatrixEleCalc` path for backward compatibility with the g-factor output format. The `opticalProperties` program uses a different, more general approach based on the unified accumulation framework described in Section 6.5.5.
 
-- `g='g1'`: perturbation along $x$ (the $d/dx$ gradient operator)
-- `g='g2'`: perturbation along $y$ (the $d/dy$ gradient operator)
-- `g='g3'`: perturbation along $z$ (the $k_z$ operator)
+### 6.5.5 Unified optical accumulation framework
 
-Each perturbation Hamiltonian is stored in CSR format and applied via sparse matrix-vector multiplication (`csr_spmv`), making the computation efficient for the large $8N_{\text{grid}} \times 8N_{\text{grid}}$ wire Hamiltonian. The matrix element is then:
+All optical quantities (absorption, spontaneous emission, gain, ISBT) share the same core structure in `optical_spectra.f90`:
 
 $$
-P_\alpha = \mathbf{c}_{\text{CB}}^\dagger \cdot H_{\text{pert},\alpha} \cdot \mathbf{c}_{\text{VB}}
+S_\alpha(E) = \sum_{k} \sum_{i,j} |P_\alpha^{ij}|^2 \cdot \Phi(E - E_{ij}) \cdot W(k) \cdot \text{occ}(i,j)
 $$
 
-where $\mathbf{c}_{\text{CB}}$ and $\mathbf{c}_{\text{VB}}$ are the eigenvectors.
+where:
 
-### 6.5.4 Output format
+- $|P_\alpha^{ij}|^2$ is the velocity matrix element squared, computed from the commutator-based CSR matrices (same for all quantities).
+- $\Phi(E - E_{ij})$ is the Voigt lineshape (Section 6.7.4), same broadening for all quantities.
+- $W(k)$ is the Simpson integration weight with appropriate dimensional prefactor (2D for QW, 1D for wire, 3D for bulk).
+- $\text{occ}(i,j)$ is the **occupation factor**, which is the only quantity-specific component:
 
-The output is written by `main_gfactor.f90` to `output/optical_transitions.dat`:
+| Quantity | Initial state $i$ | Final state $j$ | Occupation factor |
+|---|---|---|---|
+| Absorption | VB | CB | $f_v(E_i) - f_c(E_j)$ |
+| Spontaneous emission | VB | CB | $f_c(E_j) \cdot (1 - f_v(E_i))$ |
+| Gain | VB | CB | $f_v(E_i) - f_c(E_j)$ (with quasi-Fermi levels) |
+| ISBT | CB (lower) | CB (upper) | $f_i - f_j$ |
+
+At equilibrium (no carrier injection), $f_v \approx 1$ and $f_c \approx 0$ near the band edge, so the absorption occupation factor $\approx 1$. For gain, separate quasi-Fermi levels $\mu_e$ and $\mu_h$ are computed from the carrier density via bisection, and the occupation factors use $f(E, \mu_e)$ and $f(E, \mu_h)$ instead of a single equilibrium Fermi level.
+
+The accumulation is implemented in `optics_accumulate` (absorption), `optics_accumulate_spontaneous` (spontaneous emission), and `compute_gain_qw` (gain), all in `optical_spectra.f90`.
+
+### 6.5.6 The `opticalProperties` executable
+
+The standalone `opticalProperties` program (`src/apps/main_optics.f90`) computes optical spectra for all three geometries. Unlike the older approach where optics was computed inline during the `bandStructure` k-sweep, the standalone program separates the optical calculation into a dedicated workflow:
+
+1. Parse `input.cfg` with the `optics:` block (Section 6.5.7).
+2. Initialize confinement and material parameters.
+3. Build velocity matrices once at $k = 0$:
+   - Bulk: analytical `ZB8bandBulk(g='g')` for each direction.
+   - QW: commutator $-i [z, H]$ for vel(3), `ZB8bandQW(g='g')` for vel(1) and vel(2).
+   - Wire: commutator $-i [x, H]$, $-i [y, H]$, plus `ZB8bandGeneralized(g='g3')` for vel(3).
+4. Sweep $k$: build $H(k)$, diagonalize, accumulate optical spectra via `optics_accumulate`.
+5. Finalize: apply physical prefactors, write output files.
+
+The program supports OpenMP parallelization of the diagonalization step (each $k$-point is independent), with serial accumulation.
+
+### 6.5.7 Input format for the optics block
+
+The `opticalProperties` program reads the same `input.cfg` format as the other executables, with the addition of the `optics:` block:
+
+```
+optics:
+  T
+  linewidth_lorentzian  0.030
+  linewidth_gaussian    0.005
+  refractive_index      3.3
+  E_min  E_max  num_energy_points
+  temperature            300.0
+  carrier_density        0.0
+  gain_enabled           F
+  gain_carrier_density   3.0e12
+  isbt_enabled           F
+  spontaneous_enabled    F
+  spin_resolved          F
+```
+
+The two new fields added in the current update are:
+
+- **`spontaneous_enabled`** (logical, default `F`): enables spontaneous emission calculation, output to `output/spontaneous_TE.dat` and `output/spontaneous_TM.dat`.
+- **`spin_resolved`** (logical, default `F`): enables spin-up/down decomposition of all spectra using the Clebsch-Gordan transformation in `spin_projection.f90`. When enabled, additional output files are generated: `output/absorption_TE_up.dat`, `output/absorption_TE_dw.dat`, `output/absorption_TM_up.dat`, `output/absorption_TM_dw.dat`.
+
+### 6.5.8 Output files
+
+The `opticalProperties` program writes the following files to `output/`:
+
+| File | Columns | Description |
+|---|---|---|
+| `absorption_TE.dat` | $E$ (eV), $\alpha$ (cm$^{-1}$) | TE-polarized interband absorption |
+| `absorption_TM.dat` | $E$ (eV), $\alpha$ (cm$^{-1}$) | TM-polarized interband absorption |
+| `absorption_ISBT.dat` | $E$ (eV), $\alpha$ (cm$^{-1}$) | ISBT absorption (TM only, when `isbt_enabled=T`) |
+| `gain_TE.dat` | $E$ (eV), $g$ (cm$^{-1}$) | TE gain (when `gain_enabled=T`) |
+| `gain_TM.dat` | $E$ (eV), $g$ (cm$^{-1}$) | TM gain (when `gain_enabled=T`) |
+| `spontaneous_TE.dat` | $E$ (eV), rate (arb. units) | TE spontaneous emission (when `spontaneous_enabled=T`) |
+| `spontaneous_TM.dat` | $E$ (eV), rate (arb. units) | TM spontaneous emission (when `spontaneous_enabled=T`) |
+
+When `spin_resolved=T`, each file additionally has `_up` and `_dw` variants for spin-up and spin-down channels. The sum rule $\text{total} = \text{up} + \text{down}$ provides a consistency check.
+
+The `gfactorCalculation` program continues to write `output/optical_transitions.dat` with the per-transition oscillator strengths for g-factor analysis:
 
 ```
 # CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc
@@ -337,13 +425,13 @@ Table 6.3 lists the computed subband eigenvalues at $k_z = 0$ near the band edge
 
 **Fundamental gap:** CB1 $-$ VB1 = 1.5217 $-$ 0.0000 = **1.522 eV**, only 2.7 meV above the bulk GaAs gap of 1.519 eV. This is expected: for a 63 nm wire the confinement energy $E_{\text{conf}} \approx \hbar^2 \pi^2 / (2 m^* L^2)$ is negligible ($\sim$1 meV for electrons, $\ll$1 meV for holes). The CB1 state at 1.522 eV sits just above $E_C = 1.519$ eV, confirming the corrected Hamiltonian (the missing $\hbar^2/2m_0$ factor fix).
 
-### 6.6.3 Wire optical transitions: current status
+### 6.6.3 Wire optical transitions
 
-The optical transition calculation for wires (`compute_optical_matrix_wire` in `gfactor_functions.f90`) requires the `gfactorCalculation` executable, which uses FEAST (sparse eigensolver) for the $3528 \times 3528$ Hamiltonian.
+The wire optical transitions can be computed by either the `opticalProperties` program (using commutator-based velocity matrices and the FEAST eigensolver) or the `gfactorCalculation` program (using the legacy perturbation-Hamiltonian approach). The `opticalProperties` program is the recommended path for full spectra, while the `gfactorCalculation` program provides per-transition oscillator strength tables.
 
 **State selection.** The code selects CB and VB states using band-character-based gap detection. For each eigenstate, the CB character is computed as the sum of the CB-band (7--8) weights from the eigenvector decomposition. The first eigenstate whose CB weight exceeds the threshold of 0.5 is identified as the band edge, and the requested `numvb` and `numcb` states are taken around this gap. If the band-character criterion fails (no state meets the threshold), the code falls back to finding the largest spectral gap between consecutive eigenvalues that can accommodate the requested number of VB and CB states.
 
-**FEAST convergence.** The FEAST subspace ($m_0 = 2 \times 24 = 48$) may be too small for the 3528-dimensional problem, producing the warning "FEAST subspace too small (info=3). Missing eigenvalues." Additionally, the COO cache for the perturbation Hamiltonian can overflow (`WARNING: COO capacity exceeded in insert_csr_block_scaled`), causing entries to be dropped.
+**FEAST convergence.** The FEAST subspace ($m_0 = 2 \times 24 = 48$) may be too small for the 3528-dimensional problem, producing the warning "FEAST subspace too small (info=3). Missing eigenvalues." Additionally, the COO cache for the perturbation Hamiltonian can overflow (`WARNING: COO capacity exceeded in insert_csr_block_scaled`), causing entries to be dropped. The `opticalProperties` wire branch uses the same FEAST solver but with configurable `feast_emin`/`feast_emax` energy windows.
 
 The QW optical transitions (Section 6.6.5) use dense LAPACK and do not suffer from these problems.
 
@@ -416,9 +504,12 @@ See Chapter 02, Section A.6 for the full computed transition table.
 
 | Component | File | Routine |
 |---|---|---|
-| Matrix element computation | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_qw` |
-| Per-direction computation | `src/physics/gfactor_functions.f90` | `pMatrixEleCalc` |
-| Output writing | `src/apps/main_gfactor.f90` | QW optical block |
+| Velocity matrices (commutator) | `src/physics/hamiltonianConstructor.f90` | `build_velocity_matrices_1d` |
+| In-plane velocity (dH/dk) | `src/physics/hamiltonianConstructor.f90` | `ZB8bandQW(g='g')` |
+| Absorption accumulation | `src/physics/optical_spectra.f90` | `optics_accumulate` |
+| Optical properties program | `src/apps/main_optics.f90` | QW branch |
+| g-factor matrix elements (legacy) | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_qw` |
+| Output writing (g-factor) | `src/apps/main_gfactor.f90` | QW optical block |
 
 ---
 
@@ -463,11 +554,11 @@ The integration proceeds as follows:
 
 1. **Define the grid.** Set $k_{\max}$ large enough that the Fermi functions $f_v$ and $f_c$ suppress all transitions beyond the cutoff. A typical choice is $k_{\max} \approx 0.5$--$1.0$ angstrom$^{-1}$ (corresponding to $\hbar^2 k_{\max}^2 / 2m_0 \sim 0.8$--$3.0$ eV for a free-electron mass). Use an odd number of points (e.g., $N_k = 51$) for Simpson integration.
 
-2. **On-the-fly accumulation.** At each $k_\parallel$ point, the k.p eigenproblem is solved for the QW Hamiltonian (which already happens during the band structure $k$-sweep in `main.f90`). The eigenvectors are then fed to `pMatrixEleCalc` for each CB-VB pair to obtain the momentum matrix elements. The absorption integrand $k_\parallel \cdot |M_{cv}|^2 \cdot (f_v - f_c) \cdot L(E - \Delta E_{cv})$ is accumulated directly into the energy-grid arrays for $\alpha_{\text{TE}}$ and $\alpha_{\text{TM}}$. After the accumulation, the eigenvectors can be discarded -- they are never stored for all $k_\parallel$ points simultaneously, keeping memory usage at $O(N_{\text{grid}})$ rather than $O(N_k \cdot N_{\text{grid}})$.
+2. **On-the-fly accumulation.** At each $k_\parallel$ point, the k.p eigenproblem is solved for the QW Hamiltonian. The velocity matrix elements are then computed by CSR SpMV against the pre-built velocity matrices: for each CB-VB pair, three SpMV operations (one per direction) followed by a dot product yield $|P_x|^2$, $|P_y|^2$, $|P_z|^2$. The absorption integrand $k_\parallel \cdot |M_{cv}|^2 \cdot (f_v - f_c) \cdot L(E - \Delta E_{cv})$ is accumulated directly into the energy-grid arrays for $\alpha_{\text{TE}}$ and $\alpha_{\text{TM}}$. After the accumulation, the eigenvectors can be discarded -- they are never stored for all $k_\parallel$ points simultaneously, keeping memory usage at $O(N_{\text{grid}})$ rather than $O(N_k \cdot N_{\text{grid}})$.
 
 3. **Simpson integration.** After the loop over all $k_\parallel$ points completes, the accumulated arrays are integrated using Simpson's rule: $\int_0^{k_{\max}} f(k) \, dk \approx (\Delta k / 3) \sum_j w_j f(k_j)$ with Simpson weights $w_j = \{1, 4, 2, 4, 2, \ldots, 4, 1\}$.
 
-4. **Computational cost.** For each $k_\parallel$ point, the cost is dominated by the $N_c \times N_v$ matrix element evaluations. Each evaluation calls `pMatrixEleCalc` three times (for $x$, $y$, $z$), each involving a Hamiltonian build and a dot product. The total cost scales as $O(N_c \cdot N_v \cdot N_k \cdot N_E)$, where $N_E$ is the number of energy grid points. For a typical QW calculation ($N_c = 4$, $N_v = 12$, $N_k = 51$, $N_E = 200$), this amounts to roughly $5 \times 10^5$ matrix element evaluations -- each of which is a dense matrix-vector product of dimension $8N_{\text{FD}}$. This is feasible on a single core in seconds to minutes for $N_{\text{FD}} \leq 400$.
+4. **Computational cost.** For each $k_\parallel$ point, the dominant cost is the diagonalization ($O(N^3)$ for dense LAPACK, where $N = 8 N_{\text{FD}}$). The matrix element evaluations are $O(N_c \cdot N_v \cdot N_{\text{nnz}})$ where $N_{\text{nnz}}$ is the number of nonzeros in the velocity matrix. Since the velocity matrices are built once and reused, there is no per-$k$ Hamiltonian construction for the velocity. The total cost scales as $O(N_k \cdot N^3 + N_k \cdot N_c \cdot N_v \cdot N_{\text{nnz}} \cdot N_E)$. For a typical QW calculation ($N_{\text{FD}} = 400$, $N_c = 4$, $N_v = 12$, $N_k = 51$, $N_E = 200$), the diagonalization dominates and the calculation completes in seconds to minutes on a single core. OpenMP parallelization across $k$-points is supported.
 
 ### 6.7.3 TE and TM polarization decomposition
 
@@ -664,13 +755,7 @@ where $n_{2D}$ is the 2D electron density in the well (from doping or carrier in
 
 The polarization restriction means that ISBT absorption is measured at oblique or grating-coupled incidence (to project a $z$-component of the electric field into the well plane). This geometric constraint is a distinguishing experimental signature of ISBTs and is exploited in QWIP focal plane arrays, where a diffraction grating on the detector surface provides the necessary TM coupling.
 
-For computational purposes, the code evaluates $z_{ij}$ by direct numerical integration of the envelope functions:
-
-$$
-z_{ij} = \sum_{n=1}^{N_{\text{FD}}} \psi_i^*(z_n) \, z_n \, \psi_j(z_n) \, \Delta z
-$$
-
-using the same FD grid and Simpson integration as the charge density calculation. The ISBT oscillator strength is then computed from the $f_{ij}$ formula above. The $z$-dipole evaluation and ISBT absorption are implemented in `optical_spectra.f90`: `z_dipole` computes the position matrix element, `compute_intersubband_transitions` assembles the transition table for all CB subband pairs, and `compute_isbt_absorption` evaluates the full absorption spectrum including Fermi factors and broadening.
+For computational purposes, the code evaluates $z_{ij}$ via the commutator-based velocity matrix element. The z-velocity matrix $\text{vel}_z$ from $-i [z, H]$ is applied to the CB eigenvectors via CSR SpMV, yielding the same $z_{ij}$ dipole moment (up to the factor $i m_0 \omega_{ij}$ connecting velocity and length gauges). The ISBT absorption spectrum is then assembled from the velocity matrix elements, Fermi occupation factors, and Voigt broadening, using the same unified accumulation framework as the interband absorption. This approach works for all geometries: QW (z-dipole from $[z, H]$), wire (transverse dipoles from $[x, H]$ and $[y, H]$), and bulk (no ISBT, since $[r, H] = 0$ for the 8x8 Hamiltonian).
 
 ![ISBT dipole moments](../figures/isbt_dipole_moments.png)
 
@@ -869,7 +954,7 @@ The momentum matrix elements converge more slowly with the FD grid spacing than 
 - The number of VB states included (`numvb`) should be large enough to capture the dominant transitions; typically 10--20 VB states are needed.
 - Convergence of the oscillator strength should be checked by varying the grid spacing: $f_{ij}$ should change by less than 1% between successive refinements.
 
-### 6.12.2 Gauge invariance
+### 6.12.2 Gauge invariance and the commutator
 
 The momentum matrix elements $\mathbf{p}_{if}$ and the position matrix elements $\mathbf{r}_{if}$ are related by
 
@@ -877,7 +962,7 @@ $$
 \mathbf{p}_{if} = \frac{im_0 \Delta E_{if}}{\hbar} \mathbf{r}_{if}
 $$
 
-In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") give identical results. In a heterostructure with position-dependent material parameters, however, the velocity gauge (used by this code, since it directly evaluates $\partial H / \partial k$) is preferred because it avoids the ambiguity of the position operator across interfaces. The k.p Hamiltonian naturally provides the velocity-gauge matrix elements, and the code exploits this without needing to define a position operator.
+In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") give identical results. In a heterostructure with position-dependent material parameters, the commutator $-i [r_\alpha, H]$ naturally bridges both formulations: it is a velocity-gauge expression that explicitly uses the position operator. The discretized form $-i (r_i - r_j) H(i,j)$ evaluates to zero for on-site (same grid point) matrix elements and nonzero for off-diagonal (neighboring grid point) elements, which is precisely the length-gauge contribution from the spatial gradient. This approach avoids the ambiguity of defining a position operator across material interfaces, since the position information enters only through the difference $(r_i - r_j)$ of grid coordinates.
 
 ### 6.12.3 Current limitations
 
@@ -887,9 +972,9 @@ In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") g
 
 3. **No magnetic field dependence.** The optical transitions are computed at $B = 0$. Magneto-optical measurements (e.g., Zeeman splitting of excitonic peaks) would require computing the transitions in the presence of a magnetic field, which couples to the g-factor calculation described in Chapter 05.
 
-4. **No direct Im[$\epsilon$] computation.** The code computes individual transition matrix elements and oscillator strengths for both wire and QW modes but does not assemble them into the imaginary part of the dielectric function $\text{Im}[\epsilon(\omega)]$. This requires a post-processing step that sums over all transitions with appropriate Fermi occupation factors, k_parallel integration (for QWs), and broadening (Section 6.7). A future extension could output $\text{Im}[\epsilon(\omega)]$ directly -- this is planned for Phase 2 of the development roadmap.
+4. **Spin resolution is approximate.** The spin-resolved spectra use the Clebsch-Gordan decomposition of the 8-band k.p basis into spin-orbital components. For interband transitions, the cross-spin terms are small and the projection $w_\uparrow(i) \cdot w_\uparrow(j)$ provides a reasonable approximation. A more rigorous treatment would require the full spin-density matrix formalism.
 
-5. **Wire state selection.** The `gfactorCalculation` wire mode selects CB/VB states using band-character-based gap detection (CB weight threshold at 0.5, with fallback to largest spectral gap). For wires with many subbands where the band character is well-defined, this correctly identifies the band edge. The fallback gap-based heuristic may still misidentify the edge in pathological cases with strongly mixed character.
+5. **Wire state selection.** The `gfactorCalculation` wire mode selects CB/VB states using band-character-based gap detection (CB weight threshold at 0.5, with fallback to largest spectral gap). For wires with many subbands where the band character is well-defined, this correctly identifies the band edge. The `opticalProperties` program uses the same state selection via `numcb` and `numvb` parameters.
 
 ### 6.12.4 Wurtzite limitation
 
@@ -945,39 +1030,43 @@ from what still needs a benchmark closure.
 | Quantity | Formula | Code output column |
 |---|---|---|
 | Transition energy | $\Delta E = E_{\text{CB}} - E_{\text{VB}}$ | `dE(eV)` |
-| $x$-polarized matrix element | $\|\langle \text{CB}\|\partial H/\partial k_x\|\text{VB}\rangle\|^2$ | `\|px\|^2` |
-| $y$-polarized matrix element | $\|\langle \text{CB}\|\partial H/\partial k_y\|\text{VB}\rangle\|^2$ | `\|py\|^2` |
-| $z$-polarized matrix element | $\|\langle \text{CB}\|\partial H/\partial k_z\|\text{VB}\rangle\|^2$ | `\|pz\|^2` |
-| Oscillator strength | $f = \sum_\alpha \|p_\alpha\|^2 / [(\hbar^2/2m_0) \cdot \Delta E]$ | `f_osc` |
-| ISBT dipole moment | $z_{ij} = \langle\psi_i|z|\psi_j\rangle$ | `z_ij` |
+| $x$-polarized matrix element | $\|\langle \text{CB}\|v_x\|\text{VB}\rangle\|^2$ (commutator) | `\|px\|^2` |
+| $y$-polarized matrix element | $\|\langle \text{CB}\|v_y\|\text{VB}\rangle\|^2$ (commutator) | `\|py\|^2` |
+| $z$-polarized matrix element | $\|\langle \text{CB}\|v_z\|\text{VB}\rangle\|^2$ (commutator) | `\|pz\|^2` |
+| Oscillator strength | $f = \sum_\alpha \|P_\alpha\|^2 / [(\hbar^2/2m_0) \cdot \Delta E]$ | `f_osc` |
+| ISBT dipole moment | from commutator $v_z$ (velocity gauge) | -- |
+| Absorption coefficient | $\alpha(\hbar\omega)$ via unified accumulation | `absorption_TE/TM.dat` |
+| Spontaneous emission | $R_{sp}(E)$ with $f_c(1-f_v)$ factor | `spontaneous_TE/TM.dat` |
+| Optical gain | $g = -\alpha$ with quasi-Fermi levels | `gain_TE/TM.dat` |
 | Exciton binding energy | $E_b$ (variational) | `E_binding(meV)` |
 | Scattering rate | $1/\tau_{ij}^{\text{Fr}}$ | `rate(1/s)` |
 
 **Key physical insights:**
 
-1. The 8-band k.p framework provides all optical matrix elements "for free" -- they are contained in the off-diagonal $P$-coupling blocks of the Hamiltonian itself.
+1. The velocity operator from the Heisenberg equation of motion, $v_\alpha = -i [r_\alpha, H] / \hbar$, captures all k.p coupling terms automatically when evaluated element-wise on the CSR Hamiltonian. This includes both the Kane P parameter contributions and the spatial gradient terms from the finite-difference stencil.
 
 2. The selection rules emerge directly from the angular momentum quantum numbers of the basis states: HH transitions are purely TE, LH transitions are TE+TM with TM dominant, and SO transitions are mixed.
 
 3. The Kane energy $E_P$ controls the absolute scale of all optical matrix elements and simultaneously determines the CB effective mass through the k.p interaction.
 
-4. Quantum wire geometry introduces polarization anisotropy ($|p_x|^2 \neq |p_y|^2$ for rectangular cross-sections) that can be used to identify the symmetry character of transitions experimentally.
+4. All optical quantities (absorption, spontaneous emission, gain, ISBT) share the same velocity matrix elements and differ only in the occupation factor, enabling a unified accumulation framework.
+
+5. Quantum wire geometry introduces polarization anisotropy ($|p_x|^2 \neq |p_y|^2$ for rectangular cross-sections) that can be used to identify the symmetry character of transitions experimentally.
 
 **Code locations:**
 
 | Component | File | Routine |
 |---|---|---|
+| Velocity matrix construction | `src/physics/hamiltonianConstructor.f90` | `build_velocity_matrices` |
 | Optical transition type | `src/core/defs.f90` | `optical_transition` |
-| Matrix element computation | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_wire` |
-| Per-direction dispatcher | `src/physics/gfactor_functions.f90` | `compute_pele_2d` |
-| Output writing | `src/apps/main_gfactor.f90` | wire block |
-| Matrix element computation (QW) | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_qw` |
-| Per-direction computation (QW) | `src/physics/gfactor_functions.f90` | `pMatrixEleCalc` |
-| Output writing (QW) | `src/apps/main_gfactor.f90` | QW optical block |
-| Interband absorption/gain | `src/physics/optical_spectra.f90` | `optics_init`, `optics_accumulate`, `optics_finalize` |
-| ISBT dipole moment | `src/physics/optical_spectra.f90` | `z_dipole` |
-| ISBT transition table | `src/physics/optical_spectra.f90` | `compute_intersubband_transitions` |
-| ISBT absorption spectrum | `src/physics/optical_spectra.f90` | `compute_isbt_absorption` |
+| Optics config type | `src/core/defs.f90` | `optics_config` |
+| Unified accumulation | `src/physics/optical_spectra.f90` | `optics_init`, `optics_accumulate`, `optics_finalize` |
+| Spontaneous emission | `src/physics/optical_spectra.f90` | `optics_accumulate_spontaneous` |
+| Gain computation | `src/physics/optical_spectra.f90` | `compute_gain_qw` |
+| ISBT absorption | `src/physics/optical_spectra.f90` | `compute_isbt_absorption` |
+| Spin projection | `src/physics/spin_projection.f90` | `spin_weights` |
+| Optical properties program | `src/apps/main_optics.f90` | `program opticalProperties` |
+| Optics parsing | `src/io/input_parser.f90` | `optics:` block |
+| g-factor optical matrix (legacy) | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_wire` |
 | Exciton binding energy | `src/physics/exciton.f90` | `compute_exciton_binding` |
-| 2D Sommerfeld enhancement | `src/physics/exciton.f90` | `sommerfeld_2d` |
 | LO-phonon scattering rates | `src/physics/scattering.f90` | `compute_phonon_scattering` |
