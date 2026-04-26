@@ -2,7 +2,6 @@ module optical_spectra
 
   use definitions
   use sparse_matrices, only: csr_matrix, csr_spmv
-  use gfactorFunctions
   use charge_density, only: fermi_dirac
   use outputFunctions, only: ensure_output_dir, get_unit
   implicit none
@@ -795,29 +794,30 @@ contains
   ! levels are computed once (at the first k-point call) and reused.
   ! ------------------------------------------------------------------
   subroutine compute_gain_qw(optcfg, eigvals, eigvecs, k_weight, &
-    & nlayers, params, profile, kpterms, startz, endz, dz, &
-    & numcb, numvb, carrier_density)
+    & vel, numcb, numvb, carrier_density)
 
     type(optics_config), intent(in) :: optcfg
     real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
     complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
-    integer, intent(in) :: nlayers
-    type(paramStruct), intent(in) :: params(nlayers)
-    real(kind=dp), intent(in), dimension(:,:) :: profile
-    real(kind=dp), intent(in), dimension(:,:,:) :: kpterms
-    real(kind=dp), intent(in) :: startz, endz, dz
+    type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in) :: numcb, numvb
     real(kind=dp), intent(in) :: carrier_density   ! 2D carrier density (cm^-2)
 
-    integer :: i, j, dir, ie
+    integer :: i, j, dir, ie, dim
     real(kind=dp) :: dE, f_c, f_v, occ_factor
     real(kind=dp) :: px, py, pz
     real(kind=dp) :: gamma_l, gamma_g
     complex(kind=dp) :: Pele
+    complex(kind=dp), allocatable :: Ytmp(:)
+    complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    complex(kind=dp), external :: zdotc
 
     if (nE == 0) return  ! optics_init not called
     if (.not. allocated(alpha_gain_te)) return  ! gain not initialized
+
+    dim = size(eigvecs, 1)
+    allocate(Ytmp(dim))
 
     ! Compute quasi-Fermi levels once on the first k-point call.
     ! We use the eigenvalues at the first k-point (usually k_par ~ 0)
@@ -863,18 +863,16 @@ contains
         ! Skip negligible contributions
         if (abs(occ_factor) < 1.0e-30_dp) cycle
 
-        ! Momentum matrix elements in each direction
+        ! Velocity matrix elements via commutator v_alpha = -i [r_alpha, H]
+        ! |<CB| v_alpha |VB>|^2 computed as SpMV: Ytmp = vel(dir) * |VB>,
+        ! then Pele = <CB| Ytmp>.
         px = 0.0_dp
         py = 0.0_dp
         pz = 0.0_dp
 
         do dir = 1, 3
-          Pele = ZERO
-          call pMatrixEleCalc(Pele, dir, eigvecs(:,numvb+j), &
-            & eigvecs(:,i), nlayers, params, &
-            & profile=profile, kpterms=kpterms, &
-            & startz=startz, endz=endz, dz=dz)
-
+          call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
+          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
@@ -895,6 +893,8 @@ contains
 
       end do
     end do
+
+    deallocate(Ytmp)
 
   end subroutine compute_gain_qw
 

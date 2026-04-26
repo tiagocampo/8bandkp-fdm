@@ -836,14 +836,9 @@ program kpfdm
           ! Gain spectrum accumulation (uses separate quasi-Fermi levels)
           if (cfg%optics%gain_enabled) then
             call compute_gain_qw(cfg%optics, &
-              & eigvals=eig(:, k), &
-              & eigvecs=eigv(:, :, k), &
-              & k_weight=simpson_w(k), &
-              & nlayers=cfg%numLayers, params=cfg%params, &
-              & profile=profile, kpterms=kpterms, &
-              & startz=cfg%startPos(1), endz=cfg%endPos(1), dz=cfg%dz, &
-              & numcb=cfg%numcb, numvb=cfg%numvb, &
-              & carrier_density=cfg%optics%gain_carrier_density)
+              & eig(:, k), eigv(:, :, k), simpson_w(k), &
+              & vel_opt, cfg%numcb, cfg%numvb, &
+              & cfg%optics%gain_carrier_density)
           end if
 
           ! ISBT accumulation
