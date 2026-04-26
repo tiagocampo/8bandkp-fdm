@@ -266,6 +266,12 @@ program opticalProperties
       call optics_accumulate(cfg%optics, &
         & eig(:, k), eigv(:, :, k), simpson_w(k), &
         & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+
+      if (cfg%optics%spontaneous_enabled) then
+        call optics_accumulate_spontaneous(cfg%optics, &
+          & eig(:, k), eigv(:, :, k), simpson_w(k), &
+          & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+      end if
     end do
 
     ! ================================================================
@@ -481,6 +487,12 @@ program opticalProperties
       call optics_accumulate(cfg%optics, &
         & eig(:, k), eigv(:, :, k), simpson_w(k), &
         & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+
+      if (cfg%optics%spontaneous_enabled) then
+        call optics_accumulate_spontaneous(cfg%optics, &
+          & eig(:, k), eigv(:, :, k), simpson_w(k), &
+          & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+      end if
     end do
 
     ! ================================================================
@@ -648,6 +660,14 @@ program opticalProperties
           & eigen_res%eigenvectors(:, 1:nev_wire), &
           & simpson_w(k), &
           & vel_wire, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+
+        if (cfg%optics%spontaneous_enabled) then
+          call optics_accumulate_spontaneous(cfg%optics, &
+            & eigen_res%eigenvalues(1:nev_wire), &
+            & eigen_res%eigenvectors(:, 1:nev_wire), &
+            & simpson_w(k), &
+            & vel_wire, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+        end if
 
         ! Free eigensolver result for next kz
         call eigensolver_result_free(eigen_res)
