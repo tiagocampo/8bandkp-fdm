@@ -631,26 +631,32 @@ contains
   ! Uses the same Voigt broadening as interband.  Written to
   ! output/absorption_ISBT.dat after finalization.
   ! ------------------------------------------------------------------
-  subroutine compute_isbt_absorption(optcfg, eigvals, eigvecs, z_grid, dz, &
-    & numcb, numvb, fdstep, k_weight, fermi_level)
+  subroutine compute_isbt_absorption(optcfg, eigvals, eigvecs, &
+    & vel, numcb, numvb, k_weight, fermi_level)
 
     type(optics_config), intent(in) :: optcfg
     real(kind=dp), intent(in)    :: eigvals(:)
     complex(kind=dp), intent(in) :: eigvecs(:,:)
-    real(kind=dp), intent(in)    :: z_grid(:)
-    real(kind=dp), intent(in)    :: dz
-    integer, intent(in)          :: numcb, numvb, fdstep
+    type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
+    integer, intent(in)          :: numcb, numvb
     real(kind=dp), intent(in)    :: k_weight
     real(kind=dp), intent(in)    :: fermi_level
 
-    integer :: i, j, ie, state_i, state_j
+    integer :: i, j, ie, state_i, state_j, dim
+    integer, parameter :: dir_isbt = 3   ! z-dipole for QW ISBT
     real(kind=dp) :: E_ij, occ_factor, f_i, f_j
     real(kind=dp) :: gamma_l, gamma_g
-    real(kind=dp) :: z_ij_abs2
-    complex(kind=dp) :: z_ij
+    real(kind=dp) :: p_abs2
+    complex(kind=dp) :: pele_ij
+    complex(kind=dp), allocatable :: Ytmp(:)
+    complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    complex(kind=dp), external :: zdotc
     real(kind=dp) :: ef_cb
 
     if (nE == 0) return  ! optics_init not called
+
+    dim = size(eigvecs, 1)
+    allocate(Ytmp(dim))
 
     gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
     gamma_g = optcfg%linewidth_gaussian / 2.0_dp
@@ -679,18 +685,21 @@ contains
         E_ij = eigvals(state_j) - eigvals(state_i)
         if (E_ij < DE_MIN) cycle
 
-        ! z-dipole matrix element via helper
-        z_ij = z_dipole(eigvecs, z_grid, dz, fdstep, state_i, state_j)
-        z_ij_abs2 = real(z_ij * conjg(z_ij), kind=dp)
+        ! Velocity matrix element via commutator: dir_isbt = 3 for QW (z-dipole)
+        call csr_spmv(vel(dir_isbt), eigvecs(:,state_j), Ytmp, ONE, ZERO)
+        pele_ij = zdotc(dim, eigvecs(1,state_i), 1, Ytmp, 1)
+        p_abs2 = real(pele_ij * conjg(pele_ij), kind=dp)
 
         ! Broaden and accumulate onto energy grid (ISBT, TM-polarized)
         do ie = 1, nE
-          alpha_isbt(ie) = alpha_isbt(ie) + occ_factor * z_ij_abs2 &
+          alpha_isbt(ie) = alpha_isbt(ie) + occ_factor * p_abs2 &
             & * lineshape_voigt(E_grid(ie), E_ij, gamma_l, gamma_g) * k_weight
         end do
 
       end do
     end do
+
+    deallocate(Ytmp)
 
   end subroutine compute_isbt_absorption
 

@@ -844,11 +844,9 @@ program kpfdm
           ! ISBT accumulation
           if (cfg%optics%isbt_enabled) then
             call compute_isbt_absorption(cfg%optics, &
-              & eigvals=eig(:, k), &
-              & eigvecs=eigv(:, :, k), &
-              & z_grid=cfg%z, dz=cfg%dz, &
-              & numcb=cfg%numcb, numvb=cfg%numvb, fdstep=cfg%fdstep, &
-              & k_weight=simpson_w(k), fermi_level=cfg%sc%fermi_level)
+              & eig(:, k), eigv(:, :, k), &
+              & vel_opt, cfg%numcb, cfg%numvb, &
+              & simpson_w(k), cfg%sc%fermi_level)
           end if
         end do
 
