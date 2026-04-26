@@ -186,6 +186,47 @@ Optional. Triggered by reading a strain-enabled line after the SC block. Uses de
 
 ---
 
+## 12. Optical Spectra Parameters
+
+Optional. Triggered by `optics: T`. All optics parameters use their defaults if missing or if the file ends early.
+
+| Name | Type | Default | Valid range | Modes | Description |
+|---|---|---|---|---|---|
+| `optics` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | Q | Enable optical spectra calculation. When enabled, the remaining optics parameters are read. |
+| `linewidth_lorentzian` | float | `0.030` | >= 0 (eV) | Q | Lorentzian FWHM linewidth for homogeneous broadening. |
+| `linewidth_gaussian` | float | `0.005` | >= 0 (eV) | Q | Gaussian FWHM linewidth for inhomogeneous broadening. |
+| `refractive_index` | float | `3.3` | > 0 | Q | Background refractive index used in the prefactor. |
+| `E_min` | float | `0.5` | > 0 (eV) | Q | Minimum photon energy in the spectral grid. |
+| `E_max` | float | `2.0` | > `E_min` (eV) | Q | Maximum photon energy in the spectral grid. |
+| `num_energy_points` | integer | `200` | >= 1 | Q | Number of energy grid points for the spectral calculation. |
+| `temperature` | float | `300.0` | > 0 (K) | Q | Temperature for Fermi-Dirac occupation factors in the optical matrix elements. |
+| `carrier_density` | float | `0.0` | >= 0 (cm^-2) | Q | 2D carrier density for equilibrium absorption. 0 means intrinsic (no carrier screening). |
+| `gain_enabled` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | Q | Enable gain spectrum calculation (requires inverted population). |
+| `gain_carrier_density` | float | `3.0e12` | > 0 (cm^-2) | Q | 2D carrier density used for the gain calculation. Only read when `gain_enabled = T`. |
+| `isbt_enabled` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | Q | Enable intersubband transition (ISBT) absorption calculation (TM-polarized, z-dipole). |
+| `spontaneous_enabled` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | Q | Enable spontaneous emission spectrum calculation. Writes `output/spontaneous_TE.dat` and `output/spontaneous_TM.dat`. |
+| `spin_resolved` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | Q | Enable spin-up/down decomposition of absorption spectra. Writes `output/absorption_TE_up.dat`, `output/absorption_TE_dw.dat`, `output/absorption_TM_up.dat`, and `output/absorption_TM_dw.dat`. |
+
+### Output files
+
+The optics module produces the following output files in `output/`:
+
+| File | Condition | Columns | Description |
+|---|---|---|---|
+| `absorption_TE.dat` | `optics: T` | E(eV), alpha(cm^-1) | Interband TE absorption spectrum |
+| `absorption_TM.dat` | `optics: T` | E(eV), alpha(cm^-1) | Interband TM absorption spectrum |
+| `absorption_ISBT.dat` | `optics: T` | E(eV), alpha(cm^-1) | ISBT absorption spectrum (TM-polarized, z-dipole only) |
+| `gain_TE.dat` | `gain_enabled: T` | E(eV), gain(cm^-1) | Interband TE gain spectrum |
+| `gain_TM.dat` | `gain_enabled: T` | E(eV), gain(cm^-1) | Interband TM gain spectrum |
+| `spontaneous_TE.dat` | `spontaneous_enabled: T` | E(eV), rate(cm^-1) | Spontaneous emission TE spectrum |
+| `spontaneous_TM.dat` | `spontaneous_enabled: T` | E(eV), rate(cm^-1) | Spontaneous emission TM spectrum |
+| `absorption_TE_up.dat` | `spin_resolved: T` | E(eV), alpha(cm^-1) | Spin-up TE absorption spectrum |
+| `absorption_TE_dw.dat` | `spin_resolved: T` | E(eV), alpha(cm^-1) | Spin-down TE absorption spectrum |
+| `absorption_TM_up.dat` | `spin_resolved: T` | E(eV), alpha(cm^-1) | Spin-up TM absorption spectrum |
+| `absorption_TM_dw.dat` | `spin_resolved: T` | E(eV), alpha(cm^-1) | Spin-down TM absorption spectrum |
+
+---
+
 ## Canonical File Order
 
 Recommended order for committed `input.cfg` examples:
@@ -240,6 +281,20 @@ strain: <T|F>              ! strain (optional)
   strain_reference: <str>   }
   strain_solver: <str>      } strain parameters (only if strain=T)
   strain_piezo: <T|F>       }
+optics: <T|F>               ! optical spectra (optional)
+  linewidth_lorentzian: <float>  }
+  linewidth_gaussian: <float>    }
+  refractive_index: <float>      }
+  E_min: <float>                 }
+  E_max: <float>                 }
+  num_energy_points: <int>       }
+  temperature: <float>           }
+  carrier_density: <float>       }
+  gain_enabled: <T|F>            }
+  gain_carrier_density: <float>  }
+  isbt_enabled: <T|F>            }
+  spontaneous_enabled: <T|F>     } optics parameters (only if optics=T)
+  spin_resolved: <T|F>           }
 ```
 
 ---

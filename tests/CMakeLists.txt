@@ -243,6 +243,22 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# QW optical properties via opticalProperties executable (commutator-based velocity)
+add_test(
+    NAME regression_qw_optics_commutator
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_optics_commutator.sh
+        $<TARGET_FILE:opticalProperties>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/qw_optics_commutator.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/qw_optics_commutator
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_qw_optics_commutator
+    PROPERTIES LABELS "regression"
+)
+
 # QCSE GaAs/AlGaAs QW without electric field (Harrison benchmark)
 add_test(
     NAME regression_qcse_gaas_algaas

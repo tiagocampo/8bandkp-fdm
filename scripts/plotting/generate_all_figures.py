@@ -51,6 +51,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BUILD_DIR = REPO_ROOT / "build"
 EXE_BAND = BUILD_DIR / "src" / "bandStructure"
 EXE_GFACTOR = BUILD_DIR / "src" / "gfactorCalculation"
+EXE_OPTICS = BUILD_DIR / "src" / "opticalProperties"
 CONFIG_DIR = REPO_ROOT / "tests" / "regression" / "configs"
 FIGURE_DIR = REPO_ROOT / "docs" / "figures"
 INPUT_CFG = REPO_ROOT / "input.cfg"
@@ -119,7 +120,7 @@ def ensure_dirs() -> None:
 
 def build_fortran() -> None:
     """Configure (if needed) and build the Fortran executables."""
-    if EXE_BAND.exists() and EXE_GFACTOR.exists():
+    if EXE_BAND.exists() and EXE_GFACTOR.exists() and EXE_OPTICS.exists():
         print("[build] Executables already exist, skipping build.")
         return
     print("[build] Configuring and building Fortran code ...")
@@ -4633,6 +4634,120 @@ def fig_absorption_excitonic_TE(output_dir: Path) -> None:
     print("  -> docs/figures/absorption_excitonic_TE.png")
 
 
+def fig_bulk_gaas_absorption(output_dir: Path) -> None:
+    """Bulk GaAs interband absorption spectrum via opticalProperties."""
+    print("[figure] bulk_gaas_absorption")
+
+    result = run_executable(EXE_OPTICS, CONFIG_DIR / "bulk_gaas_optics.cfg",
+                            REPO_ROOT, label="Bulk GaAs absorption", timeout=300)
+    if result.returncode != 0:
+        print("  WARNING: opticalProperties failed for bulk GaAs, skipping.")
+        return
+
+    try:
+        E_te, alpha_te = _read_absorption(output_dir, "TE")
+        E_tm, alpha_tm = _read_absorption(output_dir, "TM")
+    except FileNotFoundError as exc:
+        print(f"  WARNING: {exc}, skipping.")
+        return
+
+    fig, ax = plt.subplots()
+    ax.plot(E_te, alpha_te, 'b-', label='TE')
+    ax.plot(E_tm, alpha_tm, 'r--', label='TM')
+    ax.set_xlabel('Photon energy (eV)')
+    ax.set_ylabel(r'Absorption $\alpha$ (cm$^{-1}$)')
+    ax.set_title('Bulk GaAs interband absorption')
+    ax.legend()
+    ax.set_xlim(1.2, 2.2)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "bulk_gaas_absorption.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/bulk_gaas_absorption.png")
+
+
+def fig_qw_absorption_optics_exe(output_dir: Path) -> None:
+    """QW absorption via standalone opticalProperties executable."""
+    print("[figure] qw_absorption_optics_exe")
+
+    result = run_executable(EXE_OPTICS,
+                            CONFIG_DIR / "qw_gaas_algaas_absorption.cfg",
+                            REPO_ROOT, label="QW absorption (opticalProperties)",
+                            timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: opticalProperties failed for QW absorption, skipping.")
+        return
+
+    try:
+        E_te, alpha_te = _read_absorption(output_dir, "TE")
+        E_tm, alpha_tm = _read_absorption(output_dir, "TM")
+    except FileNotFoundError as exc:
+        print(f"  WARNING: {exc}, skipping.")
+        return
+
+    fig, ax = plt.subplots()
+    ax.plot(E_te, alpha_te, 'b-', label='TE')
+    ax.plot(E_tm, alpha_tm, 'r--', label='TM')
+    ax.set_xlabel('Photon energy (eV)')
+    ax.set_ylabel(r'Absorption $\alpha$ (cm$^{-1}$)')
+    ax.set_title(r'QW absorption (opticalProperties) — GaAs/Al$_{0.3}$Ga$_{0.7}$As')
+    ax.legend()
+    ax.set_xlim(1.3, 2.1)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_absorption_optics_exe.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/qw_absorption_optics_exe.png")
+
+
+def fig_qw_absorption_spin_resolved(output_dir: Path) -> None:
+    """Spin-resolved QW absorption via opticalProperties."""
+    print("[figure] qw_absorption_spin_resolved")
+
+    result = run_executable(EXE_OPTICS,
+                            CONFIG_DIR / "qw_gaas_algaas_spin_resolved.cfg",
+                            REPO_ROOT, label="Spin-resolved QW absorption",
+                            timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: opticalProperties failed for spin-resolved, skipping.")
+        return
+
+    # Read spin-resolved output files
+    try:
+        te_up = np.loadtxt(output_dir / "absorption_TE_up.dat")
+        te_dw = np.loadtxt(output_dir / "absorption_TE_dw.dat")
+        tm_up = np.loadtxt(output_dir / "absorption_TM_up.dat")
+        tm_dw = np.loadtxt(output_dir / "absorption_TM_dw.dat")
+    except Exception as exc:
+        print(f"  WARNING: could not read spin-resolved output: {exc}, skipping.")
+        return
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
+
+    # TE panel
+    ax1.plot(te_up[:, 0], te_up[:, 1], 'b-', label='Spin up')
+    ax1.plot(te_dw[:, 0], te_dw[:, 1], 'r--', label='Spin down')
+    ax1.plot(te_up[:, 0], te_up[:, 1] + te_dw[:, 1], 'k:', label='Total')
+    ax1.set_xlabel('Photon energy (eV)')
+    ax1.set_ylabel(r'Absorption $\alpha$ (cm$^{-1}$)')
+    ax1.set_title('TE absorption')
+    ax1.legend()
+    ax1.set_xlim(1.3, 2.1)
+
+    # TM panel
+    ax2.plot(tm_up[:, 0], tm_up[:, 1], 'b-', label='Spin up')
+    ax2.plot(tm_dw[:, 0], tm_dw[:, 1], 'r--', label='Spin down')
+    ax2.plot(tm_up[:, 0], tm_up[:, 1] + tm_dw[:, 1], 'k:', label='Total')
+    ax2.set_xlabel('Photon energy (eV)')
+    ax2.set_title('TM absorption')
+    ax2.legend()
+    ax2.set_xlim(1.3, 2.1)
+
+    fig.suptitle(r'Spin-resolved absorption — GaAs/Al$_{0.3}$Ga$_{0.7}$As QW')
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "qw_absorption_spin_resolved.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/qw_absorption_spin_resolved.png")
+
+
 def fig_scattering_lifetime_vs_width(output_dir: Path) -> None:
     """scattering_lifetime_vs_width.png: LO-phonon scattering rate / lifetime vs subband transition.
 
@@ -5960,6 +6075,9 @@ ALL_FIGURES = {
     "sc_inas_alsb_potential": fig_sc_inas_alsb_potential,
     "sc_inas_alsb_convergence": fig_sc_inas_alsb_convergence,
     "qw_gfactor_vs_width": fig_qw_gfactor_vs_width,
+    "bulk_gaas_absorption": fig_bulk_gaas_absorption,
+    "qw_absorption_optics_exe": fig_qw_absorption_optics_exe,
+    "qw_absorption_spin_resolved": fig_qw_absorption_spin_resolved,
 }
 
 

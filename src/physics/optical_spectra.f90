@@ -1,14 +1,15 @@
 module optical_spectra
 
   use definitions
-  use gfactorFunctions
+  use sparse_matrices, only: csr_matrix, csr_spmv
   use charge_density, only: fermi_dirac
+  use spin_projection, only: spin_weights
   use outputFunctions, only: ensure_output_dir, get_unit
   implicit none
 
   private
 
-  public :: optics_init, optics_accumulate, optics_finalize, optics_cleanup
+  public :: optics_init, optics_accumulate, optics_accumulate_spontaneous, optics_finalize, optics_cleanup
   public :: compute_intersubband_transitions, compute_isbt_absorption
   public :: compute_gain_qw, gain_reset
   public :: E_grid, alpha_te, alpha_tm, nE
@@ -19,7 +20,13 @@ module optical_spectra
   real(kind=dp), allocatable, save :: alpha_isbt(:)  ! ISBT accumulation on E_grid
   real(kind=dp), allocatable, save :: alpha_gain_te(:)  ! Gain TE accumulation on E_grid
   real(kind=dp), allocatable, save :: alpha_gain_tm(:)  ! Gain TM accumulation on E_grid
+  real(kind=dp), allocatable, save :: spont_te(:)   ! Spontaneous TE accumulation
+  real(kind=dp), allocatable, save :: spont_tm(:)   ! Spontaneous TM accumulation
   real(kind=dp), allocatable, save :: E_grid(:)      ! photon energy grid (eV)
+  real(kind=dp), allocatable, save :: alpha_te_up(:)  ! spin-up TE accumulation
+  real(kind=dp), allocatable, save :: alpha_te_dw(:)  ! spin-down TE accumulation
+  real(kind=dp), allocatable, save :: alpha_tm_up(:)  ! spin-up TM accumulation
+  real(kind=dp), allocatable, save :: alpha_tm_dw(:)  ! spin-down TM accumulation
   integer, save :: nE = 0                            ! number of energy points
 
   ! Gain quasi-Fermi level state (set once per k_sweep)
@@ -64,6 +71,21 @@ contains
       alpha_gain_tm = 0.0_dp
     end if
 
+    ! Spontaneous emission arrays: allocated when spontaneous is enabled
+    if (optcfg%spontaneous_enabled) then
+      allocate(spont_te(nE), spont_tm(nE))
+      spont_te = 0.0_dp
+      spont_tm = 0.0_dp
+    end if
+
+    ! Spin-resolved absorption arrays: allocated when spin_resolved is enabled
+    if (optcfg%spin_resolved) then
+      allocate(alpha_te_up(nE), alpha_te_dw(nE))
+      allocate(alpha_tm_up(nE), alpha_tm_dw(nE))
+      alpha_te_up = 0.0_dp; alpha_te_dw = 0.0_dp
+      alpha_tm_up = 0.0_dp; alpha_tm_dw = 0.0_dp
+    end if
+
   end subroutine optics_init
 
 
@@ -71,33 +93,38 @@ contains
   ! Accumulate contributions from one k_par point into the absorption
   ! spectrum.  Called inside the k_sweep loop after diagonalization.
   !
-  ! For each CB-VB pair:
-  !   1. Compute |px|^2, |py|^2, |pz|^2 via pMatrixEleCalc
+  ! Uses commutator-based velocity matrices v_alpha = -i [r_alpha, H]
+  ! computed on CSR sparse format.  For each CB-VB pair:
+  !   1. Compute |<CB|v_x|VB>|^2, |<CB|v_y|VB>|^2, |<CB|v_z|VB>|^2
+  !      via CSR SpMV + zdotc
   !   2. Compute transition energy dE = E_CB - E_VB
   !   3. Compute Fermi occupation factor (f_V - f_C)
   !   4. Broaden: add weighted lineshape to alpha_te and alpha_tm
   ! ------------------------------------------------------------------
   subroutine optics_accumulate(optcfg, eigvals, eigvecs, k_weight, &
-    & nlayers, params, profile, kpterms, startz, endz, dz, numcb, numvb, &
-    & fermi_level)
+    & vel, numcb, numvb, fermi_level)
 
     type(optics_config), intent(in) :: optcfg
     real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
     complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
-    integer, intent(in) :: nlayers
-    type(paramStruct), intent(in) :: params(nlayers)
-    real(kind=dp), intent(in), dimension(:,:) :: profile
-    real(kind=dp), intent(in), dimension(:,:,:) :: kpterms
-    real(kind=dp), intent(in) :: startz, endz, dz
+    type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in) :: numcb, numvb
     real(kind=dp), intent(in) :: fermi_level       ! Fermi energy (eV)
 
-    integer :: i, j, dir, ie
+    integer :: i, j, dir, ie, dim, Ngrid
     real(kind=dp) :: dE, f_c, f_v, occ_factor
     real(kind=dp) :: px, py, pz
     real(kind=dp) :: gamma_l, gamma_g
+    real(kind=dp) :: w_up_i, w_dw_i, w_up_j, w_dw_j
     complex(kind=dp) :: Pele
+    complex(kind=dp), allocatable :: Ytmp(:)
+    complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    complex(kind=dp), external :: zdotc
+
+    dim = size(eigvecs, 1)
+    Ngrid = dim / 8
+    allocate(Ytmp(dim))
 
     ! Half-widths at half-maximum from FWHM
     gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
@@ -122,18 +149,16 @@ contains
         dE = eigvals(numvb + j) - eigvals(i)
         if (dE < DE_MIN) cycle
 
-        ! Momentum matrix elements in each direction
+        ! Velocity matrix elements via commutator v_alpha = -i [r_alpha, H]
+        ! |<CB| v_alpha |VB>|^2 computed as SpMV: Ytmp = vel(dir) * |VB>,
+        ! then Pele = <CB| Ytmp>.
         px = 0.0_dp
         py = 0.0_dp
         pz = 0.0_dp
 
         do dir = 1, 3
-          Pele = ZERO
-          call pMatrixEleCalc(Pele, dir, eigvecs(:,numvb+j), &
-            & eigvecs(:,i), nlayers, params, &
-            & profile=profile, kpterms=kpterms, &
-            & startz=startz, endz=endz, dz=dz)
-
+          call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
+          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
@@ -152,10 +177,116 @@ contains
             & * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
         end do
 
+        ! Spin-resolved accumulation (factorized approximation)
+        if (optcfg%spin_resolved) then
+          call spin_weights(eigvecs(:,numvb+j), Ngrid, w_up_j, w_dw_j)
+          call spin_weights(eigvecs(:,i), Ngrid, w_up_i, w_dw_i)
+          do ie = 1, nE
+            ! Spin-up channel
+            alpha_te_up(ie) = alpha_te_up(ie) + occ_factor * (px + py) &
+              & * w_up_i * w_up_j * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+            alpha_tm_up(ie) = alpha_tm_up(ie) + occ_factor * pz &
+              & * w_up_i * w_up_j * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+            ! Spin-down channel
+            alpha_te_dw(ie) = alpha_te_dw(ie) + occ_factor * (px + py) &
+              & * w_dw_i * w_dw_j * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+            alpha_tm_dw(ie) = alpha_tm_dw(ie) + occ_factor * pz &
+              & * w_dw_i * w_dw_j * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+          end do
+        end if
+
       end do
     end do
 
+    deallocate(Ytmp)
+
   end subroutine optics_accumulate
+
+
+  ! ------------------------------------------------------------------
+  ! Accumulate spontaneous emission contributions from one k_par point.
+  ! Identical to optics_accumulate except the occupation factor is
+  !   f_c * (1 - f_v)   (radiative recombination rate)
+  ! instead of (f_v - f_c) used for absorption.
+  ! ------------------------------------------------------------------
+  subroutine optics_accumulate_spontaneous(optcfg, eigvals, eigvecs, k_weight, &
+    & vel, numcb, numvb, fermi_level)
+
+    type(optics_config), intent(in) :: optcfg
+    real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
+    complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
+    real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
+    type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
+    integer, intent(in) :: numcb, numvb
+    real(kind=dp), intent(in) :: fermi_level       ! Fermi energy (eV)
+
+    integer :: i, j, dir, ie, dim
+    real(kind=dp) :: dE, f_c, f_v, occ_factor
+    real(kind=dp) :: px, py, pz
+    real(kind=dp) :: gamma_l, gamma_g
+    complex(kind=dp) :: Pele
+    complex(kind=dp), allocatable :: Ytmp(:)
+    complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    complex(kind=dp), external :: zdotc
+
+    if (nE == 0) return
+    if (.not. allocated(spont_te)) return
+
+    dim = size(eigvecs, 1)
+    allocate(Ytmp(dim))
+
+    ! Half-widths at half-maximum from FWHM
+    gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
+    gamma_g = optcfg%linewidth_gaussian / 2.0_dp
+
+    do i = 1, numvb
+      ! VB eigenvalue
+      f_v = fermi_dirac(eigvals(i), fermi_level, optcfg%temperature)
+
+      do j = 1, numcb
+        ! CB eigenvalue (offset by numvb)
+        f_c = fermi_dirac(eigvals(numvb + j), fermi_level, optcfg%temperature)
+
+        ! Spontaneous emission: f_c * (1 - f_v)
+        occ_factor = f_c * (1.0_dp - f_v)
+        if (occ_factor < 1.0e-30_dp) cycle
+
+        ! Transition energy: E_CB - E_VB > 0
+        dE = eigvals(numvb + j) - eigvals(i)
+        if (dE < DE_MIN) cycle
+
+        ! Velocity matrix elements via commutator v_alpha = -i [r_alpha, H]
+        px = 0.0_dp
+        py = 0.0_dp
+        pz = 0.0_dp
+
+        do dir = 1, 3
+          call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
+          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
+          select case(dir)
+          case(1)
+            px = real(Pele * conjg(Pele), kind=dp)
+          case(2)
+            py = real(Pele * conjg(Pele), kind=dp)
+          case(3)
+            pz = real(Pele * conjg(Pele), kind=dp)
+          end select
+        end do
+
+        ! Broaden and accumulate onto the energy grid
+        do ie = 1, nE
+          spont_te(ie) = spont_te(ie) + occ_factor * (px + py) &
+            & * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+          spont_tm(ie) = spont_tm(ie) + occ_factor * pz &
+            & * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
+        end do
+
+      end do
+    end do
+
+    deallocate(Ytmp)
+
+  end subroutine optics_accumulate_spontaneous
 
 
   ! ------------------------------------------------------------------
@@ -306,6 +437,96 @@ contains
       print '(a)', 'Gain spectra written to output/gain_TE.dat and output/gain_TM.dat'
     end if
 
+    ! --- Spontaneous emission output ---
+    if (optcfg%spontaneous_enabled .and. allocated(spont_te)) then
+      ! Apply prefactor
+      do ie = 1, nE
+        if (E_grid(ie) > 0.0_dp) then
+          prefactor_E = (2.0_dp * pi_dp * e**2) &
+            & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
+        else
+          prefactor_E = 0.0_dp
+        end if
+        spont_te(ie) = prefactor_E * spont_te(ie) * AA_TO_CM
+        spont_tm(ie) = prefactor_E * spont_tm(ie) * AA_TO_CM
+      end do
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+
+      open(unit=iounit, file='output/spontaneous_TE.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spontaneous emission TE spectrum'
+      write(iounit, '(a)') '# E(eV)  rate(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), spont_te(ie)
+      end do
+      close(iounit)
+
+      open(unit=iounit, file='output/spontaneous_TM.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spontaneous emission TM spectrum'
+      write(iounit, '(a)') '# E(eV)  rate(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), spont_tm(ie)
+      end do
+      close(iounit)
+
+      print '(a)', 'Spontaneous emission written to output/spontaneous_TE.dat and output/spontaneous_TM.dat'
+    end if
+
+    ! --- Spin-resolved absorption output ---
+    if (optcfg%spin_resolved .and. allocated(alpha_te_up)) then
+      ! Apply the same prefactor to spin-resolved arrays
+      do ie = 1, nE
+        if (E_grid(ie) > 0.0_dp) then
+          prefactor_E = (2.0_dp * pi_dp * e**2) &
+            & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
+        else
+          prefactor_E = 0.0_dp
+        end if
+        alpha_te_up(ie) = prefactor_E * alpha_te_up(ie) * AA_TO_CM
+        alpha_te_dw(ie) = prefactor_E * alpha_te_dw(ie) * AA_TO_CM
+        alpha_tm_up(ie) = prefactor_E * alpha_tm_up(ie) * AA_TO_CM
+        alpha_tm_dw(ie) = prefactor_E * alpha_tm_dw(ie) * AA_TO_CM
+      end do
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+
+      open(unit=iounit, file='output/absorption_TE_up.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spin-up TE absorption spectrum (alpha_TE_up vs E)'
+      write(iounit, '(a)') '# E(eV)  alpha(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_te_up(ie)
+      end do
+      close(iounit)
+
+      open(unit=iounit, file='output/absorption_TE_dw.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spin-down TE absorption spectrum (alpha_TE_dw vs E)'
+      write(iounit, '(a)') '# E(eV)  alpha(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_te_dw(ie)
+      end do
+      close(iounit)
+
+      open(unit=iounit, file='output/absorption_TM_up.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spin-up TM absorption spectrum (alpha_TM_up vs E)'
+      write(iounit, '(a)') '# E(eV)  alpha(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_tm_up(ie)
+      end do
+      close(iounit)
+
+      open(unit=iounit, file='output/absorption_TM_dw.dat', status='replace', action='write')
+      write(iounit, '(a)') '# Spin-down TM absorption spectrum (alpha_TM_dw vs E)'
+      write(iounit, '(a)') '# E(eV)  alpha(cm^-1)'
+      do ie = 1, nE
+        write(iounit, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_tm_dw(ie)
+      end do
+      close(iounit)
+
+      print '(a)', 'Spin-resolved spectra written to output/absorption_TE_up.dat, output/absorption_TE_dw.dat, output/absorption_TM_up.dat, output/absorption_TM_dw.dat'
+    end if
+
   end subroutine optics_finalize
 
 
@@ -322,6 +543,12 @@ contains
     if (allocated(alpha_isbt))   deallocate(alpha_isbt)
     if (allocated(alpha_gain_te)) deallocate(alpha_gain_te)
     if (allocated(alpha_gain_tm)) deallocate(alpha_gain_tm)
+    if (allocated(spont_te))      deallocate(spont_te)
+    if (allocated(spont_tm))      deallocate(spont_tm)
+    if (allocated(alpha_te_up)) deallocate(alpha_te_up)
+    if (allocated(alpha_te_dw)) deallocate(alpha_te_dw)
+    if (allocated(alpha_tm_up)) deallocate(alpha_tm_up)
+    if (allocated(alpha_tm_dw)) deallocate(alpha_tm_dw)
     nE = 0
     gain_fermi_computed = .false.
     mu_e = 0.0_dp
@@ -495,26 +722,32 @@ contains
   ! Uses the same Voigt broadening as interband.  Written to
   ! output/absorption_ISBT.dat after finalization.
   ! ------------------------------------------------------------------
-  subroutine compute_isbt_absorption(optcfg, eigvals, eigvecs, z_grid, dz, &
-    & numcb, numvb, fdstep, k_weight, fermi_level)
+  subroutine compute_isbt_absorption(optcfg, eigvals, eigvecs, &
+    & vel, numcb, numvb, k_weight, fermi_level)
 
     type(optics_config), intent(in) :: optcfg
     real(kind=dp), intent(in)    :: eigvals(:)
     complex(kind=dp), intent(in) :: eigvecs(:,:)
-    real(kind=dp), intent(in)    :: z_grid(:)
-    real(kind=dp), intent(in)    :: dz
-    integer, intent(in)          :: numcb, numvb, fdstep
+    type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
+    integer, intent(in)          :: numcb, numvb
     real(kind=dp), intent(in)    :: k_weight
     real(kind=dp), intent(in)    :: fermi_level
 
-    integer :: i, j, ie, state_i, state_j
+    integer :: i, j, ie, state_i, state_j, dim
+    integer, parameter :: dir_isbt = 3   ! z-dipole for QW ISBT
     real(kind=dp) :: E_ij, occ_factor, f_i, f_j
     real(kind=dp) :: gamma_l, gamma_g
-    real(kind=dp) :: z_ij_abs2
-    complex(kind=dp) :: z_ij
+    real(kind=dp) :: p_abs2
+    complex(kind=dp) :: pele_ij
+    complex(kind=dp), allocatable :: Ytmp(:)
+    complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    complex(kind=dp), external :: zdotc
     real(kind=dp) :: ef_cb
 
     if (nE == 0) return  ! optics_init not called
+
+    dim = size(eigvecs, 1)
+    allocate(Ytmp(dim))
 
     gamma_l = optcfg%linewidth_lorentzian / 2.0_dp
     gamma_g = optcfg%linewidth_gaussian / 2.0_dp
@@ -543,18 +776,21 @@ contains
         E_ij = eigvals(state_j) - eigvals(state_i)
         if (E_ij < DE_MIN) cycle
 
-        ! z-dipole matrix element via helper
-        z_ij = z_dipole(eigvecs, z_grid, dz, fdstep, state_i, state_j)
-        z_ij_abs2 = real(z_ij * conjg(z_ij), kind=dp)
+        ! Velocity matrix element via commutator: dir_isbt = 3 for QW (z-dipole)
+        call csr_spmv(vel(dir_isbt), eigvecs(:,state_j), Ytmp, ONE, ZERO)
+        pele_ij = zdotc(dim, eigvecs(1,state_i), 1, Ytmp, 1)
+        p_abs2 = real(pele_ij * conjg(pele_ij), kind=dp)
 
         ! Broaden and accumulate onto energy grid (ISBT, TM-polarized)
         do ie = 1, nE
-          alpha_isbt(ie) = alpha_isbt(ie) + occ_factor * z_ij_abs2 &
+          alpha_isbt(ie) = alpha_isbt(ie) + occ_factor * p_abs2 &
             & * lineshape_voigt(E_grid(ie), E_ij, gamma_l, gamma_g) * k_weight
         end do
 
       end do
     end do
+
+    deallocate(Ytmp)
 
   end subroutine compute_isbt_absorption
 
@@ -658,29 +894,30 @@ contains
   ! levels are computed once (at the first k-point call) and reused.
   ! ------------------------------------------------------------------
   subroutine compute_gain_qw(optcfg, eigvals, eigvecs, k_weight, &
-    & nlayers, params, profile, kpterms, startz, endz, dz, &
-    & numcb, numvb, carrier_density)
+    & vel, numcb, numvb, carrier_density)
 
     type(optics_config), intent(in) :: optcfg
     real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
     complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
-    integer, intent(in) :: nlayers
-    type(paramStruct), intent(in) :: params(nlayers)
-    real(kind=dp), intent(in), dimension(:,:) :: profile
-    real(kind=dp), intent(in), dimension(:,:,:) :: kpterms
-    real(kind=dp), intent(in) :: startz, endz, dz
+    type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in) :: numcb, numvb
     real(kind=dp), intent(in) :: carrier_density   ! 2D carrier density (cm^-2)
 
-    integer :: i, j, dir, ie
+    integer :: i, j, dir, ie, dim
     real(kind=dp) :: dE, f_c, f_v, occ_factor
     real(kind=dp) :: px, py, pz
     real(kind=dp) :: gamma_l, gamma_g
     complex(kind=dp) :: Pele
+    complex(kind=dp), allocatable :: Ytmp(:)
+    complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    complex(kind=dp), external :: zdotc
 
     if (nE == 0) return  ! optics_init not called
     if (.not. allocated(alpha_gain_te)) return  ! gain not initialized
+
+    dim = size(eigvecs, 1)
+    allocate(Ytmp(dim))
 
     ! Compute quasi-Fermi levels once on the first k-point call.
     ! We use the eigenvalues at the first k-point (usually k_par ~ 0)
@@ -726,18 +963,16 @@ contains
         ! Skip negligible contributions
         if (abs(occ_factor) < 1.0e-30_dp) cycle
 
-        ! Momentum matrix elements in each direction
+        ! Velocity matrix elements via commutator v_alpha = -i [r_alpha, H]
+        ! |<CB| v_alpha |VB>|^2 computed as SpMV: Ytmp = vel(dir) * |VB>,
+        ! then Pele = <CB| Ytmp>.
         px = 0.0_dp
         py = 0.0_dp
         pz = 0.0_dp
 
         do dir = 1, 3
-          Pele = ZERO
-          call pMatrixEleCalc(Pele, dir, eigvecs(:,numvb+j), &
-            & eigvecs(:,i), nlayers, params, &
-            & profile=profile, kpterms=kpterms, &
-            & startz=startz, endz=endz, dz=dz)
-
+          call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
+          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
@@ -758,6 +993,8 @@ contains
 
       end do
     end do
+
+    deallocate(Ytmp)
 
   end subroutine compute_gain_qw
 

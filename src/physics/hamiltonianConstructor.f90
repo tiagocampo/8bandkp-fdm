@@ -37,6 +37,11 @@ module hamiltonianConstructor
   public :: wire_coo_cache, wire_coo_cache_free
   public :: build_velocity_matrices
 
+  interface build_velocity_matrices
+    module procedure build_velocity_matrices_2d
+    module procedure build_velocity_matrices_1d
+  end interface build_velocity_matrices
+
   contains
 
     subroutine build_kpterm_block(kpterms, profile_vec, central, forward, &
@@ -1795,7 +1800,7 @@ module hamiltonianConstructor
     ! Uses csr_clone_structure to replicate H's sparsity pattern into
     ! vel_x and vel_y, then fills values via position-difference scaling.
     ! ==================================================================
-    subroutine build_velocity_matrices(H_csr, grid, vel_x, vel_y)
+    subroutine build_velocity_matrices_2d(H_csr, grid, vel_x, vel_y)
       type(csr_matrix), intent(in)    :: H_csr
       type(spatial_grid), intent(in)  :: grid
       type(csr_matrix), intent(out)   :: vel_x
@@ -1831,7 +1836,56 @@ module hamiltonianConstructor
         end do
       end do
 
-    end subroutine build_velocity_matrices
+    end subroutine build_velocity_matrices_2d
+
+    ! ==================================================================
+    ! Build commutator-based velocity matrices for QW (1D confinement).
+    !
+    ! v_alpha = -i * [r_alpha, H],  computed element-wise on CSR as
+    !   vel_alpha(i,j) = -i * (r_alpha_i - r_alpha_j) * H(i,j).
+    !
+    ! For QW (ndim=1), only z-confinement exists:
+    !   vel(3) has non-zero off-diagonal entries where z-positions differ.
+    !   vel(1) and vel(2) are identically zero (no x/y spatial grid).
+    !
+    ! Grid uses grid%z(:) with grid%ny points.  Basis ordering is
+    ! band-major: idx = (band-1)*Ngrid + z_idx, so the spatial index
+    ! for a given CSR row/col is sp = mod(idx-1, Ngrid) + 1.
+    ! ==================================================================
+    subroutine build_velocity_matrices_1d(H_csr, grid, vel)
+      type(csr_matrix), intent(in)    :: H_csr
+      type(spatial_grid), intent(in)  :: grid
+      type(csr_matrix), intent(out)   :: vel(3)
+
+      integer :: k, row, col, sp_row, sp_col, Ngrid
+      real(kind=dp) :: z_diff
+
+      Ngrid = grid%ny
+
+      ! Clone sparsity pattern from H (same rowptr, colind; values zeroed)
+      call csr_clone_structure(H_csr, vel(1))
+      call csr_clone_structure(H_csr, vel(2))
+      call csr_clone_structure(H_csr, vel(3))
+
+      ! vel(1) and vel(2) remain zero (no x/y spatial grid in QW)
+
+      ! Fill vel(3) using z-position differences
+      do row = 1, H_csr%nrows
+        do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
+          col = H_csr%colind(k)
+
+          ! Extract spatial grid index from the band-major basis index
+          sp_row = mod(row - 1, Ngrid) + 1
+          sp_col = mod(col - 1, Ngrid) + 1
+
+          z_diff = grid%z(sp_row) - grid%z(sp_col)
+
+          ! vel_z = -i * (z_i - z_j) * H(i,j)
+          vel(3)%values(k) = cmplx(0.0_dp, -z_diff, kind=dp) * H_csr%values(k)
+        end do
+      end do
+
+    end subroutine build_velocity_matrices_1d
 
     ! ==================================================================
     ! Helper: Build kp-term Q for wire
