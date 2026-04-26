@@ -19,6 +19,7 @@ set(COMMON_SOURCES
     physics/optical_spectra.f90
     physics/exciton.f90
     physics/scattering.f90
+    physics/spin_projection.f90
 )
 
 # Create library of common code
@@ -62,6 +63,7 @@ set_source_files_properties(
     physics/optical_spectra.f90
     physics/exciton.f90
     physics/scattering.f90
+    physics/spin_projection.f90
     apps/main.f90
     apps/main_gfactor.f90
     apps/main_optics.f90
