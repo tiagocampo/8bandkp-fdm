@@ -597,6 +597,17 @@ curve remains weaker and peaks at higher photon energy. This matches the
 expected HH-dominated TE edge qualitatively, but should still be treated as a
 qualitative validation figure rather than a precision benchmark.
 
+![Bulk GaAs absorption](../figures/bulk_gaas_absorption.png)
+
+**Figure 6.4a:** Bulk GaAs interband absorption coefficient computed with the
+`opticalProperties` executable using commutator-based velocity matrices. For
+isotropic bulk, the TE and TM spectra are identical (both sample the same $|p|^2
+= |p_x|^2 + |p_y|^2 + |p_z|^2$ from the spherical Fermi surface), providing a
+symmetry validation of the velocity operator implementation. The absorption
+onset occurs at $E_g = 1.519$ eV with the expected $\sqrt{E - E_g}$ joint
+density-of-states lineshape. The 3D k-space integration uses 51 radial points
+with spherical quadrature and Simpson integration.
+
 ![Excitonic TE absorption spectrum](../figures/absorption_excitonic_TE.png)
 
 **Figure 6.4b:** TE-polarized interband absorption spectrum for a 10 nm
@@ -676,6 +687,44 @@ QWs of varying well width. The qualitative expectation is a blue shift for
 narrower wells, but this width sweep is not yet backed by an automated
 parameter-sweep benchmark and should be treated as exploratory rather than
 validated.
+
+### 6.7.6 Standalone executable cross-validation
+
+The `opticalProperties` executable (Section 6.5.6) computes optical spectra
+independently of the `bandStructure` inline optics path. Both programs use the
+commutator-based velocity matrices for z-direction matrix elements and the
+$\partial H / \partial k$ approach for in-plane directions. Cross-validating
+the two code paths confirms that the standalone program reproduces the inline
+results:
+
+![QW absorption via opticalProperties](../figures/qw_absorption_optics_exe.png)
+
+**Figure 6.6a:** QW interband absorption computed by the standalone
+`opticalProperties` executable using commutator-based velocity matrices. The TE
+and TM spectra match the inline `bandStructure` output (Figure 6.4), confirming
+that the separated build-diagonalize-accumulate pipeline produces identical
+physics. The standalone program additionally supports bulk and wire geometries
+with the same velocity-matrix infrastructure.
+
+### 6.7.7 Spin-resolved absorption
+
+When the `SpinResolved: T` flag is set in the `optics:` block, the code
+decomposes each interband transition into spin-up and spin-down channels using
+the Clebsch-Gordan projection in `spin_projection.f90`. The total absorption
+satisfies $\alpha_{\text{total}} = \alpha_\uparrow + \alpha_\downarrow$ by
+construction, providing an internal consistency check:
+
+![Spin-resolved QW absorption](../figures/qw_absorption_spin_resolved.png)
+
+**Figure 6.6b:** Spin-resolved interband absorption for a GaAs/Al$_{0.3}$Ga$_{0.7}$As
+QW. Left panel: TE polarization; right panel: TM polarization. In each panel,
+the solid curves show the spin-up (blue) and spin-down (red) contributions,
+with the dashed black line showing the total. At the zone center, Kramers
+degeneracy ensures $\alpha_\uparrow = \alpha_\downarrow$ for all transitions;
+the small asymmetry visible at higher energies arises from band mixing at finite
+$k_\parallel$. The TE panel shows the dominant HH-related edge with nearly
+equal spin channels, while the TM panel shows the LH/SO-related edge at higher
+energy.
 
 ---
 
@@ -1007,6 +1056,8 @@ from what still needs a benchmark closure.
 | LO-phonon lifetime (GaAs QW) | ~7--10 ps | current scattering figures are provisional; no benchmark-quality number retained yet | Ferreira & Bastard (1989) |
 | ISBT dipole moment (GaAs QW) | $z_{12} \sim 10$ A | 8--14 A (width-dependent) | Liu & Capasso (2000) |
 | GaAs interband absorption edge | $E_g = 1.519$ eV | 1.519 eV | Vurgaftman (2001) |
+| GaAs bulk TE = TM symmetry | identical by isotropy | TE = TM (confirmed) | symmetry constraint |
+| QW absorption (opticalProperties vs bandStructure) | identical spectra | TE and TM match | cross-validation |
 
 **Notes:**
 
