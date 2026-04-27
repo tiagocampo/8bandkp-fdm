@@ -61,9 +61,26 @@ module hamiltonianConstructor
     logical :: initialized = .false.
   end type wire_workspace
 
+  ! ------------------------------------------------------------------
+  ! Strain COO insertion table entry: describes one of the 32 block
+  ! patterns that map Bir-Pikus fields into the 8x8 band structure.
+  ! row_band/col_band are 0-based band offsets (0-7).
+  ! field_id selects which bp component to read:
+  !   1=delta_EHH, 2=delta_ELH, 3=delta_ESO, 4=delta_Ec,
+  !   5=S_eps, 6=R_eps, 7=QT2_eps
+  ! prefactor scales the value; use_conjg applies conjg() to the field.
+  ! ------------------------------------------------------------------
+  type :: strain_entry
+    integer               :: row_band, col_band  ! 0-based band offsets (0-7)
+    integer               :: field_id            ! 1=EHH,2=ELH,3=ESO,4=Ec,5=S,6=R,7=QT2
+    complex(kind=dp)      :: prefactor           ! complex scale (e.g. IU*RQS2)
+    logical               :: use_conjg           ! conjugate the field value?
+  end type strain_entry
+
   public :: wire_coo_cache, wire_coo_cache_free
   public :: wire_workspace, wire_workspace_free
   public :: build_velocity_matrices
+  public :: strain_entry, build_strain_table
 
   interface build_velocity_matrices
     module procedure build_velocity_matrices_2d
@@ -71,6 +88,64 @@ module hamiltonianConstructor
   end interface build_velocity_matrices
 
   contains
+
+    ! ==================================================================
+    ! Build the 32-entry strain insertion table.
+    !
+    ! Each entry describes how one band-block of the strain Hamiltonian
+    ! is constructed from the Bir-Pikus fields.  The table encodes all
+    ! diagonal shifts, S_eps, R_eps, and VB-SO coupling terms.
+    !
+    ! Constants used (from definitions module):
+    !   IU    = cmplx(0,1,dp)
+    !   RQS2  = 1/sqrt(2)
+    !   SQR2  = sqrt(2)
+    !   SQR3o2 = sqrt(1.5_dp)
+    ! ==================================================================
+    function build_strain_table() result(table)
+      type(strain_entry) :: table(32)
+
+      ! --- Diagonal entries (1-8) ---
+      table( 1) = strain_entry(0, 0, 1, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+      table( 2) = strain_entry(1, 1, 2, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+      table( 3) = strain_entry(2, 2, 2, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+      table( 4) = strain_entry(3, 3, 1, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+      table( 5) = strain_entry(4, 4, 3, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+      table( 6) = strain_entry(5, 5, 3, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+      table( 7) = strain_entry(6, 6, 4, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+      table( 8) = strain_entry(7, 7, 4, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+
+      ! --- S_eps entries (9-12) ---
+      table( 9) = strain_entry(0, 1, 5, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
+      table(10) = strain_entry(1, 0, 5, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+      table(11) = strain_entry(2, 3, 5, cmplx(-1.0_dp, 0.0_dp, kind=dp), .true.)
+      table(12) = strain_entry(3, 2, 5, cmplx(-1.0_dp, 0.0_dp, kind=dp), .false.)
+
+      ! --- R_eps entries (13-16) ---
+      table(13) = strain_entry(0, 2, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
+      table(14) = strain_entry(2, 0, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+      table(15) = strain_entry(1, 3, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
+      table(16) = strain_entry(3, 1, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+
+      ! --- VB-SO coupling entries (17-32) ---
+      table(17) = strain_entry(0, 4, 5, -IU * RQS2,   .true.)
+      table(18) = strain_entry(4, 0, 5,  IU * RQS2,   .false.)
+      table(19) = strain_entry(0, 5, 6,  IU * SQR2,   .true.)
+      table(20) = strain_entry(5, 0, 6, -IU * SQR2,   .false.)
+      table(21) = strain_entry(1, 4, 7,  IU * RQS2,   .false.)
+      table(22) = strain_entry(4, 1, 7, -IU * RQS2,   .false.)
+      table(23) = strain_entry(1, 5, 5, -IU * SQR3o2, .true.)
+      table(24) = strain_entry(5, 1, 5,  IU * SQR3o2, .false.)
+      table(25) = strain_entry(2, 4, 5,  IU * SQR3o2, .false.)
+      table(26) = strain_entry(4, 2, 5, -IU * SQR3o2, .true.)
+      table(27) = strain_entry(2, 5, 7,  IU * RQS2,   .false.)
+      table(28) = strain_entry(5, 2, 7, -IU * RQS2,   .false.)
+      table(29) = strain_entry(3, 4, 6, -IU * SQR2,   .false.)
+      table(30) = strain_entry(4, 3, 6,  IU * SQR2,   .true.)
+      table(31) = strain_entry(3, 5, 5,  IU * RQS2,   .false.)
+      table(32) = strain_entry(5, 3, 5, -IU * RQS2,   .true.)
+
+    end function build_strain_table
 
     subroutine build_kpterm_block(kpterms, profile_vec, central, forward, &
       & backward, diag, offup, offdown, N, term_idx, scale_factor, has_diag)
