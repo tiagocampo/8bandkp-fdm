@@ -388,4 +388,60 @@ contains
     call csr_free(H)
   end subroutine test_energy_window_gershgorin
 
+  ! ==================================================================
+  ! Test 10: feast_workspace caches upper-triangle structure.
+  ! ==================================================================
+  @test
+  subroutine test_feast_workspace_cached_matches_uncached()
+    ! Solve the same eigenvalue problem with and without workspace.
+    ! Eigenvalues must be identical.
+    integer, parameter :: n = 20
+    real(kind=dp) :: diag(n)
+    type(csr_matrix) :: H
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: res1, res2
+    type(feast_workspace) :: fw
+    integer :: i, min_nev
+
+    do i = 1, n
+      diag(i) = real(i, kind=dp)
+    end do
+    call build_diagonal_csr(diag, n, H)
+
+    cfg%method = 'FEAST'
+    cfg%emin = 0.5_dp
+    cfg%emax = 5.5_dp
+    cfg%nev = 5
+
+    ! Solve without workspace
+    call solve_feast(H, cfg, res1)
+
+    ! Solve with workspace (first call = slow path, initializes cache)
+    call solve_feast(H, cfg, res2, fw)
+    @assertTrue(fw%initialized)
+    @assertEqual(res1%nev_found, res2%nev_found)
+    min_nev = min(res1%nev_found, res2%nev_found)
+    do i = 1, min_nev
+      @assertEqual(res1%eigenvalues(i), res2%eigenvalues(i), tolerance=1.0e-12_dp)
+    end do
+    call eigensolver_result_free(res1)
+    call eigensolver_result_free(res2)
+
+    ! Solve again with cached workspace (tests fast path)
+    call solve_feast(H, cfg, res2, fw)
+    @assertTrue(fw%initialized)
+    call solve_feast(H, cfg, res1)
+    @assertEqual(res1%nev_found, res2%nev_found)
+    min_nev = min(res1%nev_found, res2%nev_found)
+    do i = 1, min_nev
+      @assertEqual(res1%eigenvalues(i), res2%eigenvalues(i), tolerance=1.0e-12_dp)
+    end do
+
+    call eigensolver_result_free(res1)
+    call eigensolver_result_free(res2)
+    call feast_workspace_free(fw)
+    @assertFalse(fw%initialized)
+    call csr_free(H)
+  end subroutine test_feast_workspace_cached_matches_uncached
+
 end module test_eigensolver
