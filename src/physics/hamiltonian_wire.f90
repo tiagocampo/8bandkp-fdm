@@ -46,13 +46,17 @@ module hamiltonian_wire
     complex(kind=dp), allocatable :: coo_vals(:)
     integer                       :: coo_capacity = 0
 
-    ! COO-to-CSR mapping (replaces wire_coo_cache)
-    integer, allocatable          :: coo_to_csr(:)
-    integer                       :: coo_nnz_in = 0
-
     ! Diagonal position indices within operator-sparsity CSRs
     ! diag_pos(k) = CSR index of the k-th diagonal entry (row k, col k)
     integer, allocatable          :: diag_pos(:)
+
+    ! Scatter maps: map each kpterm's nonzero index to the union-structure block position
+    integer, allocatable :: scatter_S_14(:)   ! kp14 -> blk_S
+    integer, allocatable :: scatter_S_15(:)   ! kp15 -> blk_S
+    integer, allocatable :: scatter_PP_12(:)  ! kp12 -> blk_PP
+    integer, allocatable :: scatter_PP_13(:)  ! kp13 -> blk_PP
+    integer, allocatable :: scatter_R_16(:)   ! kp16 -> blk_R
+    integer, allocatable :: scatter_R_11(:)   ! kp11 -> blk_R
 
     logical :: initialized = .false.
   end type wire_workspace
@@ -84,6 +88,45 @@ module hamiltonian_wire
   end interface build_velocity_matrices
 
   contains
+
+    ! ==================================================================
+    ! Build a scatter map from a source CSR to a destination (union) CSR.
+    !
+    ! For each nonzero in src, binary-search for the same (row, col) in dst
+    ! and record the dst index.  Used to map individual kpterm positions to
+    ! the corresponding positions in the union-structure workspace blocks.
+    ! ==================================================================
+    subroutine build_scatter_map(src, dst, scatter_map)
+      type(csr_matrix), intent(in) :: src, dst
+      integer, allocatable, intent(out) :: scatter_map(:)
+
+      integer :: row, k_src, k_dst, lo, hi, mid, col_src
+
+      allocate(scatter_map(src%nnz))
+      do row = 1, src%nrows
+        do k_src = src%rowptr(row), src%rowptr(row + 1) - 1
+          col_src = src%colind(k_src)
+          lo = dst%rowptr(row)
+          hi = dst%rowptr(row + 1) - 1
+          do while (lo <= hi)
+            mid = (lo + hi) / 2
+            if (dst%colind(mid) == col_src) then
+              scatter_map(k_src) = mid
+              exit
+            else if (dst%colind(mid) < col_src) then
+              lo = mid + 1
+            else
+              hi = mid - 1
+            end if
+          end do
+          if (lo > hi) then
+            print *, 'ERROR: build_scatter_map: entry not found for row', row, 'col', col_src
+            stop 1
+          end if
+        end do
+      end do
+    end subroutine build_scatter_map
+
     ! ==================================================================
     ! Build the 32-entry strain insertion table.
     !
@@ -805,6 +848,14 @@ module hamiltonian_wire
           end do
         end do
 
+        ! Build scatter maps: kpterm -> union-structure block position
+        call build_scatter_map(kpterms_2d(14), ws%blk_S, ws%scatter_S_14)
+        call build_scatter_map(kpterms_2d(15), ws%blk_S, ws%scatter_S_15)
+        call build_scatter_map(kpterms_2d(12), ws%blk_PP, ws%scatter_PP_12)
+        call build_scatter_map(kpterms_2d(13), ws%blk_PP, ws%scatter_PP_13)
+        call build_scatter_map(kpterms_2d(16), ws%blk_R, ws%scatter_R_16)
+        call build_scatter_map(kpterms_2d(11), ws%blk_R, ws%scatter_R_11)
+
         ws%coo_capacity = coo_capacity
         ws%initialized = .true.
       end if
@@ -1497,10 +1548,14 @@ module hamiltonian_wire
       if (allocated(ws%coo_rows)) deallocate(ws%coo_rows)
       if (allocated(ws%coo_cols)) deallocate(ws%coo_cols)
       if (allocated(ws%coo_vals)) deallocate(ws%coo_vals)
-      if (allocated(ws%coo_to_csr)) deallocate(ws%coo_to_csr)
       if (allocated(ws%diag_pos)) deallocate(ws%diag_pos)
+      if (allocated(ws%scatter_S_14))  deallocate(ws%scatter_S_14)
+      if (allocated(ws%scatter_S_15))  deallocate(ws%scatter_S_15)
+      if (allocated(ws%scatter_PP_12)) deallocate(ws%scatter_PP_12)
+      if (allocated(ws%scatter_PP_13)) deallocate(ws%scatter_PP_13)
+      if (allocated(ws%scatter_R_16))  deallocate(ws%scatter_R_16)
+      if (allocated(ws%scatter_R_11))  deallocate(ws%scatter_R_11)
       ws%coo_capacity = 0
-      ws%coo_nnz_in = 0
       ws%initialized = .false.
     end subroutine wire_workspace_free
 
