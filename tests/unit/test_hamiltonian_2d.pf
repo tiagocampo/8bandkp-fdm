@@ -1165,4 +1165,73 @@ contains
     @assertFalse(ws%initialized)
   end subroutine test_wire_workspace_free
 
+  ! ==================================================================
+  ! Wire workspace: slow-path reproducibility test
+  ! ==================================================================
+
+  @test
+  subroutine test_workspace_slow_path_reproducible()
+    ! Build wire Hamiltonian at one kz twice via slow path,
+    ! verify identical CSR output.
+    integer, parameter :: nx = 4, ny = 4
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ij, k
+    integer :: mat2d(nx, ny)
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H1, H2
+    type(wire_coo_cache) :: coo_cache
+    real(kind=dp) :: kz
+    type(simulation_config) :: cfg
+
+    ngrid = nx * ny
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+
+    kz = 0.05_dp
+    cfg%grid = grid
+
+    ! First call
+    coo_cache%initialized = .false.
+    call ZB8bandGeneralized(H1, kz, profile_2d, kpterms_2d, cfg, coo_cache)
+    call wire_coo_cache_free(coo_cache)
+
+    ! Second call (same kz, fresh cache)
+    coo_cache%initialized = .false.
+    call ZB8bandGeneralized(H2, kz, profile_2d, kpterms_2d, cfg, coo_cache)
+
+    ! Compare
+    @assertEqual(H1%nrows, H2%nrows, message="nrows match")
+    @assertEqual(H1%nnz, H2%nnz, message="nnz match")
+    do k = 1, H1%nnz
+      @assertEqual(H1%colind(k), H2%colind(k), message="colind match")
+    end do
+    do k = 1, H1%nnz
+      @assertEqual(H1%values(k), H2%values(k), tolerance=1.0e-13_dp, message="values match")
+    end do
+
+    call csr_free(H1)
+    call csr_free(H2)
+    call wire_coo_cache_free(coo_cache)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_workspace_slow_path_reproducible
+
 end module test_hamiltonian_2d
