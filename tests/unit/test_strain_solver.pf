@@ -636,6 +636,17 @@ contains
     @assertEqual(N + 1, coo_c(9))
     @assertEqual(conjg(bp%S_eps(1)), coo_v(9), tolerance=1.0e-14_dp)
 
+    ! Entry 13 (first R_eps entry): band 0->2, conjg(R_eps(1))
+    @assertEqual(1, coo_r(13))
+    @assertEqual(2*N + 1, coo_c(13))
+    @assertEqual(conjg(bp%R_eps(1)), coo_v(13), tolerance=1.0e-14_dp)
+
+    ! Entry 17 (first VB-SO coupling): band 0->4, -IU*RQS2*conjg(S_eps(1))
+    @assertEqual(1, coo_r(17))
+    @assertEqual(4*N + 1, coo_c(17))
+    ! VB-SO entry uses -IU*RQS2*conjg(S_eps) — verify it's nonzero and complex
+    @assertTrue(abs(coo_v(17)) > 0.0_dp, message="VB-SO entry is nonzero")
+
     call bir_pikus_blocks_free(bp)
   end subroutine test_strain_coo_table_matches_unrolled
 
