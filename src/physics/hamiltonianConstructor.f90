@@ -1378,16 +1378,14 @@ module hamiltonianConstructor
 
       integer :: coo_idx, coo_capacity, nnz_est
 
-      ! COO assembly arrays
-      integer, allocatable :: coo_rows(:), coo_cols(:)
-      complex(kind=dp), allocatable :: coo_vals(:)
-
       associate(blk_Q => ws%blk_Q, blk_T => ws%blk_T, &
                 blk_S => ws%blk_S, blk_SC => ws%blk_SC, &
                 blk_R => ws%blk_R, blk_RC => ws%blk_RC, &
                 blk_PZ => ws%blk_PZ, blk_PP => ws%blk_PP, &
                 blk_PM => ws%blk_PM, blk_A => ws%blk_A, &
-                blk_diff => ws%blk_diff, blk_temp => ws%blk_temp)
+                blk_diff => ws%blk_diff, blk_temp => ws%blk_temp, &
+                coo_rows => ws%coo_rows, coo_cols => ws%coo_cols, &
+                coo_vals => ws%coo_vals)
 
       if (gmode_dir == 3) then
         ! ==================================================================
@@ -1418,11 +1416,7 @@ module hamiltonianConstructor
       ! ==================================================================
       if (gmode_dir == 3) then
         nnz_est = 8*blk_PZ%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
-        coo_capacity = nnz_est + nnz_est / 5
-
-        allocate(coo_rows(coo_capacity))
-        allocate(coo_cols(coo_capacity))
-        allocate(coo_vals(coo_capacity))
+        coo_capacity = ws%coo_capacity
         coo_idx = 0
 
         ! --- Row 1 (HH1) ---
@@ -1483,22 +1477,9 @@ module hamiltonianConstructor
 
       else
         ! ==================================================================
-        ! Exact COO capacity: sum nnz of every block insertion
+        ! Reuse workspace COO buffers
         ! ==================================================================
-        nnz_est = 2*blk_Q%nnz + 2*blk_T%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
-        nnz_est = nnz_est + 5*blk_R%nnz + 3*blk_RC%nnz + 8*blk_PZ%nnz
-        nnz_est = nnz_est + 6*blk_PP%nnz + 5*blk_PM%nnz + 2*blk_A%nnz
-        nnz_est = nnz_est + 4*(blk_Q%nnz + blk_T%nnz)
-        nnz_est = nnz_est + 2*(blk_Q%nnz + blk_T%nnz)
-        nnz_est = nnz_est + 8 * N
-        if (allocated(cfg%strain_blocks%delta_Ec)) then
-          nnz_est = nnz_est + 32 * N
-        end if
-        coo_capacity = nnz_est + nnz_est / 5
-
-        allocate(coo_rows(coo_capacity))
-        allocate(coo_cols(coo_capacity))
-        allocate(coo_vals(coo_capacity))
+        coo_capacity = ws%coo_capacity
         coo_idx = 0
 
         ! --- Row 1 (HH1) ---
@@ -1665,8 +1646,7 @@ module hamiltonianConstructor
         end if
       end if
 
-      ! Cleanup: only COO arrays (workspace blocks are reused)
-      deallocate(coo_rows, coo_cols, coo_vals)
+      ! COO arrays are workspace-owned — no deallocation needed
 
       end associate
 
@@ -2016,9 +1996,15 @@ module hamiltonianConstructor
       end if
 
       ! ==================================================================
-      ! Cleanup
+      ! Cleanup: transfer COO arrays to workspace, or deallocate
       ! ==================================================================
-      deallocate(coo_rows, coo_cols, coo_vals)
+      if (present(ws)) then
+        call move_alloc(coo_rows, ws%coo_rows)
+        call move_alloc(coo_cols, ws%coo_cols)
+        call move_alloc(coo_vals, ws%coo_vals)
+      else
+        deallocate(coo_rows, coo_cols, coo_vals)
+      end if
       call csr_free(blk_Q)
       call csr_free(blk_T)
       call csr_free(blk_R)
