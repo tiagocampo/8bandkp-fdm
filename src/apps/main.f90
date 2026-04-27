@@ -45,6 +45,7 @@ program kpfdm
   type(csr_matrix)                 :: HT_csr
   type(wire_coo_cache)             :: coo_cache  ! kept for self_consistent_loop_wire
   type(wire_workspace)             :: wire_ws
+  type(feast_workspace)            :: feast_ws
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   real(kind=dp), allocatable       :: eig_wire(:,:)
@@ -338,7 +339,7 @@ program kpfdm
       print *, '  Auto energy window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
     end if
 
-    call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
+    call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res, feast_ws)
 
     if (.not. eigen_res%converged) then
       if (eigen_res%nev_found < nev_wire) then
@@ -392,7 +393,7 @@ program kpfdm
           call csr_clone_structure(HT_csr, HT_csr_step)
           call ZB8bandGeneralized(HT_csr_step, smallk(k)%kz, profile_2d, &
             & kpterms_2d, cfg, ws=wire_ws)
-          call solve_sparse_evp(HT_csr_step, eigen_cfg, eigen_res)
+          call solve_sparse_evp(HT_csr_step, eigen_cfg, eigen_res, feast_ws)
           call csr_free(HT_csr_step)
         end block
 
@@ -432,6 +433,7 @@ program kpfdm
     ! Free Hamiltonian CSR and workspace
     call csr_free(HT_csr)
     call wire_workspace_free(wire_ws)
+    call feast_workspace_free(feast_ws)
     call wire_coo_cache_free(coo_cache)
 
     ! Write eigenvalues to file (only the rows actually populated)

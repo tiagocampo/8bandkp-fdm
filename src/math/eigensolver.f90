@@ -60,16 +60,17 @@ contains
   ! ==================================================================
   ! Main dispatch: select FEAST or ARPACK based on config.
   ! ==================================================================
-  subroutine solve_sparse_evp(H_csr, config, result)
+  subroutine solve_sparse_evp(H_csr, config, result, feast_ws)
     type(csr_matrix), intent(in)          :: H_csr
     type(eigensolver_config), intent(in)  :: config
     type(eigensolver_result), intent(out) :: result
+    type(feast_workspace), intent(inout), optional :: feast_ws
 
     select case (trim(config%method))
 #ifdef USE_MKL_FEAST
     case ('FEAST')
       print *, '  Eigensolver: FEAST'
-      call solve_feast(H_csr, config, result)
+      call solve_feast(H_csr, config, result, fw=feast_ws)
     case ('DENSE')
       print *, '  Eigensolver: dense LAPACK'
       call solve_dense_lapack(H_csr, config, result)
