@@ -841,6 +841,7 @@ module hamiltonian_wire
 
         ! Pre-compute diagonal position mapping from blk_Q CSR
         allocate(ws%diag_pos(N))
+        ws%diag_pos = 0
         do i = 1, N
           do k = ws%blk_Q%rowptr(i), ws%blk_Q%rowptr(i+1) - 1
             if (ws%blk_Q%colind(k) == i) then
@@ -849,9 +850,14 @@ module hamiltonian_wire
             end if
           end do
         end do
+        if (any(ws%diag_pos == 0)) then
+          print *, 'ERROR: diag_pos: no diagonal entry found for some rows in blk_Q'
+          stop 1
+        end if
 
         ! Diagonal positions for blk_R (different sparsity from Q)
         allocate(ws%diag_pos_R(N))
+        ws%diag_pos_R = 0
         do i = 1, N
           do k = ws%blk_R%rowptr(i), ws%blk_R%rowptr(i+1) - 1
             if (ws%blk_R%colind(k) == i) then
@@ -860,9 +866,14 @@ module hamiltonian_wire
             end if
           end do
         end do
+        if (any(ws%diag_pos_R == 0)) then
+          print *, 'ERROR: diag_pos_R: no diagonal entry found for some rows in blk_R'
+          stop 1
+        end if
 
         ! Diagonal positions for blk_A (different sparsity from Q)
         allocate(ws%diag_pos_A(N))
+        ws%diag_pos_A = 0
         do i = 1, N
           do k = ws%blk_A%rowptr(i), ws%blk_A%rowptr(i+1) - 1
             if (ws%blk_A%colind(k) == i) then
@@ -871,6 +882,10 @@ module hamiltonian_wire
             end if
           end do
         end do
+        if (any(ws%diag_pos_A == 0)) then
+          print *, 'ERROR: diag_pos_A: no diagonal entry found for some rows in blk_A'
+          stop 1
+        end if
 
         ! Build scatter maps: kpterm -> union-structure block position
         call build_scatter_map(kpterms_2d(14), ws%blk_S, ws%scatter_S_14)
@@ -881,6 +896,10 @@ module hamiltonian_wire
         call build_scatter_map(kpterms_2d(11), ws%blk_R, ws%scatter_R_11)
 
         ws%coo_capacity = coo_capacity
+        if (ws%initialized) then
+          print *, 'ERROR: workspace already initialized in slow path'
+          stop 1
+        end if
         ws%initialized = .true.
       end if
 
@@ -1459,8 +1478,8 @@ module hamiltonian_wire
         do k = blk%rowptr(row), blk%rowptr(row + 1) - 1
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
-            print *, "WARNING: COO capacity exceeded in insert_csr_block_scaled, skipping entries"
-            return
+            print *, "ERROR: COO capacity exceeded in insert_csr_block_scaled"
+            stop 1
           end if
           g_row = alpha_off * N + row
           g_col = beta_off * N + blk%colind(k)
@@ -1497,8 +1516,8 @@ module hamiltonian_wire
         do ii = 1, N
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
-            print *, "WARNING: COO capacity exceeded in insert_profile_diagonal, skipping entries"
-            return
+            print *, "ERROR: COO capacity exceeded in insert_profile_diagonal"
+            stop 1
           end if
           coo_r(coo_idx) = (band - 1) * N + ii
           coo_c(coo_idx) = (band - 1) * N + ii
@@ -1525,7 +1544,10 @@ module hamiltonian_wire
       do ii = 1, N
         do e = 1, 32
           coo_idx = coo_idx + 1
-          if (coo_idx > coo_cap) return
+          if (coo_idx > coo_cap) then
+            print *, "ERROR: COO capacity exceeded in insert_strain_coo"
+            stop 1
+          end if
 
           g_row = table(e)%row_band * N + ii
           g_col = table(e)%col_band * N + ii
@@ -1538,6 +1560,8 @@ module hamiltonian_wire
           case (5); field_val = bp%S_eps(ii)
           case (6); field_val = bp%R_eps(ii)
           case (7); field_val = bp%QT2_eps(ii)
+          case default
+            error stop "insert_strain_coo: invalid field_id"
           end select
 
           if (table(e)%use_conjg) field_val = conjg(field_val)
