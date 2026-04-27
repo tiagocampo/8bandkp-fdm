@@ -1241,7 +1241,7 @@ module hamiltonianConstructor
     !> confinement in x-y.  The kpterms_2d operators encode d/dx, d/dy,
     !> d^2/dx^2, d^2/dy^2, and cross derivatives on the 2D grid.
     !---------------------------------------------------------------------------
-    subroutine ZB8bandGeneralized(HT_csr, kz, profile_2d, kpterms_2d, cfg, coo_cache, g)
+    subroutine ZB8bandGeneralized(HT_csr, kz, profile_2d, kpterms_2d, cfg, coo_cache, ws, g)
 
       type(csr_matrix), intent(inout)         :: HT_csr
       real(kind=dp), intent(in)               :: kz
@@ -1249,23 +1249,13 @@ module hamiltonianConstructor
       type(csr_matrix), intent(in)            :: kpterms_2d(:)
       type(simulation_config), intent(in)     :: cfg
       type(wire_coo_cache), intent(inout), optional :: coo_cache
+      type(wire_workspace), intent(inout), optional :: ws
       character(len=2), intent(in), optional  :: g
 
-      integer :: N, Ntot, alpha, beta, nnz_est
+      integer :: N, Ntot, nnz_est
       real(kind=dp) :: kz2
       logical :: gmode
       integer :: gmode_dir  ! 0=none, 1=x, 2=y, 3=z
-
-      ! CSR work matrices for the kp terms
-      type(csr_matrix) :: blk_Q, blk_T, blk_S, blk_SC
-      type(csr_matrix) :: blk_R, blk_RC
-      type(csr_matrix) :: blk_PZ, blk_PP, blk_PM, blk_A
-      type(csr_matrix) :: blk_temp, blk_temp2, blk_diff
-
-      ! COO assembly arrays
-      integer, allocatable :: coo_rows(:), coo_cols(:)
-      complex(kind=dp), allocatable :: coo_vals(:)
-      integer :: coo_idx, coo_capacity
 
       N = grid_ngrid(cfg%grid)
       Ntot = 8 * N
@@ -1278,60 +1268,80 @@ module hamiltonianConstructor
         gmode = (gmode_dir > 0)
       end if
 
+      if (present(ws) .and. ws%initialized) then
+        ! ==================================================================
+        ! FAST PATH: workspace is initialized, reuse CSR structures
+        ! ==================================================================
+        call zb8_generalized_fast(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
+          cfg, coo_cache, ws, N, Ntot, gmode, gmode_dir)
+      else
+        ! ==================================================================
+        ! SLOW PATH: first call or no workspace — build from scratch
+        ! ==================================================================
+        call zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
+          cfg, coo_cache, ws, N, Ntot, gmode, gmode_dir)
+      end if
+
+    end subroutine ZB8bandGeneralized
+
+    ! ======================================================================
+    ! Fast path: workspace initialized, reuse CSR structures.
+    ! All CSR blocks are aliased from the workspace via associate.
+    ! ======================================================================
+    subroutine zb8_generalized_fast(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
+        cfg, coo_cache, ws, N, Ntot, gmode, gmode_dir)
+
+      type(csr_matrix), intent(inout)         :: HT_csr
+      real(kind=dp), intent(in)               :: kz, kz2
+      real(kind=dp), intent(in)               :: profile_2d(:,:)
+      type(csr_matrix), intent(in)            :: kpterms_2d(:)
+      type(simulation_config), intent(in)     :: cfg
+      type(wire_coo_cache), intent(inout), optional :: coo_cache
+      type(wire_workspace), intent(inout)     :: ws
+      integer, intent(in)                     :: N, Ntot, gmode_dir
+      logical, intent(in)                     :: gmode
+
+      integer :: coo_idx, coo_capacity, nnz_est
+
+      ! COO assembly arrays
+      integer, allocatable :: coo_rows(:), coo_cols(:)
+      complex(kind=dp), allocatable :: coo_vals(:)
+
+      associate(blk_Q => ws%blk_Q, blk_T => ws%blk_T, &
+                blk_S => ws%blk_S, blk_SC => ws%blk_SC, &
+                blk_R => ws%blk_R, blk_RC => ws%blk_RC, &
+                blk_PZ => ws%blk_PZ, blk_PP => ws%blk_PP, &
+                blk_PM => ws%blk_PM, blk_A => ws%blk_A, &
+                blk_diff => ws%blk_diff, blk_temp => ws%blk_temp)
+
       if (gmode_dir == 3) then
         ! ==================================================================
         ! g='g3' mode (z direction): dH/dkz at kz=0.
-        ! The kz-linear terms are PZ (= P*kz) and S, SC (= kz * FD ops).
-        ! PP/PM are kz-independent (FD operators) and do NOT contribute
-        ! to dH/dkz.  Band-offset profile not added.
         ! ==================================================================
-        call build_kp_term_PZ(1.0_dp, kpterms_2d, blk_PZ)
-        call build_kp_term_S(1.0_dp, kpterms_2d, blk_S)
-        call build_kp_term_SC(1.0_dp, kpterms_2d, blk_SC)
+        call build_kp_term_PZ(1.0_dp, kpterms_2d, blk_PZ, ws)
+        call build_kp_term_S(1.0_dp, kpterms_2d, blk_S, ws)
+        call build_kp_term_SC(1.0_dp, kpterms_2d, blk_SC, ws)
 
       else
         ! ==================================================================
-        ! Build kp-term CSR matrices (size N x N each)
+        ! Build kp-term CSR matrices via fast path
         ! ==================================================================
-
-        ! Q = -((gamma1+gamma2)*kz^2*I + kpterms_2d(7))
-        call build_kp_term_Q(kz2, kpterms_2d, blk_Q)
-
-        ! T = -(gamma1-gamma2)*kz^2*I - kpterms_2d(8)
-        call build_kp_term_T(kz2, kpterms_2d, blk_T)
-
-        ! S = 2*sqrt(3)*kz*kpterms_2d(9)  (wire: kminus = kz since kx,ky are spatial)
-        call build_kp_term_S(kz, kpterms_2d, blk_S)
-
-        ! SC = 2*sqrt(3)*kz*kpterms_2d(9)  (wire: kplus = kz since kx,ky are spatial)
-        call build_kp_term_SC(kz, kpterms_2d, blk_SC)
-
-        ! R = -sqrt(3)*gamma2*kz^2*I (diagonal only, kx^2,ky^2 absorbed into 2D ops)
-        call build_kp_term_R(kz2, kpterms_2d, blk_R)
-
-        ! RC = conjg(R) = R (real diagonal)
-        call build_kp_term_RC(kz2, kpterms_2d, blk_RC)
-
-        ! PZ = P * kz (diagonal, free wire axis)
-        call build_kp_term_PZ(kz, kpterms_2d, blk_PZ)
-
-        ! PP = P * (kx + i ky) / sqrt(2) mapped to transverse operators
-        call build_kp_term_PP(kz, kpterms_2d, blk_PP)
-
-        ! PM = P * (kx - i ky) / sqrt(2) mapped to transverse operators
-        call build_kp_term_PM(kz, kpterms_2d, blk_PM)
-
-        ! A = kpterms_2d(5) + kz^2 * kpterms_2d(10)
-        call build_kp_term_A(kz2, kpterms_2d, blk_A)
+        call build_kp_term_Q(kz2, kpterms_2d, blk_Q, ws)
+        call build_kp_term_T(kz2, kpterms_2d, blk_T, ws)
+        call build_kp_term_S(kz, kpterms_2d, blk_S, ws)
+        call build_kp_term_SC(kz, kpterms_2d, blk_SC, ws)
+        call build_kp_term_R(kz2, kpterms_2d, blk_R, ws)
+        call build_kp_term_RC(kz2, kpterms_2d, blk_RC, ws)
+        call build_kp_term_PZ(kz, kpterms_2d, blk_PZ, ws)
+        call build_kp_term_PP(kz, kpterms_2d, blk_PP, ws)
+        call build_kp_term_PM(kz, kpterms_2d, blk_PM, ws)
+        call build_kp_term_A(kz2, kpterms_2d, blk_A, ws)
       end if
 
       ! ==================================================================
       ! COO capacity estimation and block insertion
       ! ==================================================================
       if (gmode_dir == 3) then
-        ! ==================================================================
-        ! g='g3' mode (z direction): PZ + S + SC (kz-linear perturbation).
-        ! PZ:8, S:6, SC:6  (+ 20% safety margin)
         nnz_est = 8*blk_PZ%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
         coo_capacity = nnz_est + nnz_est / 5
 
@@ -1341,78 +1351,58 @@ module hamiltonianConstructor
         coo_idx = 0
 
         ! --- Row 1 (HH1) ---
-        ! (1,2): SC
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 0, 1, blk_SC, N)
-        ! (1,5): -IU * RQS2 * SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 0, 4, blk_SC, N, -IU * RQS2)
 
         ! --- Row 2 (HH2) ---
-        ! (2,1): S
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 0, blk_S, N)
-        ! (2,6): -IU * SQR3 * RQS2 * SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 5, blk_SC, N, -IU * SQR3 * RQS2)
-        ! (2,7): SQR2 * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
 
         ! --- Row 3 (LH1) ---
-        ! (3,4): -SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        ! (3,5): IU * SQR3 * RQS2 * S
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 4, blk_S, N, IU * SQR3 * RQS2)
-        ! (3,8): IU * SQR2 * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 7, blk_PZ, N, IU * SQR2 * RQS3)
 
         ! --- Row 4 (LH2) ---
-        ! (4,3): -S
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        ! (4,6): IU * RQS2 * S
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 3, 5, blk_S, N, IU * RQS2)
 
         ! --- Row 5 (SO1) ---
-        ! (5,1): IU * RQS2 * S
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 0, blk_S, N, IU * RQS2)
-        ! (5,3): -IU * SQR3 * RQS2 * SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 2, blk_SC, N, -IU * SQR3 * RQS2)
-        ! (5,7): IU * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 6, blk_PZ, N, IU * RQS3)
 
         ! --- Row 6 (SO2) ---
-        ! (6,2): IU * SQR3 * RQS2 * S
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 1, blk_S, N, IU * SQR3 * RQS2)
-        ! (6,4): -IU * RQS2 * SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 3, blk_SC, N, -IU * RQS2)
-        ! (6,8): -RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
 
         ! --- Row 7 (CB1) ---
-        ! (7,2): SQR2 * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
-        ! (7,5): -IU * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 4, blk_PZ, N, -IU * RQS3)
 
         ! --- Row 8 (CB2) ---
-        ! (8,3): -IU * SQR2 * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 2, blk_PZ, N, -IU * SQR2 * RQS3)
-        ! (8,6): -RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
 
@@ -1420,210 +1410,144 @@ module hamiltonianConstructor
         ! ==================================================================
         ! Exact COO capacity: sum nnz of every block insertion
         ! ==================================================================
-        ! blk_diff and blk_temp are built during insert phase; their nnz is
-        ! bounded by blk_Q%nnz + blk_T%nnz.  Count block multiplicities:
-        ! Q:2, T:2, S:6, SC:6, R:5, RC:3, PZ:8, PP:6, PM:5, A:2,
-        ! diff:4, temp:2, profile:8*N
         nnz_est = 2*blk_Q%nnz + 2*blk_T%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
         nnz_est = nnz_est + 5*blk_R%nnz + 3*blk_RC%nnz + 8*blk_PZ%nnz
         nnz_est = nnz_est + 6*blk_PP%nnz + 5*blk_PM%nnz + 2*blk_A%nnz
-        ! blk_diff (Q-T): at most Q%nnz + T%nnz entries, inserted 4 times
         nnz_est = nnz_est + 4*(blk_Q%nnz + blk_T%nnz)
-        ! blk_temp (0.5*(Q+T)): at most Q%nnz + T%nnz entries, inserted 2 times
         nnz_est = nnz_est + 2*(blk_Q%nnz + blk_T%nnz)
-        ! Profile diagonal: 8 bands * N
         nnz_est = nnz_est + 8 * N
-        ! Strain: 32 entries per grid point (8 diag + 4 S_eps + 4 R_eps + 16 VB-SO)
         if (allocated(cfg%strain_blocks%delta_Ec)) then
           nnz_est = nnz_est + 32 * N
         end if
-        coo_capacity = nnz_est + nnz_est / 5  ! 20% safety margin
+        coo_capacity = nnz_est + nnz_est / 5
 
         allocate(coo_rows(coo_capacity))
         allocate(coo_cols(coo_capacity))
         allocate(coo_vals(coo_capacity))
         coo_idx = 0
 
-        ! ==================================================================
-        ! Insert 8x8 blocks into COO arrays
-        ! ==================================================================
-        ! The block topology follows ZB8bandQW exactly.
-        ! Block (alpha, beta) occupies rows [(alpha-1)*N+1 : alpha*N]
-        !                       cols [(beta-1)*N+1  : beta*N]
-
         ! --- Row 1 (HH1) ---
-        ! (1,1): Q
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 0, 0, blk_Q, N)
-        ! (1,2): SC
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 0, 1, blk_SC, N)
-        ! (1,3): RC
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 0, 2, blk_RC, N)
-        ! (1,5): -IU * RQS2 * SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 0, 4, blk_SC, N, -IU * RQS2)
-        ! (1,6): IU * SQR2 * RC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 0, 5, blk_RC, N, IU * SQR2)
-        ! (1,7): IU * PP
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 0, 6, blk_PP, N, IU)
 
         ! --- Row 2 (HH2) ---
-        ! (2,1): S
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 0, blk_S, N)
-        ! (2,2): T
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 1, blk_T, N)
-        ! (2,4): RC
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 3, blk_RC, N)
-        ! (2,5): IU * RQS2 * (Q - T)
-        call csr_add(blk_Q, blk_T, blk_diff, UM, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        ! (2,5): IU * RQS2 * (Q - T) — element-wise on pre-allocated blk_diff
+        blk_diff%values = blk_Q%values - blk_T%values
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 4, blk_diff, N, IU * RQS2)
-        ! (2,6): -IU * SQR3 * RQS2 * SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 5, blk_SC, N, -IU * SQR3 * RQS2)
-        ! (2,7): SQR2 * RQS3 * PZ  (upper triangle, same sign as 1D QW)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
-        ! (2,8): -RQS3 * PP
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 1, 7, blk_PP, N, cmplx(-RQS3, 0.0_dp, kind=dp))
 
         ! --- Row 3 (LH1) ---
-        ! (3,1): R
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 0, blk_R, N)
-        ! (3,3): T
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 2, blk_T, N)
-        ! (3,4): -SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        ! (3,5): IU * SQR3 * RQS2 * S
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 4, blk_S, N, IU * SQR3 * RQS2)
-        ! (3,6): IU * RQS2 * (Q - T)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 5, blk_diff, N, IU * RQS2)
-        ! (3,7): IU * RQS3 * PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 6, blk_PM, N, IU * RQS3)
-        ! (3,8): IU * SQR2 * RQS3 * PZ  (upper triangle, same sign as 1D QW)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 2, 7, blk_PZ, N, IU * SQR2 * RQS3)
 
         ! --- Row 4 (LH2) ---
-        ! (4,2): R
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 3, 1, blk_R, N)
-        ! (4,3): -S
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        ! (4,4): Q
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 3, 3, blk_Q, N)
-        ! (4,5): IU * SQR2 * R
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 3, 4, blk_R, N, IU * SQR2)
-        ! (4,6): IU * RQS2 * S
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 3, 5, blk_S, N, IU * RQS2)
-        ! (4,8): -PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 3, 7, blk_PM, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
 
         ! --- Row 5 (SO1) ---
-        ! (5,1): IU * RQS2 * S
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 0, blk_S, N, IU * RQS2)
-        ! (5,2): -IU * RQS2 * (Q - T)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 1, blk_diff, N, -IU * RQS2)
-        ! (5,3): -IU * SQR3 * RQS2 * SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 2, blk_SC, N, -IU * SQR3 * RQS2)
-        ! (5,4): -IU * SQR2 * RC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 3, blk_RC, N, -IU * SQR2)
-        ! (5,5) and (6,6): 0.5*(Q + T), computed once
-        call csr_add(blk_Q, blk_T, blk_temp, cmplx(0.5_dp, 0.0_dp, kind=dp), &
-          cmplx(0.5_dp, 0.0_dp, kind=dp))
+        ! (5,5): 0.5*(Q + T) — element-wise on pre-allocated blk_temp
+        blk_temp%values = cmplx(0.5_dp, 0.0_dp, kind=dp) * (blk_Q%values + blk_T%values)
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 4, blk_temp, N)
-        ! (5,7): IU * RQS3 * PZ  (upper triangle, same sign as 1D QW)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 6, blk_PZ, N, IU * RQS3)
-        ! (5,8): IU * SQR2 * RQS3 * PP
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 7, blk_PP, N, IU * SQR2 * RQS3)
 
         ! --- Row 6 (SO2) ---
-        ! (6,1): -IU * SQR2 * R
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 0, blk_R, N, -IU * SQR2)
-        ! (6,2): IU * SQR3 * RQS2 * S
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 1, blk_S, N, IU * SQR3 * RQS2)
-        ! (6,3): -IU * RQS2 * (Q - T)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 2, blk_diff, N, -IU * RQS2)
-        ! (6,4): -IU * RQS2 * SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 3, blk_SC, N, -IU * RQS2)
         ! (6,6): 0.5*(Q + T) — reuse blk_temp from (5,5)
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 5, blk_temp, N)
-        call csr_free(blk_temp)
-        ! (6,7): SQR2 * RQS3 * PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 6, blk_PM, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
-        ! (6,8): -RQS3 * PZ  (upper triangle, same sign as 1D QW)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
 
         ! --- Row 7 (CB1) ---
-        ! (7,1): -IU * PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 0, blk_PM, N, -IU)
-        ! (7,2): SQR2 * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
-        ! (7,3): -IU * RQS3 * PP
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 2, blk_PP, N, -IU * RQS3)
-        ! (7,5): -IU * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 4, blk_PZ, N, -IU * RQS3)
-        ! (7,6): SQR2 * RQS3 * PP
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 5, blk_PP, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
-        ! (7,7): A
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 6, 6, blk_A, N)
 
         ! --- Row 8 (CB2) ---
-        ! (8,2): -RQS3 * PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 1, blk_PM, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-        ! (8,3): -IU * SQR2 * RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 2, blk_PZ, N, -IU * SQR2 * RQS3)
-        ! (8,4): -PP
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 3, blk_PP, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        ! (8,5): -IU * SQR2 * RQS3 * PM
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 4, blk_PM, N, -IU * SQR2 * RQS3)
-        ! (8,6): -RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-        ! (8,8): A
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 7, blk_A, N)
 
@@ -1635,10 +1559,6 @@ module hamiltonianConstructor
 
         ! ==================================================================
         ! Add Bir-Pikus strain corrections (diagonal + off-diagonal)
-        !
-        ! Strain is k-independent so NOT added in g-mode.
-        ! All strain terms are per-grid-point scalars (diagonal in spatial
-        ! indices), inserted as individual COO entries.
         ! ==================================================================
         if (allocated(cfg%strain_blocks%delta_Ec)) then
           call insert_strain_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
@@ -1652,11 +1572,9 @@ module hamiltonianConstructor
       ! ==================================================================
       if (present(coo_cache)) then
         if (coo_cache%initialized) then
-          ! Reuse existing CSR structure: O(NNZ) value update only
           call csr_set_values_from_coo(HT_csr, coo_idx, &
             coo_cache%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
         else
-          ! First call: full build + save COO-to-CSR mapping to cache
           call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
             coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
             coo_cache%coo_to_csr)
@@ -1664,13 +1582,362 @@ module hamiltonianConstructor
           coo_cache%initialized = .true.
         end if
       else
-        ! No cache: always do full build (backward compatible)
         if (coo_idx > 0) then
           call csr_build_from_coo(HT_csr, Ntot, Ntot, coo_idx, &
             coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx))
         else
           call csr_init(HT_csr, Ntot, Ntot)
         end if
+      end if
+
+      ! Cleanup: only COO arrays (workspace blocks are reused)
+      deallocate(coo_rows, coo_cols, coo_vals)
+
+      end associate
+
+    end subroutine zb8_generalized_fast
+
+    ! ======================================================================
+    ! Slow path: first call or no workspace — build from scratch.
+    ! Optionally initializes workspace for subsequent fast-path calls.
+    ! ======================================================================
+    subroutine zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
+        cfg, coo_cache, ws, N, Ntot, gmode, gmode_dir)
+
+      type(csr_matrix), intent(inout)         :: HT_csr
+      real(kind=dp), intent(in)               :: kz, kz2
+      real(kind=dp), intent(in)               :: profile_2d(:,:)
+      type(csr_matrix), intent(in)            :: kpterms_2d(:)
+      type(simulation_config), intent(in)     :: cfg
+      type(wire_coo_cache), intent(inout), optional :: coo_cache
+      type(wire_workspace), intent(inout), optional :: ws
+      integer, intent(in)                     :: N, Ntot, gmode_dir
+      logical, intent(in)                     :: gmode
+
+      ! CSR work matrices for the kp terms
+      type(csr_matrix) :: blk_Q, blk_T, blk_S, blk_SC
+      type(csr_matrix) :: blk_R, blk_RC
+      type(csr_matrix) :: blk_PZ, blk_PP, blk_PM, blk_A
+      type(csr_matrix) :: blk_temp, blk_diff
+
+      ! COO assembly arrays
+      integer, allocatable :: coo_rows(:), coo_cols(:)
+      complex(kind=dp), allocatable :: coo_vals(:)
+      integer :: coo_idx, coo_capacity, nnz_est
+      integer :: i, k  ! workspace init loop variables
+
+      if (gmode_dir == 3) then
+        ! ==================================================================
+        ! g='g3' mode (z direction): dH/dkz at kz=0.
+        ! ==================================================================
+        call build_kp_term_PZ(1.0_dp, kpterms_2d, blk_PZ)
+        call build_kp_term_S(1.0_dp, kpterms_2d, blk_S)
+        call build_kp_term_SC(1.0_dp, kpterms_2d, blk_SC)
+
+      else
+        ! ==================================================================
+        ! Build kp-term CSR matrices (size N x N each)
+        ! ==================================================================
+        call build_kp_term_Q(kz2, kpterms_2d, blk_Q)
+        call build_kp_term_T(kz2, kpterms_2d, blk_T)
+        call build_kp_term_S(kz, kpterms_2d, blk_S)
+        call build_kp_term_SC(kz, kpterms_2d, blk_SC)
+        call build_kp_term_R(kz2, kpterms_2d, blk_R)
+        call build_kp_term_RC(kz2, kpterms_2d, blk_RC)
+        call build_kp_term_PZ(kz, kpterms_2d, blk_PZ)
+        call build_kp_term_PP(kz, kpterms_2d, blk_PP)
+        call build_kp_term_PM(kz, kpterms_2d, blk_PM)
+        call build_kp_term_A(kz2, kpterms_2d, blk_A)
+      end if
+
+      ! ==================================================================
+      ! COO capacity estimation and block insertion
+      ! ==================================================================
+      if (gmode_dir == 3) then
+        nnz_est = 8*blk_PZ%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
+        coo_capacity = nnz_est + nnz_est / 5
+
+        allocate(coo_rows(coo_capacity))
+        allocate(coo_cols(coo_capacity))
+        allocate(coo_vals(coo_capacity))
+        coo_idx = 0
+
+        ! --- Row 1 (HH1) ---
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 1, blk_SC, N)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 4, blk_SC, N, -IU * RQS2)
+
+        ! --- Row 2 (HH2) ---
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 0, blk_S, N)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 5, blk_SC, N, -IU * SQR3 * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 3 (LH1) ---
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 4, blk_S, N, IU * SQR3 * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 7, blk_PZ, N, IU * SQR2 * RQS3)
+
+        ! --- Row 4 (LH2) ---
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 5, blk_S, N, IU * RQS2)
+
+        ! --- Row 5 (SO1) ---
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 0, blk_S, N, IU * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 2, blk_SC, N, -IU * SQR3 * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 6, blk_PZ, N, IU * RQS3)
+
+        ! --- Row 6 (SO2) ---
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 1, blk_S, N, IU * SQR3 * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 3, blk_SC, N, -IU * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 7 (CB1) ---
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 4, blk_PZ, N, -IU * RQS3)
+
+        ! --- Row 8 (CB2) ---
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 2, blk_PZ, N, -IU * SQR2 * RQS3)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+
+      else
+        ! ==================================================================
+        ! Exact COO capacity: sum nnz of every block insertion
+        ! ==================================================================
+        nnz_est = 2*blk_Q%nnz + 2*blk_T%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
+        nnz_est = nnz_est + 5*blk_R%nnz + 3*blk_RC%nnz + 8*blk_PZ%nnz
+        nnz_est = nnz_est + 6*blk_PP%nnz + 5*blk_PM%nnz + 2*blk_A%nnz
+        nnz_est = nnz_est + 4*(blk_Q%nnz + blk_T%nnz)
+        nnz_est = nnz_est + 2*(blk_Q%nnz + blk_T%nnz)
+        nnz_est = nnz_est + 8 * N
+        if (allocated(cfg%strain_blocks%delta_Ec)) then
+          nnz_est = nnz_est + 32 * N
+        end if
+        coo_capacity = nnz_est + nnz_est / 5
+
+        allocate(coo_rows(coo_capacity))
+        allocate(coo_cols(coo_capacity))
+        allocate(coo_vals(coo_capacity))
+        coo_idx = 0
+
+        ! ==================================================================
+        ! Insert 8x8 blocks into COO arrays
+        ! ==================================================================
+
+        ! --- Row 1 (HH1) ---
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 0, blk_Q, N)
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 1, blk_SC, N)
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 2, blk_RC, N)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 4, blk_SC, N, -IU * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 5, blk_RC, N, IU * SQR2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 0, 6, blk_PP, N, IU)
+
+        ! --- Row 2 (HH2) ---
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 0, blk_S, N)
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 1, blk_T, N)
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 3, blk_RC, N)
+        ! (2,5): IU * RQS2 * (Q - T)
+        call csr_add(blk_Q, blk_T, blk_diff, UM, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 4, blk_diff, N, IU * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 5, blk_SC, N, -IU * SQR3 * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 1, 7, blk_PP, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 3 (LH1) ---
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 0, blk_R, N)
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 2, blk_T, N)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 4, blk_S, N, IU * SQR3 * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 5, blk_diff, N, IU * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 6, blk_PM, N, IU * RQS3)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 2, 7, blk_PZ, N, IU * SQR2 * RQS3)
+
+        ! --- Row 4 (LH2) ---
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 1, blk_R, N)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 3, blk_Q, N)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 4, blk_R, N, IU * SQR2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 5, blk_S, N, IU * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 3, 7, blk_PM, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+
+        ! --- Row 5 (SO1) ---
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 0, blk_S, N, IU * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 1, blk_diff, N, -IU * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 2, blk_SC, N, -IU * SQR3 * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 3, blk_RC, N, -IU * SQR2)
+        ! (5,5) and (6,6): 0.5*(Q + T), computed once
+        call csr_add(blk_Q, blk_T, blk_temp, cmplx(0.5_dp, 0.0_dp, kind=dp), &
+          cmplx(0.5_dp, 0.0_dp, kind=dp))
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 4, blk_temp, N)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 6, blk_PZ, N, IU * RQS3)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 4, 7, blk_PP, N, IU * SQR2 * RQS3)
+
+        ! --- Row 6 (SO2) ---
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 0, blk_R, N, -IU * SQR2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 1, blk_S, N, IU * SQR3 * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 2, blk_diff, N, -IU * RQS2)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 3, blk_SC, N, -IU * RQS2)
+        ! (6,6): 0.5*(Q + T) — reuse blk_temp from (5,5)
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 5, blk_temp, N)
+        call csr_free(blk_temp)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 6, blk_PM, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+
+        ! --- Row 7 (CB1) ---
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 0, blk_PM, N, -IU)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 2, blk_PP, N, -IU * RQS3)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 4, blk_PZ, N, -IU * RQS3)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 5, blk_PP, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 6, 6, blk_A, N)
+
+        ! --- Row 8 (CB2) ---
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 1, blk_PM, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 2, blk_PZ, N, -IU * SQR2 * RQS3)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 3, blk_PP, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 4, blk_PM, N, -IU * SQR2 * RQS3)
+        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+        call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, 7, 7, blk_A, N)
+
+        ! ==================================================================
+        ! Add band-offset profile to diagonal blocks
+        ! ==================================================================
+        call insert_profile_diagonal(coo_rows, coo_cols, coo_vals, coo_capacity, &
+          coo_idx, profile_2d, N)
+
+        ! ==================================================================
+        ! Add Bir-Pikus strain corrections
+        ! ==================================================================
+        if (allocated(cfg%strain_blocks%delta_Ec)) then
+          call insert_strain_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
+            coo_idx, cfg%strain_blocks, N)
+        end if
+
+      end if
+
+      ! ==================================================================
+      ! Build final CSR from COO, or update values if cache is available
+      ! ==================================================================
+      if (present(coo_cache)) then
+        if (coo_cache%initialized) then
+          call csr_set_values_from_coo(HT_csr, coo_idx, &
+            coo_cache%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
+        else
+          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
+            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
+            coo_cache%coo_to_csr)
+          coo_cache%coo_nnz_in = coo_idx
+          coo_cache%initialized = .true.
+        end if
+      else
+        if (coo_idx > 0) then
+          call csr_build_from_coo(HT_csr, Ntot, Ntot, coo_idx, &
+            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx))
+        else
+          call csr_init(HT_csr, Ntot, Ntot)
+        end if
+      end if
+
+      ! ==================================================================
+      ! Workspace initialization (before cleanup)
+      ! ==================================================================
+      if (present(ws)) then
+        call csr_clone_structure(blk_Q, ws%blk_Q)
+        call csr_clone_structure(blk_T, ws%blk_T)
+        call csr_clone_structure(blk_S, ws%blk_S)
+        call csr_clone_structure(blk_SC, ws%blk_SC)
+        call csr_clone_structure(blk_R, ws%blk_R)
+        call csr_clone_structure(blk_RC, ws%blk_RC)
+        call csr_clone_structure(blk_PZ, ws%blk_PZ)
+        call csr_clone_structure(blk_PP, ws%blk_PP)
+        call csr_clone_structure(blk_PM, ws%blk_PM)
+        call csr_clone_structure(blk_A, ws%blk_A)
+        call csr_clone_structure(blk_diff, ws%blk_diff)
+        call csr_clone_structure(blk_temp, ws%blk_temp)
+
+        ! Pre-compute diagonal position mapping from blk_Q CSR
+        allocate(ws%diag_pos(N))
+        do i = 1, N
+          do k = ws%blk_Q%rowptr(i), ws%blk_Q%rowptr(i+1) - 1
+            if (ws%blk_Q%colind(k) == i) then
+              ws%diag_pos(i) = k
+              exit
+            end if
+          end do
+        end do
+
+        ws%coo_capacity = coo_capacity
+        ws%initialized = .true.
       end if
 
       ! ==================================================================
@@ -1690,7 +1957,7 @@ module hamiltonianConstructor
       call csr_free(blk_PP)
       call csr_free(blk_PM)
 
-    end subroutine ZB8bandGeneralized
+    end subroutine zb8_generalized_slow
 
     ! ==================================================================
     ! Build commutator-based velocity operator matrices from the full wire
