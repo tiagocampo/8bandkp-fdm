@@ -52,6 +52,7 @@ module eigensolver
     integer, allocatable          :: colind_loc(:)   ! (nnz_upper) column indices
     integer                       :: nnz_upper = 0
     integer                       :: M0 = 0
+    integer                       :: N = 0
     logical                       :: initialized = .false.
   end type feast_workspace
 
@@ -144,7 +145,7 @@ contains
     res = 0.0_dp
 
     ! Extract upper triangle only (FEAST UPLO='U' requires col >= row).
-    if (present(fw) .and. fw%initialized .and. fw%M0 == M0) then
+    if (present(fw) .and. fw%initialized .and. fw%M0 == M0 .and. fw%N == N) then
       ! Fast path: reuse cached upper-triangle structure, just update values
       allocate(val_loc(fw%nnz_upper))
       do i = 1, N
@@ -200,6 +201,7 @@ contains
         call move_alloc(colind_loc, fw%colind_loc)
         fw%nnz_upper = nnz
         fw%M0 = M0
+        fw%N = N
         fw%initialized = .true.
       else
         deallocate(rowptr_loc, colind_loc)
@@ -698,6 +700,7 @@ contains
     if (allocated(fw%colind_loc)) deallocate(fw%colind_loc)
     fw%nnz_upper = 0
     fw%M0 = 0
+    fw%N = 0
     fw%initialized = .false.
   end subroutine feast_workspace_free
 
