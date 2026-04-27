@@ -1820,23 +1820,44 @@ module hamiltonianConstructor
     ! The free-axis kz term remains diagonal:
     !   (gamma1 - 2*gamma2) * kz^2 * I
     ! ==================================================================
-    subroutine build_kp_term_Q(kz2, kpterms_2d, blk)
+    subroutine build_kp_term_Q(kz2, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
-      type(csr_matrix), intent(out) :: blk
+      type(csr_matrix), intent(inout) :: blk
+      type(wire_workspace), intent(inout), optional :: ws
 
-      type(csr_matrix) :: qxy, kz_diag
+      if (present(ws) .and. ws%initialized) then
+        ! Fast path: kp7 and kp8 have operator sparsity (= result sparsity)
+        blk%values = cmplx(0.25_dp, 0.0_dp, kind=dp) * kpterms_2d(7)%values &
+                   + cmplx(0.75_dp, 0.0_dp, kind=dp) * kpterms_2d(8)%values
+        ! Add diagonal contributions (kp1, kp2) at diagonal positions
+        block
+          integer :: k
+          do k = 1, kpterms_2d(1)%nnz
+            blk%values(ws%diag_pos(k)) = blk%values(ws%diag_pos(k)) &
+              + cmplx(kz2, 0.0_dp, kind=dp) * kpterms_2d(1)%values(k) &
+              + cmplx(-2.0_dp * kz2, 0.0_dp, kind=dp) * kpterms_2d(2)%values(k)
+          end do
+        end block
+        ! Apply negation
+        blk%values = -blk%values
+      else
+        ! Original slow path
+        block
+          type(csr_matrix) :: qxy, kz_diag
 
-      call csr_add(kpterms_2d(7), kpterms_2d(8), qxy, &
-        cmplx(0.25_dp, 0.0_dp, kind=dp), cmplx(0.75_dp, 0.0_dp, kind=dp))
+          call csr_add(kpterms_2d(7), kpterms_2d(8), qxy, &
+            cmplx(0.25_dp, 0.0_dp, kind=dp), cmplx(0.75_dp, 0.0_dp, kind=dp))
 
-      call csr_add(kpterms_2d(1), kpterms_2d(2), kz_diag, &
-        cmplx(kz2, 0.0_dp, kind=dp), cmplx(-2.0_dp * kz2, 0.0_dp, kind=dp))
+          call csr_add(kpterms_2d(1), kpterms_2d(2), kz_diag, &
+            cmplx(kz2, 0.0_dp, kind=dp), cmplx(-2.0_dp * kz2, 0.0_dp, kind=dp))
 
-      call csr_add(qxy, kz_diag, blk, UM, UM)
-      call csr_free(qxy)
-      call csr_free(kz_diag)
-      call negate_csr(blk)
+          call csr_add(qxy, kz_diag, blk, UM, UM)
+          call csr_free(qxy)
+          call csr_free(kz_diag)
+          call negate_csr(blk)
+        end block
+      end if
     end subroutine build_kp_term_Q
 
     ! ==================================================================
