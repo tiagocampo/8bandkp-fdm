@@ -667,7 +667,7 @@ module hamiltonianConstructor
       integer, intent(in)                     :: N, Ntot, gmode_dir
       logical, intent(in)                     :: gmode
 
-      integer :: coo_idx, coo_capacity, nnz_est
+      integer :: coo_idx, coo_capacity
 
       associate(blk_Q => ws%blk_Q, blk_T => ws%blk_T, &
                 blk_S => ws%blk_S, blk_SC => ws%blk_SC, &
@@ -706,7 +706,6 @@ module hamiltonianConstructor
       ! COO capacity estimation and block insertion
       ! ==================================================================
       if (gmode_dir == 3) then
-        nnz_est = 8*blk_PZ%nnz + 6*blk_S%nnz + 6*blk_SC%nnz
         coo_capacity = ws%coo_capacity
         coo_idx = 0
 
