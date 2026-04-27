@@ -48,7 +48,9 @@ module hamiltonian_wire
 
     ! Diagonal position indices within operator-sparsity CSRs
     ! diag_pos(k) = CSR index of the k-th diagonal entry (row k, col k)
-    integer, allocatable          :: diag_pos(:)
+    integer, allocatable          :: diag_pos(:)     ! for blk_Q and blk_T (same sparsity)
+    integer, allocatable          :: diag_pos_R(:)   ! for blk_R (different sparsity from Q)
+    integer, allocatable          :: diag_pos_A(:)   ! for blk_A (different sparsity from Q)
 
     ! Scatter maps: map each kpterm's nonzero index to the union-structure block position
     integer, allocatable :: scatter_S_14(:)   ! kp14 -> blk_S
@@ -848,6 +850,28 @@ module hamiltonian_wire
           end do
         end do
 
+        ! Diagonal positions for blk_R (different sparsity from Q)
+        allocate(ws%diag_pos_R(N))
+        do i = 1, N
+          do k = ws%blk_R%rowptr(i), ws%blk_R%rowptr(i+1) - 1
+            if (ws%blk_R%colind(k) == i) then
+              ws%diag_pos_R(i) = k
+              exit
+            end if
+          end do
+        end do
+
+        ! Diagonal positions for blk_A (different sparsity from Q)
+        allocate(ws%diag_pos_A(N))
+        do i = 1, N
+          do k = ws%blk_A%rowptr(i), ws%blk_A%rowptr(i+1) - 1
+            if (ws%blk_A%colind(k) == i) then
+              ws%diag_pos_A(i) = k
+              exit
+            end if
+          end do
+        end do
+
         ! Build scatter maps: kpterm -> union-structure block position
         call build_scatter_map(kpterms_2d(14), ws%blk_S, ws%scatter_S_14)
         call build_scatter_map(kpterms_2d(15), ws%blk_S, ws%scatter_S_15)
@@ -1077,9 +1101,12 @@ module hamiltonian_wire
       type(wire_workspace), intent(inout), optional :: ws
 
       if (present(ws) .and. ws%initialized) then
-        ! Fast path: kp14 and kp15 have gradient sparsity (same pattern)
-        blk%values = cmplx(-2.0_dp*SQR3*kz, 0.0_dp, kind=dp) * kpterms_2d(14)%values &
-                   + cmplx(0.0_dp, 2.0_dp*SQR3*kz, kind=dp) * kpterms_2d(15)%values
+        ! Fast path: scatter kp14 and kp15 into union-structure block
+        blk%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
+        blk%values(ws%scatter_S_14) = cmplx(-2.0_dp*SQR3*kz, 0.0_dp, kind=dp) &
+          * kpterms_2d(14)%values
+        blk%values(ws%scatter_S_15) = blk%values(ws%scatter_S_15) &
+          + cmplx(0.0_dp, 2.0_dp*SQR3*kz, kind=dp) * kpterms_2d(15)%values
       else
         ! Original slow path
         block
@@ -1128,9 +1155,8 @@ module hamiltonian_wire
       type(wire_workspace), intent(inout), optional :: ws
 
       if (present(ws) .and. ws%initialized) then
-        ! Fast path: build S into temp, then conjugate transpose to blk
-        call build_kp_term_S(kz, kpterms_2d, ws%blk_temp, ws)
-        call csr_conjugate_transpose_to_preallocated(ws%blk_temp, blk)
+        ! Fast path: conjugate transpose the already-built blk_S
+        call csr_conjugate_transpose_to_preallocated(ws%blk_S, blk)
       else
         ! Original slow path
         block
@@ -1158,14 +1184,17 @@ module hamiltonian_wire
       type(wire_workspace), intent(inout), optional :: ws
 
       if (present(ws) .and. ws%initialized) then
-        ! Fast path: operator part from kp16 and kp11
-        blk%values = cmplx(-SQR3, 0.0_dp, kind=dp) * kpterms_2d(16)%values &
-                   + cmplx(0.0_dp, 2.0_dp*SQR3, kind=dp) * kpterms_2d(11)%values
+        ! Fast path: scatter kp16 and kp11 into union-structure block
+        blk%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
+        blk%values(ws%scatter_R_16) = cmplx(-SQR3, 0.0_dp, kind=dp) &
+          * kpterms_2d(16)%values
+        blk%values(ws%scatter_R_11) = blk%values(ws%scatter_R_11) &
+          + cmplx(0.0_dp, 2.0_dp*SQR3, kind=dp) * kpterms_2d(11)%values
         ! Add diagonal contribution (kp2) at diagonal positions
         block
           integer :: k
           do k = 1, kpterms_2d(2)%nnz
-            blk%values(ws%diag_pos(k)) = blk%values(ws%diag_pos(k)) &
+            blk%values(ws%diag_pos_R(k)) = blk%values(ws%diag_pos_R(k)) &
               + cmplx(-SQR3*kz2, 0.0_dp, kind=dp) * kpterms_2d(2)%values(k)
           end do
         end block
@@ -1210,9 +1239,8 @@ module hamiltonian_wire
       type(wire_workspace), intent(inout), optional :: ws
 
       if (present(ws) .and. ws%initialized) then
-        ! Fast path: build R into temp, then conjugate transpose to blk
-        call build_kp_term_R(kz2, kpterms_2d, ws%blk_temp, ws)
-        call csr_conjugate_transpose_to_preallocated(ws%blk_temp, blk)
+        ! Fast path: conjugate transpose the already-built blk_R
+        call csr_conjugate_transpose_to_preallocated(ws%blk_R, blk)
       else
         ! Original slow path
         block
@@ -1260,9 +1288,12 @@ module hamiltonian_wire
       type(wire_workspace), intent(inout), optional :: ws
 
       if (present(ws) .and. ws%initialized) then
-        ! Fast path: kp12 and kp13 have gradient sparsity (same pattern)
-        blk%values = cmplx(0.0_dp, RQS2, kind=dp) * kpterms_2d(12)%values &
-                   + cmplx(-RQS2, 0.0_dp, kind=dp) * kpterms_2d(13)%values
+        ! Fast path: scatter kp12 and kp13 into union-structure block
+        blk%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
+        blk%values(ws%scatter_PP_12) = cmplx(0.0_dp, RQS2, kind=dp) &
+          * kpterms_2d(12)%values
+        blk%values(ws%scatter_PP_13) = blk%values(ws%scatter_PP_13) &
+          + cmplx(-RQS2, 0.0_dp, kind=dp) * kpterms_2d(13)%values
       else
         ! Original slow path
         block
@@ -1295,9 +1326,8 @@ module hamiltonian_wire
       type(wire_workspace), intent(inout), optional :: ws
 
       if (present(ws) .and. ws%initialized) then
-        ! Fast path: build PP into temp, then conjugate transpose to blk
-        call build_kp_term_PP(kz, kpterms_2d, ws%blk_temp, ws)
-        call csr_conjugate_transpose_to_preallocated(ws%blk_temp, blk)
+        ! Fast path: conjugate transpose the already-built blk_PP
+        call csr_conjugate_transpose_to_preallocated(ws%blk_PP, blk)
       else
         ! Original slow path
         block
@@ -1385,7 +1415,7 @@ module hamiltonian_wire
         block
           integer :: k
           do k = 1, kpterms_2d(10)%nnz
-            blk%values(ws%diag_pos(k)) = blk%values(ws%diag_pos(k)) &
+            blk%values(ws%diag_pos_A(k)) = blk%values(ws%diag_pos_A(k)) &
               + cmplx(kz2, 0.0_dp, kind=dp) * kpterms_2d(10)%values(k)
           end do
         end block
@@ -1549,6 +1579,8 @@ module hamiltonian_wire
       if (allocated(ws%coo_cols)) deallocate(ws%coo_cols)
       if (allocated(ws%coo_vals)) deallocate(ws%coo_vals)
       if (allocated(ws%diag_pos)) deallocate(ws%diag_pos)
+      if (allocated(ws%diag_pos_R)) deallocate(ws%diag_pos_R)
+      if (allocated(ws%diag_pos_A)) deallocate(ws%diag_pos_A)
       if (allocated(ws%scatter_S_14))  deallocate(ws%scatter_S_14)
       if (allocated(ws%scatter_S_15))  deallocate(ws%scatter_S_15)
       if (allocated(ws%scatter_PP_12)) deallocate(ws%scatter_PP_12)
