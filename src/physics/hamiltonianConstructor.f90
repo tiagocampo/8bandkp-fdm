@@ -2757,204 +2757,36 @@ module hamiltonianConstructor
       type(bir_pikus_blocks), intent(in) :: bp
       integer, intent(in) :: N
 
-      integer :: ii
+      type(strain_entry) :: table(32)
+      integer :: ii, e, g_row, g_col
+      complex(kind=dp) :: field_val
+
+      table = build_strain_table()
 
       do ii = 1, N
-        ! === Diagonal per-band ===
-        ! band 1 (HH): delta_EHH
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = ii; coo_c(coo_idx) = ii
-        coo_v(coo_idx) = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
+        do e = 1, 32
+          coo_idx = coo_idx + 1
+          if (coo_idx > coo_cap) return
 
-        ! band 2 (LH): delta_ELH
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = N + ii
-        coo_v(coo_idx) = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
+          g_row = table(e)%row_band * N + ii
+          g_col = table(e)%col_band * N + ii
 
-        ! band 3 (LH): delta_ELH
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 2*N + ii
-        coo_v(coo_idx) = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
+          select case (table(e)%field_id)
+          case (1); field_val = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
+          case (2); field_val = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
+          case (3); field_val = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
+          case (4); field_val = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
+          case (5); field_val = bp%S_eps(ii)
+          case (6); field_val = bp%R_eps(ii)
+          case (7); field_val = bp%QT2_eps(ii)
+          end select
 
-        ! band 4 (HH): delta_EHH
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 3*N + ii
-        coo_v(coo_idx) = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
+          if (table(e)%use_conjg) field_val = conjg(field_val)
 
-        ! band 5 (SO): delta_ESO
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = 4*N + ii
-        coo_v(coo_idx) = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
-
-        ! band 6 (SO): delta_ESO
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = 5*N + ii
-        coo_v(coo_idx) = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
-
-        ! band 7 (CB): delta_Ec
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 6*N + ii; coo_c(coo_idx) = 6*N + ii
-        coo_v(coo_idx) = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
-
-        ! band 8 (CB): delta_Ec
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 7*N + ii; coo_c(coo_idx) = 7*N + ii
-        coo_v(coo_idx) = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
-
-        ! === Off-diagonal: S_eps (HH-LH coupling) ===
-        ! (1,2): S_eps_c
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = ii; coo_c(coo_idx) = N + ii
-        coo_v(coo_idx) = conjg(bp%S_eps(ii))
-
-        ! (2,1): S_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = ii
-        coo_v(coo_idx) = bp%S_eps(ii)
-
-        ! (3,4): -S_eps_c
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 3*N + ii
-        coo_v(coo_idx) = -conjg(bp%S_eps(ii))
-
-        ! (4,3): -S_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 2*N + ii
-        coo_v(coo_idx) = -bp%S_eps(ii)
-
-        ! === Off-diagonal: R_eps (HH-LH coupling) ===
-        ! (1,3): R_eps_c
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = ii; coo_c(coo_idx) = 2*N + ii
-        coo_v(coo_idx) = conjg(bp%R_eps(ii))
-
-        ! (3,1): R_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = ii
-        coo_v(coo_idx) = bp%R_eps(ii)
-
-        ! (2,4): R_eps_c
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = 3*N + ii
-        coo_v(coo_idx) = conjg(bp%R_eps(ii))
-
-        ! (4,2): R_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = N + ii
-        coo_v(coo_idx) = bp%R_eps(ii)
-
-        ! === Off-diagonal: VB-SO coupling ===
-        ! (1,5): -i/sqrt(2) * S_eps_c
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = ii; coo_c(coo_idx) = 4*N + ii
-        coo_v(coo_idx) = -IU * RQS2 * conjg(bp%S_eps(ii))
-
-        ! (5,1): +i/sqrt(2) * S_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = ii
-        coo_v(coo_idx) = IU * RQS2 * bp%S_eps(ii)
-
-        ! (1,6): +i*sqrt(2) * R_eps_c
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = ii; coo_c(coo_idx) = 5*N + ii
-        coo_v(coo_idx) = IU * SQR2 * conjg(bp%R_eps(ii))
-
-        ! (6,1): -i*sqrt(2) * R_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = ii
-        coo_v(coo_idx) = -IU * SQR2 * bp%R_eps(ii)
-
-        ! (2,5): +i/sqrt(2) * QT2_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = 4*N + ii
-        coo_v(coo_idx) = cmplx(IU * RQS2 * bp%QT2_eps(ii), kind=dp)
-
-        ! (5,2): -i/sqrt(2) * QT2_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = N + ii
-        coo_v(coo_idx) = cmplx(-IU * RQS2 * bp%QT2_eps(ii), kind=dp)
-
-        ! (2,6): -i*sqrt(3/2) * S_eps_c
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = N + ii; coo_c(coo_idx) = 5*N + ii
-        coo_v(coo_idx) = -IU * SQR3o2 * conjg(bp%S_eps(ii))
-
-        ! (6,2): +i*sqrt(3/2) * S_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = N + ii
-        coo_v(coo_idx) = IU * SQR3o2 * bp%S_eps(ii)
-
-        ! (3,5): +i*sqrt(3/2) * S_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 4*N + ii
-        coo_v(coo_idx) = IU * SQR3o2 * bp%S_eps(ii)
-
-        ! (5,3): -i*sqrt(3/2) * S_eps_c
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = 2*N + ii
-        coo_v(coo_idx) = -IU * SQR3o2 * conjg(bp%S_eps(ii))
-
-        ! (3,6): +i/sqrt(2) * QT2_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 2*N + ii; coo_c(coo_idx) = 5*N + ii
-        coo_v(coo_idx) = cmplx(IU * RQS2 * bp%QT2_eps(ii), kind=dp)
-
-        ! (6,3): -i/sqrt(2) * QT2_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = 2*N + ii
-        coo_v(coo_idx) = cmplx(-IU * RQS2 * bp%QT2_eps(ii), kind=dp)
-
-        ! (4,5): -i*sqrt(2) * R_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 4*N + ii
-        coo_v(coo_idx) = -IU * SQR2 * bp%R_eps(ii)
-
-        ! (5,4): +i*sqrt(2) * R_eps_c
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 4*N + ii; coo_c(coo_idx) = 3*N + ii
-        coo_v(coo_idx) = IU * SQR2 * conjg(bp%R_eps(ii))
-
-        ! (4,6): +i/sqrt(2) * S_eps
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 3*N + ii; coo_c(coo_idx) = 5*N + ii
-        coo_v(coo_idx) = IU * RQS2 * bp%S_eps(ii)
-
-        ! (6,4): -i/sqrt(2) * S_eps_c
-        coo_idx = coo_idx + 1
-        if (coo_idx > coo_cap) return
-        coo_r(coo_idx) = 5*N + ii; coo_c(coo_idx) = 3*N + ii
-        coo_v(coo_idx) = -IU * RQS2 * conjg(bp%S_eps(ii))
+          coo_r(coo_idx) = g_row
+          coo_c(coo_idx) = g_col
+          coo_v(coo_idx) = table(e)%prefactor * field_val
+        end do
       end do
     end subroutine insert_strain_coo
 
