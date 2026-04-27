@@ -34,7 +34,35 @@ module hamiltonianConstructor
     logical                       :: initialized = .false.
   end type wire_coo_cache
 
+  ! ------------------------------------------------------------------
+  ! Workspace for wire Hamiltonian kz-sweep: pre-allocated CSR blocks
+  ! and COO buffers.  Structure is fixed from the first kz-point; only
+  ! values are updated for subsequent points.
+  ! ------------------------------------------------------------------
+  type :: wire_workspace
+    ! Pre-allocated kp-term CSR blocks (structure from first call, values updated per kz)
+    type(csr_matrix) :: blk_Q, blk_T, blk_S, blk_SC
+    type(csr_matrix) :: blk_R, blk_RC, blk_PZ, blk_PP, blk_PM, blk_A
+    type(csr_matrix) :: blk_diff, blk_temp
+
+    ! Pre-allocated COO buffers
+    integer, allocatable          :: coo_rows(:), coo_cols(:)
+    complex(kind=dp), allocatable :: coo_vals(:)
+    integer                       :: coo_capacity = 0
+
+    ! COO-to-CSR mapping (replaces wire_coo_cache)
+    integer, allocatable          :: coo_to_csr(:)
+    integer                       :: coo_nnz_in = 0
+
+    ! Diagonal position indices within operator-sparsity CSRs
+    ! diag_pos(k) = CSR index of the k-th diagonal entry (row k, col k)
+    integer, allocatable          :: diag_pos(:)
+
+    logical :: initialized = .false.
+  end type wire_workspace
+
   public :: wire_coo_cache, wire_coo_cache_free
+  public :: wire_workspace, wire_workspace_free
   public :: build_velocity_matrices
 
   interface build_velocity_matrices
@@ -2434,6 +2462,34 @@ module hamiltonianConstructor
         mat%values(k) = -mat%values(k)
       end do
     end subroutine negate_csr
+
+    ! ==================================================================
+    ! Free the wire workspace: all CSR blocks and COO buffers.
+    ! ==================================================================
+    subroutine wire_workspace_free(ws)
+      type(wire_workspace), intent(inout) :: ws
+
+      call csr_free(ws%blk_Q)
+      call csr_free(ws%blk_T)
+      call csr_free(ws%blk_S)
+      call csr_free(ws%blk_SC)
+      call csr_free(ws%blk_R)
+      call csr_free(ws%blk_RC)
+      call csr_free(ws%blk_PZ)
+      call csr_free(ws%blk_PP)
+      call csr_free(ws%blk_PM)
+      call csr_free(ws%blk_A)
+      call csr_free(ws%blk_diff)
+      call csr_free(ws%blk_temp)
+      if (allocated(ws%coo_rows)) deallocate(ws%coo_rows)
+      if (allocated(ws%coo_cols)) deallocate(ws%coo_cols)
+      if (allocated(ws%coo_vals)) deallocate(ws%coo_vals)
+      if (allocated(ws%coo_to_csr)) deallocate(ws%coo_to_csr)
+      if (allocated(ws%diag_pos)) deallocate(ws%diag_pos)
+      ws%coo_capacity = 0
+      ws%coo_nnz_in = 0
+      ws%initialized = .false.
+    end subroutine wire_workspace_free
 
     ! ==================================================================
     ! Free the COO cache for symbolic assembly reuse.

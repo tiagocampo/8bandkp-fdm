@@ -1154,4 +1154,15 @@ contains
     call grid_free(grid)
   end subroutine test_wire_cb_block_ground_state_centered
 
+  ! ==================================================================
+  ! wire_workspace free test
+  ! ==================================================================
+
+  @test
+  subroutine test_wire_workspace_free()
+    type(wire_workspace) :: ws
+    call wire_workspace_free(ws)
+    @assertFalse(ws%initialized)
+  end subroutine test_wire_workspace_free
+
 end module test_hamiltonian_2d
