@@ -100,7 +100,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(in) :: src, dst
       integer, allocatable, intent(out) :: scatter_map(:)
 
-      integer :: row, k_src, k_dst, lo, hi, mid, col_src
+      integer :: row, k_src, lo, hi, mid, col_src
 
       allocate(scatter_map(src%nnz))
       do row = 1, src%nrows
