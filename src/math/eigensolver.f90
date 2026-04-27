@@ -595,6 +595,8 @@ contains
 
     integer :: row, k, N
     real(kind=dp) :: row_sum, diag_val, rmin, rmax
+    real(kind=dp), parameter :: margin_frac = 0.1_dp
+    real(kind=dp), parameter :: margin_floor = 0.5_dp  ! eV
 
     N = H_csr%nrows
     if (N == 0) then
@@ -625,8 +627,8 @@ contains
       end if
     end do
 
-    emin = rmin - max(0.1_dp * abs(rmin), 0.5_dp)
-    emax = rmax + max(0.1_dp * abs(rmax), 0.5_dp)
+    emin = rmin - max(margin_frac * abs(rmin), margin_floor)
+    emax = rmax + max(margin_frac * abs(rmax), margin_floor)
   end subroutine auto_compute_energy_window
 
   ! ==================================================================

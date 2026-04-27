@@ -182,24 +182,24 @@ module hamiltonianConstructor
         kpterms(ii,ii,10) = kptermsProfile(ii,4) !A
       end forall
 
+      ! Build tridiagonal averaging matrices (shared by both FD order paths)
+      allocate(forward(N,N))
+      allocate(backward(N,N))
+      allocate(central(N,N))
+      forward = 0.0_dp
+      backward = 0.0_dp
+      central = 0.0_dp
+
+      forall(ii=1:N-1)
+        forward(ii,ii) = 1
+        forward(ii,ii+1) = 1
+      end forall
+      forward(N,N) = 1
+      backward = transpose(forward)
+      central = backward + forward
+
       if (order == 2) then
         ! ---- Order 2: use existing tridiagonal approach (backward compatible) ----
-        allocate(forward(N,N))
-        allocate(backward(N,N))
-        allocate(central(N,N))
-        forward = 0.0_dp
-        backward = 0.0_dp
-        central = 0.0_dp
-
-        forall(ii=1:N-1)
-          forward(ii,ii) = 1
-          forward(ii,ii+1) = 1
-        end forall
-        !last element done alone to avoid if inside loop
-        forward(N,N) = 1
-        backward = transpose(forward)
-        central = backward + forward
-
 
         allocate(diag(N))
         allocate(offup(N))
@@ -238,22 +238,6 @@ module hamiltonianConstructor
         ! This gives identical results to FDorder=2 for uniform g,
         ! and improved accuracy at interfaces for FDorder>=4.
         !
-        ! Build the same averaging matrices as FDorder=2
-        allocate(forward(N,N))
-        allocate(backward(N,N))
-        allocate(central(N,N))
-        forward = 0.0_dp
-        backward = 0.0_dp
-        central = 0.0_dp
-
-        forall(ii=1:N-1)
-          forward(ii,ii) = 1
-          forward(ii,ii+1) = 1
-        end forall
-        forward(N,N) = 1
-        backward = transpose(forward)
-        central = backward + forward
-
         ! 2nd-derivative terms: use higher-order g_half interpolation
         ! with the staggered grid (2-point D_inner/D_outer)
         call buildStaggeredD1Inner(N, delta, 2, D_inner)
@@ -980,7 +964,8 @@ module hamiltonianConstructor
 
       if (present(sparse)) then
         if (sparse .eqv. .True.) then
-          nzmax = (N + (N-1)*2 + 2)*64
+          ! 8x8 band blocks, each with (N + 2*(N-1) + 2) potential entries
+          nzmax = (N + (N-1)*2 + 2) * 8 * 8
 
           call dnscsr_z_mkl(nzmax, N*8, HT, HT_csr)
 
@@ -1032,11 +1017,11 @@ module hamiltonianConstructor
 
       !kp parameters
       if (present(g) .and. g == 'g') then
-        gamma1 = 0!params(1)%gamma1
-        gamma2 = 0!params(1)%gamma2
-        gamma3 = 0!params(1)%gamma3
+        gamma1 = 0.0_dp
+        gamma2 = 0.0_dp
+        gamma3 = 0.0_dp
         P = params(1)%P
-        A = 0!params(1)%A
+        A = 0.0_dp
       else
         gamma1 = params(1)%gamma1
         gamma2 = params(1)%gamma2
@@ -1127,7 +1112,7 @@ module hamiltonianConstructor
       HT(7,3) = -IU * RQS3 * PP
       HT(7,5) = -IU * RQS3 * PZ
       HT(7,6) =  SQR2 * RQS3 * PP
-      HT(7,7) =  A * K2
+      HT(7,7) =  A * k2
       HT(7,8) =  0.0_dp
 
       !col 8
@@ -1136,7 +1121,7 @@ module hamiltonianConstructor
       HT(8,4) = -PP
       HT(8,5) = -IU * SQR2 * RQS3 * PM
       HT(8,6) = -RQS3 * PZ
-      HT(8,8) =  A * K2
+      HT(8,8) =  A * k2
 
 
       ! SOC
@@ -1261,9 +1246,6 @@ module hamiltonianConstructor
       gmode = .false.
       gmode_dir = 0
       if (present(g)) then
-        ! Backward compat: treat 'g ' (len=1 'g' padded) as g3
-        if (g == 'g1') gmode_dir = 1
-        if (g == 'g2') gmode_dir = 2
         if (g == 'g3' .or. g == 'g ') gmode_dir = 3
         gmode = (gmode_dir > 0)
       end if
@@ -1278,30 +1260,6 @@ module hamiltonianConstructor
         call build_kp_term_PZ(1.0_dp, kpterms_2d, blk_PZ)
         call build_kp_term_S(1.0_dp, kpterms_2d, blk_S)
         call build_kp_term_SC(1.0_dp, kpterms_2d, blk_SC)
-
-      else if (gmode_dir == 1) then
-        ! ==================================================================
-        ! g='g1' mode (x direction): dH/dkx at k=0.
-        ! Differentiate the linear Kane P terms with respect to the external
-        ! wavevector kx.  This gives diagonal P blocks; using spatial
-        ! gradients here differentiates the envelope operator instead.
-        !   d(PP)/dkx = P/sqrt(2)
-        !   d(PM)/dkx = P/sqrt(2)
-        ! ==================================================================
-        call csr_scale(kpterms_2d(4), blk_PP, cmplx(RQS2, 0.0_dp, kind=dp))
-        call csr_scale(kpterms_2d(4), blk_PM, cmplx(RQS2, 0.0_dp, kind=dp))
-
-      else if (gmode_dir == 2) then
-        ! ==================================================================
-        ! g='g2' mode (y direction): dH/dky at k=0.
-        ! Differentiate the linear Kane P terms with respect to the external
-        ! wavevector ky.  This gives diagonal P blocks; using spatial
-        ! gradients here differentiates the envelope operator instead.
-        !   d(PP)/dky = i*P/sqrt(2)
-        !   d(PM)/dky = -i*P/sqrt(2)
-        ! ==================================================================
-        call csr_scale(kpterms_2d(4), blk_PP, cmplx(0.0_dp, RQS2, kind=dp))
-        call csr_scale(kpterms_2d(4), blk_PM, cmplx(0.0_dp, -RQS2, kind=dp))
 
       else
         ! ==================================================================
@@ -1429,75 +1387,6 @@ module hamiltonianConstructor
         ! (8,6): -RQS3 * PZ
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-
-      else if (gmode_dir == 1 .or. gmode_dir == 2) then
-        ! ==================================================================
-        ! g='g1' or g='g2' mode (x or y direction): PP + PM blocks.
-        ! The transverse velocity perturbation for the Kane P terms is
-        ! diagonal in envelope space and uses the normal PP/PM block topology.
-        ! PP:6, PM:6
-        ! ==================================================================
-        nnz_est = 6*blk_PP%nnz + 6*blk_PM%nnz
-        coo_capacity = nnz_est + nnz_est / 5
-
-        allocate(coo_rows(coo_capacity))
-        allocate(coo_cols(coo_capacity))
-        allocate(coo_vals(coo_capacity))
-        coo_idx = 0
-
-        ! --- Row 1 (HH1) ---
-        ! (1,7): IU * PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 0, 6, blk_PP, N, IU)
-
-        ! --- Row 2 (HH2) ---
-        ! (2,8): -RQS3 * PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 1, 7, blk_PP, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-
-        ! --- Row 3 (LH1) ---
-        ! (3,7): IU * RQS3 * PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 2, 6, blk_PM, N, IU * RQS3)
-
-        ! --- Row 4 (LH2) ---
-        ! (4,8): -PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 3, 7, blk_PM, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-
-        ! --- Row 5 (SO1) ---
-        ! (5,8): IU * SQR2 * RQS3 * PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 4, 7, blk_PP, N, IU * SQR2 * RQS3)
-
-        ! --- Row 6 (SO2) ---
-        ! (6,7): SQR2 * RQS3 * PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 5, 6, blk_PM, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
-
-        ! --- Row 7 (CB1) ---
-        ! (7,1): -IU * PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 6, 0, blk_PM, N, -IU)
-        ! (7,3): -IU * RQS3 * PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 6, 2, blk_PP, N, -IU * RQS3)
-        ! (7,6): SQR2 * RQS3 * PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 6, 5, blk_PP, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
-
-        ! --- Row 8 (CB2) ---
-        ! (8,2): -RQS3 * PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 7, 1, blk_PM, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-        ! (8,4): -PP
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 7, 3, blk_PP, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        ! (8,5): -IU * SQR2 * RQS3 * PM
-        call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
-          coo_idx, 7, 4, blk_PM, N, -IU * SQR2 * RQS3)
-
-        ! No profile diagonal in g1/g2 mode
 
       else
         ! ==================================================================
@@ -1634,12 +1523,11 @@ module hamiltonianConstructor
         ! (5,4): -IU * SQR2 * RC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 3, blk_RC, N, -IU * SQR2)
-        ! (5,5): 0.5*(Q + T)
+        ! (5,5) and (6,6): 0.5*(Q + T), computed once
         call csr_add(blk_Q, blk_T, blk_temp, cmplx(0.5_dp, 0.0_dp, kind=dp), &
           cmplx(0.5_dp, 0.0_dp, kind=dp))
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 4, blk_temp, N)
-        call csr_free(blk_temp)
         ! (5,7): IU * RQS3 * PZ  (upper triangle, same sign as 1D QW)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 4, 6, blk_PZ, N, IU * RQS3)
@@ -1660,9 +1548,7 @@ module hamiltonianConstructor
         ! (6,4): -IU * RQS2 * SC
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 3, blk_SC, N, -IU * RQS2)
-        ! (6,6): 0.5*(Q + T)
-        call csr_add(blk_Q, blk_T, blk_temp, cmplx(0.5_dp, 0.0_dp, kind=dp), &
-          cmplx(0.5_dp, 0.0_dp, kind=dp))
+        ! (6,6): 0.5*(Q + T) — reuse blk_temp from (5,5)
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 5, blk_temp, N)
         call csr_free(blk_temp)
@@ -2182,22 +2068,8 @@ module hamiltonianConstructor
       integer, intent(in) :: alpha_off, beta_off, N
       type(csr_matrix), intent(in) :: blk
 
-      integer :: row, k, g_row, g_col
-
-      do row = 1, blk%nrows
-        do k = blk%rowptr(row), blk%rowptr(row + 1) - 1
-          coo_idx = coo_idx + 1
-          if (coo_idx > coo_cap) then
-            print *, "WARNING: COO capacity exceeded in insert_csr_block, skipping entries"
-            return
-          end if
-          g_row = alpha_off * N + row
-          g_col = beta_off * N + blk%colind(k)
-          coo_r(coo_idx) = g_row
-          coo_c(coo_idx) = g_col
-          coo_v(coo_idx) = blk%values(k)
-        end do
-      end do
+      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
+        alpha_off, beta_off, blk, N, cmplx(1.0_dp, 0.0_dp, kind=dp))
     end subroutine insert_csr_block
 
     ! ==================================================================

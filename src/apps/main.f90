@@ -368,9 +368,9 @@ program kpfdm
     if (eigen_res%nev_found > 0) then
       allocate(prev_wire_eval(eigen_res%nev_found))
       allocate(prev_wire_evec(Ntot, eigen_res%nev_found))
-      prev_wire_eval = eigen_res%eigenvalues
-      prev_wire_evec = eigen_res%eigenvectors
     end if
+    prev_wire_eval = eigen_res%eigenvalues
+    prev_wire_evec = eigen_res%eigenvectors
 
     call eigensolver_result_free(eigen_res)
 
@@ -412,10 +412,6 @@ program kpfdm
           end do
           max_nev_found = max(max_nev_found, eigen_res%nev_found)
 
-          if (allocated(prev_wire_eval)) deallocate(prev_wire_eval)
-          if (allocated(prev_wire_evec)) deallocate(prev_wire_evec)
-          allocate(prev_wire_eval(eigen_res%nev_found))
-          allocate(prev_wire_evec(Ntot, eigen_res%nev_found))
           prev_wire_eval = eigen_res%eigenvalues
           prev_wire_evec = eigen_res%eigenvectors
 
