@@ -604,7 +604,7 @@ contains
     integer, parameter :: coo_cap = 32 * N + 10
     integer :: coo_r(coo_cap), coo_c(coo_cap)
     complex(kind=dp) :: coo_v(coo_cap)
-    integer :: coo_idx, k, expected_nnz
+    integer :: coo_idx, expected_nnz
     type(bir_pikus_blocks) :: bp
 
     ! Build synthetic strain blocks
