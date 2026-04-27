@@ -6,7 +6,7 @@ project(8bandkp-fdm Fortran)
 # Defaults: LP64 interface + intel_thread for internal MKL parallelism
 # Note: CMPLR_ROOT must point to Intel compiler for libiomp5 (e.g. /opt/intel/oneapi/compiler/2025.0)
 set(MKL_INTERFACE "lp64" CACHE STRING "MKL interface: lp64 or ilp64")
-set(MKL_THREADING "intel_thread" CACHE STRING "MKL threading: sequential, intel_thread")
+set(MKL_THREADING "sequential" CACHE STRING "MKL threading: sequential, intel_thread")
 find_package(MKL CONFIG REQUIRED)
 
 # FFTW3
