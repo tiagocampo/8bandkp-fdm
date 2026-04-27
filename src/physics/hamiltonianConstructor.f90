@@ -1869,23 +1869,43 @@ module hamiltonianConstructor
     !   -(gamma1 - gamma2) * Laplacian_xy
     !     = 3/4 * kpterms_2d(7) + 1/4 * kpterms_2d(8)
     ! ==================================================================
-    subroutine build_kp_term_T(kz2, kpterms_2d, blk)
+    subroutine build_kp_term_T(kz2, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
-      type(csr_matrix), intent(out) :: blk
+      type(csr_matrix), intent(inout) :: blk
+      type(wire_workspace), intent(inout), optional :: ws
 
-      type(csr_matrix) :: txy, kz_diag
+      if (present(ws) .and. ws%initialized) then
+        ! Fast path: kp7 and kp8 have operator sparsity (= result sparsity)
+        blk%values = cmplx(0.75_dp, 0.0_dp, kind=dp) * kpterms_2d(7)%values &
+                   + cmplx(0.25_dp, 0.0_dp, kind=dp) * kpterms_2d(8)%values
+        ! Add diagonal contributions (kp1, kp2) at diagonal positions
+        block
+          integer :: k
+          do k = 1, kpterms_2d(1)%nnz
+            blk%values(ws%diag_pos(k)) = blk%values(ws%diag_pos(k)) &
+              + cmplx(kz2, 0.0_dp, kind=dp) * kpterms_2d(1)%values(k) &
+              + cmplx(2.0_dp * kz2, 0.0_dp, kind=dp) * kpterms_2d(2)%values(k)
+          end do
+        end block
+        blk%values = -blk%values
+      else
+        ! Original slow path
+        block
+          type(csr_matrix) :: txy, kz_diag
 
-      call csr_add(kpterms_2d(7), kpterms_2d(8), txy, &
-        cmplx(0.75_dp, 0.0_dp, kind=dp), cmplx(0.25_dp, 0.0_dp, kind=dp))
+          call csr_add(kpterms_2d(7), kpterms_2d(8), txy, &
+            cmplx(0.75_dp, 0.0_dp, kind=dp), cmplx(0.25_dp, 0.0_dp, kind=dp))
 
-      call csr_add(kpterms_2d(1), kpterms_2d(2), kz_diag, &
-        cmplx(kz2, 0.0_dp, kind=dp), cmplx(2.0_dp * kz2, 0.0_dp, kind=dp))
+          call csr_add(kpterms_2d(1), kpterms_2d(2), kz_diag, &
+            cmplx(kz2, 0.0_dp, kind=dp), cmplx(2.0_dp * kz2, 0.0_dp, kind=dp))
 
-      call csr_add(txy, kz_diag, blk, UM, UM)
-      call csr_free(txy)
-      call csr_free(kz_diag)
-      call negate_csr(blk)
+          call csr_add(txy, kz_diag, blk, UM, UM)
+          call csr_free(txy)
+          call csr_free(kz_diag)
+          call negate_csr(blk)
+        end block
+      end if
     end subroutine build_kp_term_T
 
     ! ==================================================================
@@ -1900,30 +1920,40 @@ module hamiltonianConstructor
     ! and kpterms(9) = -gamma3*d/dz.  The wire replaces kx-i*ky by spatial
     ! operators d/dx - i*d/dy and the 1D spatial derivative by kz (scalar).
     ! ==================================================================
-    subroutine build_kp_term_S(kz, kpterms_2d, blk)
+    subroutine build_kp_term_S(kz, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
-      type(csr_matrix), intent(out) :: blk
+      type(csr_matrix), intent(inout) :: blk
+      type(wire_workspace), intent(inout), optional :: ws
 
-      type(csr_matrix) :: grad_y_scaled
-      ! blk = -2*sqrt(3)*kz * kpterms_2d(14) = 2*sqrt(3)*kz*gamma3*d/dx
-      call csr_scale(kpterms_2d(14), blk, &
-        cmplx(-2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
-      ! grad_y_scaled = +2*sqrt(3)*kz*i * kpterms_2d(15)
-      !                = +2*sqrt(3)*kz*i*(-gamma3*d/dy)
-      !                = -2*sqrt(3)*kz*i*gamma3*d/dy
-      call csr_scale(kpterms_2d(15), grad_y_scaled, &
-        cmplx(0.0_dp, 2.0_dp * SQR3 * kz, kind=dp))
-      ! S = blk + grad_y_scaled = 2*sqrt(3)*kz*gamma3*(d/dx - i*d/dy)
-      block
-        type(csr_matrix) :: tmp
-        call csr_add(blk, grad_y_scaled, tmp)
-        call csr_free(blk)
-        call csr_clone_structure(tmp, blk)
-        blk%values = tmp%values
-        call csr_free(tmp)
-      end block
-      call csr_free(grad_y_scaled)
+      if (present(ws) .and. ws%initialized) then
+        ! Fast path: kp14 and kp15 have gradient sparsity (same pattern)
+        blk%values = cmplx(-2.0_dp*SQR3*kz, 0.0_dp, kind=dp) * kpterms_2d(14)%values &
+                   + cmplx(0.0_dp, 2.0_dp*SQR3*kz, kind=dp) * kpterms_2d(15)%values
+      else
+        ! Original slow path
+        block
+          type(csr_matrix) :: grad_y_scaled
+          ! blk = -2*sqrt(3)*kz * kpterms_2d(14) = 2*sqrt(3)*kz*gamma3*d/dx
+          call csr_scale(kpterms_2d(14), blk, &
+            cmplx(-2.0_dp * SQR3 * kz, 0.0_dp, kind=dp))
+          ! grad_y_scaled = +2*sqrt(3)*kz*i * kpterms_2d(15)
+          !                = +2*sqrt(3)*kz*i*(-gamma3*d/dy)
+          !                = -2*sqrt(3)*kz*i*gamma3*d/dy
+          call csr_scale(kpterms_2d(15), grad_y_scaled, &
+            cmplx(0.0_dp, 2.0_dp * SQR3 * kz, kind=dp))
+          ! S = blk + grad_y_scaled = 2*sqrt(3)*kz*gamma3*(d/dx - i*d/dy)
+          block
+            type(csr_matrix) :: tmp
+            call csr_add(blk, grad_y_scaled, tmp)
+            call csr_free(blk)
+            call csr_clone_structure(tmp, blk)
+            blk%values = tmp%values
+            call csr_free(tmp)
+          end block
+          call csr_free(grad_y_scaled)
+        end block
+      end if
     end subroutine build_kp_term_S
 
     ! ==================================================================
@@ -1941,16 +1971,26 @@ module hamiltonianConstructor
     ! The sign differs from S because kpterms_2d(14) = -gamma3*d/dx
     ! includes a negative sign that cancels differently for SC.
     ! ==================================================================
-    subroutine build_kp_term_SC(kz, kpterms_2d, blk)
+    subroutine build_kp_term_SC(kz, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
-      type(csr_matrix), intent(out) :: blk
+      type(csr_matrix), intent(inout) :: blk
+      type(wire_workspace), intent(inout), optional :: ws
 
-      type(csr_matrix) :: blk_s
+      if (present(ws) .and. ws%initialized) then
+        ! Fast path: build S into temp, then conjugate transpose to blk
+        call build_kp_term_S(kz, kpterms_2d, ws%blk_temp, ws)
+        call csr_conjugate_transpose_to_preallocated(ws%blk_temp, blk)
+      else
+        ! Original slow path
+        block
+          type(csr_matrix) :: blk_s
 
-      call build_kp_term_S(kz, kpterms_2d, blk_s)
-      call csr_conjugate_transpose(blk_s, blk)
-      call csr_free(blk_s)
+          call build_kp_term_S(kz, kpterms_2d, blk_s)
+          call csr_conjugate_transpose(blk_s, blk)
+          call csr_free(blk_s)
+        end block
+      end if
     end subroutine build_kp_term_SC
 
     ! ==================================================================
@@ -1961,33 +2001,51 @@ module hamiltonianConstructor
     !       kpterms_2d(11) = gamma3*d^2/dxdy
     !       kpterms_2d(2)  = gamma2 (diagonal)
     ! ==================================================================
-    subroutine build_kp_term_R(kz2, kpterms_2d, blk)
+    subroutine build_kp_term_R(kz2, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
-      type(csr_matrix), intent(out) :: blk
+      type(csr_matrix), intent(inout) :: blk
+      type(wire_workspace), intent(inout), optional :: ws
 
-      type(csr_matrix) :: cross_scaled, diag_kz2, tmp1, tmp2
+      if (present(ws) .and. ws%initialized) then
+        ! Fast path: operator part from kp16 and kp11
+        blk%values = cmplx(-SQR3, 0.0_dp, kind=dp) * kpterms_2d(16)%values &
+                   + cmplx(0.0_dp, 2.0_dp*SQR3, kind=dp) * kpterms_2d(11)%values
+        ! Add diagonal contribution (kp2) at diagonal positions
+        block
+          integer :: k
+          do k = 1, kpterms_2d(2)%nnz
+            blk%values(ws%diag_pos(k)) = blk%values(ws%diag_pos(k)) &
+              + cmplx(-SQR3*kz2, 0.0_dp, kind=dp) * kpterms_2d(2)%values(k)
+          end do
+        end block
+      else
+        ! Original slow path
+        block
+          type(csr_matrix) :: cross_scaled, diag_kz2, tmp1, tmp2
 
-      ! cross_scaled = -sqrt(3) * (-2i) * kpterms_2d(11)
-      !              = 2i*sqrt(3) * gamma3 * d^2/dxdy
-      call csr_scale(kpterms_2d(11), cross_scaled, &
-        cmplx(0.0_dp, 2.0_dp * SQR3, kind=dp))
+          ! cross_scaled = -sqrt(3) * (-2i) * kpterms_2d(11)
+          !              = 2i*sqrt(3) * gamma3 * d^2/dxdy
+          call csr_scale(kpterms_2d(11), cross_scaled, &
+            cmplx(0.0_dp, 2.0_dp * SQR3, kind=dp))
 
-      ! diag_kz2 = -sqrt(3)*kz^2 * gamma2 (diagonal)
-      call csr_scale(kpterms_2d(2), diag_kz2, &
-        cmplx(-SQR3 * kz2, 0.0_dp, kind=dp))
+          ! diag_kz2 = -sqrt(3)*kz^2 * gamma2 (diagonal)
+          call csr_scale(kpterms_2d(2), diag_kz2, &
+            cmplx(-SQR3 * kz2, 0.0_dp, kind=dp))
 
-      ! Spatial derivative part: -sqrt(3) * kpterms_2d(16)
-      call csr_scale(kpterms_2d(16), tmp1, &
-        cmplx(-SQR3, 0.0_dp, kind=dp))
+          ! Spatial derivative part: -sqrt(3) * kpterms_2d(16)
+          call csr_scale(kpterms_2d(16), tmp1, &
+            cmplx(-SQR3, 0.0_dp, kind=dp))
 
-      ! Sum all three parts
-      call csr_add(tmp1, cross_scaled, tmp2)
-      call csr_free(tmp1)
-      call csr_free(cross_scaled)
-      call csr_add(tmp2, diag_kz2, blk)
-      call csr_free(tmp2)
-      call csr_free(diag_kz2)
+          ! Sum all three parts
+          call csr_add(tmp1, cross_scaled, tmp2)
+          call csr_free(tmp1)
+          call csr_free(cross_scaled)
+          call csr_add(tmp2, diag_kz2, blk)
+          call csr_free(tmp2)
+          call csr_free(diag_kz2)
+        end block
+      end if
     end subroutine build_kp_term_R
 
     ! ==================================================================
@@ -1995,16 +2053,26 @@ module hamiltonianConstructor
     ! RC = -sqrt(3) * [gamma2*(d^2/dx^2 - d^2/dy^2) + 2i*gamma3*d^2/dxdy + gamma2*kz^2*I]
     !    = R^H: flips sign of the imaginary part (cross-derivative term).
     ! ==================================================================
-    subroutine build_kp_term_RC(kz2, kpterms_2d, blk)
+    subroutine build_kp_term_RC(kz2, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
-      type(csr_matrix), intent(out) :: blk
+      type(csr_matrix), intent(inout) :: blk
+      type(wire_workspace), intent(inout), optional :: ws
 
-      type(csr_matrix) :: blk_r
+      if (present(ws) .and. ws%initialized) then
+        ! Fast path: build R into temp, then conjugate transpose to blk
+        call build_kp_term_R(kz2, kpterms_2d, ws%blk_temp, ws)
+        call csr_conjugate_transpose_to_preallocated(ws%blk_temp, blk)
+      else
+        ! Original slow path
+        block
+          type(csr_matrix) :: blk_r
 
-      call build_kp_term_R(kz2, kpterms_2d, blk_r)
-      call csr_conjugate_transpose(blk_r, blk)
-      call csr_free(blk_r)
+          call build_kp_term_R(kz2, kpterms_2d, blk_r)
+          call csr_conjugate_transpose(blk_r, blk)
+          call csr_free(blk_r)
+        end block
+      end if
     end subroutine build_kp_term_RC
 
     ! ==================================================================
@@ -2012,12 +2080,21 @@ module hamiltonianConstructor
     ! PZ = P * kz  (diagonal term, z is the free direction)
     ! kpterms_2d(4) = P (diagonal)
     ! ==================================================================
-    subroutine build_kp_term_PZ(kz, kpterms_2d, blk)
+    subroutine build_kp_term_PZ(kz, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
-      type(csr_matrix), intent(out) :: blk
+      type(csr_matrix), intent(inout) :: blk
+      type(wire_workspace), intent(inout), optional :: ws
 
-      call csr_scale(kpterms_2d(4), blk, cmplx(kz, 0.0_dp, kind=dp))
+      if (present(ws) .and. ws%initialized) then
+        ! Fast path: kp4 is diagonal, result is diagonal
+        blk%values = cmplx(kz, 0.0_dp, kind=dp) * kpterms_2d(4)%values
+      else
+        ! Original slow path
+        block
+          call csr_scale(kpterms_2d(4), blk, cmplx(kz, 0.0_dp, kind=dp))
+        end block
+      end if
     end subroutine build_kp_term_PZ
 
     ! ==================================================================
@@ -2026,23 +2103,33 @@ module hamiltonianConstructor
     !    = P * (-i d/dx + d/dy) / sqrt(2)
     ! using kpterms_2d(12) = P*d/dx and kpterms_2d(13) = P*d/dy
     ! ==================================================================
-    subroutine build_kp_term_PP(kz, kpterms_2d, blk)
+    subroutine build_kp_term_PP(kz, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
-      type(csr_matrix), intent(out) :: blk
+      type(csr_matrix), intent(inout) :: blk
+      type(wire_workspace), intent(inout), optional :: ws
 
-      type(csr_matrix) :: grad_x_scaled, grad_y_scaled
+      if (present(ws) .and. ws%initialized) then
+        ! Fast path: kp12 and kp13 have gradient sparsity (same pattern)
+        blk%values = cmplx(0.0_dp, RQS2, kind=dp) * kpterms_2d(12)%values &
+                   + cmplx(-RQS2, 0.0_dp, kind=dp) * kpterms_2d(13)%values
+      else
+        ! Original slow path
+        block
+          type(csr_matrix) :: grad_x_scaled, grad_y_scaled
 
-      ! kpterms_2d(12:13) already include the minus sign from
-      ! csr_apply_variable_coeff, i.e. kpterms_2d(12) = -P*d/dx and
-      ! kpterms_2d(13) = -P*d/dy. Therefore:
-      !   PP = P * (-i*d/dx + d/dy) / sqrt(2)
-      !      = +i * kpterms_2d(12) / sqrt(2) - kpterms_2d(13) / sqrt(2)
-      call csr_scale(kpterms_2d(12), grad_x_scaled, cmplx(0.0_dp, RQS2, kind=dp))
-      call csr_scale(kpterms_2d(13), grad_y_scaled, cmplx(-RQS2, 0.0_dp, kind=dp))
-      call csr_add(grad_x_scaled, grad_y_scaled, blk)
-      call csr_free(grad_x_scaled)
-      call csr_free(grad_y_scaled)
+          ! kpterms_2d(12:13) already include the minus sign from
+          ! csr_apply_variable_coeff, i.e. kpterms_2d(12) = -P*d/dx and
+          ! kpterms_2d(13) = -P*d/dy. Therefore:
+          !   PP = P * (-i*d/dx + d/dy) / sqrt(2)
+          !      = +i * kpterms_2d(12) / sqrt(2) - kpterms_2d(13) / sqrt(2)
+          call csr_scale(kpterms_2d(12), grad_x_scaled, cmplx(0.0_dp, RQS2, kind=dp))
+          call csr_scale(kpterms_2d(13), grad_y_scaled, cmplx(-RQS2, 0.0_dp, kind=dp))
+          call csr_add(grad_x_scaled, grad_y_scaled, blk)
+          call csr_free(grad_x_scaled)
+          call csr_free(grad_y_scaled)
+        end block
+      end if
     end subroutine build_kp_term_PP
 
     ! ==================================================================
@@ -2051,16 +2138,26 @@ module hamiltonianConstructor
     !    = P * (-i d/dx - d/dy) / sqrt(2)
     ! using kpterms_2d(12) = P*d/dx and kpterms_2d(13) = P*d/dy
     ! ==================================================================
-    subroutine build_kp_term_PM(kz, kpterms_2d, blk)
+    subroutine build_kp_term_PM(kz, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz
       type(csr_matrix), intent(in) :: kpterms_2d(:)
-      type(csr_matrix), intent(out) :: blk
+      type(csr_matrix), intent(inout) :: blk
+      type(wire_workspace), intent(inout), optional :: ws
 
-      type(csr_matrix) :: blk_pp
+      if (present(ws) .and. ws%initialized) then
+        ! Fast path: build PP into temp, then conjugate transpose to blk
+        call build_kp_term_PP(kz, kpterms_2d, ws%blk_temp, ws)
+        call csr_conjugate_transpose_to_preallocated(ws%blk_temp, blk)
+      else
+        ! Original slow path
+        block
+          type(csr_matrix) :: blk_pp
 
-      call build_kp_term_PP(kz, kpterms_2d, blk_pp)
-      call csr_conjugate_transpose(blk_pp, blk)
-      call csr_free(blk_pp)
+          call build_kp_term_PP(kz, kpterms_2d, blk_pp)
+          call csr_conjugate_transpose(blk_pp, blk)
+          call csr_free(blk_pp)
+        end block
+      end if
     end subroutine build_kp_term_PM
 
     subroutine csr_conjugate_transpose(A, AH)
@@ -2089,19 +2186,66 @@ module hamiltonianConstructor
       deallocate(rows_coo, cols_coo, vals_coo)
     end subroutine csr_conjugate_transpose
 
+    subroutine csr_conjugate_transpose_to_preallocated(A, AH)
+      ! Writes conjugate transpose of A into pre-allocated AH.
+      ! AH must already have the correct structure (rowptr, colind, nnz).
+      type(csr_matrix), intent(in)    :: A
+      type(csr_matrix), intent(inout) :: AH
+
+      integer :: row, k, col, lo, hi, mid
+
+      AH%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      do row = 1, A%nrows
+        do k = A%rowptr(row), A%rowptr(row + 1) - 1
+          col = A%colind(k)
+          ! Binary search for (col, row) in AH's sorted CSR structure
+          lo = AH%rowptr(col)
+          hi = AH%rowptr(col + 1) - 1
+          do while (lo <= hi)
+            mid = (lo + hi) / 2
+            if (AH%colind(mid) == row) then
+              AH%values(mid) = conjg(A%values(k))
+              exit
+            else if (AH%colind(mid) < row) then
+              lo = mid + 1
+            else
+              hi = mid - 1
+            end if
+          end do
+        end do
+      end do
+    end subroutine csr_conjugate_transpose_to_preallocated
+
     ! ==================================================================
     ! Helper: Build kp-term A for wire
     ! A = kpterms_2d(5) + kz^2 * kpterms_2d(10)
     ! kpterms_2d(5) = -A*Laplacian
     ! kpterms_2d(10) = A diagonal
     ! ==================================================================
-    subroutine build_kp_term_A(kz2, kpterms_2d, blk)
+    subroutine build_kp_term_A(kz2, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz2
       type(csr_matrix), intent(in) :: kpterms_2d(:)
-      type(csr_matrix), intent(out) :: blk
+      type(csr_matrix), intent(inout) :: blk
+      type(wire_workspace), intent(inout), optional :: ws
 
-      call csr_add(kpterms_2d(5), kpterms_2d(10), blk, &
-        UM, cmplx(kz2, 0.0_dp, kind=dp))
+      if (present(ws) .and. ws%initialized) then
+        ! Fast path: kp5 has operator sparsity (= result sparsity)
+        blk%values = kpterms_2d(5)%values
+        ! Add diagonal contribution (kp10) at diagonal positions
+        block
+          integer :: k
+          do k = 1, kpterms_2d(10)%nnz
+            blk%values(ws%diag_pos(k)) = blk%values(ws%diag_pos(k)) &
+              + cmplx(kz2, 0.0_dp, kind=dp) * kpterms_2d(10)%values(k)
+          end do
+        end block
+      else
+        ! Original slow path
+        block
+          call csr_add(kpterms_2d(5), kpterms_2d(10), blk, &
+            UM, cmplx(kz2, 0.0_dp, kind=dp))
+        end block
+      end if
     end subroutine build_kp_term_A
 
     ! ==================================================================
