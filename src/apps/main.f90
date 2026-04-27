@@ -43,7 +43,8 @@ program kpfdm
   real(kind=dp), allocatable       :: profile_2d(:,:)
   type(csr_matrix), allocatable    :: kpterms_2d(:)
   type(csr_matrix)                 :: HT_csr
-  type(wire_coo_cache)             :: coo_cache
+  type(wire_coo_cache)             :: coo_cache  ! kept for self_consistent_loop_wire
+  type(wire_workspace)             :: wire_ws
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   real(kind=dp), allocatable       :: eig_wire(:,:)
@@ -281,8 +282,9 @@ program kpfdm
         deallocate(sc_phi, sc_ne, sc_nh)
       end block
 
-      ! Reset COO cache — profile_2d changed, need fresh CSR structure
+      ! Reset COO cache and workspace — profile_2d changed, need fresh CSR structure
       call wire_coo_cache_free(coo_cache)
+      call wire_workspace_free(wire_ws)
     end if
 
     ! --- Write 2D band edge profile (after strain + SC, before k-sweep) ---
@@ -324,7 +326,7 @@ program kpfdm
     print *, 'k-point 1/', cfg%waveVectorStep, ' kz=', smallk(1)%kz
 
     call ZB8bandGeneralized(HT_csr, smallk(1)%kz, profile_2d, &
-      & kpterms_2d, cfg, coo_cache)
+      & kpterms_2d, cfg, ws=wire_ws)
 
     call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
     ! Override with manual window if specified in config
@@ -389,7 +391,7 @@ program kpfdm
 
           call csr_clone_structure(HT_csr, HT_csr_step)
           call ZB8bandGeneralized(HT_csr_step, smallk(k)%kz, profile_2d, &
-            & kpterms_2d, cfg, coo_cache)
+            & kpterms_2d, cfg, ws=wire_ws)
           call solve_sparse_evp(HT_csr_step, eigen_cfg, eigen_res)
           call csr_free(HT_csr_step)
         end block
@@ -427,8 +429,9 @@ program kpfdm
       end do
     end if
 
-    ! Free Hamiltonian CSR and COO cache
+    ! Free Hamiltonian CSR and workspace
     call csr_free(HT_csr)
+    call wire_workspace_free(wire_ws)
     call wire_coo_cache_free(coo_cache)
 
     ! Write eigenvalues to file (only the rows actually populated)

@@ -1835,7 +1835,7 @@ module hamiltonianConstructor
         ! (6,6): 0.5*(Q + T) — reuse blk_temp from (5,5)
         call insert_csr_block(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 5, blk_temp, N)
-        call csr_free(blk_temp)
+        if (.not. present(ws)) call csr_free(blk_temp)
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
           coo_idx, 5, 6, blk_PM, N, cmplx(SQR2 * RQS3, 0.0_dp, kind=dp))
         call insert_csr_block_scaled(coo_rows, coo_cols, coo_vals, coo_capacity, &
