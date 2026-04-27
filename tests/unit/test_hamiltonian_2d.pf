@@ -1234,4 +1234,78 @@ contains
     call grid_free(grid)
   end subroutine test_workspace_slow_path_reproducible
 
+  @test
+  subroutine test_workspace_fast_path_matches_slow()
+    ! Build wire Hamiltonian at kz=0.05 via slow path, then at kz=0.06
+    ! via fast path (workspace initialized from first call).
+    ! Verify the fast-path result matches a fresh slow-path build at kz=0.06.
+    integer, parameter :: nx = 4, ny = 4
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ij, k
+    integer :: mat2d(nx, ny)
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_slow, H_fast
+    type(wire_coo_cache) :: coo_cache
+    type(wire_workspace) :: wire_ws
+    real(kind=dp) :: kz1, kz2
+    type(simulation_config) :: cfg
+
+    ngrid = nx * ny
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+
+    kz1 = 0.05_dp
+    kz2 = 0.06_dp
+    cfg%grid = grid
+
+    ! First call at kz1: initializes workspace (slow path)
+    call ZB8bandGeneralized(H_slow, kz1, profile_2d, kpterms_2d, cfg, &
+      ws=wire_ws)
+    call csr_free(H_slow)
+
+    ! Second call at kz2: uses fast path
+    call ZB8bandGeneralized(H_fast, kz2, profile_2d, kpterms_2d, cfg, &
+      ws=wire_ws)
+
+    ! Fresh slow-path at kz2 for comparison
+    coo_cache%initialized = .false.
+    call ZB8bandGeneralized(H_slow, kz2, profile_2d, kpterms_2d, cfg, &
+      coo_cache)
+
+    ! Compare: must match element-by-element
+    @assertEqual(H_slow%nrows, H_fast%nrows, message="nrows match")
+    @assertEqual(H_slow%nnz, H_fast%nnz, message="nnz match")
+    do k = 1, H_slow%nnz
+      @assertEqual(H_slow%colind(k), H_fast%colind(k), message="colind match")
+    end do
+    do k = 1, H_slow%nnz
+      @assertEqual(H_slow%values(k), H_fast%values(k), tolerance=1.0e-13_dp, message="values match")
+    end do
+
+    call csr_free(H_slow)
+    call csr_free(H_fast)
+    call wire_coo_cache_free(coo_cache)
+    call wire_workspace_free(wire_ws)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_workspace_fast_path_matches_slow
+
 end module test_hamiltonian_2d
