@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Fortran 90 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning with commutator-based velocity operators. Computes optical absorption, gain, spontaneous emission, and intersubband transitions using commutator-based velocity matrices $v_\alpha = -i [r_\alpha, H]$. Includes self-consistent Schrödinger-Poisson solver with DIIS acceleration. GPL v3.0, authored by Tiago de Campos.
+Fortran 2008 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Built with `-std=f2008` enforcement. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning with commutator-based velocity operators. Computes optical absorption, gain, spontaneous emission, and intersubband transitions using commutator-based velocity matrices $v_\alpha = -i [r_\alpha, H]$. Includes self-consistent Schrödinger-Poisson solver with DIIS acceleration. GPL v3.0, authored by Tiago de Campos.
 
 ## Build Commands
 
@@ -25,7 +25,7 @@ make test           # Configure with BUILD_TESTING=ON, build, run ctest
 
 **Executables** at `build/src/bandStructure`, `build/src/gfactorCalculation`, and `build/src/opticalProperties`.
 
-**Prerequisites:** gfortran, Intel MKL (sequential, LP64 interface), FFTW3, CMake >= 3.15, Ninja (optional). MKL defaults: `MKL_INTERFACE=lp64`, `MKL_THREADING=sequential` (set in root `CMakeLists.txt`).
+**Prerequisites:** gfortran, Intel MKL (sequential, LP64 interface), FFTW3, CMake >= 3.15, Ninja (optional). Compiler enforced to `-std=f2008` via `CMAKE_Fortran_FLAGS`. MKL defaults: `MKL_INTERFACE=lp64`, `MKL_THREADING=sequential` (set in root `CMakeLists.txt`).
 
 **Gotcha — stale `.mod` files:** Old `.mod` in project root shadow fresh ones in `build/`. Run `rm -f *.mod` if you get type mismatch errors.
 
@@ -67,12 +67,12 @@ Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed e
 ```
 src/
   core/       defs.f90, parameters.f90, utils.f90
-  math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90
+  math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90, linalg.f90, sparse_matrices.f90, eigensolver.f90, geometry.f90
   io/         outputFunctions.f90, input_parser.f90
-  physics/    hamiltonianConstructor.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90
+  physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90
 tests/
-  unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_poisson, test_charge_density, test_sc_loop)
+  unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_hamiltonian_2d, test_csr_spmv, test_eigensolver, test_poisson, test_charge_density, test_sc_loop)
   integration/  shell scripts for full-executable tests
   regression/   configs/, data/, compare_output.py
 cmake/        FindFFTW3.cmake
@@ -133,6 +133,20 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 
 ## Code Conventions
 
+- **Fortran standard:** F2008 enforced via `-std=f2008` in CMake. No GNU extensions.
+- Prefer generic intrinsics (`sqrt`) over legacy typed intrinsics (`dsqrt`, `dble`, etc.).
+- Prefer `do` / `do concurrent` over `forall` (deprecated in F2008).
+- Prefer `execute_command_line` over non-standard `call system(...)`.
+- Use `c_loc()` from `iso_c_binding` instead of non-standard `loc()`.
+- Declaration ordering: variables must be declared before use in array dimension expressions.
+- No `goto` in new code — use named `do` loops with `exit` for early-return blocks.
+- External BLAS/LAPACK/PARDISO declarations go through `linalg.f90` interfaces, not local `external ::`.
+- Workspace types (`csr_matrix`, `wire_workspace`, `feast_workspace`) have finalizers but keep explicit `*_free` routines public for manual control.
+- `csr_matrix` has type-bound `free()` and `clone_structure()` but components remain public for hot-path access.
+- `contiguous` attribute on assumed-shape hot-path arguments only where proven safe (whole allocated arrays at all call sites).
+- `g='g3'` derivative builds must stay isolated from `wire_workspace` cache.
+- `feast_workspace` reuse must remain pattern-validated.
+- `simulation_config` is validated after parsing via `validate_simulation_config` — use `error stop` for invalid configs.
 - Precision kinds in `defs.f90`: `sp` (single), `dp` (double), `qp` (quad), `iknd` (int64)
 - k-vectors and wavevector sweeps use `real(dp)` throughout
 - File/function length guidelines from `.clinerules`: 300 lines/file, 50 lines/function

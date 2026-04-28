@@ -1,6 +1,6 @@
 # 8bandkp-fdm
 
-Fortran 90 solver for the **8-band zinc-blende k.p Hamiltonian** via finite differences.
+Fortran 2008 solver for the **8-band zinc-blende k.p Hamiltonian** via finite differences.
 
 Computes electronic band structures for bulk semiconductors, quantum wells, and quantum wires. Calculates Landau g-factors via second-order Lowdin partitioning with commutator-based velocity operators. Computes optical absorption, gain, spontaneous emission, and intersubband transitions using commutator-based velocity matrices. Includes a self-consistent Schrodinger-Poisson solver with DIIS acceleration.
 
@@ -10,7 +10,7 @@ If you use this code, please cite: [10.1021/acsaelm.0c00269](https://doi.org/10.
 
 ## Build
 
-**Prerequisites:** Fortran compiler (gfortran), BLAS/LAPACK, FFTW3, CMake >= 3.15. For best performance use Intel MKL.
+**Prerequisites:** Fortran 2008 compiler (gfortran), BLAS/LAPACK, FFTW3, CMake >= 3.15. For best performance use Intel MKL.
 
 Ubuntu:
 ```bash
