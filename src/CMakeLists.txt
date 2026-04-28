@@ -10,6 +10,8 @@ set(COMMON_SOURCES
     math/linalg.f90
     io/outputFunctions.f90
     io/input_parser.f90
+    physics/confinement_init.f90
+    physics/hamiltonian_wire.f90
     physics/hamiltonianConstructor.f90
     physics/charge_density.f90
     physics/poisson.f90
@@ -54,6 +56,8 @@ set_source_files_properties(
     math/linalg.f90
     io/outputFunctions.f90
     io/input_parser.f90
+    physics/confinement_init.f90
+    physics/hamiltonian_wire.f90
     physics/hamiltonianConstructor.f90
     physics/charge_density.f90
     physics/poisson.f90

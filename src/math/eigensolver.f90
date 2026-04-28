@@ -10,6 +10,7 @@ module eigensolver
 
   private
   public :: eigensolver_config, eigensolver_result
+  public :: feast_workspace, feast_workspace_free
   public :: solve_sparse_evp, solve_feast, solve_dense_lapack
   public :: auto_compute_energy_window, eigensolver_result_free
 #ifdef USE_ARPACK
@@ -42,21 +43,69 @@ module eigensolver
     logical                       :: converged = .false.
   end type eigensolver_result
 
+  ! ------------------------------------------------------------------
+  ! Cached upper-triangle CSR structure for repeated FEAST calls.
+  ! Avoids O(NNZ) scan + 3 allocations per k-point in wire kz-sweeps.
+  ! ------------------------------------------------------------------
+  type :: feast_workspace
+    integer, allocatable          :: rowptr_loc(:)   ! (N+1) upper-triangle row pointers
+    integer, allocatable          :: colind_loc(:)   ! (nnz_upper) column indices
+    integer                       :: nnz_upper = 0
+    integer                       :: M0 = 0
+    integer                       :: N = 0
+    logical                       :: initialized = .false.
+  end type feast_workspace
+
 contains
+
+  ! ==================================================================
+  ! Check whether a cached feast_workspace matches the upper-triangle
+  ! sparsity pattern of the current CSR matrix.
+  ! ==================================================================
+  logical function feast_workspace_matches_pattern(H_csr, fw, N, M0)
+    type(csr_matrix), intent(in) :: H_csr
+    type(feast_workspace), intent(in) :: fw
+    integer, intent(in) :: N, M0
+
+    integer :: i, j, k
+
+    feast_workspace_matches_pattern = .false.
+    if (.not. fw%initialized) return
+    if (fw%N /= N .or. fw%M0 /= M0) return
+    if (.not. allocated(fw%rowptr_loc)) return
+    if (.not. allocated(fw%colind_loc)) return
+    if (size(fw%rowptr_loc) /= N + 1) return
+
+    do i = 1, N
+      k = fw%rowptr_loc(i)
+      do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+        if (H_csr%colind(j) >= i) then
+          if (k >= fw%rowptr_loc(i + 1)) return
+          if (k > fw%nnz_upper) return
+          if (fw%colind_loc(k) /= H_csr%colind(j)) return
+          k = k + 1
+        end if
+      end do
+      if (k /= fw%rowptr_loc(i + 1)) return
+    end do
+
+    feast_workspace_matches_pattern = .true.
+  end function feast_workspace_matches_pattern
 
   ! ==================================================================
   ! Main dispatch: select FEAST or ARPACK based on config.
   ! ==================================================================
-  subroutine solve_sparse_evp(H_csr, config, result)
+  subroutine solve_sparse_evp(H_csr, config, result, feast_ws)
     type(csr_matrix), intent(in)          :: H_csr
     type(eigensolver_config), intent(in)  :: config
     type(eigensolver_result), intent(out) :: result
+    type(feast_workspace), intent(inout), optional :: feast_ws
 
     select case (trim(config%method))
 #ifdef USE_MKL_FEAST
     case ('FEAST')
       print *, '  Eigensolver: FEAST'
-      call solve_feast(H_csr, config, result)
+      call solve_feast(H_csr, config, result, fw=feast_ws)
     case ('DENSE')
       print *, '  Eigensolver: dense LAPACK'
       call solve_dense_lapack(H_csr, config, result)
@@ -85,10 +134,11 @@ contains
   ! Explicit interface from linalg module provides proper type signatures
   ! so gfortran generates correct calls without wrapper indirection.
   ! ==================================================================
-  subroutine solve_feast(H_csr, config, result)
+  subroutine solve_feast(H_csr, config, result, fw)
     type(csr_matrix), intent(in)          :: H_csr
     type(eigensolver_config), intent(in)  :: config
     type(eigensolver_result), intent(out) :: result
+    type(feast_workspace), intent(inout), optional :: fw
 
     integer :: N, M0, M, loop, info, i, j, k, nnz
     integer :: fpm(128)
@@ -129,40 +179,74 @@ contains
     res = 0.0_dp
 
     ! Extract upper triangle only (FEAST UPLO='U' requires col >= row).
-    ! First pass: count upper-triangle entries per row.
-    allocate(rowptr_loc(N+1))
-    rowptr_loc = 0
-    do i = 1, N
-      do k = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
-        if (H_csr%colind(k) >= i) then
-          rowptr_loc(i+1) = rowptr_loc(i+1) + 1
-        end if
+    if (present(fw) .and. feast_workspace_matches_pattern(H_csr, fw, N, M0)) then
+      ! Fast path: reuse cached upper-triangle structure, just update values
+      allocate(val_loc(fw%nnz_upper))
+      do i = 1, N
+        k = fw%rowptr_loc(i)
+        do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+          if (H_csr%colind(j) >= i) then
+            val_loc(k) = H_csr%values(j)
+            k = k + 1
+          end if
+        end do
       end do
-    end do
-    rowptr_loc(1) = 1
-    do i = 1, N
-      rowptr_loc(i+1) = rowptr_loc(i) + rowptr_loc(i+1)
-    end do
-    nnz = rowptr_loc(N+1) - 1
-
-    allocate(val_loc(nnz), colind_loc(nnz))
-    do i = 1, N
-      k = rowptr_loc(i)
-      do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
-        if (H_csr%colind(j) >= i) then
-          val_loc(k) = H_csr%values(j)
-          colind_loc(k) = H_csr%colind(j)
-          k = k + 1
-        end if
+      ! Use cached rowptr and colind directly
+      call zfeast_hcsrev('U', N, val_loc, fw%rowptr_loc, fw%colind_loc, &
+                         fpm, epsout, loop, config%emin, config%emax, M0, &
+                         E, X, M, res, info)
+      deallocate(val_loc)
+    else
+      ! Free stale cache before rebuilding
+      if (present(fw)) then
+        if (fw%initialized) call feast_workspace_free(fw)
+      end if
+      ! Original path: count, allocate, fill
+      allocate(rowptr_loc(N+1))
+      rowptr_loc = 0
+      do i = 1, N
+        do k = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+          if (H_csr%colind(k) >= i) then
+            rowptr_loc(i+1) = rowptr_loc(i+1) + 1
+          end if
+        end do
       end do
-    end do
+      rowptr_loc(1) = 1
+      do i = 1, N
+        rowptr_loc(i+1) = rowptr_loc(i) + rowptr_loc(i+1)
+      end do
+      nnz = rowptr_loc(N+1) - 1
 
-    ! Call FEAST directly (explicit interface from linalg module)
-    call zfeast_hcsrev('U', N, val_loc, rowptr_loc, colind_loc, &
-                       fpm, epsout, loop, config%emin, config%emax, M0, &
-                       E, X, M, res, info)
+      allocate(val_loc(nnz), colind_loc(nnz))
+      do i = 1, N
+        k = rowptr_loc(i)
+        do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+          if (H_csr%colind(j) >= i) then
+            val_loc(k) = H_csr%values(j)
+            colind_loc(k) = H_csr%colind(j)
+            k = k + 1
+          end if
+        end do
+      end do
 
-    deallocate(val_loc, rowptr_loc, colind_loc)
+      call zfeast_hcsrev('U', N, val_loc, rowptr_loc, colind_loc, &
+                         fpm, epsout, loop, config%emin, config%emax, M0, &
+                         E, X, M, res, info)
+
+      ! Cache for future calls
+      if (present(fw)) then
+        call move_alloc(rowptr_loc, fw%rowptr_loc)
+        call move_alloc(colind_loc, fw%colind_loc)
+        fw%nnz_upper = nnz
+        fw%M0 = M0
+        fw%N = N
+        fw%initialized = .true.
+      else
+        deallocate(rowptr_loc, colind_loc)
+      end if
+
+      deallocate(val_loc)
+    end if
 
     result%iterations = loop
     result%converged = (info == 0) .or. (info == 2)
@@ -595,6 +679,8 @@ contains
 
     integer :: row, k, N
     real(kind=dp) :: row_sum, diag_val, rmin, rmax
+    real(kind=dp), parameter :: margin_frac = 0.1_dp
+    real(kind=dp), parameter :: margin_floor = 0.5_dp  ! eV
 
     N = H_csr%nrows
     if (N == 0) then
@@ -625,8 +711,8 @@ contains
       end if
     end do
 
-    emin = rmin - max(0.1_dp * abs(rmin), 0.5_dp)
-    emax = rmax + max(0.1_dp * abs(rmax), 0.5_dp)
+    emin = rmin - max(margin_frac * abs(rmin), margin_floor)
+    emax = rmax + max(margin_frac * abs(rmax), margin_floor)
   end subroutine auto_compute_energy_window
 
   ! ==================================================================
@@ -641,6 +727,20 @@ contains
     result%converged = .false.
     result%iterations = 0
   end subroutine eigensolver_result_free
+
+  ! ==================================================================
+  ! Deallocate feast_workspace cached arrays.
+  ! ==================================================================
+  subroutine feast_workspace_free(fw)
+    type(feast_workspace), intent(inout) :: fw
+
+    if (allocated(fw%rowptr_loc)) deallocate(fw%rowptr_loc)
+    if (allocated(fw%colind_loc)) deallocate(fw%colind_loc)
+    fw%nnz_upper = 0
+    fw%M0 = 0
+    fw%N = 0
+    fw%initialized = .false.
+  end subroutine feast_workspace_free
 
   ! ==================================================================
   ! Internal: convert CSR to dense.

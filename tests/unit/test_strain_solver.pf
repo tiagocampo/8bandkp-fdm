@@ -4,6 +4,7 @@ module test_strain_solver
   use parameters
   use strain_solver
   use geometry
+  use hamiltonianConstructor
   implicit none
 
 contains
@@ -592,5 +593,61 @@ contains
     deallocate(grid%z, grid%material_id)
 
   end subroutine test_strain_sign_inas_on_gaas
+
+
+  @test
+  subroutine test_strain_coo_table_matches_unrolled()
+    ! Build synthetic bir_pikus_blocks, insert strain COO using the
+    ! (now table-driven) insert_strain_coo, and verify the expected number
+    ! of entries and correct band structure.
+    integer, parameter :: N = 3
+    integer, parameter :: coo_cap = 32 * N + 10
+    integer :: coo_r(coo_cap), coo_c(coo_cap)
+    complex(kind=dp) :: coo_v(coo_cap)
+    integer :: coo_idx, expected_nnz
+    type(bir_pikus_blocks) :: bp
+
+    ! Build synthetic strain blocks
+    allocate(bp%delta_EHH(N), bp%delta_ELH(N), bp%delta_ESO(N), bp%delta_Ec(N))
+    allocate(bp%S_eps(N), bp%R_eps(N), bp%QT2_eps(N))
+    bp%delta_EHH = [1.0_dp, 2.0_dp, 3.0_dp]
+    bp%delta_ELH = [0.1_dp, 0.2_dp, 0.3_dp]
+    bp%delta_ESO = [0.01_dp, 0.02_dp, 0.03_dp]
+    bp%delta_Ec = [10.0_dp, 11.0_dp, 12.0_dp]
+    bp%S_eps = [(0.1_dp, 0.2_dp), (0.3_dp, 0.4_dp), (0.5_dp, 0.6_dp)]
+    bp%R_eps = [(0.01_dp, 0.02_dp), (0.03_dp, 0.04_dp), (0.05_dp, 0.06_dp)]
+    bp%QT2_eps = [(1.0_dp, 0.1_dp), (2.0_dp, 0.2_dp), (3.0_dp, 0.3_dp)]
+
+    coo_idx = 0
+    call insert_strain_coo(coo_r, coo_c, coo_v, coo_cap, coo_idx, bp, N)
+
+    ! Must have exactly 32*N = 96 entries
+    expected_nnz = 32 * N
+    @assertEqual(expected_nnz, coo_idx, message="strain COO entry count")
+
+    ! Spot-check a few entries:
+    ! Entry 1: band 0 diagonal, delta_EHH(1) = (1.0, 0.0)
+    @assertEqual(1, coo_r(1))
+    @assertEqual(1, coo_c(1))
+    @assertEqual(cmplx(1.0_dp, 0.0_dp, kind=dp), coo_v(1), tolerance=1.0e-14_dp)
+
+    ! Entry 9 (first S_eps entry): band 0->1, conjg(S_eps(1))
+    @assertEqual(1, coo_r(9))
+    @assertEqual(N + 1, coo_c(9))
+    @assertEqual(conjg(bp%S_eps(1)), coo_v(9), tolerance=1.0e-14_dp)
+
+    ! Entry 13 (first R_eps entry): band 0->2, conjg(R_eps(1))
+    @assertEqual(1, coo_r(13))
+    @assertEqual(2*N + 1, coo_c(13))
+    @assertEqual(conjg(bp%R_eps(1)), coo_v(13), tolerance=1.0e-14_dp)
+
+    ! Entry 17 (first VB-SO coupling): band 0->4, -IU*RQS2*conjg(S_eps(1))
+    @assertEqual(1, coo_r(17))
+    @assertEqual(4*N + 1, coo_c(17))
+    ! VB-SO entry uses -IU*RQS2*conjg(S_eps) — verify it's nonzero and complex
+    @assertTrue(abs(coo_v(17)) > 0.0_dp, message="VB-SO entry is nonzero")
+
+    call bir_pikus_blocks_free(bp)
+  end subroutine test_strain_coo_table_matches_unrolled
 
 end module test_strain_solver

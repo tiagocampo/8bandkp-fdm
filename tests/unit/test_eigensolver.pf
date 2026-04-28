@@ -388,4 +388,120 @@ contains
     call csr_free(H)
   end subroutine test_energy_window_gershgorin
 
+  ! ==================================================================
+  ! Test 10: feast_workspace caches upper-triangle structure.
+  ! ==================================================================
+  @test
+  subroutine test_feast_workspace_cached_matches_uncached()
+    ! Solve the same eigenvalue problem with and without workspace.
+    ! Eigenvalues must be identical.
+    integer, parameter :: n = 20
+    real(kind=dp) :: diag(n)
+    type(csr_matrix) :: H
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: res1, res2
+    type(feast_workspace) :: fw
+    integer :: i, min_nev
+
+    do i = 1, n
+      diag(i) = real(i, kind=dp)
+    end do
+    call build_diagonal_csr(diag, n, H)
+
+    cfg%method = 'FEAST'
+    cfg%emin = 0.5_dp
+    cfg%emax = 5.5_dp
+    cfg%nev = 5
+
+    ! Solve without workspace
+    call solve_feast(H, cfg, res1)
+
+    ! Solve with workspace (first call = slow path, initializes cache)
+    call solve_feast(H, cfg, res2, fw)
+    @assertTrue(fw%initialized)
+    @assertEqual(res1%nev_found, res2%nev_found)
+    min_nev = min(res1%nev_found, res2%nev_found)
+    do i = 1, min_nev
+      @assertEqual(res1%eigenvalues(i), res2%eigenvalues(i), tolerance=1.0e-12_dp)
+    end do
+    call eigensolver_result_free(res1)
+    call eigensolver_result_free(res2)
+
+    ! Solve again with cached workspace (tests fast path)
+    call solve_feast(H, cfg, res2, fw)
+    @assertTrue(fw%initialized)
+    call solve_feast(H, cfg, res1)
+    @assertEqual(res1%nev_found, res2%nev_found)
+    min_nev = min(res1%nev_found, res2%nev_found)
+    do i = 1, min_nev
+      @assertEqual(res1%eigenvalues(i), res2%eigenvalues(i), tolerance=1.0e-12_dp)
+    end do
+
+    call eigensolver_result_free(res1)
+    call eigensolver_result_free(res2)
+    call feast_workspace_free(fw)
+    @assertFalse(fw%initialized)
+    call csr_free(H)
+  end subroutine test_feast_workspace_cached_matches_uncached
+
+  ! ==================================================================
+  ! Test 11: FEAST workspace rebuilds on sparsity pattern change.
+  !
+  ! Initializes cache with diagonal upper-triangle structure (N nonzeros),
+  ! then reuses workspace on same-size tridiagonal matrix with different
+  ! sparsity (2N-1 upper-triangle nonzeros).  The fast path at line 148 of
+  ! eigensolver.f90 only checks dimensions (N, M0) but NOT the sparsity
+  ! pattern (rowptr_loc, colind_loc).  This test catches that bug: cached
+  ! colind_loc has wrong entries and wrong count, producing wrong
+  ! eigenvalues or a crash.
+  ! ==================================================================
+  @test
+  subroutine test_feast_workspace_rebuilds_on_pattern_change()
+    integer, parameter :: n = 20
+    real(kind=dp) :: diag(n)
+    type(csr_matrix) :: H_diag, H_tri
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: cached, uncached
+    type(feast_workspace) :: fw
+    integer :: i, min_nev
+
+    do i = 1, n
+      diag(i) = real(i, kind=dp)
+    end do
+    call build_diagonal_csr(diag, n, H_diag)
+
+    ! Tridiagonal with diagonal=3.0, off-diagonal=-0.1.  Eigenvalues cluster
+    ! around 3.0 +/- 0.2*cos(k*pi/(n+1)) ~ 2.8..3.2.  Use a narrow window
+    ! [2.82, 2.85] so only 1-2 eigenvalues fall inside, avoiding FEAST info=3
+    ! (subspace too small) when all 20 eigenvalues sit in a wider window.
+    call build_tridiag_csr(3.0_dp, -0.1_dp, n, H_tri)
+
+    cfg%method = 'FEAST'
+    cfg%emin = 2.82_dp
+    cfg%emax = 2.85_dp
+    cfg%nev = 3
+    cfg%feast_m0 = 8
+
+    ! Initialize cache with diagonal upper-triangle structure.
+    call solve_feast(H_diag, cfg, cached, fw)
+    call eigensolver_result_free(cached)
+    @assertTrue(fw%initialized)
+
+    ! Reuse same workspace on same-size but different sparsity matrix.
+    call solve_feast(H_tri, cfg, cached, fw)
+    call solve_feast(H_tri, cfg, uncached)
+
+    @assertEqual(uncached%nev_found, cached%nev_found)
+    min_nev = min(uncached%nev_found, cached%nev_found)
+    do i = 1, min_nev
+      @assertEqual(uncached%eigenvalues(i), cached%eigenvalues(i), tolerance=1.0e-10_dp)
+    end do
+
+    call eigensolver_result_free(cached)
+    call eigensolver_result_free(uncached)
+    call feast_workspace_free(fw)
+    call csr_free(H_diag)
+    call csr_free(H_tri)
+  end subroutine test_feast_workspace_rebuilds_on_pattern_change
+
 end module test_eigensolver

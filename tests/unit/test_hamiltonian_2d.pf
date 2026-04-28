@@ -6,6 +6,7 @@ module test_hamiltonian_2d
   use geometry
   use finitedifferences
   use hamiltonianConstructor
+  use hamiltonian_wire
   use linalg, only: zheevx, ilaenv, dlamch
   implicit none
 
@@ -1153,5 +1154,227 @@ contains
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
     call grid_free(grid)
   end subroutine test_wire_cb_block_ground_state_centered
+
+  ! ==================================================================
+  ! wire_workspace free test
+  ! ==================================================================
+
+  @test
+  subroutine test_wire_workspace_free()
+    type(wire_workspace) :: ws
+    call wire_workspace_free(ws)
+    @assertFalse(ws%initialized)
+  end subroutine test_wire_workspace_free
+
+  ! ==================================================================
+  ! Wire workspace: slow-path reproducibility test
+  ! ==================================================================
+
+  @test
+  subroutine test_workspace_slow_path_reproducible()
+    ! Build wire Hamiltonian at one kz twice via slow path,
+    ! verify identical CSR output.
+    integer, parameter :: nx = 4, ny = 4
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ij, k
+    integer :: mat2d(nx, ny)
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H1, H2
+    type(wire_coo_cache) :: coo_cache
+    real(kind=dp) :: kz
+    type(simulation_config) :: cfg
+
+    ngrid = nx * ny
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+
+    kz = 0.05_dp
+    cfg%grid = grid
+
+    ! First call
+    coo_cache%initialized = .false.
+    call ZB8bandGeneralized(H1, kz, profile_2d, kpterms_2d, cfg, coo_cache)
+    call wire_coo_cache_free(coo_cache)
+
+    ! Second call (same kz, fresh cache)
+    coo_cache%initialized = .false.
+    call ZB8bandGeneralized(H2, kz, profile_2d, kpterms_2d, cfg, coo_cache)
+
+    ! Compare
+    @assertEqual(H1%nrows, H2%nrows, message="nrows match")
+    @assertEqual(H1%nnz, H2%nnz, message="nnz match")
+    do k = 1, H1%nnz
+      @assertEqual(H1%colind(k), H2%colind(k), message="colind match")
+    end do
+    do k = 1, H1%nnz
+      @assertEqual(H1%values(k), H2%values(k), tolerance=1.0e-13_dp, message="values match")
+    end do
+
+    call csr_free(H1)
+    call csr_free(H2)
+    call wire_coo_cache_free(coo_cache)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_workspace_slow_path_reproducible
+
+  @test
+  subroutine test_workspace_fast_path_matches_slow()
+    ! Build wire Hamiltonian at kz=0.05 via slow path, then at kz=0.06
+    ! via fast path (workspace initialized from first call).
+    ! Verify the fast-path result matches a fresh slow-path build at kz=0.06.
+    integer, parameter :: nx = 4, ny = 4
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ij, k
+    integer :: mat2d(nx, ny)
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_slow, H_fast
+    type(wire_coo_cache) :: coo_cache
+    type(wire_workspace) :: wire_ws
+    real(kind=dp) :: kz1, kz2
+    type(simulation_config) :: cfg
+
+    ngrid = nx * ny
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+
+    kz1 = 0.05_dp
+    kz2 = 0.06_dp
+    cfg%grid = grid
+
+    ! First call at kz1: initializes workspace (slow path)
+    call ZB8bandGeneralized(H_slow, kz1, profile_2d, kpterms_2d, cfg, &
+      ws=wire_ws)
+    call csr_free(H_slow)
+
+    ! Second call at kz2: uses fast path
+    call ZB8bandGeneralized(H_fast, kz2, profile_2d, kpterms_2d, cfg, &
+      ws=wire_ws)
+
+    ! Fresh slow-path at kz2 for comparison
+    coo_cache%initialized = .false.
+    call ZB8bandGeneralized(H_slow, kz2, profile_2d, kpterms_2d, cfg, &
+      coo_cache)
+
+    ! Compare: must match element-by-element
+    @assertEqual(H_slow%nrows, H_fast%nrows, message="nrows match")
+    @assertEqual(H_slow%nnz, H_fast%nnz, message="nnz match")
+    do k = 1, H_slow%nnz
+      @assertEqual(H_slow%colind(k), H_fast%colind(k), message="colind match")
+    end do
+    do k = 1, H_slow%nnz
+      @assertEqual(H_slow%values(k), H_fast%values(k), tolerance=1.0e-13_dp, message="values match")
+    end do
+
+    call csr_free(H_slow)
+    call csr_free(H_fast)
+    call wire_coo_cache_free(coo_cache)
+    call wire_workspace_free(wire_ws)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_workspace_fast_path_matches_slow
+
+  @test
+  subroutine test_workspace_g3_does_not_corrupt_normal_cache()
+    integer, parameter :: nx = 4, ny = 4
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ij, k, normal_nnz, coo_nnz
+    integer :: mat2d(nx, ny)
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_fast, H_slow, H_g3
+    type(wire_workspace) :: wire_ws
+    type(wire_coo_cache) :: coo_cache
+    type(simulation_config) :: cfg
+
+    mat2d = 1
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+    cfg%grid = grid
+
+    ! Initialize the normal workspace and its COO mapping.
+    call ZB8bandGeneralized(H_fast, 0.05_dp, profile_2d, kpterms_2d, cfg, &
+      ws=wire_ws)
+    normal_nnz = H_fast%nnz
+    coo_nnz = wire_ws%coo_nnz_in
+
+    ! Accidental workspace use in g3 mode must not overwrite normal cache state.
+    call ZB8bandGeneralized(H_g3, 1.0_dp, profile_2d, kpterms_2d, cfg, &
+      ws=wire_ws, g='g3')
+    @assertTrue(H_g3%nnz > 0, message="g3 matrix built")
+    @assertEqual(normal_nnz, H_fast%nnz, message="normal matrix retained")
+    @assertEqual(coo_nnz, wire_ws%coo_nnz_in, message="normal COO mapping retained")
+
+    ! Normal fast path must still match a fresh slow-path build after g3.
+    call ZB8bandGeneralized(H_fast, 0.06_dp, profile_2d, kpterms_2d, cfg, &
+      ws=wire_ws)
+    call ZB8bandGeneralized(H_slow, 0.06_dp, profile_2d, kpterms_2d, cfg, &
+      coo_cache)
+
+    @assertEqual(H_slow%nrows, H_fast%nrows)
+    @assertEqual(H_slow%nnz, H_fast%nnz)
+    do k = 1, H_slow%nnz
+      @assertEqual(H_slow%colind(k), H_fast%colind(k))
+      @assertEqual(H_slow%values(k), H_fast%values(k), tolerance=1.0e-13_dp)
+    end do
+
+    call csr_free(H_fast)
+    call csr_free(H_slow)
+    call csr_free(H_g3)
+    call wire_workspace_free(wire_ws)
+    call wire_coo_cache_free(coo_cache)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_workspace_g3_does_not_corrupt_normal_cache
 
 end module test_hamiltonian_2d

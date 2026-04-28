@@ -21,7 +21,9 @@ module sparse_matrices
   public :: kron_dense_dense, kron_dense_eye, kron_eye_dense, kron_dense_dense_1d
   public :: csr_set_values_from_coo, csr_build_from_coo_cached
   public :: csr_add, csr_scale, csr_apply_variable_coeff
+  public :: csr_find_diag_positions
   public :: csr_spmv
+  public :: csr_conjugate_transpose, csr_conjugate_transpose_to_preallocated
 
   ! ------------------------------------------------------------------
   ! Compressed Sparse Row (CSR) matrix type for complex-valued
@@ -806,6 +808,36 @@ contains
   end subroutine csr_scale
 
   ! ------------------------------------------------------------------
+  ! Find diagonal entry positions in a CSR matrix.
+  !
+  ! For each row i, scans colind(rowptr(i)..rowptr(i+1)-1) to find the
+  ! column index equal to i (the diagonal entry).  Returns diag_pos(i)
+  ! = the CSR index k such that colind(k) == i.
+  !
+  ! Stops with an error if any row lacks a diagonal entry.
+  ! ------------------------------------------------------------------
+  subroutine csr_find_diag_positions(mat, diag_pos)
+    type(csr_matrix), intent(in)  :: mat
+    integer, intent(out) :: diag_pos(mat%nrows)
+
+    integer :: i, k
+
+    diag_pos = 0
+    do i = 1, mat%nrows
+      do k = mat%rowptr(i), mat%rowptr(i + 1) - 1
+        if (mat%colind(k) == i) then
+          diag_pos(i) = k
+          exit
+        end if
+      end do
+    end do
+    if (any(diag_pos == 0)) then
+      print *, 'ERROR: csr_find_diag_positions: no diagonal entry for some rows'
+      stop 1
+    end if
+  end subroutine csr_find_diag_positions
+
+  ! ------------------------------------------------------------------
   ! Apply variable coefficient (element-wise row scaling) to a CSR
   ! matrix: result(i,j) = -profile(i) * w(i,j) * A(i,j).
   !
@@ -999,5 +1031,76 @@ contains
     !$omp end parallel do
 
   end subroutine csr_spmv
+
+  ! ==================================================================
+  ! CSR conjugate transpose utilities
+  ! ==================================================================
+
+  ! ------------------------------------------------------------------
+  ! Compute the conjugate transpose AH = A^H of a CSR matrix.
+  !
+  ! Swaps rows and columns and conjugates the values.  The result is
+  ! built via COO to ensure a valid sorted CSR structure.
+  ! ------------------------------------------------------------------
+  subroutine csr_conjugate_transpose(A, AH)
+    type(csr_matrix), intent(in)  :: A
+    type(csr_matrix), intent(out) :: AH
+
+    integer :: row, k
+    integer, allocatable :: rows_coo(:), cols_coo(:)
+    complex(kind=dp), allocatable :: vals_coo(:)
+
+    if (A%nnz == 0) then
+      call csr_init(AH, A%ncols, A%nrows)
+      return
+    end if
+
+    allocate(rows_coo(A%nnz), cols_coo(A%nnz), vals_coo(A%nnz))
+    do row = 1, A%nrows
+      do k = A%rowptr(row), A%rowptr(row + 1) - 1
+        rows_coo(k) = A%colind(k)
+        cols_coo(k) = row
+        vals_coo(k) = conjg(A%values(k))
+      end do
+    end do
+
+    call csr_build_from_coo(AH, A%ncols, A%nrows, A%nnz, rows_coo, cols_coo, vals_coo)
+    deallocate(rows_coo, cols_coo, vals_coo)
+  end subroutine csr_conjugate_transpose
+
+  ! ------------------------------------------------------------------
+  ! Write conjugate transpose of A into a pre-allocated AH.
+  !
+  ! AH must already have the correct sparsity structure (rowptr, colind,
+  ! nnz) matching A^H.  Uses binary search to locate each transposed
+  ! entry in AH's sorted CSR structure.
+  ! ------------------------------------------------------------------
+  subroutine csr_conjugate_transpose_to_preallocated(A, AH)
+    type(csr_matrix), intent(in)    :: A
+    type(csr_matrix), intent(inout) :: AH
+
+    integer :: row, k, col, lo, hi, mid
+
+    AH%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do row = 1, A%nrows
+      do k = A%rowptr(row), A%rowptr(row + 1) - 1
+        col = A%colind(k)
+        ! Binary search for (col, row) in AH's sorted CSR structure
+        lo = AH%rowptr(col)
+        hi = AH%rowptr(col + 1) - 1
+        do while (lo <= hi)
+          mid = (lo + hi) / 2
+          if (AH%colind(mid) == row) then
+            AH%values(mid) = conjg(A%values(k))
+            exit
+          else if (AH%colind(mid) < row) then
+            lo = mid + 1
+          else
+            hi = mid - 1
+          end if
+        end do
+      end do
+    end do
+  end subroutine csr_conjugate_transpose_to_preallocated
 
 end module sparse_matrices

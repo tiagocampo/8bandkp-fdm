@@ -42,8 +42,10 @@ program kpfdm
   ! --- Wire mode variables ---
   real(kind=dp), allocatable       :: profile_2d(:,:)
   type(csr_matrix), allocatable    :: kpterms_2d(:)
-  type(csr_matrix)                 :: HT_csr
-  type(wire_coo_cache)             :: coo_cache
+  type(csr_matrix)                 :: HT_csr, HT_csr_step
+  type(wire_coo_cache)             :: coo_cache  ! kept for self_consistent_loop_wire
+  type(wire_workspace)             :: wire_ws
+  type(feast_workspace)            :: feast_ws
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   real(kind=dp), allocatable       :: eig_wire(:,:)
@@ -281,8 +283,9 @@ program kpfdm
         deallocate(sc_phi, sc_ne, sc_nh)
       end block
 
-      ! Reset COO cache — profile_2d changed, need fresh CSR structure
+      ! Reset COO cache and workspace — profile_2d changed, need fresh CSR structure
       call wire_coo_cache_free(coo_cache)
+      call wire_workspace_free(wire_ws)
     end if
 
     ! --- Write 2D band edge profile (after strain + SC, before k-sweep) ---
@@ -324,7 +327,7 @@ program kpfdm
     print *, 'k-point 1/', cfg%waveVectorStep, ' kz=', smallk(1)%kz
 
     call ZB8bandGeneralized(HT_csr, smallk(1)%kz, profile_2d, &
-      & kpterms_2d, cfg, coo_cache)
+      & kpterms_2d, cfg, ws=wire_ws)
 
     call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
     ! Override with manual window if specified in config
@@ -336,7 +339,7 @@ program kpfdm
       print *, '  Auto energy window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
     end if
 
-    call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
+    call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res, feast_ws)
 
     if (.not. eigen_res%converged) then
       if (eigen_res%nev_found < nev_wire) then
@@ -378,21 +381,18 @@ program kpfdm
     if (cfg%waveVectorStep > 1) then
       info = mkl_set_num_threads_local(1)
 
+      ! Pre-allocate CSR workspace with the same sparsity pattern for all kz-points
+      call csr_clone_structure(HT_csr, HT_csr_step)
+
       print '(A,I0,A)', ' Wire kz-sweep: k=2..', cfg%waveVectorStep, &
         & ' (serial branch tracking)'
 
       do k = 2, cfg%waveVectorStep
         print *, 'k-point ', k, '/', cfg%waveVectorStep, ' kz=', smallk(k)%kz
 
-        block
-          type(csr_matrix) :: HT_csr_step
-
-          call csr_clone_structure(HT_csr, HT_csr_step)
-          call ZB8bandGeneralized(HT_csr_step, smallk(k)%kz, profile_2d, &
-            & kpterms_2d, cfg, coo_cache)
-          call solve_sparse_evp(HT_csr_step, eigen_cfg, eigen_res)
-          call csr_free(HT_csr_step)
-        end block
+        call ZB8bandGeneralized(HT_csr_step, smallk(k)%kz, profile_2d, &
+          & kpterms_2d, cfg, ws=wire_ws)
+        call solve_sparse_evp(HT_csr_step, eigen_cfg, eigen_res, feast_ws)
 
         if (.not. eigen_res%converged) then
           if (eigen_res%nev_found < nev_wire) then
@@ -412,10 +412,6 @@ program kpfdm
           end do
           max_nev_found = max(max_nev_found, eigen_res%nev_found)
 
-          if (allocated(prev_wire_eval)) deallocate(prev_wire_eval)
-          if (allocated(prev_wire_evec)) deallocate(prev_wire_evec)
-          allocate(prev_wire_eval(eigen_res%nev_found))
-          allocate(prev_wire_evec(Ntot, eigen_res%nev_found))
           prev_wire_eval = eigen_res%eigenvalues
           prev_wire_evec = eigen_res%eigenvectors
 
@@ -429,10 +425,15 @@ program kpfdm
 
         call eigensolver_result_free(eigen_res)
       end do
+
+      ! Free pre-allocated CSR step matrix
+      call csr_free(HT_csr_step)
     end if
 
-    ! Free Hamiltonian CSR and COO cache
+    ! Free Hamiltonian CSR and workspace
     call csr_free(HT_csr)
+    call wire_workspace_free(wire_ws)
+    call feast_workspace_free(feast_ws)
     call wire_coo_cache_free(coo_cache)
 
     ! Write eigenvalues to file (only the rows actually populated)

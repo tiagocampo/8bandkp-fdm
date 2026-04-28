@@ -51,7 +51,8 @@ program opticalProperties
   real(kind=dp), allocatable       :: profile_2d(:,:)
   type(csr_matrix), allocatable    :: kpterms_2d(:)
   type(csr_matrix)                 :: HT_csr
-  type(wire_coo_cache)             :: coo_cache
+  type(wire_workspace)             :: wire_ws
+  type(feast_workspace)            :: feast_ws
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   type(csr_matrix)                 :: vel_wire(3)
@@ -625,7 +626,7 @@ program opticalProperties
     ! Build wire Hamiltonian at kz=0
     ! ----------------------------------------------------------------
     call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, &
-      & cfg, coo_cache)
+      & cfg, ws=wire_ws)
 
     ! Build commutator-based velocity matrices for x,y directions
     call build_velocity_matrices(HT_csr, cfg%grid, vel_wire(1), vel_wire(2))
@@ -703,10 +704,10 @@ program opticalProperties
 
         ! Build wire Hamiltonian at this kz (cache reuses CSR structure)
         call ZB8bandGeneralized(HT_csr, kz_val, profile_2d, kpterms_2d, &
-          & cfg, coo_cache)
+          & cfg, ws=wire_ws)
 
         ! Solve eigenvalue problem
-        call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
+        call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res, feast_ws)
 
         if (eigen_res%nev_found == 0) then
           print '(a,i0,a)', ' WARNING: FEAST found no eigenvalues at kz-point ', k
@@ -774,7 +775,8 @@ program opticalProperties
     end do
 
     ! Free wire-specific resources
-    call wire_coo_cache_free(coo_cache)
+    call wire_workspace_free(wire_ws)
+    call feast_workspace_free(feast_ws)
     if (allocated(profile_2d)) deallocate(profile_2d)
     if (allocated(kpterms_2d)) then
       do i = 1, size(kpterms_2d)

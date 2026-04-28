@@ -4,7 +4,6 @@ program gfactor
   use parameters
   use hamiltonianConstructor
   use finitedifferences
-  use OMP_lib
   use outputFunctions
   use gfactorFunctions
   use utils
@@ -12,7 +11,7 @@ program gfactor
   use sparse_matrices
   use eigensolver
   use strain_solver
-  use linalg, only: ilaenv, dlamch, mkl_set_num_threads_local
+  use linalg, only: mkl_set_num_threads_local
 
   implicit NONE
 
@@ -28,12 +27,10 @@ program gfactor
   integer :: i, j, k
 
   ! hamiltonian and LAPACK/BLAS
-  integer :: info, NB, lwork, N, M, il, iuu, vl, vu, lrwork, liwork
-  real(kind=dp) :: abstol
+  integer :: info, lwork, N, lrwork, liwork
   real(kind=dp), allocatable :: eig(:,:), rwork(:)
   complex(kind=dp), allocatable :: work(:)
-  complex(kind=dp), allocatable, dimension(:,:,:) :: eigv
-  integer, allocatable :: iwork(:), ifail(:)
+  integer, allocatable :: iwork(:)
   complex(kind=dp), allocatable, dimension(:,:) :: HT
 
   ! gfactor
@@ -42,8 +39,6 @@ program gfactor
   integer :: whichBand, bandIdx
   complex(kind=dp), allocatable, dimension(:,:,:) :: tensor
   real(kind=dp) :: g_eff(3)
-  complex(kind=dp) :: aa, bb, cc, dd
-  real(kind=dp) :: gfac(2,3)
 
   ! file handling
   integer(kind=4) :: iounit
@@ -74,10 +69,6 @@ program gfactor
 
   ! g-factor specific validation
   if (cfg%waveVectorStep /= 0 .and. cfg%waveVector /= 'k0') stop 'g-factor calculation requires only k=0'
-  if (cfg%waveVectorStep /= 0) then
-    print *, 'Warning: Setting wvStep to 0 for g-factor calculation'
-    cfg%waveVectorStep = 0
-  endif
 
   ! Initialize k for workspace query
   k = 1
@@ -352,10 +343,6 @@ program gfactor
 
     if (cfg%evnum /= N) stop 'evnum not equal to total matrix size'
 
-    NB = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
-    NB = MAX(NB,N)
-    ABSTOL = DLAMCH('P')
-
     ! Allocate arrays
     if (allocated(eig)) deallocate(eig)
     allocate(eig(N,1))  ! Only one k-point for g-factor
@@ -403,9 +390,13 @@ program gfactor
 
     ! Print profile for QW mode
     if (cfg%confDir == 'z') then
-      do i = 1, cfg%fdStep, 1
-        write(101,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
+      do i = 1, cfg%fdStep
+        write(iounit, *) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
       end do
+      close(iounit)
     end if
 
     !only Gamma points
@@ -473,14 +464,6 @@ program gfactor
   do i = 1, 2
     write(*,'(2(f9.4,1x,f9.4))') (tensor(i,j,3), j=1,2)
   end do
-
-  if (allocated(rwork)) deallocate(rwork)
-  allocate(rwork(3*2-2))
-  NB = ILAENV(1, 'ZHETRD', 'UPLO', 2, 2, -1, -1)
-  NB = MAX(NB,2)
-  lwork = 2*(NB+1)*N
-  if (allocated(work)) deallocate(work)
-  allocate(work(lwork))
 
   print *, 'gx'
   print *, 0.0_dp
