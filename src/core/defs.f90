@@ -31,12 +31,12 @@ module definitions
   real(kind=dp), parameter :: g_free = 2.00231_dp
 
   complex(kind=dp), parameter :: IU = cmplx(0.0_dp, 1.0_dp, kind=dp)
-  real(kind=dp), parameter :: SQR3 = dsqrt(3.0_dp)
-  real(kind=dp), parameter :: SQR2 = dsqrt(2.0_dp)
-  real(kind=dp), parameter :: SQR2o3 = dsqrt(2.0_dp/3.0_dp)
+  real(kind=dp), parameter :: SQR3 = sqrt(3.0_dp)
+  real(kind=dp), parameter :: SQR2 = sqrt(2.0_dp)
+  real(kind=dp), parameter :: SQR2o3 = sqrt(2.0_dp/3.0_dp)
   real(kind=dp), parameter :: RQS3 = 1.0_dp/SQR3
   real(kind=dp), parameter :: RQS2 = 1.0_dp/SQR2
-  real(kind=dp), parameter :: SQR3o2 = dsqrt(1.5_dp)   ! sqrt(3/2) = SQR3 * RQS2
+  real(kind=dp), parameter :: SQR3o2 = sqrt(1.5_dp)   ! sqrt(3/2) = SQR3 * RQS2
   complex(kind=dp), parameter :: ZERO = cmplx(0.0_dp, 0.0_dp, kind=dp)
   complex(kind=dp), parameter :: UM = cmplx(1.0_dp, 0.0_dp, kind=dp)
 

@@ -735,14 +735,14 @@ module parameters
         end select
 
         ! Compute derived parameters from raw material data
-        params(i)%P = dsqrt(params(i)%EP*const)
+        params(i)%P = sqrt(params(i)%EP*const)
         params(i)%A = 1.0_dp/params(i)%meff
 
         if (renormalization .or. params(i)%A < 0) then
 
           gamma0 = params(i)%A
           EP = (gamma0-1.0_dp)*params(i)%Eg*(params(i)%Eg+params(i)%deltaSO)/(params(i)%Eg+(2.0_dp/3.0_dp)*params(i)%deltaSO)
-          P = dsqrt(EP*const)
+          P = sqrt(EP*const)
           A = - ((params(i)%Eg+(2.0_dp/3.0_dp)*params(i)%deltaSO)/(params(i)%Eg+params(i)%deltaSO))*(EP/params(i)%Eg) + gamma0
 
           gamma1 = const*(params(i)%gamma1 - EP/(3.0_dp*params(i)%Eg))
