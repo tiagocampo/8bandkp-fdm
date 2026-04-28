@@ -506,16 +506,8 @@ module hamiltonian_wire
       ! ==================================================================
       ! Build final CSR from COO, or update values if cache is available
       ! ==================================================================
-      if (ws%coo_cache_valid .and. HT_csr%nnz > 0) then
-        call csr_set_values_from_coo(HT_csr, coo_idx, &
-          ws%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
-      else
-        call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
-          coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
-          ws%coo_to_csr)
-        ws%coo_nnz_in = coo_idx
-        ws%coo_cache_valid = .true.
-      end if
+      call finalize_coo_to_csr(HT_csr, Ntot, coo_rows, coo_cols, coo_vals, &
+        coo_idx, ws=ws)
 
       ! COO arrays are workspace-owned — no deallocation needed
 
@@ -808,36 +800,8 @@ module hamiltonian_wire
       ! ==================================================================
       ! Build final CSR from COO, or update values if cache is available
       ! ==================================================================
-      if (present(ws)) then
-        if (ws%coo_cache_valid) then
-          call csr_set_values_from_coo(HT_csr, coo_idx, &
-            ws%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
-        else
-          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
-            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
-            ws%coo_to_csr)
-          ws%coo_nnz_in = coo_idx
-          ws%coo_cache_valid = .true.
-        end if
-      else if (present(coo_cache)) then
-        if (coo_cache%initialized) then
-          call csr_set_values_from_coo(HT_csr, coo_idx, &
-            coo_cache%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
-        else
-          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
-            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
-            coo_cache%coo_to_csr)
-          coo_cache%coo_nnz_in = coo_idx
-          coo_cache%initialized = .true.
-        end if
-      else
-        if (coo_idx > 0) then
-          call csr_build_from_coo(HT_csr, Ntot, Ntot, coo_idx, &
-            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx))
-        else
-          call csr_init(HT_csr, Ntot, Ntot)
-        end if
-      end if
+      call finalize_coo_to_csr(HT_csr, Ntot, coo_rows, coo_cols, coo_vals, &
+        coo_idx, ws=ws, coo_cache=coo_cache)
 
       ! ==================================================================
       ! Workspace initialization (before cleanup)
@@ -1497,6 +1461,58 @@ module hamiltonian_wire
         end do
       end do
     end subroutine insert_strain_coo
+
+    ! ==================================================================
+    ! Finalize COO assembly into CSR, dispatching to the appropriate path:
+    !   1) workspace cache (ws present)   — fast-path or slow-path with ws
+    !   2) standalone COO cache           — SC loop without ws
+    !   3) bare build from scratch        — first call, no caching
+    !
+    ! When a cache is valid and the CSR already has nonzero entries
+    ! (HT_csr%nnz > 0), only values are updated in O(NNZ) time.
+    ! Otherwise a full COO-to-CSR conversion is performed and the cache
+    ! mapping is populated for subsequent calls.
+    ! ==================================================================
+    subroutine finalize_coo_to_csr(HT_csr, Ntot, coo_rows, coo_cols, coo_vals, &
+        coo_idx, ws, coo_cache)
+      type(csr_matrix), intent(inout) :: HT_csr
+      integer, intent(in) :: Ntot, coo_idx
+      integer, intent(in) :: coo_rows(:), coo_cols(:)
+      complex(kind=dp), intent(in) :: coo_vals(:)
+      type(wire_workspace), intent(inout), optional :: ws
+      type(wire_coo_cache), intent(inout), optional :: coo_cache
+
+      if (present(ws)) then
+        if (ws%coo_cache_valid .and. HT_csr%nnz > 0) then
+          call csr_set_values_from_coo(HT_csr, coo_idx, &
+            ws%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
+        else
+          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
+            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
+            ws%coo_to_csr)
+          ws%coo_nnz_in = coo_idx
+          ws%coo_cache_valid = .true.
+        end if
+      else if (present(coo_cache)) then
+        if (coo_cache%initialized) then
+          call csr_set_values_from_coo(HT_csr, coo_idx, &
+            coo_cache%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
+        else
+          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
+            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
+            coo_cache%coo_to_csr)
+          coo_cache%coo_nnz_in = coo_idx
+          coo_cache%initialized = .true.
+        end if
+      else
+        if (coo_idx > 0) then
+          call csr_build_from_coo(HT_csr, Ntot, Ntot, coo_idx, &
+            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx))
+        else
+          call csr_init(HT_csr, Ntot, Ntot)
+        end if
+      end if
+    end subroutine finalize_coo_to_csr
 
     ! ==================================================================
     ! Free the wire workspace: all CSR blocks and COO buffers.
