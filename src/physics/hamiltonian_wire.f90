@@ -60,6 +60,11 @@ module hamiltonian_wire
     integer, allocatable :: scatter_R_16(:)   ! kp16 -> blk_R
     integer, allocatable :: scatter_R_11(:)   ! kp11 -> blk_R
 
+    ! COO-to-CSR sort cache (absorbed from wire_coo_cache)
+    integer, allocatable          :: coo_to_csr(:)
+    integer                       :: coo_nnz_in = 0
+    logical                       :: coo_cache_valid = .false.
+
     logical :: initialized = .false.
   end type wire_workspace
 
@@ -209,7 +214,7 @@ module hamiltonian_wire
       real(kind=dp), intent(in)               :: profile_2d(:,:)
       type(csr_matrix), intent(in)            :: kpterms_2d(:)
       type(simulation_config), intent(in)     :: cfg
-      type(wire_coo_cache), intent(inout), optional :: coo_cache
+      type(wire_coo_cache), intent(inout), optional :: coo_cache  ! SC loop only
       type(wire_workspace), intent(inout), optional :: ws
       character(len=2), intent(in), optional  :: g
 
@@ -231,7 +236,7 @@ module hamiltonian_wire
         ! FAST PATH: workspace is initialized, reuse CSR structures
         ! ==================================================================
         call zb8_generalized_fast(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
-          cfg, coo_cache, ws, N, Ntot, gmode_dir)
+          cfg, ws, N, Ntot, gmode_dir)
       else
         ! ==================================================================
         ! SLOW PATH: first call or no workspace — build from scratch
@@ -242,14 +247,13 @@ module hamiltonian_wire
 
     end subroutine ZB8bandGeneralized
     subroutine zb8_generalized_fast(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
-        cfg, coo_cache, ws, N, Ntot, gmode_dir)
+        cfg, ws, N, Ntot, gmode_dir)
 
       type(csr_matrix), intent(inout)         :: HT_csr
       real(kind=dp), intent(in)               :: kz, kz2
       real(kind=dp), intent(in)               :: profile_2d(:,:)
       type(csr_matrix), intent(in)            :: kpterms_2d(:)
       type(simulation_config), intent(in)     :: cfg
-      type(wire_coo_cache), intent(inout), optional :: coo_cache
       type(wire_workspace), intent(inout)     :: ws
       integer, intent(in)                     :: N, Ntot, gmode_dir
 
@@ -502,24 +506,15 @@ module hamiltonian_wire
       ! ==================================================================
       ! Build final CSR from COO, or update values if cache is available
       ! ==================================================================
-      if (present(coo_cache)) then
-        if (coo_cache%initialized) then
-          call csr_set_values_from_coo(HT_csr, coo_idx, &
-            coo_cache%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
-        else
-          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
-            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
-            coo_cache%coo_to_csr)
-          coo_cache%coo_nnz_in = coo_idx
-          coo_cache%initialized = .true.
-        end if
+      if (ws%coo_cache_valid .and. HT_csr%nnz > 0) then
+        call csr_set_values_from_coo(HT_csr, coo_idx, &
+          ws%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
       else
-        if (coo_idx > 0) then
-          call csr_build_from_coo(HT_csr, Ntot, Ntot, coo_idx, &
-            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx))
-        else
-          call csr_init(HT_csr, Ntot, Ntot)
-        end if
+        call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
+          coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
+          ws%coo_to_csr)
+        ws%coo_nnz_in = coo_idx
+        ws%coo_cache_valid = .true.
       end if
 
       ! COO arrays are workspace-owned — no deallocation needed
@@ -813,7 +808,18 @@ module hamiltonian_wire
       ! ==================================================================
       ! Build final CSR from COO, or update values if cache is available
       ! ==================================================================
-      if (present(coo_cache)) then
+      if (present(ws)) then
+        if (ws%coo_cache_valid) then
+          call csr_set_values_from_coo(HT_csr, coo_idx, &
+            ws%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
+        else
+          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
+            coo_rows(1:coo_idx), coo_cols(1:coo_idx), coo_vals(1:coo_idx), &
+            ws%coo_to_csr)
+          ws%coo_nnz_in = coo_idx
+          ws%coo_cache_valid = .true.
+        end if
+      else if (present(coo_cache)) then
         if (coo_cache%initialized) then
           call csr_set_values_from_coo(HT_csr, coo_idx, &
             coo_cache%coo_to_csr(1:coo_idx), coo_vals(1:coo_idx))
@@ -1522,6 +1528,9 @@ module hamiltonian_wire
       if (allocated(ws%scatter_PP_13)) deallocate(ws%scatter_PP_13)
       if (allocated(ws%scatter_R_16))  deallocate(ws%scatter_R_16)
       if (allocated(ws%scatter_R_11))  deallocate(ws%scatter_R_11)
+      if (allocated(ws%coo_to_csr)) deallocate(ws%coo_to_csr)
+      ws%coo_nnz_in = 0
+      ws%coo_cache_valid = .false.
       ws%coo_capacity = 0
       ws%initialized = .false.
     end subroutine wire_workspace_free
