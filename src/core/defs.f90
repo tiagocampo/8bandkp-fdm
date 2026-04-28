@@ -289,6 +289,11 @@ module definitions
     type(scattering_config)  :: scattering   ! phonon scattering parameters
   end type simulation_config
 
+  type :: config_validation_result
+    logical           :: ok      = .true.
+    character(len=256) :: message = ''
+  end type config_validation_result
+
   type group
       integer :: order    ! original order of unsorted data
       real(kind=dp) :: value       ! values to be sorted by
