@@ -231,7 +231,14 @@ module hamiltonian_wire
         if (g == 'g3' .or. g == 'g ') gmode_dir = 3
       end if
 
-      if (present(ws) .and. ws%initialized) then
+      if (gmode_dir == 3) then
+        ! ==================================================================
+        ! g3 builds dH/dkz, whose sparsity and COO mapping differ from
+        ! the normal Hamiltonian. Do not initialize or mutate wire_workspace.
+        ! ==================================================================
+        call zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
+          cfg, N=N, Ntot=Ntot, gmode_dir=gmode_dir)
+      else if (present(ws) .and. ws%initialized) then
         ! ==================================================================
         ! FAST PATH: workspace is initialized, reuse CSR structures
         ! ==================================================================
