@@ -637,9 +637,13 @@ module finitedifferences
 
       matrix = 0
       if (present(factor)) then
-        forall(i = 1:n) matrix(i,i) = 1*factor
+        do i = 1, n
+          matrix(i,i) = factor
+        end do
       else
-        forall(i = 1:n) matrix(i,i) = 1
+        do i = 1, n
+          matrix(i,i) = 1
+        end do
       endif
 
     end subroutine
