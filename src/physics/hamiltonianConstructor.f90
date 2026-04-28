@@ -90,29 +90,33 @@ module hamiltonianConstructor
       A = 0.0_dp
 
       if (.not. present(g)) then
-        forall(ii=1:N, jj=1:N)
-          Q(ii,jj) = -( (kpterms(ii,jj,1) + kpterms(ii,jj,2))*k2 + kpterms(ii,jj,7) )
-          T(ii,jj) = -( (kpterms(ii,jj,1) - kpterms(ii,jj,2))*k2 + kpterms(ii,jj,8) )
-          S(ii,jj)  =  2.0_dp * SQR3 * kminus * kpterms(ii,jj,9) !no IU because of derivative
-          SC(jj,ii) =  2.0_dp * SQR3 * kplus  * kpterms(ii,jj,9) !no IU because of derivative
-          PZ(ii,jj) = kpterms(ii,jj,6) * (-IU)
-          A(ii,jj)  = kpterms(ii,jj,5) + k2*kpterms(ii,jj,10)
-        end forall
+        do jj = 1, N
+          do ii = 1, N
+            Q(ii,jj) = -( (kpterms(ii,jj,1) + kpterms(ii,jj,2))*k2 + kpterms(ii,jj,7) )
+            T(ii,jj) = -( (kpterms(ii,jj,1) - kpterms(ii,jj,2))*k2 + kpterms(ii,jj,8) )
+            S(ii,jj)  =  2.0_dp * SQR3 * kminus * kpterms(ii,jj,9) !no IU because of derivative
+            SC(jj,ii) =  2.0_dp * SQR3 * kplus  * kpterms(ii,jj,9) !no IU because of derivative
+            PZ(ii,jj) = kpterms(ii,jj,6) * (-IU)
+            A(ii,jj)  = kpterms(ii,jj,5) + k2*kpterms(ii,jj,10)
+          end do
+        end do
 
-        forall (ii=1:N)
+        do ii = 1, N
           R(ii,ii)  = - SQR3 * ( kpterms(ii,ii,2)*(kx2 - ky2) - 2.0_dp*IU*kpterms(ii,ii,3)*kxky )
           RC(ii,ii) = - SQR3 * ( kpterms(ii,ii,2)*(kx2 - ky2) + 2.0_dp*IU*kpterms(ii,ii,3)*kxky )
           PP(ii,ii) = kpterms(ii,ii,4) * kplus  * RQS2
           PM(ii,ii) = kpterms(ii,ii,4) * kminus * RQS2
-        end forall
+        end do
       else
-        forall(ii=1:N, jj=1:N)
-          PZ(ii,jj) = kpterms(ii,jj,4) * wv%kz
-        end forall
-        forall (ii=1:N)
+        do jj = 1, N
+          do ii = 1, N
+            PZ(ii,jj) = kpterms(ii,jj,4) * wv%kz
+          end do
+        end do
+        do ii = 1, N
           PP(ii,ii) = kpterms(ii,ii,4) * kplus  * RQS2
           PM(ii,ii) = kpterms(ii,ii,4) * kminus * RQS2
-        end forall
+        end do
 
       end if
 
@@ -196,7 +200,7 @@ module hamiltonianConstructor
 
 
       ! Profile
-      forall(ii=1:N)
+      do ii = 1, N
         HT(      ii,      ii) = HT(      ii,      ii) + profile(ii,1)
         HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + profile(ii,1)
         HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + profile(ii,1)
@@ -205,7 +209,7 @@ module hamiltonianConstructor
         HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + profile(ii,2)
         HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + profile(ii,3)
         HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + profile(ii,3)
-      end forall
+      end do
 
       ! Full Bir-Pikus strain (k-independent, not in g-mode)
       if (present(cfg)) then
