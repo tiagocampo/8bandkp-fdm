@@ -1309,4 +1309,72 @@ contains
     call grid_free(grid)
   end subroutine test_workspace_fast_path_matches_slow
 
+  @test
+  subroutine test_workspace_g3_does_not_corrupt_normal_cache()
+    integer, parameter :: nx = 4, ny = 4
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ij, k, normal_nnz, coo_nnz
+    integer :: mat2d(nx, ny)
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    character(len=255), allocatable :: material_names(:)
+    type(region_spec), allocatable :: regions(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_fast, H_slow, H_g3
+    type(wire_workspace) :: wire_ws
+    type(wire_coo_cache) :: coo_cache
+    type(simulation_config) :: cfg
+
+    mat2d = 1
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, &
+      profile_2d, kpterms_2d, FDorder=2)
+    cfg%grid = grid
+
+    ! Initialize the normal workspace and its COO mapping.
+    call ZB8bandGeneralized(H_fast, 0.05_dp, profile_2d, kpterms_2d, cfg, &
+      ws=wire_ws)
+    normal_nnz = H_fast%nnz
+    coo_nnz = wire_ws%coo_nnz_in
+
+    ! Accidental workspace use in g3 mode must not overwrite normal cache state.
+    call ZB8bandGeneralized(H_g3, 1.0_dp, profile_2d, kpterms_2d, cfg, &
+      ws=wire_ws, g='g3')
+    @assertTrue(H_g3%nnz > 0, message="g3 matrix built")
+    @assertEqual(normal_nnz, H_fast%nnz, message="normal matrix retained")
+    @assertEqual(coo_nnz, wire_ws%coo_nnz_in, message="normal COO mapping retained")
+
+    ! Normal fast path must still match a fresh slow-path build after g3.
+    call ZB8bandGeneralized(H_fast, 0.06_dp, profile_2d, kpterms_2d, cfg, &
+      ws=wire_ws)
+    call ZB8bandGeneralized(H_slow, 0.06_dp, profile_2d, kpterms_2d, cfg, &
+      coo_cache)
+
+    @assertEqual(H_slow%nrows, H_fast%nrows)
+    @assertEqual(H_slow%nnz, H_fast%nnz)
+    do k = 1, H_slow%nnz
+      @assertEqual(H_slow%colind(k), H_fast%colind(k))
+      @assertEqual(H_slow%values(k), H_fast%values(k), tolerance=1.0e-13_dp)
+    end do
+
+    call csr_free(H_fast)
+    call csr_free(H_slow)
+    call csr_free(H_g3)
+    call wire_workspace_free(wire_ws)
+    call wire_coo_cache_free(coo_cache)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_workspace_g3_does_not_corrupt_normal_cache
+
 end module test_hamiltonian_2d
