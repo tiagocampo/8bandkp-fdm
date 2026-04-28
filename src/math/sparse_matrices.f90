@@ -42,6 +42,8 @@ module sparse_matrices
     integer, allocatable          :: colind(:)   ! (nnz)
     integer, allocatable          :: rowptr(:)   ! (nrows+1)
   contains
+    procedure :: free => csr_matrix_free_bound
+    procedure :: clone_structure => csr_matrix_clone_structure_bound
     final :: csr_finalize
   end type csr_matrix
 
@@ -93,6 +95,26 @@ contains
     allocate(dst%values(src%nnz))
     dst%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
   end subroutine csr_clone_structure
+
+  ! ------------------------------------------------------------------
+  ! Type-bound wrapper: free all arrays in a CSR matrix.
+  ! Delegates to the module-level csr_free subroutine.
+  ! ------------------------------------------------------------------
+  subroutine csr_matrix_free_bound(this)
+    class(csr_matrix), intent(inout) :: this
+    call csr_free(this)
+  end subroutine csr_matrix_free_bound
+
+  ! ------------------------------------------------------------------
+  ! Type-bound wrapper: clone the sparsity structure (rowptr, colind)
+  ! from this into dst.  dst%values is allocated but zeroed.
+  ! Delegates to the module-level csr_clone_structure subroutine.
+  ! ------------------------------------------------------------------
+  subroutine csr_matrix_clone_structure_bound(this, dst)
+    class(csr_matrix), intent(in)  :: this
+    type(csr_matrix), intent(out)  :: dst
+    call csr_clone_structure(this, dst)
+  end subroutine csr_matrix_clone_structure_bound
 
   ! ------------------------------------------------------------------
   ! Finalizer: automatically called when a csr_matrix goes out of scope.
