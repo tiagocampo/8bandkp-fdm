@@ -21,6 +21,7 @@ module sparse_matrices
   public :: kron_dense_dense, kron_dense_eye, kron_eye_dense, kron_dense_dense_1d
   public :: csr_set_values_from_coo, csr_build_from_coo_cached
   public :: csr_add, csr_scale, csr_apply_variable_coeff
+  public :: csr_find_diag_positions
   public :: csr_spmv
 
   ! ------------------------------------------------------------------
@@ -804,6 +805,36 @@ contains
     result_mat%colind = A%colind
     result_mat%values = A%values * scale
   end subroutine csr_scale
+
+  ! ------------------------------------------------------------------
+  ! Find diagonal entry positions in a CSR matrix.
+  !
+  ! For each row i, scans colind(rowptr(i)..rowptr(i+1)-1) to find the
+  ! column index equal to i (the diagonal entry).  Returns diag_pos(i)
+  ! = the CSR index k such that colind(k) == i.
+  !
+  ! Stops with an error if any row lacks a diagonal entry.
+  ! ------------------------------------------------------------------
+  subroutine csr_find_diag_positions(mat, diag_pos)
+    type(csr_matrix), intent(in)  :: mat
+    integer, intent(out) :: diag_pos(mat%nrows)
+
+    integer :: i, k
+
+    diag_pos = 0
+    do i = 1, mat%nrows
+      do k = mat%rowptr(i), mat%rowptr(i + 1) - 1
+        if (mat%colind(k) == i) then
+          diag_pos(i) = k
+          exit
+        end if
+      end do
+    end do
+    if (any(diag_pos == 0)) then
+      print *, 'ERROR: csr_find_diag_positions: no diagonal entry for some rows'
+      stop 1
+    end if
+  end subroutine csr_find_diag_positions
 
   ! ------------------------------------------------------------------
   ! Apply variable coefficient (element-wise row scaling) to a CSR

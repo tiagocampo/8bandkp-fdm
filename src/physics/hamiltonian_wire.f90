@@ -197,20 +197,17 @@ module hamiltonian_wire
       type(wire_workspace), intent(inout), optional :: ws
       character(len=2), intent(in), optional  :: g
 
-      integer :: N, Ntot, nnz_est
+      integer :: N, Ntot
       real(kind=dp) :: kz2
-      logical :: gmode
       integer :: gmode_dir  ! 0=none, 1=x, 2=y, 3=z
 
       N = grid_ngrid(cfg%grid)
       Ntot = 8 * N
       kz2 = kz * kz
 
-      gmode = .false.
       gmode_dir = 0
       if (present(g)) then
         if (g == 'g3' .or. g == 'g ') gmode_dir = 3
-        gmode = (gmode_dir > 0)
       end if
 
       if (present(ws) .and. ws%initialized) then
@@ -218,18 +215,18 @@ module hamiltonian_wire
         ! FAST PATH: workspace is initialized, reuse CSR structures
         ! ==================================================================
         call zb8_generalized_fast(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
-          cfg, coo_cache, ws, N, Ntot, gmode, gmode_dir)
+          cfg, coo_cache, ws, N, Ntot, gmode_dir)
       else
         ! ==================================================================
         ! SLOW PATH: first call or no workspace — build from scratch
         ! ==================================================================
         call zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
-          cfg, coo_cache, ws, N, Ntot, gmode, gmode_dir)
+          cfg, coo_cache, ws, N, Ntot, gmode_dir)
       end if
 
     end subroutine ZB8bandGeneralized
     subroutine zb8_generalized_fast(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
-        cfg, coo_cache, ws, N, Ntot, gmode, gmode_dir)
+        cfg, coo_cache, ws, N, Ntot, gmode_dir)
 
       type(csr_matrix), intent(inout)         :: HT_csr
       real(kind=dp), intent(in)               :: kz, kz2
@@ -239,7 +236,6 @@ module hamiltonian_wire
       type(wire_coo_cache), intent(inout), optional :: coo_cache
       type(wire_workspace), intent(inout)     :: ws
       integer, intent(in)                     :: N, Ntot, gmode_dir
-      logical, intent(in)                     :: gmode
 
       integer :: coo_idx, coo_capacity
 
@@ -516,7 +512,7 @@ module hamiltonian_wire
 
     end subroutine zb8_generalized_fast
     subroutine zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
-        cfg, coo_cache, ws, N, Ntot, gmode, gmode_dir)
+        cfg, coo_cache, ws, N, Ntot, gmode_dir)
 
       type(csr_matrix), intent(inout)         :: HT_csr
       real(kind=dp), intent(in)               :: kz, kz2
@@ -526,7 +522,6 @@ module hamiltonian_wire
       type(wire_coo_cache), intent(inout), optional :: coo_cache
       type(wire_workspace), intent(inout), optional :: ws
       integer, intent(in)                     :: N, Ntot, gmode_dir
-      logical, intent(in)                     :: gmode
 
       ! CSR work matrices for the kp terms
       type(csr_matrix) :: blk_Q, blk_T, blk_S, blk_SC
@@ -841,51 +836,15 @@ module hamiltonian_wire
 
         ! Pre-compute diagonal position mapping from blk_Q CSR
         allocate(ws%diag_pos(N))
-        ws%diag_pos = 0
-        do i = 1, N
-          do k = ws%blk_Q%rowptr(i), ws%blk_Q%rowptr(i+1) - 1
-            if (ws%blk_Q%colind(k) == i) then
-              ws%diag_pos(i) = k
-              exit
-            end if
-          end do
-        end do
-        if (any(ws%diag_pos == 0)) then
-          print *, 'ERROR: diag_pos: no diagonal entry found for some rows in blk_Q'
-          stop 1
-        end if
+        call csr_find_diag_positions(ws%blk_Q, ws%diag_pos)
 
         ! Diagonal positions for blk_R (different sparsity from Q)
         allocate(ws%diag_pos_R(N))
-        ws%diag_pos_R = 0
-        do i = 1, N
-          do k = ws%blk_R%rowptr(i), ws%blk_R%rowptr(i+1) - 1
-            if (ws%blk_R%colind(k) == i) then
-              ws%diag_pos_R(i) = k
-              exit
-            end if
-          end do
-        end do
-        if (any(ws%diag_pos_R == 0)) then
-          print *, 'ERROR: diag_pos_R: no diagonal entry found for some rows in blk_R'
-          stop 1
-        end if
+        call csr_find_diag_positions(ws%blk_R, ws%diag_pos_R)
 
         ! Diagonal positions for blk_A (different sparsity from Q)
         allocate(ws%diag_pos_A(N))
-        ws%diag_pos_A = 0
-        do i = 1, N
-          do k = ws%blk_A%rowptr(i), ws%blk_A%rowptr(i+1) - 1
-            if (ws%blk_A%colind(k) == i) then
-              ws%diag_pos_A(i) = k
-              exit
-            end if
-          end do
-        end do
-        if (any(ws%diag_pos_A == 0)) then
-          print *, 'ERROR: diag_pos_A: no diagonal entry found for some rows in blk_A'
-          stop 1
-        end if
+        call csr_find_diag_positions(ws%blk_A, ws%diag_pos_A)
 
         ! Build scatter maps: kpterm -> union-structure block position
         call build_scatter_map(kpterms_2d(14), ws%blk_S, ws%scatter_S_14)
@@ -1048,7 +1007,7 @@ module hamiltonian_wire
           call csr_add(qxy, kz_diag, blk, UM, UM)
           call csr_free(qxy)
           call csr_free(kz_diag)
-          call negate_csr(blk)
+          blk%values = -blk%values
         end block
       end if
     end subroutine build_kp_term_Q
@@ -1096,7 +1055,7 @@ module hamiltonian_wire
           call csr_add(txy, kz_diag, blk, UM, UM)
           call csr_free(txy)
           call csr_free(kz_diag)
-          call negate_csr(blk)
+          blk%values = -blk%values
         end block
       end if
     end subroutine build_kp_term_T
@@ -1572,14 +1531,6 @@ module hamiltonian_wire
         end do
       end do
     end subroutine insert_strain_coo
-    subroutine negate_csr(mat)
-      type(csr_matrix), intent(inout) :: mat
-      integer :: k
-
-      do k = 1, mat%nnz
-        mat%values(k) = -mat%values(k)
-      end do
-    end subroutine negate_csr
 
     ! ==================================================================
     ! Free the wire workspace: all CSR blocks and COO buffers.
