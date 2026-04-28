@@ -42,7 +42,7 @@ program kpfdm
   ! --- Wire mode variables ---
   real(kind=dp), allocatable       :: profile_2d(:,:)
   type(csr_matrix), allocatable    :: kpterms_2d(:)
-  type(csr_matrix)                 :: HT_csr
+  type(csr_matrix)                 :: HT_csr, HT_csr_step
   type(wire_coo_cache)             :: coo_cache  ! kept for self_consistent_loop_wire
   type(wire_workspace)             :: wire_ws
   type(feast_workspace)            :: feast_ws
@@ -381,21 +381,18 @@ program kpfdm
     if (cfg%waveVectorStep > 1) then
       info = mkl_set_num_threads_local(1)
 
+      ! Pre-allocate CSR workspace with the same sparsity pattern for all kz-points
+      call csr_clone_structure(HT_csr, HT_csr_step)
+
       print '(A,I0,A)', ' Wire kz-sweep: k=2..', cfg%waveVectorStep, &
         & ' (serial branch tracking)'
 
       do k = 2, cfg%waveVectorStep
         print *, 'k-point ', k, '/', cfg%waveVectorStep, ' kz=', smallk(k)%kz
 
-        block
-          type(csr_matrix) :: HT_csr_step
-
-          call csr_clone_structure(HT_csr, HT_csr_step)
-          call ZB8bandGeneralized(HT_csr_step, smallk(k)%kz, profile_2d, &
-            & kpterms_2d, cfg, ws=wire_ws)
-          call solve_sparse_evp(HT_csr_step, eigen_cfg, eigen_res, feast_ws)
-          call csr_free(HT_csr_step)
-        end block
+        call ZB8bandGeneralized(HT_csr_step, smallk(k)%kz, profile_2d, &
+          & kpterms_2d, cfg, ws=wire_ws)
+        call solve_sparse_evp(HT_csr_step, eigen_cfg, eigen_res, feast_ws)
 
         if (.not. eigen_res%converged) then
           if (eigen_res%nev_found < nev_wire) then
@@ -428,6 +425,9 @@ program kpfdm
 
         call eigensolver_result_free(eigen_res)
       end do
+
+      ! Free pre-allocated CSR step matrix
+      call csr_free(HT_csr_step)
     end if
 
     ! Free Hamiltonian CSR and workspace
