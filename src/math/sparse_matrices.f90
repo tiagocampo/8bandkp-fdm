@@ -41,6 +41,8 @@ module sparse_matrices
     complex(kind=dp), allocatable :: values(:)   ! (nnz)
     integer, allocatable          :: colind(:)   ! (nnz)
     integer, allocatable          :: rowptr(:)   ! (nrows+1)
+  contains
+    final :: csr_finalize
   end type csr_matrix
 
 contains
@@ -91,6 +93,15 @@ contains
     allocate(dst%values(src%nnz))
     dst%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
   end subroutine csr_clone_structure
+
+  ! ------------------------------------------------------------------
+  ! Finalizer: automatically called when a csr_matrix goes out of scope.
+  ! Delegates to csr_free so existing manual frees remain valid.
+  ! ------------------------------------------------------------------
+  subroutine csr_finalize(mat)
+    type(csr_matrix), intent(inout) :: mat
+    call csr_free(mat)
+  end subroutine csr_finalize
 
   ! ------------------------------------------------------------------
   ! Deallocate all arrays in a CSR matrix.

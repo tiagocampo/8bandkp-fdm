@@ -66,6 +66,8 @@ module hamiltonian_wire
     logical                       :: coo_cache_valid = .false.
 
     logical :: initialized = .false.
+  contains
+    final :: wire_workspace_finalize
   end type wire_workspace
 
   ! ------------------------------------------------------------------
@@ -1302,6 +1304,15 @@ module hamiltonian_wire
         end if
       end if
     end subroutine finalize_coo_to_csr
+
+    ! ==================================================================
+    ! Finalizer: automatically called when a wire_workspace goes out of scope.
+    ! Delegates to wire_workspace_free so existing manual frees remain valid.
+    ! ==================================================================
+    subroutine wire_workspace_finalize(ws)
+      type(wire_workspace), intent(inout) :: ws
+      call wire_workspace_free(ws)
+    end subroutine wire_workspace_finalize
 
     ! ==================================================================
     ! Free the wire workspace: all CSR blocks and COO buffers.

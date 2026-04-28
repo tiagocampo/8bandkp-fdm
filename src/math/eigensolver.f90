@@ -54,6 +54,8 @@ module eigensolver
     integer                       :: M0 = 0
     integer                       :: N = 0
     logical                       :: initialized = .false.
+  contains
+    final :: feast_workspace_finalize
   end type feast_workspace
 
 contains
@@ -726,6 +728,15 @@ contains
     result%converged = .false.
     result%iterations = 0
   end subroutine eigensolver_result_free
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a feast_workspace goes out of scope.
+  ! Delegates to feast_workspace_free so existing manual frees remain valid.
+  ! ==================================================================
+  subroutine feast_workspace_finalize(fw)
+    type(feast_workspace), intent(inout) :: fw
+    call feast_workspace_free(fw)
+  end subroutine feast_workspace_finalize
 
   ! ==================================================================
   ! Deallocate feast_workspace cached arrays.
