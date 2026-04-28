@@ -471,13 +471,16 @@ contains
     call build_diagonal_csr(diag, n, H_diag)
 
     ! Tridiagonal with diagonal=3.0, off-diagonal=-0.1.  Eigenvalues cluster
-    ! around 3.0 +/- 0.2*cos(k*pi/(n+1)) ~ 2.8..3.2, well within [0.5, 5.5].
+    ! around 3.0 +/- 0.2*cos(k*pi/(n+1)) ~ 2.8..3.2.  Use a narrow window
+    ! [2.82, 2.85] so only 1-2 eigenvalues fall inside, avoiding FEAST info=3
+    ! (subspace too small) when all 20 eigenvalues sit in a wider window.
     call build_tridiag_csr(3.0_dp, -0.1_dp, n, H_tri)
 
     cfg%method = 'FEAST'
-    cfg%emin = 0.5_dp
-    cfg%emax = 5.5_dp
-    cfg%nev = 5
+    cfg%emin = 2.82_dp
+    cfg%emax = 2.85_dp
+    cfg%nev = 3
+    cfg%feast_m0 = 8
 
     ! Initialize cache with diagonal upper-triangle structure.
     call solve_feast(H_diag, cfg, cached, fw)

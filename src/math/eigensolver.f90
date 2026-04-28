@@ -59,6 +59,40 @@ module eigensolver
 contains
 
   ! ==================================================================
+  ! Check whether a cached feast_workspace matches the upper-triangle
+  ! sparsity pattern of the current CSR matrix.
+  ! ==================================================================
+  logical function feast_workspace_matches_pattern(H_csr, fw, N, M0)
+    type(csr_matrix), intent(in) :: H_csr
+    type(feast_workspace), intent(in) :: fw
+    integer, intent(in) :: N, M0
+
+    integer :: i, j, k
+
+    feast_workspace_matches_pattern = .false.
+    if (.not. fw%initialized) return
+    if (fw%N /= N .or. fw%M0 /= M0) return
+    if (.not. allocated(fw%rowptr_loc)) return
+    if (.not. allocated(fw%colind_loc)) return
+    if (size(fw%rowptr_loc) /= N + 1) return
+
+    do i = 1, N
+      k = fw%rowptr_loc(i)
+      do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+        if (H_csr%colind(j) >= i) then
+          if (k >= fw%rowptr_loc(i + 1)) return
+          if (k > fw%nnz_upper) return
+          if (fw%colind_loc(k) /= H_csr%colind(j)) return
+          k = k + 1
+        end if
+      end do
+      if (k /= fw%rowptr_loc(i + 1)) return
+    end do
+
+    feast_workspace_matches_pattern = .true.
+  end function feast_workspace_matches_pattern
+
+  ! ==================================================================
   ! Main dispatch: select FEAST or ARPACK based on config.
   ! ==================================================================
   subroutine solve_sparse_evp(H_csr, config, result, feast_ws)
@@ -145,7 +179,7 @@ contains
     res = 0.0_dp
 
     ! Extract upper triangle only (FEAST UPLO='U' requires col >= row).
-    if (present(fw) .and. fw%initialized .and. fw%M0 == M0 .and. fw%N == N) then
+    if (present(fw) .and. feast_workspace_matches_pattern(H_csr, fw, N, M0)) then
       ! Fast path: reuse cached upper-triangle structure, just update values
       allocate(val_loc(fw%nnz_upper))
       do i = 1, N
@@ -163,6 +197,10 @@ contains
                          E, X, M, res, info)
       deallocate(val_loc)
     else
+      ! Free stale cache before rebuilding
+      if (present(fw)) then
+        if (fw%initialized) call feast_workspace_free(fw)
+      end if
       ! Original path: count, allocate, fill
       allocate(rowptr_loc(N+1))
       rowptr_loc = 0
