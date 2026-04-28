@@ -89,7 +89,23 @@ module hamiltonian_wire
     module procedure build_velocity_matrices_1d
   end interface build_velocity_matrices
 
+  ! ------------------------------------------------------------------
+  ! Module-level cache for the strain table (32-entry compile-time
+  ! constant).  Avoids rebuilding it on every kz-point.
+  ! ------------------------------------------------------------------
+  logical, save :: strain_table_cached = .false.
+  type(strain_entry), save :: strain_table_cache(32)
+
   contains
+
+    function get_strain_table() result(table)
+      type(strain_entry) :: table(32)
+      if (.not. strain_table_cached) then
+        strain_table_cache = build_strain_table()
+        strain_table_cached = .true.
+      end if
+      table = strain_table_cache
+    end function get_strain_table
 
     ! ==================================================================
     ! Build a scatter map from a source CSR to a destination (union) CSR.
@@ -1498,7 +1514,7 @@ module hamiltonian_wire
       integer :: ii, e, g_row, g_col
       complex(kind=dp) :: field_val
 
-      table = build_strain_table()
+      table = get_strain_table()
 
       do ii = 1, N
         do e = 1, 32
