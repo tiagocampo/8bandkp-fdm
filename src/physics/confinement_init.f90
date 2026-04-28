@@ -36,20 +36,20 @@ contains
     call dgemv('N', N, N, 1.0_dp, backward, N, profile_vec, 1, 0.0_dp, offdown, 1)
 
     if (has_diag) then
-      forall(ii=2:N-1)
+      do ii = 2, N - 1
         kpterms(ii,ii,term_idx) = diag(ii)
         kpterms(ii+1,ii,term_idx) = -offup(ii)
         kpterms(ii-1,ii,term_idx) = -offdown(ii)
-      end forall
+      end do
       kpterms(1,1,term_idx) = diag(1)
       kpterms(N,N,term_idx) = diag(N)
       kpterms(2,1,term_idx) = -offup(1)
       kpterms(N-1,N,term_idx) = -offdown(N)
     else
-      forall(ii=2:N-1)
+      do ii = 2, N - 1
         kpterms(ii+1,ii,term_idx) = offup(ii)
         kpterms(ii-1,ii,term_idx) = -offdown(ii)
-      end forall
+      end do
       kpterms(2,1,term_idx) = offup(1)
       kpterms(N-1,N,term_idx) = -offdown(N)
     end if
@@ -132,13 +132,13 @@ contains
 
     end if
 
-    forall(ii=1:N)
+    do ii = 1, N
       kpterms(ii,ii,1) = kptermsProfile(ii,1) !gamma1
       kpterms(ii,ii,2) = kptermsProfile(ii,2) !gamma2
       kpterms(ii,ii,3) = kptermsProfile(ii,3) !gamma3
       kpterms(ii,ii,4) = kptermsProfile(ii,5) !P
       kpterms(ii,ii,10) = kptermsProfile(ii,4) !A
-    end forall
+    end do
 
     ! Build tridiagonal averaging matrices (shared by both FD order paths)
     allocate(forward(N,N))
@@ -148,10 +148,10 @@ contains
     backward = 0.0_dp
     central = 0.0_dp
 
-    forall(ii=1:N-1)
+    do ii = 1, N - 1
       forward(ii,ii) = 1
       forward(ii,ii+1) = 1
-    end forall
+    end do
     forward(N,N) = 1
     backward = transpose(forward)
     central = backward + forward
