@@ -43,11 +43,11 @@ contains
     ! Output:
     !   phi(N)     - electrostatic potential (V)
 
+    integer, intent(in)          :: N
+    real(kind=dp), intent(in)    :: dz
     real(kind=dp), intent(inout) :: phi(N)
     real(kind=dp), intent(in)    :: rho(N)
     real(kind=dp), intent(in)    :: epsilon(N)
-    real(kind=dp), intent(in)    :: dz
-    integer, intent(in)          :: N
     real(kind=dp), intent(in)    :: bc_left
     real(kind=dp), intent(in)    :: bc_right
     integer, intent(in)          :: bc_type
@@ -130,8 +130,8 @@ contains
     !
     ! with c(1)=0 and b(N)=0.
 
-    real(kind=dp), intent(inout) :: a(N), b(N), c(N), d(N)
     integer, intent(in) :: N
+    real(kind=dp), intent(inout) :: a(N), b(N), c(N), d(N)
 
     real(kind=dp) :: w
     integer :: i
@@ -184,11 +184,11 @@ contains
   ! ==================================================================
   subroutine solve_poisson_2d(phi, rho, epsilon, dy, dz, ny, nz, bc_value)
 
+    integer, intent(in)          :: ny, nz
+    real(kind=dp), intent(in)    :: dy, dz
     real(kind=dp), intent(inout) :: phi(ny, nz)
     real(kind=dp), intent(in)    :: rho(ny, nz)
     real(kind=dp), intent(in)    :: epsilon(ny, nz)
-    real(kind=dp), intent(in)    :: dy, dz
-    integer, intent(in)          :: ny, nz
     real(kind=dp), intent(in)    :: bc_value
 
     integer :: ntotal, nnz_est, coo_idx

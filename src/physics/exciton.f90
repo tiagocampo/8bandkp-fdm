@@ -174,9 +174,10 @@ contains
   ! Density-weighted average dielectric constant.
   ! ------------------------------------------------------------------
   function avg_dielectric(phi_e, phi_h, params, nlayers, mat_id) result(eps_r)
+    integer, intent(in)          :: nlayers
     real(kind=dp), intent(in)    :: phi_e(:), phi_h(:)
     type(paramStruct), intent(in):: params(nlayers)
-    integer, intent(in)          :: nlayers, mat_id(:)
+    integer, intent(in)          :: mat_id(:)
     real(kind=dp)                :: eps_r
 
     integer :: n, layer
@@ -218,9 +219,10 @@ contains
   ! m_hh: 1/(gamma1 - 2*gamma2) for [001] growth
   ! ------------------------------------------------------------------
   function reduced_mass(phi_e, phi_h, params, nlayers, mat_id) result(mu_eff)
+    integer, intent(in)          :: nlayers
     real(kind=dp), intent(in)    :: phi_e(:), phi_h(:)
     type(paramStruct), intent(in):: params(nlayers)
-    integer, intent(in)          :: nlayers, mat_id(:)
+    integer, intent(in)          :: mat_id(:)
     real(kind=dp)                :: mu_eff
 
     integer :: n, layer

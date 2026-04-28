@@ -12,14 +12,7 @@ module confinement_init
   end interface confinementInitialization
 
   public :: confinementInitialization
-  public :: confinementInitialization_raw
-  public :: confinementInitialization_cfg
   public :: confinementInitialization_2d
-  public :: build_kpterm_block
-  public :: build_diagonal_csr
-  public :: applyVariableCoeffStaggered
-  public :: apply_dirichlet_order2_first_derivative
-  public :: apply_dirichlet_order2_second_derivative
 
 contains
 
@@ -70,21 +63,21 @@ contains
 
     real(kind = dp), intent(in), dimension(:) :: z
     integer, intent(in), dimension(:) :: startPos, endPos
-    character(len = 255), intent(in) :: material(nlayers)
     integer, intent(in) :: nlayers
+    character(len = 255), intent(in) :: material(nlayers)
     type(paramStruct), intent(in) :: params(nlayers)
     character(len = 1), intent(in) :: confDir
     real(kind = dp), intent(inout), allocatable, dimension(:,:) :: profile
     real(kind = dp), intent(inout), dimension(:,:,:) :: kpterms
     integer, intent(in), optional :: FDorder
 
-    real(kind=dp), allocatable, dimension(:,:) :: ScnDer, FstDer, kptermsProfile
+    real(kind=dp), allocatable, dimension(:,:) :: kptermsProfile
     real(kind=dp), allocatable, dimension(:,:) :: forward, central, backward
     real(kind=dp), allocatable, dimension(:) :: diag, offup, offdown
     real(kind=dp), allocatable, dimension(:,:) :: D_inner, D_outer
     real(kind=dp), allocatable, dimension(:) :: g_half
 
-    integer :: i, initIDX, endIDX, N, ii, jj, j
+    integer :: i, N, ii, j
     integer :: order
     real(kind = dp) :: delta
 
@@ -363,7 +356,6 @@ contains
     type(csr_matrix) :: kron_Iy_D2x, kron_D2y_Ix, laplacian_2d
     type(csr_matrix) :: kron_Iy_D1x, kron_D1y_Ix, grad_2d
     type(csr_matrix) :: kron_D1y_D1x  ! cross-derivative
-    type(csr_matrix) :: diag_csr, scaled_diag
 
     ! Material profiles on the 2D grid
     real(kind=dp), allocatable :: prof_gamma1(:), prof_gamma2(:)

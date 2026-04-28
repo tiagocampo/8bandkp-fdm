@@ -148,8 +148,8 @@ module linalg
       logical, intent(in)             :: rvec
       character(len=1), intent(in)    :: howmny, bmat
       character(len=2), intent(in)    :: which
-      logical, intent(inout)          :: select(ncv)
       integer, intent(in)             :: n, nev, ncv, ldz, ldv, lworkl
+      logical, intent(inout)          :: select(ncv)
       real(kind=dp), intent(in)       :: tol
       complex(kind=dp), intent(out)   :: d(nev)
       complex(kind=dp), intent(out)   :: z(ldz, nev)

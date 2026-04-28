@@ -57,8 +57,8 @@ contains
   ! Uses work arrays cx, cz which must be large enough.
   ! ------------------------------------------------------------------
   pure subroutine clip_halfplane(vx, vz, nvert, cx, cz, nc, nx, nz, px, pz)
-    real(kind=dp), intent(in)  :: vx(nvert), vz(nvert)
     integer, intent(in)        :: nvert
+    real(kind=dp), intent(in)  :: vx(nvert), vz(nvert)
     real(kind=dp), intent(out) :: cx(nvert + 1), cz(nvert + 1)
     integer, intent(out)       :: nc
     real(kind=dp), intent(in)  :: nx, nz     ! outward normal

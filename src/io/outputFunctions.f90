@@ -22,7 +22,7 @@ module outputFunctions
       
       ! Create directory if it doesn't exist
       if (.not. dir_exists) then
-        call system('mkdir -p '//OUTPUT_DIR)
+        call execute_command_line('mkdir -p '//OUTPUT_DIR)
       end if
     end subroutine
 
