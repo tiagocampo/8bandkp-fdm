@@ -1334,62 +1334,6 @@ module hamiltonian_wire
       end if
     end subroutine build_kp_term_PM
 
-    subroutine csr_conjugate_transpose(A, AH)
-      type(csr_matrix), intent(in)  :: A
-      type(csr_matrix), intent(out) :: AH
-
-      integer :: row, k
-      integer, allocatable :: rows_coo(:), cols_coo(:)
-      complex(kind=dp), allocatable :: vals_coo(:)
-
-      if (A%nnz == 0) then
-        call csr_init(AH, A%ncols, A%nrows)
-        return
-      end if
-
-      allocate(rows_coo(A%nnz), cols_coo(A%nnz), vals_coo(A%nnz))
-      do row = 1, A%nrows
-        do k = A%rowptr(row), A%rowptr(row + 1) - 1
-          rows_coo(k) = A%colind(k)
-          cols_coo(k) = row
-          vals_coo(k) = conjg(A%values(k))
-        end do
-      end do
-
-      call csr_build_from_coo(AH, A%ncols, A%nrows, A%nnz, rows_coo, cols_coo, vals_coo)
-      deallocate(rows_coo, cols_coo, vals_coo)
-    end subroutine csr_conjugate_transpose
-
-    subroutine csr_conjugate_transpose_to_preallocated(A, AH)
-      ! Writes conjugate transpose of A into pre-allocated AH.
-      ! AH must already have the correct structure (rowptr, colind, nnz).
-      type(csr_matrix), intent(in)    :: A
-      type(csr_matrix), intent(inout) :: AH
-
-      integer :: row, k, col, lo, hi, mid
-
-      AH%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
-      do row = 1, A%nrows
-        do k = A%rowptr(row), A%rowptr(row + 1) - 1
-          col = A%colind(k)
-          ! Binary search for (col, row) in AH's sorted CSR structure
-          lo = AH%rowptr(col)
-          hi = AH%rowptr(col + 1) - 1
-          do while (lo <= hi)
-            mid = (lo + hi) / 2
-            if (AH%colind(mid) == row) then
-              AH%values(mid) = conjg(A%values(k))
-              exit
-            else if (AH%colind(mid) < row) then
-              lo = mid + 1
-            else
-              hi = mid - 1
-            end if
-          end do
-        end do
-      end do
-    end subroutine csr_conjugate_transpose_to_preallocated
-
     ! ==================================================================
     ! Helper: Build kp-term A for wire
     ! A = kpterms_2d(5) + kz^2 * kpterms_2d(10)
