@@ -19,10 +19,10 @@ contains
   subroutine build_kpterm_block(kpterms, profile_vec, central, forward, &
     & backward, diag, offup, offdown, N, term_idx, scale_factor, has_diag)
 
-    real(kind=dp), intent(inout), dimension(:,:,:) :: kpterms
-    real(kind=dp), intent(in), dimension(:) :: profile_vec
-    real(kind=dp), intent(in), dimension(:,:) :: central, forward, backward
-    real(kind=dp), intent(inout), dimension(:) :: diag, offup, offdown
+    real(kind=dp), intent(inout), contiguous, dimension(:,:,:) :: kpterms
+    real(kind=dp), intent(in), contiguous, dimension(:) :: profile_vec
+    real(kind=dp), intent(in), contiguous, dimension(:,:) :: central, forward, backward
+    real(kind=dp), intent(inout), contiguous, dimension(:) :: diag, offup, offdown
     integer, intent(in) :: N, term_idx
     real(kind=dp), intent(in) :: scale_factor
     logical, intent(in) :: has_diag
@@ -61,14 +61,14 @@ contains
   subroutine confinementInitialization_raw(z, startPos, endPos, material, nlayers,&
     & params, confDir, profile, kpterms, FDorder)
 
-    real(kind = dp), intent(in), dimension(:) :: z
-    integer, intent(in), dimension(:) :: startPos, endPos
+    real(kind = dp), intent(in), contiguous, dimension(:) :: z
+    integer, intent(in), contiguous, dimension(:) :: startPos, endPos
     integer, intent(in) :: nlayers
     character(len = 255), intent(in) :: material(nlayers)
     type(paramStruct), intent(in) :: params(nlayers)
     character(len = 1), intent(in) :: confDir
     real(kind = dp), intent(inout), allocatable, dimension(:,:) :: profile
-    real(kind = dp), intent(inout), dimension(:,:,:) :: kpterms
+    real(kind = dp), intent(inout), contiguous, dimension(:,:,:) :: kpterms
     integer, intent(in), optional :: FDorder
 
     real(kind=dp), allocatable, dimension(:,:) :: kptermsProfile
@@ -330,8 +330,8 @@ contains
       profile_2d, kpterms_2d, FDorder)
 
     type(spatial_grid), intent(in)    :: grid
-    type(paramStruct), intent(in)     :: params(:)     ! size = numRegions
-    type(region_spec), intent(in)     :: regions(:)    ! size = numRegions
+    type(paramStruct), intent(in), contiguous     :: params(:)     ! size = numRegions
+    type(region_spec), intent(in), contiguous     :: regions(:)    ! size = numRegions
     real(kind=dp), allocatable, intent(out) :: profile_2d(:,:)
     type(csr_matrix), allocatable, intent(out) :: kpterms_2d(:)
     integer, intent(in), optional     :: FDorder
@@ -604,7 +604,7 @@ contains
   end subroutine confinementInitialization_2d
 
   subroutine apply_dirichlet_order2_first_derivative(D1, dz)
-    real(kind=dp), intent(inout) :: D1(:,:)
+    real(kind=dp), intent(inout), contiguous :: D1(:,:)
     real(kind=dp), intent(in) :: dz
     integer :: n, i
 
@@ -625,7 +625,7 @@ contains
   end subroutine apply_dirichlet_order2_first_derivative
 
   subroutine apply_dirichlet_order2_second_derivative(D2, dz)
-    real(kind=dp), intent(inout) :: D2(:,:)
+    real(kind=dp), intent(inout), contiguous :: D2(:,:)
     real(kind=dp), intent(in) :: dz
     integer :: n, i
 
@@ -682,9 +682,9 @@ contains
   !---------------------------------------------------------------------------
   subroutine applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, term_idx)
 
-    real(kind=dp), intent(inout), dimension(:,:,:) :: kpterms
-    real(kind=dp), intent(in) :: g_half(:)
-    real(kind=dp), intent(in) :: D_inner(:,:), D_outer(:,:)
+    real(kind=dp), intent(inout), contiguous, dimension(:,:,:) :: kpterms
+    real(kind=dp), intent(in), contiguous :: g_half(:)
+    real(kind=dp), intent(in), contiguous :: D_inner(:,:), D_outer(:,:)
     integer, intent(in) :: N, term_idx
 
     real(kind=dp), allocatable :: temp(:,:), result(:,:)
