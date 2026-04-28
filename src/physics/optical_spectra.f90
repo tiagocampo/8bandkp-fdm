@@ -5,6 +5,7 @@ module optical_spectra
   use charge_density, only: fermi_dirac
   use spin_projection, only: spin_weights
   use outputFunctions, only: ensure_output_dir, get_unit
+  use linalg, only: zdotc
   implicit none
 
   private
@@ -120,7 +121,7 @@ contains
     complex(kind=dp) :: Pele
     complex(kind=dp), allocatable :: Ytmp(:)
     complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
-    complex(kind=dp), external :: zdotc
+
 
     dim = size(eigvecs, 1)
     Ngrid = dim / 8
@@ -158,7 +159,7 @@ contains
 
         do dir = 1, 3
           call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
-          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
+          Pele = zdotc(dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
@@ -227,7 +228,7 @@ contains
     complex(kind=dp) :: Pele
     complex(kind=dp), allocatable :: Ytmp(:)
     complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
-    complex(kind=dp), external :: zdotc
+
 
     if (nE == 0) return
     if (.not. allocated(spont_te)) return
@@ -262,7 +263,7 @@ contains
 
         do dir = 1, 3
           call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
-          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
+          Pele = zdotc(dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
@@ -741,7 +742,7 @@ contains
     complex(kind=dp) :: pele_ij
     complex(kind=dp), allocatable :: Ytmp(:)
     complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
-    complex(kind=dp), external :: zdotc
+
     real(kind=dp) :: ef_cb
 
     if (nE == 0) return  ! optics_init not called
@@ -778,7 +779,7 @@ contains
 
         ! Velocity matrix element via commutator: dir_isbt = 3 for QW (z-dipole)
         call csr_spmv(vel(dir_isbt), eigvecs(:,state_j), Ytmp, ONE, ZERO)
-        pele_ij = zdotc(dim, eigvecs(1,state_i), 1, Ytmp, 1)
+        pele_ij = zdotc(dim, eigvecs(1:dim,state_i), 1, Ytmp, 1)
         p_abs2 = real(pele_ij * conjg(pele_ij), kind=dp)
 
         ! Broaden and accumulate onto energy grid (ISBT, TM-polarized)
@@ -911,7 +912,7 @@ contains
     complex(kind=dp) :: Pele
     complex(kind=dp), allocatable :: Ytmp(:)
     complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
-    complex(kind=dp), external :: zdotc
+
 
     if (nE == 0) return  ! optics_init not called
     if (.not. allocated(alpha_gain_te)) return  ! gain not initialized
@@ -972,7 +973,7 @@ contains
 
         do dir = 1, 3
           call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
-          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
+          Pele = zdotc(dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)

@@ -1,8 +1,9 @@
 module linalg
-  ! Centralized explicit interface blocks for LAPACK, MKL utility, and
-  ! (optionally) MKL FEAST routines.  Replaces loose `external` declarations
-  ! scattered across the codebase, giving the compiler proper type-checking
-  ! and eliminating gfortran strict-aliasing warnings.
+  ! Centralized explicit interface blocks for LAPACK, BLAS, MKL utility,
+  ! MKL PARDISO, and (optionally) MKL FEAST routines.  Replaces loose
+  ! `external` declarations scattered across the codebase, giving the
+  ! compiler proper type-checking and eliminating gfortran strict-aliasing
+  ! warnings.
 
   use definitions, only: dp
   implicit none
@@ -14,8 +15,16 @@ module linalg
   public :: ilaenv
   public :: dlamch
 
+  ! BLAS
+  public :: zdotc
+
   ! MKL-specific
   public :: mkl_set_num_threads_local
+
+  ! MKL PARDISO (guarded)
+#ifdef USE_ARPACK
+  public :: pardiso
+#endif
 
   ! MKL FEAST (guarded)
 #ifdef USE_MKL_FEAST
@@ -89,6 +98,35 @@ module linalg
       integer :: previous
     end function
   end interface
+
+  ! zdotc - BLAS complex dot product (conjugated first vector)
+  interface
+    function zdotc(n, zx, incx, zy, incy) result(res)
+      import :: dp
+      integer, intent(in) :: n, incx, incy
+      complex(kind=dp), intent(in) :: zx(*), zy(*)
+      complex(kind=dp) :: res
+    end function zdotc
+  end interface
+
+#ifdef USE_ARPACK
+  ! pardiso - MKL PARDISO direct solver
+  interface
+    subroutine pardiso(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, &
+                       nrhs, iparm, msglvl, b, x, error)
+      use definitions, only: dp
+      integer(8), intent(inout) :: pt(64)
+      integer, intent(in) :: maxfct, mnum, mtype, phase, n
+      complex(kind=dp), intent(in) :: a(*)
+      integer, intent(in) :: ia(*), ja(*), perm(*)
+      integer, intent(in) :: nrhs
+      integer, intent(inout) :: iparm(64)
+      integer, intent(in) :: msglvl
+      complex(kind=dp), intent(inout) :: b(*), x(*)
+      integer, intent(out) :: error
+    end subroutine pardiso
+  end interface
+#endif
 
 #ifdef USE_MKL_FEAST
   ! feastinit - FEAST initialization

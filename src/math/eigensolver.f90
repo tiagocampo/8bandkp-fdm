@@ -313,7 +313,7 @@ contains
   ! ==================================================================
   subroutine solve_arpack(H_csr, config, result)
     use sparse_matrices, only: csr_spmv
-    use linalg, only: znaupd, zneupd
+    use linalg, only: znaupd, zneupd, pardiso
     type(csr_matrix), intent(in)          :: H_csr
     type(eigensolver_config), intent(in)  :: config
     type(eigensolver_result), intent(out) :: result
@@ -337,7 +337,6 @@ contains
     integer, allocatable :: H_shifted_rowptr(:), H_shifted_colind(:)
     complex(kind=dp), allocatable :: rhs(:), sol(:)
     complex(kind=dp) :: dummy_bx(1)
-    external :: pardiso
     integer :: nnz, k
     integer, allocatable :: perm(:)
 
