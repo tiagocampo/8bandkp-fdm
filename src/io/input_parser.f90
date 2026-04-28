@@ -495,197 +495,205 @@ contains
 
     ! --- SC parameters (backward compatible: uses defaults if missing) ---
     read(data_unit, *, iostat=status) label, cfg%sc%enabled
-    if (status == 0 .and. cfg%sc%enabled == 1) then
-      print *, trim(label), cfg%sc%enabled
+    sc_block: do
+      if (status == 0 .and. cfg%sc%enabled == 1) then
+        print *, trim(label), cfg%sc%enabled
 
-      read(data_unit, *, iostat=status) label, cfg%sc%max_iterations
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%max_iterations
+        read(data_unit, *, iostat=status) label, cfg%sc%max_iterations
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%max_iterations
 
-      read(data_unit, *, iostat=status) label, cfg%sc%tolerance
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%tolerance
+        read(data_unit, *, iostat=status) label, cfg%sc%tolerance
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%tolerance
 
-      read(data_unit, *, iostat=status) label, cfg%sc%mixing_alpha
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%mixing_alpha
+        read(data_unit, *, iostat=status) label, cfg%sc%mixing_alpha
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%mixing_alpha
 
-      read(data_unit, *, iostat=status) label, cfg%sc%diis_history
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%diis_history
+        read(data_unit, *, iostat=status) label, cfg%sc%diis_history
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%diis_history
 
-      read(data_unit, *, iostat=status) label, cfg%sc%temperature
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%temperature
+        read(data_unit, *, iostat=status) label, cfg%sc%temperature
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%temperature
 
-      read(data_unit, *, iostat=status) label, cfg%sc%fermi_mode
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%fermi_mode
+        read(data_unit, *, iostat=status) label, cfg%sc%fermi_mode
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%fermi_mode
 
-      read(data_unit, *, iostat=status) label, cfg%sc%fermi_level
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%fermi_level
+        read(data_unit, *, iostat=status) label, cfg%sc%fermi_level
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%fermi_level
 
-      read(data_unit, *, iostat=status) label, cfg%sc%num_kpar
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%num_kpar
+        read(data_unit, *, iostat=status) label, cfg%sc%num_kpar
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%num_kpar
 
-      read(data_unit, *, iostat=status) label, cfg%sc%kpar_max
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%kpar_max
+        read(data_unit, *, iostat=status) label, cfg%sc%kpar_max
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%kpar_max
 
-      read(data_unit, *, iostat=status) label, cfg%sc%bc_type
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%bc_type
+        read(data_unit, *, iostat=status) label, cfg%sc%bc_type
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%bc_type
 
-      read(data_unit, *, iostat=status) label, cfg%sc%bc_left
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%bc_left
+        read(data_unit, *, iostat=status) label, cfg%sc%bc_left
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%bc_left
 
-      read(data_unit, *, iostat=status) label, cfg%sc%bc_right
-      if (status /= 0) goto 100
-      print *, trim(label), cfg%sc%bc_right
+        read(data_unit, *, iostat=status) label, cfg%sc%bc_right
+        if (status /= 0) then; status = 0; exit sc_block; end if
+        print *, trim(label), cfg%sc%bc_right
 
-      ! Read doping per layer (ND NA for each layer)
-      allocate(cfg%doping(cfg%numLayers))
-      do i = 1, cfg%numLayers
-        read(data_unit, *, iostat=status) label, cfg%doping(i)%ND, cfg%doping(i)%NA
-        if (status /= 0) then
-          cfg%doping(i)%ND = 0.0_dp
-          cfg%doping(i)%NA = 0.0_dp
-          status = 0
-          exit
-        end if
-        print *, trim(label), cfg%doping(i)%ND, cfg%doping(i)%NA
-      end do
+        ! Read doping per layer (ND NA for each layer)
+        allocate(cfg%doping(cfg%numLayers))
+        do i = 1, cfg%numLayers
+          read(data_unit, *, iostat=status) label, cfg%doping(i)%ND, cfg%doping(i)%NA
+          if (status /= 0) then
+            cfg%doping(i)%ND = 0.0_dp
+            cfg%doping(i)%NA = 0.0_dp
+            status = 0
+            exit
+          end if
+          print *, trim(label), cfg%doping(i)%ND, cfg%doping(i)%NA
+        end do
 
-    else if (status == 0) then
-      ! SC=0, skip remaining SC lines
-      print *, trim(label), cfg%sc%enabled
-    else
-      ! Could not read SC flag -- use defaults (SC off)
-      status = 0
-    end if
-100 continue
+      else if (status == 0) then
+        ! SC=0, skip remaining SC lines
+        print *, trim(label), cfg%sc%enabled
+      else
+        ! Could not read SC flag -- use defaults (SC off)
+        status = 0
+      end if
+      exit sc_block
+    end do sc_block
 
     ! --- Optical spectra parameters (backward compatible: uses defaults if missing) ---
     call read_optional_logical_flag(data_unit, 'optics:', cfg%optics%enabled, found_optional, label)
-    if (found_optional .and. cfg%optics%enabled) then
-      print *, trim(label), cfg%optics%enabled
+    optics_block: do
+      if (found_optional .and. cfg%optics%enabled) then
+        print *, trim(label), cfg%optics%enabled
 
-      read(data_unit, *, iostat=status) label, cfg%optics%linewidth_lorentzian
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%linewidth_lorentzian
+        read(data_unit, *, iostat=status) label, cfg%optics%linewidth_lorentzian
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%linewidth_lorentzian
 
-      read(data_unit, *, iostat=status) label, cfg%optics%linewidth_gaussian
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%linewidth_gaussian
+        read(data_unit, *, iostat=status) label, cfg%optics%linewidth_gaussian
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%linewidth_gaussian
 
-      read(data_unit, *, iostat=status) label, cfg%optics%refractive_index
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%refractive_index
+        read(data_unit, *, iostat=status) label, cfg%optics%refractive_index
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%refractive_index
 
-      read(data_unit, *, iostat=status) label, cfg%optics%E_min
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%E_min
+        read(data_unit, *, iostat=status) label, cfg%optics%E_min
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%E_min
 
-      read(data_unit, *, iostat=status) label, cfg%optics%E_max
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%E_max
+        read(data_unit, *, iostat=status) label, cfg%optics%E_max
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%E_max
 
-      read(data_unit, *, iostat=status) label, cfg%optics%num_energy_points
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%num_energy_points
+        read(data_unit, *, iostat=status) label, cfg%optics%num_energy_points
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%num_energy_points
 
-      read(data_unit, *, iostat=status) label, cfg%optics%temperature
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%temperature
+        read(data_unit, *, iostat=status) label, cfg%optics%temperature
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%temperature
 
-      read(data_unit, *, iostat=status) label, cfg%optics%carrier_density
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%carrier_density
+        read(data_unit, *, iostat=status) label, cfg%optics%carrier_density
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%carrier_density
 
-      ! Gain parameters
-      read(data_unit, *, iostat=status) label, cfg%optics%gain_enabled
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%gain_enabled
+        ! Gain parameters
+        read(data_unit, *, iostat=status) label, cfg%optics%gain_enabled
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%gain_enabled
 
-      read(data_unit, *, iostat=status) label, cfg%optics%gain_carrier_density
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%gain_carrier_density
+        read(data_unit, *, iostat=status) label, cfg%optics%gain_carrier_density
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%gain_carrier_density
 
-      ! ISBT
-      read(data_unit, *, iostat=status) label, cfg%optics%isbt_enabled
-      if (status /= 0) goto 101
-      print *, trim(label), cfg%optics%isbt_enabled
+        ! ISBT
+        read(data_unit, *, iostat=status) label, cfg%optics%isbt_enabled
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        print *, trim(label), cfg%optics%isbt_enabled
 
-      ! Spontaneous emission (optional — backward compatible with configs
-      ! that omit these lines).  Peek at the label; if it doesn't match
-      ! the expected field name, push the line back with BACKSPACE.
-      read(data_unit, *, iostat=status) label
-      if (status /= 0) goto 101
-      if (trim(adjustl(label)) == 'SpontaneousEnabled:') then
-        backspace(data_unit)
-        read(data_unit, *, iostat=status) label, cfg%optics%spontaneous_enabled
-        if (status /= 0) goto 101
-        print *, trim(label), cfg%optics%spontaneous_enabled
-
-        ! Spin resolution (also optional)
+        ! Spontaneous emission (optional — backward compatible with configs
+        ! that omit these lines).  Peek at the label; if it doesn't match
+        ! the expected field name, push the line back with BACKSPACE.
         read(data_unit, *, iostat=status) label
-        if (status /= 0) goto 101
-        if (trim(adjustl(label)) == 'SpinResolved:') then
+        if (status /= 0) then; status = 0; exit optics_block; end if
+        if (trim(adjustl(label)) == 'SpontaneousEnabled:') then
           backspace(data_unit)
-          read(data_unit, *, iostat=status) label, cfg%optics%spin_resolved
-          if (status /= 0) goto 101
-          print *, trim(label), cfg%optics%spin_resolved
+          read(data_unit, *, iostat=status) label, cfg%optics%spontaneous_enabled
+          if (status /= 0) then; status = 0; exit optics_block; end if
+          print *, trim(label), cfg%optics%spontaneous_enabled
+
+          ! Spin resolution (also optional)
+          read(data_unit, *, iostat=status) label
+          if (status /= 0) then; status = 0; exit optics_block; end if
+          if (trim(adjustl(label)) == 'SpinResolved:') then
+            backspace(data_unit)
+            read(data_unit, *, iostat=status) label, cfg%optics%spin_resolved
+            if (status /= 0) then; status = 0; exit optics_block; end if
+            print *, trim(label), cfg%optics%spin_resolved
+          else
+            backspace(data_unit)
+          end if
         else
           backspace(data_unit)
         end if
-      else
-        backspace(data_unit)
-      end if
 
-    else if (found_optional) then
-      ! Optics=F, skip remaining optics lines
-      print *, trim(label), cfg%optics%enabled
-    end if
-101 continue
+      else if (found_optional) then
+        ! Optics=F, skip remaining optics lines
+        print *, trim(label), cfg%optics%enabled
+      end if
+      exit optics_block
+    end do optics_block
 
     ! --- Exciton parameters (backward compatible: uses defaults if missing) ---
     call read_optional_logical_flag(data_unit, 'exciton:', cfg%exciton%enabled, found_optional, label)
-    if (found_optional .and. cfg%exciton%enabled) then
-      print *, trim(label), cfg%exciton%enabled
+    exciton_block: do
+      if (found_optional .and. cfg%exciton%enabled) then
+        print *, trim(label), cfg%exciton%enabled
 
-      read(data_unit, *, iostat=status) label, cfg%exciton%method
-      if (status /= 0) goto 102
-      print *, trim(label), trim(cfg%exciton%method)
+        read(data_unit, *, iostat=status) label, cfg%exciton%method
+        if (status /= 0) then; status = 0; exit exciton_block; end if
+        print *, trim(label), trim(cfg%exciton%method)
 
-    else if (found_optional) then
-      print *, trim(label), cfg%exciton%enabled
-    end if
-102 continue
+      else if (found_optional) then
+        print *, trim(label), cfg%exciton%enabled
+      end if
+      exit exciton_block
+    end do exciton_block
 
     ! --- Scattering parameters (backward compatible: uses defaults if missing) ---
     call read_optional_logical_flag(data_unit, 'scattering:', cfg%scattering%enabled, found_optional, label)
-    if (found_optional .and. cfg%scattering%enabled) then
-      print *, trim(label), cfg%scattering%enabled
+    scattering_block: do
+      if (found_optional .and. cfg%scattering%enabled) then
+        print *, trim(label), cfg%scattering%enabled
 
-      read(data_unit, *, iostat=status) label, cfg%scattering%phonon_energy
-      if (status /= 0) goto 103
-      print *, trim(label), cfg%scattering%phonon_energy
+        read(data_unit, *, iostat=status) label, cfg%scattering%phonon_energy
+        if (status /= 0) then; status = 0; exit scattering_block; end if
+        print *, trim(label), cfg%scattering%phonon_energy
 
-      read(data_unit, *, iostat=status) label, cfg%scattering%eps_inf
-      if (status /= 0) goto 103
-      print *, trim(label), cfg%scattering%eps_inf
+        read(data_unit, *, iostat=status) label, cfg%scattering%eps_inf
+        if (status /= 0) then; status = 0; exit scattering_block; end if
+        print *, trim(label), cfg%scattering%eps_inf
 
-      read(data_unit, *, iostat=status) label, cfg%scattering%eps_0
-      if (status /= 0) goto 103
-      print *, trim(label), cfg%scattering%eps_0
+        read(data_unit, *, iostat=status) label, cfg%scattering%eps_0
+        if (status /= 0) then; status = 0; exit scattering_block; end if
+        print *, trim(label), cfg%scattering%eps_0
 
-    else if (found_optional) then
-      print *, trim(label), cfg%scattering%enabled
-    end if
-103 continue
+      else if (found_optional) then
+        print *, trim(label), cfg%scattering%enabled
+      end if
+      exit scattering_block
+    end do scattering_block
 
     ! --- FEAST eigensolver tuning (backward compatible: uses defaults if missing) ---
     call read_optional_real_flag(data_unit, 'feast_emin:', cfg%feast_emin, found_optional, label)
@@ -715,27 +723,28 @@ contains
 
     ! --- Strain parameters (backward compatible: uses defaults if missing) ---
     call read_optional_logical_flag(data_unit, 'strain:', cfg%strain%enabled, found_optional, label)
-    if (found_optional .and. cfg%strain%enabled) then
-      print *, trim(label), cfg%strain%enabled
+    strain_block: do
+      if (found_optional .and. cfg%strain%enabled) then
+        print *, trim(label), cfg%strain%enabled
 
-      read(data_unit, *, iostat=status) label, cfg%strain%reference
-      if (status /= 0) goto 200
-      print *, trim(label), trim(cfg%strain%reference)
+        read(data_unit, *, iostat=status) label, cfg%strain%reference
+        if (status /= 0) then; status = 0; exit strain_block; end if
+        print *, trim(label), trim(cfg%strain%reference)
 
-      read(data_unit, *, iostat=status) label, cfg%strain%solver
-      if (status /= 0) goto 200
-      print *, trim(label), trim(cfg%strain%solver)
+        read(data_unit, *, iostat=status) label, cfg%strain%solver
+        if (status /= 0) then; status = 0; exit strain_block; end if
+        print *, trim(label), trim(cfg%strain%solver)
 
-      read(data_unit, *, iostat=status) label, cfg%strain%piezoelectric
-      if (status /= 0) goto 200
-      print *, trim(label), cfg%strain%piezoelectric
+        read(data_unit, *, iostat=status) label, cfg%strain%piezoelectric
+        if (status /= 0) then; status = 0; exit strain_block; end if
+        print *, trim(label), cfg%strain%piezoelectric
 
-    else if (found_optional) then
-      ! strain=.false., skip remaining strain lines
-      print *, trim(label), cfg%strain%enabled
-    end if
-
-200 continue
+      else if (found_optional) then
+        ! strain=.false., skip remaining strain lines
+        print *, trim(label), cfg%strain%enabled
+      end if
+      exit strain_block
+    end do strain_block
 
     print *, ' '
 
