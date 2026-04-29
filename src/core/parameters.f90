@@ -3,6 +3,8 @@ module parameters
   use definitions
 
   implicit none
+  private
+  public :: paramDatabase
 
   contains
 

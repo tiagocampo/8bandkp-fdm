@@ -3,6 +3,15 @@ module finitedifferences
   use definitions
 
   implicit none
+  private
+  public :: FDmatrixDense, Identity, FDstencil, toeplitz
+  public :: buildFD2ndDerivMatrix, buildFD1stDerivMatrix
+  public :: FDcentralCoeffs2nd, FDcentralCoeffs1st
+  public :: FDforwardCoeffs2nd, FDbackwardCoeffs2nd
+  public :: FDforwardCoeffs1st, FDbackwardCoeffs1st
+  public :: vandermonde_2nd_deriv, vandermonde_1st_deriv
+  public :: buildStaggeredD1Inner, buildStaggeredD1Outer
+  public :: interpolateToHalfPoints
 
   contains
 

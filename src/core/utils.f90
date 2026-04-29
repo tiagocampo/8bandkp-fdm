@@ -4,6 +4,9 @@ use definitions
 use sparse_matrices, only: csr_matrix, csr_build_from_coo
 
 implicit none
+private
+public :: dnscsr_z_mkl, simpson, simpson_real
+public :: insertCOO_cmplx, finalizeCOO_cmplx
 
 contains
 
