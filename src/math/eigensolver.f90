@@ -41,6 +41,8 @@ module eigensolver
     complex(kind=dp), allocatable :: eigenvectors(:,:)
     integer                       :: iterations = 0
     logical                       :: converged = .false.
+  contains
+    final :: eigensolver_result_finalize
   end type eigensolver_result
 
   ! ------------------------------------------------------------------
@@ -715,6 +717,15 @@ contains
     emin = rmin - max(margin_frac * abs(rmin), margin_floor)
     emax = rmax + max(margin_frac * abs(rmax), margin_floor)
   end subroutine auto_compute_energy_window
+
+  ! ==================================================================
+  ! Finalizer: automatically called when an eigensolver_result goes out of scope.
+  ! Delegates to eigensolver_result_free so existing manual frees remain valid.
+  ! ==================================================================
+  subroutine eigensolver_result_finalize(er)
+    type(eigensolver_result), intent(inout) :: er
+    call eigensolver_result_free(er)
+  end subroutine eigensolver_result_finalize
 
   ! ==================================================================
   ! Deallocate result arrays.

@@ -30,6 +30,8 @@ module hamiltonian_wire
     integer, allocatable          :: coo_to_csr(:)   ! (coo_nnz_in) mapping
     integer                       :: coo_nnz_in = 0  ! input COO count
     logical                       :: initialized = .false.
+  contains
+    final :: wire_coo_cache_finalize
   end type wire_coo_cache
 
   ! ------------------------------------------------------------------
@@ -1354,6 +1356,15 @@ module hamiltonian_wire
       ws%coo_capacity = 0
       ws%initialized = .false.
     end subroutine wire_workspace_free
+
+    ! ==================================================================
+    ! Finalizer: automatically called when a wire_coo_cache goes out of scope.
+    ! Delegates to wire_coo_cache_free so existing manual frees remain valid.
+    ! ==================================================================
+    subroutine wire_coo_cache_finalize(cache)
+      type(wire_coo_cache), intent(inout) :: cache
+      call wire_coo_cache_free(cache)
+    end subroutine wire_coo_cache_finalize
 
     ! ==================================================================
     ! Free the COO cache for symbolic assembly reuse.

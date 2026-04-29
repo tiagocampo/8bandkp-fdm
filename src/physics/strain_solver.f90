@@ -39,6 +39,8 @@ module strain_solver
     real(kind=dp), allocatable :: eps_yy(:)   ! (Ngrid) in-plane strain
     real(kind=dp), allocatable :: eps_zz(:)   ! (Ngrid) in-plane / growth strain
     real(kind=dp), allocatable :: eps_yz(:)   ! (Ngrid) shear strain
+  contains
+    final :: strain_result_finalize
   end type strain_result
 
 contains
@@ -849,6 +851,15 @@ contains
               cmplx(eps_xz, -eps_yz, kind=dp)
 
   end function compute_bp_scalar
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a strain_result goes out of scope.
+  ! Delegates to strain_result_free so existing manual frees remain valid.
+  ! ==================================================================
+  subroutine strain_result_finalize(sr)
+    type(strain_result), intent(inout) :: sr
+    call strain_result_free(sr)
+  end subroutine strain_result_finalize
 
   ! ==================================================================
   ! Deallocate strain_result arrays

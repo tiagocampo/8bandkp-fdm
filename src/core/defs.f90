@@ -85,6 +85,8 @@ module definitions
     complex(kind=dp), allocatable :: R_eps(:)    ! VB-VB coupling
     complex(kind=dp), allocatable :: S_eps(:)    ! VB-VB coupling
     real(kind=dp), allocatable :: QT2_eps(:)     ! VB-SO coupling (2*Q_eps)
+  contains
+    final :: bir_pikus_blocks_finalize
   end type bir_pikus_blocks
 
   type wavevector
@@ -325,6 +327,22 @@ module definitions
 
 
   contains
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a bir_pikus_blocks goes out of scope.
+  ! Deallocates all allocatable components.
+  ! ==================================================================
+  subroutine bir_pikus_blocks_finalize(bp)
+    type(bir_pikus_blocks), intent(inout) :: bp
+
+    if (allocated(bp%delta_Ec))  deallocate(bp%delta_Ec)
+    if (allocated(bp%delta_EHH)) deallocate(bp%delta_EHH)
+    if (allocated(bp%delta_ELH)) deallocate(bp%delta_ELH)
+    if (allocated(bp%delta_ESO)) deallocate(bp%delta_ESO)
+    if (allocated(bp%R_eps))     deallocate(bp%R_eps)
+    if (allocated(bp%S_eps))     deallocate(bp%S_eps)
+    if (allocated(bp%QT2_eps))   deallocate(bp%QT2_eps)
+  end subroutine bir_pikus_blocks_finalize
 
   elemental pure function kronij(i,j)
     integer, intent(in) :: i,j
