@@ -563,8 +563,10 @@ module hamiltonian_wire
       call csr_clone_structure(H_csr, vel_x)
       call csr_clone_structure(H_csr, vel_y)
 
-      ! Loop over all nonzero entries via CSR structure
-      do row = 1, H_csr%nrows
+      ! Loop over all nonzero entries via CSR structure.
+      ! Each row writes to disjoint CSR index ranges, so outer loop is
+      ! safe for do concurrent — no loop-carried dependencies.
+      do concurrent (row = 1:H_csr%nrows)
         do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
           col = H_csr%colind(k)
 
@@ -617,8 +619,10 @@ module hamiltonian_wire
 
       ! vel(1) and vel(2) remain zero (no x/y spatial grid in QW)
 
-      ! Fill vel(3) using z-position differences
-      do row = 1, H_csr%nrows
+      ! Fill vel(3) using z-position differences.
+      ! Each row writes to disjoint CSR index ranges, so outer loop is
+      ! safe for do concurrent — no loop-carried dependencies.
+      do concurrent (row = 1:H_csr%nrows)
         do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
           col = H_csr%colind(k)
 
