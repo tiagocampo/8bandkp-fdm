@@ -146,7 +146,7 @@ module outputFunctions
 
     subroutine writeEigenvalues(smallk, eig, wvStep, cfg)
 
-      real(kind=dp), intent(in), contiguous :: eig(:,:)
+      real(kind=dp), intent(in) :: eig(:,:)
       type(wavevector), intent(in) :: smallk(:)
       integer, intent(in) :: wvStep
       type(simulation_config), intent(in), optional :: cfg
