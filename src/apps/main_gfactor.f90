@@ -13,7 +13,8 @@ program gfactor
   use utils
   use input_parser
   use sparse_matrices
-  use eigensolver
+  use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
+    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
   use strain_solver
   use linalg, only: mkl_set_num_threads_local
 
@@ -53,6 +54,7 @@ program gfactor
   type(csr_matrix)                 :: HT_csr
   type(wire_coo_cache)             :: coo_cache
   type(eigensolver_config)         :: eigen_cfg
+  class(eigensolver_base), allocatable :: eigen_solver
   type(eigensolver_result)         :: eigen_res
   type(csr_matrix)                 :: vel(3)
   integer                          :: Ngrid, Ntot, nev_wire
@@ -165,8 +167,11 @@ program gfactor
       call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
     end if
 
+    ! Create polymorphic eigensolver
+    eigen_solver = make_eigensolver(eigen_cfg)
+
     ! Solve eigenvalue problem
-    call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res)
+    call eigen_solver%solve(HT_csr, eigen_cfg, eigen_res)
 
     if (eigen_res%nev_found == 0) then
       print *, 'Error: FEAST found no eigenvalues. Check energy window.'

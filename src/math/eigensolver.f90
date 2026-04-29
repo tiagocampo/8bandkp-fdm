@@ -13,6 +13,8 @@ module eigensolver
   public :: feast_workspace, feast_workspace_free
   public :: solve_sparse_evp, solve_feast, solve_dense_lapack
   public :: auto_compute_energy_window, eigensolver_result_free
+  public :: eigensolver_base, feast_solver_t, dense_lapack_solver_t
+  public :: make_eigensolver
 #ifdef USE_ARPACK
   public :: solve_arpack
 #endif
@@ -46,6 +48,24 @@ module eigensolver
   end type eigensolver_result
 
   ! ------------------------------------------------------------------
+  ! Abstract base type for polymorphic eigensolver dispatch.
+  ! ------------------------------------------------------------------
+  type, abstract :: eigensolver_base
+  contains
+    procedure(solve_evp_interface), deferred :: solve
+  end type eigensolver_base
+
+  abstract interface
+    subroutine solve_evp_interface(self, H_csr, config, result)
+      import :: eigensolver_base, csr_matrix, eigensolver_config, eigensolver_result
+      class(eigensolver_base), intent(inout) :: self
+      type(csr_matrix), intent(in) :: H_csr
+      type(eigensolver_config), intent(in) :: config
+      type(eigensolver_result), intent(out) :: result
+    end subroutine solve_evp_interface
+  end interface
+
+  ! ------------------------------------------------------------------
   ! Cached upper-triangle CSR structure for repeated FEAST calls.
   ! Avoids O(NNZ) scan + 3 allocations per k-point in wire kz-sweeps.
   ! ------------------------------------------------------------------
@@ -59,6 +79,21 @@ module eigensolver
   contains
     final :: feast_workspace_finalize
   end type feast_workspace
+
+  ! ------------------------------------------------------------------
+  ! Concrete solver types for polymorphic dispatch.
+  ! ------------------------------------------------------------------
+  type, extends(eigensolver_base) :: feast_solver_t
+    type(feast_workspace) :: ws
+  contains
+    procedure :: solve => feast_solve_dispatch
+    final :: feast_solver_finalize
+  end type feast_solver_t
+
+  type, extends(eigensolver_base) :: dense_lapack_solver_t
+  contains
+    procedure :: solve => dense_lapack_solve_dispatch
+  end type dense_lapack_solver_t
 
 contains
 
@@ -816,5 +851,53 @@ contains
 
     deallocate(tmp_vec)
   end subroutine sort_eigenpairs_ascending
+
+  ! ==================================================================
+  ! Polymorphic dispatch implementations.
+  ! ==================================================================
+
+#ifdef USE_MKL_FEAST
+  subroutine feast_solve_dispatch(self, H_csr, config, result)
+    class(feast_solver_t), intent(inout) :: self
+    type(csr_matrix), intent(in) :: H_csr
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+
+    call solve_feast(H_csr, config, result, fw=self%ws)
+  end subroutine feast_solve_dispatch
+#endif
+
+  subroutine dense_lapack_solve_dispatch(self, H_csr, config, result)
+    class(dense_lapack_solver_t), intent(inout) :: self
+    type(csr_matrix), intent(in) :: H_csr
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+
+    call solve_dense_lapack(H_csr, config, result)
+  end subroutine dense_lapack_solve_dispatch
+
+  subroutine feast_solver_finalize(self)
+    type(feast_solver_t), intent(inout) :: self
+    call feast_workspace_free(self%ws)
+  end subroutine feast_solver_finalize
+
+  function make_eigensolver(config) result(solver)
+    class(eigensolver_base), allocatable :: solver
+    type(eigensolver_config), intent(in) :: config
+
+    select case (trim(config%method))
+#ifdef USE_MKL_FEAST
+    case ('FEAST')
+      allocate(feast_solver_t :: solver)
+#else
+    case ('FEAST')
+      allocate(dense_lapack_solver_t :: solver)
+#endif
+    case ('DENSE')
+      allocate(dense_lapack_solver_t :: solver)
+    case default
+      allocate(dense_lapack_solver_t :: solver)
+    end select
+  end function make_eigensolver
 
 end module eigensolver

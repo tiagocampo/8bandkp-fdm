@@ -16,7 +16,7 @@ module sc_loop
   use charge_density
   use poisson
   use eigensolver, only: eigensolver_config, eigensolver_result, &
-    & solve_sparse_evp, eigensolver_result_free
+    & eigensolver_base, make_eigensolver, solve_sparse_evp, eigensolver_result_free
   use sparse_matrices, only: csr_matrix, csr_clone_structure, csr_free
   use linalg, only: zheevx, dgesv, ilaenv, dlamch
   implicit none
@@ -590,6 +590,7 @@ contains
 
     ! Eigensolver temporaries
     type(csr_matrix)          :: HT_csr_sc
+    class(eigensolver_base), allocatable :: eigen_solver_sc
     type(eigensolver_result)  :: eigen_res_sc
     integer :: Ngrid, Ntot, nev_sc, i
     integer :: num_subbands_actual
@@ -684,6 +685,7 @@ contains
     end if
 
     ! --- Main SC loop ---
+    eigen_solver_sc = make_eigensolver(eigen_cfg)
     print *, '=== Wire Self-Consistent Loop Start ==='
     print *, '  max_iterations:', niter
     print *, '  tolerance:', cfg%sc%tolerance
@@ -712,7 +714,7 @@ contains
             & kpterms_2d, cfg, coo_cache)
         end if
 
-        call solve_sparse_evp(HT_csr_sc, eigen_cfg, eigen_res_sc)
+        call eigen_solver_sc%solve(HT_csr_sc, eigen_cfg, eigen_res_sc)
 
         if (.not. eigen_res_sc%converged) then
           print *, '  WARNING: eigensolver did not converge at kx=', kx_grid(k_idx)
@@ -856,6 +858,7 @@ contains
 
     ! --- Cleanup ---
     if (allocated(HT_csr_sc%values)) call csr_free(HT_csr_sc)
+    if (allocated(eigen_solver_sc)) deallocate(eigen_solver_sc)
     deallocate(kx_grid, phi_old, phi_new, phi_poisson)
     deallocate(phi_old_flat, phi_new_flat, phi_poisson_flat)
     deallocate(rho_2d, rho_2d_flat, epsilon_2d)

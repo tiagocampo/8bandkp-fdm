@@ -10,7 +10,9 @@ program opticalProperties
   use optical_spectra
   use exciton_solver, only: compute_exciton_binding, apply_excitonic_corrections
   use sparse_matrices
-  use eigensolver
+  use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
+    & eigensolver_result, eigensolver_result_free, &
+    & auto_compute_energy_window
   use strain_solver
   use linalg, only: zheevx, ilaenv, dlamch, mkl_set_num_threads_local
   use utils, only: dnscsr_z_mkl
@@ -55,7 +57,7 @@ program opticalProperties
   type(csr_matrix), allocatable    :: kpterms_2d(:)
   type(csr_matrix)                 :: HT_csr
   type(wire_workspace)             :: wire_ws
-  type(feast_workspace)            :: feast_ws
+  class(eigensolver_base), allocatable :: eigen_solver
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   type(csr_matrix)                 :: vel_wire(3)
@@ -659,6 +661,9 @@ program opticalProperties
       call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
     end if
 
+    ! Create polymorphic eigensolver
+    eigen_solver = make_eigensolver(eigen_cfg)
+
     ! ----------------------------------------------------------------
     ! Initialize optics accumulation
     ! ----------------------------------------------------------------
@@ -710,7 +715,7 @@ program opticalProperties
           & cfg, ws=wire_ws)
 
         ! Solve eigenvalue problem
-        call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res, feast_ws)
+        call eigen_solver%solve(HT_csr, eigen_cfg, eigen_res)
 
         if (eigen_res%nev_found == 0) then
           print '(a,i0,a)', ' WARNING: FEAST found no eigenvalues at kz-point ', k
@@ -779,7 +784,7 @@ program opticalProperties
 
     ! Free wire-specific resources
     call wire_workspace_free(wire_ws)
-    call feast_workspace_free(feast_ws)
+    if (allocated(eigen_solver)) deallocate(eigen_solver)
     if (allocated(profile_2d)) deallocate(profile_2d)
     if (allocated(kpterms_2d)) then
       do i = 1, size(kpterms_2d)
