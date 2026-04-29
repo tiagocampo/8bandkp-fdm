@@ -146,10 +146,14 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - All types with allocatable components have finalizers (delegating to `*_free` routines where they exist, inlined where cross-module delegation isn't possible). Keep explicit `*_free` routines public for manual control.
 - `do concurrent` used on proven-independent loops: velocity matrix construction, optics finalization, kpterms diagonal init.
 - `csr_matrix` has type-bound `free()` and `clone_structure()` but components remain public for hot-path access.
-- `contiguous` attribute on assumed-shape hot-path arguments only where proven safe (whole allocated arrays at all call sites).
+- `contiguous` attribute on all assumed-shape hot-path array arguments (not on optional or allocatable).
+- `spatial_grid%npoints()` accessor preferred over raw `grid%nx * grid%ny` for total grid size.
+- `iso_c_binding` used for all MKL C APIs: PARDISO as `pardiso_c`, FEAST wrappers, `mkl_set_num_threads_local`. Scalars passed by reference (not `value`) since MKL C API passes everything as pointers.
+- Polymorphic eigensolver: `make_eigensolver(config)` factory returns a polymorphic solver; dispatch via `solver%solve(...)`. Existing `solve_sparse_evp` remains available as a direct interface.
+- `fortran-stdlib` as optional dependency: CMake uses `find_package(fortran_stdlib CONFIG QUIET)`; code compiles without it.
 - `g='g3'` derivative builds must stay isolated from `wire_workspace` cache.
 - `feast_workspace` reuse must remain pattern-validated.
-- `simulation_config` is validated after parsing via `validate_simulation_config` — use `error stop` for invalid configs.
+- `simulation_config` is validated after parsing via the type-bound `config%validate()` method — use `error stop` for invalid configs.
 - Scalar `pure` functions upgraded to `elemental pure`: `kronij`, `fermi_dirac`, `flat_idx`, `wire_flat_idx`, `compute_bp_scalar`, `segment_circle_fraction`.
 - Precision kinds in `defs.f90`: `sp` (single), `dp` (double), `qp` (quad), `iknd` (int64)
 - k-vectors and wavevector sweeps use `real(dp)` throughout

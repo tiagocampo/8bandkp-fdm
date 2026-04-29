@@ -10,7 +10,7 @@ If you use this code, please cite: [10.1021/acsaelm.0c00269](https://doi.org/10.
 
 ## Build
 
-**Prerequisites:** Fortran 2008 compiler (gfortran), BLAS/LAPACK, FFTW3, CMake >= 3.15. For best performance use Intel MKL.
+**Prerequisites:** Fortran 2008 compiler (gfortran), BLAS/LAPACK, FFTW3, CMake >= 3.15. For best performance use Intel MKL. Optional: [fortran-stdlib](https://github.com/fortran-lang/stdlib) (detected automatically by CMake).
 
 Ubuntu:
 ```bash
@@ -31,6 +31,12 @@ make clean     # Remove build/ directory
 ```
 
 Executables: `build/src/bandStructure`, `build/src/gfactorCalculation`, and `build/src/opticalProperties`.
+
+**Alternative build with fpm** (optional, requires [fpm](https://fpm.fortran-lang.org/) v0.13.0+):
+```bash
+fpm build --profile release
+```
+See `fpm.toml` for the project manifest.
 
 ## Quick Start
 
