@@ -414,7 +414,7 @@ module definitions
   ! Semantically identical to the standalone grid_ngrid function, but
   ! called as grid%npoints() on polymorphic or direct references.
   ! ------------------------------------------------------------------
-  elemental function spatial_grid_npoints(self) result(n)
+  elemental pure function spatial_grid_npoints(self) result(n)
     class(spatial_grid), intent(in) :: self
     integer :: n
     n = self%nx * self%ny
