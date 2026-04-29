@@ -356,6 +356,7 @@ contains
   subroutine solve_arpack(H_csr, config, result)
     use sparse_matrices, only: csr_spmv
     use linalg, only: znaupd, zneupd, pardiso_c
+    use, intrinsic :: iso_c_binding, only: c_intptr_t
     type(csr_matrix), intent(in)          :: H_csr
     type(eigensolver_config), intent(in)  :: config
     type(eigensolver_result), intent(out) :: result
@@ -373,7 +374,7 @@ contains
     integer :: iparam(11), ipntr(14)
 
     ! PARDISO arrays for shift-invert
-    integer(8) :: pt(64)
+    integer(kind=c_intptr_t) :: pt(64)
     integer :: iparm(64), maxfct, mnum, mtype, phase, nrhs, msglvl, error_loc
     complex(kind=dp), allocatable :: H_shifted_val(:)
     integer, allocatable :: H_shifted_rowptr(:), H_shifted_colind(:)
