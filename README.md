@@ -32,11 +32,7 @@ make clean     # Remove build/ directory
 
 Executables: `build/src/bandStructure`, `build/src/gfactorCalculation`, and `build/src/opticalProperties`.
 
-**Alternative build with fpm** (optional, requires [fpm](https://fpm.fortran-lang.org/) v0.13.0+):
-```bash
-fpm build --profile release
-```
-See `fpm.toml` for the project manifest.
+**Experimental fpm manifest** — `fpm.toml` is provided as a project manifest but does not encode MKL/FFTW3 link flags. Use CMake for production builds.
 
 ## Quick Start
 
