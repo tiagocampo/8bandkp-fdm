@@ -876,7 +876,7 @@ contains
 
   subroutine feast_solver_finalize(self)
     type(feast_solver_t), intent(inout) :: self
-    call feast_workspace_free(self%ws)
+    ! ws component auto-finalizes via feast_workspace_finalize
   end subroutine feast_solver_finalize
 
   function make_eigensolver(config) result(solver)
