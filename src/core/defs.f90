@@ -150,6 +150,8 @@ module definitions
     real(kind=dp)      :: height = 0.0_dp     ! AA (rectangle, y-extent)
     integer            :: nverts = 0           ! polygon vertex count
     real(kind=dp), allocatable :: verts(:,:)  ! (2, nverts) x,y vertices
+  contains
+    final :: wire_geometry_finalize
   end type wire_geometry
 
   ! ------------------------------------------------------------------
@@ -202,6 +204,8 @@ module definitions
     real(kind=dp), allocatable :: face_fraction_y(:,:) ! (nx*ny, 2) bottom/top face in y-direction
     ! Nearest active neighbor for each ghost/inactive point
     integer, allocatable  :: ghost_map(:,:)            ! (nx*ny, 4) N S W E
+  contains
+    final :: spatial_grid_finalize
   end type spatial_grid
 
   type strain_config
@@ -313,6 +317,8 @@ module definitions
     type(optics_config)      :: optics       ! optical spectra parameters
     type(exciton_config)     :: exciton      ! exciton solver parameters
     type(scattering_config)  :: scattering   ! phonon scattering parameters
+  contains
+    final :: simulation_config_finalize
   end type simulation_config
 
   type :: config_validation_result
@@ -343,6 +349,53 @@ module definitions
     if (allocated(bp%S_eps))     deallocate(bp%S_eps)
     if (allocated(bp%QT2_eps))   deallocate(bp%QT2_eps)
   end subroutine bir_pikus_blocks_finalize
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a wire_geometry goes out of scope.
+  ! Deallocates the polygon vertex array.
+  ! ==================================================================
+  subroutine wire_geometry_finalize(wg)
+    type(wire_geometry), intent(inout) :: wg
+
+    if (allocated(wg%verts)) deallocate(wg%verts)
+  end subroutine wire_geometry_finalize
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a spatial_grid goes out of scope.
+  ! Deallocates all allocatable components.
+  ! ==================================================================
+  subroutine spatial_grid_finalize(sg)
+    type(spatial_grid), intent(inout) :: sg
+
+    if (allocated(sg%x))                deallocate(sg%x)
+    if (allocated(sg%z))                deallocate(sg%z)
+    if (allocated(sg%coords))           deallocate(sg%coords)
+    if (allocated(sg%material_id))      deallocate(sg%material_id)
+    if (allocated(sg%cell_volume))      deallocate(sg%cell_volume)
+    if (allocated(sg%face_fraction_x))  deallocate(sg%face_fraction_x)
+    if (allocated(sg%face_fraction_y))  deallocate(sg%face_fraction_y)
+    if (allocated(sg%ghost_map))        deallocate(sg%ghost_map)
+  end subroutine spatial_grid_finalize
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a simulation_config goes out
+  ! of scope.  Deallocates all allocatable components.
+  ! Note: cfg%grid and cfg%wire_geom have their own finalizers which
+  ! will fire automatically when this type is destroyed.
+  ! ==================================================================
+  subroutine simulation_config_finalize(cfg)
+    type(simulation_config), intent(inout) :: cfg
+
+    if (allocated(cfg%startPos))    deallocate(cfg%startPos)
+    if (allocated(cfg%endPos))      deallocate(cfg%endPos)
+    if (allocated(cfg%z))           deallocate(cfg%z)
+    if (allocated(cfg%intStartPos)) deallocate(cfg%intStartPos)
+    if (allocated(cfg%intEndPos))   deallocate(cfg%intEndPos)
+    if (allocated(cfg%materialN))   deallocate(cfg%materialN)
+    if (allocated(cfg%params))      deallocate(cfg%params)
+    if (allocated(cfg%doping))      deallocate(cfg%doping)
+    if (allocated(cfg%regions))     deallocate(cfg%regions)
+  end subroutine simulation_config_finalize
 
   elemental pure function kronij(i,j)
     integer, intent(in) :: i,j

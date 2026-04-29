@@ -742,6 +742,7 @@ contains
     integer :: ngrid, ij, mid
     real(kind=dp) :: Tr_eps
     real(kind=dp) :: eps_xx, eps_yy, eps_zz, eps_xy, eps_xz, eps_yz
+    type(bp_scalar) :: s
 
     ngrid = grid_ngrid(grid)
 
@@ -790,16 +791,15 @@ contains
       if (abs(Tr_eps) < 1.0e-20_dp .and. abs(eps_yz) < 1.0e-20_dp) cycle
 
       ! Single source of truth for Bir-Pikus formulas
-      associate(s => compute_bp_scalar(params(mid), eps_xx, eps_yy, eps_zz, &
-                                        eps_xy, eps_xz, eps_yz))
-        bp%delta_Ec(ij)  = s%delta_Ec
-        bp%delta_EHH(ij) = s%delta_EHH
-        bp%delta_ELH(ij) = s%delta_ELH
-        bp%delta_ESO(ij) = s%delta_ESO
-        bp%R_eps(ij)     = s%R_eps
-        bp%S_eps(ij)     = s%S_eps
-        bp%QT2_eps(ij)   = s%QT2_eps
-      end associate
+      s = compute_bp_scalar(params(mid), eps_xx, eps_yy, eps_zz, &
+                            eps_xy, eps_xz, eps_yz)
+      bp%delta_Ec(ij)  = s%delta_Ec
+      bp%delta_EHH(ij) = s%delta_EHH
+      bp%delta_ELH(ij) = s%delta_ELH
+      bp%delta_ESO(ij) = s%delta_ESO
+      bp%R_eps(ij)     = s%R_eps
+      bp%S_eps(ij)     = s%S_eps
+      bp%QT2_eps(ij)   = s%QT2_eps
     end do
 
   end subroutine compute_bir_pikus_blocks
