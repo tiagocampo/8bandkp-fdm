@@ -149,6 +149,7 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - `contiguous` attribute on all assumed-shape hot-path array arguments (not on optional or allocatable).
 - `spatial_grid%npoints()` accessor preferred over raw `grid%nx * grid%ny` for total grid size.
 - `iso_c_binding` used for all MKL C APIs: PARDISO as `pardiso_c`, FEAST wrappers, `mkl_set_num_threads_local`. PARDISO/FEAST scalars passed by reference (MKL C API passes pointers). `mkl_set_num_threads_local` uses `value` since the C function takes `int` by value.
+- PARDISO has two `iso_c_binding` interfaces: `pardiso_c` (complex, used by ARPACK eigensolver) and `pardiso_real` (real-valued, used by Poisson solver). Both use `c_intptr_t` for the `pt` handle array.
 - Polymorphic eigensolver: `make_eigensolver(config)` factory returns a polymorphic solver; dispatch via `solver%solve(...)`. Existing `solve_sparse_evp` remains available as a direct interface.
 - `fortran-stdlib` as optional dependency: CMake uses `find_package(fortran_stdlib CONFIG QUIET)`; code compiles without it.
 - `g='g3'` derivative builds must stay isolated from `wire_workspace` cache.
