@@ -320,6 +320,7 @@ module definitions
     type(scattering_config)  :: scattering   ! phonon scattering parameters
   contains
     final :: simulation_config_finalize
+    procedure :: validate => simulation_config_validate
   end type simulation_config
 
   type group
@@ -392,6 +393,73 @@ module definitions
     if (allocated(cfg%doping))      deallocate(cfg%doping)
     if (allocated(cfg%regions))     deallocate(cfg%regions)
   end subroutine simulation_config_finalize
+
+  ! ==================================================================
+  ! Type-bound validation for simulation_config.
+  ! Checks invariants already assumed by downstream code.
+  ! Calls error stop on failure (F2008).
+  ! ==================================================================
+  subroutine simulation_config_validate(self)
+    class(simulation_config), intent(in) :: self
+
+    associate(cfg => self)
+      ! confDir: set internally ('n'=bulk, 'z'=QW/wire)
+      if (cfg%confDir /= 'z' .and. cfg%confDir /= 'n') then
+        error stop 'validate_simulation_config: invalid confDir'
+      end if
+
+      ! fdStep: must be positive
+      if (cfg%fdStep <= 0) then
+        error stop 'validate_simulation_config: fdStep must be positive'
+      end if
+
+      ! numcb/numvb: must be non-negative
+      if (cfg%numcb < 0) then
+        error stop 'validate_simulation_config: numcb must be non-negative'
+      end if
+      if (cfg%numvb < 0) then
+        error stop 'validate_simulation_config: numvb must be non-negative'
+      end if
+
+      ! evnum must equal numcb + numvb (set by parser)
+      if (cfg%evnum /= cfg%numcb + cfg%numvb) then
+        error stop 'validate_simulation_config: evnum must equal numcb + numvb'
+      end if
+
+      ! numLayers: must be positive
+      if (cfg%numLayers < 1) then
+        error stop 'validate_simulation_config: numLayers must be >= 1'
+      end if
+
+      ! confinement: must be 0, 1, or 2
+      if (cfg%confinement < 0 .or. cfg%confinement > 2) then
+        error stop 'validate_simulation_config: confinement must be 0, 1, or 2'
+      end if
+
+      ! FDorder: must be one of the supported values
+      if (cfg%FDorder /= 2 .and. cfg%FDorder /= 4 .and. cfg%FDorder /= 6 &
+          .and. cfg%FDorder /= 8 .and. cfg%FDorder /= 10) then
+        error stop 'validate_simulation_config: FDorder must be 2, 4, 6, 8, or 10'
+      end if
+
+      ! materialN must be allocated with numLayers entries
+      if (.not. allocated(cfg%materialN)) then
+        error stop 'validate_simulation_config: materialN not allocated'
+      end if
+      if (size(cfg%materialN) < cfg%numLayers) then
+        error stop 'validate_simulation_config: materialN too small for numLayers'
+      end if
+
+      ! params must be allocated with numLayers entries
+      if (.not. allocated(cfg%params)) then
+        error stop 'validate_simulation_config: params not allocated'
+      end if
+      if (size(cfg%params) < cfg%numLayers) then
+        error stop 'validate_simulation_config: params too small for numLayers'
+      end if
+    end associate
+
+  end subroutine simulation_config_validate
 
   elemental pure function kronij(i,j)
     integer, intent(in) :: i,j

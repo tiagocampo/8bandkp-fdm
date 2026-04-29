@@ -11,7 +11,6 @@ module input_parser
 
   private
   public :: read_and_setup
-  public :: validate_simulation_config
 
 contains
 
@@ -28,71 +27,6 @@ contains
       end if
     end do
   end function to_lower_ascii
-
-  ! ------------------------------------------------------------------
-  ! Post-parse validation for simulation_config.
-  ! Checks invariants already assumed by downstream code.
-  ! Calls error stop on failure (F2008).
-  ! ------------------------------------------------------------------
-  subroutine validate_simulation_config(cfg)
-    type(simulation_config), intent(in) :: cfg
-
-    ! confDir: set internally ('n'=bulk, 'z'=QW/wire)
-    if (cfg%confDir /= 'z' .and. cfg%confDir /= 'n') then
-      error stop 'validate_simulation_config: invalid confDir'
-    end if
-
-    ! fdStep: must be positive
-    if (cfg%fdStep <= 0) then
-      error stop 'validate_simulation_config: fdStep must be positive'
-    end if
-
-    ! numcb/numvb: must be non-negative
-    if (cfg%numcb < 0) then
-      error stop 'validate_simulation_config: numcb must be non-negative'
-    end if
-    if (cfg%numvb < 0) then
-      error stop 'validate_simulation_config: numvb must be non-negative'
-    end if
-
-    ! evnum must equal numcb + numvb (set by parser)
-    if (cfg%evnum /= cfg%numcb + cfg%numvb) then
-      error stop 'validate_simulation_config: evnum must equal numcb + numvb'
-    end if
-
-    ! numLayers: must be positive
-    if (cfg%numLayers < 1) then
-      error stop 'validate_simulation_config: numLayers must be >= 1'
-    end if
-
-    ! confinement: must be 0, 1, or 2
-    if (cfg%confinement < 0 .or. cfg%confinement > 2) then
-      error stop 'validate_simulation_config: confinement must be 0, 1, or 2'
-    end if
-
-    ! FDorder: must be one of the supported values
-    if (cfg%FDorder /= 2 .and. cfg%FDorder /= 4 .and. cfg%FDorder /= 6 &
-        .and. cfg%FDorder /= 8 .and. cfg%FDorder /= 10) then
-      error stop 'validate_simulation_config: FDorder must be 2, 4, 6, 8, or 10'
-    end if
-
-    ! materialN must be allocated with numLayers entries
-    if (.not. allocated(cfg%materialN)) then
-      error stop 'validate_simulation_config: materialN not allocated'
-    end if
-    if (size(cfg%materialN) < cfg%numLayers) then
-      error stop 'validate_simulation_config: materialN too small for numLayers'
-    end if
-
-    ! params must be allocated with numLayers entries
-    if (.not. allocated(cfg%params)) then
-      error stop 'validate_simulation_config: params not allocated'
-    end if
-    if (size(cfg%params) < cfg%numLayers) then
-      error stop 'validate_simulation_config: params too small for numLayers'
-    end if
-
-  end subroutine validate_simulation_config
 
   subroutine read_next_data_line(data_unit, line, status)
     integer(kind=4), intent(in) :: data_unit
@@ -860,7 +794,7 @@ contains
     close(data_unit)
 
     ! Final validation pass: catch any inconsistent state
-    call validate_simulation_config(cfg)
+    call cfg%validate()
 
   end subroutine read_and_setup
 
