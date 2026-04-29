@@ -6,7 +6,7 @@ module linalg
   ! warnings.
 
   use definitions, only: dp
-  use, intrinsic :: iso_c_binding, only: c_int, c_int64_t, c_double, c_double_complex, c_char
+  use, intrinsic :: iso_c_binding, only: c_int, c_intptr_t, c_double, c_double_complex, c_char
   implicit none
   private
 
@@ -22,7 +22,8 @@ module linalg
   ! MKL-specific
   public :: mkl_set_num_threads_local
 
-  ! MKL PARDISO (guarded)
+  ! MKL PARDISO
+  public :: pardiso_real
 #ifdef USE_ARPACK
   public :: pardiso_c
 #endif
@@ -102,13 +103,15 @@ module linalg
   end interface
 
   ! zdotc - BLAS complex dot product (conjugated first vector)
+  ! Declared as subroutine to match MKL's hidden-argument ABI for
+  ! complex function returns (ifort convention on x86-64).
   interface
-    function zdotc(n, zx, incx, zy, incy) result(res)
+    subroutine zdotc(res, n, zx, incx, zy, incy)
       import :: dp
+      complex(kind=dp), intent(out) :: res
       integer, intent(in) :: n, incx, incy
       complex(kind=dp), intent(in) :: zx(*), zy(*)
-      complex(kind=dp) :: res
-    end function zdotc
+    end subroutine zdotc
   end interface
 
 #ifdef USE_ARPACK
@@ -116,8 +119,8 @@ module linalg
   interface
     subroutine pardiso_c(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, &
                          nrhs, iparm, msglvl, b, x, error) bind(C, name="PARDISO")
-      import :: c_int, c_int64_t, c_double_complex
-      integer(c_int64_t), intent(inout) :: pt(64)
+      import :: c_int, c_intptr_t, c_double_complex
+      integer(c_intptr_t), intent(inout) :: pt(64)
       integer(c_int), intent(in) :: maxfct, mnum, mtype, phase, n, nrhs, msglvl
       complex(c_double_complex), intent(in) :: a(*)
       integer(c_int), intent(in) :: ia(*), ja(*), perm(*)
@@ -128,7 +131,26 @@ module linalg
   end interface
 #endif
 
+  ! pardiso_real - MKL PARDISO for real-valued matrices (iso_c_binding)
+  interface
+    subroutine pardiso_real(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, &
+                         nrhs, iparm, msglvl, b, x, error) bind(C, name="PARDISO")
+      import :: c_int, c_intptr_t, c_double
+      integer(c_intptr_t), intent(inout) :: pt(64)
+      integer(c_int), intent(in) :: maxfct, mnum, mtype, phase, n, nrhs, msglvl
+      real(c_double), intent(in) :: a(*)
+      integer(c_int), intent(in) :: ia(*), ja(*), perm(*)
+      integer(c_int), intent(inout) :: iparm(64)
+      real(c_double), intent(inout) :: b(*), x(*)
+      integer(c_int), intent(out) :: error
+    end subroutine pardiso_real
+  end interface
+
 #ifdef USE_MKL_FEAST
+  ! FEAST interfaces use bind(C) binding to MKL's C-exported symbols.
+  ! Safe on x86-64 Linux where C and Fortran pointer-passing ABIs are identical.
+  ! May require adjustment for other platforms.
+
   ! feastinit - FEAST initialization (iso_c_binding)
   interface
     subroutine feastinit(fpm) bind(C, name="feastinit")
