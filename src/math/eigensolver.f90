@@ -13,7 +13,10 @@ module eigensolver
   public :: feast_workspace, feast_workspace_free
   public :: solve_sparse_evp, solve_feast, solve_dense_lapack
   public :: auto_compute_energy_window, eigensolver_result_free
-  public :: eigensolver_base, feast_solver_t, dense_lapack_solver_t
+  public :: eigensolver_base, dense_lapack_solver_t
+#ifdef USE_MKL_FEAST
+  public :: feast_solver_t
+#endif
   public :: make_eigensolver
 #ifdef USE_ARPACK
   public :: solve_arpack
@@ -83,12 +86,14 @@ module eigensolver
   ! ------------------------------------------------------------------
   ! Concrete solver types for polymorphic dispatch.
   ! ------------------------------------------------------------------
+#ifdef USE_MKL_FEAST
   type, extends(eigensolver_base) :: feast_solver_t
     type(feast_workspace) :: ws
   contains
     procedure :: solve => feast_solve_dispatch
     final :: feast_solver_finalize
   end type feast_solver_t
+#endif
 
   type, extends(eigensolver_base) :: dense_lapack_solver_t
   contains
@@ -874,10 +879,12 @@ contains
     call solve_dense_lapack(H_csr, config, result)
   end subroutine dense_lapack_solve_dispatch
 
+#ifdef USE_MKL_FEAST
   subroutine feast_solver_finalize(self)
     type(feast_solver_t), intent(inout) :: self
     ! ws component auto-finalizes via feast_workspace_finalize
   end subroutine feast_solver_finalize
+#endif
 
   function make_eigensolver(config) result(solver)
     class(eigensolver_base), allocatable :: solver
