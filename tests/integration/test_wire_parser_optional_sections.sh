@@ -47,7 +47,9 @@ if ! grep -q "feast_m0:" "$WORKDIR_DENSE/test_output.log"; then
     exit 1
 fi
 
-if ! grep -q "Eigensolver: dense LAPACK" "$WORKDIR_DENSE/test_output.log"; then
+# Negative feast_m0 selects dense LAPACK path (not FEAST).
+# Verify by checking for the "Manual energy window" print unique to dense path.
+if ! grep -q "Manual energy window" "$WORKDIR_DENSE/test_output.log"; then
     echo "FAIL: negative feast_m0 did not select dense LAPACK in wire config"
     cat "$WORKDIR_DENSE/test_output.log"
     exit 1
