@@ -118,7 +118,7 @@ module linalg
                          nrhs, iparm, msglvl, b, x, error) bind(C, name="PARDISO")
       import :: c_int, c_int64_t, c_double_complex
       integer(c_int64_t), intent(inout) :: pt(64)
-      integer(c_int), value :: maxfct, mnum, mtype, phase, n, nrhs, msglvl
+      integer(c_int), intent(in) :: maxfct, mnum, mtype, phase, n, nrhs, msglvl
       complex(c_double_complex), intent(in) :: a(*)
       integer(c_int), intent(in) :: ia(*), ja(*), perm(*)
       integer(c_int), intent(inout) :: iparm(64)
@@ -143,7 +143,7 @@ module linalg
                              emin, emax, m0, e, x, m, res, info) bind(C, name="zfeast_hcsrev")
       import :: c_int, c_double, c_double_complex, c_char
       character(c_char), intent(in) :: uplo
-      integer(c_int), value :: n, m0
+      integer(c_int), intent(in) :: n, m0
       complex(c_double_complex), intent(in) :: a(*)
       integer(c_int), intent(in) :: ia(*), ja(*)
       integer(c_int), intent(inout) :: fpm(128)
