@@ -143,10 +143,8 @@ contains
     select case (trim(config%method))
 #ifdef USE_MKL_FEAST
     case ('FEAST')
-      print *, '  Eigensolver: FEAST'
       call solve_feast(H_csr, config, result, fw=feast_ws)
     case ('DENSE')
-      print *, '  Eigensolver: dense LAPACK'
       call solve_dense_lapack(H_csr, config, result)
     case ('ARPACK')
       call solve_arpack_dispatch(H_csr, config, result)
@@ -863,7 +861,6 @@ contains
     type(eigensolver_config), intent(in) :: config
     type(eigensolver_result), intent(out) :: result
 
-    print *, '  Eigensolver: FEAST'
     call solve_feast(H_csr, config, result, fw=self%ws)
   end subroutine feast_solve_dispatch
 #endif
@@ -874,7 +871,6 @@ contains
     type(eigensolver_config), intent(in) :: config
     type(eigensolver_result), intent(out) :: result
 
-    print *, '  Eigensolver: dense LAPACK'
     call solve_dense_lapack(H_csr, config, result)
   end subroutine dense_lapack_solve_dispatch
 
