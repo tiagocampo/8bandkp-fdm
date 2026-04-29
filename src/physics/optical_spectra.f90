@@ -354,7 +354,7 @@ contains
     real(kind=dp), parameter :: AA_TO_CM = 1.0e8_dp
 
     ! --- Apply prefactor to build final alpha arrays ---
-    do ie = 1, nE
+    do concurrent (ie = 1:nE)
       if (E_grid(ie) > 0.0_dp) then
         prefactor_E = (2.0_dp * pi_dp * e**2) &
           & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
@@ -402,7 +402,7 @@ contains
     ! --- Gain output ---
     if (optcfg%gain_enabled .and. allocated(alpha_gain_te)) then
       ! Apply the same prefactor to gain arrays
-      do ie = 1, nE
+      do concurrent (ie = 1:nE)
         if (E_grid(ie) > 0.0_dp) then
           prefactor_E = (2.0_dp * pi_dp * e**2) &
             & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
@@ -441,7 +441,7 @@ contains
     ! --- Spontaneous emission output ---
     if (optcfg%spontaneous_enabled .and. allocated(spont_te)) then
       ! Apply prefactor
-      do ie = 1, nE
+      do concurrent (ie = 1:nE)
         if (E_grid(ie) > 0.0_dp) then
           prefactor_E = (2.0_dp * pi_dp * e**2) &
             & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
@@ -477,7 +477,7 @@ contains
     ! --- Spin-resolved absorption output ---
     if (optcfg%spin_resolved .and. allocated(alpha_te_up)) then
       ! Apply the same prefactor to spin-resolved arrays
-      do ie = 1, nE
+      do concurrent (ie = 1:nE)
         if (E_grid(ie) > 0.0_dp) then
           prefactor_E = (2.0_dp * pi_dp * e**2) &
             & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))

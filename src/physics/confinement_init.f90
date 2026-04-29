@@ -135,7 +135,7 @@ contains
 
     end if
 
-    do ii = 1, N
+    do concurrent (ii = 1:N)
       kpterms(ii,ii,1) = kptermsProfile(ii,1) !gamma1
       kpterms(ii,ii,2) = kptermsProfile(ii,2) !gamma2
       kpterms(ii,ii,3) = kptermsProfile(ii,3) !gamma3
