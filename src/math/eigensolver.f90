@@ -891,17 +891,22 @@ contains
     type(eigensolver_config), intent(in) :: config
 
     select case (trim(config%method))
+    case ('DENSE')
+      allocate(dense_lapack_solver_t :: solver)
 #ifdef USE_MKL_FEAST
     case ('FEAST')
       allocate(feast_solver_t :: solver)
 #else
     case ('FEAST')
+      print *, 'WARNING: FEAST requested but not compiled; using dense LAPACK'
       allocate(dense_lapack_solver_t :: solver)
 #endif
-    case ('DENSE')
+    case ('ARPACK')
+      print *, 'WARNING: ARPACK dispatch not yet polymorphic; using dense LAPACK'
       allocate(dense_lapack_solver_t :: solver)
     case default
-      allocate(dense_lapack_solver_t :: solver)
+      print *, 'ERROR: Unknown eigensolver method: ', trim(config%method)
+      stop 1
     end select
   end function make_eigensolver
 
