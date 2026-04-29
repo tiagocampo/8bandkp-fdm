@@ -1,6 +1,30 @@
 module definitions
 
   implicit none
+  private
+
+  ! Kinds
+  public :: sp, dp, qp, iknd
+
+  ! Physical constants
+  public :: pi_sp, pi_dp, pi_qp
+  public :: a0, hbar, const, c, m0, e, e0
+  public :: kB_eV, tolerance, renormalization, hbar2O2m0
+  public :: NUM_CB_STATES, NUM_VB_STATES, g_free
+  public :: SQR3, SQR2, SQR2o3, SQR3o2, RQS3, RQS2
+  public :: IU, ZERO, UM
+
+  ! Types
+  public :: bp_scalar, bir_pikus_blocks
+  public :: wavevector, paramStruct
+  public :: doping_spec, sc_config, wire_geometry, region_spec
+  public :: spatial_grid, strain_config
+  public :: optical_transition, optics_config
+  public :: exciton_config, scattering_config
+  public :: simulation_config, config_validation_result, group
+
+  ! Functions and subroutines
+  public :: kronij, grid_ngrid, init_grid_from_config
 
   integer, parameter :: sp = selected_real_kind(6, 37)
   integer, parameter :: dp = selected_real_kind(15, 307)
