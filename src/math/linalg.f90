@@ -103,15 +103,13 @@ module linalg
   end interface
 
   ! zdotc - BLAS complex dot product (conjugated first vector)
-  ! Declared as subroutine to match MKL's hidden-argument ABI for
-  ! complex function returns (ifort convention on x86-64).
   interface
-    subroutine zdotc(res, n, zx, incx, zy, incy)
+    function zdotc(n, zx, incx, zy, incy) result(res)
       import :: dp
-      complex(kind=dp), intent(out) :: res
       integer, intent(in) :: n, incx, incy
       complex(kind=dp), intent(in) :: zx(*), zy(*)
-    end subroutine zdotc
+      complex(kind=dp) :: res
+    end function zdotc
   end interface
 
 #ifdef USE_ARPACK

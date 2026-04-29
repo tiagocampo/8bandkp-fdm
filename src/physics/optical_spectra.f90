@@ -159,7 +159,7 @@ contains
 
         do dir = 1, 3
           call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
-          call zdotc(Pele, dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
+          Pele = zdotc(dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
@@ -263,7 +263,7 @@ contains
 
         do dir = 1, 3
           call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
-          call zdotc(Pele, dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
+          Pele = zdotc(dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
@@ -779,7 +779,7 @@ contains
 
         ! Velocity matrix element via commutator: dir_isbt = 3 for QW (z-dipole)
         call csr_spmv(vel(dir_isbt), eigvecs(:,state_j), Ytmp, ONE, ZERO)
-        call zdotc(pele_ij, dim, eigvecs(1:dim,state_i), 1, Ytmp, 1)
+        pele_ij = zdotc(dim, eigvecs(1:dim,state_i), 1, Ytmp, 1)
         p_abs2 = real(pele_ij * conjg(pele_ij), kind=dp)
 
         ! Broaden and accumulate onto energy grid (ISBT, TM-polarized)
@@ -973,7 +973,7 @@ contains
 
         do dir = 1, 3
           call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
-          call zdotc(Pele, dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
+          Pele = zdotc(dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
