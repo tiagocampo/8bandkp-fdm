@@ -21,7 +21,7 @@ module definitions
   public :: spatial_grid, strain_config
   public :: optical_transition, optics_config
   public :: exciton_config, scattering_config
-  public :: simulation_config, config_validation_result, group
+  public :: simulation_config, group
 
   ! Functions and subroutines
   public :: kronij, grid_ngrid, init_grid_from_config
@@ -320,11 +320,6 @@ module definitions
   contains
     final :: simulation_config_finalize
   end type simulation_config
-
-  type :: config_validation_result
-    logical           :: ok      = .true.
-    character(len=256) :: message = ''
-  end type config_validation_result
 
   type group
       integer :: order    ! original order of unsorted data
