@@ -24,6 +24,14 @@ find_package(OpenMP REQUIRED)
 # ARPACK-NG (optional sparse eigensolver fallback)
 find_package(ARPACK QUIET)
 
+# fortran_stdlib (optional — used selectively for string handling, error types, etc.)
+find_package(fortran_stdlib CONFIG QUIET)
+if(fortran_stdlib_FOUND)
+  message(STATUS "Found fortran_stdlib")
+else()
+  message(STATUS "fortran_stdlib not found - building without stdlib support")
+endif()
+
 # BLAS/LAPACK backend selector (future portability)
 set(LINALG_BACKEND "MKL" CACHE STRING "BLAS/LAPACK backend: MKL, OPENBLAS, AOCL")
 
