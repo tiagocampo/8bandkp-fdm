@@ -771,9 +771,9 @@ contains
 
   subroutine reorder_wire_branches(prev_eval, prev_evec, curr_eval, curr_evec)
     real(kind=dp), intent(in) :: prev_eval(:)
-    complex(kind=dp), intent(in) :: prev_evec(:,:)
+    complex(kind=dp), intent(in), contiguous :: prev_evec(:,:)
     real(kind=dp), intent(inout) :: curr_eval(:)
-    complex(kind=dp), intent(inout) :: curr_evec(:,:)
+    complex(kind=dp), intent(inout), contiguous :: curr_evec(:,:)
 
     integer :: n_prev, n_curr, n_match, i, j, best_j, next_slot
     integer :: block_start, block_end

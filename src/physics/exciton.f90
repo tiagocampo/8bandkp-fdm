@@ -45,7 +45,7 @@ contains
     & material_id)
 
     real(kind=dp), intent(in)    :: eigvals(:)
-    complex(kind=dp), intent(in) :: eigvecs(:,:)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)
     real(kind=dp), intent(in)    :: z_grid(:)
     real(kind=dp), intent(in)    :: dz
     integer, intent(in)          :: nlayers
@@ -147,7 +147,7 @@ contains
   ! Normalised so that sum(phi)*dz = 1.
   ! ------------------------------------------------------------------
   subroutine extract_envelope(eigvecs, fdstep, state_idx, dz, density)
-    complex(kind=dp), intent(in)  :: eigvecs(:,:)
+    complex(kind=dp), intent(in), contiguous  :: eigvecs(:,:)
     integer, intent(in)           :: fdstep, state_idx
     real(kind=dp), intent(in)     :: dz
     real(kind=dp), intent(out)    :: density(:)

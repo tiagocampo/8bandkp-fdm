@@ -788,7 +788,7 @@ contains
   ! ------------------------------------------------------------------
   subroutine sort_eigenpairs_ascending(evals, evecs)
     real(kind=dp), intent(inout) :: evals(:)
-    complex(kind=dp), intent(inout) :: evecs(:,:)
+    complex(kind=dp), intent(inout), contiguous :: evecs(:,:)
 
     integer :: i, j, jmin, n
     real(kind=dp) :: tmp_eval

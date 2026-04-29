@@ -535,9 +535,9 @@ contains
   ! Apply electrostatic potential to 2D band profile (all 3 columns)
   ! ------------------------------------------------------------------
   subroutine apply_potential_to_profile_2d(profile_2d, profile_2d_base, phi, nx, ny)
-    real(kind=dp), intent(inout) :: profile_2d(:,:)
-    real(kind=dp), intent(in)    :: profile_2d_base(:,:)
-    real(kind=dp), intent(in)    :: phi(:,:)
+    real(kind=dp), intent(inout), contiguous :: profile_2d(:,:)
+    real(kind=dp), intent(in), contiguous    :: profile_2d_base(:,:)
+    real(kind=dp), intent(in), contiguous    :: phi(:,:)
     integer, intent(in)          :: nx, ny
     integer :: ix, iy, ij
 

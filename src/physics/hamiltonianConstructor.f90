@@ -464,7 +464,7 @@ module hamiltonianConstructor
 
     end subroutine ZB8bandBulk
     subroutine add_bp_strain_dense(HT, ii, N, bp)
-      complex(kind=dp), intent(inout) :: HT(:,:)
+      complex(kind=dp), intent(inout), contiguous :: HT(:,:)
       integer, intent(in) :: ii, N
       type(bir_pikus_blocks), intent(in) :: bp
 

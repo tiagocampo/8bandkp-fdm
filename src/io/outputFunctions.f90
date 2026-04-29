@@ -30,7 +30,7 @@ module outputFunctions
 
       integer, intent(in) :: N, evnum, k, fdstep
       real(kind=dp), intent(in) :: z(:)
-      complex(kind=dp), intent(in) :: A(:,:)
+      complex(kind=dp), intent(in), contiguous :: A(:,:)
       logical, intent(in) :: is_bulk
       real(kind=dp), intent(in), optional :: k_magnitude  ! |k| for gnuplot header
 
@@ -146,7 +146,7 @@ module outputFunctions
 
     subroutine writeEigenvalues(smallk, eig, wvStep, cfg)
 
-      real(kind=dp), intent(in) :: eig(:,:)
+      real(kind=dp), intent(in), contiguous :: eig(:,:)
       type(wavevector), intent(in) :: smallk(:)
       integer, intent(in) :: wvStep
       type(simulation_config), intent(in), optional :: cfg
@@ -255,7 +255,7 @@ module outputFunctions
 
     subroutine get_eigenvector_component(eigenvectors, eigenstate_index, band_index, fdstep, total_points, component)
       implicit none
-      complex(kind=dp), intent(in) :: eigenvectors(:,:)
+      complex(kind=dp), intent(in), contiguous :: eigenvectors(:,:)
       integer, intent(in) :: eigenstate_index, band_index, fdstep, total_points
       real(kind=dp), intent(out), dimension(fdstep) :: component
       integer :: i, base_idx
@@ -286,7 +286,7 @@ module outputFunctions
 
       type(spatial_grid), intent(in)  :: grid
       real(kind=dp), intent(in)       :: eigenvalues(:)
-      complex(kind=dp), intent(in)    :: eigenvectors(:,:)
+      complex(kind=dp), intent(in), contiguous    :: eigenvectors(:,:)
       integer, intent(in)             :: k_index
       integer, intent(in)             :: nev
       logical, intent(in), optional   :: write_parts
@@ -354,7 +354,7 @@ module outputFunctions
     ! ==================================================================
     subroutine writeParts2d(grid, eigenvectors, nev)
       type(spatial_grid), intent(in)  :: grid
-      complex(kind=dp), intent(in)    :: eigenvectors(:,:)
+      complex(kind=dp), intent(in), contiguous    :: eigenvectors(:,:)
       integer, intent(in)             :: nev
 
       integer(kind=4) :: iounit, ios

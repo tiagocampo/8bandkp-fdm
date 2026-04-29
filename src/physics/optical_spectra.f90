@@ -107,7 +107,7 @@ contains
 
     type(optics_config), intent(in) :: optcfg
     real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
-    complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in) :: numcb, numvb
@@ -215,7 +215,7 @@ contains
 
     type(optics_config), intent(in) :: optcfg
     real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
-    complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in) :: numcb, numvb
@@ -580,7 +580,7 @@ contains
   ! Returns the complex z_ij in units of AA.
   ! ------------------------------------------------------------------
   function z_dipole(eigvecs, z_grid, dz, fdstep, state_i, state_j) result(z_ij)
-    complex(kind=dp), intent(in) :: eigvecs(:,:)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)
     real(kind=dp), intent(in)    :: z_grid(:)
     real(kind=dp), intent(in)    :: dz
     integer, intent(in)          :: fdstep, state_i, state_j
@@ -664,8 +664,8 @@ contains
     & numcb, numvb, fdstep, transitions_file)
 
     real(kind=dp), intent(in)    :: eigvals(:)           ! (nstates) eigenvalues ascending
-    complex(kind=dp), intent(in) :: eigvecs(:,:)         ! (8*fdstep, nstates)
-    real(kind=dp), intent(in)    :: z_grid(:)            ! (fdstep) z-coords (AA)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)         ! (8*fdstep, nstates)
+    real(kind=dp), intent(in), contiguous    :: z_grid(:)            ! (fdstep) z-coords (AA)
     real(kind=dp), intent(in)    :: dz                   ! grid spacing (AA)
     integer, intent(in)          :: numcb, numvb, fdstep
     character(len=*), intent(in) :: transitions_file
@@ -728,7 +728,7 @@ contains
 
     type(optics_config), intent(in) :: optcfg
     real(kind=dp), intent(in)    :: eigvals(:)
-    complex(kind=dp), intent(in) :: eigvecs(:,:)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in)          :: numcb, numvb
     real(kind=dp), intent(in)    :: k_weight
@@ -899,7 +899,7 @@ contains
 
     type(optics_config), intent(in) :: optcfg
     real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
-    complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in) :: numcb, numvb

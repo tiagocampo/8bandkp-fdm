@@ -49,7 +49,7 @@ contains
 
     type(simulation_config), intent(in) :: cfg
     real(kind=dp), intent(in)    :: eigvals(:)
-    complex(kind=dp), intent(in) :: eigvecs(:,:)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)
     real(kind=dp), intent(in)    :: z_grid(:)
     type(paramStruct), intent(in):: params(:)
     real(kind=dp), intent(in)    :: dz
@@ -202,7 +202,7 @@ contains
   ! Bands 7 and 8 are the two CB states in the 8-band basis.
   ! ------------------------------------------------------------------
   subroutine extract_cb_envelope(eigvecs, fdstep, state_idx, dz, density)
-    complex(kind=dp), intent(in)  :: eigvecs(:,:)
+    complex(kind=dp), intent(in), contiguous  :: eigvecs(:,:)
     integer, intent(in)           :: fdstep, state_idx
     real(kind=dp), intent(in)     :: dz
     real(kind=dp), intent(out)    :: density(:)
@@ -401,7 +401,7 @@ contains
     integer, intent(in)       :: ncb
     integer, intent(in)       :: cb_state_idx(:)
     real(kind=dp), intent(in) :: eigvals(:)
-    real(kind=dp), intent(in) :: rate_em(:,:), rate_ab(:,:)
+    real(kind=dp), intent(in), contiguous :: rate_em(:,:), rate_ab(:,:)
 
     integer :: iounit, ios, i, j
     real(kind=dp) :: dE, tau_em_ps, tau_ab_ps
