@@ -1,8 +1,34 @@
 # Modern Fortran Migration Design
 
 **Date:** 2026-04-26
-**Status:** Implementation complete in `docs/plans/2026-04-26-modern-fortran-migration-plan.md`. Merged via PR on branch `refactor/modern-fortran-migration`.
+**Status:** Phase 1 and Phase 2 complete. Phase 3 deferred.
 **Approach:** Phased by standard version (bottom-up)
+
+## Phase 2 Completion Summary
+
+Phase 2 (Aggressive Encapsulation) is complete across 8 commits on branch `refactor/modern-fortran-migration`. All 39/39 tests pass with no numerical regressions.
+
+**Completed items:**
+
+| Item | Files | Details |
+|---|---|---|
+| `private` defaults — Hamiltonian modules | 3 + 13 downstream fixes | `hamiltonianConstructor.f90`, `hamiltonian_wire.f90`, `gfactor_functions.f90` |
+| `private` defaults — core math modules | 3 | `finitedifferences.f90`, `sparse_matrices.f90`, `eigensolver.f90` |
+| `private` defaults — definitions module | 1 | `defs.f90` |
+| `elemental pure` upgrade | 4 files, 6 functions | `kronij`, `fermi_dirac`, `flat_idx`, `wire_flat_idx`, `compute_bp_scalar`, `segment_circle_fraction` |
+| Finalizers with `_free` delegation | 3 files, 4 types | `csr_matrix`, `wire_workspace`, `feast_workspace`, `sc_workspace` |
+| Finalizers without `_free` (inlined) | 1 file, 3 types | `doping_spec`, `layer_spec`, `sc_config` in `defs.f90` |
+| `do concurrent` — velocity matrices | 1 file, 2 subroutines | `build_velocity_matrices_1d`, `build_velocity_matrices_2d` |
+| `do concurrent` — optics + kpterms | 2 files, 5 loops | `optical_spectra.f90` (3 loops), `confinement_init.f90` (2 loops) |
+
+**Deferred to Phase 3:**
+
+- `csr_matrix` component privacy (hot-path access patterns require deeper refactoring)
+- Polymorphic eigensolver dispatch (`eigensolver_base` abstract type)
+- `iso_c_binding` for MKL interfaces in `linalg.f90`
+- `spatial_grid` type-bound encapsulation
+- stdlib adoption (`fpm.toml`, `find_package(fortran_stdlib)`)
+- fpm as alternative build system
 
 ## Current State
 

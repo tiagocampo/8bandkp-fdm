@@ -138,15 +138,19 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - Prefer `do` / `do concurrent` over `forall` (deprecated in F2008).
 - Prefer `execute_command_line` over non-standard `call system(...)`.
 - Use `c_loc()` from `iso_c_binding` instead of non-standard `loc()`.
+- All modules use `private` default with explicit `public` exports. When adding new modules, use `private` default and enumerate `public ::` exports.
+- When adding new scalar `pure` functions, use `elemental pure` by default (F2008 requires both keywords; F2018+ implies pure).
 - Declaration ordering: variables must be declared before use in array dimension expressions.
 - No `goto` in new code — use named `do` loops with `exit` for early-return blocks.
 - External BLAS/LAPACK/PARDISO declarations go through `linalg.f90` interfaces, not local `external ::`.
-- Workspace types (`csr_matrix`, `wire_workspace`, `feast_workspace`) have finalizers but keep explicit `*_free` routines public for manual control.
+- All types with allocatable components have finalizers (delegating to `*_free` routines where they exist, inlined where cross-module delegation isn't possible). Keep explicit `*_free` routines public for manual control.
+- `do concurrent` used on proven-independent loops: velocity matrix construction, optics finalization, kpterms diagonal init.
 - `csr_matrix` has type-bound `free()` and `clone_structure()` but components remain public for hot-path access.
 - `contiguous` attribute on assumed-shape hot-path arguments only where proven safe (whole allocated arrays at all call sites).
 - `g='g3'` derivative builds must stay isolated from `wire_workspace` cache.
 - `feast_workspace` reuse must remain pattern-validated.
 - `simulation_config` is validated after parsing via `validate_simulation_config` — use `error stop` for invalid configs.
+- Scalar `pure` functions upgraded to `elemental pure`: `kronij`, `fermi_dirac`, `flat_idx`, `wire_flat_idx`, `compute_bp_scalar`, `segment_circle_fraction`.
 - Precision kinds in `defs.f90`: `sp` (single), `dp` (double), `qp` (quad), `iknd` (int64)
 - k-vectors and wavevector sweeps use `real(dp)` throughout
 - File/function length guidelines from `.clinerules`: 300 lines/file, 50 lines/function
