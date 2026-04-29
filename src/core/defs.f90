@@ -205,6 +205,7 @@ module definitions
     ! Nearest active neighbor for each ghost/inactive point
     integer, allocatable  :: ghost_map(:,:)            ! (nx*ny, 4) N S W E
   contains
+    procedure :: npoints => spatial_grid_npoints
     final :: spatial_grid_finalize
   end type spatial_grid
 
@@ -407,6 +408,17 @@ module definitions
     integer :: n
     n = grid%nx * grid%ny
   end function
+
+  ! ------------------------------------------------------------------
+  ! Type-bound accessor: total number of spatial grid points (nx * ny).
+  ! Semantically identical to the standalone grid_ngrid function, but
+  ! called as grid%npoints() on polymorphic or direct references.
+  ! ------------------------------------------------------------------
+  elemental function spatial_grid_npoints(self) result(n)
+    class(spatial_grid), intent(in) :: self
+    integer :: n
+    n = self%nx * self%ny
+  end function spatial_grid_npoints
 
   ! ------------------------------------------------------------------
   ! Initialize a spatial_grid from the fields already set in

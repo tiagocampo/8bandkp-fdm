@@ -809,7 +809,7 @@ contains
 
     integer :: ix, iy, ij, ngrid
 
-    ngrid = grid%nx * grid%ny
+    ngrid = grid%npoints()
 
     if (.not. allocated(grid%x) .or. .not. allocated(grid%z)) return
 

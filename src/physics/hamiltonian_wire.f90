@@ -557,7 +557,7 @@ module hamiltonian_wire
       integer :: k, row, col, sp_row, sp_col, Ngrid
       real(kind=dp) :: dx_diff, dy_diff
 
-      Ngrid = grid%nx * grid%ny
+      Ngrid = grid%npoints()
 
       ! Clone sparsity pattern from H (same rowptr, colind; values zeroed)
       call csr_clone_structure(H_csr, vel_x)

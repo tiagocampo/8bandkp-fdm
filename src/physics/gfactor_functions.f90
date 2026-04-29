@@ -690,7 +690,7 @@ complex(kind=dp) function sigmaElem_2d(state1, state2, dir, grid)
   beta = cmplx(0.0_dp, 0.0_dp, kind=dp)
   sigmaElem_2d = ZERO
 
-  ngrid = grid%nx * grid%ny
+  ngrid = grid%npoints()
 
   do iy = 1, grid%ny
     do ix = 1, grid%nx
@@ -804,7 +804,7 @@ subroutine gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, numcb, num
   complex(kind=dp) :: sigma(2,2,3)
 
   dimax = size(cb_state, 1)
-  ngrid = cfg%grid%nx * cfg%grid%ny
+  ngrid = cfg%grid%npoints()
 
   Pele1 = ZERO
   Pele2 = ZERO

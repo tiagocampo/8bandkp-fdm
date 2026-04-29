@@ -300,7 +300,7 @@ module outputFunctions
       ! Ensure output directory exists
       call ensure_output_dir()
 
-      Ngrid = grid%nx * grid%ny
+      Ngrid = grid%npoints()
       if (Ngrid == 0) return
 
       nev_actual = min(nev, size(eigenvectors, 2))
@@ -365,7 +365,7 @@ module outputFunctions
       ! Ensure output directory exists
       call ensure_output_dir()
 
-      Ngrid = grid%nx * grid%ny
+      Ngrid = grid%npoints()
       if (Ngrid == 0) return
 
       nev_actual = min(nev, size(eigenvectors, 2))
