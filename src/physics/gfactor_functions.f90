@@ -8,13 +8,15 @@ module gfactorFunctions
 
   implicit none
 
+  private
+  public :: sigmaElem, sigmaElem_2d
+  public :: gfactorCalculation, gfactorCalculation_wire
+  public :: compute_optical_matrix_wire, compute_optical_matrix_qw
+
   ! Module-level spin matrices (8-band basis).
   ! Shared between sigmaElem (QW) and sigmaElem_2d (wire).
   complex(kind=dp), save :: SIGMA_X(8,8), SIGMA_Y(8,8), SIGMA_Z(8,8)
   logical, save :: spin_matrices_initialized = .false.
-
-  private :: init_spin_matrices, spin_matrices_initialized
-  private :: SIGMA_X, SIGMA_Y, SIGMA_Z
 
   contains
 
