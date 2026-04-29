@@ -9,6 +9,8 @@ module hamiltonian_wire
 
   implicit none
 
+  private
+
   ! ------------------------------------------------------------------
   ! Cache for the COO sparsity structure of the wire Hamiltonian.
   !
@@ -90,6 +92,8 @@ module hamiltonian_wire
   public :: wire_workspace, wire_workspace_free
   public :: build_velocity_matrices
   public :: strain_entry, build_strain_table
+  public :: ZB8bandGeneralized
+  public :: insert_strain_coo
 
   interface build_velocity_matrices
     module procedure build_velocity_matrices_2d

@@ -6,6 +6,7 @@ module test_hamiltonian_2d
   use geometry
   use finitedifferences
   use hamiltonianConstructor
+  use confinement_init, only: confinementInitialization_2d
   use hamiltonian_wire
   use linalg, only: zheevx, ilaenv, dlamch
   implicit none

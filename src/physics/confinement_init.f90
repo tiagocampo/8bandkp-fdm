@@ -6,12 +6,15 @@ module confinement_init
 
   implicit none
 
+  private
+
   interface confinementInitialization
     module procedure confinementInitialization_raw
     module procedure confinementInitialization_cfg
   end interface confinementInitialization
 
   public :: confinementInitialization
+  public :: confinementInitialization_raw
   public :: confinementInitialization_2d
 
 contains

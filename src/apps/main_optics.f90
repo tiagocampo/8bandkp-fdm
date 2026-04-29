@@ -3,6 +3,9 @@ program opticalProperties
   use definitions
   use parameters
   use hamiltonianConstructor
+  use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
+    & build_velocity_matrices, ZB8bandGeneralized
+  use confinement_init, only: confinementInitialization_2d
   use input_parser
   use optical_spectra
   use exciton_solver, only: compute_exciton_binding, apply_excitonic_corrections

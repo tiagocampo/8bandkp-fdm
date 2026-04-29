@@ -4,6 +4,8 @@ module test_hamiltonian
   use parameters
   use sparse_matrices
   use hamiltonianConstructor
+  use confinement_init, only: confinementInitialization_raw
+  use hamiltonian_wire, only: build_velocity_matrices
   implicit none
 
 contains

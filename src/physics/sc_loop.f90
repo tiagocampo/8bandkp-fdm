@@ -12,6 +12,7 @@ module sc_loop
 
   use definitions
   use hamiltonianConstructor
+  use hamiltonian_wire, only: wire_coo_cache, ZB8bandGeneralized
   use charge_density
   use poisson
   use eigensolver, only: eigensolver_config, eigensolver_result, &

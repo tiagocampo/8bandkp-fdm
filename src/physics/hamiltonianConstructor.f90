@@ -10,6 +10,8 @@ module hamiltonianConstructor
 
   implicit none
 
+  private
+
   public :: externalFieldSetup_electricField
   public :: ZB8bandQW, ZB8bandBulk
   public :: add_bp_strain_dense

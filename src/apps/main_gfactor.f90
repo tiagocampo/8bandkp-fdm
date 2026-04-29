@@ -3,6 +3,10 @@ program gfactor
   use definitions
   use parameters
   use hamiltonianConstructor
+  use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free, &
+    & wire_workspace, wire_workspace_free, build_velocity_matrices, &
+    & ZB8bandGeneralized
+  use confinement_init, only: confinementInitialization_2d
   use finitedifferences
   use outputFunctions
   use gfactorFunctions

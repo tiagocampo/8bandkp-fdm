@@ -4,6 +4,7 @@ module input_parser
   use parameters
   use geometry
   use hamiltonianConstructor
+  use confinement_init, only: confinementInitialization
   use outputFunctions
 
   implicit none

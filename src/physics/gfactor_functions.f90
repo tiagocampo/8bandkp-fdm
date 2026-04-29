@@ -2,6 +2,7 @@ module gfactorFunctions
 
   use definitions
   use hamiltonianConstructor
+  use utils, only: simpson
   use sparse_matrices, only: csr_matrix, csr_spmv
   use OMP_lib
 

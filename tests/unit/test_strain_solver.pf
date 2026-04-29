@@ -5,6 +5,7 @@ module test_strain_solver
   use strain_solver
   use geometry
   use hamiltonianConstructor
+  use hamiltonian_wire, only: insert_strain_coo
   implicit none
 
 contains

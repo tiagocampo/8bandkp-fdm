@@ -3,6 +3,9 @@ program kpfdm
   use definitions
   use parameters
   use hamiltonianConstructor
+  use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
+    & wire_coo_cache, wire_coo_cache_free, ZB8bandGeneralized
+  use confinement_init, only: confinementInitialization_2d
   use OMP_lib
   use outputFunctions
   use input_parser
