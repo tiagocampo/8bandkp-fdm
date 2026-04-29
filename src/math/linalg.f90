@@ -6,6 +6,7 @@ module linalg
   ! warnings.
 
   use definitions, only: dp
+  use, intrinsic :: iso_c_binding, only: c_int, c_int64_t, c_double, c_double_complex, c_char
   implicit none
   private
 
@@ -23,7 +24,7 @@ module linalg
 
   ! MKL PARDISO (guarded)
 #ifdef USE_ARPACK
-  public :: pardiso
+  public :: pardiso_c
 #endif
 
   ! MKL FEAST (guarded)
@@ -93,9 +94,10 @@ module linalg
 
   ! mkl_set_num_threads_local - MKL per-thread thread count
   interface
-    function mkl_set_num_threads_local(nt) result(previous)
-      integer, intent(in) :: nt
-      integer :: previous
+    function mkl_set_num_threads_local(nt) result(previous) bind(C, name="MKL_Set_Num_Threads_Local")
+      import :: c_int
+      integer(c_int), value :: nt
+      integer(c_int) :: previous
     end function
   end interface
 
@@ -110,47 +112,46 @@ module linalg
   end interface
 
 #ifdef USE_ARPACK
-  ! pardiso - MKL PARDISO direct solver
+  ! pardiso_c - MKL PARDISO direct solver (iso_c_binding)
   interface
-    subroutine pardiso(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, &
-                       nrhs, iparm, msglvl, b, x, error)
-      use definitions, only: dp
-      integer(8), intent(inout) :: pt(64)
-      integer, intent(in) :: maxfct, mnum, mtype, phase, n
-      complex(kind=dp), intent(in) :: a(*)
-      integer, intent(in) :: ia(*), ja(*), perm(*)
-      integer, intent(in) :: nrhs
-      integer, intent(inout) :: iparm(64)
-      integer, intent(in) :: msglvl
-      complex(kind=dp), intent(inout) :: b(*), x(*)
-      integer, intent(out) :: error
-    end subroutine pardiso
+    subroutine pardiso_c(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, &
+                         nrhs, iparm, msglvl, b, x, error) bind(C, name="PARDISO")
+      import :: c_int, c_int64_t, c_double_complex
+      integer(c_int64_t), intent(inout) :: pt(64)
+      integer(c_int), value :: maxfct, mnum, mtype, phase, n, nrhs, msglvl
+      complex(c_double_complex), intent(in) :: a(*)
+      integer(c_int), intent(in) :: ia(*), ja(*), perm(*)
+      integer(c_int), intent(inout) :: iparm(64)
+      complex(c_double_complex), intent(inout) :: b(*), x(*)
+      integer(c_int), intent(out) :: error
+    end subroutine pardiso_c
   end interface
 #endif
 
 #ifdef USE_MKL_FEAST
-  ! feastinit - FEAST initialization
+  ! feastinit - FEAST initialization (iso_c_binding)
   interface
-    subroutine feastinit(fpm)
-      integer, intent(inout) :: fpm(128)
+    subroutine feastinit(fpm) bind(C, name="feastinit")
+      import :: c_int
+      integer(c_int), intent(inout) :: fpm(128)
     end subroutine
   end interface
 
-  ! zfeast_hcsrev - FEAST complex Hermitian CSR eigensolver
+  ! zfeast_hcsrev - FEAST complex Hermitian CSR eigensolver (iso_c_binding)
   interface
     subroutine zfeast_hcsrev(uplo, n, a, ia, ja, fpm, epsout, loop, &
-                             emin, emax, m0, e, x, m, res, info)
-      use definitions, only: dp
-      character(len=1), intent(in) :: uplo
-      integer, intent(in) :: n, m0
-      complex(kind=dp), intent(in) :: a(*)
-      integer, intent(in) :: ia(*), ja(*)
-      integer, intent(inout) :: fpm(128)
-      real(kind=dp), intent(out) :: epsout
-      integer, intent(out) :: loop, m, info
-      real(kind=dp), intent(in) :: emin, emax
-      real(kind=dp), intent(inout) :: e(m0), res(m0)
-      complex(kind=dp), intent(inout) :: x(n, m0)
+                             emin, emax, m0, e, x, m, res, info) bind(C, name="zfeast_hcsrev")
+      import :: c_int, c_double, c_double_complex, c_char
+      character(c_char), intent(in) :: uplo
+      integer(c_int), value :: n, m0
+      complex(c_double_complex), intent(in) :: a(*)
+      integer(c_int), intent(in) :: ia(*), ja(*)
+      integer(c_int), intent(inout) :: fpm(128)
+      real(c_double), intent(out) :: epsout
+      integer(c_int), intent(out) :: loop, m, info
+      real(c_double), intent(in) :: emin, emax
+      real(c_double), intent(inout) :: e(m0), res(m0)
+      complex(c_double_complex), intent(inout) :: x(n, m0)
     end subroutine
   end interface
 #endif

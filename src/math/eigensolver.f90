@@ -317,7 +317,7 @@ contains
   ! ==================================================================
   subroutine solve_arpack(H_csr, config, result)
     use sparse_matrices, only: csr_spmv
-    use linalg, only: znaupd, zneupd, pardiso
+    use linalg, only: znaupd, zneupd, pardiso_c
     type(csr_matrix), intent(in)          :: H_csr
     type(eigensolver_config), intent(in)  :: config
     type(eigensolver_result), intent(out) :: result
@@ -408,7 +408,7 @@ contains
     ! Symbolic factorization (phase=11)
     phase = 11
     dummy_bx = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    call pardiso(pt, maxfct, mnum, mtype, phase, N, &
+    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                  H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
                  perm, nrhs, iparm, msglvl, &
                  dummy_bx, dummy_bx, error_loc)
@@ -422,7 +422,7 @@ contains
 
     ! Numeric factorization (phase=22)
     phase = 22
-    call pardiso(pt, maxfct, mnum, mtype, phase, N, &
+    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                  H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
                  perm, nrhs, iparm, msglvl, &
                  dummy_bx, dummy_bx, error_loc)
@@ -432,7 +432,7 @@ contains
       result%nev_found = 0
       ! Cleanup PARDISO
       phase = -1
-      call pardiso(pt, maxfct, mnum, mtype, phase, N, &
+      call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                    H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
                    perm, nrhs, iparm, msglvl, &
                    dummy_bx, dummy_bx, error_loc)
@@ -495,7 +495,7 @@ contains
 
         ! PARDISO solve (phase=33)
         phase = 33
-        call pardiso(pt, maxfct, mnum, mtype, phase, N, &
+        call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                      H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
                      perm, nrhs, iparm, msglvl, rhs, sol, error_loc)
 
@@ -561,7 +561,7 @@ contains
 
     ! Cleanup PARDISO
     phase = -1
-    call pardiso(pt, maxfct, mnum, mtype, phase, N, &
+    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                  H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
                  perm, nrhs, iparm, msglvl, &
                  dummy_bx, dummy_bx, error_loc)
