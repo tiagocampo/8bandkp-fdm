@@ -41,7 +41,7 @@ contains
   ! ------------------------------------------------------------------
   ! Map 2D (ix, iy) to flattened column-major index: ij = (iy-1)*nx + ix
   ! ------------------------------------------------------------------
-  pure function flat_idx(nx, ix, iy) result(ij)
+  elemental pure function flat_idx(nx, ix, iy) result(ij)
     integer, intent(in) :: nx, ix, iy
     integer :: ij
     ij = (iy - 1) * nx + ix
@@ -188,7 +188,7 @@ contains
   ! vertical (constant x) for y-face computation.  Uses the analytical
   ! chord-length formula.
   ! ------------------------------------------------------------------
-  pure function segment_circle_fraction(a, b, coord, is_horizontal, &
+  elemental pure function segment_circle_fraction(a, b, coord, is_horizontal, &
       cx, cy, radius) result(frac)
     real(kind=dp), intent(in)  :: a, b          ! segment endpoints along main axis
     real(kind=dp), intent(in)  :: coord          ! perpendicular coordinate

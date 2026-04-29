@@ -326,7 +326,7 @@ module definitions
 
   contains
 
-  pure function kronij(i,j)
+  elemental pure function kronij(i,j)
     integer, intent(in) :: i,j
     integer :: kronij
     kronij = merge(1, 0, i == j)

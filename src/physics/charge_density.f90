@@ -26,7 +26,7 @@ contains
   ! ------------------------------------------------------------------
   ! Fermi-Dirac distribution function
   ! ------------------------------------------------------------------
-  pure function fermi_dirac(energy, mu, T) result(f)
+  elemental pure function fermi_dirac(energy, mu, T) result(f)
     real(kind=dp), intent(in) :: energy  ! Energy (eV)
     real(kind=dp), intent(in) :: mu      ! Fermi level (eV)
     real(kind=dp), intent(in) :: T       ! Temperature (K)

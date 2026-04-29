@@ -823,7 +823,7 @@ contains
   ! Computes all diagonal and off-diagonal strain Hamiltonian components
   ! for a single grid point from the strain tensor and material parameters.
   ! ==================================================================
-  pure function compute_bp_scalar(params, eps_xx, eps_yy, eps_zz, &
+  elemental pure function compute_bp_scalar(params, eps_xx, eps_yy, eps_zz, &
       eps_xy, eps_xz, eps_yz) result(s)
     type(paramStruct), intent(in) :: params
     real(kind=dp), intent(in) :: eps_xx, eps_yy, eps_zz
@@ -867,7 +867,7 @@ contains
   ! ==================================================================
 
   ! Local flat_idx to avoid circular dependency on geometry module.
-  pure function wire_flat_idx(nx, ix, iy) result(ij)
+  elemental pure function wire_flat_idx(nx, ix, iy) result(ij)
     integer, intent(in) :: nx, ix, iy
     integer :: ij
     ij = (iy - 1) * nx + ix
