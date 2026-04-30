@@ -15,6 +15,8 @@ module strain_solver
 
   use definitions, only: dp, paramStruct, spatial_grid, strain_config, &
     & grid_ngrid, SQR3, IU, bir_pikus_blocks, bp_scalar
+  use linalg, only: pardiso_real
+  use, intrinsic :: iso_c_binding, only: c_intptr_t
 
   implicit none
 
@@ -202,7 +204,7 @@ contains
     real(kind=dp), allocatable :: rhs(:), sol(:)
 
     ! PARDISO arrays
-    integer(8) :: pt(64)
+    integer(kind=c_intptr_t) :: pt(64)
     integer :: iparm(64)
     integer :: maxfct, mnum, mtype, phase, nrhs, msglvl, error
     integer, allocatable :: perm(:)
@@ -610,14 +612,14 @@ contains
 
     ! Phase 11: Analysis + Factorization + Solve
     phase = 13
-    call pardiso(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
+    call pardiso_real(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
       perm, nrhs, iparm, msglvl, rhs, sol, error)
 
     if (error /= 0) then
       print *, 'ERROR: Strain PDE solve failed (PARDISO error=', error, '). Aborting.'
       ! Release PARDISO internal memory before cleanup
       phase = -1
-      call pardiso(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
+      call pardiso_real(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
         perm, nrhs, iparm, msglvl, rhs, sol, error)
       deallocate(ia, ja, a_csr, rhs, sol, perm)
       stop 1
@@ -625,7 +627,7 @@ contains
 
     ! Phase -1: Release memory
     phase = -1
-    call pardiso(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
+    call pardiso_real(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
       perm, nrhs, iparm, msglvl, rhs, sol, error)
 
     deallocate(ia, ja, a_csr, rhs, perm)
