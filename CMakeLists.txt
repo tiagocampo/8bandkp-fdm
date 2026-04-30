@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
 project(8bandkp-fdm Fortran)
 
+# --- Require Fortran 2008 standard ---
+set(CMAKE_Fortran_STANDARD 2008)
+set(CMAKE_Fortran_STANDARD_REQUIRED ON)
+set(CMAKE_Fortran_EXTENSIONS OFF)
+
 # --- Find dependencies ---
 # Intel MKL (oneAPI provides MKLConfig.cmake)
 # Defaults: LP64 interface + intel_thread for internal MKL parallelism
@@ -19,12 +24,20 @@ find_package(OpenMP REQUIRED)
 # ARPACK-NG (optional sparse eigensolver fallback)
 find_package(ARPACK QUIET)
 
+# fortran_stdlib (optional — used selectively for string handling, error types, etc.)
+find_package(fortran_stdlib CONFIG QUIET)
+if(fortran_stdlib_FOUND)
+  message(STATUS "Found fortran_stdlib")
+else()
+  message(STATUS "fortran_stdlib not found - building without stdlib support")
+endif()
+
 # BLAS/LAPACK backend selector (future portability)
 set(LINALG_BACKEND "MKL" CACHE STRING "BLAS/LAPACK backend: MKL, OPENBLAS, AOCL")
 
 # --- Fortran compiler flags (gfortran) ---
 if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
-    set(CMAKE_Fortran_FLAGS "-ffree-line-length-none -fno-second-underscore -ffree-form -fimplicit-none -m64 -fno-strict-aliasing")
+    set(CMAKE_Fortran_FLAGS "-std=f2018 -ffree-line-length-none -fno-second-underscore -ffree-form -fimplicit-none -m64 -fno-strict-aliasing")
     # NOTE: -ffast-math was replaced by its individual safe components.
     # Kept: -fno-signed-zeros (~2%), -freciprocal-math (~3%), -fno-trapping-math
     # Dropped: -ffinite-math-only (removes NaN/Inf guards), -funsafe-math-optimizations

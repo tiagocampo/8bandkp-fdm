@@ -15,6 +15,8 @@ module strain_solver
 
   use definitions, only: dp, paramStruct, spatial_grid, strain_config, &
     & grid_ngrid, SQR3, IU, bir_pikus_blocks, bp_scalar
+  use linalg, only: pardiso_real
+  use, intrinsic :: iso_c_binding, only: c_intptr_t
 
   implicit none
 
@@ -39,6 +41,8 @@ module strain_solver
     real(kind=dp), allocatable :: eps_yy(:)   ! (Ngrid) in-plane strain
     real(kind=dp), allocatable :: eps_zz(:)   ! (Ngrid) in-plane / growth strain
     real(kind=dp), allocatable :: eps_yz(:)   ! (Ngrid) shear strain
+  contains
+    final :: strain_result_finalize
   end type strain_result
 
 contains
@@ -200,7 +204,7 @@ contains
     real(kind=dp), allocatable :: rhs(:), sol(:)
 
     ! PARDISO arrays
-    integer(8) :: pt(64)
+    integer(kind=c_intptr_t) :: pt(64)
     integer :: iparm(64)
     integer :: maxfct, mnum, mtype, phase, nrhs, msglvl, error
     integer, allocatable :: perm(:)
@@ -608,14 +612,14 @@ contains
 
     ! Phase 11: Analysis + Factorization + Solve
     phase = 13
-    call pardiso(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
+    call pardiso_real(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
       perm, nrhs, iparm, msglvl, rhs, sol, error)
 
     if (error /= 0) then
       print *, 'ERROR: Strain PDE solve failed (PARDISO error=', error, '). Aborting.'
       ! Release PARDISO internal memory before cleanup
       phase = -1
-      call pardiso(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
+      call pardiso_real(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
         perm, nrhs, iparm, msglvl, rhs, sol, error)
       deallocate(ia, ja, a_csr, rhs, sol, perm)
       stop 1
@@ -623,7 +627,7 @@ contains
 
     ! Phase -1: Release memory
     phase = -1
-    call pardiso(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
+    call pardiso_real(pt, maxfct, mnum, mtype, phase, ndof, a_csr, ia, ja, &
       perm, nrhs, iparm, msglvl, rhs, sol, error)
 
     deallocate(ia, ja, a_csr, rhs, perm)
@@ -740,6 +744,7 @@ contains
     integer :: ngrid, ij, mid
     real(kind=dp) :: Tr_eps
     real(kind=dp) :: eps_xx, eps_yy, eps_zz, eps_xy, eps_xz, eps_yz
+    type(bp_scalar) :: s
 
     ngrid = grid_ngrid(grid)
 
@@ -788,16 +793,15 @@ contains
       if (abs(Tr_eps) < 1.0e-20_dp .and. abs(eps_yz) < 1.0e-20_dp) cycle
 
       ! Single source of truth for Bir-Pikus formulas
-      associate(s => compute_bp_scalar(params(mid), eps_xx, eps_yy, eps_zz, &
-                                        eps_xy, eps_xz, eps_yz))
-        bp%delta_Ec(ij)  = s%delta_Ec
-        bp%delta_EHH(ij) = s%delta_EHH
-        bp%delta_ELH(ij) = s%delta_ELH
-        bp%delta_ESO(ij) = s%delta_ESO
-        bp%R_eps(ij)     = s%R_eps
-        bp%S_eps(ij)     = s%S_eps
-        bp%QT2_eps(ij)   = s%QT2_eps
-      end associate
+      s = compute_bp_scalar(params(mid), eps_xx, eps_yy, eps_zz, &
+                            eps_xy, eps_xz, eps_yz)
+      bp%delta_Ec(ij)  = s%delta_Ec
+      bp%delta_EHH(ij) = s%delta_EHH
+      bp%delta_ELH(ij) = s%delta_ELH
+      bp%delta_ESO(ij) = s%delta_ESO
+      bp%R_eps(ij)     = s%R_eps
+      bp%S_eps(ij)     = s%S_eps
+      bp%QT2_eps(ij)   = s%QT2_eps
     end do
 
   end subroutine compute_bir_pikus_blocks
@@ -823,7 +827,7 @@ contains
   ! Computes all diagonal and off-diagonal strain Hamiltonian components
   ! for a single grid point from the strain tensor and material parameters.
   ! ==================================================================
-  pure function compute_bp_scalar(params, eps_xx, eps_yy, eps_zz, &
+  elemental pure function compute_bp_scalar(params, eps_xx, eps_yy, eps_zz, &
       eps_xy, eps_xz, eps_yz) result(s)
     type(paramStruct), intent(in) :: params
     real(kind=dp), intent(in) :: eps_xx, eps_yy, eps_zz
@@ -851,6 +855,15 @@ contains
   end function compute_bp_scalar
 
   ! ==================================================================
+  ! Finalizer: automatically called when a strain_result goes out of scope.
+  ! Delegates to strain_result_free so existing manual frees remain valid.
+  ! ==================================================================
+  subroutine strain_result_finalize(sr)
+    type(strain_result), intent(inout) :: sr
+    call strain_result_free(sr)
+  end subroutine strain_result_finalize
+
+  ! ==================================================================
   ! Deallocate strain_result arrays
   ! ==================================================================
   subroutine strain_result_free(s)
@@ -867,7 +880,7 @@ contains
   ! ==================================================================
 
   ! Local flat_idx to avoid circular dependency on geometry module.
-  pure function wire_flat_idx(nx, ix, iy) result(ij)
+  elemental pure function wire_flat_idx(nx, ix, iy) result(ij)
     integer, intent(in) :: nx, ix, iy
     integer :: ij
     ij = (iy - 1) * nx + ix

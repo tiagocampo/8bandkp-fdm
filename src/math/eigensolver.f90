@@ -13,6 +13,11 @@ module eigensolver
   public :: feast_workspace, feast_workspace_free
   public :: solve_sparse_evp, solve_feast, solve_dense_lapack
   public :: auto_compute_energy_window, eigensolver_result_free
+  public :: eigensolver_base, dense_lapack_solver_t
+#ifdef USE_MKL_FEAST
+  public :: feast_solver_t
+#endif
+  public :: make_eigensolver
 #ifdef USE_ARPACK
   public :: solve_arpack
 #endif
@@ -41,7 +46,27 @@ module eigensolver
     complex(kind=dp), allocatable :: eigenvectors(:,:)
     integer                       :: iterations = 0
     logical                       :: converged = .false.
+  contains
+    final :: eigensolver_result_finalize
   end type eigensolver_result
+
+  ! ------------------------------------------------------------------
+  ! Abstract base type for polymorphic eigensolver dispatch.
+  ! ------------------------------------------------------------------
+  type, abstract :: eigensolver_base
+  contains
+    procedure(solve_evp_interface), deferred :: solve
+  end type eigensolver_base
+
+  abstract interface
+    subroutine solve_evp_interface(self, H_csr, config, result)
+      import :: eigensolver_base, csr_matrix, eigensolver_config, eigensolver_result
+      class(eigensolver_base), intent(inout) :: self
+      type(csr_matrix), intent(in) :: H_csr
+      type(eigensolver_config), intent(in) :: config
+      type(eigensolver_result), intent(out) :: result
+    end subroutine solve_evp_interface
+  end interface
 
   ! ------------------------------------------------------------------
   ! Cached upper-triangle CSR structure for repeated FEAST calls.
@@ -54,7 +79,31 @@ module eigensolver
     integer                       :: M0 = 0
     integer                       :: N = 0
     logical                       :: initialized = .false.
+  contains
+    final :: feast_workspace_finalize
   end type feast_workspace
+
+  ! ------------------------------------------------------------------
+  ! Concrete solver types for polymorphic dispatch.
+  ! ------------------------------------------------------------------
+#ifdef USE_MKL_FEAST
+  type, extends(eigensolver_base) :: feast_solver_t
+    type(feast_workspace) :: ws
+  contains
+    procedure :: solve => feast_solve_dispatch
+    final :: feast_solver_finalize
+  end type feast_solver_t
+#endif
+
+  type, extends(eigensolver_base) :: dense_lapack_solver_t
+  contains
+    procedure :: solve => dense_lapack_solve_dispatch
+  end type dense_lapack_solver_t
+
+  type, extends(eigensolver_base) :: arpack_solver_t
+  contains
+    procedure :: solve => arpack_solve_dispatch
+  end type arpack_solver_t
 
 contains
 
@@ -104,10 +153,8 @@ contains
     select case (trim(config%method))
 #ifdef USE_MKL_FEAST
     case ('FEAST')
-      print *, '  Eigensolver: FEAST'
       call solve_feast(H_csr, config, result, fw=feast_ws)
     case ('DENSE')
-      print *, '  Eigensolver: dense LAPACK'
       call solve_dense_lapack(H_csr, config, result)
     case ('ARPACK')
       call solve_arpack_dispatch(H_csr, config, result)
@@ -313,7 +360,8 @@ contains
   ! ==================================================================
   subroutine solve_arpack(H_csr, config, result)
     use sparse_matrices, only: csr_spmv
-    use linalg, only: znaupd, zneupd
+    use linalg, only: znaupd, zneupd, pardiso_c
+    use, intrinsic :: iso_c_binding, only: c_intptr_t
     type(csr_matrix), intent(in)          :: H_csr
     type(eigensolver_config), intent(in)  :: config
     type(eigensolver_result), intent(out) :: result
@@ -331,13 +379,12 @@ contains
     integer :: iparam(11), ipntr(14)
 
     ! PARDISO arrays for shift-invert
-    integer(8) :: pt(64)
+    integer(kind=c_intptr_t) :: pt(64)
     integer :: iparm(64), maxfct, mnum, mtype, phase, nrhs, msglvl, error_loc
     complex(kind=dp), allocatable :: H_shifted_val(:)
     integer, allocatable :: H_shifted_rowptr(:), H_shifted_colind(:)
     complex(kind=dp), allocatable :: rhs(:), sol(:)
     complex(kind=dp) :: dummy_bx(1)
-    external :: pardiso
     integer :: nnz, k
     integer, allocatable :: perm(:)
 
@@ -405,7 +452,7 @@ contains
     ! Symbolic factorization (phase=11)
     phase = 11
     dummy_bx = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    call pardiso(pt, maxfct, mnum, mtype, phase, N, &
+    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                  H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
                  perm, nrhs, iparm, msglvl, &
                  dummy_bx, dummy_bx, error_loc)
@@ -419,7 +466,7 @@ contains
 
     ! Numeric factorization (phase=22)
     phase = 22
-    call pardiso(pt, maxfct, mnum, mtype, phase, N, &
+    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                  H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
                  perm, nrhs, iparm, msglvl, &
                  dummy_bx, dummy_bx, error_loc)
@@ -429,7 +476,7 @@ contains
       result%nev_found = 0
       ! Cleanup PARDISO
       phase = -1
-      call pardiso(pt, maxfct, mnum, mtype, phase, N, &
+      call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                    H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
                    perm, nrhs, iparm, msglvl, &
                    dummy_bx, dummy_bx, error_loc)
@@ -492,7 +539,7 @@ contains
 
         ! PARDISO solve (phase=33)
         phase = 33
-        call pardiso(pt, maxfct, mnum, mtype, phase, N, &
+        call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                      H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
                      perm, nrhs, iparm, msglvl, rhs, sol, error_loc)
 
@@ -558,7 +605,7 @@ contains
 
     ! Cleanup PARDISO
     phase = -1
-    call pardiso(pt, maxfct, mnum, mtype, phase, N, &
+    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                  H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
                  perm, nrhs, iparm, msglvl, &
                  dummy_bx, dummy_bx, error_loc)
@@ -716,6 +763,15 @@ contains
   end subroutine auto_compute_energy_window
 
   ! ==================================================================
+  ! Finalizer: automatically called when an eigensolver_result goes out of scope.
+  ! Delegates to eigensolver_result_free so existing manual frees remain valid.
+  ! ==================================================================
+  subroutine eigensolver_result_finalize(er)
+    type(eigensolver_result), intent(inout) :: er
+    call eigensolver_result_free(er)
+  end subroutine eigensolver_result_finalize
+
+  ! ==================================================================
   ! Deallocate result arrays.
   ! ==================================================================
   subroutine eigensolver_result_free(result)
@@ -727,6 +783,15 @@ contains
     result%converged = .false.
     result%iterations = 0
   end subroutine eigensolver_result_free
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a feast_workspace goes out of scope.
+  ! Delegates to feast_workspace_free so existing manual frees remain valid.
+  ! ==================================================================
+  subroutine feast_workspace_finalize(fw)
+    type(feast_workspace), intent(inout) :: fw
+    call feast_workspace_free(fw)
+  end subroutine feast_workspace_finalize
 
   ! ==================================================================
   ! Deallocate feast_workspace cached arrays.
@@ -767,7 +832,7 @@ contains
   ! ------------------------------------------------------------------
   subroutine sort_eigenpairs_ascending(evals, evecs)
     real(kind=dp), intent(inout) :: evals(:)
-    complex(kind=dp), intent(inout) :: evecs(:,:)
+    complex(kind=dp), intent(inout), contiguous :: evecs(:,:)
 
     integer :: i, j, jmin, n
     real(kind=dp) :: tmp_eval
@@ -795,5 +860,68 @@ contains
 
     deallocate(tmp_vec)
   end subroutine sort_eigenpairs_ascending
+
+  ! ==================================================================
+  ! Polymorphic dispatch implementations.
+  ! ==================================================================
+
+#ifdef USE_MKL_FEAST
+  subroutine feast_solve_dispatch(self, H_csr, config, result)
+    class(feast_solver_t), intent(inout) :: self
+    type(csr_matrix), intent(in) :: H_csr
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+
+    call solve_feast(H_csr, config, result, fw=self%ws)
+  end subroutine feast_solve_dispatch
+#endif
+
+  subroutine dense_lapack_solve_dispatch(self, H_csr, config, result)
+    class(dense_lapack_solver_t), intent(inout) :: self
+    type(csr_matrix), intent(in) :: H_csr
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+
+    call solve_dense_lapack(H_csr, config, result)
+  end subroutine dense_lapack_solve_dispatch
+
+  subroutine arpack_solve_dispatch(self, H_csr, config, result)
+    class(arpack_solver_t), intent(inout) :: self
+    type(csr_matrix), intent(in) :: H_csr
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+
+    call solve_arpack_dispatch(H_csr, config, result)
+  end subroutine arpack_solve_dispatch
+
+#ifdef USE_MKL_FEAST
+  subroutine feast_solver_finalize(self)
+    type(feast_solver_t), intent(inout) :: self
+    ! ws component auto-finalizes via feast_workspace_finalize
+  end subroutine feast_solver_finalize
+#endif
+
+  function make_eigensolver(config) result(solver)
+    class(eigensolver_base), allocatable :: solver
+    type(eigensolver_config), intent(in) :: config
+
+    select case (trim(config%method))
+    case ('DENSE')
+      allocate(dense_lapack_solver_t :: solver)
+#ifdef USE_MKL_FEAST
+    case ('FEAST')
+      allocate(feast_solver_t :: solver)
+#else
+    case ('FEAST')
+      print *, 'WARNING: FEAST requested but not compiled; using dense LAPACK'
+      allocate(dense_lapack_solver_t :: solver)
+#endif
+    case ('ARPACK')
+      allocate(arpack_solver_t :: solver)
+    case default
+      print *, 'ERROR: Unknown eigensolver method: ', trim(config%method)
+      stop 1
+    end select
+  end function make_eigensolver
 
 end module eigensolver

@@ -12,10 +12,11 @@ module sc_loop
 
   use definitions
   use hamiltonianConstructor
+  use hamiltonian_wire, only: wire_coo_cache, ZB8bandGeneralized
   use charge_density
   use poisson
   use eigensolver, only: eigensolver_config, eigensolver_result, &
-    & solve_sparse_evp, eigensolver_result_free
+    & eigensolver_base, make_eigensolver, solve_sparse_evp, eigensolver_result_free
   use sparse_matrices, only: csr_matrix, csr_clone_structure, csr_free
   use linalg, only: zheevx, dgesv, ilaenv, dlamch
   implicit none
@@ -431,11 +432,11 @@ contains
       & work_ne, work_nh) result(mu)
 
     real(kind=dp) :: mu
+    integer, intent(in) :: N, num_subbands, nk_actual, nz
     real(kind=dp), intent(in) :: eig_kpar(num_subbands, nk_actual)
     complex(kind=dp), intent(in) :: eigv_kpar(N, num_subbands, nk_actual)
     real(kind=dp), intent(in) :: kpar_grid(nk_actual)
     type(simulation_config), intent(in) :: cfg
-    integer, intent(in) :: N, num_subbands, nk_actual, nz
     real(kind=dp), intent(in) :: dz_val, rho_doping(nz)
     real(kind=dp), intent(inout), optional :: work_ne(nz), work_nh(nz)
 
@@ -465,11 +466,11 @@ contains
       & cfg, N, num_subbands, nk_actual, nz, dz_val, rho_doping, &
       & n_elec, n_hole, mu)
 
+    integer, intent(in) :: N, num_subbands, nk_actual, nz
     real(kind=dp), intent(in) :: eig_kpar(num_subbands, nk_actual)
     complex(kind=dp), intent(in) :: eigv_kpar(N, num_subbands, nk_actual)
     real(kind=dp), intent(in) :: kpar_grid(nk_actual)
     type(simulation_config), intent(in) :: cfg
-    integer, intent(in) :: N, num_subbands, nk_actual, nz
     real(kind=dp), intent(in) :: dz_val, rho_doping(nz)
     real(kind=dp), intent(inout) :: n_elec(nz), n_hole(nz)
     real(kind=dp), intent(out) :: mu
@@ -517,10 +518,10 @@ contains
   ! Apply electrostatic potential to all 3 profile columns
   ! ------------------------------------------------------------------
   subroutine apply_potential_to_profile(profile, profile_base, phi, nz)
+    integer, intent(in)          :: nz
     real(kind=dp), intent(inout) :: profile(nz, 3)
     real(kind=dp), intent(in)    :: profile_base(nz, 3)
     real(kind=dp), intent(in)    :: phi(nz)
-    integer, intent(in)          :: nz
     integer :: iz
     do iz = 1, nz
       profile(iz, 1) = profile_base(iz, 1) - phi(iz)
@@ -534,9 +535,9 @@ contains
   ! Apply electrostatic potential to 2D band profile (all 3 columns)
   ! ------------------------------------------------------------------
   subroutine apply_potential_to_profile_2d(profile_2d, profile_2d_base, phi, nx, ny)
-    real(kind=dp), intent(inout) :: profile_2d(:,:)
-    real(kind=dp), intent(in)    :: profile_2d_base(:,:)
-    real(kind=dp), intent(in)    :: phi(:,:)
+    real(kind=dp), intent(inout), contiguous :: profile_2d(:,:)
+    real(kind=dp), intent(in), contiguous    :: profile_2d_base(:,:)
+    real(kind=dp), intent(in), contiguous    :: phi(:,:)
     integer, intent(in)          :: nx, ny
     integer :: ix, iy, ij
 
@@ -589,6 +590,7 @@ contains
 
     ! Eigensolver temporaries
     type(csr_matrix)          :: HT_csr_sc
+    class(eigensolver_base), allocatable :: eigen_solver_sc
     type(eigensolver_result)  :: eigen_res_sc
     integer :: Ngrid, Ntot, nev_sc, i
     integer :: num_subbands_actual
@@ -683,6 +685,7 @@ contains
     end if
 
     ! --- Main SC loop ---
+    eigen_solver_sc = make_eigensolver(eigen_cfg)
     print *, '=== Wire Self-Consistent Loop Start ==='
     print *, '  max_iterations:', niter
     print *, '  tolerance:', cfg%sc%tolerance
@@ -711,7 +714,7 @@ contains
             & kpterms_2d, cfg, coo_cache)
         end if
 
-        call solve_sparse_evp(HT_csr_sc, eigen_cfg, eigen_res_sc)
+        call eigen_solver_sc%solve(HT_csr_sc, eigen_cfg, eigen_res_sc)
 
         if (.not. eigen_res_sc%converged) then
           print *, '  WARNING: eigensolver did not converge at kx=', kx_grid(k_idx)
@@ -855,6 +858,7 @@ contains
 
     ! --- Cleanup ---
     if (allocated(HT_csr_sc%values)) call csr_free(HT_csr_sc)
+    if (allocated(eigen_solver_sc)) deallocate(eigen_solver_sc)
     deallocate(kx_grid, phi_old, phi_new, phi_poisson)
     deallocate(phi_old_flat, phi_new_flat, phi_poisson_flat)
     deallocate(rho_2d, rho_2d_flat, epsilon_2d)
@@ -874,15 +878,14 @@ contains
       & work_ne, work_nh, nx, ny) result(mu)
 
     real(kind=dp) :: mu
+    integer, intent(in) :: N, num_subbands, nk_actual, Ngrid, nx, ny
     real(kind=dp), intent(in) :: eig_kx(num_subbands, nk_actual)
     complex(kind=dp), intent(in) :: eigv_kx(N, num_subbands, nk_actual)
     real(kind=dp), intent(in) :: kx_grid(nk_actual)
     type(simulation_config), intent(in) :: cfg
-    integer, intent(in) :: N, num_subbands, nk_actual, Ngrid
     real(kind=dp), intent(in) :: dA
     real(kind=dp), intent(in) :: rho_doping_2d(nx, ny)
     real(kind=dp), intent(inout) :: work_ne(Ngrid), work_nh(Ngrid)
-    integer, intent(in) :: nx, ny
 
     real(kind=dp) :: mu_lo, mu_hi, mu_mid
     real(kind=dp) :: charge_excess, target_charge
@@ -930,9 +933,9 @@ contains
   ! Build dielectric constant array from material parameters
   ! ------------------------------------------------------------------
   subroutine build_epsilon(epsilon, cfg, nz)
+    integer, intent(in) :: nz
     real(kind=dp), intent(out) :: epsilon(nz)
     type(simulation_config), intent(in) :: cfg
-    integer, intent(in) :: nz
     integer :: iz, ilayer
     integer, allocatable :: layer_index(:)
     call map_layer_to_grid(layer_index, cfg, nz)
@@ -953,9 +956,9 @@ contains
   ! Build doping charge density array (ND - NA) in cm^-3
   ! ------------------------------------------------------------------
   subroutine build_doping_charge(rho_doping, cfg, nz)
+    integer, intent(in) :: nz
     real(kind=dp), intent(out) :: rho_doping(nz)
     type(simulation_config), intent(in) :: cfg
-    integer, intent(in) :: nz
     integer :: iz, ilayer
     integer, allocatable :: layer_index(:)
     rho_doping = 0.0_dp

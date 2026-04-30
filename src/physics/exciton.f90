@@ -45,7 +45,7 @@ contains
     & material_id)
 
     real(kind=dp), intent(in)    :: eigvals(:)
-    complex(kind=dp), intent(in) :: eigvecs(:,:)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)
     real(kind=dp), intent(in)    :: z_grid(:)
     real(kind=dp), intent(in)    :: dz
     integer, intent(in)          :: nlayers
@@ -147,7 +147,7 @@ contains
   ! Normalised so that sum(phi)*dz = 1.
   ! ------------------------------------------------------------------
   subroutine extract_envelope(eigvecs, fdstep, state_idx, dz, density)
-    complex(kind=dp), intent(in)  :: eigvecs(:,:)
+    complex(kind=dp), intent(in), contiguous  :: eigvecs(:,:)
     integer, intent(in)           :: fdstep, state_idx
     real(kind=dp), intent(in)     :: dz
     real(kind=dp), intent(out)    :: density(:)
@@ -174,9 +174,10 @@ contains
   ! Density-weighted average dielectric constant.
   ! ------------------------------------------------------------------
   function avg_dielectric(phi_e, phi_h, params, nlayers, mat_id) result(eps_r)
+    integer, intent(in)          :: nlayers
     real(kind=dp), intent(in)    :: phi_e(:), phi_h(:)
     type(paramStruct), intent(in):: params(nlayers)
-    integer, intent(in)          :: nlayers, mat_id(:)
+    integer, intent(in)          :: mat_id(:)
     real(kind=dp)                :: eps_r
 
     integer :: n, layer
@@ -218,9 +219,10 @@ contains
   ! m_hh: 1/(gamma1 - 2*gamma2) for [001] growth
   ! ------------------------------------------------------------------
   function reduced_mass(phi_e, phi_h, params, nlayers, mat_id) result(mu_eff)
+    integer, intent(in)          :: nlayers
     real(kind=dp), intent(in)    :: phi_e(:), phi_h(:)
     type(paramStruct), intent(in):: params(nlayers)
-    integer, intent(in)          :: nlayers, mat_id(:)
+    integer, intent(in)          :: mat_id(:)
     real(kind=dp)                :: mu_eff
 
     integer :: n, layer

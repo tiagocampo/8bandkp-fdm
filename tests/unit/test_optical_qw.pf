@@ -3,6 +3,7 @@ module test_optical_qw
   use definitions
   use parameters
   use hamiltonianConstructor
+  use confinement_init, only: confinementInitialization_raw
   use finitedifferences
   use gfactorFunctions
   use utils

@@ -3,6 +3,15 @@ module finitedifferences
   use definitions
 
   implicit none
+  private
+  public :: FDmatrixDense, Identity, FDstencil, toeplitz
+  public :: buildFD2ndDerivMatrix, buildFD1stDerivMatrix
+  public :: FDcentralCoeffs2nd, FDcentralCoeffs1st
+  public :: FDforwardCoeffs2nd, FDbackwardCoeffs2nd
+  public :: FDforwardCoeffs1st, FDbackwardCoeffs1st
+  public :: vandermonde_2nd_deriv, vandermonde_1st_deriv
+  public :: buildStaggeredD1Inner, buildStaggeredD1Outer
+  public :: interpolateToHalfPoints
 
   contains
 
@@ -411,7 +420,7 @@ module finitedifferences
       ! stencil points 1..npts (1-indexed grid positions).
       allocate(offsets(npts))
       do j = 1, npts
-        offsets(j) = dble(j - boundary_idx)
+        offsets(j) = real(j - boundary_idx, kind=dp)
       end do
 
       call vandermonde_2nd_deriv(offsets, npts, coeffs)
@@ -443,7 +452,7 @@ module finitedifferences
       ! to stencil points {N-npts+1, ..., N}.  Offsets are negative/zero.
       allocate(offsets(npts))
       do j = 1, npts
-        offsets(j) = dble(-(npts - j) + (boundary_idx - 1))
+        offsets(j) = real(-(npts - j) + (boundary_idx - 1), kind=dp)
       end do
 
       call vandermonde_2nd_deriv(offsets, npts, coeffs)
@@ -582,7 +591,7 @@ module finitedifferences
 
       allocate(offsets(npts))
       do j = 1, npts
-        offsets(j) = dble(j - boundary_idx)
+        offsets(j) = real(j - boundary_idx, kind=dp)
       end do
 
       call vandermonde_1st_deriv(offsets, npts, coeffs)
@@ -615,7 +624,7 @@ module finitedifferences
       ! to stencil points {N-npts+1, ..., N}.  Offsets are negative/zero.
       allocate(offsets(npts))
       do j = 1, npts
-        offsets(j) = dble(-(npts - j) + (boundary_idx - 1))
+        offsets(j) = real(-(npts - j) + (boundary_idx - 1), kind=dp)
       end do
 
       call vandermonde_1st_deriv(offsets, npts, coeffs)
@@ -637,9 +646,13 @@ module finitedifferences
 
       matrix = 0
       if (present(factor)) then
-        forall(i = 1:n) matrix(i,i) = 1*factor
+        do i = 1, n
+          matrix(i,i) = factor
+        end do
       else
-        forall(i = 1:n) matrix(i,i) = 1
+        do i = 1, n
+          matrix(i,i) = 1
+        end do
       endif
 
     end subroutine
@@ -719,7 +732,7 @@ module finitedifferences
           ! Interior half-points: (FDorder+1)-point symmetric central stencil
           npts = FDorder + 1
           do i = 1, npts
-            offsets_work(i) = dble(i - bw_inner) - 0.5_dp
+            offsets_work(i) = real(i - bw_inner, kind=dp) - 0.5_dp
           end do
           call vandermonde_1st_deriv(offsets_work(1:npts), npts, coeffs(1:npts))
 
@@ -733,7 +746,7 @@ module finitedifferences
           ! Evaluation point: z_{j+0.5}.  Use grid points 1..npts.
           npts = FDorder + 1
           do i = 1, npts
-            offsets_work(i) = dble(i) - dble(j) - 0.5_dp
+            offsets_work(i) = real(i, kind=dp) - real(j, kind=dp) - 0.5_dp
           end do
           call vandermonde_1st_deriv(offsets_work(1:npts), npts, coeffs(1:npts))
 
@@ -746,7 +759,7 @@ module finitedifferences
           ! Right boundary: one-sided backward stencil
           npts = FDorder + 1
           do i = 1, npts
-            offsets_work(i) = dble(N - npts + i) - dble(j) - 0.5_dp
+            offsets_work(i) = real(N - npts + i, kind=dp) - real(j, kind=dp) - 0.5_dp
           end do
           call vandermonde_1st_deriv(offsets_work(1:npts), npts, coeffs(1:npts))
 

@@ -6,6 +6,8 @@ module test_sc_loop
   use parameters
   use geometry
   use hamiltonianConstructor
+  use confinement_init, only: confinementInitialization_2d
+  use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free
   use eigensolver
   use sparse_matrices
   implicit none

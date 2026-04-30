@@ -1,11 +1,37 @@
 module definitions
 
-  implicit none
+  use, intrinsic :: iso_fortran_env, only: real32, real64, real128, int32
 
-  integer, parameter :: sp = selected_real_kind(6, 37)
-  integer, parameter :: dp = selected_real_kind(15, 307)
-  integer, parameter :: qp = selected_real_kind(33, 4931)
-  integer, parameter :: iknd = selected_int_kind(8)
+  implicit none
+  private
+
+  ! Kinds
+  public :: sp, dp, qp, iknd
+
+  ! Physical constants
+  public :: pi_sp, pi_dp, pi_qp
+  public :: a0, hbar, const, c, m0, e, e0
+  public :: kB_eV, tolerance, renormalization, hbar2O2m0
+  public :: NUM_CB_STATES, NUM_VB_STATES, g_free
+  public :: SQR3, SQR2, SQR2o3, SQR3o2, RQS3, RQS2
+  public :: IU, ZERO, UM
+
+  ! Types
+  public :: bp_scalar, bir_pikus_blocks
+  public :: wavevector, paramStruct
+  public :: doping_spec, sc_config, wire_geometry, region_spec
+  public :: spatial_grid, strain_config
+  public :: optical_transition, optics_config
+  public :: exciton_config, scattering_config
+  public :: simulation_config, group
+
+  ! Functions and subroutines
+  public :: kronij, grid_ngrid, init_grid_from_config
+
+  integer, parameter :: sp   = real32
+  integer, parameter :: dp   = real64
+  integer, parameter :: qp   = real128
+  integer, parameter :: iknd = int32
 
   real(kind=sp), parameter :: pi_sp = 3.14159265358979323846264338327950288_sp
   real(kind=dp), parameter :: pi_dp = 3.14159265358979323846264338327950288_dp
@@ -31,12 +57,12 @@ module definitions
   real(kind=dp), parameter :: g_free = 2.00231_dp
 
   complex(kind=dp), parameter :: IU = cmplx(0.0_dp, 1.0_dp, kind=dp)
-  real(kind=dp), parameter :: SQR3 = dsqrt(3.0_dp)
-  real(kind=dp), parameter :: SQR2 = dsqrt(2.0_dp)
-  real(kind=dp), parameter :: SQR2o3 = dsqrt(2.0_dp/3.0_dp)
+  real(kind=dp), parameter :: SQR3 = sqrt(3.0_dp)
+  real(kind=dp), parameter :: SQR2 = sqrt(2.0_dp)
+  real(kind=dp), parameter :: SQR2o3 = sqrt(2.0_dp/3.0_dp)
   real(kind=dp), parameter :: RQS3 = 1.0_dp/SQR3
   real(kind=dp), parameter :: RQS2 = 1.0_dp/SQR2
-  real(kind=dp), parameter :: SQR3o2 = dsqrt(1.5_dp)   ! sqrt(3/2) = SQR3 * RQS2
+  real(kind=dp), parameter :: SQR3o2 = sqrt(1.5_dp)   ! sqrt(3/2) = SQR3 * RQS2
   complex(kind=dp), parameter :: ZERO = cmplx(0.0_dp, 0.0_dp, kind=dp)
   complex(kind=dp), parameter :: UM = cmplx(1.0_dp, 0.0_dp, kind=dp)
 
@@ -61,6 +87,8 @@ module definitions
     complex(kind=dp), allocatable :: R_eps(:)    ! VB-VB coupling
     complex(kind=dp), allocatable :: S_eps(:)    ! VB-VB coupling
     real(kind=dp), allocatable :: QT2_eps(:)     ! VB-SO coupling (2*Q_eps)
+  contains
+    final :: bir_pikus_blocks_finalize
   end type bir_pikus_blocks
 
   type wavevector
@@ -124,6 +152,8 @@ module definitions
     real(kind=dp)      :: height = 0.0_dp     ! AA (rectangle, y-extent)
     integer            :: nverts = 0           ! polygon vertex count
     real(kind=dp), allocatable :: verts(:,:)  ! (2, nverts) x,y vertices
+  contains
+    final :: wire_geometry_finalize
   end type wire_geometry
 
   ! ------------------------------------------------------------------
@@ -176,6 +206,9 @@ module definitions
     real(kind=dp), allocatable :: face_fraction_y(:,:) ! (nx*ny, 2) bottom/top face in y-direction
     ! Nearest active neighbor for each ghost/inactive point
     integer, allocatable  :: ghost_map(:,:)            ! (nx*ny, 4) N S W E
+  contains
+    procedure :: npoints => spatial_grid_npoints
+    final :: spatial_grid_finalize
   end type spatial_grid
 
   type strain_config
@@ -287,6 +320,9 @@ module definitions
     type(optics_config)      :: optics       ! optical spectra parameters
     type(exciton_config)     :: exciton      ! exciton solver parameters
     type(scattering_config)  :: scattering   ! phonon scattering parameters
+  contains
+    final :: simulation_config_finalize
+    procedure :: validate => simulation_config_validate
   end type simulation_config
 
   type group
@@ -297,7 +333,137 @@ module definitions
 
   contains
 
-  pure function kronij(i,j)
+  ! ==================================================================
+  ! Finalizer: automatically called when a bir_pikus_blocks goes out of scope.
+  ! Deallocates all allocatable components.
+  ! ==================================================================
+  subroutine bir_pikus_blocks_finalize(bp)
+    type(bir_pikus_blocks), intent(inout) :: bp
+
+    if (allocated(bp%delta_Ec))  deallocate(bp%delta_Ec)
+    if (allocated(bp%delta_EHH)) deallocate(bp%delta_EHH)
+    if (allocated(bp%delta_ELH)) deallocate(bp%delta_ELH)
+    if (allocated(bp%delta_ESO)) deallocate(bp%delta_ESO)
+    if (allocated(bp%R_eps))     deallocate(bp%R_eps)
+    if (allocated(bp%S_eps))     deallocate(bp%S_eps)
+    if (allocated(bp%QT2_eps))   deallocate(bp%QT2_eps)
+  end subroutine bir_pikus_blocks_finalize
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a wire_geometry goes out of scope.
+  ! Deallocates the polygon vertex array.
+  ! ==================================================================
+  subroutine wire_geometry_finalize(wg)
+    type(wire_geometry), intent(inout) :: wg
+
+    if (allocated(wg%verts)) deallocate(wg%verts)
+  end subroutine wire_geometry_finalize
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a spatial_grid goes out of scope.
+  ! Deallocates all allocatable components.
+  ! ==================================================================
+  subroutine spatial_grid_finalize(sg)
+    type(spatial_grid), intent(inout) :: sg
+
+    if (allocated(sg%x))                deallocate(sg%x)
+    if (allocated(sg%z))                deallocate(sg%z)
+    if (allocated(sg%coords))           deallocate(sg%coords)
+    if (allocated(sg%material_id))      deallocate(sg%material_id)
+    if (allocated(sg%cell_volume))      deallocate(sg%cell_volume)
+    if (allocated(sg%face_fraction_x))  deallocate(sg%face_fraction_x)
+    if (allocated(sg%face_fraction_y))  deallocate(sg%face_fraction_y)
+    if (allocated(sg%ghost_map))        deallocate(sg%ghost_map)
+  end subroutine spatial_grid_finalize
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a simulation_config goes out
+  ! of scope.  Deallocates all allocatable components.
+  ! Note: cfg%grid and cfg%wire_geom have their own finalizers which
+  ! will fire automatically when this type is destroyed.
+  ! ==================================================================
+  subroutine simulation_config_finalize(cfg)
+    type(simulation_config), intent(inout) :: cfg
+
+    if (allocated(cfg%startPos))    deallocate(cfg%startPos)
+    if (allocated(cfg%endPos))      deallocate(cfg%endPos)
+    if (allocated(cfg%z))           deallocate(cfg%z)
+    if (allocated(cfg%intStartPos)) deallocate(cfg%intStartPos)
+    if (allocated(cfg%intEndPos))   deallocate(cfg%intEndPos)
+    if (allocated(cfg%materialN))   deallocate(cfg%materialN)
+    if (allocated(cfg%params))      deallocate(cfg%params)
+    if (allocated(cfg%doping))      deallocate(cfg%doping)
+    if (allocated(cfg%regions))     deallocate(cfg%regions)
+  end subroutine simulation_config_finalize
+
+  ! ==================================================================
+  ! Type-bound validation for simulation_config.
+  ! Checks invariants already assumed by downstream code.
+  ! Calls error stop on failure (F2008).
+  ! ==================================================================
+  subroutine simulation_config_validate(self)
+    class(simulation_config), intent(in) :: self
+
+    associate(cfg => self)
+      ! confDir: set internally ('n'=bulk, 'z'=QW/wire)
+      if (cfg%confDir /= 'z' .and. cfg%confDir /= 'n') then
+        error stop 'validate_simulation_config: invalid confDir'
+      end if
+
+      ! fdStep: must be positive
+      if (cfg%fdStep <= 0) then
+        error stop 'validate_simulation_config: fdStep must be positive'
+      end if
+
+      ! numcb/numvb: must be non-negative
+      if (cfg%numcb < 0) then
+        error stop 'validate_simulation_config: numcb must be non-negative'
+      end if
+      if (cfg%numvb < 0) then
+        error stop 'validate_simulation_config: numvb must be non-negative'
+      end if
+
+      ! evnum must equal numcb + numvb (set by parser)
+      if (cfg%evnum /= cfg%numcb + cfg%numvb) then
+        error stop 'validate_simulation_config: evnum must equal numcb + numvb'
+      end if
+
+      ! numLayers: must be positive
+      if (cfg%numLayers < 1) then
+        error stop 'validate_simulation_config: numLayers must be >= 1'
+      end if
+
+      ! confinement: must be 0, 1, or 2
+      if (cfg%confinement < 0 .or. cfg%confinement > 2) then
+        error stop 'validate_simulation_config: confinement must be 0, 1, or 2'
+      end if
+
+      ! FDorder: must be one of the supported values
+      if (cfg%FDorder /= 2 .and. cfg%FDorder /= 4 .and. cfg%FDorder /= 6 &
+          .and. cfg%FDorder /= 8 .and. cfg%FDorder /= 10) then
+        error stop 'validate_simulation_config: FDorder must be 2, 4, 6, 8, or 10'
+      end if
+
+      ! materialN must be allocated with numLayers entries
+      if (.not. allocated(cfg%materialN)) then
+        error stop 'validate_simulation_config: materialN not allocated'
+      end if
+      if (size(cfg%materialN) < cfg%numLayers) then
+        error stop 'validate_simulation_config: materialN too small for numLayers'
+      end if
+
+      ! params must be allocated with numLayers entries
+      if (.not. allocated(cfg%params)) then
+        error stop 'validate_simulation_config: params not allocated'
+      end if
+      if (size(cfg%params) < cfg%numLayers) then
+        error stop 'validate_simulation_config: params too small for numLayers'
+      end if
+    end associate
+
+  end subroutine simulation_config_validate
+
+  elemental pure function kronij(i,j)
     integer, intent(in) :: i,j
     integer :: kronij
     kronij = merge(1, 0, i == j)
@@ -312,6 +478,17 @@ module definitions
     integer :: n
     n = grid%nx * grid%ny
   end function
+
+  ! ------------------------------------------------------------------
+  ! Type-bound accessor: total number of spatial grid points (nx * ny).
+  ! Semantically identical to the standalone grid_ngrid function, but
+  ! called as grid%npoints() on polymorphic or direct references.
+  ! ------------------------------------------------------------------
+  elemental pure function spatial_grid_npoints(self) result(n)
+    class(spatial_grid), intent(in) :: self
+    integer :: n
+    n = self%nx * self%ny
+  end function spatial_grid_npoints
 
   ! ------------------------------------------------------------------
   ! Initialize a spatial_grid from the fields already set in

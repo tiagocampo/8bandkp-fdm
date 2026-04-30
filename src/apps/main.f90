@@ -3,12 +3,16 @@ program kpfdm
   use definitions
   use parameters
   use hamiltonianConstructor
+  use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
+    & wire_coo_cache, wire_coo_cache_free, ZB8bandGeneralized
+  use confinement_init, only: confinementInitialization_2d
   use OMP_lib
   use outputFunctions
   use input_parser
   use sc_loop
   use sparse_matrices
-  use eigensolver
+  use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
+    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
   use strain_solver
   use exciton_solver
   use scattering_solver
@@ -45,7 +49,7 @@ program kpfdm
   type(csr_matrix)                 :: HT_csr, HT_csr_step
   type(wire_coo_cache)             :: coo_cache  ! kept for self_consistent_loop_wire
   type(wire_workspace)             :: wire_ws
-  type(feast_workspace)            :: feast_ws
+  class(eigensolver_base), allocatable :: eigen_solver
   type(eigensolver_config)         :: eigen_cfg
   type(eigensolver_result)         :: eigen_res
   real(kind=dp), allocatable       :: eig_wire(:,:)
@@ -185,6 +189,9 @@ program kpfdm
     eigen_cfg%max_iter = 100
     eigen_cfg%tol      = 1.0e-10_dp
     eigen_cfg%feast_m0 = cfg%feast_m0  ! 0 means auto: 2*nev
+
+    ! Create polymorphic eigensolver (FEAST or dense LAPACK)
+    eigen_solver = make_eigensolver(eigen_cfg)
 
     ! Allocate storage for eigenvalues across k-points
     ! Use Ntot as upper bound: range mode can return many eigenvalues
@@ -339,7 +346,7 @@ program kpfdm
       print *, '  Auto energy window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
     end if
 
-    call solve_sparse_evp(HT_csr, eigen_cfg, eigen_res, feast_ws)
+    call eigen_solver%solve(HT_csr, eigen_cfg, eigen_res)
 
     if (.not. eigen_res%converged) then
       if (eigen_res%nev_found < nev_wire) then
@@ -392,7 +399,7 @@ program kpfdm
 
         call ZB8bandGeneralized(HT_csr_step, smallk(k)%kz, profile_2d, &
           & kpterms_2d, cfg, ws=wire_ws)
-        call solve_sparse_evp(HT_csr_step, eigen_cfg, eigen_res, feast_ws)
+        call eigen_solver%solve(HT_csr_step, eigen_cfg, eigen_res)
 
         if (.not. eigen_res%converged) then
           if (eigen_res%nev_found < nev_wire) then
@@ -433,7 +440,7 @@ program kpfdm
     ! Free Hamiltonian CSR and workspace
     call csr_free(HT_csr)
     call wire_workspace_free(wire_ws)
-    call feast_workspace_free(feast_ws)
+    if (allocated(eigen_solver)) deallocate(eigen_solver)
     call wire_coo_cache_free(coo_cache)
 
     ! Write eigenvalues to file (only the rows actually populated)
@@ -768,9 +775,9 @@ contains
 
   subroutine reorder_wire_branches(prev_eval, prev_evec, curr_eval, curr_evec)
     real(kind=dp), intent(in) :: prev_eval(:)
-    complex(kind=dp), intent(in) :: prev_evec(:,:)
+    complex(kind=dp), intent(in), contiguous :: prev_evec(:,:)
     real(kind=dp), intent(inout) :: curr_eval(:)
-    complex(kind=dp), intent(inout) :: curr_evec(:,:)
+    complex(kind=dp), intent(inout), contiguous :: curr_evec(:,:)
 
     integer :: n_prev, n_curr, n_match, i, j, best_j, next_slot
     integer :: block_start, block_end

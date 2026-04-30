@@ -12,6 +12,7 @@ module sparse_matrices
   ! ==============================================================================
 
   use definitions, only: dp, iknd
+  use, intrinsic :: iso_c_binding, only: c_associated, c_loc, c_ptr
 
   implicit none
 
@@ -40,6 +41,10 @@ module sparse_matrices
     complex(kind=dp), allocatable :: values(:)   ! (nnz)
     integer, allocatable          :: colind(:)   ! (nnz)
     integer, allocatable          :: rowptr(:)   ! (nrows+1)
+  contains
+    procedure :: free => csr_matrix_free_bound
+    procedure :: clone_structure => csr_matrix_clone_structure_bound
+    final :: csr_finalize
   end type csr_matrix
 
 contains
@@ -90,6 +95,35 @@ contains
     allocate(dst%values(src%nnz))
     dst%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
   end subroutine csr_clone_structure
+
+  ! ------------------------------------------------------------------
+  ! Type-bound wrapper: free all arrays in a CSR matrix.
+  ! Delegates to the module-level csr_free subroutine.
+  ! ------------------------------------------------------------------
+  subroutine csr_matrix_free_bound(this)
+    class(csr_matrix), intent(inout) :: this
+    call csr_free(this)
+  end subroutine csr_matrix_free_bound
+
+  ! ------------------------------------------------------------------
+  ! Type-bound wrapper: clone the sparsity structure (rowptr, colind)
+  ! from this into dst.  dst%values is allocated but zeroed.
+  ! Delegates to the module-level csr_clone_structure subroutine.
+  ! ------------------------------------------------------------------
+  subroutine csr_matrix_clone_structure_bound(this, dst)
+    class(csr_matrix), intent(in)  :: this
+    type(csr_matrix), intent(out)  :: dst
+    call csr_clone_structure(this, dst)
+  end subroutine csr_matrix_clone_structure_bound
+
+  ! ------------------------------------------------------------------
+  ! Finalizer: automatically called when a csr_matrix goes out of scope.
+  ! Delegates to csr_free so existing manual frees remain valid.
+  ! ------------------------------------------------------------------
+  subroutine csr_finalize(mat)
+    type(csr_matrix), intent(inout) :: mat
+    call csr_free(mat)
+  end subroutine csr_finalize
 
   ! ------------------------------------------------------------------
   ! Deallocate all arrays in a CSR matrix.
@@ -432,10 +466,10 @@ contains
   ! is stored if |A(i,j) * B(k,l)| >= tol.
   ! ------------------------------------------------------------------
   subroutine kron_dense_dense(A, na1, na2, B, nb1, nb2, C, tol)
-    complex(kind=dp), intent(in) :: A(na1, na2)
     integer, intent(in) :: na1, na2
-    complex(kind=dp), intent(in) :: B(nb1, nb2)
+    complex(kind=dp), intent(in) :: A(na1, na2)
     integer, intent(in) :: nb1, nb2
+    complex(kind=dp), intent(in) :: B(nb1, nb2)
     type(csr_matrix), intent(out) :: C
     real(kind=dp), intent(in), optional :: tol
 
@@ -520,8 +554,8 @@ contains
   ! C((i-1)*n+k, (j-1)*n+k) = A(i,j)  for k = 1..n
   ! ------------------------------------------------------------------
   subroutine kron_dense_eye(A, na, n_eye, C, tol)
-    complex(kind=dp), intent(in) :: A(na, na)
     integer, intent(in) :: na, n_eye
+    complex(kind=dp), intent(in) :: A(na, na)
     type(csr_matrix), intent(out) :: C
     real(kind=dp), intent(in), optional :: tol
 
@@ -588,9 +622,8 @@ contains
   ! Total nnz = n * nnz(B) (entries above threshold).
   ! ------------------------------------------------------------------
   subroutine kron_eye_dense(n_eye, B, nb1, nb2, C, tol)
-    integer, intent(in) :: n_eye
+    integer, intent(in) :: n_eye, nb1, nb2
     complex(kind=dp), intent(in) :: B(nb1, nb2)
-    integer, intent(in) :: nb1, nb2
     type(csr_matrix), intent(out) :: C
     real(kind=dp), intent(in), optional :: tol
 
@@ -658,10 +691,10 @@ contains
   ! This is the outer product: C = A * B^T  (rank-1 Kronecker).
   ! ------------------------------------------------------------------
   subroutine kron_dense_dense_1d(A, na, B, nb, C, tol)
-    complex(kind=dp), intent(in) :: A(na)
     integer, intent(in) :: na
-    complex(kind=dp), intent(in) :: B(nb)
+    complex(kind=dp), intent(in) :: A(na)
     integer, intent(in) :: nb
+    complex(kind=dp), intent(in) :: B(nb)
     type(csr_matrix), intent(out) :: C
     real(kind=dp), intent(in), optional :: tol
 
@@ -726,8 +759,8 @@ contains
   ! Uses COO accumulation: sparsifies union of sparsity patterns.
   ! ------------------------------------------------------------------
   subroutine csr_add(A, B, C, alpha, beta)
-    type(csr_matrix), intent(in)  :: A, B
-    type(csr_matrix), intent(out) :: C
+    type(csr_matrix), intent(in), target  :: A, B
+    type(csr_matrix), intent(out), target :: C
     complex(kind=dp), intent(in), optional :: alpha, beta
     complex(kind=dp) :: sa, sb
 
@@ -736,7 +769,8 @@ contains
     complex(kind=dp), allocatable :: vals_coo(:)
 
     ! Guard against self-aliasing: C must not be the same as A or B
-    if (loc(C) == loc(A) .or. loc(C) == loc(B)) then
+    if (transfer(c_loc(C), 0_iknd) == transfer(c_loc(A), 0_iknd) .or. &
+        transfer(c_loc(C), 0_iknd) == transfer(c_loc(B), 0_iknd)) then
       print *, 'ERROR: csr_add self-aliasing detected'
       stop 1
     end if

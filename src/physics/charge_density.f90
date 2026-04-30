@@ -26,7 +26,7 @@ contains
   ! ------------------------------------------------------------------
   ! Fermi-Dirac distribution function
   ! ------------------------------------------------------------------
-  pure function fermi_dirac(energy, mu, T) result(f)
+  elemental pure function fermi_dirac(energy, mu, T) result(f)
     real(kind=dp), intent(in) :: energy  ! Energy (eV)
     real(kind=dp), intent(in) :: mu      ! Fermi level (eV)
     real(kind=dp), intent(in) :: T       ! Temperature (K)
@@ -75,6 +75,10 @@ contains
     !
     ! Output is in cm^-3 (converted from 1/nm^3 via 1e21 factor).
 
+    integer, intent(in)          :: N
+    integer, intent(in)          :: num_subbands
+    integer, intent(in)          :: num_kpar
+    integer, intent(in)          :: numcb
     real(kind=dp), intent(out)   :: n_electron(N)
     real(kind=dp), intent(out)   :: n_hole(N)
     complex(kind=dp), intent(in) :: eigenvectors(8*N, num_subbands, num_kpar)
@@ -82,10 +86,6 @@ contains
     real(kind=dp), intent(in)    :: kpar_grid(num_kpar)
     real(kind=dp), intent(in)    :: fermi_level
     real(kind=dp), intent(in)    :: temperature
-    integer, intent(in)          :: N
-    integer, intent(in)          :: num_subbands
-    integer, intent(in)          :: num_kpar
-    integer, intent(in)          :: numcb
 
     ! Local arrays
     real(kind=dp), allocatable :: psi2_z(:,:)    ! |Psi|^2 at each z, k_par
@@ -168,12 +168,12 @@ contains
 
     real(kind=dp), intent(out)   :: n_electron
     real(kind=dp), intent(out)   :: n_hole
+    integer, intent(in)          :: num_subbands
+    integer, intent(in)          :: num_k
     real(kind=dp), intent(in)    :: eigenvalues_k(num_subbands, num_k)
     real(kind=dp), intent(in)    :: k_grid(num_k)
     real(kind=dp), intent(in)    :: fermi_level
     real(kind=dp), intent(in)    :: temperature
-    integer, intent(in)          :: num_subbands
-    integer, intent(in)          :: num_k
 
     integer :: s, ik
     real(kind=dp) :: dk, shell_vol, prefactor, occ
@@ -213,9 +213,9 @@ contains
   ! Helper: insertion sort (descending)
   ! ------------------------------------------------------------------
   subroutine sort_descending(vals, idx, n)
+    integer, intent(in) :: n
     real(kind=dp), intent(inout) :: vals(n)
     integer, intent(inout) :: idx(n)
-    integer, intent(in) :: n
 
     integer :: i, j, key_idx
     real(kind=dp) :: key_val
@@ -240,9 +240,9 @@ contains
   ! Compute |Psi_s(z, k_par)|^2 summed over all 8 band components
   ! ------------------------------------------------------------------
   subroutine compute_psi2(psi2_z, eigenvectors, s, N, nk, num_subbands)
+    integer, intent(in)          :: s, N, nk, num_subbands
     real(kind=dp), intent(out)   :: psi2_z(N, nk)
     complex(kind=dp), intent(in) :: eigenvectors(8*N, num_subbands, nk)
-    integer, intent(in)          :: s, N, nk, num_subbands
 
     integer :: idx, band_start, iz
 
@@ -265,14 +265,14 @@ contains
   subroutine accumulate_band_density(n_density, psi2_z, eigenvalues_kpar, &
       & kpar_grid, integrand, fermi_level, temperature, s, N, nk, num_subbands, &
       & k_max, is_cb)
+    integer, intent(in)          :: N, nk, num_subbands
     real(kind=dp), intent(inout) :: n_density(N)
     real(kind=dp), intent(in)    :: psi2_z(N, nk)
-    integer, intent(in)          :: num_subbands
     real(kind=dp), intent(in)    :: eigenvalues_kpar(num_subbands, nk)
     real(kind=dp), intent(in)    :: kpar_grid(nk)
     real(kind=dp), intent(inout) :: integrand(nk)
     real(kind=dp), intent(in)    :: fermi_level, temperature, k_max
-    integer, intent(in)          :: s, N, nk
+    integer, intent(in)          :: s
     logical, intent(in)          :: is_cb
 
     integer :: iz, idx
@@ -308,7 +308,7 @@ contains
     !
     ! Output arrays are flattened (Ny*Nz), in cm^-3.
 
-    integer, intent(in)          :: Ny, Nz
+    integer, intent(in)          :: Ny, Nz, num_subbands, num_kx, numcb
     real(kind=dp), intent(out)   :: n_electron(Ny*Nz)
     real(kind=dp), intent(out)   :: n_hole(Ny*Nz)
     complex(kind=dp), intent(in) :: eigenvectors(8*Ny*Nz, num_subbands, num_kx)
@@ -316,9 +316,6 @@ contains
     real(kind=dp), intent(in)    :: kx_grid(num_kx)
     real(kind=dp), intent(in)    :: fermi_level
     real(kind=dp), intent(in)    :: temperature
-    integer, intent(in)          :: num_subbands
-    integer, intent(in)          :: num_kx
-    integer, intent(in)          :: numcb
 
     integer :: Ngrid
     real(kind=dp), allocatable :: psi2(:,:)       ! |Psi|^2 at each grid pt, kx
@@ -394,9 +391,9 @@ contains
     ! For a wire, eigenvectors are (8*Ngrid, num_subbands, nk).
     ! Component nu at flat grid point p is at index (nu-1)*Ngrid + p.
 
+    integer, intent(in)          :: s, Ngrid, nk, num_subbands
     real(kind=dp), intent(out)   :: psi2(Ngrid, nk)
     complex(kind=dp), intent(in) :: eigenvectors(8*Ngrid, num_subbands, nk)
-    integer, intent(in)          :: s, Ngrid, nk, num_subbands
 
     integer :: idx, band_start, p
 
@@ -422,15 +419,14 @@ contains
     ! Integrate |Psi_s|^2 * f * 1/(2*pi) over k_x using Simpson's rule.
     ! Weight is 1/(2*pi) (1D integral, no k_par factor).
 
-    integer, intent(in)          :: Ngrid
+    integer, intent(in)          :: Ngrid, nk, num_subbands
     real(kind=dp), intent(inout) :: n_density(Ngrid)
     real(kind=dp), intent(in)    :: psi2(Ngrid, nk)
-    integer, intent(in)          :: num_subbands
     real(kind=dp), intent(in)    :: eigenvalues_kx(num_subbands, nk)
     real(kind=dp), intent(in)    :: kx_grid(nk)
     real(kind=dp), intent(inout) :: integrand(nk)
     real(kind=dp), intent(in)    :: fermi_level, temperature, kx_max
-    integer, intent(in)          :: s, nk
+    integer, intent(in)          :: s
     logical, intent(in)          :: is_cb
 
     integer :: p, idx

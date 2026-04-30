@@ -1,10 +1,12 @@
 module linalg
-  ! Centralized explicit interface blocks for LAPACK, MKL utility, and
-  ! (optionally) MKL FEAST routines.  Replaces loose `external` declarations
-  ! scattered across the codebase, giving the compiler proper type-checking
-  ! and eliminating gfortran strict-aliasing warnings.
+  ! Centralized explicit interface blocks for LAPACK, BLAS, MKL utility,
+  ! MKL PARDISO, and (optionally) MKL FEAST routines.  Replaces loose
+  ! `external` declarations scattered across the codebase, giving the
+  ! compiler proper type-checking and eliminating gfortran strict-aliasing
+  ! warnings.
 
   use definitions, only: dp
+  use, intrinsic :: iso_c_binding, only: c_int, c_intptr_t, c_double, c_double_complex, c_char
   implicit none
   private
 
@@ -14,8 +16,17 @@ module linalg
   public :: ilaenv
   public :: dlamch
 
+  ! BLAS
+  public :: zdotc
+
   ! MKL-specific
   public :: mkl_set_num_threads_local
+
+  ! MKL PARDISO
+  public :: pardiso_real
+#ifdef USE_ARPACK
+  public :: pardiso_c
+#endif
 
   ! MKL FEAST (guarded)
 #ifdef USE_MKL_FEAST
@@ -84,35 +95,96 @@ module linalg
 
   ! mkl_set_num_threads_local - MKL per-thread thread count
   interface
-    function mkl_set_num_threads_local(nt) result(previous)
-      integer, intent(in) :: nt
-      integer :: previous
+    function mkl_set_num_threads_local(nt) result(previous) bind(C, name="MKL_Set_Num_Threads_Local")
+      import :: c_int
+      integer(c_int), value :: nt
+      integer(c_int) :: previous
     end function
   end interface
 
-#ifdef USE_MKL_FEAST
-  ! feastinit - FEAST initialization
+  ! zdotc - BLAS complex dot product (conjugated first vector)
   interface
-    subroutine feastinit(fpm)
-      integer, intent(inout) :: fpm(128)
+    function zdotc(n, zx, incx, zy, incy) result(res)
+      import :: dp
+      integer, intent(in) :: n, incx, incy
+      complex(kind=dp), intent(in) :: zx(*), zy(*)
+      complex(kind=dp) :: res
+    end function zdotc
+  end interface
+
+#ifdef USE_ARPACK
+  ! pardiso_c - MKL PARDISO direct solver (iso_c_binding)
+  !
+  ! NOTE: Binds to "PARDISO" — same C symbol as pardiso_real.  MKL dispatches
+  ! by argument types at runtime (mtype selects real/complex/complex-Hermitian).
+  ! See comment above pardiso_real regarding -Wlto-type-mismatch warning safety.
+  interface
+    subroutine pardiso_c(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, &
+                         nrhs, iparm, msglvl, b, x, error) bind(C, name="PARDISO")
+      import :: c_int, c_intptr_t, c_double_complex
+      integer(c_intptr_t), intent(inout) :: pt(64)
+      integer(c_int), intent(in) :: maxfct, mnum, mtype, phase, n, nrhs, msglvl
+      complex(c_double_complex), intent(in) :: a(*)
+      integer(c_int), intent(in) :: ia(*), ja(*), perm(*)
+      integer(c_int), intent(inout) :: iparm(64)
+      complex(c_double_complex), intent(inout) :: b(*), x(*)
+      integer(c_int), intent(out) :: error
+    end subroutine pardiso_c
+  end interface
+#endif
+
+  ! pardiso_real - MKL PARDISO for real-valued matrices (iso_c_binding)
+  !
+  ! NOTE: Both pardiso_real and pardiso_c (when ARPACK is enabled) bind to the
+  ! same C symbol "PARDISO".  MKL dispatches to the correct routine internally
+  ! based on the mtype argument (11=real symmetric, 13=complex Hermitian, etc.)
+  ! and the actual argument types at runtime.  The linker warning
+  ! -Wlto-type-mismatch is therefore benign: the type mismatch is intentional.
+  ! -fno-strict-aliasing (set in both CMAKE_Fortran_FLAGS and
+  ! CMAKE_Fortran_FLAGS_RELEASE) ensures the compiler does not assume distinct
+  ! pointers cannot alias, which is relevant for the void*-like a/b/x arrays.
+  interface
+    subroutine pardiso_real(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, &
+                         nrhs, iparm, msglvl, b, x, error) bind(C, name="PARDISO")
+      import :: c_int, c_intptr_t, c_double
+      integer(c_intptr_t), intent(inout) :: pt(64)
+      integer(c_int), intent(in) :: maxfct, mnum, mtype, phase, n, nrhs, msglvl
+      real(c_double), intent(in) :: a(*)
+      integer(c_int), intent(in) :: ia(*), ja(*), perm(*)
+      integer(c_int), intent(inout) :: iparm(64)
+      real(c_double), intent(inout) :: b(*), x(*)
+      integer(c_int), intent(out) :: error
+    end subroutine pardiso_real
+  end interface
+
+#ifdef USE_MKL_FEAST
+  ! FEAST interfaces use bind(C) binding to MKL's C-exported symbols.
+  ! Safe on x86-64 Linux where C and Fortran pointer-passing ABIs are identical.
+  ! May require adjustment for other platforms.
+
+  ! feastinit - FEAST initialization (iso_c_binding)
+  interface
+    subroutine feastinit(fpm) bind(C, name="feastinit")
+      import :: c_int
+      integer(c_int), intent(inout) :: fpm(128)
     end subroutine
   end interface
 
-  ! zfeast_hcsrev - FEAST complex Hermitian CSR eigensolver
+  ! zfeast_hcsrev - FEAST complex Hermitian CSR eigensolver (iso_c_binding)
   interface
     subroutine zfeast_hcsrev(uplo, n, a, ia, ja, fpm, epsout, loop, &
-                             emin, emax, m0, e, x, m, res, info)
-      use definitions, only: dp
-      character(len=1), intent(in) :: uplo
-      integer, intent(in) :: n, m0
-      complex(kind=dp), intent(in) :: a(*)
-      integer, intent(in) :: ia(*), ja(*)
-      integer, intent(inout) :: fpm(128)
-      real(kind=dp), intent(out) :: epsout
-      integer, intent(out) :: loop, m, info
-      real(kind=dp), intent(in) :: emin, emax
-      real(kind=dp), intent(inout) :: e(m0), res(m0)
-      complex(kind=dp), intent(inout) :: x(n, m0)
+                             emin, emax, m0, e, x, m, res, info) bind(C, name="zfeast_hcsrev")
+      import :: c_int, c_double, c_double_complex, c_char
+      character(c_char), intent(in) :: uplo
+      integer(c_int), intent(in) :: n, m0
+      complex(c_double_complex), intent(in) :: a(*)
+      integer(c_int), intent(in) :: ia(*), ja(*)
+      integer(c_int), intent(inout) :: fpm(128)
+      real(c_double), intent(out) :: epsout
+      integer(c_int), intent(out) :: loop, m, info
+      real(c_double), intent(in) :: emin, emax
+      real(c_double), intent(inout) :: e(m0), res(m0)
+      complex(c_double_complex), intent(inout) :: x(n, m0)
     end subroutine
   end interface
 #endif
@@ -148,8 +220,8 @@ module linalg
       logical, intent(in)             :: rvec
       character(len=1), intent(in)    :: howmny, bmat
       character(len=2), intent(in)    :: which
-      logical, intent(inout)          :: select(ncv)
       integer, intent(in)             :: n, nev, ncv, ldz, ldv, lworkl
+      logical, intent(inout)          :: select(ncv)
       real(kind=dp), intent(in)       :: tol
       complex(kind=dp), intent(out)   :: d(nev)
       complex(kind=dp), intent(out)   :: z(ldz, nev)

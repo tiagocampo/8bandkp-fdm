@@ -8,6 +8,8 @@ module poisson
   !     Solved via MKL PARDISO sparse direct solver on Ny x Nz grids.
 
   use definitions, only: dp, e0
+  use linalg, only: pardiso_real
+  use, intrinsic :: iso_c_binding, only: c_intptr_t
   implicit none
 
   private
@@ -43,11 +45,11 @@ contains
     ! Output:
     !   phi(N)     - electrostatic potential (V)
 
+    integer, intent(in)          :: N
+    real(kind=dp), intent(in)    :: dz
     real(kind=dp), intent(inout) :: phi(N)
     real(kind=dp), intent(in)    :: rho(N)
     real(kind=dp), intent(in)    :: epsilon(N)
-    real(kind=dp), intent(in)    :: dz
-    integer, intent(in)          :: N
     real(kind=dp), intent(in)    :: bc_left
     real(kind=dp), intent(in)    :: bc_right
     integer, intent(in)          :: bc_type
@@ -130,8 +132,8 @@ contains
     !
     ! with c(1)=0 and b(N)=0.
 
-    real(kind=dp), intent(inout) :: a(N), b(N), c(N), d(N)
     integer, intent(in) :: N
+    real(kind=dp), intent(inout) :: a(N), b(N), c(N), d(N)
 
     real(kind=dp) :: w
     integer :: i
@@ -184,11 +186,11 @@ contains
   ! ==================================================================
   subroutine solve_poisson_2d(phi, rho, epsilon, dy, dz, ny, nz, bc_value)
 
+    integer, intent(in)          :: ny, nz
+    real(kind=dp), intent(in)    :: dy, dz
     real(kind=dp), intent(inout) :: phi(ny, nz)
     real(kind=dp), intent(in)    :: rho(ny, nz)
     real(kind=dp), intent(in)    :: epsilon(ny, nz)
-    real(kind=dp), intent(in)    :: dy, dz
-    integer, intent(in)          :: ny, nz
     real(kind=dp), intent(in)    :: bc_value
 
     integer :: ntotal, nnz_est, coo_idx
@@ -200,7 +202,7 @@ contains
     real(kind=dp), allocatable :: rhs(:), sol(:)
 
     ! PARDISO arrays
-    integer(8) :: pt(64)
+    integer(kind=c_intptr_t) :: pt(64)
     integer :: iparm(64)
     integer :: maxfct, mnum, mtype, phase, nrhs, msglvl, error
     integer, allocatable :: perm(:)
@@ -317,14 +319,14 @@ contains
 
     ! Phase 13: Analysis + Factorization + Solve
     phase = 13
-    call pardiso(pt, maxfct, mnum, mtype, phase, ntotal, a_csr, ia, ja, &
+    call pardiso_real(pt, maxfct, mnum, mtype, phase, ntotal, a_csr, ia, ja, &
       perm, nrhs, iparm, msglvl, rhs, sol, error)
 
     if (error /= 0) then
       print *, 'ERROR: 2D Poisson solve failed (PARDISO error=', error, '). Aborting.'
       ! Release PARDISO memory
       phase = -1
-      call pardiso(pt, maxfct, mnum, mtype, phase, ntotal, a_csr, ia, ja, &
+      call pardiso_real(pt, maxfct, mnum, mtype, phase, ntotal, a_csr, ia, ja, &
         perm, nrhs, iparm, msglvl, rhs, sol, error)
       deallocate(ia, ja, a_csr, rhs, sol, perm)
       stop 1
@@ -332,7 +334,7 @@ contains
 
     ! Phase -1: Release memory
     phase = -1
-    call pardiso(pt, maxfct, mnum, mtype, phase, ntotal, a_csr, ia, ja, &
+    call pardiso_real(pt, maxfct, mnum, mtype, phase, ntotal, a_csr, ia, ja, &
       perm, nrhs, iparm, msglvl, rhs, sol, error)
 
     deallocate(ia, ja, a_csr, rhs, perm)

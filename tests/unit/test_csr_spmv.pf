@@ -32,7 +32,7 @@ contains
     @assertEqual(cmplx(2.0_dp, 0, dp), y(2), tolerance=1.0e-14_dp)
     @assertEqual(cmplx(3.0_dp, 0, dp), y(3), tolerance=1.0e-14_dp)
 
-    call csr_free(A)
+    call A%free()
   end subroutine test_spmv_identity
 
   ! ==================================================================

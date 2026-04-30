@@ -1,0 +1,36 @@
+name = "8bandkp-fdm"
+version = "0.1.0"
+license = "GPL-3.0"
+author = "Tiago de Campos"
+
+[dependencies]
+stdlib = "*"
+
+[build]
+auto-executables = false
+auto-tests = false
+
+[[executable]]
+name = "bandStructure"
+source-dir = "src/apps"
+main = "main.f90"
+
+[[executable]]
+name = "gfactorCalculation"
+source-dir = "src/apps"
+main = "main_gfactor.f90"
+
+[[executable]]
+name = "opticalProperties"
+source-dir = "src/apps"
+main = "main_optics.f90"
+
+[library]
+source-dir = "src"
+
+[install]
+library = false
+
+[fortran]
+implicit-typing = false
+source-form = "free"

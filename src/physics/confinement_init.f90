@@ -6,6 +6,8 @@ module confinement_init
 
   implicit none
 
+  private
+
   interface confinementInitialization
     module procedure confinementInitialization_raw
     module procedure confinementInitialization_cfg
@@ -13,23 +15,17 @@ module confinement_init
 
   public :: confinementInitialization
   public :: confinementInitialization_raw
-  public :: confinementInitialization_cfg
   public :: confinementInitialization_2d
-  public :: build_kpterm_block
-  public :: build_diagonal_csr
-  public :: applyVariableCoeffStaggered
-  public :: apply_dirichlet_order2_first_derivative
-  public :: apply_dirichlet_order2_second_derivative
 
 contains
 
   subroutine build_kpterm_block(kpterms, profile_vec, central, forward, &
     & backward, diag, offup, offdown, N, term_idx, scale_factor, has_diag)
 
-    real(kind=dp), intent(inout), dimension(:,:,:) :: kpterms
-    real(kind=dp), intent(in), dimension(:) :: profile_vec
-    real(kind=dp), intent(in), dimension(:,:) :: central, forward, backward
-    real(kind=dp), intent(inout), dimension(:) :: diag, offup, offdown
+    real(kind=dp), intent(inout), contiguous, dimension(:,:,:) :: kpterms
+    real(kind=dp), intent(in), contiguous, dimension(:) :: profile_vec
+    real(kind=dp), intent(in), contiguous, dimension(:,:) :: central, forward, backward
+    real(kind=dp), intent(inout), contiguous, dimension(:) :: diag, offup, offdown
     integer, intent(in) :: N, term_idx
     real(kind=dp), intent(in) :: scale_factor
     logical, intent(in) :: has_diag
@@ -43,20 +39,20 @@ contains
     call dgemv('N', N, N, 1.0_dp, backward, N, profile_vec, 1, 0.0_dp, offdown, 1)
 
     if (has_diag) then
-      forall(ii=2:N-1)
+      do ii = 2, N - 1
         kpterms(ii,ii,term_idx) = diag(ii)
         kpterms(ii+1,ii,term_idx) = -offup(ii)
         kpterms(ii-1,ii,term_idx) = -offdown(ii)
-      end forall
+      end do
       kpterms(1,1,term_idx) = diag(1)
       kpterms(N,N,term_idx) = diag(N)
       kpterms(2,1,term_idx) = -offup(1)
       kpterms(N-1,N,term_idx) = -offdown(N)
     else
-      forall(ii=2:N-1)
+      do ii = 2, N - 1
         kpterms(ii+1,ii,term_idx) = offup(ii)
         kpterms(ii-1,ii,term_idx) = -offdown(ii)
-      end forall
+      end do
       kpterms(2,1,term_idx) = offup(1)
       kpterms(N-1,N,term_idx) = -offdown(N)
     end if
@@ -68,23 +64,23 @@ contains
   subroutine confinementInitialization_raw(z, startPos, endPos, material, nlayers,&
     & params, confDir, profile, kpterms, FDorder)
 
-    real(kind = dp), intent(in), dimension(:) :: z
-    integer, intent(in), dimension(:) :: startPos, endPos
-    character(len = 255), intent(in) :: material(nlayers)
+    real(kind = dp), intent(in), contiguous, dimension(:) :: z
+    integer, intent(in), contiguous, dimension(:) :: startPos, endPos
     integer, intent(in) :: nlayers
+    character(len = 255), intent(in) :: material(nlayers)
     type(paramStruct), intent(in) :: params(nlayers)
     character(len = 1), intent(in) :: confDir
     real(kind = dp), intent(inout), allocatable, dimension(:,:) :: profile
-    real(kind = dp), intent(inout), dimension(:,:,:) :: kpterms
+    real(kind = dp), intent(inout), contiguous, dimension(:,:,:) :: kpterms
     integer, intent(in), optional :: FDorder
 
-    real(kind=dp), allocatable, dimension(:,:) :: ScnDer, FstDer, kptermsProfile
+    real(kind=dp), allocatable, dimension(:,:) :: kptermsProfile
     real(kind=dp), allocatable, dimension(:,:) :: forward, central, backward
     real(kind=dp), allocatable, dimension(:) :: diag, offup, offdown
     real(kind=dp), allocatable, dimension(:,:) :: D_inner, D_outer
     real(kind=dp), allocatable, dimension(:) :: g_half
 
-    integer :: i, initIDX, endIDX, N, ii, jj, j
+    integer :: i, N, ii, j
     integer :: order
     real(kind = dp) :: delta
 
@@ -139,13 +135,13 @@ contains
 
     end if
 
-    forall(ii=1:N)
+    do concurrent (ii = 1:N)
       kpterms(ii,ii,1) = kptermsProfile(ii,1) !gamma1
       kpterms(ii,ii,2) = kptermsProfile(ii,2) !gamma2
       kpterms(ii,ii,3) = kptermsProfile(ii,3) !gamma3
       kpterms(ii,ii,4) = kptermsProfile(ii,5) !P
       kpterms(ii,ii,10) = kptermsProfile(ii,4) !A
-    end forall
+    end do
 
     ! Build tridiagonal averaging matrices (shared by both FD order paths)
     allocate(forward(N,N))
@@ -155,10 +151,10 @@ contains
     backward = 0.0_dp
     central = 0.0_dp
 
-    forall(ii=1:N-1)
+    do ii = 1, N - 1
       forward(ii,ii) = 1
       forward(ii,ii+1) = 1
-    end forall
+    end do
     forward(N,N) = 1
     backward = transpose(forward)
     central = backward + forward
@@ -337,8 +333,8 @@ contains
       profile_2d, kpterms_2d, FDorder)
 
     type(spatial_grid), intent(in)    :: grid
-    type(paramStruct), intent(in)     :: params(:)     ! size = numRegions
-    type(region_spec), intent(in)     :: regions(:)    ! size = numRegions
+    type(paramStruct), intent(in), contiguous     :: params(:)     ! size = numRegions
+    type(region_spec), intent(in), contiguous     :: regions(:)    ! size = numRegions
     real(kind=dp), allocatable, intent(out) :: profile_2d(:,:)
     type(csr_matrix), allocatable, intent(out) :: kpterms_2d(:)
     integer, intent(in), optional     :: FDorder
@@ -363,7 +359,6 @@ contains
     type(csr_matrix) :: kron_Iy_D2x, kron_D2y_Ix, laplacian_2d
     type(csr_matrix) :: kron_Iy_D1x, kron_D1y_Ix, grad_2d
     type(csr_matrix) :: kron_D1y_D1x  ! cross-derivative
-    type(csr_matrix) :: diag_csr, scaled_diag
 
     ! Material profiles on the 2D grid
     real(kind=dp), allocatable :: prof_gamma1(:), prof_gamma2(:)
@@ -612,7 +607,7 @@ contains
   end subroutine confinementInitialization_2d
 
   subroutine apply_dirichlet_order2_first_derivative(D1, dz)
-    real(kind=dp), intent(inout) :: D1(:,:)
+    real(kind=dp), intent(inout), contiguous :: D1(:,:)
     real(kind=dp), intent(in) :: dz
     integer :: n, i
 
@@ -633,7 +628,7 @@ contains
   end subroutine apply_dirichlet_order2_first_derivative
 
   subroutine apply_dirichlet_order2_second_derivative(D2, dz)
-    real(kind=dp), intent(inout) :: D2(:,:)
+    real(kind=dp), intent(inout), contiguous :: D2(:,:)
     real(kind=dp), intent(in) :: dz
     integer :: n, i
 
@@ -690,9 +685,9 @@ contains
   !---------------------------------------------------------------------------
   subroutine applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, term_idx)
 
-    real(kind=dp), intent(inout), dimension(:,:,:) :: kpterms
-    real(kind=dp), intent(in) :: g_half(:)
-    real(kind=dp), intent(in) :: D_inner(:,:), D_outer(:,:)
+    real(kind=dp), intent(inout), contiguous, dimension(:,:,:) :: kpterms
+    real(kind=dp), intent(in), contiguous :: g_half(:)
+    real(kind=dp), intent(in), contiguous :: D_inner(:,:), D_outer(:,:)
     integer, intent(in) :: N, term_idx
 
     real(kind=dp), allocatable :: temp(:,:), result(:,:)

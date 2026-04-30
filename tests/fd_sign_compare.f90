@@ -9,6 +9,7 @@ program fd_sign_compare
   use definitions
   use parameters
   use hamiltonianConstructor
+  use confinement_init, only: confinementInitialization
   use finitedifferences
 
   implicit none

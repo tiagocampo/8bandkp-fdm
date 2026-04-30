@@ -5,6 +5,7 @@ module optical_spectra
   use charge_density, only: fermi_dirac
   use spin_projection, only: spin_weights
   use outputFunctions, only: ensure_output_dir, get_unit
+  use linalg, only: zdotc
   implicit none
 
   private
@@ -105,8 +106,8 @@ contains
     & vel, numcb, numvb, fermi_level)
 
     type(optics_config), intent(in) :: optcfg
-    real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
-    complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
+    real(kind=dp), intent(in), contiguous :: eigvals(:)        ! (numcb+numvb) eigenvalues
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in) :: numcb, numvb
@@ -120,7 +121,7 @@ contains
     complex(kind=dp) :: Pele
     complex(kind=dp), allocatable :: Ytmp(:)
     complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
-    complex(kind=dp), external :: zdotc
+
 
     dim = size(eigvecs, 1)
     Ngrid = dim / 8
@@ -158,7 +159,7 @@ contains
 
         do dir = 1, 3
           call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
-          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
+          Pele = zdotc(dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
@@ -213,8 +214,8 @@ contains
     & vel, numcb, numvb, fermi_level)
 
     type(optics_config), intent(in) :: optcfg
-    real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
-    complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
+    real(kind=dp), intent(in), contiguous :: eigvals(:)        ! (numcb+numvb) eigenvalues
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in) :: numcb, numvb
@@ -227,7 +228,7 @@ contains
     complex(kind=dp) :: Pele
     complex(kind=dp), allocatable :: Ytmp(:)
     complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
-    complex(kind=dp), external :: zdotc
+
 
     if (nE == 0) return
     if (.not. allocated(spont_te)) return
@@ -262,7 +263,7 @@ contains
 
         do dir = 1, 3
           call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
-          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
+          Pele = zdotc(dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)
@@ -353,7 +354,7 @@ contains
     real(kind=dp), parameter :: AA_TO_CM = 1.0e8_dp
 
     ! --- Apply prefactor to build final alpha arrays ---
-    do ie = 1, nE
+    do concurrent (ie = 1:nE)
       if (E_grid(ie) > 0.0_dp) then
         prefactor_E = (2.0_dp * pi_dp * e**2) &
           & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
@@ -401,7 +402,7 @@ contains
     ! --- Gain output ---
     if (optcfg%gain_enabled .and. allocated(alpha_gain_te)) then
       ! Apply the same prefactor to gain arrays
-      do ie = 1, nE
+      do concurrent (ie = 1:nE)
         if (E_grid(ie) > 0.0_dp) then
           prefactor_E = (2.0_dp * pi_dp * e**2) &
             & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
@@ -440,7 +441,7 @@ contains
     ! --- Spontaneous emission output ---
     if (optcfg%spontaneous_enabled .and. allocated(spont_te)) then
       ! Apply prefactor
-      do ie = 1, nE
+      do concurrent (ie = 1:nE)
         if (E_grid(ie) > 0.0_dp) then
           prefactor_E = (2.0_dp * pi_dp * e**2) &
             & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
@@ -476,7 +477,7 @@ contains
     ! --- Spin-resolved absorption output ---
     if (optcfg%spin_resolved .and. allocated(alpha_te_up)) then
       ! Apply the same prefactor to spin-resolved arrays
-      do ie = 1, nE
+      do concurrent (ie = 1:nE)
         if (E_grid(ie) > 0.0_dp) then
           prefactor_E = (2.0_dp * pi_dp * e**2) &
             & / (optcfg%refractive_index * c * e0_AA * hbar**2 * E_grid(ie))
@@ -579,7 +580,7 @@ contains
   ! Returns the complex z_ij in units of AA.
   ! ------------------------------------------------------------------
   function z_dipole(eigvecs, z_grid, dz, fdstep, state_i, state_j) result(z_ij)
-    complex(kind=dp), intent(in) :: eigvecs(:,:)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)
     real(kind=dp), intent(in)    :: z_grid(:)
     real(kind=dp), intent(in)    :: dz
     integer, intent(in)          :: fdstep, state_i, state_j
@@ -662,9 +663,9 @@ contains
   subroutine compute_intersubband_transitions(eigvals, eigvecs, z_grid, dz, &
     & numcb, numvb, fdstep, transitions_file)
 
-    real(kind=dp), intent(in)    :: eigvals(:)           ! (nstates) eigenvalues ascending
-    complex(kind=dp), intent(in) :: eigvecs(:,:)         ! (8*fdstep, nstates)
-    real(kind=dp), intent(in)    :: z_grid(:)            ! (fdstep) z-coords (AA)
+    real(kind=dp), intent(in), contiguous    :: eigvals(:)           ! (nstates) eigenvalues ascending
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)         ! (8*fdstep, nstates)
+    real(kind=dp), intent(in), contiguous    :: z_grid(:)            ! (fdstep) z-coords (AA)
     real(kind=dp), intent(in)    :: dz                   ! grid spacing (AA)
     integer, intent(in)          :: numcb, numvb, fdstep
     character(len=*), intent(in) :: transitions_file
@@ -726,8 +727,8 @@ contains
     & vel, numcb, numvb, k_weight, fermi_level)
 
     type(optics_config), intent(in) :: optcfg
-    real(kind=dp), intent(in)    :: eigvals(:)
-    complex(kind=dp), intent(in) :: eigvecs(:,:)
+    real(kind=dp), intent(in), contiguous :: eigvals(:)
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in)          :: numcb, numvb
     real(kind=dp), intent(in)    :: k_weight
@@ -741,7 +742,7 @@ contains
     complex(kind=dp) :: pele_ij
     complex(kind=dp), allocatable :: Ytmp(:)
     complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
-    complex(kind=dp), external :: zdotc
+
     real(kind=dp) :: ef_cb
 
     if (nE == 0) return  ! optics_init not called
@@ -778,7 +779,7 @@ contains
 
         ! Velocity matrix element via commutator: dir_isbt = 3 for QW (z-dipole)
         call csr_spmv(vel(dir_isbt), eigvecs(:,state_j), Ytmp, ONE, ZERO)
-        pele_ij = zdotc(dim, eigvecs(1,state_i), 1, Ytmp, 1)
+        pele_ij = zdotc(dim, eigvecs(1:dim,state_i), 1, Ytmp, 1)
         p_abs2 = real(pele_ij * conjg(pele_ij), kind=dp)
 
         ! Broaden and accumulate onto energy grid (ISBT, TM-polarized)
@@ -818,7 +819,7 @@ contains
   function find_quasi_fermi(eigvals, temperature, carrier_density_cm2, &
     & n_states, state_offset) result(mu)
 
-    real(kind=dp), intent(in) :: eigvals(:)       ! all eigenvalues at k=0
+    real(kind=dp), intent(in), contiguous :: eigvals(:)       ! all eigenvalues at k=0
     real(kind=dp), intent(in) :: temperature       ! K
     real(kind=dp), intent(in) :: carrier_density_cm2  ! cm^-2
     integer, intent(in)       :: n_states          ! number of subbands to sum
@@ -897,8 +898,8 @@ contains
     & vel, numcb, numvb, carrier_density)
 
     type(optics_config), intent(in) :: optcfg
-    real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
-    complex(kind=dp), intent(in) :: eigvecs(:,:)   ! (dim, numcb+numvb)
+    real(kind=dp), intent(in), contiguous :: eigvals(:)        ! (numcb+numvb) eigenvalues
+    complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in) :: numcb, numvb
@@ -911,7 +912,7 @@ contains
     complex(kind=dp) :: Pele
     complex(kind=dp), allocatable :: Ytmp(:)
     complex(kind=dp), parameter :: ONE  = cmplx(1.0_dp, 0.0_dp, kind=dp)
-    complex(kind=dp), external :: zdotc
+
 
     if (nE == 0) return  ! optics_init not called
     if (.not. allocated(alpha_gain_te)) return  ! gain not initialized
@@ -972,7 +973,7 @@ contains
 
         do dir = 1, 3
           call csr_spmv(vel(dir), eigvecs(:,i), Ytmp, ONE, ZERO)
-          Pele = zdotc(dim, eigvecs(1,numvb+j), 1, Ytmp, 1)
+          Pele = zdotc(dim, eigvecs(1:dim,numvb+j), 1, Ytmp, 1)
           select case(dir)
           case(1)
             px = real(Pele * conjg(Pele), kind=dp)

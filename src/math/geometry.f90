@@ -41,7 +41,7 @@ contains
   ! ------------------------------------------------------------------
   ! Map 2D (ix, iy) to flattened column-major index: ij = (iy-1)*nx + ix
   ! ------------------------------------------------------------------
-  pure function flat_idx(nx, ix, iy) result(ij)
+  elemental pure function flat_idx(nx, ix, iy) result(ij)
     integer, intent(in) :: nx, ix, iy
     integer :: ij
     ij = (iy - 1) * nx + ix
@@ -57,8 +57,8 @@ contains
   ! Uses work arrays cx, cz which must be large enough.
   ! ------------------------------------------------------------------
   pure subroutine clip_halfplane(vx, vz, nvert, cx, cz, nc, nx, nz, px, pz)
-    real(kind=dp), intent(in)  :: vx(nvert), vz(nvert)
     integer, intent(in)        :: nvert
+    real(kind=dp), intent(in)  :: vx(nvert), vz(nvert)
     real(kind=dp), intent(out) :: cx(nvert + 1), cz(nvert + 1)
     integer, intent(out)       :: nc
     real(kind=dp), intent(in)  :: nx, nz     ! outward normal
@@ -188,7 +188,7 @@ contains
   ! vertical (constant x) for y-face computation.  Uses the analytical
   ! chord-length formula.
   ! ------------------------------------------------------------------
-  pure function segment_circle_fraction(a, b, coord, is_horizontal, &
+  elemental pure function segment_circle_fraction(a, b, coord, is_horizontal, &
       cx, cy, radius) result(frac)
     real(kind=dp), intent(in)  :: a, b          ! segment endpoints along main axis
     real(kind=dp), intent(in)  :: coord          ! perpendicular coordinate
@@ -809,7 +809,7 @@ contains
 
     integer :: ix, iy, ij, ngrid
 
-    ngrid = grid%nx * grid%ny
+    ngrid = grid%npoints()
 
     if (.not. allocated(grid%x) .or. .not. allocated(grid%z)) return
 

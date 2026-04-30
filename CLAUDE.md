@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Fortran 90 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning with commutator-based velocity operators. Computes optical absorption, gain, spontaneous emission, and intersubband transitions using commutator-based velocity matrices $v_\alpha = -i [r_\alpha, H]$. Includes self-consistent Schrödinger-Poisson solver with DIIS acceleration. GPL v3.0, authored by Tiago de Campos.
+Fortran 2018 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Built with `-std=f2018` enforcement. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning with commutator-based velocity operators. Computes optical absorption, gain, spontaneous emission, and intersubband transitions using commutator-based velocity matrices $v_\alpha = -i [r_\alpha, H]$. Includes self-consistent Schrödinger-Poisson solver with DIIS acceleration. GPL v3.0, authored by Tiago de Campos.
 
 ## Build Commands
 
@@ -25,7 +25,7 @@ make test           # Configure with BUILD_TESTING=ON, build, run ctest
 
 **Executables** at `build/src/bandStructure`, `build/src/gfactorCalculation`, and `build/src/opticalProperties`.
 
-**Prerequisites:** gfortran, Intel MKL (sequential, LP64 interface), FFTW3, CMake >= 3.15, Ninja (optional). MKL defaults: `MKL_INTERFACE=lp64`, `MKL_THREADING=sequential` (set in root `CMakeLists.txt`).
+**Prerequisites:** gfortran (version supporting F2018), Intel MKL (sequential, LP64 interface), FFTW3, CMake >= 3.15, Ninja (optional). Compiler enforced to `-std=f2018` via `CMAKE_Fortran_FLAGS`. MKL defaults: `MKL_INTERFACE=lp64`, `MKL_THREADING=sequential` (set in root `CMakeLists.txt`).
 
 **Gotcha — stale `.mod` files:** Old `.mod` in project root shadow fresh ones in `build/`. Run `rm -f *.mod` if you get type mismatch errors.
 
@@ -41,9 +41,13 @@ cmake --build build
 
 # Run tests
 ctest --test-dir build                    # all tests (15 unit + 24 regression)
+ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
 ctest --test-dir build -V                 # verbose output
+
+# With OpenMP threading for QW k-point sweeps:
+OMP_NUM_THREADS=12 ctest --test-dir build -j4 --output-on-failure
 ```
 
 pFUnit installs as **uppercase `PFUNIT`** — use `-DPFUNIT_DIR=.../PFUNIT-<ver>/cmake`. Built from source: `git clone https://github.com/Goddard-Fortran-Ecosystem/pFUnit`.
@@ -58,6 +62,19 @@ Regression tests use shell scripts + Python (`tests/regression/compare_output.py
 ./build/src/opticalProperties   # Reads input.cfg with optics: block, outputs to output/
 ```
 
+**Parallelism:** OpenMP distributes the QW k-point sweep across threads (`main.f90:691-723`). MKL runs sequential internally to avoid oversubscription. Control thread count with `OMP_NUM_THREADS`:
+
+```bash
+OMP_NUM_THREADS=12 ./build/src/bandStructure   # use 12 of 24 cores
+OMP_NUM_THREADS=$[$(nproc)/2] ./build/src/bandStructure  # half of available cores
+```
+
+Without `OMP_NUM_THREADS`, OpenMP defaults to all cores. For test runs, set it before `ctest`:
+
+```bash
+OMP_NUM_THREADS=12 ctest --test-dir build --output-on-failure
+```
+
 Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed examples in the canonical order documented in `docs/reference/input-reference.md`; optional block entry labels are name-aware (`optics:`, `exciton:`, `scattering:`, `feast_emin:`, `strain:`), but parameters inside each block still follow the documented sequence.
 
 ## Architecture
@@ -67,12 +84,12 @@ Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed e
 ```
 src/
   core/       defs.f90, parameters.f90, utils.f90
-  math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90
+  math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90, linalg.f90, sparse_matrices.f90, eigensolver.f90, geometry.f90
   io/         outputFunctions.f90, input_parser.f90
-  physics/    hamiltonianConstructor.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90
+  physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90
 tests/
-  unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_poisson, test_charge_density, test_sc_loop)
+  unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_hamiltonian_2d, test_csr_spmv, test_eigensolver, test_poisson, test_charge_density, test_sc_loop, test_geometry, test_optical, test_optical_qw, test_strain_solver)
   integration/  shell scripts for full-executable tests
   regression/   configs/, data/, compare_output.py
 cmake/        FindFFTW3.cmake
@@ -97,12 +114,14 @@ defs.f90                      (kinds, constants, derived types — no deps)
        <- utils.f90           (dense-to-sparse conversion, Simpson integration)
             <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices)
                  <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian, commutator velocity matrices)
+                      <- hamiltonian_wire.f90     (2D wire Hamiltonian, CSR assembly, wire geometry)
                       <- gfactor_functions.f90  (Lowdin partitioning, spin/momentum matrix elements)
                       <- optical_spectra.f90    (absorption, gain, spontaneous emission, ISBT accumulation)
                       <- spin_projection.f90     (Clebsch-Gordan spin-up/down decomposition)
                  <- poisson.f90           (box-integration Poisson solver, Thomas algorithm)
                  <- charge_density.f90    (n(z), p(z) from k.p eigenstates + k_∥ sampling)
                       <- sc_loop.f90           (self-consistent SP loop, linear + DIIS mixing)
+  <- scattering_solver       (phonon scattering rates, used by main.f90)
   <- outputFunctions.f90      (eigenvalue/eigenfunction file I/O)
   <- input_parser.f90         (shared input.cfg parser → simulation_config type)
 ```
@@ -133,7 +152,34 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 
 ## Code Conventions
 
-- Precision kinds in `defs.f90`: `sp` (single), `dp` (double), `qp` (quad), `iknd` (int64)
+- **Fortran standard:** F2018 enforced via `-std=f2018` in CMake. No GNU extensions.
+- Prefer generic intrinsics (`sqrt`) over legacy typed intrinsics (`dsqrt`, `dble`, etc.).
+- Prefer `do` / `do concurrent` over `forall` (removed in F2008, restored in F2018).
+- Prefer `execute_command_line` over non-standard `call system(...)`.
+- Use `c_loc()` from `iso_c_binding` instead of non-standard `loc()`.
+- All modules use `private` default with explicit `public` exports. When adding new modules, use `private` default and enumerate `public ::` exports.
+- When adding new scalar `pure` functions, use `elemental pure` by default (F2008 requires both keywords; F2018+ implies pure).
+  - **Known exceptions:** `grid_ngrid` (`defs.f90:476`), `to_lower_ascii` (`input_parser.f90:17`) — upgrade when touching those functions
+- Declaration ordering: variables must be declared before use in array dimension expressions.
+- No `goto` in new code — use named `do` loops with `exit` for early-return blocks.
+- External BLAS/LAPACK/PARDISO declarations go through `linalg.f90` interfaces, not local `external ::`.
+- All types with allocatable components have finalizers (delegating to `*_free` routines where they exist, inlined where cross-module delegation isn't possible). Keep explicit `*_free` routines public for manual control.
+- `do concurrent` used on proven-independent loops: velocity matrix construction, optics finalization, kpterms diagonal init.
+- `csr_matrix` has type-bound `free()` and `clone_structure()` but components remain public for hot-path access.
+- `contiguous` attribute on all assumed-shape hot-path array arguments (not on optional or allocatable).
+  - **Known gaps** (will be fixed when touching those routines): `ZB8bandQW` profile/kpterms (`hamiltonianConstructor.f90:42-43`), `dns(:,:)` in `utils.f90:19`, `psi(:)` in `spin_projection.f90:14`
+- `spatial_grid%npoints()` accessor preferred over raw `grid%nx * grid%ny` for total grid size.
+- `iso_c_binding` used for all MKL C APIs: PARDISO as `pardiso_c`, FEAST wrappers, `mkl_set_num_threads_local`. PARDISO/FEAST scalars passed by reference (MKL C API passes pointers). `mkl_set_num_threads_local` uses `value` since the C function takes `int` by value.
+- PARDISO has two `iso_c_binding` interfaces: `pardiso_c` (complex, used by ARPACK eigensolver) and `pardiso_real` (real-valued, used by Poisson solver). Both use `c_intptr_t` for the `pt` handle array.
+- Polymorphic eigensolver: `make_eigensolver(config)` factory returns a polymorphic solver; dispatch via `solver%solve(...)`. Existing `solve_sparse_evp` remains available as a direct interface.
+- `fortran-stdlib` as optional dependency: CMake uses `find_package(fortran_stdlib CONFIG QUIET)`; code compiles without it.
+- `fpm.toml` exists as experimental alternative build system (documented as such in README). CMake/Ninja remains the primary build.
+- `g='g3'` derivative builds must stay isolated from `wire_workspace` cache.
+- `feast_workspace` reuse must remain pattern-validated.
+- `zdotc` declared as function-return ABI in `linalg.f90` — MKL on this platform returns `complex(dp)` by value, not via subroutine hidden argument. Do not change to subroutine form.
+- Eigensolver variants guarded by preprocessor: `#ifdef USE_MKL_FEAST` for FEAST solver, `#ifdef USE_ARPACK` for ARPACK solver. `make_eigensolver(config)` factory dispatches on string; add new variants behind their own `#ifdef` guard.
+- Scalar `pure` functions upgraded to `elemental pure`: `kronij`, `fermi_dirac`, `flat_idx`, `wire_flat_idx`, `compute_bp_scalar`, `segment_circle_fraction`.
+- Precision kinds in `defs.f90`: `sp` (real32), `dp` (real64), `qp` (real128), `iknd` (int32) — aliased from `iso_fortran_env`
 - k-vectors and wavevector sweeps use `real(dp)` throughout
 - File/function length guidelines from `.clinerules`: 300 lines/file, 50 lines/function
 - Prioritize: Correctness > Maintainability > Readability > Type-Exactness > Performance > Minimal

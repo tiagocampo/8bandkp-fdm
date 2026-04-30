@@ -44,6 +44,11 @@ if(ARPACK_FOUND)
     target_link_libraries(8bandkp_common PUBLIC ARPACK::ARPACK)
 endif()
 
+# fortran_stdlib (optional — string handling, error types, etc.)
+if(fortran_stdlib_FOUND)
+    target_link_libraries(8bandkp_common PUBLIC fortran_stdlib::fortran_stdlib)
+endif()
+
 # Preprocessor for files with #ifdef/#include
 set_source_files_properties(
     core/defs.f90

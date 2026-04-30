@@ -9,6 +9,8 @@ module hamiltonian_wire
 
   implicit none
 
+  private
+
   ! ------------------------------------------------------------------
   ! Cache for the COO sparsity structure of the wire Hamiltonian.
   !
@@ -28,6 +30,8 @@ module hamiltonian_wire
     integer, allocatable          :: coo_to_csr(:)   ! (coo_nnz_in) mapping
     integer                       :: coo_nnz_in = 0  ! input COO count
     logical                       :: initialized = .false.
+  contains
+    final :: wire_coo_cache_finalize
   end type wire_coo_cache
 
   ! ------------------------------------------------------------------
@@ -66,6 +70,8 @@ module hamiltonian_wire
     logical                       :: coo_cache_valid = .false.
 
     logical :: initialized = .false.
+  contains
+    final :: wire_workspace_finalize
   end type wire_workspace
 
   ! ------------------------------------------------------------------
@@ -88,6 +94,8 @@ module hamiltonian_wire
   public :: wire_workspace, wire_workspace_free
   public :: build_velocity_matrices
   public :: strain_entry, build_strain_table
+  public :: ZB8bandGeneralized
+  public :: insert_strain_coo
 
   interface build_velocity_matrices
     module procedure build_velocity_matrices_2d
@@ -211,8 +219,8 @@ module hamiltonian_wire
 
       type(csr_matrix), intent(inout)         :: HT_csr
       real(kind=dp), intent(in)               :: kz
-      real(kind=dp), intent(in)               :: profile_2d(:,:)
-      type(csr_matrix), intent(in)            :: kpterms_2d(:)
+      real(kind=dp), intent(in), contiguous   :: profile_2d(:,:)
+      type(csr_matrix), intent(in), contiguous:: kpterms_2d(:)
       type(simulation_config), intent(in)     :: cfg
       type(wire_coo_cache), intent(inout), optional :: coo_cache  ! SC loop only
       type(wire_workspace), intent(inout), optional :: ws
@@ -221,6 +229,7 @@ module hamiltonian_wire
       integer :: N, Ntot
       real(kind=dp) :: kz2
       integer :: gmode_dir  ! 0=none, 1=x, 2=y, 3=z
+      logical :: do_init  ! thread-safe init flag
 
       N = grid_ngrid(cfg%grid)
       Ntot = 8 * N
@@ -238,18 +247,32 @@ module hamiltonian_wire
         ! ==================================================================
         call zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
           cfg, N=N, Ntot=Ntot, gmode_dir=gmode_dir)
-      else if (present(ws) .and. ws%initialized) then
+      else if (present(ws)) then
         ! ==================================================================
-        ! FAST PATH: workspace is initialized, reuse CSR structures
+        ! Thread-safe init check using double-checked locking.
+        ! First check with atomic read (low overhead), then critical section
+        ! to safely initialize if needed.
         ! ==================================================================
+        !$omp atomic read :: do_init = ws%initialized
+        if (.not. do_init) then
+          !$omp critical(ws_init)
+          if (.not. ws%initialized) then
+            call zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
+              cfg, coo_cache, ws, N, Ntot, gmode_dir)
+            !$omp atomic write :: ws%initialized = .true.
+          end if
+          !$omp end critical(ws_init)
+        end if
+        ! At this point ws%initialized == .true. (either we just set it,
+        ! or another thread did). Use fast path.
         call zb8_generalized_fast(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
           cfg, ws, N, Ntot, gmode_dir)
       else
         ! ==================================================================
-        ! SLOW PATH: first call or no workspace — build from scratch
+        ! SLOW PATH: no workspace provided — build from scratch
         ! ==================================================================
         call zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
-          cfg, coo_cache, ws, N, Ntot, gmode_dir)
+          cfg, coo_cache, N=N, Ntot=Ntot, gmode_dir=gmode_dir)
       end if
 
     end subroutine ZB8bandGeneralized
@@ -258,8 +281,8 @@ module hamiltonian_wire
 
       type(csr_matrix), intent(inout)         :: HT_csr
       real(kind=dp), intent(in)               :: kz, kz2
-      real(kind=dp), intent(in)               :: profile_2d(:,:)
-      type(csr_matrix), intent(in)            :: kpterms_2d(:)
+      real(kind=dp), intent(in), contiguous   :: profile_2d(:,:)
+      type(csr_matrix), intent(in), contiguous:: kpterms_2d(:)
       type(simulation_config), intent(in)     :: cfg
       type(wire_workspace), intent(inout)     :: ws
       integer, intent(in)                     :: N, Ntot, gmode_dir
@@ -357,8 +380,8 @@ module hamiltonian_wire
 
       type(csr_matrix), intent(inout)         :: HT_csr
       real(kind=dp), intent(in)               :: kz, kz2
-      real(kind=dp), intent(in)               :: profile_2d(:,:)
-      type(csr_matrix), intent(in)            :: kpterms_2d(:)
+      real(kind=dp), intent(in), contiguous   :: profile_2d(:,:)
+      type(csr_matrix), intent(in), contiguous:: kpterms_2d(:)
       type(simulation_config), intent(in)     :: cfg
       type(wire_coo_cache), intent(inout), optional :: coo_cache
       type(wire_workspace), intent(inout), optional :: ws
@@ -549,14 +572,16 @@ module hamiltonian_wire
       integer :: k, row, col, sp_row, sp_col, Ngrid
       real(kind=dp) :: dx_diff, dy_diff
 
-      Ngrid = grid%nx * grid%ny
+      Ngrid = grid%npoints()
 
       ! Clone sparsity pattern from H (same rowptr, colind; values zeroed)
       call csr_clone_structure(H_csr, vel_x)
       call csr_clone_structure(H_csr, vel_y)
 
-      ! Loop over all nonzero entries via CSR structure
-      do row = 1, H_csr%nrows
+      ! Loop over all nonzero entries via CSR structure.
+      ! Each row writes to disjoint CSR index ranges, so outer loop is
+      ! safe for do concurrent — no loop-carried dependencies.
+      do concurrent (row = 1:H_csr%nrows)
         do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
           col = H_csr%colind(k)
 
@@ -609,8 +634,10 @@ module hamiltonian_wire
 
       ! vel(1) and vel(2) remain zero (no x/y spatial grid in QW)
 
-      ! Fill vel(3) using z-position differences
-      do row = 1, H_csr%nrows
+      ! Fill vel(3) using z-position differences.
+      ! Each row writes to disjoint CSR index ranges, so outer loop is
+      ! safe for do concurrent — no loop-carried dependencies.
+      do concurrent (row = 1:H_csr%nrows)
         do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
           col = H_csr%colind(k)
 
@@ -628,7 +655,7 @@ module hamiltonian_wire
     end subroutine build_velocity_matrices_1d
     subroutine build_kp_term_Q(kz2, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz2
-      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(in), contiguous :: kpterms_2d(:)
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
@@ -677,7 +704,7 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine build_kp_term_T(kz2, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz2
-      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(in), contiguous :: kpterms_2d(:)
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
@@ -728,7 +755,7 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine build_kp_term_S(kz, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz
-      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(in), contiguous :: kpterms_2d(:)
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
@@ -782,7 +809,7 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine build_kp_term_SC(kz, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz
-      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(in), contiguous :: kpterms_2d(:)
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
@@ -811,7 +838,7 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine build_kp_term_R(kz2, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz2
-      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(in), contiguous :: kpterms_2d(:)
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
@@ -866,7 +893,7 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine build_kp_term_RC(kz2, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz2
-      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(in), contiguous :: kpterms_2d(:)
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
@@ -892,7 +919,7 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine build_kp_term_PZ(kz, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz
-      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(in), contiguous :: kpterms_2d(:)
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
@@ -915,7 +942,7 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine build_kp_term_PP(kz, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz
-      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(in), contiguous :: kpterms_2d(:)
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
@@ -953,7 +980,7 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine build_kp_term_PM(kz, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz
-      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(in), contiguous :: kpterms_2d(:)
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
@@ -980,7 +1007,7 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine build_kp_term_A(kz2, kpterms_2d, blk, ws)
       real(kind=dp), intent(in) :: kz2
-      type(csr_matrix), intent(in) :: kpterms_2d(:)
+      type(csr_matrix), intent(in), contiguous :: kpterms_2d(:)
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
@@ -1005,8 +1032,8 @@ module hamiltonian_wire
     end subroutine build_kp_term_A
     subroutine insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
         alpha_off, beta_off, blk, N)
-      integer, intent(inout) :: coo_r(:), coo_c(:)
-      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(inout), contiguous :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout), contiguous :: coo_v(:)
       integer, intent(in) :: coo_cap
       integer, intent(inout) :: coo_idx
       integer, intent(in) :: alpha_off, beta_off, N
@@ -1021,8 +1048,8 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
         alpha_off, beta_off, blk, N, scale)
-      integer, intent(inout) :: coo_r(:), coo_c(:)
-      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(inout), contiguous :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout), contiguous :: coo_v(:)
       integer, intent(in) :: coo_cap
       integer, intent(inout) :: coo_idx
       integer, intent(in) :: alpha_off, beta_off, N
@@ -1053,8 +1080,8 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine insert_g3_blocks(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
         blk_S, blk_SC, blk_PZ, N)
-      integer, intent(inout) :: coo_r(:), coo_c(:)
-      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(inout), contiguous :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout), contiguous :: coo_v(:)
       integer, intent(in) :: coo_cap
       integer, intent(inout) :: coo_idx
       type(csr_matrix), intent(in) :: blk_S, blk_SC, blk_PZ
@@ -1097,8 +1124,8 @@ module hamiltonian_wire
     subroutine insert_main_blocks(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
         blk_Q, blk_T, blk_S, blk_SC, blk_R, blk_RC, blk_PZ, blk_PP, &
         blk_PM, blk_A, blk_diff, blk_temp, N)
-      integer, intent(inout) :: coo_r(:), coo_c(:)
-      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(inout), contiguous :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout), contiguous :: coo_v(:)
       integer, intent(in) :: coo_cap
       integer, intent(inout) :: coo_idx
       type(csr_matrix), intent(in) :: blk_Q, blk_T, blk_S, blk_SC
@@ -1175,11 +1202,11 @@ module hamiltonian_wire
     ! ==================================================================
     subroutine insert_profile_diagonal(coo_r, coo_c, coo_v, coo_cap, &
         coo_idx, profile_2d, N)
-      integer, intent(inout) :: coo_r(:), coo_c(:)
-      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(inout), contiguous :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout), contiguous :: coo_v(:)
       integer, intent(in) :: coo_cap
       integer, intent(inout) :: coo_idx
-      real(kind=dp), intent(in) :: profile_2d(:,:)
+      real(kind=dp), intent(in), contiguous :: profile_2d(:,:)
       integer, intent(in) :: N
 
       integer :: ii, band
@@ -1206,8 +1233,8 @@ module hamiltonian_wire
     end subroutine insert_profile_diagonal
     subroutine insert_strain_coo(coo_r, coo_c, coo_v, coo_cap, &
         coo_idx, bp, N)
-      integer, intent(inout) :: coo_r(:), coo_c(:)
-      complex(kind=dp), intent(inout) :: coo_v(:)
+      integer, intent(inout), contiguous :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout), contiguous :: coo_v(:)
       integer, intent(in) :: coo_cap
       integer, intent(inout) :: coo_idx
       type(bir_pikus_blocks), intent(in) :: bp
@@ -1266,8 +1293,8 @@ module hamiltonian_wire
         coo_idx, ws, coo_cache)
       type(csr_matrix), intent(inout) :: HT_csr
       integer, intent(in) :: Ntot, coo_idx
-      integer, intent(in) :: coo_rows(:), coo_cols(:)
-      complex(kind=dp), intent(in) :: coo_vals(:)
+      integer, intent(in), contiguous :: coo_rows(:), coo_cols(:)
+      complex(kind=dp), intent(in), contiguous :: coo_vals(:)
       type(wire_workspace), intent(inout), optional :: ws
       type(wire_coo_cache), intent(inout), optional :: coo_cache
 
@@ -1302,6 +1329,15 @@ module hamiltonian_wire
         end if
       end if
     end subroutine finalize_coo_to_csr
+
+    ! ==================================================================
+    ! Finalizer: automatically called when a wire_workspace goes out of scope.
+    ! Delegates to wire_workspace_free so existing manual frees remain valid.
+    ! ==================================================================
+    subroutine wire_workspace_finalize(ws)
+      type(wire_workspace), intent(inout) :: ws
+      call wire_workspace_free(ws)
+    end subroutine wire_workspace_finalize
 
     ! ==================================================================
     ! Free the wire workspace: all CSR blocks and COO buffers.
@@ -1339,6 +1375,15 @@ module hamiltonian_wire
       ws%coo_capacity = 0
       ws%initialized = .false.
     end subroutine wire_workspace_free
+
+    ! ==================================================================
+    ! Finalizer: automatically called when a wire_coo_cache goes out of scope.
+    ! Delegates to wire_coo_cache_free so existing manual frees remain valid.
+    ! ==================================================================
+    subroutine wire_coo_cache_finalize(cache)
+      type(wire_coo_cache), intent(inout) :: cache
+      call wire_coo_cache_free(cache)
+    end subroutine wire_coo_cache_finalize
 
     ! ==================================================================
     ! Free the COO cache for symbolic assembly reuse.

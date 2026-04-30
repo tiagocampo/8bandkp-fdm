@@ -4,6 +4,9 @@ use definitions
 use sparse_matrices, only: csr_matrix, csr_build_from_coo
 
 implicit none
+private
+public :: dnscsr_z_mkl, simpson, simpson_real
+public :: insertCOO_cmplx, finalizeCOO_cmplx
 
 contains
 
@@ -192,8 +195,12 @@ complex(kind=dp) function simpson(f,a,b)
 
   sc = 1.0_dp
   ! Simpson's 1/3 rule: even-index interior points get 4, odd-index get 2
-  forall(i=2:N-1:2) sc(i) = 4.0_dp
-  forall(i=3:N-1:2) sc(i) = 2.0_dp
+  do i = 2, N - 1, 2
+    sc(i) = 4.0_dp
+  end do
+  do i = 3, N - 1, 2
+    sc(i) = 2.0_dp
+  end do
 
   simpson= h*sum(sc*f)
 
