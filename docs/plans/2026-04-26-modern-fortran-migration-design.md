@@ -218,6 +218,8 @@ Most promising target: k-point sweep (independent eigenvalue problems). Blocked 
 
 ### 4.2 `iso_fortran_env` kinds
 
+**Status:** Prototyped — drop-in replacement, no downstream changes. Committed to `refactor/modern-fortran-migration`.
+
 Replace `selected_real_kind` in `defs.f90`:
 ```fortran
 use, intrinsic :: iso_fortran_env, only: sp => real32, dp => real64, qp => real128
@@ -227,9 +229,11 @@ Functionally identical on common platforms. More portable and self-documenting. 
 
 ### 4.3 F2023 conditional expressions
 
-gfortran 16 supports conditional expressions. Adopt as encountered, don't hunt for opportunities.
+gfortran 15.2 does NOT support F2023 conditional expressions. Revisit when gfortran 16+ is available. Adopt as encountered, don't hunt for opportunities.
 
 ### 4.4 Coarrays for distributed k-point sweeps
+
+**Status:** Prototype validated with `-fcoarray=single`. Committed to `refactor/modern-fortran-migration`. Integration path requires making `smallk` accessible. QW k-sweep is the only good candidate (wire has branch tracking, bulk is trivially fast).
 
 k-point sweep is embarrassingly parallel. Coarrays with shared-memory (gfortran 16, `-fcoarray=lib`) express this without MPI. Worth a prototype on a single multi-core machine.
 
