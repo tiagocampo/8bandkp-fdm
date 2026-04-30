@@ -58,6 +58,19 @@ Regression tests use shell scripts + Python (`tests/regression/compare_output.py
 ./build/src/opticalProperties   # Reads input.cfg with optics: block, outputs to output/
 ```
 
+**Parallelism:** OpenMP distributes the QW k-point sweep across threads (`main.f90:691-723`). MKL runs sequential internally to avoid oversubscription. Control thread count with `OMP_NUM_THREADS`:
+
+```bash
+OMP_NUM_THREADS=12 ./build/src/bandStructure   # use 12 of 24 cores
+OMP_NUM_THREADS=$[$(nproc)/2] ./build/src/bandStructure  # half of available cores
+```
+
+Without `OMP_NUM_THREADS`, OpenMP defaults to all cores. For test runs, set it before `ctest`:
+
+```bash
+OMP_NUM_THREADS=12 ctest --test-dir build --output-on-failure
+```
+
 Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed examples in the canonical order documented in `docs/reference/input-reference.md`; optional block entry labels are name-aware (`optics:`, `exciton:`, `scattering:`, `feast_emin:`, `strain:`), but parameters inside each block still follow the documented sequence.
 
 ## Architecture
