@@ -41,9 +41,13 @@ cmake --build build
 
 # Run tests
 ctest --test-dir build                    # all tests (15 unit + 24 regression)
+ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
 ctest --test-dir build -V                 # verbose output
+
+# With OpenMP threading for QW k-point sweeps:
+OMP_NUM_THREADS=12 ctest --test-dir build -j4 --output-on-failure
 ```
 
 pFUnit installs as **uppercase `PFUNIT`** — use `-DPFUNIT_DIR=.../PFUNIT-<ver>/cmake`. Built from source: `git clone https://github.com/Goddard-Fortran-Ecosystem/pFUnit`.
