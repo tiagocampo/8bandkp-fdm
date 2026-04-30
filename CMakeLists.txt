@@ -37,7 +37,7 @@ set(LINALG_BACKEND "MKL" CACHE STRING "BLAS/LAPACK backend: MKL, OPENBLAS, AOCL"
 
 # --- Fortran compiler flags (gfortran) ---
 if(CMAKE_Fortran_COMPILER_ID MATCHES "GNU")
-    set(CMAKE_Fortran_FLAGS "-std=f2008 -ffree-line-length-none -fno-second-underscore -ffree-form -fimplicit-none -m64 -fno-strict-aliasing")
+    set(CMAKE_Fortran_FLAGS "-std=f2018 -ffree-line-length-none -fno-second-underscore -ffree-form -fimplicit-none -m64 -fno-strict-aliasing")
     # NOTE: -ffast-math was replaced by its individual safe components.
     # Kept: -fno-signed-zeros (~2%), -freciprocal-math (~3%), -fno-trapping-math
     # Dropped: -ffinite-math-only (removes NaN/Inf guards), -funsafe-math-optimizations

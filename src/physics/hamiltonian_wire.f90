@@ -229,6 +229,7 @@ module hamiltonian_wire
       integer :: N, Ntot
       real(kind=dp) :: kz2
       integer :: gmode_dir  ! 0=none, 1=x, 2=y, 3=z
+      logical :: do_init  ! thread-safe init flag
 
       N = grid_ngrid(cfg%grid)
       Ntot = 8 * N
@@ -246,18 +247,32 @@ module hamiltonian_wire
         ! ==================================================================
         call zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
           cfg, N=N, Ntot=Ntot, gmode_dir=gmode_dir)
-      else if (present(ws) .and. ws%initialized) then
+      else if (present(ws)) then
         ! ==================================================================
-        ! FAST PATH: workspace is initialized, reuse CSR structures
+        ! Thread-safe init check using double-checked locking.
+        ! First check with atomic read (low overhead), then critical section
+        ! to safely initialize if needed.
         ! ==================================================================
+        !$omp atomic read :: do_init = ws%initialized
+        if (.not. do_init) then
+          !$omp critical(ws_init)
+          if (.not. ws%initialized) then
+            call zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
+              cfg, coo_cache, ws, N, Ntot, gmode_dir)
+            !$omp atomic write :: ws%initialized = .true.
+          end if
+          !$omp end critical(ws_init)
+        end if
+        ! At this point ws%initialized == .true. (either we just set it,
+        ! or another thread did). Use fast path.
         call zb8_generalized_fast(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
           cfg, ws, N, Ntot, gmode_dir)
       else
         ! ==================================================================
-        ! SLOW PATH: first call or no workspace — build from scratch
+        ! SLOW PATH: no workspace provided — build from scratch
         ! ==================================================================
         call zb8_generalized_slow(HT_csr, kz, kz2, profile_2d, kpterms_2d, &
-          cfg, coo_cache, ws, N, Ntot, gmode_dir)
+          cfg, coo_cache, N=N, Ntot=Ntot, gmode_dir=gmode_dir)
       end if
 
     end subroutine ZB8bandGeneralized

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Fortran 2008 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Built with `-std=f2008` enforcement. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning with commutator-based velocity operators. Computes optical absorption, gain, spontaneous emission, and intersubband transitions using commutator-based velocity matrices $v_\alpha = -i [r_\alpha, H]$. Includes self-consistent Schrödinger-Poisson solver with DIIS acceleration. GPL v3.0, authored by Tiago de Campos.
+Fortran 2018 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Built with `-std=f2018` enforcement. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning with commutator-based velocity operators. Computes optical absorption, gain, spontaneous emission, and intersubband transitions using commutator-based velocity matrices $v_\alpha = -i [r_\alpha, H]$. Includes self-consistent Schrödinger-Poisson solver with DIIS acceleration. GPL v3.0, authored by Tiago de Campos.
 
 ## Build Commands
 
@@ -25,13 +25,11 @@ make test           # Configure with BUILD_TESTING=ON, build, run ctest
 
 **Executables** at `build/src/bandStructure`, `build/src/gfactorCalculation`, and `build/src/opticalProperties`.
 
-**Prerequisites:** gfortran, Intel MKL (sequential, LP64 interface), FFTW3, CMake >= 3.15, Ninja (optional). Compiler enforced to `-std=f2008` via `CMAKE_Fortran_FLAGS`. MKL defaults: `MKL_INTERFACE=lp64`, `MKL_THREADING=sequential` (set in root `CMakeLists.txt`).
+**Prerequisites:** gfortran (version supporting F2018), Intel MKL (sequential, LP64 interface), FFTW3, CMake >= 3.15, Ninja (optional). Compiler enforced to `-std=f2018` via `CMAKE_Fortran_FLAGS`. MKL defaults: `MKL_INTERFACE=lp64`, `MKL_THREADING=sequential` (set in root `CMakeLists.txt`).
 
 **Gotcha — stale `.mod` files:** Old `.mod` in project root shadow fresh ones in `build/`. Run `rm -f *.mod` if you get type mismatch errors.
 
 **Gotcha — `cp -i` alias:** The shell has `cp -i` alias. Use the Write tool (not `cp`) when creating `input.cfg`.
-
-**Gotcha — `dble()` backlog:** `finitedifferences.f90` (lines 423/455/594/627/735/749/762) uses `dble()` instead of `real(..., dp)`. Replace when touching that module.
 
 ## Testing
 
@@ -154,9 +152,9 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 
 ## Code Conventions
 
-- **Fortran standard:** F2008 enforced via `-std=f2008` in CMake. No GNU extensions.
+- **Fortran standard:** F2018 enforced via `-std=f2018` in CMake. No GNU extensions.
 - Prefer generic intrinsics (`sqrt`) over legacy typed intrinsics (`dsqrt`, `dble`, etc.).
-- Prefer `do` / `do concurrent` over `forall` (deprecated in F2008).
+- Prefer `do` / `do concurrent` over `forall` (removed in F2008, restored in F2018).
 - Prefer `execute_command_line` over non-standard `call system(...)`.
 - Use `c_loc()` from `iso_c_binding` instead of non-standard `loc()`.
 - All modules use `private` default with explicit `public` exports. When adding new modules, use `private` default and enumerate `public ::` exports.
@@ -169,7 +167,7 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - `do concurrent` used on proven-independent loops: velocity matrix construction, optics finalization, kpterms diagonal init.
 - `csr_matrix` has type-bound `free()` and `clone_structure()` but components remain public for hot-path access.
 - `contiguous` attribute on all assumed-shape hot-path array arguments (not on optional or allocatable).
-  - **Known gaps** (will be fixed when touching those routines): `ZB8bandQW` profile/kpterms (`hamiltonianConstructor.f90:42-43`), `eigvals(:)` in 7 `optical_spectra.f90` routines, `dns(:,:)` in `utils.f90:19`, `psi(:)` in `spin_projection.f90:14`
+  - **Known gaps** (will be fixed when touching those routines): `ZB8bandQW` profile/kpterms (`hamiltonianConstructor.f90:42-43`), `dns(:,:)` in `utils.f90:19`, `psi(:)` in `spin_projection.f90:14`
 - `spatial_grid%npoints()` accessor preferred over raw `grid%nx * grid%ny` for total grid size.
 - `iso_c_binding` used for all MKL C APIs: PARDISO as `pardiso_c`, FEAST wrappers, `mkl_set_num_threads_local`. PARDISO/FEAST scalars passed by reference (MKL C API passes pointers). `mkl_set_num_threads_local` uses `value` since the C function takes `int` by value.
 - PARDISO has two `iso_c_binding` interfaces: `pardiso_c` (complex, used by ARPACK eigensolver) and `pardiso_real` (real-valued, used by Poisson solver). Both use `c_intptr_t` for the `pt` handle array.

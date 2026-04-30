@@ -114,6 +114,10 @@ module linalg
 
 #ifdef USE_ARPACK
   ! pardiso_c - MKL PARDISO direct solver (iso_c_binding)
+  !
+  ! NOTE: Binds to "PARDISO" — same C symbol as pardiso_real.  MKL dispatches
+  ! by argument types at runtime (mtype selects real/complex/complex-Hermitian).
+  ! See comment above pardiso_real regarding -Wlto-type-mismatch warning safety.
   interface
     subroutine pardiso_c(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, &
                          nrhs, iparm, msglvl, b, x, error) bind(C, name="PARDISO")
@@ -130,6 +134,15 @@ module linalg
 #endif
 
   ! pardiso_real - MKL PARDISO for real-valued matrices (iso_c_binding)
+  !
+  ! NOTE: Both pardiso_real and pardiso_c (when ARPACK is enabled) bind to the
+  ! same C symbol "PARDISO".  MKL dispatches to the correct routine internally
+  ! based on the mtype argument (11=real symmetric, 13=complex Hermitian, etc.)
+  ! and the actual argument types at runtime.  The linker warning
+  ! -Wlto-type-mismatch is therefore benign: the type mismatch is intentional.
+  ! -fno-strict-aliasing (set in both CMAKE_Fortran_FLAGS and
+  ! CMAKE_Fortran_FLAGS_RELEASE) ensures the compiler does not assume distinct
+  ! pointers cannot alias, which is relevant for the void*-like a/b/x arrays.
   interface
     subroutine pardiso_real(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, &
                          nrhs, iparm, msglvl, b, x, error) bind(C, name="PARDISO")
