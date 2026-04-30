@@ -22,7 +22,7 @@ module definitions
   public :: doping_spec, sc_config, wire_geometry, region_spec
   public :: spatial_grid, strain_config
   public :: optical_transition, optics_config
-  public :: exciton_config, scattering_config
+  public :: exciton_config, scattering_config, bdg_config, topology_config, topological_result
   public :: simulation_config, group
 
   ! Functions and subroutines
@@ -268,6 +268,57 @@ module definitions
     real(kind=dp)    :: eps_0 = 12.9_dp            ! static dielectric
   end type scattering_config
 
+  ! ------------------------------------------------------------------
+  ! BdG / topological superconductivity parameters.
+  ! ------------------------------------------------------------------
+  type :: bdg_config
+    logical          :: enabled = .false.
+    real(kind=dp)   :: mu = 0.0_dp       ! chemical potential (eV)
+    real(kind=dp)   :: delta_0 = 0.0_dp  ! s-wave pairing gap (eV)
+    real(kind=dp)   :: B_vec(3) = 0.0_dp ! magnetic field Bx, By, Bz (Tesla)
+    character(len=20) :: gauge = 'landau_x'  ! gauge choice
+    real(kind=dp)   :: B_sweep(3) = 0.0_dp ! B sweep: min, max, step
+    logical        :: self_consistent = .false.  ! future: self-consistent gap
+  end type
+
+  ! ------------------------------------------------------------------
+  ! Unified topological analysis parameters (QHE / QSHE / BdG modes).
+  ! ------------------------------------------------------------------
+  type :: topology_config
+    logical          :: enabled = .false.
+    character(len=20) :: mode = 'qhe'     ! qhe | qshe | bdg
+    ! Chern / Berry curvature
+    logical          :: compute_chern = .false.
+    logical          :: compute_hall = .false.   ! output sigma_xy = C*e^2/h
+    ! Z2 invariant
+    logical          :: compute_z2 = .false.
+    character(len=20) :: z2_method = 'auto'  ! auto | gap | fukane
+    ! Edge states
+    logical          :: extract_edge_states = .false.
+    real(kind=dp)    :: edge_E_window = 0.01_dp  ! energy window for detection
+    ! LDOS
+    logical          :: compute_ldos = .false.
+    real(kind=dp)    :: ldos_eta = 0.001_dp  ! Lorentzian broadening
+    real(kind=dp)    :: ldos_E_range(2) = [-0.1_dp, 0.1_dp]
+    integer          :: ldos_num_E = 200
+  end type
+
+  ! ------------------------------------------------------------------
+  ! Results from topological analysis.
+  ! ------------------------------------------------------------------
+  type :: topological_result
+    integer          :: chern_number = 0
+    integer          :: z2_invariant = 0
+    real(kind=dp)    :: hall_conductance = 0.0_dp   ! in units of e^2/h
+    real(kind=dp)    :: min_gap = 0.0_dp
+    real(kind=dp)    :: edge_xi = 0.0_dp           ! edge localization length
+    real(kind=dp), allocatable :: edge_energies(:)
+    real(kind=dp), allocatable :: phase_boundary(:,:)  ! (B, mu) pairs
+    real(kind=dp), allocatable :: berry_curvature(:,:) ! Omega(kx, ky) if computed
+  contains
+    final :: topological_result_finalize
+  end type
+
   type simulation_config
     integer :: confinement = 0
     integer :: fdStep = 1
@@ -320,6 +371,8 @@ module definitions
     type(optics_config)      :: optics       ! optical spectra parameters
     type(exciton_config)     :: exciton      ! exciton solver parameters
     type(scattering_config)  :: scattering   ! phonon scattering parameters
+    type(bdg_config)        :: bdg          ! BdG / topological SC parameters
+    type(topology_config)    :: topo         ! topological analysis parameters
   contains
     final :: simulation_config_finalize
     procedure :: validate => simulation_config_validate
@@ -395,6 +448,18 @@ module definitions
     if (allocated(cfg%doping))      deallocate(cfg%doping)
     if (allocated(cfg%regions))     deallocate(cfg%regions)
   end subroutine simulation_config_finalize
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a topological_result goes
+  ! out of scope.  Deallocates all allocatable components.
+  ! ==================================================================
+  subroutine topological_result_finalize(res)
+    type(topological_result), intent(inout) :: res
+
+    if (allocated(res%edge_energies))    deallocate(res%edge_energies)
+    if (allocated(res%phase_boundary))   deallocate(res%phase_boundary)
+    if (allocated(res%berry_curvature))  deallocate(res%berry_curvature)
+  end subroutine topological_result_finalize
 
   ! ==================================================================
   ! Type-bound validation for simulation_config.
