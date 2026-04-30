@@ -100,6 +100,11 @@ module eigensolver
     procedure :: solve => dense_lapack_solve_dispatch
   end type dense_lapack_solver_t
 
+  type, extends(eigensolver_base) :: arpack_solver_t
+  contains
+    procedure :: solve => arpack_solve_dispatch
+  end type arpack_solver_t
+
 contains
 
   ! ==================================================================
@@ -880,6 +885,15 @@ contains
     call solve_dense_lapack(H_csr, config, result)
   end subroutine dense_lapack_solve_dispatch
 
+  subroutine arpack_solve_dispatch(self, H_csr, config, result)
+    class(arpack_solver_t), intent(inout) :: self
+    type(csr_matrix), intent(in) :: H_csr
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+
+    call solve_arpack_dispatch(H_csr, config, result)
+  end subroutine arpack_solve_dispatch
+
 #ifdef USE_MKL_FEAST
   subroutine feast_solver_finalize(self)
     type(feast_solver_t), intent(inout) :: self
@@ -903,8 +917,7 @@ contains
       allocate(dense_lapack_solver_t :: solver)
 #endif
     case ('ARPACK')
-      print *, 'WARNING: ARPACK dispatch not yet polymorphic; using dense LAPACK'
-      allocate(dense_lapack_solver_t :: solver)
+      allocate(arpack_solver_t :: solver)
     case default
       print *, 'ERROR: Unknown eigensolver method: ', trim(config%method)
       stop 1
