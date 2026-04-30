@@ -156,7 +156,7 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - `feast_workspace` reuse must remain pattern-validated.
 - `simulation_config` is validated after parsing via the type-bound `config%validate()` method — use `error stop` for invalid configs.
 - Scalar `pure` functions upgraded to `elemental pure`: `kronij`, `fermi_dirac`, `flat_idx`, `wire_flat_idx`, `compute_bp_scalar`, `segment_circle_fraction`.
-- Precision kinds in `defs.f90`: `sp` (single), `dp` (double), `qp` (quad), `iknd` (int64)
+- Precision kinds in `defs.f90`: `sp` (real32), `dp` (real64), `qp` (real128), `iknd` (int32) — aliased from `iso_fortran_env`
 - k-vectors and wavevector sweeps use `real(dp)` throughout
 - File/function length guidelines from `.clinerules`: 300 lines/file, 50 lines/function
 - Prioritize: Correctness > Maintainability > Readability > Type-Exactness > Performance > Minimal

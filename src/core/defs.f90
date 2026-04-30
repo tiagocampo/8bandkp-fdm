@@ -1,5 +1,7 @@
 module definitions
 
+  use, intrinsic :: iso_fortran_env, only: real32, real64, real128, int32
+
   implicit none
   private
 
@@ -26,10 +28,10 @@ module definitions
   ! Functions and subroutines
   public :: kronij, grid_ngrid, init_grid_from_config
 
-  integer, parameter :: sp = selected_real_kind(6, 37)
-  integer, parameter :: dp = selected_real_kind(15, 307)
-  integer, parameter :: qp = selected_real_kind(33, 4931)
-  integer, parameter :: iknd = selected_int_kind(8)
+  integer, parameter :: sp   = real32
+  integer, parameter :: dp   = real64
+  integer, parameter :: qp   = real128
+  integer, parameter :: iknd = int32
 
   real(kind=sp), parameter :: pi_sp = 3.14159265358979323846264338327950288_sp
   real(kind=dp), parameter :: pi_dp = 3.14159265358979323846264338327950288_dp
