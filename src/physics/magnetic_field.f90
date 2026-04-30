@@ -1,0 +1,71 @@
+module magnetic_field
+
+  use definitions
+  use sparse_matrices
+  implicit none
+  private
+
+  public :: add_zeeman_coo, add_peierls_coo
+
+  ! 8x8 spin matrices in zinc-blende basis (HH1,HH2,LH1,LH2,SO1,SO2,CB1,CB2)
+  ! Derived from J=3/2 and J=1/2 angular momentum operators
+  ! Spin-up diagonal: +mu_B * B, spin-down: -mu_B * B
+  ! mu_B = e * hbar / (2 * m0) = 5.7884e-5 eV/T
+
+contains
+
+  subroutine add_zeeman_coo(coo_vals, coo_row, coo_col, nnz_offset, &
+                             grid, B_vec, g_factor)
+    ! Adds g*mu_B * B . sigma to the 8-band diagonal at each grid point.
+    ! Each grid point contributes 8 diagonal COO entries (one per band).
+    real(kind=dp), intent(inout) :: coo_vals(:)
+    integer, intent(inout) :: coo_row(:), coo_col(:)
+    integer, intent(inout) :: nnz_offset
+    type(spatial_grid), intent(in) :: grid
+    real(kind=dp), intent(in) :: B_vec(3), g_factor
+
+    integer :: i, idx, n
+    real(kind=dp) :: Vz(8), mu_B, B_mag
+
+    ! mu_B = e * hbar / (2 * m0) in eV/T
+    mu_B = e * hbar / (2.0_dp * m0)
+    B_mag = sqrt(sum(B_vec**2))
+
+    n = grid%npoints()
+    do i = 1, n
+      ! Zeeman splitting: Vz_n = g_factor * g_J * mu_B * B
+      ! g_J eigenvalues: HH=-1.5, LH=+0.5, SO=-0.5, CB=+1.0
+      Vz(1:2) = -1.5_dp * g_factor * mu_B * B_mag  ! HH (J_z = +/- 3/2)
+      Vz(3:4) =  0.5_dp * g_factor * mu_B * B_mag  ! LH (J_z = +/- 1/2)
+      Vz(5:6) = -0.5_dp * g_factor * mu_B * B_mag  ! SO (J_z = +/- 1/2)
+      Vz(7) = -1.0_dp * g_factor * mu_B * B_mag  ! CB1 (J_z = -1/2)
+      Vz(8) =  1.0_dp * g_factor * mu_B * B_mag  ! CB2 (J_z = +1/2)
+
+      do idx = 1, 8
+        nnz_offset = nnz_offset + 1
+        coo_row(nnz_offset) = (i-1)*8 + idx
+        coo_col(nnz_offset) = (i-1)*8 + idx
+        coo_vals(nnz_offset) = Vz(idx)
+      end do
+    end do
+  end subroutine add_zeeman_coo
+
+  subroutine add_peierls_coo(coo_vals, coo_row, coo_col, nnz_offset, &
+                              grid, B_vec, gauge, kpterms_2d)
+    ! Peierls substitution: k -> k - eA/hbar
+    ! For Landau gauge A = (0, 0, Bx*y):
+    !   kz -> kz - e*Bx*y/hbar  (phase factor e^(ieA.z/hbar))
+    ! Only affects cross-derivative and kz-coupling blocks
+    real(kind=dp), intent(inout) :: coo_vals(:)
+    integer, intent(inout) :: coo_row(:), coo_col(:)
+    integer, intent(inout) :: nnz_offset
+    type(spatial_grid), intent(in) :: grid
+    real(kind=dp), intent(in) :: B_vec(3)
+    character(len=*), intent(in) :: gauge
+    type(csr_matrix), intent(in) :: kpterms_2d(:)
+    ! Stub: Peierls substitution will be implemented when integrating
+    ! with the Landau level infrastructure (Task 2.2)
+    nnz_offset = nnz_offset
+  end subroutine add_peierls_coo
+
+end module magnetic_field
