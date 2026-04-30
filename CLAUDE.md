@@ -31,6 +31,8 @@ make test           # Configure with BUILD_TESTING=ON, build, run ctest
 
 **Gotcha — `cp -i` alias:** The shell has `cp -i` alias. Use the Write tool (not `cp`) when creating `input.cfg`.
 
+**Gotcha — `dble()` backlog:** `finitedifferences.f90` (lines 423/455/594/627/735/749/762) uses `dble()` instead of `real(..., dp)`. Replace when touching that module.
+
 ## Testing
 
 ```bash
@@ -86,10 +88,10 @@ src/
   core/       defs.f90, parameters.f90, utils.f90
   math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90, linalg.f90, sparse_matrices.f90, eigensolver.f90, geometry.f90
   io/         outputFunctions.f90, input_parser.f90
-  physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90
+  physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90
 tests/
-  unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_hamiltonian_2d, test_csr_spmv, test_eigensolver, test_poisson, test_charge_density, test_sc_loop)
+  unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_hamiltonian_2d, test_csr_spmv, test_eigensolver, test_poisson, test_charge_density, test_sc_loop, test_geometry, test_optical, test_optical_qw, test_strain_solver)
   integration/  shell scripts for full-executable tests
   regression/   configs/, data/, compare_output.py
 cmake/        FindFFTW3.cmake
@@ -114,12 +116,14 @@ defs.f90                      (kinds, constants, derived types — no deps)
        <- utils.f90           (dense-to-sparse conversion, Simpson integration)
             <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices)
                  <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian, commutator velocity matrices)
+                      <- hamiltonian_wire.f90     (2D wire Hamiltonian, CSR assembly, wire geometry)
                       <- gfactor_functions.f90  (Lowdin partitioning, spin/momentum matrix elements)
                       <- optical_spectra.f90    (absorption, gain, spontaneous emission, ISBT accumulation)
                       <- spin_projection.f90     (Clebsch-Gordan spin-up/down decomposition)
                  <- poisson.f90           (box-integration Poisson solver, Thomas algorithm)
                  <- charge_density.f90    (n(z), p(z) from k.p eigenstates + k_∥ sampling)
                       <- sc_loop.f90           (self-consistent SP loop, linear + DIIS mixing)
+  <- scattering_solver       (phonon scattering rates, used by main.f90)
   <- outputFunctions.f90      (eigenvalue/eigenfunction file I/O)
   <- input_parser.f90         (shared input.cfg parser → simulation_config type)
 ```
@@ -157,6 +161,7 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - Use `c_loc()` from `iso_c_binding` instead of non-standard `loc()`.
 - All modules use `private` default with explicit `public` exports. When adding new modules, use `private` default and enumerate `public ::` exports.
 - When adding new scalar `pure` functions, use `elemental pure` by default (F2008 requires both keywords; F2018+ implies pure).
+  - **Known exceptions:** `grid_ngrid` (`defs.f90:476`), `to_lower_ascii` (`input_parser.f90:17`) — upgrade when touching those functions
 - Declaration ordering: variables must be declared before use in array dimension expressions.
 - No `goto` in new code — use named `do` loops with `exit` for early-return blocks.
 - External BLAS/LAPACK/PARDISO declarations go through `linalg.f90` interfaces, not local `external ::`.
@@ -164,14 +169,17 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - `do concurrent` used on proven-independent loops: velocity matrix construction, optics finalization, kpterms diagonal init.
 - `csr_matrix` has type-bound `free()` and `clone_structure()` but components remain public for hot-path access.
 - `contiguous` attribute on all assumed-shape hot-path array arguments (not on optional or allocatable).
+  - **Known gaps** (will be fixed when touching those routines): `ZB8bandQW` profile/kpterms (`hamiltonianConstructor.f90:42-43`), `eigvals(:)` in 7 `optical_spectra.f90` routines, `dns(:,:)` in `utils.f90:19`, `psi(:)` in `spin_projection.f90:14`
 - `spatial_grid%npoints()` accessor preferred over raw `grid%nx * grid%ny` for total grid size.
 - `iso_c_binding` used for all MKL C APIs: PARDISO as `pardiso_c`, FEAST wrappers, `mkl_set_num_threads_local`. PARDISO/FEAST scalars passed by reference (MKL C API passes pointers). `mkl_set_num_threads_local` uses `value` since the C function takes `int` by value.
 - PARDISO has two `iso_c_binding` interfaces: `pardiso_c` (complex, used by ARPACK eigensolver) and `pardiso_real` (real-valued, used by Poisson solver). Both use `c_intptr_t` for the `pt` handle array.
 - Polymorphic eigensolver: `make_eigensolver(config)` factory returns a polymorphic solver; dispatch via `solver%solve(...)`. Existing `solve_sparse_evp` remains available as a direct interface.
 - `fortran-stdlib` as optional dependency: CMake uses `find_package(fortran_stdlib CONFIG QUIET)`; code compiles without it.
+- `fpm.toml` exists as experimental alternative build system (documented as such in README). CMake/Ninja remains the primary build.
 - `g='g3'` derivative builds must stay isolated from `wire_workspace` cache.
 - `feast_workspace` reuse must remain pattern-validated.
-- `simulation_config` is validated after parsing via the type-bound `config%validate()` method — use `error stop` for invalid configs.
+- `zdotc` declared as function-return ABI in `linalg.f90` — MKL on this platform returns `complex(dp)` by value, not via subroutine hidden argument. Do not change to subroutine form.
+- Eigensolver variants guarded by preprocessor: `#ifdef USE_MKL_FEAST` for FEAST solver, `#ifdef USE_ARPACK` for ARPACK solver. `make_eigensolver(config)` factory dispatches on string; add new variants behind their own `#ifdef` guard.
 - Scalar `pure` functions upgraded to `elemental pure`: `kronij`, `fermi_dirac`, `flat_idx`, `wire_flat_idx`, `compute_bp_scalar`, `segment_circle_fraction`.
 - Precision kinds in `defs.f90`: `sp` (real32), `dp` (real64), `qp` (real128), `iknd` (int32) — aliased from `iso_fortran_env`
 - k-vectors and wavevector sweeps use `real(dp)` throughout

@@ -106,7 +106,7 @@ contains
     & vel, numcb, numvb, fermi_level)
 
     type(optics_config), intent(in) :: optcfg
-    real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
+    real(kind=dp), intent(in), contiguous :: eigvals(:)        ! (numcb+numvb) eigenvalues
     complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
@@ -214,7 +214,7 @@ contains
     & vel, numcb, numvb, fermi_level)
 
     type(optics_config), intent(in) :: optcfg
-    real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
+    real(kind=dp), intent(in), contiguous :: eigvals(:)        ! (numcb+numvb) eigenvalues
     complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
@@ -663,7 +663,7 @@ contains
   subroutine compute_intersubband_transitions(eigvals, eigvecs, z_grid, dz, &
     & numcb, numvb, fdstep, transitions_file)
 
-    real(kind=dp), intent(in)    :: eigvals(:)           ! (nstates) eigenvalues ascending
+    real(kind=dp), intent(in), contiguous    :: eigvals(:)           ! (nstates) eigenvalues ascending
     complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)         ! (8*fdstep, nstates)
     real(kind=dp), intent(in), contiguous    :: z_grid(:)            ! (fdstep) z-coords (AA)
     real(kind=dp), intent(in)    :: dz                   ! grid spacing (AA)
@@ -727,7 +727,7 @@ contains
     & vel, numcb, numvb, k_weight, fermi_level)
 
     type(optics_config), intent(in) :: optcfg
-    real(kind=dp), intent(in)    :: eigvals(:)
+    real(kind=dp), intent(in), contiguous :: eigvals(:)
     complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
     integer, intent(in)          :: numcb, numvb
@@ -819,7 +819,7 @@ contains
   function find_quasi_fermi(eigvals, temperature, carrier_density_cm2, &
     & n_states, state_offset) result(mu)
 
-    real(kind=dp), intent(in) :: eigvals(:)       ! all eigenvalues at k=0
+    real(kind=dp), intent(in), contiguous :: eigvals(:)       ! all eigenvalues at k=0
     real(kind=dp), intent(in) :: temperature       ! K
     real(kind=dp), intent(in) :: carrier_density_cm2  ! cm^-2
     integer, intent(in)       :: n_states          ! number of subbands to sum
@@ -898,7 +898,7 @@ contains
     & vel, numcb, numvb, carrier_density)
 
     type(optics_config), intent(in) :: optcfg
-    real(kind=dp), intent(in) :: eigvals(:)        ! (numcb+numvb) eigenvalues
+    real(kind=dp), intent(in), contiguous :: eigvals(:)        ! (numcb+numvb) eigenvalues
     complex(kind=dp), intent(in), contiguous :: eigvecs(:,:)   ! (dim, numcb+numvb)
     real(kind=dp), intent(in) :: k_weight          ! Simpson weight for this k
     type(csr_matrix), intent(in) :: vel(3)         ! commutator velocity matrices
