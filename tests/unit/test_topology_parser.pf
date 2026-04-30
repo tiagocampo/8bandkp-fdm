@@ -1,0 +1,41 @@
+module test_topology_parser
+  use funit
+  use definitions
+  use input_parser
+  implicit none
+contains
+
+  @test
+  subroutine test_parse_topology_and_bdg_block()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    open(unit=99, file='input.cfg', status='replace', action='write')
+    write(99, '(A)') 'waveVector k0'
+    write(99, '(A)') 'waveVectorMax 0.0'
+    write(99, '(A)') 'waveVectorStep 1'
+    write(99, '(A)') 'confinement 0'
+    write(99, '(A)') 'FDstep 50'
+    write(99, '(A)') 'FDorder 2'
+    write(99, '(A)') 'numLayers 1'
+    write(99, '(A)') 'material1 InAs'
+    write(99, '(A)') 'numcb 1'
+    write(99, '(A)') 'numvb 2'
+    write(99, '(A)') 'SC 0'
+    write(99, '(A)') 'topology: T'
+    write(99, '(A)') 'topology_mode bdg'
+    write(99, '(A)') 'topology_compute_chern T'
+    write(99, '(A)') 'bdg: T'
+    write(99, '(A)') 'bdg_mu 0.010'
+    write(99, '(A)') 'bdg_delta 0.0003'
+    close(99)
+    call read_and_setup(cfg, profile, kpterms)
+    @assertTrue(cfg%topo%enabled)
+    @assertEqual('bdg', trim(cfg%topo%mode))
+    @assertTrue(cfg%topo%compute_chern)
+    @assertTrue(cfg%bdg%enabled)
+    @assertEqual(0.010_dp, cfg%bdg%mu, tolerance=1.0e-6_dp)
+    @assertEqual(0.0003_dp, cfg%bdg%delta_0, tolerance=1.0e-8_dp)
+    close(unit=99, status='delete')
+  end subroutine
+
+end module

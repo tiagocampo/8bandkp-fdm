@@ -696,6 +696,92 @@ contains
       exit scattering_block
     end do scattering_block
 
+    ! --- Topology analysis parameters (backward compatible: uses defaults if missing) ---
+    call read_optional_logical_flag(data_unit, 'topology:', cfg%topo%enabled, found_optional, label)
+    topology_block: do
+      if (found_optional .and. cfg%topo%enabled) then
+        print *, trim(label), cfg%topo%enabled
+
+        read(data_unit, *, iostat=status) label, cfg%topo%mode
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), trim(cfg%topo%mode)
+
+        read(data_unit, *, iostat=status) label, cfg%topo%compute_chern
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%compute_chern
+
+        read(data_unit, *, iostat=status) label, cfg%topo%compute_hall
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%compute_hall
+
+        read(data_unit, *, iostat=status) label, cfg%topo%compute_z2
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%compute_z2
+
+        read(data_unit, *, iostat=status) label, cfg%topo%z2_method
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), trim(cfg%topo%z2_method)
+
+        read(data_unit, *, iostat=status) label, cfg%topo%extract_edge_states
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%extract_edge_states
+
+        read(data_unit, *, iostat=status) label, cfg%topo%edge_E_window
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%edge_E_window
+
+        read(data_unit, *, iostat=status) label, cfg%topo%compute_ldos
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%compute_ldos
+
+        read(data_unit, *, iostat=status) label, cfg%topo%ldos_eta
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%ldos_eta
+
+        read(data_unit, *, iostat=status) label, cfg%topo%ldos_E_range(1)
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%ldos_E_range(1)
+
+        read(data_unit, *, iostat=status) label, cfg%topo%ldos_E_range(2)
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%ldos_E_range(2)
+
+        read(data_unit, *, iostat=status) label, cfg%topo%ldos_num_E
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%ldos_num_E
+
+      else if (found_optional) then
+        ! topology=F, skip remaining topology lines
+        print *, trim(label), cfg%topo%enabled
+      end if
+      exit topology_block
+    end do topology_block
+
+    ! --- BdG parameters (backward compatible: uses defaults if missing) ---
+    call read_optional_logical_flag(data_unit, 'bdg:', cfg%bdg%enabled, found_optional, label)
+    bdg_block: do
+      if (found_optional .and. cfg%bdg%enabled) then
+        print *, trim(label), cfg%bdg%enabled
+
+        read(data_unit, *, iostat=status) label, cfg%bdg%mu
+        if (status /= 0) then; status = 0; exit bdg_block; end if
+        print *, trim(label), cfg%bdg%mu
+
+        read(data_unit, *, iostat=status) label, cfg%bdg%delta_0
+        if (status /= 0) then; status = 0; exit bdg_block; end if
+        print *, trim(label), cfg%bdg%delta_0
+
+        read(data_unit, *, iostat=status) label, cfg%bdg%gauge
+        if (status /= 0) then; status = 0; exit bdg_block; end if
+        print *, trim(label), trim(cfg%bdg%gauge)
+
+      else if (found_optional) then
+        ! bdg=F, skip remaining bdg lines
+        print *, trim(label), cfg%bdg%enabled
+      end if
+      exit bdg_block
+    end do bdg_block
+
     ! --- FEAST eigensolver tuning (backward compatible: uses defaults if missing) ---
     call read_optional_real_flag(data_unit, 'feast_emin:', cfg%feast_emin, found_optional, label)
     if (found_optional) then
