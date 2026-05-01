@@ -276,6 +276,7 @@ module definitions
     real(kind=dp)   :: mu = 0.0_dp       ! chemical potential (eV)
     real(kind=dp)   :: delta_0 = 0.0_dp  ! s-wave pairing gap (eV)
     real(kind=dp)   :: B_vec(3) = 0.0_dp ! magnetic field Bx, By, Bz (Tesla)
+    real(kind=dp)   :: g_factor = 2.0_dp  ! Lande g-factor for Zeeman splitting
     character(len=20) :: gauge = 'landau_x'  ! gauge choice
     real(kind=dp)   :: B_sweep(3) = 0.0_dp ! B sweep: min, max, step
     logical        :: self_consistent = .false.  ! future: self-consistent gap

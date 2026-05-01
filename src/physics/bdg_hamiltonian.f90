@@ -28,6 +28,7 @@ module bdg_hamiltonian
   use definitions
   use sparse_matrices
   use hamiltonian_wire, only: ZB8bandGeneralized, wire_workspace
+  use magnetic_field, only: add_zeeman_coo, add_peierls_coo
 
   implicit none
 
@@ -53,7 +54,7 @@ contains
   ! For the wire, each band-block is replicated at each spatial point.
   ! ==============================================================================
   subroutine build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
-                                       kz, mu, delta_0, ws)
+                                       kz, mu, delta_0, ws, B_vec, g_factor)
 
     type(csr_matrix), intent(out) :: H_bdg_csr
     type(simulation_config), intent(in) :: cfg
@@ -61,19 +62,25 @@ contains
     type(csr_matrix), intent(in) :: kpterms_2d(:)
     real(kind=dp), intent(in) :: kz, mu, delta_0
     type(wire_workspace), intent(inout) :: ws
+    real(kind=dp), intent(in), optional :: B_vec(3)
+    real(kind=dp), intent(in), optional :: g_factor
 
     type(csr_matrix) :: H0
-    integer :: N, Ntot, nnz, nnz_bdg
+    integer :: N, Ntot, nnz_bdg, nnz_zeeman
     integer :: coo_idx, coo_capacity
     integer, allocatable :: coo_row_bdg(:), coo_col_bdg(:)
     complex(kind=dp), allocatable :: coo_vals_bdg(:)
+    ! Separate REAL COO for Zeeman/Peierls (merged during assembly)
+    integer, allocatable :: coo_row_zeeman(:), coo_col_zeeman(:)
+    real(kind=dp), allocatable :: coo_vals_zeeman(:)
 
     ! Pairing sign pattern for 8-band zinc-blende basis
     ! CB1=+1, CB2=-1, VB signs alternate, then negate for particle-hole
     real(kind=dp) :: pairing_sign(8)
 
     ! Temporary for -H0^T + mu*I
-    integer :: i, kk, row, col, global_row, global_col
+    integer :: i, kk, row, col, global_row, global_col, nnz_z
+    real(kind=dp) :: g_f
 
     ! --- Build H0 (8N x 8N wire Hamiltonian) ---
     call ZB8bandGeneralized(H0, kz, profile_2d, kpterms_2d, cfg, ws=ws)
@@ -93,6 +100,10 @@ contains
     allocate(coo_row_bdg(coo_capacity))
     allocate(coo_col_bdg(coo_capacity))
     allocate(coo_vals_bdg(coo_capacity))
+    nnz_zeeman = 8 * N  ! maximum Zeeman diagonal entries
+    allocate(coo_row_zeeman(nnz_zeeman))
+    allocate(coo_col_zeeman(nnz_zeeman))
+    allocate(coo_vals_zeeman(nnz_zeeman))
     coo_idx = 0
 
     ! --- Pairing sign pattern: antidiag(+1,-1,+1,-1,-1,+1,+1,-1) ---
@@ -119,6 +130,32 @@ contains
         coo_vals_bdg(coo_idx) = H0%values(kk)
       end do
     end do
+
+    ! ==================================================================
+    ! Add Zeeman and Peierls corrections to electron block (1,1)
+    ! These merge with existing diagonal entries during CSR assembly.
+    ! ==================================================================
+    if (present(B_vec)) then
+      if (present(g_factor)) then
+        g_f = g_factor
+      else
+        g_f = cfg%bdg%g_factor
+      end if
+      ! Add Zeeman splitting to separate real COO array
+      nnz_z = 0
+      call add_zeeman_coo(coo_vals_zeeman, coo_row_zeeman, coo_col_zeeman, &
+                          nnz_z, cfg%grid, B_vec, g_f)
+      ! Add Peierls substitution for orbital magnetic effects
+      call add_peierls_coo(coo_vals_zeeman, coo_row_zeeman, coo_col_zeeman, &
+                            nnz_z, cfg%grid, B_vec, 'landau', kpterms_2d)
+      ! Copy Zeeman entries into the main complex COO (real part adds)
+      do i = 1, nnz_z
+        coo_idx = coo_idx + 1
+        coo_row_bdg(coo_idx) = coo_row_zeeman(i)
+        coo_col_bdg(coo_idx) = coo_col_zeeman(i)
+        coo_vals_bdg(coo_idx) = cmplx(real(coo_vals_zeeman(i), kind=dp), 0.0_dp, kind=dp)
+      end do
+    end if
 
     ! Subtract mu from diagonal: (band_diag, band_diag) entries
     do i = 1, 8 * N
@@ -206,6 +243,7 @@ contains
                              coo_vals_bdg(1:coo_idx))
 
     deallocate(coo_row_bdg, coo_col_bdg, coo_vals_bdg)
+    deallocate(coo_row_zeeman, coo_col_zeeman, coo_vals_zeeman)
     call csr_free(H0)
 
   end subroutine build_bdg_hamiltonian_1d

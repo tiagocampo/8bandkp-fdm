@@ -17,10 +17,45 @@ contains
 
   @test
   subroutine test_bdg_particle_hole_symmetry()
-    ! H_BdG is Hermitian and particle-hole symmetric
-    ! If E is eigenvalue, -E is also eigenvalue
-    ! ... build simple 2x2 BdG test, verify symmetry ...
-    @assertTrue(.true.)
+    ! H_BdG is Hermitian and particle-hole symmetric.
+    ! For a 2x2 BdG case: H = [E0  Delta; Delta* -E0]
+    ! Eigenvalues are ±sqrt(E0^2 + |Delta|^2) — particle-hole symmetric.
+    ! We construct H_BdG directly and verify the symmetry property.
+    use linalg, only: zheevx
+    complex(kind=dp) :: H_2x2(2,2), work(10), z(2,2)
+    real(kind=dp) :: rwork(15), eigenvalues(2), abstol, vl, vu
+    integer :: iwork(10), ifail(2), info, m, il, iu
+    real(kind=dp) :: E0, delta_0, gap, tol
+
+    E0 = 0.5_dp       ! normal-state energy
+    delta_0 = 0.3_dp   ! pairing amplitude
+
+    ! Build 2x2 BdG Hamiltonian: H = [E0  Delta; Delta* -E0]
+    H_2x2(1,1) = cmplx(E0, 0.0_dp, kind=dp)
+    H_2x2(1,2) = cmplx(delta_0, 0.0_dp, kind=dp)
+    H_2x2(2,1) = cmplx(delta_0, 0.0_dp, kind=dp)
+    H_2x2(2,2) = cmplx(-E0, 0.0_dp, kind=dp)
+
+    ! Solve eigenvalue problem: get eigenvalues 1 through 2
+    abstol = 0.0_dp
+    il = 1
+    iu = 2
+    call zheevx('N', 'I', 'U', 2, H_2x2, 2, vl, vu, il, iu, &
+                abstol, m, eigenvalues, z, 2, work, 10, rwork, iwork, ifail, info)
+    @assertEqual(0, info)
+
+    ! Eigenvalues should be ±sqrt(E0^2 + delta_0^2)
+    gap = sqrt(E0**2 + delta_0**2)
+    tol = 1.0e-12_dp
+
+    ! Verify particle-hole symmetry: eigenvalues are negated by the
+    ! particle-hole operator Xi = tau_x K (Pauli + conjugation).
+    ! For a 2x2 BdG matrix the eigenvalues are ±gap.
+    @assertTrue(gap - abs(eigenvalues(1)) < tol, message="BdG eigenvalue 1 should have magnitude gap")
+    @assertTrue(gap - abs(eigenvalues(2)) < tol, message="BdG eigenvalue 2 should have magnitude gap")
+
+    ! Verify particle-hole symmetry: E and -E should be paired
+    @assertTrue(abs(eigenvalues(1) + eigenvalues(2)) < tol, message="Particle-hole symmetry: E and -E pair")
   end subroutine
 
 end module
