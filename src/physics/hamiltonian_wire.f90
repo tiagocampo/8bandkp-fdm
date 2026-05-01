@@ -362,6 +362,14 @@ module hamiltonian_wire
             coo_idx, cfg%strain_blocks, N)
         end if
 
+        ! ==================================================================
+        ! Add Zeeman splitting to diagonal blocks
+        ! ==================================================================
+        if (cfg%bdg%enabled) then
+          call insert_zeeman_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
+            coo_idx, cfg%bdg%B_vec, cfg%bdg%g_factor, cfg%grid, N)
+        end if
+
       end if
 
       ! ==================================================================
@@ -484,6 +492,14 @@ module hamiltonian_wire
         if (allocated(cfg%strain_blocks%delta_Ec)) then
           call insert_strain_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
             coo_idx, cfg%strain_blocks, N)
+        end if
+
+        ! ==================================================================
+        ! Add Zeeman splitting to diagonal blocks
+        ! ==================================================================
+        if (cfg%bdg%enabled) then
+          call insert_zeeman_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
+            coo_idx, cfg%bdg%B_vec, cfg%bdg%g_factor, cfg%grid, N)
         end if
 
       end if
@@ -1277,6 +1293,48 @@ module hamiltonian_wire
         end do
       end do
     end subroutine insert_strain_coo
+
+    ! ==================================================================
+    ! Insert Zeeman splitting into COO diagonal entries.
+    ! Each grid point contributes 8 diagonal entries (one per band).
+    ! g*mu_B*B . sigma_z eigenvalues: HH=-1.5, LH=+0.5, SO=-0.5, CB=+1.0
+    ! ==================================================================
+    subroutine insert_zeeman_coo(coo_r, coo_c, coo_v, coo_cap, &
+        coo_idx, B_vec, g_factor, grid, N)
+      integer, intent(inout), contiguous :: coo_r(:), coo_c(:)
+      complex(kind=dp), intent(inout), contiguous :: coo_v(:)
+      integer, intent(in) :: coo_cap
+      integer, intent(inout) :: coo_idx
+      real(kind=dp), intent(in) :: B_vec(3), g_factor
+      type(spatial_grid), intent(in) :: grid
+      integer, intent(in) :: N
+
+      integer :: i, idx, n_grid
+      real(kind=dp) :: mu_B, B_mag, Vz(8)
+
+      mu_B = e * hbar / (2.0_dp * m0)
+      B_mag = sqrt(sum(B_vec**2))
+      n_grid = grid%npoints()
+
+      do i = 1, n_grid
+        Vz(1:2) = -1.5_dp * g_factor * mu_B * B_mag  ! HH
+        Vz(3:4) =  0.5_dp * g_factor * mu_B * B_mag  ! LH
+        Vz(5:6) = -0.5_dp * g_factor * mu_B * B_mag  ! SO
+        Vz(7)   = -1.0_dp * g_factor * mu_B * B_mag  ! CB1
+        Vz(8)   =  1.0_dp * g_factor * mu_B * B_mag  ! CB2
+
+        do idx = 1, 8
+          coo_idx = coo_idx + 1
+          if (coo_idx > coo_cap) then
+            print *, "ERROR: COO capacity exceeded in insert_zeeman_coo"
+            stop 1
+          end if
+          coo_r(coo_idx) = (i - 1) * 8 + idx
+          coo_c(coo_idx) = (i - 1) * 8 + idx
+          coo_v(coo_idx) = cmplx(Vz(idx), 0.0_dp, kind=dp)
+        end do
+      end do
+    end subroutine insert_zeeman_coo
 
     ! ==================================================================
     ! Finalize COO assembly into CSR, dispatching to the appropriate path:

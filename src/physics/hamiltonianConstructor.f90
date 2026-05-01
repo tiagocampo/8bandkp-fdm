@@ -7,6 +7,7 @@ module hamiltonianConstructor
   use strain_solver, only: compute_bp_scalar, bir_pikus_blocks_free
   use confinement_init
   use hamiltonian_wire
+  use magnetic_field, only: add_zeeman_coo
 
   implicit none
 
@@ -222,6 +223,35 @@ module hamiltonianConstructor
         end if
       end if
 
+      ! ---------------------------------------------------------------
+      ! Zeeman splitting: g*mu_B * B . sigma
+      ! Applied after profile and strain so all terms are present.
+      ! ---------------------------------------------------------------
+      if (present(cfg)) then
+        if (.not. present(g) .and. cfg%bdg%enabled) then
+          block
+            real(kind=dp) :: mu_B, B_mag, Vz(8)
+            mu_B = e * hbar / (2.0_dp * m0)
+            B_mag = sqrt(sum(cfg%bdg%B_vec**2))
+            Vz(1:2) = -1.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! HH
+            Vz(3:4) =  0.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! LH
+            Vz(5:6) = -0.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! SO
+            Vz(7)   = -1.0_dp * cfg%bdg%g_factor * mu_B * B_mag  ! CB1
+            Vz(8)   =  1.0_dp * cfg%bdg%g_factor * mu_B * B_mag  ! CB2
+            do ii = 1, N
+              HT(      ii,      ii) = HT(      ii,      ii) + Vz(1)
+              HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + Vz(2)
+              HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + Vz(3)
+              HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + Vz(4)
+              HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + Vz(5)
+              HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + Vz(6)
+              HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + Vz(7)
+              HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + Vz(8)
+            end do
+          end block
+        end if
+      end if
+
 
       deallocate(Q)
       deallocate(T)
@@ -246,7 +276,7 @@ module hamiltonianConstructor
 
 
     end subroutine ZB8bandQW
-    subroutine ZB8bandBulk(HT,wv,params,g)
+    subroutine ZB8bandBulk(HT,wv,params,cfg,g)
 
       implicit none
 
@@ -254,6 +284,7 @@ module hamiltonianConstructor
       complex(kind=dp), intent(inout), dimension(:,:) :: HT
       type(wavevector), intent(in) :: wv
       type(paramStruct), intent(in) :: params(1)
+      type(simulation_config), intent(in), optional :: cfg
       character(len=1), intent(in), optional :: g
 
       ! wave vector related
@@ -400,6 +431,34 @@ module hamiltonianConstructor
 
       HT(7,7) = HT(7,7) + params(1)%Eg
       HT(8,8) = HT(8,8) + params(1)%Eg
+
+      ! ---------------------------------------------------------------
+      ! Zeeman splitting: g*mu_B * B . sigma
+      ! Applied after SOC and band-edge shifts so all terms are present.
+      ! ---------------------------------------------------------------
+      if (present(cfg)) then
+        if (cfg%bdg%enabled) then
+          block
+            real(kind=dp) :: mu_B, B_mag, Vz(8)
+            mu_B = e * hbar / (2.0_dp * m0)
+            B_mag = sqrt(sum(cfg%bdg%B_vec**2))
+            ! sigma_z eigenvalues: HH=-1.5, LH=+0.5, SO=-0.5, CB=+1.0
+            Vz(1:2) = -1.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! HH
+            Vz(3:4) =  0.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! LH
+            Vz(5:6) = -0.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! SO
+            Vz(7)   = -1.0_dp * cfg%bdg%g_factor * mu_B * B_mag  ! CB1
+            Vz(8)   =  1.0_dp * cfg%bdg%g_factor * mu_B * B_mag  ! CB2
+            HT(1,1) = HT(1,1) + Vz(1)
+            HT(2,2) = HT(2,2) + Vz(2)
+            HT(3,3) = HT(3,3) + Vz(3)
+            HT(4,4) = HT(4,4) + Vz(4)
+            HT(5,5) = HT(5,5) + Vz(5)
+            HT(6,6) = HT(6,6) + Vz(6)
+            HT(7,7) = HT(7,7) + Vz(7)
+            HT(8,8) = HT(8,8) + Vz(8)
+          end block
+        end if
+      end if
 
       ! ---------------------------------------------------------------
       ! Full Bir-Pikus strain Hamiltonian for bulk.

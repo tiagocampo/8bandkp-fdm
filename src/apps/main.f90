@@ -612,7 +612,7 @@ program kpfdm
   ! ====================================================================
   if (cfg%confDir == 'n') then
     ! BULK: 8x8 workspace query
-    call ZB8bandBulk(HT, smallk(1), cfg%params(1))
+    call ZB8bandBulk(HT, smallk(1), cfg%params(1), cfg=cfg)
     HTmp = HT(1:8,1:8)
     if (allocated(work)) deallocate(work)
     allocate(work(1))
@@ -649,7 +649,7 @@ program kpfdm
   if (cfg%confDir == 'n') then
     ! --- BULK (8x8, trivially fast — no parallelization needed) ---
     do k = 1, cfg%waveVectorStep
-      call ZB8bandBulk(HT, smallk(k), cfg%params(1))
+      call ZB8bandBulk(HT, smallk(k), cfg%params(1), cfg=cfg)
       HTmp = HT(1:8,1:8)
 
       call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:cfg%evnum,k), &

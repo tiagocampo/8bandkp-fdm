@@ -412,7 +412,7 @@ program gfactor
     k = 1
 
     if (cfg%confDir == 'n') then !BULK
-      call ZB8bandBulk(HT,smallk(k),cfg%params(1))
+      call ZB8bandBulk(HT,smallk(k),cfg%params(1), cfg=cfg)
     else if (cfg%confDir == 'z') then ! QUANTUM WELL
       call ZB8bandQW(HT, smallk(k), profile, kpterms, cfg=cfg)
     else

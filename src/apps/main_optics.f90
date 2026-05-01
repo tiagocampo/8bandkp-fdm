@@ -127,7 +127,7 @@ program opticalProperties
     ! ================================================================
     ! Workspace query (k=1)
     ! ================================================================
-    call ZB8bandBulk(HT, smallk(1), cfg%params(1:1))
+    call ZB8bandBulk(HT, smallk(1), cfg%params(1:1), cfg=cfg)
     allocate(work(1))
     lwork = -1
     call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, &
@@ -153,7 +153,7 @@ program opticalProperties
     pert_kx%kz = 0.0_dp
     allocate(H_k0(N, N))
     H_k0 = (0.0_dp, 0.0_dp)
-    call ZB8bandBulk(H_k0, pert_kx, cfg%params(1:1), g='g')
+    call ZB8bandBulk(H_k0, pert_kx, cfg%params(1:1), cfg=cfg, g='g')
     nzmax_tmp = N * N
     call dnscsr_z_mkl(nzmax_tmp, N, H_k0, vel_opt(1))
     deallocate(H_k0)
@@ -164,7 +164,7 @@ program opticalProperties
     pert_ky%kz = 0.0_dp
     allocate(H_k0(N, N))
     H_k0 = (0.0_dp, 0.0_dp)
-    call ZB8bandBulk(H_k0, pert_ky, cfg%params(1:1), g='g')
+    call ZB8bandBulk(H_k0, pert_ky, cfg%params(1:1), cfg=cfg, g='g')
     nzmax_tmp = N * N
     call dnscsr_z_mkl(nzmax_tmp, N, H_k0, vel_opt(2))
     deallocate(H_k0)
@@ -177,7 +177,7 @@ program opticalProperties
       pert_kz%kz = 1.0_dp
       allocate(H_k0(N, N))
       H_k0 = (0.0_dp, 0.0_dp)
-      call ZB8bandBulk(H_k0, pert_kz, cfg%params(1:1), g='g')
+      call ZB8bandBulk(H_k0, pert_kz, cfg%params(1:1), cfg=cfg, g='g')
       nzmax_tmp = N * N
       call dnscsr_z_mkl(nzmax_tmp, N, H_k0, vel_opt(3))
       deallocate(H_k0)
@@ -245,7 +245,7 @@ program opticalProperties
       !$omp do schedule(static)
       do k = 1, npts
         ! Build 8x8 bulk Hamiltonian at this k
-        call ZB8bandBulk(HT_loc, smallk(k), cfg%params(1:1))
+        call ZB8bandBulk(HT_loc, smallk(k), cfg%params(1:1), cfg=cfg)
 
         ! Diagonalize all 8 eigenvalues
         call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
