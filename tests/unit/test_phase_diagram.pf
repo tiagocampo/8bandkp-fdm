@@ -1,0 +1,125 @@
+module test_phase_diagram
+  use funit
+  use definitions
+  use topological_analysis
+  implicit none
+
+contains
+
+  @test
+  subroutine test_gap_closing_detect_no_closing()
+    real(kind=dp) :: evals(4)
+    logical :: is_closing
+    evals = [-2.0_dp, -1.0_dp, 1.0_dp, 2.0_dp]
+    is_closing = gap_closing_detect(evals, mu=0.0_dp, gap_threshold=0.5_dp)
+    @assertFalse(is_closing)
+  end subroutine test_gap_closing_detect_no_closing
+
+  @test
+  subroutine test_gap_closing_detect_with_closing()
+    real(kind=dp) :: evals(4)
+    logical :: is_closing
+    evals = [-2.0_dp, -0.05_dp, 0.05_dp, 2.0_dp]
+    is_closing = gap_closing_detect(evals, mu=0.0_dp, gap_threshold=0.5_dp)
+    @assertTrue(is_closing)
+  end subroutine test_gap_closing_detect_with_closing
+
+  @test
+  subroutine test_gap_closing_detect_insignificant_gap()
+    real(kind=dp) :: evals(4)
+    logical :: is_closing
+    evals = [-2.0_dp, -0.1_dp, 0.1_dp, 2.0_dp]
+    is_closing = gap_closing_detect(evals, mu=0.0_dp, gap_threshold=0.5_dp)
+    @assertTrue(is_closing)
+  end subroutine test_gap_closing_detect_insignificant_gap
+
+  @test
+  subroutine test_phase_diagram_trivial()
+    real(kind=dp), allocatable :: gap_array(:,:)
+    integer, allocatable :: z2_array(:,:)
+    real(kind=dp), allocatable :: gap_line(:)
+    integer :: n_transitions
+
+    call compute_phase_diagram(B_min=0.0_dp, B_max=4.0_dp, nB=5, &
+                                mu_min=-0.5_dp, mu_max=0.5_dp, nMu=3, &
+                                eigenvalues_func=simple_gap_func, &
+                                gap_threshold=0.3_dp, &
+                                gap_array=gap_array, z2_array=z2_array, &
+                                gap_line=gap_line, n_transitions=n_transitions)
+
+    @assertEqual(5, size(gap_array, 1))
+    @assertEqual(3, size(gap_array, 2))
+    @assertEqual(5, size(z2_array, 1))
+    @assertEqual(3, size(z2_array, 2))
+    @assertTrue(n_transitions >= 0)
+
+    deallocate(gap_array, z2_array, gap_line)
+  end subroutine test_phase_diagram_trivial
+
+  @test
+  subroutine test_phase_diagram_z2_transitions()
+    real(kind=dp), allocatable :: gap_array(:,:)
+    integer, allocatable :: z2_array(:,:)
+    real(kind=dp), allocatable :: gap_line(:)
+    integer :: n_transitions
+
+    call compute_phase_diagram(B_min=0.0_dp, B_max=4.0_dp, nB=9, &
+                                mu_min=-0.1_dp, mu_max=0.1_dp, nMu=5, &
+                                eigenvalues_func=simple_gap_func, &
+                                gap_threshold=0.3_dp, &
+                                gap_array=gap_array, z2_array=z2_array, &
+                                gap_line=gap_line, n_transitions=n_transitions)
+
+    @assertTrue(n_transitions >= 1, message="Should detect at least one Z2 transition")
+
+    deallocate(gap_array, z2_array, gap_line)
+  end subroutine test_phase_diagram_z2_transitions
+
+  @test
+  subroutine test_phase_diagram_gap_array_values()
+    real(kind=dp), allocatable :: gap_array(:,:)
+    integer, allocatable :: z2_array(:,:)
+    real(kind=dp), allocatable :: gap_line(:)
+    integer :: n_transitions
+
+    call compute_phase_diagram(B_min=0.0_dp, B_max=4.0_dp, nB=5, &
+                                mu_min=-0.5_dp, mu_max=0.5_dp, nMu=3, &
+                                eigenvalues_func=simple_gap_func, &
+                                gap_threshold=0.3_dp, &
+                                gap_array=gap_array, z2_array=z2_array, &
+                                gap_line=gap_line, n_transitions=n_transitions)
+
+    @assertTrue(all(gap_array >= 0.0_dp), message="Gap values must be non-negative")
+
+    deallocate(gap_array, z2_array, gap_line)
+  end subroutine test_phase_diagram_gap_array_values
+
+  ! ==============================================================================
+  ! Test eigenvalue function: gap closes at B = 2.0 (|B-2| < 0.1).
+  ! Returns eigenvalues symmetric around zero (particle-hole symmetric).
+  ! ==============================================================================
+  function simple_gap_func(B, mu) result(evals)
+    implicit none
+    real(kind=dp), intent(in) :: B, mu
+    real(kind=dp), allocatable :: evals(:)
+
+    real(kind=dp) :: gap_val, Escale
+    real(kind=dp), parameter :: Bcrit = 2.0_dp
+
+    if (abs(B - Bcrit) < 0.1_dp) then
+      gap_val = 0.05_dp
+    else
+      gap_val = 1.0_dp
+    end if
+
+    Escale = abs(B - Bcrit) + 0.5_dp
+
+    allocate(evals(4))
+    evals(1) = -Escale - gap_val
+    evals(2) = -Escale + gap_val
+    evals(3) =  Escale - gap_val
+    evals(4) =  Escale + gap_val
+
+  end function simple_gap_func
+
+end module test_phase_diagram

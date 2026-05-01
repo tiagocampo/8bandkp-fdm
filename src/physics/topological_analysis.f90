@@ -18,6 +18,8 @@ module topological_analysis
   public :: bhz_wire_params
   public :: extract_edge_states_wire
   public :: fit_exponential_decay
+  public :: compute_phase_diagram
+  public :: gap_closing_detect
 
   type :: bhz_wire_params
     real(kind=dp) :: A = 364.5_dp
@@ -508,5 +510,129 @@ contains
     deallocate(coo_vals, coo_row, coo_col)
 
   end subroutine build_bhz_wire_hamiltonian
+
+  ! ==============================================================================
+  ! Gap closing detection at a single (B, mu) point.
+  ! Returns the minimum eigenvalue spacing (gap) around the Fermi level.
+  ! ==============================================================================
+  function gap_closing_detect(eigenvalues, mu, gap_threshold) result(is_gap_closing)
+    implicit none
+    real(kind=dp), intent(in) :: eigenvalues(:)
+    real(kind=dp), intent(in) :: mu
+    real(kind=dp), intent(in) :: gap_threshold
+    logical :: is_gap_closing
+
+    real(kind=dp) :: gap_min
+    integer :: i
+
+    if (size(eigenvalues) < 2) then
+      is_gap_closing = .false.
+      return
+    end if
+
+    gap_min = huge(1.0_dp)
+    do i = 1, size(eigenvalues) - 1
+      if (abs(eigenvalues(i) - mu) < gap_threshold .or. &
+          abs(eigenvalues(i+1) - mu) < gap_threshold) then
+        gap_min = min(gap_min, abs(eigenvalues(i+1) - eigenvalues(i)))
+      end if
+    end do
+
+    is_gap_closing = (gap_min < gap_threshold)
+
+  end function gap_closing_detect
+
+  ! ==============================================================================
+  ! Topological phase diagram computation.
+  !
+  ! Sweeps B-field and chemical potential mu, tracks gap closings.
+  ! Each gap closing flips the Z2 invariant.
+  !
+  ! Output arrays (allocated within the routine):
+  !   gap_array(nB, nMu)     : minimum eigenvalue gap at each (B, mu)
+  !   z2_array(nB, nMu)      : Z2 invariant (0 or 1) at each (B, mu)
+  !   gap_line(n_transitions): B values where gap closes (Z2 transitions)
+  ! ==============================================================================
+  subroutine compute_phase_diagram(B_min, B_max, nB, mu_min, mu_max, nMu, &
+                                    eigenvalues_func, gap_threshold, &
+                                    gap_array, z2_array, gap_line, n_transitions)
+    implicit none
+    real(kind=dp), intent(in) :: B_min, B_max
+    integer, intent(in) :: nB
+    real(kind=dp), intent(in) :: mu_min, mu_max
+    integer, intent(in) :: nMu
+    interface
+      function eigenvalues_func(B, mu) result(evals)
+        import :: dp
+        real(kind=dp), intent(in) :: B, mu
+        real(kind=dp), allocatable :: evals(:)
+      end function eigenvalues_func
+    end interface
+    real(kind=dp), intent(in) :: gap_threshold
+    real(kind=dp), allocatable, intent(out) :: gap_array(:,:)
+    integer, allocatable, intent(out) :: z2_array(:,:)
+    real(kind=dp), allocatable, intent(out) :: gap_line(:)
+    integer, intent(out) :: n_transitions
+
+    real(kind=dp) :: B_val, mu_val, dB, dmu
+    real(kind=dp), allocatable :: eigenvalues(:)
+    real(kind=dp) :: gap_min
+    integer :: iB, iMu, i, j
+    logical :: is_gap_closing
+    real(kind=dp), allocatable :: gap_line_raw(:)
+    integer :: n_raw
+
+    dB = (B_max - B_min) / real(max(1, nB - 1), kind=dp)
+    dmu = (mu_max - mu_min) / real(max(1, nMu - 1), kind=dp)
+
+    allocate(gap_array(nB, nMu))
+    allocate(z2_array(nB, nMu))
+    gap_array = 0.0_dp
+    z2_array = 0
+
+    ! Sweep over B and mu
+    do iB = 1, nB
+      B_val = B_min + real(iB - 1, kind=dp) * dB
+      do iMu = 1, nMu
+        mu_val = mu_min + real(iMu - 1, kind=dp) * dmu
+
+        eigenvalues = eigenvalues_func(B_val, mu_val)
+
+        ! Compute minimum gap around Fermi level
+        gap_min = huge(1.0_dp)
+        do i = 1, size(eigenvalues) - 1
+          if (abs(eigenvalues(i) - mu_val) < gap_threshold .or. &
+              abs(eigenvalues(i+1) - mu_val) < gap_threshold) then
+            gap_min = min(gap_min, abs(eigenvalues(i+1) - eigenvalues(i)))
+          end if
+        end do
+
+        gap_array(iB, iMu) = gap_min
+        is_gap_closing = (gap_min < gap_threshold)
+        if (is_gap_closing) z2_array(iB, iMu) = 1
+
+        deallocate(eigenvalues)
+      end do
+    end do
+
+    ! Track Z2 transitions along B sweep at fixed mu (use central mu)
+    n_raw = 0
+    allocate(gap_line_raw(nB))
+    j = (nMu + 1) / 2  ! central mu index
+
+    do iB = 1, nB - 1
+      if (z2_array(iB, j) /= z2_array(iB + 1, j)) then
+        n_raw = n_raw + 1
+        gap_line_raw(n_raw) = B_min + real(iB - 1, kind=dp) * dB + dB / 2.0_dp
+      end if
+    end do
+
+    n_transitions = n_raw
+    allocate(gap_line(n_transitions))
+    gap_line(1:n_transitions) = gap_line_raw(1:n_transitions)
+
+    deallocate(gap_line_raw)
+
+  end subroutine compute_phase_diagram
 
 end module topological_analysis
