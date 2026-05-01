@@ -23,6 +23,7 @@ set(COMMON_SOURCES
     physics/scattering.f90
     physics/spin_projection.f90
     physics/magnetic_field.f90
+    physics/topological_analysis.f90
 )
 
 # Create library of common code
@@ -75,6 +76,7 @@ set_source_files_properties(
     physics/scattering.f90
     physics/spin_projection.f90
     physics/magnetic_field.f90
+    physics/topological_analysis.f90
     apps/main.f90
     apps/main_gfactor.f90
     apps/main_optics.f90

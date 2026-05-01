@@ -1,0 +1,29 @@
+module test_chern_number
+  use funit
+  use definitions
+  use topological_analysis
+  implicit none
+contains
+
+  @test
+  subroutine test_qwz_chern_trivial()
+    integer :: C
+    C = compute_chern_qwz(u=2.5_dp, nk=50)
+    @assertEqual(0, C)
+  end subroutine test_qwz_chern_trivial
+
+  @test
+  subroutine test_qwz_chern_plus_one()
+    integer :: C
+    C = compute_chern_qwz(u=-0.8_dp, nk=50)
+    @assertEqual(1, C)
+  end subroutine test_qwz_chern_plus_one
+
+  @test
+  subroutine test_qwz_chern_minus_one()
+    integer :: C
+    C = compute_chern_qwz(u=0.5_dp, nk=50)
+    @assertEqual(-1, C)
+  end subroutine test_qwz_chern_minus_one
+
+end module test_chern_number
