@@ -101,8 +101,8 @@ program topologicalAnalysis
           integer, parameter :: nk_default = 20
 
           print *, '--- Computing Chern number (QWZ model) ---'
-          ! Use default or configured nk grid for Berry curvature integration
-          chern = compute_chern_qwz(0.0_dp, nk_default)
+          ! Use configured u parameter for QWZ mass term
+          chern = compute_chern_qwz(cfg%topo%qwz_u, nk_default)
           sigma_xy = compute_hall_conductance(chern)
 
           topo_result%chern_number = chern

@@ -51,33 +51,56 @@ contains
 
     integer :: status
     character(len=512) :: line
-    character(len=255) :: label_read
-    logical :: value_read
+    character(len=255) :: label_part, value_str
+    integer :: colon_pos
 
     found = .false.
     call read_next_data_line(data_unit, line, status)
     if (status /= 0) return
 
-    read(line, *, iostat=status) label_read
-    if (status /= 0) then
+    ! Extract label (before colon) and value (after colon)
+    colon_pos = index(line, ':')
+    if (colon_pos <= 0) then
+      ! No colon found - backspace and return
       backspace(data_unit)
       return
     end if
 
-    if (trim(to_lower_ascii(label_read)) /= trim(to_lower_ascii(expected_label))) then
+    label_part = adjustl(line(:colon_pos-1))
+    if (trim(to_lower_ascii(label_part)) /= trim(to_lower_ascii(expected_label))) then
+      ! Label doesn't match - backspace and return
       backspace(data_unit)
       return
     end if
 
-    read(line, *, iostat=status) label_read, value_read
-    if (status /= 0) then
+    ! Extract value after colon
+    value_str = adjustl(line(colon_pos+1:))
+
+    ! Check .true. or .false. first (with dots)
+    if (index(value_str, '.true.') > 0 .or. index(value_str, '.TRUE.') > 0 .or. &
+        index(value_str, '.True.') > 0) then
+      value = .true.
+      found = .true.
+      label = trim(label_part) // ':'
+    else if (index(value_str, '.false.') > 0 .or. index(value_str, '.FALSE.') > 0 .or. &
+             index(value_str, '.False.') > 0) then
+      value = .false.
+      found = .true.
+      label = trim(label_part) // ':'
+    ! Then check single letter T/F without dots
+    else if (value_str(1:1) == 'T' .or. value_str(1:1) == 't') then
+      value = .true.
+      found = .true.
+      label = trim(label_part) // ':'
+    else if (value_str(1:1) == 'F' .or. value_str(1:1) == 'f') then
+      value = .false.
+      found = .true.
+      label = trim(label_part) // ':'
+    else
+      ! Value not recognized - backspace and return
       backspace(data_unit)
       return
     end if
-
-    label = label_read
-    value = value_read
-    found = .true.
   end subroutine read_optional_logical_flag
 
   subroutine read_optional_real_flag(data_unit, expected_label, value, found, label)
@@ -713,6 +736,10 @@ contains
         read(data_unit, *, iostat=status) label, cfg%topo%compute_hall
         if (status /= 0) then; status = 0; exit topology_block; end if
         print *, trim(label), cfg%topo%compute_hall
+
+        read(data_unit, *, iostat=status) label, cfg%topo%qwz_u
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%qwz_u
 
         read(data_unit, *, iostat=status) label, cfg%topo%compute_z2
         if (status /= 0) then; status = 0; exit topology_block; end if

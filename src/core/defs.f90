@@ -291,6 +291,7 @@ module definitions
     ! Chern / Berry curvature
     logical          :: compute_chern = .false.
     logical          :: compute_hall = .false.   ! output sigma_xy = C*e^2/h
+    real(kind=dp)    :: qwz_u = 0.0_dp           ! QWZ mass parameter u
     ! Z2 invariant
     logical          :: compute_z2 = .false.
     character(len=20) :: z2_method = 'auto'  ! auto | gap | fukane

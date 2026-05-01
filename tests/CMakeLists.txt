@@ -489,3 +489,48 @@ set_tests_properties(
     regression_topology_qhe
     PROPERTIES LABELS "regression"
 )
+
+# QWZ Chern number regression (three u values: -0.8, 0.5, 2.5)
+add_test(
+    NAME regression_topology_qwz_chern
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_chern_qwz.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_qwz_chern_u-0.8.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_qwz_chern_u0.5.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_qwz_chern_u2.5.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_qwz_chern
+    PROPERTIES LABELS "regression"
+)
+
+# BHZ Z2 invariant regression (trivial d=58A and topological d=70A)
+add_test(
+    NAME regression_topology_bhz_z2
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_bhz_z2.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_bhz_z2_trivial.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_bhz_z2_topological.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_bhz_z2
+    PROPERTIES LABELS "regression"
+)
+
+# Rashba wire phase boundary regression (mu=0.5 meV, Delta=0.3 meV)
+add_test(
+    NAME regression_topology_rashba_phase
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_rashba_phase_boundary.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_rashba_phase.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_rashba_phase
+    PROPERTIES LABELS "regression"
+)
