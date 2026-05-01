@@ -1,0 +1,135 @@
+module test_green_functions
+  use funit
+  use definitions
+  use sparse_matrices
+  use green_functions
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! Helper: build a 2x2 diagonal CSR matrix for simple testing.
+  ! ==================================================================
+  subroutine build_diagonal_csr_2x2(d1, d2, mat)
+    real(kind=dp), intent(in) :: d1, d2
+    type(csr_matrix), intent(out) :: mat
+    integer, allocatable :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    allocate(rows(2), cols(2), vals(2))
+    rows(1) = 1; cols(1) = 1; vals(1) = cmplx(d1, 0.0_dp, kind=dp)
+    rows(2) = 2; cols(2) = 2; vals(2) = cmplx(d2, 0.0_dp, kind=dp)
+    call csr_build_from_coo(mat, 2, 2, 2, rows, cols, vals)
+    deallocate(rows, cols, vals)
+  end subroutine build_diagonal_csr_2x2
+
+  ! ==================================================================
+  ! Test 1: LDOS is non-negative for a simple 2x2 diagonal Hamiltonian.
+  !
+  ! H = diag(E1, E2), G = diag(1/(E+i*eta - E1), 1/(E+i*eta - E2))
+  ! LDOS(r) = -(1/pi) * Im[G(r,r)]
+  !         = (1/pi) * eta / ((E - Er)^2 + eta^2)   (Lorentzian)
+  ! This is always >= 0.
+  ! ==================================================================
+  @test
+  subroutine test_ldos_non_negative()
+    type(csr_matrix) :: H
+    real(kind=dp) :: ldos(2)
+    real(kind=dp) :: E, eta
+    integer :: r
+
+    ! H with eigenvalues at 0.5 eV and 1.5 eV
+    call build_diagonal_csr_2x2(0.5_dp, 1.5_dp, H)
+
+    E = 1.0_dp    ! energy in the middle
+    eta = 0.01_dp ! broadening
+
+    call compute_ldos_csr(H, E, eta, ldos)
+
+    ! LDOS must be non-negative at all grid points
+    do r = 1, 2
+      @assertTrue(ldos(r) >= 0.0_dp)
+    end do
+
+    call H%free()
+  end subroutine test_ldos_non_negative
+
+  ! ==================================================================
+  ! Test 2: LDOS peaks near eigenenergies (2x2 case).
+  !
+  ! At E = 0.5 eV (first eigenenergy), LDOS should peak at r=1.
+  ! At E = 1.5 eV (second eigenenergy), LDOS should peak at r=2.
+  ! The Lorentzian formula gives: peak value = 1/eta/pi = ~31.83 for eta=0.01
+  ! ==================================================================
+  @test
+  subroutine test_ldos_peak_at_eigenenergy()
+    type(csr_matrix) :: H
+    real(kind=dp) :: ldos_at_05(2), ldos_at_15(2)
+    real(kind=dp) :: E, eta
+
+    call build_diagonal_csr_2x2(0.5_dp, 1.5_dp, H)
+
+    eta = 0.01_dp
+
+    ! Energy at first eigenenergy (0.5 eV)
+    E = 0.5_dp
+    call compute_ldos_csr(H, E, eta, ldos_at_05)
+
+    ! Energy at second eigenenergy (1.5 eV)
+    E = 1.5_dp
+    call compute_ldos_csr(H, E, eta, ldos_at_15)
+
+    ! At r=1 (eigenenergy 0.5 eV), LDOS should be larger when E=0.5
+    ! than when E=1.5
+    @assertTrue(ldos_at_05(1) > ldos_at_15(1))
+
+    ! At r=2 (eigenenergy 1.5 eV), LDOS should be larger when E=1.5
+    @assertTrue(ldos_at_15(2) > ldos_at_05(2))
+
+    call H%free()
+  end subroutine test_ldos_peak_at_eigenenergy
+
+  ! ==================================================================
+  ! Test 3: LDOS for a tridiagonal matrix (more realistic case).
+  ! ==================================================================
+  @test
+  subroutine test_ldos_tridiagonal()
+    type(csr_matrix) :: H
+    real(kind=dp) :: ldos(4)
+    real(kind=dp) :: E, eta
+    integer :: r
+    integer, allocatable :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    ! 4x4 tridiagonal: diagonal = 0, off-diagonal = -1
+    ! This is a 1D tight-binding chain with eigenvalues in [-2, 2]
+    allocate(rows(10), cols(10), vals(10))
+    rows(1) = 1; cols(1) = 1; vals(1) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    rows(2) = 1; cols(2) = 2; vals(2) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(3) = 2; cols(3) = 1; vals(3) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(4) = 2; cols(4) = 2; vals(4) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    rows(5) = 2; cols(5) = 3; vals(5) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(6) = 3; cols(6) = 2; vals(6) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(7) = 3; cols(7) = 3; vals(7) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    rows(8) = 3; cols(8) = 4; vals(8) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(9) = 4; cols(9) = 3; vals(9) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(10) = 4; cols(10) = 4; vals(10) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call csr_build_from_coo(H, 4, 4, 10, rows, cols, vals)
+    deallocate(rows, cols, vals)
+
+    E = 0.0_dp   ! center of band
+    eta = 0.05_dp
+
+    call compute_ldos_csr(H, E, eta, ldos)
+
+    ! All LDOS values should be non-negative
+    do r = 1, 4
+      @assertTrue(ldos(r) >= 0.0_dp)
+    end do
+
+    ! At band center, LDOS should be roughly similar across sites
+    ! (no edge localization at E=0 for this symmetric chain)
+    call H%free()
+  end subroutine test_ldos_tridiagonal
+
+end module test_green_functions

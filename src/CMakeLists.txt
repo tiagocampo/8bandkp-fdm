@@ -25,6 +25,7 @@ set(COMMON_SOURCES
     physics/magnetic_field.f90
     physics/topological_analysis.f90
     physics/bdg_hamiltonian.f90
+    physics/green_functions.f90
 )
 
 # Create library of common code
@@ -79,6 +80,7 @@ set_source_files_properties(
     physics/magnetic_field.f90
     physics/topological_analysis.f90
     physics/bdg_hamiltonian.f90
+    physics/green_functions.f90
     apps/main.f90
     apps/main_gfactor.f90
     apps/main_optics.f90
