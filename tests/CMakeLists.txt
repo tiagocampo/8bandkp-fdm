@@ -475,3 +475,17 @@ set_tests_properties(
     regression_wire_dense_sparse_consistency
     PROPERTIES LABELS "regression"
 )
+
+# Topological analysis QHE (Chern number via QWZ model)
+add_test(
+    NAME regression_topology_qhe
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_qhe.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_qhe_qwz.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_qhe
+    PROPERTIES LABELS "regression"
+)

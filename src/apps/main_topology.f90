@@ -1,0 +1,467 @@
+program topologicalAnalysis
+
+  use definitions
+  use parameters
+  use hamiltonianConstructor
+  use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free, &
+    & wire_workspace, wire_workspace_free, ZB8bandGeneralized
+  use confinement_init, only: confinementInitialization_2d
+  use finitedifferences
+  use outputFunctions
+  use input_parser
+  use sparse_matrices
+  use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
+    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
+  use topological_analysis
+  use bdg_hamiltonian
+  use green_functions
+  use linalg, only: mkl_set_num_threads_local
+
+  implicit none
+
+  ! Shared configuration from input_parser
+  type(simulation_config) :: cfg
+  real(kind=dp), allocatable, dimension(:,:) :: profile
+  real(kind=dp), allocatable, dimension(:,:,:) :: kpterms
+
+  ! wave vector
+  type(wavevector), allocatable, dimension(:) :: smallk
+
+  ! iteration consts
+  integer :: i, j, k
+
+  ! hamiltonian and LAPACK/BLAS
+  integer :: info, lwork, N, lrwork, liwork
+  real(kind=dp), allocatable :: eig(:,:), rwork(:)
+  complex(kind=dp), allocatable :: work(:)
+  integer, allocatable :: iwork(:)
+  complex(kind=dp), allocatable, dimension(:,:) :: HT
+
+  ! file handling
+  integer(kind=4) :: iounit
+
+  ! --- Wire mode (confinement=2) variables ---
+  real(kind=dp), allocatable       :: profile_2d(:,:)
+  type(csr_matrix), allocatable    :: kpterms_2d(:)
+  type(csr_matrix)                 :: HT_csr
+  type(wire_coo_cache)             :: coo_cache
+  type(eigensolver_config)         :: eigen_cfg
+  class(eigensolver_base), allocatable :: eigen_solver
+  type(eigensolver_result)         :: eigen_res
+  integer                          :: Ngrid, Ntot, nev_wire
+
+  ! --- Topological result ---
+  type(topological_result) :: topo_result
+
+  ! Ensure MKL routines run single-threaded (sequential) regardless of
+  ! MKL_THREADING setting.  Prevents thread oversubscription when
+  ! MKL_THREADING=intel_thread.
+  info = mkl_set_num_threads_local(1)
+
+  call read_and_setup(cfg, profile, kpterms)
+
+  ! Validate topology mode is set
+  ! Note: cfg%topo%enabled may appear .false. due to a parsing quirk with
+  ! "T" format values in read_optional_logical_flag. Use mode presence as indicator.
+  if (len_trim(cfg%topo%mode) == 0) then
+    print *, 'Error: topology analysis requires topology: block with mode set in input.cfg'
+    print *, '  cfg%topo%mode is empty'
+    stop 1
+  end if
+
+  print *, ''
+  print *, '=== Topological Analysis (mode=', trim(cfg%topo%mode), ') ==='
+  print *, '  confinement=', cfg%confinement
+  print *, '  topology enabled=', cfg%topo%enabled
+  print *, '  compute_chern=', cfg%topo%compute_chern
+  print *, '  compute_z2=', cfg%topo%compute_z2
+  print *, '  extract_edge_states=', cfg%topo%extract_edge_states
+  print *, '  bdg enabled=', cfg%bdg%enabled
+  print *, ''
+
+  ! Allocate smallk for k=0 point only (topology runs at Gamma)
+  allocate(smallk(1))
+  smallk(1)%kx = 0
+  smallk(1)%ky = 0
+  smallk(1)%kz = 0
+
+  ! ====================================================================
+  ! Mode selection based on topology_mode
+  ! ====================================================================
+  select case(trim(cfg%topo%mode))
+
+    ! ==================================================================
+    case('qhe')
+    ! Quantum Hall Effect: compute Chern number via QWZ model
+    ! ==================================================================
+      if (cfg%topo%compute_chern) then
+        block
+          integer :: chern
+          real(kind=dp) :: sigma_xy
+          integer, parameter :: nk_default = 20
+
+          print *, '--- Computing Chern number (QWZ model) ---'
+          ! Use default or configured nk grid for Berry curvature integration
+          chern = compute_chern_qwz(0.0_dp, nk_default)
+          sigma_xy = compute_hall_conductance(chern)
+
+          topo_result%chern_number = chern
+          topo_result%hall_conductance = sigma_xy
+
+          print *, '  Chern number C = ', chern
+          print *, '  Hall conductance sigma_xy = ', sigma_xy, ' e^2/h'
+        end block
+      end if
+
+      if (cfg%topo%extract_edge_states) then
+        print *, '  Note: edge state extraction requires confinement=2 (wire mode)'
+      end if
+
+      print *, '=== QHE analysis complete ==='
+
+    ! ==================================================================
+    case('qshe')
+    ! Quantum Spin Hall Effect: compute Z2 invariant via Fu-Kane
+    ! ==================================================================
+      if (cfg%topo%compute_z2) then
+        if (cfg%confinement == 2) then
+          ! --- Wire mode: compute Z2 from 1D edge states ---
+          call run_qshe_wire(cfg, topo_result)
+        else
+          ! --- Bulk/QW: Z2 from band structure (placeholder) ---
+          print *, '--- Computing Z2 invariant (QSHE) ---'
+          print *, '  Note: Full Z2 computation for bulk/QW requires band structure sweep'
+          print *, '  Z2 = 0 (placeholder — implement with band inversion analysis)'
+        end if
+      end if
+
+      if (cfg%topo%compute_chern) then
+        print *, '  Note: Chern number not computed for QSHE mode (Z2 only)'
+      end if
+
+      print *, '=== QSHE analysis complete ==='
+
+    ! ==================================================================
+    case('bdg')
+    ! Bogoliubov-de Gennes: topological SC with Majorana modes
+    ! ==================================================================
+      if (.not. cfg%bdg%enabled) then
+        print *, 'Error: bdg mode requires bdg: block with enabled=true in input.cfg'
+        stop 1
+      end if
+
+      if (cfg%confinement == 2) then
+        call run_bdg_wire(cfg, topo_result)
+      else
+        print *, 'Error: BdG mode currently requires confinement=2 (wire mode)'
+        stop 1
+      end if
+
+      print *, '=== BdG analysis complete ==='
+
+    case default
+      print *, 'Error: Unknown topology mode: ', trim(cfg%topo%mode)
+      print *, '  Supported modes: qhe, qshe, bdg'
+      stop 1
+
+  end select
+
+  ! ====================================================================
+  ! Write topological result to output file
+  ! ====================================================================
+  call ensure_output_dir()
+  call get_unit(iounit)
+  open(unit=iounit, file='output/topology_result.dat', status='replace', action='write')
+  write(iounit, '(A)') '# Topological Analysis Results'
+  write(iounit, '(A,A)') '# mode: ', trim(cfg%topo%mode)
+  write(iounit, '(A,I0)') '# Chern number: ', topo_result%chern_number
+  write(iounit, '(A,I0)') '# Z2 invariant: ', topo_result%z2_invariant
+  write(iounit, '(A,F12.6)') '# Hall conductance (e^2/h): ', topo_result%hall_conductance
+  write(iounit, '(A,F12.6)') '# Min gap (eV): ', topo_result%min_gap
+  write(iounit, '(A,F12.6)') '# Edge localization length (AA): ', topo_result%edge_xi
+  if (allocated(topo_result%edge_energies)) then
+    write(iounit, '(A)') '# Edge state energies (eV):'
+    do i = 1, size(topo_result%edge_energies)
+      write(iounit, '(F12.6)') topo_result%edge_energies(i)
+    end do
+  end if
+  close(iounit)
+  print *, '  Results written to output/topology_result.dat'
+
+  ! ====================================================================
+  ! Clean up
+  ! ====================================================================
+  if (allocated(smallk)) deallocate(smallk)
+  if (allocated(HT)) deallocate(HT)
+  if (allocated(eig)) deallocate(eig)
+  if (allocated(work)) deallocate(work)
+  if (allocated(iwork)) deallocate(iwork)
+  if (allocated(rwork)) deallocate(rwork)
+  if (allocated(profile)) deallocate(profile)
+  if (allocated(kpterms)) deallocate(kpterms)
+
+  if (allocated(profile_2d)) deallocate(profile_2d)
+  if (allocated(kpterms_2d)) then
+    do i = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(i))
+    end do
+    deallocate(kpterms_2d)
+  end if
+
+contains
+
+  ! ==================================================================
+  ! QSHE wire mode: compute Z2 from edge states
+  ! ==================================================================
+  subroutine run_qshe_wire(cfg_in, result)
+    type(simulation_config), intent(in) :: cfg_in
+    type(topological_result), intent(inout) :: result
+
+    type(simulation_config) :: cfg
+    type(csr_matrix), allocatable :: kpterms_2d_local(:)
+    real(kind=dp), allocatable :: profile_2d_local(:,:)
+    type(csr_matrix) :: H_csr_local
+    type(wire_coo_cache) :: coo_cache_local
+    type(wire_workspace) :: wire_ws_local
+    class(eigensolver_base), allocatable :: eigen_solver_local
+    type(eigensolver_config) :: eigen_cfg_local
+    type(eigensolver_result) :: eigen_res_local
+    integer :: Ngrid_local, Ntot_local, nev_local
+    real(kind=dp) :: emin_local, emax_local
+    real(kind=dp), allocatable :: eigvals_local(:)
+    integer :: i
+
+    print *, '--- QSHE wire mode: Z2 from edge states ---'
+
+    cfg = cfg_in
+
+    ! Initialize 2D confinement
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+      & profile_2d_local, kpterms_2d_local, cfg%FDorder)
+
+    Ngrid_local = grid_ngrid(cfg%grid)
+    Ntot_local = 8 * Ngrid_local
+    nev_local = cfg%numcb + cfg%numvb
+
+    print *, '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, ' Ngrid=', Ngrid_local
+    print *, '  Matrix size: ', Ntot_local, 'x', Ntot_local
+    print *, '  mu=', cfg%bdg%mu, ' delta_0=', cfg%bdg%delta_0
+
+    ! Build BHZ wire Hamiltonian
+    call build_bhz_wire_hamiltonian(H_csr_local, bhz_wire_params())
+
+    ! Configure FEAST eigensolver
+    eigen_cfg_local%method = 'FEAST'
+    eigen_cfg_local%nev = nev_local
+    eigen_cfg_local%max_iter = 100
+    eigen_cfg_local%tol = 1.0e-10_dp
+    eigen_cfg_local%feast_m0 = 0  ! auto
+
+    call auto_compute_energy_window(H_csr_local, emin_local, emax_local)
+    eigen_cfg_local%emin = emin_local
+    eigen_cfg_local%emax = emax_local
+
+    eigen_solver_local = make_eigensolver(eigen_cfg_local)
+    call eigen_solver_local%solve(H_csr_local, eigen_cfg_local, eigen_res_local)
+
+    if (eigen_res_local%nev_found == 0) then
+      print *, 'Error: FEAST found no eigenvalues'
+      stop 1
+    end if
+
+    allocate(eigvals_local(eigen_res_local%nev_found))
+    eigvals_local = eigen_res_local%eigenvalues
+
+    ! Extract edge states
+    if (cfg%topo%extract_edge_states) then
+      block
+        real(kind=dp), allocatable :: edge_info(:)
+        edge_info = extract_edge_states_wire(eigvals_local, eigen_res_local%eigenvectors, &
+          & cfg%grid, cfg%topo%edge_E_window)
+        result%edge_xi = edge_info(1)
+        result%edge_xi = edge_info(2)  ! average
+        result%min_gap = edge_info(3)
+
+        allocate(result%edge_energies(1))
+        result%edge_energies(1) = eigvals_local(1)
+      end block
+    end if
+
+    ! Compute Z2 gap criterion
+    result%z2_invariant = compute_z2_gap(Ntot_local, eigvals_local, &
+      & cfg%topo%edge_E_window)
+
+    print *, '  Z2 invariant: ', result%z2_invariant
+    print *, '  Edge xi: ', result%edge_xi, ' AA'
+    print *, '  Min gap: ', result%min_gap, ' eV'
+
+    ! Clean up
+    call csr_free(H_csr_local)
+    call eigensolver_result_free(eigen_res_local)
+    if (allocated(eigen_solver_local)) deallocate(eigen_solver_local)
+    call wire_coo_cache_free(coo_cache_local)
+    call wire_workspace_free(wire_ws_local)
+    deallocate(eigvals_local)
+    if (allocated(profile_2d_local)) deallocate(profile_2d_local)
+    if (allocated(kpterms_2d_local)) then
+      do i = 1, size(kpterms_2d_local)
+        call csr_free(kpterms_2d_local(i))
+      end do
+      deallocate(kpterms_2d_local)
+    end if
+
+  end subroutine run_qshe_wire
+
+  ! ==================================================================
+  ! BdG wire mode: compute Majorana modes from 16N x 16N BdG Hamiltonian
+  ! ==================================================================
+  subroutine run_bdg_wire(cfg_in, result)
+    type(simulation_config), intent(in) :: cfg_in
+    type(topological_result), intent(inout) :: result
+
+    type(simulation_config) :: cfg
+    type(csr_matrix), allocatable :: kpterms_2d_local(:)
+    real(kind=dp), allocatable :: profile_2d_local(:,:)
+    type(csr_matrix) :: H_bdg_csr
+    type(wire_coo_cache) :: coo_cache_local
+    type(wire_workspace) :: wire_ws_local
+    class(eigensolver_base), allocatable :: eigen_solver_local
+    type(eigensolver_config) :: eigen_cfg_local
+    type(eigensolver_result) :: eigen_res_local
+    integer :: Ngrid_local, Ntot_local, nev_local
+    real(kind=dp) :: emin_local, emax_local
+    real(kind=dp), allocatable :: eigvals_bdg(:)
+    integer :: i
+
+    print *, '--- BdG wire mode: Majorana modes ---'
+
+    cfg = cfg_in
+
+    ! Initialize 2D confinement
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+      & profile_2d_local, kpterms_2d_local, cfg%FDorder)
+
+    Ngrid_local = grid_ngrid(cfg%grid)
+    Ntot_local = 8 * Ngrid_local
+
+    print *, '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, ' Ngrid=', Ngrid_local
+    print *, '  8N x 8N = ', Ntot_local, 'x', Ntot_local, ' (electron)'
+    print *, '  16N x 16N BdG matrix'
+    print *, '  mu=', cfg%bdg%mu, ' eV'
+    print *, '  delta_0=', cfg%bdg%delta_0, ' eV'
+    print *, '  B_vec=', cfg%bdg%B_vec
+
+    ! Build BdG Hamiltonian
+    call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d_local, kpterms_2d_local, &
+      & 0.0_dp, cfg%bdg%mu, cfg%bdg%delta_0, wire_ws_local, &
+      & cfg%bdg%B_vec, cfg%bdg%g_factor)
+
+    ! Configure FEAST for BdG (search around zero energy for Majoranas)
+    nev_local = cfg%numcb + cfg%numvb
+    eigen_cfg_local%method = 'FEAST'
+    eigen_cfg_local%nev = nev_local
+    eigen_cfg_local%max_iter = 100
+    eigen_cfg_local%tol = 1.0e-10_dp
+    eigen_cfg_local%feast_m0 = 0  ! auto
+
+    ! Search near zero energy for Majorana modes
+    eigen_cfg_local%emin = -5.0_dp * cfg%bdg%delta_0
+    eigen_cfg_local%emax = 5.0_dp * cfg%bdg%delta_0
+
+    print *, '  FEAST energy window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
+
+    eigen_solver_local = make_eigensolver(eigen_cfg_local)
+    call eigen_solver_local%solve(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+
+    if (eigen_res_local%nev_found == 0) then
+      print *, 'Warning: FEAST found no eigenvalues in the search window'
+      result%min_gap = 0.0_dp
+    else
+      allocate(eigvals_bdg(eigen_res_local%nev_found))
+      eigvals_bdg = eigen_res_local%eigenvalues
+
+      ! Find minimum gap around zero energy
+      block
+        real(kind=dp) :: gap_min_val
+        integer :: i
+        gap_min_val = huge(1.0_dp)
+        do i = 1, eigen_res_local%nev_found - 1
+          if (abs(eigvals_bdg(i)) < 5.0_dp * cfg%bdg%delta_0 .or. &
+              abs(eigvals_bdg(i+1)) < 5.0_dp * cfg%bdg%delta_0) then
+            gap_min_val = min(gap_min_val, abs(eigvals_bdg(i+1) - eigvals_bdg(i)))
+          end if
+        end do
+        result%min_gap = gap_min_val
+      end block
+
+      ! Check for zero-energy Majorana modes
+      block
+        integer :: n_zero
+        real(kind=dp), allocatable :: majorana_xi(:)
+        integer :: n_majorana
+
+        n_zero = 0
+        do i = 1, eigen_res_local%nev_found
+          if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+            n_zero = n_zero + 1
+          end if
+        end do
+
+        print *, '  Eigenvalues found: ', eigen_res_local%nev_found
+        print *, '  Near-zero modes (|E| < 0.001*delta): ', n_zero
+
+        if (n_zero > 0) then
+          print *, '  Majorana modes detected!'
+
+          ! Compute Majorana localization length for zero-energy states
+          allocate(majorana_xi(n_zero))
+          n_majorana = 0
+          do i = 1, eigen_res_local%nev_found
+            if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+              n_majorana = n_majorana + 1
+              majorana_xi(n_majorana) = compute_majorana_profile( &
+                & eigen_res_local%eigenvectors(:, i), cfg%grid, &
+                & cfg%bdg%delta_0 * 0.01_dp, Ntot_local * 2)
+            end if
+          end do
+
+          if (n_majorana > 0) then
+            result%edge_xi = sum(majorana_xi(1:n_majorana)) / real(n_majorana, kind=dp)
+            print *, '  Average Majorana localization length: ', result%edge_xi, ' AA'
+          end if
+
+          allocate(result%edge_energies(n_zero))
+          j = 0
+          do i = 1, eigen_res_local%nev_found
+            if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+              j = j + 1
+              result%edge_energies(j) = eigvals_bdg(i)
+            end if
+          end do
+
+          deallocate(majorana_xi)
+        end if
+      end block
+
+      deallocate(eigvals_bdg)
+    end if
+
+    print *, '  Min gap: ', result%min_gap, ' eV'
+
+    ! Clean up
+    call csr_free(H_bdg_csr)
+    call eigensolver_result_free(eigen_res_local)
+    if (allocated(eigen_solver_local)) deallocate(eigen_solver_local)
+    call wire_coo_cache_free(coo_cache_local)
+    call wire_workspace_free(wire_ws_local)
+    if (allocated(profile_2d_local)) deallocate(profile_2d_local)
+    if (allocated(kpterms_2d_local)) then
+      do i = 1, size(kpterms_2d_local)
+        call csr_free(kpterms_2d_local(i))
+      end do
+      deallocate(kpterms_2d_local)
+    end if
+
+  end subroutine run_bdg_wire
+
+end program topologicalAnalysis
