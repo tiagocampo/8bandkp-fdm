@@ -23,7 +23,7 @@ make clean_all      # Also remove output files
 make test           # Configure with BUILD_TESTING=ON, build, run ctest
 ```
 
-**Executables** at `build/src/bandStructure`, `build/src/gfactorCalculation`, and `build/src/opticalProperties`.
+**Executables** at `build/src/bandStructure`, `build/src/gfactorCalculation`, `build/src/opticalProperties`, and `build/src/topologicalAnalysis`.
 
 **Prerequisites:** gfortran (version supporting F2018), Intel MKL (sequential, LP64 interface), FFTW3, CMake >= 3.15, Ninja (optional). Compiler enforced to `-std=f2018` via `CMAKE_Fortran_FLAGS`. MKL defaults: `MKL_INTERFACE=lp64`, `MKL_THREADING=sequential` (set in root `CMakeLists.txt`).
 
@@ -60,6 +60,7 @@ Regression tests use shell scripts + Python (`tests/regression/compare_output.py
 ./build/src/bandStructure       # Reads input.cfg, outputs to output/
 ./build/src/gfactorCalculation  # Reads input.cfg, outputs to output/ (requires k=0)
 ./build/src/opticalProperties   # Reads input.cfg with optics: block, outputs to output/
+./build/src/topologicalAnalysis # Reads input.cfg with topology: block, outputs to output/
 ```
 
 **Parallelism:** OpenMP distributes the QW k-point sweep across threads (`main.f90:691-723`). MKL runs sequential internally to avoid oversubscription. Control thread count with `OMP_NUM_THREADS`:
@@ -86,7 +87,7 @@ src/
   core/       defs.f90, parameters.f90, utils.f90
   math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90, linalg.f90, sparse_matrices.f90, eigensolver.f90, geometry.f90
   io/         outputFunctions.f90, input_parser.f90
-  physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90
+  physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90, magnetic_field.f90, topological_analysis.f90, bdg_hamiltonian.f90, green_functions.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90
 tests/
   unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_hamiltonian_2d, test_csr_spmv, test_eigensolver, test_poisson, test_charge_density, test_sc_loop, test_geometry, test_optical, test_optical_qw, test_strain_solver)
@@ -104,6 +105,7 @@ scripts/      gnuplot plotting scripts
 | `bandStructure` | `src/apps/main.f90` (`program kpfdm`) | Band structure vs. k-vector sweep |
 | `gfactorCalculation` | `src/apps/main_gfactor.f90` (`program gfactor`) | g-factor at Gamma point (k=0) |
 | `opticalProperties` | `src/apps/main_optics.f90` (`program opticalProperties`) | Optical spectra (absorption, gain, spontaneous emission, ISBT) for bulk/QW/wire |
+| `topologicalAnalysis` | `src/apps/main_topology.f90` (`program topologicalAnalysis`) | Topological invariants: Chern number, Z2, Majorana modes |
 
 ### Module dependency graph
 
@@ -137,6 +139,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
 - **Wire g-factor velocity operator**: commutator-based `build_velocity_matrices` computes $v_\alpha = -i [r_\alpha, H]$ element-wise on CSR. Generic interface dispatches to `_2d` (wire, 4 scalar CSR args) or `_1d` (QW, 3-element CSR array). For QW: z-velocity from commutator, in-plane from `ZB8bandQW(g='g')`. g='g3' still used for z-direction in wire. Old g='g1'/'g2' modes are dead code.
 - **Optical properties**: standalone `opticalProperties` executable computes absorption, gain, spontaneous emission, and ISBT spectra for bulk (8x8, spherical 3D k-integration), QW (dense, 2D cylindrical), and wire (CSR/FEAST, 1D kz-sweep). All use commutator-based velocity matrices via CSR SpMV + zdotc pattern. Unified accumulation framework in `optical_spectra.f90` shares velocity matrices across all quantities; only the occupation factor differs. Spin-resolved spectra via Clebsch-Gordan projection in `spin_projection.f90`.
 - **Foreman renormalization**: disabled by default (`renormalization = .False.` in defs.f90)
+- **Topological analysis**: standalone `topologicalAnalysis` executable supports QHE (Chern number via QWZ model), QSHE (Z2 invariant via BHZ wire or Fu-Kane), and BdG (Majorana modes in superconducting wire). Uses `topology:` and `bdg:` input blocks. Chern number via Fukui-Hatsugai-Suzuki algorithm; Z2 via gap criterion in 1D or parity method in 2D. BdG builds 16N x 16N Nambu-space Hamiltonian with s-wave pairing and Zeeman splitting. LDOS computed via complex PARDISO. Design doc: `docs/plans/2026-04-27-bdg-topological-superconductivity-design.md`
 - **W-variant materials** (GaAsW, InAsW, etc.): use Winkler's parameter set with InSb as EV reference. Non-W materials use Vurgaftman parameters. EC = EV + Eg convention for all materials with EV defined
 - **Self-consistent SP**: iterative Schrödinger-Poisson loop wraps the eigenvalue solve. Modifies `profile` array before Hamiltonian construction (same interface as `externalFieldSetup_electricField`). Linear mixing warm-up + DIIS/Pulay acceleration. Works for bulk (Fermi level finder) and QW (full SP). Per-layer doping (`doping_spec`), charge neutrality or fixed Fermi level, box-integration Poisson with variable dielectric. Design doc: `docs/plans/2026-03-29-self-consistent-sp-design.md`
 

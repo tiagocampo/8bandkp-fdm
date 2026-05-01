@@ -186,7 +186,54 @@ Optional. Triggered by reading a strain-enabled line after the SC block. Uses de
 
 ---
 
-## 12. Optical Spectra Parameters
+## 13. Topological Analysis Parameters
+
+Optional. Triggered by `topology: T`. All topology parameters use their defaults if missing or if the file ends early.
+
+| Name | Type | Default | Valid range | Modes | Description |
+|---|---|---|---|---|---|
+| `topology` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | all | Enable topological analysis. When enabled, the remaining topology parameters are read. |
+| `topology_mode` | string(20) | `qhe` | `qhe`, `qshe`, `bdg` | all | Topological mode: QHE (Chern number), QSHE (Z2 invariant), or BdG (Majorana modes). |
+| `compute_chern` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | all | Compute Chern number via Berry curvature integration. |
+| `compute_z2` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | all | Compute Z2 invariant (Fu-Kane for QW, gap criterion for wire). |
+| `qwz_u` | float | `0.0` | any (eV) | QHE | QWZ model mass parameter for Chern number computation. |
+| `extract_edge_states` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | W | Extract edge state energies and localization length. |
+| `edge_E_window` | float | `0.01` | > 0 (eV) | W | Energy window for edge state detection (eV). |
+| `compute_ldos` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | W | Compute local density of states via complex PARDISO. |
+| `ldos_eta` | float | `0.001` | > 0 (eV) | W | Lorentzian broadening for LDOS. |
+| `ldos_E_range` | 2 floats | `-0.1 0.1` | any (eV) | W | Energy range for LDOS computation. |
+| `ldos_num_E` | integer | `200` | >= 1 | W | Number of energy points for LDOS. |
+
+### Output files
+
+The topology module produces the following output files in `output/`:
+
+| File | Condition | Columns | Description |
+|---|---|---|---|
+| `topology_result.dat` | `topology: T` | header + data | Topological invariants: Chern number, Z2, Hall conductance, edge localization length |
+
+---
+
+## 14. BdG (Bogoliubov-de Gennes) Parameters
+
+Optional. Triggered by `bdg: T`. Used with `topology_mode: bdg` for topological superconductor / Majorana mode analysis.
+
+| Name | Type | Default | Valid range | Modes | Description |
+|---|---|---|---|---|---|
+| `bdg` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | W | Enable BdG Hamiltonian construction. |
+| `mu` | float | `0.0` | any (eV) | W | Chemical potential (Fermi level) in eV. |
+| `delta_0` | float | `0.0` | >= 0 (eV) | W | s-wave superconducting gap amplitude in eV. |
+| `B_x` | float | `0.0` | any (T) | W | Magnetic field x-component in Tesla (Zeeman splitting). |
+| `B_y` | float | `0.0` | any (T) | W | Magnetic field y-component in Tesla. |
+| `B_z` | float | `0.0` | any (T) | W | Magnetic field z-component in Tesla. |
+| `g_factor` | float | `2.0` | > 0 | W | Lande g-factor for electron spin in the wire. |
+| `gauge` | string(20) | `landau_x` | `landau_x`, `landau_z`, `zeeman` | W | Gauge choice for magnetic field coupling. |
+| `B_sweep` | 3 floats | `0 0 0` | min, max, step (T) | W | B-field sweep parameters for phase diagram. |
+| `self_consistent` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | W | Future: enable self-consistent gap computation. |
+
+---
+
+## 15. Optical Spectra Parameters
 
 Optional. Triggered by `optics: T`. All optics parameters use their defaults if missing or if the file ends early.
 
@@ -281,6 +328,19 @@ strain: <T|F>              ! strain (optional)
   strain_reference: <str>   }
   strain_solver: <str>      } strain parameters (only if strain=T)
   strain_piezo: <T|F>       }
+topology: <T|F>              ! topological analysis (optional)
+  topology_mode: <qhe|qshe|bdg>
+  compute_chern: <T|F>       }
+  compute_z2: <T|F>          } topology parameters (only if topology=T)
+  qwz_u: <float>             }
+  extract_edge_states: <T|F> }
+  edge_E_window: <float>     }
+bdg: <T|F>                   ! BdG / Majorana (optional, use with topology_mode=bdg)
+  mu: <float>                }
+  delta_0: <float>           } BdG parameters (only if bdg=T)
+  B_x: <float>               }
+  B_y: <float>               }
+  B_z: <float>               }
 optics: <T|F>               ! optical spectra (optional)
   linewidth_lorentzian: <float>  }
   linewidth_gaussian: <float>    }
