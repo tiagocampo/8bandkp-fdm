@@ -436,7 +436,7 @@ contains
     type(bhz_wire_params), intent(in) :: params
 
     integer :: N, i, row, nnz_total
-    real(kind=dp) :: dz, B_over_dz2, A_over_2dz
+    real(kind=dp) :: dz, B_plus_D_over_dz2, A_over_2dz
     complex(kind=dp), allocatable :: coo_vals(:)
     integer, allocatable :: coo_row(:), coo_col(:)
     integer :: nnz_offset
@@ -444,7 +444,7 @@ contains
     N = params%N
     dz = params%dz
 
-    B_over_dz2 = params%B / (dz * dz)
+    B_plus_D_over_dz2 = (params%B + params%D) / (dz * dz)
     A_over_2dz = params%A / (2.0_dp * dz)
 
     nnz_total = 4*N + 8*(N-1) + 8*(N-1)
@@ -458,15 +458,15 @@ contains
         coo_row(nnz_offset) = (i-1)*4 + row
         coo_col(nnz_offset) = (i-1)*4 + row
         if (row <= 2) then
-          coo_vals(nnz_offset) = cmplx(params%M - 2.0_dp * B_over_dz2, 0.0_dp, kind=dp)
+          coo_vals(nnz_offset) = cmplx(params%M - 2.0_dp * B_plus_D_over_dz2, 0.0_dp, kind=dp)
         else
-          coo_vals(nnz_offset) = cmplx(-params%M - 2.0_dp * B_over_dz2, 0.0_dp, kind=dp)
+          coo_vals(nnz_offset) = cmplx(-params%M - 2.0_dp * B_plus_D_over_dz2, 0.0_dp, kind=dp)
         end if
 
         if (i < N) then
           nnz_offset = nnz_offset + 1
           coo_row(nnz_offset) = (i-1)*4 + row
-          coo_col(nnz_offset) = i*4 + row
+          coo_col(nnz_offset) = (i-1)*4 + mod(row + 1, 4) + 1
           if (row == 1 .or. row == 4) then
             coo_vals(nnz_offset) = cmplx(A_over_2dz, 0.0_dp, kind=dp)
           else
@@ -489,14 +489,14 @@ contains
           nnz_offset = nnz_offset + 1
           coo_row(nnz_offset) = (i-1)*4 + row
           coo_col(nnz_offset) = i*4 + row
-          coo_vals(nnz_offset) = cmplx(B_over_dz2, 0.0_dp, kind=dp)
+          coo_vals(nnz_offset) = cmplx(B_plus_D_over_dz2, 0.0_dp, kind=dp)
         end if
 
         if (i > 1) then
           nnz_offset = nnz_offset + 1
           coo_row(nnz_offset) = (i-1)*4 + row
           coo_col(nnz_offset) = (i-2)*4 + row
-          coo_vals(nnz_offset) = cmplx(B_over_dz2, 0.0_dp, kind=dp)
+          coo_vals(nnz_offset) = cmplx(B_plus_D_over_dz2, 0.0_dp, kind=dp)
         end if
       end do
     end do

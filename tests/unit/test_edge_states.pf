@@ -1,0 +1,170 @@
+module test_edge_states
+  use funit
+  use definitions
+  use topological_analysis
+  use sparse_matrices
+  use linalg
+  use eigensolver
+  implicit none
+
+contains
+
+  @test
+  subroutine test_bhz_trivial_no_edge_states()
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    integer :: z2
+    real(kind=dp), parameter :: gap_threshold = 1.0_dp
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 200
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    @assertTrue(result%converged)
+    @assertTrue(allocated(result%eigenvalues))
+
+    z2 = compute_z2_gap(params%N, result%eigenvalues, gap_threshold)
+
+    @assertEqual(0, z2)
+
+    call csr_free(H_csr)
+  end subroutine test_bhz_trivial_no_edge_states
+
+  @test
+  subroutine test_bhz_topological_has_edge_states()
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    integer :: z2
+    real(kind=dp), parameter :: gap_threshold = 40.0_dp
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = -10.0_dp
+    params%d_wire = 70.0_dp
+    params%N = 200
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    @assertTrue(result%converged)
+    @assertTrue(allocated(result%eigenvalues))
+
+    z2 = compute_z2_gap(params%N, result%eigenvalues, gap_threshold)
+
+    @assertEqual(1, z2, message="BHZ topological phase (M=-10 meV, d=70A) should have Z2=1")
+
+    call csr_free(H_csr)
+  end subroutine test_bhz_topological_has_edge_states
+
+  @test
+  subroutine test_fit_exponential_decay()
+    real(kind=dp) :: density(100), xvals(100)
+    real(kind=dp) :: xi
+    logical :: success
+    integer :: i
+    real(kind=dp), parameter :: xi_true = 5.0_dp
+    real(kind=dp), parameter :: dz = 1.0_dp
+
+    ! Build exponential decay with a clear peak at index 50 and tail from 51 onwards
+    do i = 1, 100
+      xvals(i) = real(i - 1, kind=dp) * dz
+      if (i >= 50) then
+        density(i) = exp(-2.0_dp * real(i - 50, kind=dp) / xi_true)
+      else
+        density(i) = 0.0_dp
+      end if
+    end do
+
+    call fit_exponential_decay(density, xvals, xi, success)
+
+    @assertTrue(success, message="fit_exponential_decay should succeed")
+    @assertTrue(xi > 0.0_dp, message="xi should be positive")
+  end subroutine test_fit_exponential_decay
+
+  @test
+  subroutine test_bhz_wire_params_defaults()
+    type(bhz_wire_params) :: params
+
+    @assertEqual(364.5_dp, params%A, tolerance=1.0e-6_dp)
+    @assertEqual(-686.0_dp, params%B, tolerance=1.0e-6_dp)
+    @assertEqual(-512.0_dp, params%D, tolerance=1.0e-6_dp)
+    @assertEqual(10.0_dp, params%M, tolerance=1.0e-6_dp)
+    @assertEqual(58.0_dp, params%d_wire, tolerance=1.0e-6_dp)
+    @assertEqual(200, params%N)
+  end subroutine test_bhz_wire_params_defaults
+
+  @test
+  subroutine test_extract_edge_states_wire_returns_allocatable()
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(spatial_grid) :: grid
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    real(kind=dp), allocatable :: edge_info(:)
+    integer :: i
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%M = -10.0_dp
+    params%d_wire = 70.0_dp
+    params%N = 100
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    grid%ndim = 1
+    grid%ny = params%N
+    grid%dx = params%dz
+    grid%dy = params%dz
+    allocate(grid%z(params%N))
+    do i = 1, params%N
+      grid%z(i) = real(i - 1, kind=dp) * params%dz
+    end do
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    edge_info = extract_edge_states_wire(result%eigenvalues, result%eigenvectors, &
+                                        grid, 5.0_dp)
+
+    @assertTrue(allocated(edge_info))
+    @assertEqual(3, size(edge_info))
+    @assertTrue(edge_info(1) >= 0.0_dp)
+    @assertTrue(edge_info(2) >= 0.0_dp)
+    @assertTrue(edge_info(3) >= 0.0_dp)
+
+    call csr_free(H_csr)
+    deallocate(grid%z)
+    deallocate(edge_info)
+  end subroutine test_extract_edge_states_wire_returns_allocatable
+
+end module test_edge_states
