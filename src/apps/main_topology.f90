@@ -98,7 +98,7 @@ program topologicalAnalysis
         block
           integer :: chern
           real(kind=dp) :: sigma_xy
-          integer, parameter :: nk_default = 20
+          integer, parameter :: nk_default = 50
 
           print *, '--- Computing Chern number (QWZ model) ---'
           ! Use configured u parameter for QWZ mass term
