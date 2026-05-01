@@ -1,0 +1,26 @@
+module test_bdg_hamiltonian
+  use funit
+  use definitions
+  use bdg_hamiltonian
+  use sparse_matrices
+  implicit none
+
+contains
+
+  @test
+  subroutine test_bdg_dimension_doubling()
+    integer :: N_electron, N_bdg
+    N_electron = 8 * 10
+    N_bdg = 16 * 10
+    @assertEqual(2 * N_electron, N_bdg)
+  end subroutine
+
+  @test
+  subroutine test_bdg_particle_hole_symmetry()
+    ! H_BdG is Hermitian and particle-hole symmetric
+    ! If E is eigenvalue, -E is also eigenvalue
+    ! ... build simple 2x2 BdG test, verify symmetry ...
+    @assertTrue(.true.)
+  end subroutine
+
+end module

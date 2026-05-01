@@ -1,0 +1,213 @@
+module bdg_hamiltonian
+
+  ! ==============================================================================
+  ! Bogoliubov-de Gennes (BdG) Nambu-space Hamiltonian assembly.
+  !
+  ! The BdG Hamiltonian is a 16N x 16N matrix in Nambu space built from the
+  ! 8N x 8N electron Hamiltonian:
+  !
+  !   H_BdG = |  H0 - mu*I    Delta   |
+  !           |  Delta^dagger  -H0^T+mu*I |
+  !
+  ! where H0 is the 8N x 8N wire Hamiltonian (from ZB8bandGeneralized),
+  ! mu is the chemical potential, and Delta is the superconducting pairing.
+  !
+  ! Key properties:
+  !   - BdG matrix IS Hermitian (FEAST works directly, no non-Hermitian solver)
+  !   - Particle-hole symmetry: eigenvalues come in ±E pairs
+  !   - Pairing matrix: Xi = delta_0 * antidiag(+1,-1,+1,-1,-1,+1,+1,-1)
+  !     in zinc-blende 8-band basis
+  !
+  ! Basis ordering (fixed throughout codebase):
+  !   Bands 1-4 = valence (HH, LH, LH, SO), 5-6 = split-off, 7-8 = conduction
+  !   Nambu space doubles: 1..8N = electron, 8N+1..16N = hole
+  !
+  ! Reference: Fu & Kane (2008), Supriyo Datta (2018) "Quantum Transport"
+  ! ==============================================================================
+
+  use definitions
+  use sparse_matrices
+  use hamiltonian_wire, only: ZB8bandGeneralized, wire_workspace
+
+  implicit none
+
+  private
+
+  public :: build_bdg_hamiltonian_1d
+
+contains
+
+  ! ==============================================================================
+  ! Build the 16N x 16N BdG Hamiltonian from the 8N x 8N wire Hamiltonian.
+  !
+  ! H_BdG = | H0 - mu*I    Delta      |
+  !         | Delta^dagger  -H0^T+mu*I |
+  !
+  ! The pairing matrix in the zinc-blende 8-band basis is:
+  !   Xi = delta_0 * antidiag(+1,-1,+1,-1,-1,+1,+1,-1)
+  !
+  ! The 8x8 block pattern (+1,-1,+1,-1,-1,+1,+1,-1) reflects the spinor
+  ! structure: CB states get (+1,-1) for spin-up/spin-down pairing, and
+  ! VB states get paired with opposite signs according to their character.
+  !
+  ! For the wire, each band-block is replicated at each spatial point.
+  ! ==============================================================================
+  subroutine build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
+                                       kz, mu, delta_0, ws)
+
+    type(csr_matrix), intent(out) :: H_bdg_csr
+    type(simulation_config), intent(in) :: cfg
+    real(kind=dp), intent(in) :: profile_2d(:,:)
+    type(csr_matrix), intent(in) :: kpterms_2d(:)
+    real(kind=dp), intent(in) :: kz, mu, delta_0
+    type(wire_workspace), intent(inout) :: ws
+
+    type(csr_matrix) :: H0
+    integer :: N, Ntot, nnz, nnz_bdg
+    integer :: coo_idx, coo_capacity
+    integer, allocatable :: coo_row_bdg(:), coo_col_bdg(:)
+    complex(kind=dp), allocatable :: coo_vals_bdg(:)
+
+    ! Pairing sign pattern for 8-band zinc-blende basis
+    ! CB1=+1, CB2=-1, VB signs alternate, then negate for particle-hole
+    real(kind=dp) :: pairing_sign(8)
+
+    ! Temporary for -H0^T + mu*I
+    integer :: i, kk, row, col, global_row, global_col
+
+    ! --- Build H0 (8N x 8N wire Hamiltonian) ---
+    call ZB8bandGeneralized(H0, kz, profile_2d, kpterms_2d, cfg, ws=ws)
+
+    N = H0%nrows / 8
+    Ntot = 16 * N
+
+    ! --- Estimate COO capacity ---
+    ! H0 has H0%nnz nonzeros
+    ! Block (1,1): H0 - mu*I  => H0%nnz + 8N (diagonal)
+    ! Block (2,2): -H0^T + mu*I => H0%nnz + 8N (diagonal, transpose)
+    ! Block (1,2): Delta => 8N (antidiagonal, 8 bands x N spatial points)
+    ! Block (2,1): Delta^dagger => 8N (conjugate transpose)
+    nnz_bdg = 2 * H0%nnz + 2 * (8 * N) + 16 * N
+
+    coo_capacity = nnz_bdg + nnz_bdg / 5  ! small safety margin
+    allocate(coo_row_bdg(coo_capacity))
+    allocate(coo_col_bdg(coo_capacity))
+    allocate(coo_vals_bdg(coo_capacity))
+    coo_idx = 0
+
+    ! --- Pairing sign pattern: antidiag(+1,-1,+1,-1,-1,+1,+1,-1) ---
+    pairing_sign = [ &
+      +1.0_dp, &  ! CB1 (band 7)
+      -1.0_dp, &  ! CB2 (band 8)
+      +1.0_dp, &  ! HH1 (band 1)
+      -1.0_dp, &  ! HH2 (band 4)
+      -1.0_dp, &  ! SO1 (band 5)
+      +1.0_dp, &  ! SO2 (band 6)
+      +1.0_dp, &  ! LH1 (band 2)
+      -1.0_dp &   ! LH2 (band 3)
+    ]
+
+    ! ==================================================================
+    ! Block (1,1): H0 - mu*I  (rows 0..8N-1, cols 0..8N-1)
+    ! ==================================================================
+    do row = 1, H0%nrows
+      do kk = H0%rowptr(row), H0%rowptr(row + 1) - 1
+        col = H0%colind(kk)
+        coo_idx = coo_idx + 1
+        coo_row_bdg(coo_idx) = row
+        coo_col_bdg(coo_idx) = col
+        coo_vals_bdg(coo_idx) = H0%values(kk)
+      end do
+    end do
+
+    ! Subtract mu from diagonal: (band_diag, band_diag) entries
+    do i = 1, 8 * N
+      coo_idx = coo_idx + 1
+      coo_row_bdg(coo_idx) = i
+      coo_col_bdg(coo_idx) = i
+      coo_vals_bdg(coo_idx) = cmplx(-mu, 0.0_dp, kind=dp)
+    end do
+
+    ! ==================================================================
+    ! Block (2,1): Delta^dagger  (rows 8N..16N-1, cols 0..8N-1)
+    ! Delta^dagger(i,j) = conjg(Delta(j,i))
+    ! For wire: Delta is block-antidiagonal per spatial point.
+    ! Delta^dagger has the pairing signs on the hole side.
+    ! ==================================================================
+    do i = 1, N  ! spatial index
+      do row = 1, 8  ! band index (electron)
+        do col = 1, 8  ! band index (hole)
+          if (abs(pairing_sign(row)) < 0.5_dp) cycle  ! skip zero entries
+          coo_idx = coo_idx + 1
+          ! Hole row = 8N + (i-1)*8 + row
+          ! Electron col = (j-1)*8 + col
+          ! But Delta is antidiagonal in band space, so hole at spatial i
+          ! couples to electron at spatial i with sign pairing_sign(row)
+          global_row = 8 * N + (i - 1) * 8 + row
+          global_col = (i - 1) * 8 + col
+          coo_row_bdg(coo_idx) = global_row
+          coo_col_bdg(coo_idx) = global_col
+          ! Delta^dagger(i,j) = conjg(Delta(j,i))
+          ! Delta(j,i) = delta_0 * pairing_sign(col) * delta_{ij}
+          ! So Delta^dagger(i,j) = conjg(delta_0 * pairing_sign(j) * delta_{ji})
+          !                     = delta_0 * pairing_sign(j) * delta_{ij}
+          coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(col), 0.0_dp, kind=dp)
+        end do
+      end do
+    end do
+
+    ! ==================================================================
+    ! Block (1,2): Delta  (rows 0..8N-1, cols 8N..16N-1)
+    ! Delta(i,j) = delta_0 * pairing_sign(i) * delta_{ij} (antidiagonal in band)
+    ! ==================================================================
+    do i = 1, N  ! spatial index
+      do row = 1, 8  ! band index (electron)
+        do col = 1, 8  ! band index (hole)
+          if (abs(pairing_sign(row)) < 0.5_dp) cycle  ! skip zero entries
+          coo_idx = coo_idx + 1
+          global_row = (i - 1) * 8 + row
+          global_col = 8 * N + (i - 1) * 8 + col
+          coo_row_bdg(coo_idx) = global_row
+          coo_col_bdg(coo_idx) = global_col
+          coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(row), 0.0_dp, kind=dp)
+        end do
+      end do
+    end do
+
+    ! ==================================================================
+    ! Block (2,2): -H0^T + mu*I  (rows 8N..16N-1, cols 8N..16N-1)
+    ! -H0^T flips the transpose relationship
+    ! ==================================================================
+    do row = 1, H0%nrows
+      do kk = H0%rowptr(row), H0%rowptr(row + 1) - 1
+        col = H0%colind(kk)
+        coo_idx = coo_idx + 1
+        ! Transpose: row in H0^T becomes col, col becomes row
+        ! Offset by 8N for the hole block
+        coo_row_bdg(coo_idx) = 8 * N + col
+        coo_col_bdg(coo_idx) = 8 * N + row
+        coo_vals_bdg(coo_idx) = -conjg(H0%values(kk))  ! -H0^T: negate and conjugate
+      end do
+    end do
+
+    ! Add mu*I to block (2,2)
+    do i = 1, 8 * N
+      coo_idx = coo_idx + 1
+      coo_row_bdg(coo_idx) = 8 * N + i
+      coo_col_bdg(coo_idx) = 8 * N + i
+      coo_vals_bdg(coo_idx) = cmplx(mu, 0.0_dp, kind=dp)
+    end do
+
+    ! ==================================================================
+    ! Build the final CSR matrix from COO
+    ! ==================================================================
+    call csr_build_from_coo(H_bdg_csr, Ntot, Ntot, coo_idx, &
+                             coo_row_bdg(1:coo_idx), coo_col_bdg(1:coo_idx), &
+                             coo_vals_bdg(1:coo_idx))
+
+    deallocate(coo_row_bdg, coo_col_bdg, coo_vals_bdg)
+    call csr_free(H0)
+
+  end subroutine build_bdg_hamiltonian_1d
+
+end module bdg_hamiltonian

@@ -118,6 +118,12 @@ if(PFUNIT_FOUND)
         LINK_LIBRARIES 8bandkp_common
         LABELS "unit"
     )
+
+    add_pfunit_ctest(test_bdg_hamiltonian
+        TEST_SOURCES unit/test_bdg_hamiltonian.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
 else()
     message(STATUS "pFUnit not found — unit tests disabled. Install pFUnit and set -DPFUNIT_DIR to enable.")
 endif()
@@ -213,12 +219,23 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
+# Landau levels in InAs bulk at B=5T (Zeeman + Peierls)
+add_test(
+    NAME regression_landau_inas
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_landau_levels.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/landau_InAs.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/landau_InAs
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
 set_tests_properties(
     regression_bulk_gaas regression_qw_alsbw_gasbw_inasw
     regression_qw_character_and_output_dir regression_qw_absorption_polarization
     regression_qw_absorption_strained_polarization
     regression_scattering_transition_sanity regression_gfactor_cb
     regression_gfactor_no_optics regression_bulk_inas
+    regression_landau_inas
     PROPERTIES LABELS "regression"
 )
 
