@@ -766,9 +766,17 @@ contains
         if (status /= 0) then; status = 0; exit bdg_block; end if
         print *, trim(label), cfg%bdg%g_factor
 
+        ! Read B_vec before gauge to avoid gauge read consuming b_field: label
+        read(data_unit, *, iostat=status) label, cfg%bdg%B_vec(1), cfg%bdg%B_vec(2), cfg%bdg%B_vec(3)
+        if (status /= 0) then; status = 0; end if
+        print *, trim(label), cfg%bdg%B_vec
+
         read(data_unit, *, iostat=status) label, cfg%bdg%gauge
         if (status /= 0) then; status = 0; exit bdg_block; end if
         print *, trim(label), trim(cfg%bdg%gauge)
+
+        read(data_unit, *, iostat=status) label, cfg%bdg%self_consistent
+        if (status /= 0) then; status = 0; end if
 
       else if (found_optional) then
         ! bdg=F, skip remaining bdg lines

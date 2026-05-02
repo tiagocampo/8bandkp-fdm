@@ -47,7 +47,7 @@ numRegions: 1
 region: GaAs  0.0  100.0
 numcb: 4
 numvb: 4
-ExternalField: {B} EF
+ExternalField: {int(B)} EF
 EFParams: 0.0005
 whichBand: 0
 bandIdx: 1
@@ -63,6 +63,7 @@ bdg: T
 mu: 0.0005
 delta_0: 0.0003
 g_factor: 2.0
+b_field: {int(B)} 0 0
 """
 
     cfg.write_text(config_text)
