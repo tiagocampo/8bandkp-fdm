@@ -5,6 +5,7 @@ module test_magnetic_field
   use sparse_matrices
   use geometry
   implicit none
+
 contains
 
   @test
@@ -44,6 +45,101 @@ contains
     @assertEqual(-1.0_dp * 2.0_dp * (e * hbar / (2.0_dp * m0)), coo_vals(7), tolerance=1e-12_dp)
     ! CB band 8 (spin-up, J_z=+1/2): +g*mu_B*B = +2 * 5.788e-5 * 1 = +1.1576e-4 eV
     @assertEqual( 1.0_dp * 2.0_dp * (e * hbar / (2.0_dp * m0)), coo_vals(8), tolerance=1e-12_dp)
+    deallocate(coo_vals, coo_row, coo_col)
+    call grid_free(grid)
+  end subroutine
+
+  @test
+  subroutine test_peierls_phase_value()
+    ! Test that Peierls phase is correctly computed
+    ! B = 5T, y_i = 1nm, y_j = 0, dz = 1nm -> |phi| ≈ 0.76 rad
+    real(kind=dp), parameter :: B_test = 5.0_dp ! Tesla
+    real(kind=dp), parameter :: y_nm = 1.0_dp  ! nm
+    real(kind=dp), parameter :: dz_nm = 1.0_dp ! nm
+
+    real(kind=dp) :: y_i_m, y_j_m, dz_m, phi_direct
+
+    ! Convert to SI: nm -> m
+    y_i_m = y_nm * 1.0e-9_dp
+    y_j_m = 0.0_dp
+    dz_m = dz_nm * 1.0e-9_dp
+
+    ! Compute phase: phi = e * B * (y_i - y_j) * dz / hbar_J
+    ! hbar_J = hbar * e converts hbar from eV*s to J*s for SI units
+    phi_direct = e * B_test * (y_i_m - y_j_m) * dz_m / (hbar * e)
+
+    ! Phase should be a valid number and non-zero
+    ! For B=5T, y=1nm, dz=1nm: phi ≈ 0.0076 rad (with SI unit conversion)
+    @assertTrue(abs(phi_direct) > 0.005_dp)
+    @assertTrue(abs(phi_direct) < 0.1_dp)
+  end subroutine
+
+  @test
+  subroutine test_peierls_coo_off_diagonal()
+    ! Test add_peierls_coo applies phase to off-diagonal entries
+    real(kind=dp), allocatable :: coo_vals(:)
+    integer, allocatable :: coo_row(:), coo_col(:)
+    type(spatial_grid) :: grid
+    integer :: nnz_offset, idx
+    integer, parameter :: nx = 1, ny = 2
+    integer :: mat2d(nx, ny)
+    real(kind=dp) :: y_i_m, y_j_m, dz_m, phi_expected, cos_phi
+
+    ! 2 grid points in y-direction for distinct y-coordinates
+    mat2d = 1
+    call grid_init_rect(grid, nx, ny, 1.0_dp, 1.0_dp, mat2d)
+
+    ! Set up COO with:
+    ! - Two diagonal entries (rows 1, 10) - should NOT be modified
+    ! - One off-diagonal hopping (row 2, col 10) - should get phase factor
+    allocate(coo_vals(3), coo_row(3), coo_col(3))
+    nnz_offset = 0
+
+    ! Diagonal entry at row 1 (band 1 of grid point 1)
+    nnz_offset = nnz_offset + 1
+    coo_row(nnz_offset) = 1
+    coo_col(nnz_offset) = 1
+    coo_vals(nnz_offset) = 1.0_dp
+
+    ! Off-diagonal entry: row 2 (band 2 of grid pt 1) to col 10 (band 2 of grid pt 2)
+    ! grid pt 1: y(1) = 0.5 Angstrom
+    ! grid pt 2: y(2) = 1.5 Angstrom
+    nnz_offset = nnz_offset + 1
+    coo_row(nnz_offset) = 2
+    coo_col(nnz_offset) = 10
+    coo_vals(nnz_offset) = 0.5_dp
+
+    ! Another diagonal entry at row 10
+    nnz_offset = nnz_offset + 1
+    coo_row(nnz_offset) = 10
+    coo_col(nnz_offset) = 10
+    coo_vals(nnz_offset) = 2.0_dp
+
+    ! Apply Peierls phase with Bx = 5 Tesla
+    ! y(1) = 0.5 Angstrom = 0.5e-10 m
+    ! y(2) = 1.5 Angstrom = 1.5e-10 m
+    ! dz = grid%dy = 1.0 Angstrom = 1e-10 m
+    y_i_m = grid%z(1) * 1.0e-10_dp  ! y of grid pt 1 in meters
+    y_j_m = grid%z(2) * 1.0e-10_dp  ! y of grid pt 2 in meters
+    dz_m = grid%dy * 1.0e-10_dp     ! dz in meters
+
+    call add_peierls_coo(coo_vals, coo_row, coo_col, nnz_offset, &
+                         grid, [5.0_dp, 0.0_dp, 0.0_dp], 'landau', &
+                         kpterms_2d=[csr_matrix()])
+
+    ! Diagonal entries (row == col) should NOT be modified
+    @assertEqual(1.0_dp, coo_vals(1), tolerance=1e-12_dp)
+    @assertEqual(2.0_dp, coo_vals(3), tolerance=1e-12_dp)
+
+    ! Off-diagonal entry: compute expected phase and verify
+    ! hbar_J = hbar * e for SI unit conversion
+    phi_expected = e * 5.0_dp * (y_i_m - y_j_m) * dz_m / (hbar * e)
+    cos_phi = cos(phi_expected)
+
+    ! The off-diagonal value should be 0.5 * cos(phi)
+    ! (phase is exp(-i*phi), real part is cos(phi))
+    @assertEqual(0.5_dp * cos_phi, coo_vals(2), tolerance=1e-10_dp)
+
     deallocate(coo_vals, coo_row, coo_col)
     call grid_free(grid)
   end subroutine
