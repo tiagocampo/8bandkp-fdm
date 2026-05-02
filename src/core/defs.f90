@@ -295,6 +295,9 @@ module definitions
     ! Z2 invariant
     logical          :: compute_z2 = .false.
     character(len=20) :: z2_method = 'auto'  ! auto | gap | fukane
+    ! BHZ wire parameters for QSHE mode
+    real(kind=dp)    :: bhz_M = 10.0_dp      ! BHZ mass parameter (meV)
+    real(kind=dp)    :: bhz_d = 58.0_dp      ! wire width (AA)
     ! Edge states
     logical          :: extract_edge_states = .false.
     real(kind=dp)    :: edge_E_window = 0.01_dp  ! energy window for detection

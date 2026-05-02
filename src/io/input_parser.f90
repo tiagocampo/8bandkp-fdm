@@ -150,6 +150,9 @@ contains
     integer(kind=4) :: data_unit
     integer :: status
     character(len=255) :: data_filename, label
+    character(len=512) :: line
+    character(len=255) :: label_part
+    integer :: colon_pos
     logical :: found_optional
 
     ! Local iteration
@@ -507,21 +510,85 @@ contains
     end if
 
       ! Try reading gfactor params; use defaults if missing (backward compatible)
-      read(data_unit, *, iostat=status) label, cfg%whichBand
+      ! Peek at the next line to check if it's a whichBand line
+      call read_next_data_line(data_unit, line, status)
       if (status == 0) then
-        print *, trim(label), cfg%whichBand
-        read(data_unit, *, iostat=status) label, cfg%bandIdx
-        if (status == 0) print *, trim(label), cfg%bandIdx
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          label_part = adjustl(line(:colon_pos-1))
+          if (trim(to_lower_ascii(label_part)) == 'whichband') then
+            ! It's a whichBand line - read it and the bandIdx line
+            read(line(colon_pos+1:), *, iostat=status) cfg%whichBand
+            if (status == 0) then
+              print *, trim(label_part), cfg%whichBand
+              ! Read bandIdx on next line
+              call read_next_data_line(data_unit, line, status)
+              if (status == 0) then
+                colon_pos = index(line, ':')
+                if (colon_pos > 0) then
+                  label_part = adjustl(line(:colon_pos-1))
+                  read(line(colon_pos+1:), *, iostat=status) cfg%bandIdx
+                  if (status == 0) print *, trim(label_part), cfg%bandIdx
+                end if
+              end if
+              if (status /= 0) then
+                cfg%bandIdx = 1
+                status = 0
+              end if
+            else
+              status = 0
+              cfg%whichBand = 0
+              cfg%bandIdx = 1
+              backspace(data_unit)
+            end if
+          else
+            ! Not a whichBand line - back up and let next read handle it
+            backspace(data_unit)
+            cfg%whichBand = 0
+            cfg%bandIdx = 1
+          end if
+        else
+          ! No colon - back up
+          backspace(data_unit)
+          cfg%whichBand = 0
+          cfg%bandIdx = 1
+        end if
       else
         cfg%whichBand = 0
-        cfg%bandIdx= 1
+        cfg%bandIdx = 1
       end if
 
     ! --- SC parameters (backward compatible: uses defaults if missing) ---
-    read(data_unit, *, iostat=status) label, cfg%sc%enabled
+    ! Peek at the next line to check if it's an SC line
+    call read_next_data_line(data_unit, line, status)
+    if (status == 0) then
+      colon_pos = index(line, ':')
+      if (colon_pos > 0) then
+        label_part = adjustl(line(:colon_pos-1))
+        if (trim(to_lower_ascii(label_part)) == 'sc') then
+          ! It's an SC line - read the enabled flag
+          read(line(colon_pos+1:), *, iostat=status) cfg%sc%enabled
+          if (status /= 0) then
+            cfg%sc%enabled = 0
+            status = 0
+          end if
+        else
+          ! Not an SC line - back up
+          backspace(data_unit)
+          cfg%sc%enabled = 0
+        end if
+      else
+        ! No colon - back up
+        backspace(data_unit)
+        cfg%sc%enabled = 0
+      end if
+    else
+      cfg%sc%enabled = 0
+    end if
+
     sc_block: do
-      if (status == 0 .and. cfg%sc%enabled == 1) then
-        print *, trim(label), cfg%sc%enabled
+      if (cfg%sc%enabled == 1) then
+        print *, trim(label_part), cfg%sc%enabled
 
         read(data_unit, *, iostat=status) label, cfg%sc%max_iterations
         if (status /= 0) then; status = 0; exit sc_block; end if
@@ -584,18 +651,15 @@ contains
           print *, trim(label), cfg%doping(i)%ND, cfg%doping(i)%NA
         end do
 
-      else if (status == 0) then
-        ! SC=0, skip remaining SC lines
-        print *, trim(label), cfg%sc%enabled
       else
-        ! Could not read SC flag -- use defaults (SC off)
-        status = 0
+        ! SC disabled or not found - skip remaining SC lines
+        print *, trim(label_part), cfg%sc%enabled
       end if
       exit sc_block
     end do sc_block
 
     ! --- Topology analysis parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'topology:', cfg%topo%enabled, found_optional, label)
+    call read_optional_logical_flag(data_unit, 'topology', cfg%topo%enabled, found_optional, label)
     topology_block: do
       if (found_optional .and. cfg%topo%enabled) then
         print *, trim(label), cfg%topo%enabled
@@ -619,10 +683,6 @@ contains
         read(data_unit, *, iostat=status) label, cfg%topo%compute_z2
         if (status /= 0) then; status = 0; exit topology_block; end if
         print *, trim(label), cfg%topo%compute_z2
-
-        read(data_unit, *, iostat=status) label, cfg%topo%z2_method
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        print *, trim(label), trim(cfg%topo%z2_method)
 
         read(data_unit, *, iostat=status) label, cfg%topo%extract_edge_states
         if (status /= 0) then; status = 0; exit topology_block; end if
@@ -660,7 +720,7 @@ contains
     end do topology_block
 
     ! --- BdG parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'bdg:', cfg%bdg%enabled, found_optional, label)
+    call read_optional_logical_flag(data_unit, 'bdg', cfg%bdg%enabled, found_optional, label)
     bdg_block: do
       if (found_optional .and. cfg%bdg%enabled) then
         print *, trim(label), cfg%bdg%enabled
@@ -685,7 +745,7 @@ contains
     end do bdg_block
 
     ! --- Optical spectra parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'optics:', cfg%optics%enabled, found_optional, label)
+    call read_optional_logical_flag(data_unit, 'optics', cfg%optics%enabled, found_optional, label)
     optics_block: do
       if (found_optional .and. cfg%optics%enabled) then
         print *, trim(label), cfg%optics%enabled
@@ -770,7 +830,7 @@ contains
     end do optics_block
 
     ! --- Exciton parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'exciton:', cfg%exciton%enabled, found_optional, label)
+    call read_optional_logical_flag(data_unit, 'exciton', cfg%exciton%enabled, found_optional, label)
     exciton_block: do
       if (found_optional .and. cfg%exciton%enabled) then
         print *, trim(label), cfg%exciton%enabled
@@ -786,7 +846,7 @@ contains
     end do exciton_block
 
     ! --- Scattering parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'scattering:', cfg%scattering%enabled, found_optional, label)
+    call read_optional_logical_flag(data_unit, 'scattering', cfg%scattering%enabled, found_optional, label)
     scattering_block: do
       if (found_optional .and. cfg%scattering%enabled) then
         print *, trim(label), cfg%scattering%enabled
@@ -836,7 +896,7 @@ contains
     end if
 
     ! --- Strain parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'strain:', cfg%strain%enabled, found_optional, label)
+    call read_optional_logical_flag(data_unit, 'strain', cfg%strain%enabled, found_optional, label)
     strain_block: do
       if (found_optional .and. cfg%strain%enabled) then
         print *, trim(label), cfg%strain%enabled
