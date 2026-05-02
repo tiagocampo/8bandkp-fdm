@@ -125,6 +125,12 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    add_pfunit_ctest(test_bdg_config
+        TEST_SOURCES unit/test_bdg_config.pf
+        LINK_LIBRARIES 8bandkp_common
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_phase_diagram
         TEST_SOURCES unit/test_phase_diagram.pf
         LINK_LIBRARIES 8bandkp_common

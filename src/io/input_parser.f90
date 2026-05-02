@@ -733,6 +733,10 @@ contains
         if (status /= 0) then; status = 0; exit bdg_block; end if
         print *, trim(label), cfg%bdg%delta_0
 
+        read(data_unit, *, iostat=status) label, cfg%bdg%g_factor
+        if (status /= 0) then; status = 0; exit bdg_block; end if
+        print *, trim(label), cfg%bdg%g_factor
+
         read(data_unit, *, iostat=status) label, cfg%bdg%gauge
         if (status /= 0) then; status = 0; exit bdg_block; end if
         print *, trim(label), trim(cfg%bdg%gauge)
