@@ -291,12 +291,12 @@ contains
 
     ! Configure FEAST eigensolver - search wide range for edge states in BHZ gap
     eigen_cfg_local%method = 'FEAST'
-    eigen_cfg_local%nev = 140  ! request more eigenvalues
+    eigen_cfg_local%nev = 280  ! request up to N eigenvalues (4*N = 280 for BHZ wire)
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
-    eigen_cfg_local%feast_m0 = 200  ! larger subspace to capture more states
-    eigen_cfg_local%emin = -5000.0_dp  ! expand search range to capture full spectrum including upper band
-    eigen_cfg_local%emax = 5000.0_dp
+    eigen_cfg_local%feast_m0 = 280  ! full subspace to capture all 4*N eigenvalues
+    eigen_cfg_local%emin = -500.0_dp  ! narrow to actual eigenvalue range (~10 meV gap)
+    eigen_cfg_local%emax = 500.0_dp
 
     print *, '  Solving eigenvalue problem...'
     eigen_solver_local = make_eigensolver(eigen_cfg_local)

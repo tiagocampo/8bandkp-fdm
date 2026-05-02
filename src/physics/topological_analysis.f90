@@ -448,8 +448,8 @@ contains
     N = params%N
     dz = params%dz
 
-    B_plus_D_over_dz2 = (params%B + params%D) / (dz * dz)
-    A_over_2dz = params%A / (2.0_dp * dz)
+    B_plus_D_over_dz2 = (params%B + params%D) * 0.0001_dp / (dz * dz)
+    A_over_2dz = params%A * 0.02_dp / (2.0_dp * dz)
 
     ! Count entries: diagonal = 4N
     ! A-fwd (i<N): 4*(N-1)
@@ -476,7 +476,7 @@ contains
         if (i < N) then
           nnz_offset = nnz_offset + 1
           coo_row(nnz_offset) = (i-1)*4 + row
-          coo_col(nnz_offset) = (i-1)*4 + mod(row + 1, 4) + 1
+          coo_col(nnz_offset) = (i-1)*4 + 5 - row
           if (row == 1 .or. row == 4) then
             coo_vals(nnz_offset) = cmplx(A_over_2dz, 0.0_dp, kind=dp)
           else
