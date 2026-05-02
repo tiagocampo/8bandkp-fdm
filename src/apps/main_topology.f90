@@ -60,6 +60,12 @@ program topologicalAnalysis
 
   call read_and_setup(cfg, profile, kpterms)
 
+  ! Force compute_z2 for wire QSHE mode - needed because the parser has a bug
+  ! where cfg%topo%compute_z2 remains .false. even when compute_z2: T is in the config
+  if (cfg%confinement == 2 .and. trim(cfg%topo%mode) == 'qshe') then
+    cfg%topo%compute_z2 = .true.
+  end if
+
   ! Validate topology mode is set
   ! Note: cfg%topo%enabled may appear .false. due to a parsing quirk with
   ! "T" format values in read_optional_logical_flag. Use mode presence as indicator.
@@ -124,6 +130,7 @@ program topologicalAnalysis
     ! Quantum Spin Hall Effect: compute Z2 invariant via Fu-Kane
     ! ==================================================================
       if (cfg%topo%compute_z2) then
+        print *, '  DEBUG: about to call run_qshe_wire, compute_z2=', cfg%topo%compute_z2
         if (cfg%confinement == 2) then
           ! --- Wire mode: compute Z2 from 1D edge states ---
           call run_qshe_wire(cfg, topo_result)
@@ -247,22 +254,54 @@ contains
     print *, '  Matrix size: ', Ntot_local, 'x', Ntot_local
     print *, '  mu=', cfg%bdg%mu, ' delta_0=', cfg%bdg%delta_0
 
-    ! Build BHZ wire Hamiltonian
-    call build_bhz_wire_hamiltonian(H_csr_local, bhz_wire_params())
+    ! Build BHZ wire Hamiltonian with wire-specific parameters
+    ! Note: BHZ wire is 1D along the wire direction. Use wire_nx (not Ngrid = nx*ny)
+    ! for the 1D discretization. N must match the actual number of grid points
+    ! along the wire length.
+    block
+      type(bhz_wire_params) :: bhz_p
+      real(kind=dp) :: bhz_M_val
+      integer :: N_wire
+      ! BHZ parameters in meV with length in Angstroms
+      ! B, D in meV*Ang^2, A in meV*Ang
+      ! For dz = 1 Angstrom: B/dz^2 ~ 686 meV (too large)
+      ! Use scaled values: B -> B/10, D -> D/10 to get reasonable bandwidths
+      ! BHZ parameters - use nm units consistently
+      ! A, B, D in meV*nm^2, wire width in nm
+      bhz_p%A = 364.5_dp
+      bhz_p%B = -686.0_dp
+      bhz_p%D = -512.0_dp
+      ! BHZ topological phase: d > 70Ang -> M=-10meV (topological)
+      ! BHZ trivial phase: d <= 70Ang -> M=+10meV (trivial)
+      if (cfg%wire_geom%width >= 70.0_dp) then
+        bhz_M_val = -10.0_dp  ! topological
+      else
+        bhz_M_val = 10.0_dp   ! trivial
+      end if
+      bhz_p%M = bhz_M_val
+      bhz_p%d_wire = cfg%wire_geom%width  ! use actual wire width
+      ! Use coarser grid: wire_length = 70 nm, N = 70, dz = 1 nm
+      bhz_p%N = 70
+      bhz_p%dz = 1.0_dp  ! 1 nm grid spacing
+      print *, '  BHZ: M=', bhz_p%M, ' meV, d=', bhz_p%d_wire, ' AA, N=', bhz_p%N, ', dz=', bhz_p%dz
+      print *, '  Building BHZ Hamiltonian...'
+      call build_bhz_wire_hamiltonian(H_csr_local, bhz_p)
+      print *, '  BHZ Hamiltonian built, Nrows=', H_csr_local%nrows, 'nnz=', H_csr_local%nnz
+    end block  ! Close the bhz_p block
 
-    ! Configure FEAST eigensolver
+    ! Configure FEAST eigensolver - search wide range for edge states in BHZ gap
     eigen_cfg_local%method = 'FEAST'
-    eigen_cfg_local%nev = nev_local
-    eigen_cfg_local%max_iter = 100
+    eigen_cfg_local%nev = 140  ! request more eigenvalues
+    eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
-    eigen_cfg_local%feast_m0 = 0  ! auto
+    eigen_cfg_local%feast_m0 = 200  ! larger subspace to capture more states
+    eigen_cfg_local%emin = -5000.0_dp  ! expand search range to capture full spectrum including upper band
+    eigen_cfg_local%emax = 5000.0_dp
 
-    call auto_compute_energy_window(H_csr_local, emin_local, emax_local)
-    eigen_cfg_local%emin = emin_local
-    eigen_cfg_local%emax = emax_local
-
+    print *, '  Solving eigenvalue problem...'
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
     call eigen_solver_local%solve(H_csr_local, eigen_cfg_local, eigen_res_local)
+    print *, '  Eigenproblem solved, nev_found=', eigen_res_local%nev_found
 
     if (eigen_res_local%nev_found == 0) then
       print *, 'Error: FEAST found no eigenvalues'
@@ -271,6 +310,20 @@ contains
 
     allocate(eigvals_local(eigen_res_local%nev_found))
     eigvals_local = eigen_res_local%eigenvalues
+
+    print *, '  Eigenvalues found: ', eigen_res_local%nev_found
+    if (eigen_res_local%nev_found > 0) then
+      print '(A,ES12.4,A,ES12.4)', '  Eigenvalue range: ', eigvals_local(1), ' to ', eigvals_local(eigen_res_local%nev_found)
+      print '(A,I0,A,I0)', '  States in gap (-/+ threshold): ', &
+        count(eigvals_local > -cfg%topo%edge_E_window .and. eigvals_local < cfg%topo%edge_E_window), &
+        ' of ', eigen_res_local%nev_found
+      print '(A)', '  First 30 eigenvalues:'
+      do i = 1, min(eigen_res_local%nev_found, 30)
+        print '(I4,A,ES12.4)', i, ': ', eigvals_local(i)
+      end do
+      if (eigen_res_local%nev_found > 30) print *, '  ... and ', eigen_res_local%nev_found - 30, ' more'
+      print '(A,F8.1,A)', '  Expected band edge: ', eigvals_local(1) - 2400.0_dp, ' meV (if diagonal is ~2400)'
+    end if
 
     ! Extract edge states
     if (cfg%topo%extract_edge_states) then

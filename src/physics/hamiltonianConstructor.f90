@@ -7,7 +7,6 @@ module hamiltonianConstructor
   use strain_solver, only: compute_bp_scalar, bir_pikus_blocks_free
   use confinement_init
   use hamiltonian_wire
-  use magnetic_field, only: add_zeeman_coo
 
   implicit none
 

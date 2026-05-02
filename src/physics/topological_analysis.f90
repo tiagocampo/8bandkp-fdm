@@ -160,7 +160,9 @@ contains
       end if
     end do
 
-    if (n_in_gap > 0) z2 = 1
+    ! Z2 in 1D counts edge state pairs: topological phase has exactly 2 edge
+    ! states (one per end) within the bulk gap. Divide by 2 to get pair count.
+    if (n_in_gap >= 2) z2 = 1
 
   end function compute_z2_gap
 
@@ -449,7 +451,13 @@ contains
     B_plus_D_over_dz2 = (params%B + params%D) / (dz * dz)
     A_over_2dz = params%A / (2.0_dp * dz)
 
-    nnz_total = 4*N + 8*(N-1) + 8*(N-1)
+    ! Count entries: diagonal = 4N
+    ! A-fwd (i<N): 4*(N-1)
+    ! A-bwd (i>1): 4*(N-1)
+    ! B+D-fwd (i<N): 4*(N-1) - self-diagonal entries that will be merged
+    ! B+D-bwd (i>1): 4*(N-1)
+    ! Note: (row,row) entries are merged in csr_build_from_coo, so we count them
+    nnz_total = 4*N + 4*(N-1) + 4*(N-1) + 4*(N-1) + 4*(N-1)
     allocate(coo_vals(nnz_total), coo_row(nnz_total), coo_col(nnz_total))
 
     nnz_offset = 0
@@ -490,14 +498,14 @@ contains
         if (i < N) then
           nnz_offset = nnz_offset + 1
           coo_row(nnz_offset) = (i-1)*4 + row
-          coo_col(nnz_offset) = i*4 + row
+          coo_col(nnz_offset) = (i-1)*4 + mod(row, 4) + 1
           coo_vals(nnz_offset) = cmplx(B_plus_D_over_dz2, 0.0_dp, kind=dp)
         end if
 
         if (i > 1) then
           nnz_offset = nnz_offset + 1
           coo_row(nnz_offset) = (i-1)*4 + row
-          coo_col(nnz_offset) = (i-2)*4 + row
+          coo_col(nnz_offset) = (i-2)*4 + mod(row + 2, 4) + 1
           coo_vals(nnz_offset) = cmplx(B_plus_D_over_dz2, 0.0_dp, kind=dp)
         end if
       end do

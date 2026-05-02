@@ -373,7 +373,105 @@ qwz_u: -0.8
 The `topologicalAnalysis` executable reads the config file and dispatches to
 the appropriate analysis routine based on `cfg%topo%mode`.
 
-## 13.11 References
+## 13.12 Benchmark Results
+
+The implementation includes regression benchmarks comparing computed results
+against analytical and literature values.
+
+### 13.12.1 QWZ Chern Number Benchmark
+
+The QWZ model (Qi, Wu & Zhang, Phys. Rev. B 74, 085308 (2006)) provides
+analytically known Chern numbers. The Hamiltonian is:
+
+$$
+H(\mathbf{k}) = \sin k_x \sigma_x + \sin k_y \sigma_y + (u + \cos k_x + \cos k_y) \sigma_z
+$$
+
+The topological phase diagram gives C = +1 for u < -2, C = -1 for -2 < u < 0,
+and C = 0 for u > 0.
+
+**ASCII Comparison Table:**
+
+```
+======================================================================
+QWZ Chern Number Benchmark
+======================================================================
+Literature: Qi, Wu & Zhang, Phys. Rev. B 74, 085308 (2006)
+======================================================================
+
+Config                    Expected   Computed  Status
+----------------------------------------------------------------------
+u=-0.8                           1          1  PASS
+u=0.5                           -1         -1  PASS
+u=2.5                            0          0  PASS
+----------------------------------------------------------------------
+Passed: 3/3
+
+Status Key:
+- u=-0.8 (C=+1, topological phase): PASS
+- u=0.5 (C=-1, topological phase): PASS
+- u=2.5 (C=0, trivial phase): PASS — fixed by increasing nk from 20 to 50
+```
+
+**Resolution:** The trivial phase at u=2.5 was correctly computed after
+increasing `nk_default` from 20 to 50 as documented in Section 13.2.3.
+
+### 13.12.2 Landau Level Benchmark
+
+For InAs under perpendicular magnetic field B = 5 T, the Landau levels follow:
+
+$$
+E_n = \hbar\omega_c\left(n + \frac{1}{2}\right), \quad \omega_c = \frac{eB}{m^*}
+$$
+
+with m* = 0.026 m_e for InAs. The cyclotron energy is:
+
+$$
+\hbar\omega_c = \frac{e\hbar B}{m^*} = \frac{5.788\times 10^{-5}\,\text{eV/T} \times 5\,\text{T}}{0.026} = 22.26\,\text{meV}
+$$
+
+**ASCII Comparison Table:**
+
+```
+======================================================================
+Landau Level Benchmark: InAs at B=5T
+======================================================================
+Formula: E_n = hbar*omega_c*(n + 1/2)
+For InAs: m* = 0.026 m_e
+hbar*omega_c = 22.26 meV
+Expected E_0 (n=0): 11.13 meV
+Expected E_1 (n=1): 33.40 meV
+======================================================================
+
+Status: PENDING
+
+Reason: bandStructure executable failed to parse config
+        Landau level integration (Task 8.2) not complete
+```
+
+**Analysis:**
+- The Landau level regression test (Task 8.2) is pending implementation
+- The `landau_InAs.cfg` config file fails to parse `waveVectorMax`
+- This indicates that the magnetic field + Peierls substitution integration
+  into `bandStructure` is not yet complete
+- Expected values from analytical formula: E_0 = 11.13 meV, E_1 = 33.40 meV
+
+**Required work:** Complete Task 8.2 (Landau level regression test) which
+depends on the magnetic_field module and Peierls substitution being fully
+integrated into the bandStructure workflow.
+
+### 13.12.3 Benchmark Summary
+
+| Test | Model | Status | Notes |
+|---|---|---|---|
+| Chern +1 | QWZ u=-0.8 | PASS | Correctly identifies topological phase |
+| Chern -1 | QWZ u=0.5 | PASS | Correctly identifies topological phase |
+| Chern 0 | QWZ u=2.5 | PASS | Fixed by nk=50 grid resolution |
+| BHZ Z2 trivial | BHZ d=58Å M=+10meV | PASS | Z2=0 correctly detected |
+| BHZ Z2 topological | BHZ d=70Å M=-10meV | FAIL | FEAST finds bulk bands but no edge states in gap |
+| Landau levels | InAs B=5T | PENDING | Peierls substitution integration incomplete |
+
+## 13.13 References
 
 - Fukui & Hatsugai, J. Phys. Soc. Jpn. 76, 053710 (2007) — FHS method
 - Qi, Wu & Zhang, Phys. Rev. B 74, 085308 (2006) — QWZ model
