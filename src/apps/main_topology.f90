@@ -431,13 +431,16 @@ contains
     nev_local = cfg%numcb + cfg%numvb
     eigen_cfg_local%method = 'FEAST'
     eigen_cfg_local%nev = nev_local
-    eigen_cfg_local%max_iter = 100
+    eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
-    eigen_cfg_local%feast_m0 = 0  ! auto
+    ! Use moderate feast_m0 for BdG: enough to capture eigenvalues but not full N
+    ! FEAST M0 should be between nev and N. Use 8*nev for better coverage.
+    eigen_cfg_local%feast_m0 = max(8 * nev_local, 200)
 
     ! Search near zero energy for Majorana modes
+    ! Use ±5*delta to focus on the superconducting gap region
     eigen_cfg_local%emin = -5.0_dp * cfg%bdg%delta_0
-    eigen_cfg_local%emax = 5.0_dp * cfg%bdg%delta_0
+    eigen_cfg_local%emax =  5.0_dp * cfg%bdg%delta_0
 
     print *, '  FEAST energy window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
 
@@ -456,11 +459,10 @@ contains
         real(kind=dp) :: gap_min_val
         integer :: i
         gap_min_val = huge(1.0_dp)
+        ! Look at ALL consecutive eigenvalue pairs, find the minimum spacing
+        ! This will show gap closure at B_crit as min gap -> 0
         do i = 1, eigen_res_local%nev_found - 1
-          if (abs(eigvals_bdg(i)) < 5.0_dp * cfg%bdg%delta_0 .or. &
-              abs(eigvals_bdg(i+1)) < 5.0_dp * cfg%bdg%delta_0) then
-            gap_min_val = min(gap_min_val, abs(eigvals_bdg(i+1) - eigvals_bdg(i)))
-          end if
+          gap_min_val = min(gap_min_val, abs(eigvals_bdg(i+1) - eigvals_bdg(i)))
         end do
         result%min_gap = gap_min_val
       end block

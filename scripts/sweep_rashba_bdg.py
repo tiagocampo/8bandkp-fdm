@@ -31,13 +31,13 @@ def run_bdg(B, workdir):
     config_text = f"""\
 waveVector: kz
 waveVectorMax: 0.1
-waveVectorStep: 21
+waveVectorStep: 11
 confinement:  2
 FDstep: 1
 FDorder: 2
 numLayers:  1
-wire_nx: 21
-wire_ny: 21
+wire_nx: 11
+wire_ny: 11
 wire_dx: 3.0
 wire_dy: 3.0
 wire_shape: rectangle
@@ -73,7 +73,7 @@ b_field: {int(B)} 0 0
         cwd=workdir,
         capture_output=True,
         text=True,
-        timeout=60
+        timeout=120
     )
     if result.returncode != 0:
         print(f"  WARNING: B={B}T returned exit code {result.returncode}", file=sys.stderr)
