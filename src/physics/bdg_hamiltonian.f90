@@ -92,9 +92,11 @@ contains
     ! H0 has H0%nnz nonzeros
     ! Block (1,1): H0 - mu*I  => H0%nnz + 8N (diagonal)
     ! Block (2,2): -H0^T + mu*I => H0%nnz + 8N (diagonal, transpose)
-    ! Block (1,2): Delta => 8N (antidiagonal, 8 bands x N spatial points)
-    ! Block (2,1): Delta^dagger => 8N (conjugate transpose)
-    nnz_bdg = 2 * H0%nnz + 2 * (8 * N) + 16 * N
+    ! Block (1,2): Delta => 64*N (antidiagonal, 8x8 band matrix per spatial point)
+    ! Block (2,1): Delta^dagger => 64*N (conjugate transpose, 8x8 band matrix)
+    ! mu*I diagonal: 16*N (8N in each of blocks (1,1) and (2,2))
+    ! Zeeman/Peierls: 8*N additional diagonal entries (added to (1,1) when B != 0)
+    nnz_bdg = 2 * H0%nnz + 2 * (64 * N) + 16 * N + 8 * N
 
     coo_capacity = nnz_bdg + nnz_bdg / 5  ! small safety margin
     allocate(coo_row_bdg(coo_capacity))
@@ -135,7 +137,9 @@ contains
     ! Add Zeeman and Peierls corrections to electron block (1,1)
     ! These merge with existing diagonal entries during CSR assembly.
     ! ==================================================================
-    if (present(B_vec)) then
+    if (present(B_vec) .and. (abs(B_vec(1)) > 1e-12_dp .or. &
+                              abs(B_vec(2)) > 1e-12_dp .or. &
+                              abs(B_vec(3)) > 1e-12_dp)) then
       if (present(g_factor)) then
         g_f = g_factor
       else

@@ -49,7 +49,7 @@ contains
     logical, intent(out) :: found
     character(len=*), intent(out) :: label
 
-    integer :: status
+    integer :: status, rewind_status
     character(len=512) :: line
     character(len=255) :: label_part, value_str
     integer :: colon_pos
@@ -61,14 +61,12 @@ contains
     ! Extract label (before colon) and value (after colon)
     colon_pos = index(line, ':')
     if (colon_pos <= 0) then
-      ! No colon found - backspace and return
       backspace(data_unit)
       return
     end if
 
     label_part = adjustl(line(:colon_pos-1))
     if (trim(to_lower_ascii(label_part)) /= trim(to_lower_ascii(expected_label))) then
-      ! Label doesn't match - backspace and return
       backspace(data_unit)
       return
     end if
@@ -87,17 +85,16 @@ contains
       value = .false.
       found = .true.
       label = trim(label_part) // ':'
-    ! Then check single letter T/F without dots
-    else if (value_str(1:1) == 'T' .or. value_str(1:1) == 't') then
+    ! Single letter T/F without dots (check length to avoid empty string)
+    else if (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't')) then
       value = .true.
       found = .true.
       label = trim(label_part) // ':'
-    else if (value_str(1:1) == 'F' .or. value_str(1:1) == 'f') then
+    else if (len_trim(value_str) > 0 .and. (value_str(1:1) == 'F' .or. value_str(1:1) == 'f')) then
       value = .false.
       found = .true.
       label = trim(label_part) // ':'
     else
-      ! Value not recognized - backspace and return
       backspace(data_unit)
       return
     end if
@@ -720,7 +717,39 @@ contains
     end do topology_block
 
     ! --- BdG parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'bdg', cfg%bdg%enabled, found_optional, label)
+    ! IMPORTANT: After topology_block, the file position may be corrupted due to
+    ! backspace unreliability after failed list-directed reads. The file position
+    ! may be at edge_E_window or later. We need to skip lines until we find bdg.
+    bdg_search: do
+      call read_next_data_line(data_unit, line, status)
+      if (status /= 0) then
+        found_optional = .false.
+        exit bdg_search
+      end if
+      colon_pos = index(line, ':')
+      if (colon_pos > 0) then
+        label_part = adjustl(line(:colon_pos-1))
+        if (trim(to_lower_ascii(label_part)) == 'bdg') then
+          ! Found bdg line - extract enabled flag
+          block
+            character(len=255) :: bdg_value_str
+            bdg_value_str = adjustl(line(colon_pos+1:))
+            if (len_trim(bdg_value_str) > 0 .and. (bdg_value_str(1:1) == 'T' .or. bdg_value_str(1:1) == 't')) then
+              cfg%bdg%enabled = .true.
+            else if (len_trim(bdg_value_str) > 0 .and. (bdg_value_str(1:1) == 'F' .or. bdg_value_str(1:1) == 'f')) then
+              cfg%bdg%enabled = .false.
+            else
+              cfg%bdg%enabled = .false.
+            end if
+            found_optional = .true.
+            label = trim(label_part) // ':'
+          end block
+          exit bdg_search
+        end if
+        ! Not bdg - continue searching (skip this line)
+      end if
+      ! Continue loop to read next line
+    end do bdg_search
     bdg_block: do
       if (found_optional .and. cfg%bdg%enabled) then
         print *, trim(label), cfg%bdg%enabled
