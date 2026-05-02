@@ -74,3 +74,4 @@ test_staggered
 Makefile
 *.cmake
 Testing/.worktrees/
+.worktrees/
