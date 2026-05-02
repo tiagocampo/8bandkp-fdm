@@ -445,20 +445,20 @@ Expected E_1 (n=1): 33.40 meV
 
 Status: PENDING
 
-Reason: bandStructure executable failed to parse config
-        Landau level integration (Task 8.2) not complete
+Reason: Peierls substitution not yet integrated into bulk Hamiltonian
+        The computed E_0 = 0.417 meV (no Landau quantization yet)
+        Requires: add_peierls_coo call in ZB8bandBulk (confinement=0)
 ```
 
 **Analysis:**
-- The Landau level regression test (Task 8.2) is pending implementation
-- The `landau_InAs.cfg` config file fails to parse `waveVectorMax`
-- This indicates that the magnetic field + Peierls substitution integration
-  into `bandStructure` is not yet complete
+- The Landau level regression test requires Peierls substitution integration
+- The `add_peierls_coo` function exists in magnetic_field.f90 but is not called
+  from ZB8bandBulk (confinement=0 mode)
 - Expected values from analytical formula: E_0 = 11.13 meV, E_1 = 33.40 meV
+- Current computed: E_0 = 0.417 meV (no Landau quantization)
 
-**Required work:** Complete Task 8.2 (Landau level regression test) which
-depends on the magnetic_field module and Peierls substitution being fully
-integrated into the bandStructure workflow.
+**Required work:** Call `add_peierls_coo` from ZB8bandBulk in hamiltonianConstructor.f90
+to apply Peierls phase factors to the bulk Hamiltonian for Landau level quantization.
 
 ### 13.12.3 Benchmark Summary
 
@@ -468,7 +468,8 @@ integrated into the bandStructure workflow.
 | Chern -1 | QWZ u=0.5 | PASS | Correctly identifies topological phase |
 | Chern 0 | QWZ u=2.5 | PASS | Fixed by nk=50 grid resolution |
 | BHZ Z2 trivial | BHZ d=58Å M=+10meV | PASS | Z2=0 correctly detected |
-| BHZ Z2 topological | BHZ d=70Å M=-10meV | FAIL | FEAST finds bulk bands but no edge states in gap |
+| BHZ Z2 topological | BHZ d=70Å M=-10meV | PASS | Z2=1 correctly detected with feast_m0=280 |
+| Majorana phase diagram | Rashba wire | PASS | Non-zero min_gap found with feast_m0=200 |
 | Landau levels | InAs B=5T | PENDING | Peierls substitution integration incomplete |
 
 ## 13.13 References
