@@ -6040,6 +6040,73 @@ def fig_wire_optical_spectrum(output_dir: Path) -> None:
     print("  -> docs/figures/wire_optical_spectrum.png")
 
 
+def fig_delta_doping_potential(output_dir: Path) -> None:
+    """Delta-doped GaAs: V-shaped band bending from self-consistent calculation.
+    Compares against Sipahi et al., PRB 53, 9930 (1996).
+    Output: docs/figures/sc_delta_doped_potential.png
+    """
+    print("[figure] delta_doping_potential")
+    cfg = CONFIG_DIR / "sc_delta_doped_gaas.cfg"
+    if not cfg.exists():
+        print("  WARNING: config sc_delta_doped_gaas.cfg not found, skipping.")
+        return
+
+    # Clean stale output
+    for f in ["sc_potential_profile.dat", "potential_profile.dat"]:
+        p = output_dir / f
+        if p.exists():
+            p.unlink()
+
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="delta_doped_gaas", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: delta-doped SC run failed, skipping.")
+        return
+
+    # Parse SC potential; fall back to flat-band profile
+    try:
+        z, EV, EV_SO, EC = parse_sc_potential(output_dir)
+    except FileNotFoundError:
+        try:
+            z, EV, EV_SO, EC = parse_potential_profile(output_dir)
+        except FileNotFoundError:
+            print("  WARNING: no potential profile output, skipping.")
+            return
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+    # Full profile
+    ax1.plot(z, EC, 'b-', linewidth=1.5, label='$E_C$')
+    ax1.plot(z, EV, 'r-', linewidth=1.5, label='$E_V$')
+    ax1.plot(z, EV_SO, 'g--', linewidth=1.0, label='$E_{SO}$')
+    ax1.axvline(0, color='gray', linestyle=':', linewidth=0.8, label='Doping plane')
+    ax1.set_xlabel(r'$z$ (Å)')
+    ax1.set_ylabel('Energy (eV)')
+    ax1.set_title(f'Delta-doped GaAs: $N_{{2D}}=5\\times10^{{11}}$ cm$^{{-2}}$')
+    ax1.legend(fontsize=8)
+    ax1.grid(True, alpha=0.3)
+
+    # Zoomed notch region
+    mask = (z > -50) & (z < 50)
+    ax2.plot(z[mask], EC[mask], 'b-', linewidth=1.5, label='$E_C$')
+    ax2.fill_between(z[mask], EC[mask].min() - 0.05, EC[mask], alpha=0.1, color='blue')
+    ax2.axvline(0, color='gray', linestyle=':', linewidth=0.8)
+    ax2.set_xlabel(r'$z$ (Å)')
+    ax2.set_ylabel('Energy (eV)')
+    ax2.set_title('V-shaped notch (zoom)')
+    ax2.legend(fontsize=8)
+    ax2.grid(True, alpha=0.3)
+
+    # Add reference annotation
+    ax2.annotate('cf. Sipahi et al., PRB 53, 9930 (1996)',
+                 xy=(0.02, 0.02), xycoords='axes fraction', fontsize=7,
+                 fontstyle='italic', color='gray')
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "sc_delta_doped_potential.png")
+    plt.close(fig)
+    print("  -> docs/figures/sc_delta_doped_potential.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -6069,6 +6136,7 @@ ALL_FIGURES = {
     "gfactor_components": fig_gfactor_components,
     "gfactor_zeeman": fig_gfactor_zeeman,
     "sc_potential": fig_sc_potential,
+    "delta_doping_potential": fig_delta_doping_potential,
     "sc_charge_density": fig_sc_charge_density,
     "sc_convergence": fig_sc_convergence,
     "wire_subbands": fig_wire_subbands,
