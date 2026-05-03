@@ -26,15 +26,9 @@ Solidify what exists before adding new physics.
 
 ---
 
-## Phase 2: Complete Existing Physics Features
+## Phase 2: COMPLETED (2026-05-03)
 
-Wire up code that already exists but isn't connected.
-
-| Source | What | Effort |
-|--------|------|--------|
-| #6 | Bulk SC: add `confDir=='n' .and. sc%enabled==1` branch in main.f90 | Medium |
-| #6 | Bulk EF: uniform diagonal shift to 8x8 bulk Hamiltonian | Low |
-| #6 | gfactor SC: integrate SC loop in main_gfactor.f90 | Medium |
+Closed group #6. Bulk EF shift added to ZB8bandBulk, delta-doping (Gaussian profile) implemented, gfactor SC wired for wire and QW modes. Bulk SC uses QW path (confDir=z, single material). b_field parsing for bulk Landau levels.
 
 **Result:** All 4 executables support full feature set (SC, EF, gfactor, optics, wire).
 
@@ -92,8 +86,8 @@ Most advanced features. Fu-Kane is independent of Peierls but logically last.
 | Phase | Groups resolved | Net new capability | Effort |
 |-------|----------------|-------------------|--------|
 | 1. Testing | 4 | Full regression coverage | ~2-3 days |
-| 2. Physics wiring | 1 | Bulk SC, bulk EF, gfactor SC | ~2-3 days |
+| 2. Physics wiring | 1 | Bulk SC, bulk EF, gfactor SC | DONE |
 | 3. Figures | 3 | Complete documentation | ~3-4 days |
 | 4. Peierls/Landau | 2 | Magnetic field for all modes | ~5-7 days |
 | 5. Topological | 2 | Full topo suite | ~5-7 days |
-| **Total** | **11->0** | | **~17-24 days** |
+| **Total** | **10 remaining** | | **~15-21 days** |

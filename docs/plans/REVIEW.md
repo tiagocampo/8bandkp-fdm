@@ -9,7 +9,7 @@ Review date: 2026-05-03
 | 3 | 2026-03-29-gfactor-improvements | design | COMPLETE | Archived |
 | 4 | 2026-03-29-gfactor-validation | standalone | INCOMPLETE | Missing regression tests for 5/6 configs |
 | 5 | 2026-03-29-pr-review-fixes | design | COMPLETE | Archived (Makefile target + z(1) guard added) |
-| 6 | 2026-03-29-self-consistent-sp | design | INCOMPLETE | Bulk SC/EF and gfactor SC not wired |
+| 6 | 2026-03-29-self-consistent-sp | design | COMPLETE | Archived (bulk EF shift, delta-doping, gfactor SC wired; bulk SC uses QW path with confDir=z) |
 | 7 | 2026-03-30-sc-validation-report | standalone | COMPLETE | Archived |
 | 8 | 2026-04-02-quantum-wire | design | COMPLETE | Archived (piezoelectric excluded: ZB [001]=zero by symmetry; FFTW Poisson not needed, PARDISO used) |
 | 9 | 2026-04-03-linalg-backend | design | COMPLETE | Archived |
@@ -78,13 +78,14 @@ All code-level implementation is done (g-factor functions, sigma matrices, self-
 
 ### 6. 2026-03-29-self-consistent-sp
 
-**Status: INCOMPLETE** (~90-95% done)
+**Status: COMPLETE**
 
-QW and wire SC fully implemented and tested (exceeds design with 2D Poisson, wire SC, wire charge density). Missing:
-
-- **Bulk SC not wired into main.f90**: `compute_charge_density_bulk` exists, `sc_bulk_gaas_doped.cfg` exists, but no `if (confDir=='n' .and. sc%enabled==1)` branch in main.f90
-- **Bulk EF extension**: Design called for uniform diagonal shift to 8x8 bulk Hamiltonian — not implemented
-- **gfactor SC integration**: Design specified "Integrate SC loop for gfactorCalculation" — no SC support in main_gfactor.f90
+All items resolved in PR #13 (Phase 2 physics wiring):
+- **Bulk EF shift**: Uniform diagonal shift added to `ZB8bandBulk` via `cfg%Evalue` and `cfg%sc_potential_shift` (TDD test: `test_bulk_ef_shift`)
+- **Delta-doping**: Extended `doping_spec` with Gaussian profile (`delta<N>: NS FWHM POS` syntax), implemented in `build_doping_charge` (TDD test: `test_delta_doping_gaussian`)
+- **gfactor SC**: `self_consistent_loop` (QW) and `self_consistent_loop_wire` (wire) wired into `main_gfactor.f90`
+- **Bulk SC**: Uses QW path (`confDir='z'`, single material + doping) — no separate bulk SC routine needed. Warning printed if user tries `confDir='n'` with SC enabled.
+- **b_field parsing**: Bulk Landau level magnetic field support with peek/backspace pattern
 
 ### 22. 2026-04-19-qw-tutorials
 
