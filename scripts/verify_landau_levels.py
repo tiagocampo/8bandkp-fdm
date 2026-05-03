@@ -241,7 +241,41 @@ def make_figure(eigenvalues: list[float] | None, material: str = 'InAs', B: floa
     print(f"Summary written to {summary_file}")
 
 
+def test_qw_zeeman() -> bool:
+    """
+    Verify Zeeman splitting in QW mode: E_spin_up - E_spin_down = g*mu_B*B.
+
+    For QW with b_field: 5 0 0, the conduction band Zeeman splitting should be:
+        Delta_E = g * mu_B * B = 2 * 0.058 meV/T * 5 T ≈ 0.58 meV
+
+    This requires a config with confinement=1 (QW mode) and b_field enabled.
+    Currently no such config is committed, so this is a placeholder that
+    documents the expected behavior once a proper test config exists.
+
+    Returns True (placeholder always passes; real validation awaits test config).
+    """
+    print("\n" + "=" * 60)
+    print("QW Zeeman Splitting Verification")
+    print("=" * 60)
+    print("Expected: CB Zeeman splitting = g * mu_B * B")
+    print("  g     ≈ 2 (InAs/InSb conduction band)")
+    print("  mu_B  = 0.058 meV/T")
+    print("  B     = 5 T")
+    print("  => Delta_E ≈ 2 * 0.058 * 5 = 0.58 meV")
+    print("\nSTATUS: Placeholder — no committed QW + b_field config exists.")
+    print("  Once a QW config with landau/Zeeman setup is available in")
+    print("  tests/regression/configs/, this test can be upgraded to:")
+    print("    1. Run bandStructure with confinement=1 and b_field: 5 0 0")
+    print("    2. Parse CB eigenvalues at k=0")
+    print("    3. Assert |E_up - E_down| ≈ 0.58 meV")
+    print("=" * 60)
+    return True
+
+
 def main():
+    # QW Zeeman test (placeholder — runs first as independent check)
+    test_qw_zeeman()
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     material = 'InAs'
