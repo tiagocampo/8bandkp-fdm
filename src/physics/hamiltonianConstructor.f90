@@ -471,6 +471,20 @@ module hamiltonianConstructor
       HT(7,7) = HT(7,7) + params(1)%Eg
       HT(8,8) = HT(8,8) + params(1)%Eg
 
+      ! External potential shifts (EF + SC)
+      if (present(cfg)) then
+        if (cfg%ExternalField == 1 .and. cfg%EFtype == 'EF') then
+          do i = 1, 8
+            HT(i,i) = HT(i,i) + cmplx(cfg%Evalue, 0.0_dp, kind=dp)
+          end do
+        end if
+        if (cfg%sc_potential_shift /= 0.0_dp) then
+          do i = 1, 8
+            HT(i,i) = HT(i,i) + cmplx(cfg%sc_potential_shift, 0.0_dp, kind=dp)
+          end do
+        end if
+      end if
+
       ! ---------------------------------------------------------------
       ! Zeeman splitting: g*mu_B * B . sigma
       ! Applied after SOC and band-edge shifts so all terms are present.
