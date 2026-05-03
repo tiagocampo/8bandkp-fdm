@@ -501,12 +501,11 @@ contains
         print *, 'Error: Failed to read Evalue from input.cfg'
         stop 1
       end if
+      print *, trim(label), cfg%Evalue
       ! Check if the "label" we read is actually the b_field line
       ! (happens when b_field follows EFParams with no newline between)
       if (trim(label) == 'b_field:') then
-        ! The "Evalue" we read (5.0) is actually the first b_field component
         cfg%b_field(1) = cfg%Evalue
-        ! Read the remaining two components
         read(data_unit, *, iostat=status) cfg%b_field(2), cfg%b_field(3)
         if (status == 0 .or. status == -1) then
           cfg%bdg%B_vec = cfg%b_field
@@ -517,7 +516,6 @@ contains
           cfg%bdg%enabled = .false.
           status = 0
         end if
-        ! Set label to empty to indicate b_field was already handled
         label = ''
       end if
     else
@@ -530,31 +528,30 @@ contains
     if (cfg%bdg%enabled .and. label == '') then
       ! b_field was already parsed via Evalue path - skip redundant parsing
     elseif (.not. cfg%bdg%enabled) then
-      ! b_field not yet parsed - parse it now
+      ! b_field not yet parsed - peek at next line
       call read_next_data_line(data_unit, line, status)
       if (status == 0) then
         colon_pos = index(line, ':')
         if (colon_pos > 0) then
           label = adjustl(line(:colon_pos-1))
-          read(line(colon_pos+1:), *, iostat=status) &
-              cfg%b_field(1), cfg%b_field(2), cfg%b_field(3)
-          if (status == 0) then
-            cfg%bdg%B_vec = cfg%b_field
-            cfg%bdg%enabled = .true.
+          if (trim(to_lower_ascii(label)) == 'b_field') then
+            read(line(colon_pos+1:), *, iostat=status) &
+                cfg%b_field(1), cfg%b_field(2), cfg%b_field(3)
+            if (status == 0) then
+              cfg%bdg%B_vec = cfg%b_field
+              cfg%bdg%enabled = .true.
+            else
+              cfg%b_field = 0.0_dp
+              status = 0
+            end if
           else
-            cfg%b_field = 0.0_dp
-            cfg%bdg%B_vec = 0.0_dp
-            cfg%bdg%enabled = .false.
+            ! Not b_field — put line back for gfactor parsing
+            backspace(data_unit)
           end if
         else
-          cfg%b_field = 0.0_dp
-          cfg%bdg%B_vec = 0.0_dp
-          cfg%bdg%enabled = .false.
+          ! No colon — not a labeled parameter, put back
+          backspace(data_unit)
         end if
-      else
-        cfg%b_field = 0.0_dp
-        cfg%bdg%B_vec = 0.0_dp
-        cfg%bdg%enabled = .false.
       end if
     end if
 
