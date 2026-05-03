@@ -76,14 +76,15 @@ contains
 
   @test
   subroutine test_peierls_coo_off_diagonal()
-    ! Test add_peierls_coo applies phase to off-diagonal entries
-    real(kind=dp), allocatable :: coo_vals(:)
+    ! Test add_peierls_coo applies full complex phase to off-diagonal entries
+    complex(kind=dp), allocatable :: coo_vals(:)
     integer, allocatable :: coo_row(:), coo_col(:)
     type(spatial_grid) :: grid
     integer :: nnz_offset, idx
     integer, parameter :: nx = 1, ny = 2
     integer :: mat2d(nx, ny)
-    real(kind=dp) :: y_i_m, y_j_m, dz_m, phi_expected, cos_phi
+    real(kind=dp) :: y_i_m, y_j_m, dz_m, phi_expected
+    complex(kind=dp) :: exp_phase_expected
 
     ! 2 grid points in y-direction for distinct y-coordinates
     mat2d = 1
@@ -99,7 +100,7 @@ contains
     nnz_offset = nnz_offset + 1
     coo_row(nnz_offset) = 1
     coo_col(nnz_offset) = 1
-    coo_vals(nnz_offset) = 1.0_dp
+    coo_vals(nnz_offset) = cmplx(1.0_dp, 0.0_dp, kind=dp)
 
     ! Off-diagonal entry: row 2 (band 2 of grid pt 1) to col 10 (band 2 of grid pt 2)
     ! grid pt 1: y(1) = 0.5 Angstrom
@@ -107,13 +108,13 @@ contains
     nnz_offset = nnz_offset + 1
     coo_row(nnz_offset) = 2
     coo_col(nnz_offset) = 10
-    coo_vals(nnz_offset) = 0.5_dp
+    coo_vals(nnz_offset) = cmplx(0.5_dp, 0.0_dp, kind=dp)
 
     ! Another diagonal entry at row 10
     nnz_offset = nnz_offset + 1
     coo_row(nnz_offset) = 10
     coo_col(nnz_offset) = 10
-    coo_vals(nnz_offset) = 2.0_dp
+    coo_vals(nnz_offset) = cmplx(2.0_dp, 0.0_dp, kind=dp)
 
     ! Apply Peierls phase with Bx = 5 Tesla
     ! y(1) = 0.5 Angstrom = 0.5e-10 m
@@ -124,21 +125,19 @@ contains
     dz_m = grid%dy * 1.0e-10_dp     ! dz in meters
 
     call add_peierls_coo(coo_vals, coo_row, coo_col, nnz_offset, &
-                         grid, [5.0_dp, 0.0_dp, 0.0_dp], 'landau', &
-                         kpterms_2d=[csr_matrix()])
+                         grid, [5.0_dp, 0.0_dp, 0.0_dp])
 
     ! Diagonal entries (row == col) should NOT be modified
-    @assertEqual(1.0_dp, coo_vals(1), tolerance=1e-12_dp)
-    @assertEqual(2.0_dp, coo_vals(3), tolerance=1e-12_dp)
+    @assertEqual(cmplx(1.0_dp, 0.0_dp, kind=dp), coo_vals(1), tolerance=1e-12_dp)
+    @assertEqual(cmplx(2.0_dp, 0.0_dp, kind=dp), coo_vals(3), tolerance=1e-12_dp)
 
-    ! Off-diagonal entry: compute expected phase and verify
+    ! Off-diagonal entry: compute expected complex phase and verify
     ! hbar_J = hbar * e for SI unit conversion
     phi_expected = e * 5.0_dp * (y_i_m - y_j_m) * dz_m / (hbar * e)
-    cos_phi = cos(phi_expected)
+    exp_phase_expected = cmplx(cos(phi_expected), -sin(phi_expected), kind=dp)
 
-    ! The off-diagonal value should be 0.5 * cos(phi)
-    ! (phase is exp(-i*phi), real part is cos(phi))
-    @assertEqual(0.5_dp * cos_phi, coo_vals(2), tolerance=1e-10_dp)
+    ! The off-diagonal value should be 0.5 * exp(-i*phi)
+    @assertEqual(0.5_dp * exp_phase_expected, coo_vals(2), tolerance=1e-10_dp)
 
     deallocate(coo_vals, coo_row, coo_col)
     call grid_free(grid)

@@ -134,8 +134,9 @@ contains
     end do
 
     ! ==================================================================
-    ! Add Zeeman and Peierls corrections to electron block (1,1)
-    ! These merge with existing diagonal entries during CSR assembly.
+    ! Add Peierls and Zeeman corrections to electron block (1,1)
+    ! Peierls phase modifies existing off-diagonal entries in-place.
+    ! Zeeman splitting adds new diagonal entries (merged during CSR assembly).
     ! ==================================================================
     if (present(B_vec) .and. (abs(B_vec(1)) > 1e-12_dp .or. &
                               abs(B_vec(2)) > 1e-12_dp .or. &
@@ -145,19 +146,20 @@ contains
       else
         g_f = cfg%bdg%g_factor
       end if
-      ! Add Zeeman splitting to separate real COO array
+      ! Apply Peierls phase to off-diagonal entries of the already-populated
+      ! electron block (1,1) in the main complex COO array.
+      call add_peierls_coo(coo_vals_bdg, coo_row_bdg, coo_col_bdg, &
+                            coo_idx, cfg%grid, B_vec)
+      ! Add Zeeman splitting to separate real COO array (diagonal-only)
       nnz_z = 0
       call add_zeeman_coo(coo_vals_zeeman, coo_row_zeeman, coo_col_zeeman, &
                           nnz_z, cfg%grid, B_vec, g_f)
-      ! Add Peierls substitution for orbital magnetic effects
-      call add_peierls_coo(coo_vals_zeeman, coo_row_zeeman, coo_col_zeeman, &
-                            nnz_z, cfg%grid, B_vec, 'landau', kpterms_2d)
-      ! Copy Zeeman entries into the main complex COO (real part adds)
+      ! Copy Zeeman entries into the main complex COO
       do i = 1, nnz_z
         coo_idx = coo_idx + 1
         coo_row_bdg(coo_idx) = coo_row_zeeman(i)
         coo_col_bdg(coo_idx) = coo_col_zeeman(i)
-        coo_vals_bdg(coo_idx) = cmplx(real(coo_vals_zeeman(i), kind=dp), 0.0_dp, kind=dp)
+        coo_vals_bdg(coo_idx) = cmplx(coo_vals_zeeman(i), 0.0_dp, kind=dp)
       end do
     end if
 

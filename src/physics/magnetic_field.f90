@@ -51,21 +51,23 @@ contains
   end subroutine add_zeeman_coo
 
   subroutine add_peierls_coo(coo_vals, coo_row, coo_col, nnz_offset, &
-                              grid, B_vec, gauge, kpterms_2d)
+                              grid, B_vec)
     ! Peierls substitution: k -> k - eA/hbar
     ! For Landau gauge A = (0, 0, Bx*y):
     !   kz -> kz - e*Bx*y/hbar  (phase factor e^(ieA.z/hbar))
-    ! Only affects cross-derivative and kz-coupling blocks
-    real(kind=dp), intent(inout) :: coo_vals(:)
-    integer, intent(inout) :: coo_row(:), coo_col(:)
-    integer, intent(inout) :: nnz_offset
+    ! Only affects off-diagonal entries (hopping terms between sites).
+    !
+    ! Operates on the main complex COO array so that full complex phase
+    ! factors are preserved (unlike the old version which discarded the
+    ! imaginary part by storing into a real array).
+    complex(kind=dp), intent(inout) :: coo_vals(:)
+    integer, intent(in) :: coo_row(:), coo_col(:)
+    integer, intent(in) :: nnz_offset
     type(spatial_grid), intent(in) :: grid
     real(kind=dp), intent(in) :: B_vec(3)
-    character(len=*), intent(in) :: gauge
-    type(csr_matrix), intent(in) :: kpterms_2d(:)
 
     real(kind=dp) :: Bx, phase, y_i, y_j, dy_m, hbar_J
-    integer :: idx, ngrid, nx
+    integer :: idx, ngrid
     complex(kind=dp) :: exp_phase
 
     Bx = B_vec(1)
@@ -74,7 +76,6 @@ contains
     if (abs(Bx) < 1e-12_dp) return
 
     ngrid = grid%npoints()
-    nx = grid%nx
 
     ! Convert dy from Angstrom to meters for SI units
     dy_m = grid%dy * 1.0e-10_dp
@@ -99,8 +100,8 @@ contains
         ! Phase factor: exp(-i * phase)
         exp_phase = cmplx(cos(phase), -sin(phase), kind=dp)
 
-        ! Multiply the off-diagonal entry by the phase factor (real part only)
-        coo_vals(idx) = coo_vals(idx) * real(exp_phase)
+        ! Multiply the off-diagonal entry by the full complex phase factor
+        coo_vals(idx) = coo_vals(idx) * exp_phase
       end if
     end do
   end subroutine add_peierls_coo
