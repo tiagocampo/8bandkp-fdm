@@ -16,6 +16,7 @@ program gfactor
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
     & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
   use strain_solver
+  use sc_loop, only: self_consistent_loop, self_consistent_loop_wire
   use linalg, only: mkl_set_num_threads_local
 
   implicit NONE
@@ -144,6 +145,63 @@ program gfactor
     print *, '  numcb=', cfg%numcb, ' numvb=', cfg%numvb
     print *, ''
 
+    ! Configure FEAST eigensolver (needed before SC loop and production solve)
+    eigen_cfg%method   = 'FEAST'
+    eigen_cfg%nev      = nev_wire
+    eigen_cfg%max_iter = 100
+    eigen_cfg%tol      = 1.0e-10_dp
+    eigen_cfg%feast_m0 = cfg%feast_m0  ! 0 = auto: 2*nev
+
+    ! Set energy window: use manual values if provided, otherwise placeholders
+    if (cfg%feast_emin /= 0.0_dp .and. cfg%feast_emax /= 0.0_dp) then
+      eigen_cfg%emin = cfg%feast_emin
+      eigen_cfg%emax = cfg%feast_emax
+    else
+      ! Placeholder values; will be updated after first Hamiltonian build
+      eigen_cfg%emin = -1.0_dp
+      eigen_cfg%emax =  1.0_dp
+    end if
+
+    ! Self-consistent loop for wire (before Hamiltonian construction)
+    if (cfg%sc%enabled == 1) then
+      block
+        ! SC kx sweep arrays (separate from production kz solve)
+        integer :: nk_sc, nev_sc
+        real(kind=dp), allocatable :: eig_sc(:,:)
+        complex(kind=dp), allocatable :: eigv_sc(:,:,:)
+        real(kind=dp), allocatable :: sc_phi(:,:), sc_ne(:,:), sc_nh(:,:)
+        logical :: sc_converged
+
+        nk_sc = cfg%sc%num_kpar
+        if (mod(nk_sc, 2) == 0) nk_sc = nk_sc - 1
+        nev_sc = nev_wire
+
+        allocate(eig_sc(nev_sc, nk_sc))
+        allocate(eigv_sc(Ntot, nev_sc, nk_sc))
+        eig_sc = 0.0_dp
+        eigv_sc = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+        print *, ''
+        print *, '=== Running wire self-consistent SP loop (gfactor) ==='
+
+        call self_consistent_loop_wire(profile_2d, cfg, kpterms_2d, cfg%grid, &
+          & coo_cache, eigen_cfg, eig_sc, eigv_sc, &
+          & phi_out=sc_phi, n_electron_out=sc_ne, n_hole_out=sc_nh, &
+          & converged_out=sc_converged)
+
+        print *, '  Wire SC complete. Converged:', sc_converged
+
+        if (allocated(sc_phi)) deallocate(sc_phi)
+        if (allocated(sc_ne)) deallocate(sc_ne)
+        if (allocated(sc_nh)) deallocate(sc_nh)
+        if (allocated(eig_sc)) deallocate(eig_sc)
+        if (allocated(eigv_sc)) deallocate(eigv_sc)
+
+        ! Reset COO cache — profile_2d changed
+        call wire_coo_cache_free(coo_cache)
+      end block
+    end if
+
     ! Build wire Hamiltonian at kz=0
     call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg, coo_cache)
 
@@ -153,17 +211,8 @@ program gfactor
     ! Build velocity matrix for z direction (free axis, uses existing dH/dkz)
     call ZB8bandGeneralized(vel(3), 1.0_dp, profile_2d, kpterms_2d, cfg, g='g3')
 
-    ! Configure FEAST: use config energy window if provided, else auto
-    eigen_cfg%method   = 'FEAST'
-    eigen_cfg%nev      = nev_wire
-    eigen_cfg%max_iter = 100
-    eigen_cfg%tol      = 1.0e-10_dp
-    eigen_cfg%feast_m0 = cfg%feast_m0  ! 0 = auto: 2*nev
-
-    if (cfg%feast_emin /= 0.0_dp .and. cfg%feast_emax /= 0.0_dp) then
-      eigen_cfg%emin = cfg%feast_emin
-      eigen_cfg%emax = cfg%feast_emax
-    else
+    ! Update energy window from Hamiltonian if using auto mode
+    if (cfg%feast_emin == 0.0_dp .and. cfg%feast_emax == 0.0_dp) then
       call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
     end if
 
@@ -410,6 +459,41 @@ program gfactor
 
     !only Gamma points
     k = 1
+
+    ! Self-consistent loop for QW (before Hamiltonian construction)
+    if (cfg%sc%enabled == 1 .and. cfg%confDir == 'z') then
+      block
+        complex(kind=dp), allocatable :: eigv_sc(:,:,:)
+        real(kind=dp), allocatable :: sc_ne_out(:), sc_nh_out(:)
+        integer :: il_sc, iuu_sc
+
+        ! SC loop uses zheevx with index range; compute all states for gfactor
+        il_sc = 1
+        iuu_sc = N
+
+        ! Allocate eigenvector array for SC k_par sweep
+        ! SC loop will manage the k_par grid internally
+        allocate(eigv_sc(N, N, 1))
+        eigv_sc = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+        print *, ''
+        print *, '=== Running QW self-consistent SP loop (gfactor) ==='
+        call self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv_sc, &
+          & smallk, N, il_sc, iuu_sc, &
+          & n_electron_out=sc_ne_out, n_hole_out=sc_nh_out)
+        print *, '  QW SC complete.'
+
+        if (allocated(eigv_sc)) deallocate(eigv_sc)
+        if (allocated(sc_ne_out)) deallocate(sc_ne_out)
+        if (allocated(sc_nh_out)) deallocate(sc_nh_out)
+      end block
+    end if
+
+    ! Bulk SC warning
+    if (cfg%sc%enabled == 1 .and. cfg%confDir == 'n') then
+      print *, 'Warning: SC with bulk mode (confDir=n) requires confDir=z with single material.'
+      print *, '  Skipping SC. Use confinement=1, confDir=z, numLayers=1 for delta-doped bulk.'
+    end if
 
     if (cfg%confDir == 'n') then !BULK
       call ZB8bandBulk(HT,smallk(k),cfg%params(1), cfg=cfg)
