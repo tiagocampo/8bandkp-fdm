@@ -6006,6 +6006,50 @@ def fig_qw_gfactor_vs_width(output_dir: Path) -> None:
     print("  -> docs/figures/qw_gfactor_vs_width.png")
 
 
+def fig_wire_optical_spectrum(output_dir: Path) -> None:
+    """wire_optical_spectrum.png: TE and TM absorption for a GaAs rectangular wire.
+
+    Runs opticalProperties with the wire_gaas_optical_window config and plots
+    the absorption spectrum, demonstrating wire optical selection rules.
+    """
+    print("[figure] wire_optical_spectrum")
+
+    cfg = CONFIG_DIR / "wire_gaas_optical_window.cfg"
+    if not cfg.exists():
+        print("  WARNING: wire_gaas_optical_window.cfg not found, skipping.")
+        return
+
+    result = run_executable(EXE_OPTICS, cfg, REPO_ROOT,
+                           label="wire_optical_spectrum", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: opticalProperties run failed, skipping.")
+        return
+
+    te_file = output_dir / "absorption_TE.dat"
+    tm_file = output_dir / "absorption_TM.dat"
+
+    if not te_file.exists() or not tm_file.exists():
+        print("  WARNING: wire absorption files not found, skipping.")
+        return
+
+    E_te, alpha_te = _read_absorption(output_dir, "TE")
+    E_tm, alpha_tm = _read_absorption(output_dir, "TM")
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(E_te, alpha_te, color="#1f77b4", linewidth=1.5, label="TE (x, y)")
+    ax.plot(E_tm, alpha_tm, color="#d62728", linewidth=1.5, label="TM (z)")
+    ax.set_xlabel("Photon Energy (eV)")
+    ax.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
+    ax.set_title("GaAs Rectangular Wire Absorption Spectrum", fontsize=12)
+    ax.legend(loc="best", fontsize=9, framealpha=0.9)
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "wire_optical_spectrum.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/wire_optical_spectrum.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -6072,6 +6116,7 @@ ALL_FIGURES = {
     "wire_inas_gaas_subbands": fig_wire_inas_gaas_subbands,
     "wire_inas_gaas_wavefunctions": fig_wire_inas_gaas_wavefunctions,
     "wire_gfactor_vs_size": fig_wire_gfactor_vs_size,
+    "wire_optical_spectrum": fig_wire_optical_spectrum,
     "sc_inas_alsb_potential": fig_sc_inas_alsb_potential,
     "sc_inas_alsb_convergence": fig_sc_inas_alsb_convergence,
     "qw_gfactor_vs_width": fig_qw_gfactor_vs_width,
