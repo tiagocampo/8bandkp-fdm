@@ -495,7 +495,7 @@ contains
               n_majorana = n_majorana + 1
               majorana_xi(n_majorana) = compute_majorana_profile( &
                 & eigen_res_local%eigenvectors(:, i), cfg%grid, &
-                & cfg%bdg%delta_0 * 0.01_dp, Ntot_local * 2)
+                & cfg%bdg%delta_0 * 0.01_dp, Ntot_local)
             end if
           end do
 

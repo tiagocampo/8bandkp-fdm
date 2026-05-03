@@ -350,6 +350,12 @@ contains
 
     ngrid = grid%npoints()
     half_n = half_n_in
+    if (half_n * 2 > size(evec_bdg)) then
+      print *, 'ERROR: compute_majorana_profile: eigenvector too small'
+      print *, '  half_n=', half_n, ' size(evec)=', size(evec_bdg)
+      xi = 0.0_dp
+      return
+    end if
     nspatial = half_n / 8
 
     allocate(rho(nspatial))
