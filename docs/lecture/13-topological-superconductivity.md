@@ -363,11 +363,12 @@ qwz_u: -0.8
 ! z2_method: gap
 
 ! Or for BdG mode:
-! mode: bdg
-! bdg: T
-! bdg_mu: 0.010
-! bdg_delta: 0.0003
-! bdg_Bz: 5.0
+mode: bdg
+bdg: T
+mu: 0.0005
+delta_0: 0.0003
+g_factor: 2.0
+b_field: 5 0 0  ! Bx By Bz in Tesla
 ```
 
 The `topologicalAnalysis` executable reads the config file and dispatches to
@@ -412,6 +413,9 @@ Status Key:
 - u=0.5 (C=-1, topological phase): PASS
 - u=2.5 (C=0, trivial phase): PASS — fixed by increasing nk from 20 to 50
 ```
+
+![QWZ Chern Convergence](figures/qwz_chern_convergence.png)
+![QWZ Chern Phase Diagram](figures/qwz_chern_phase_diagram.png)
 
 **Resolution:** The trivial phase at u=2.5 was correctly computed after
 increasing `nk_default` from 20 to 50 as documented in Section 13.2.3.
@@ -461,6 +465,10 @@ Reason: Peierls substitution not yet integrated into bulk Hamiltonian
 to apply Peierls phase factors to the bulk Hamiltonian for Landau level quantization.
 
 ### 13.12.3 Benchmark Summary
+
+![BHZ Z2 Width Sweep](figures/verify_bhz_z2_width_sweep.png)
+![Rashba Majorana Phase Diagram](figures/rashba_majorana_phase_diagram.png)
+![Landau Levels InAs B=5T](figures/landau_levels_inas_b5t.png)
 
 | Test | Model | Status | Notes |
 |---|---|---|---|
