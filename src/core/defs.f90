@@ -120,6 +120,10 @@ module definitions
   type doping_spec
     real(kind=dp) :: ND = 0.0_dp    ! donor concentration (cm^-3)
     real(kind=dp) :: NA = 0.0_dp    ! acceptor concentration (cm^-3)
+    character(len=7) :: dtype = 'uniform'  ! 'uniform' or 'delta'
+    real(kind=dp) :: NS = 0.0_dp         ! delta: 2D sheet density (10^11 cm^-2)
+    real(kind=dp) :: delta_pos = 0.0_dp   ! delta: position along z (Angstrom)
+    real(kind=dp) :: delta_fwhm = 10.0_dp ! delta: Gaussian FWHM (Angstrom)
   end type doping_spec
 
   type sc_config
@@ -339,6 +343,10 @@ module definitions
     character(len=2) :: EFtype = '  '
     real(kind=dp) :: waveVectorMax = 0.0_dp
     real(kind=dp) :: Evalue = 0.0_dp
+    real(kind=dp) :: sc_potential_shift = 0.0_dp  ! converged SC potential for bulk
+    ! b_field: bulk Landau level magnetic field Bx, By, Bz (Tesla)
+    ! Copied to cfg%bdg%B_vec when cfg%bdg%enabled would be set
+    real(kind=dp) :: b_field(3) = 0.0_dp
     real(kind=dp) :: totalSize = 0.0_dp
     real(kind=dp) :: delta = 0.0_dp
     real(kind=dp) :: dz = 0.0_dp
