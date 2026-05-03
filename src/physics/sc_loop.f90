@@ -1051,17 +1051,24 @@ contains
     type(doping_spec), intent(in)  :: doping(:)
 
     integer :: nx, ny, ix, iy, ij, mid
+    logical :: warned
 
     nx = grid%nx
     ny = grid%ny
     allocate(rho_doping(nx, ny))
     rho_doping = 0.0_dp
+    warned = .false.
 
     do iy = 1, ny
       do ix = 1, nx
         ij = (iy - 1) * nx + ix
         mid = grid%material_id(ij)
         if (mid > 0 .and. mid <= size(doping)) then
+          if (doping(mid)%dtype == 'delta' .and. .not. warned) then
+            print *, 'Warning: delta-doping ignored in 2D wire cross-section.'
+            print *, '  Delta-doping is a z-profile; wire SC uses cross-section doping only.'
+            warned = .true.
+          end if
           rho_doping(ix, iy) = doping(mid)%ND - doping(mid)%NA
         end if
       end do

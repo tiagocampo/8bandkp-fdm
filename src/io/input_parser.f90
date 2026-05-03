@@ -506,6 +506,7 @@ contains
       ! (happens when b_field follows EFParams with no newline between)
       if (trim(label) == 'b_field:') then
         cfg%b_field(1) = cfg%Evalue
+        cfg%Evalue = 0.0_dp
         read(data_unit, *, iostat=status) cfg%b_field(2), cfg%b_field(3)
         if (status == 0 .or. status == -1) then
           cfg%bdg%B_vec = cfg%b_field
