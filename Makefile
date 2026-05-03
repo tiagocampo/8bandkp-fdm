@@ -26,4 +26,7 @@ clean:
 clean_all: clean
 	rm -f *.txt fort.* *dat
 
-.PHONY: all run test gfactor clean clean_all
+test-fd-sign:
+	@echo "Build and run manually: gfortran tests/fd_sign_compare.f90 -o build/fd_sign_compare && ./build/fd_sign_compare"
+
+.PHONY: all run test gfactor clean clean_all test-fd-sign

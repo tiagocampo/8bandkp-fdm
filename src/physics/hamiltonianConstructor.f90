@@ -26,6 +26,13 @@ module hamiltonianConstructor
 
       integer :: i
 
+      if (size(z) > 0 .and. abs(z(1)) < tolerance) then
+        print *, "ERROR: externalFieldSetup_electricField called with z(1)=0"
+        print *, "  This causes division by zero in the linear potential."
+        print *, "  Ensure z-coordinates start at a non-zero value."
+        stop 1
+      end if
+
       do i = 1, ubound(z, dim=1), 1
           profile(i,:) = profile(i,:) - (Evalue*totalSize) * (z(i)+z(1))/(2.0_dp*z(1))
       end do
@@ -333,7 +340,6 @@ module hamiltonianConstructor
 
       integer :: i, j
 
-
       !constants
 
 
@@ -468,6 +474,11 @@ module hamiltonianConstructor
       ! ---------------------------------------------------------------
       ! Zeeman splitting: g*mu_B * B . sigma
       ! Applied after SOC and band-edge shifts so all terms are present.
+      ! Note: This is SPIN Zeeman only. Orbital Landau level quantization
+      ! requires Peierls substitution (kz -> kz - eBx*y/hbar) which needs
+      ! spatial y-discretization. Bulk 8x8 at k=0 has no y information
+      ! so only Zeeman (spin) is possible here. For orbital physics, use
+      ! wire mode (confinement=2) which has 2D grid and can do Peierls.
       ! ---------------------------------------------------------------
       if (present(cfg)) then
         if (cfg%bdg%enabled) then
