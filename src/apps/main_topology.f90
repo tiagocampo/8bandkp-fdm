@@ -185,7 +185,8 @@ program topologicalAnalysis
   write(iounit, '(A,I0)') '# Z2 invariant: ', topo_result%z2_invariant
   write(iounit, '(A,F12.6)') '# Hall conductance (e^2/h): ', topo_result%hall_conductance
   write(iounit, '(A,F12.6)') '# Min gap (eV): ', topo_result%min_gap
-  write(iounit, '(A,F12.6)') '# Edge localization length (AA): ', topo_result%edge_xi
+  write(iounit, '(A,F12.6)') '# Edge localization length min (AA): ', topo_result%edge_xi_min
+  write(iounit, '(A,F12.6)') '# Edge localization length avg (AA): ', topo_result%edge_xi
   if (allocated(topo_result%edge_energies)) then
     write(iounit, '(A)') '# Edge state energies (eV):'
     do i = 1, size(topo_result%edge_energies)
@@ -353,9 +354,9 @@ contains
         real(kind=dp), allocatable :: edge_info(:)
         edge_info = extract_edge_states_wire(eigvals_local, eigen_res_local%eigenvectors, &
           & cfg%grid, cfg%topo%edge_E_window)
-        result%edge_xi = edge_info(1)
-        result%edge_xi = edge_info(2)  ! average
-        result%min_gap = edge_info(3)
+        result%edge_xi_min = edge_info(1)  ! min localization length
+        result%edge_xi = edge_info(2)      ! average localization length
+        result%min_gap = edge_info(3)      ! edge count (compatibility)
 
         allocate(result%edge_energies(1))
         result%edge_energies(1) = eigvals_local(1)
@@ -363,7 +364,7 @@ contains
     end if
 
     print *, '  Z2 invariant: ', result%z2_invariant
-    print *, '  Edge xi: ', result%edge_xi, ' AA'
+    print *, '  Edge xi (min/avg): ', result%edge_xi_min, ' / ', result%edge_xi, ' AA'
     print *, '  Min gap: ', result%min_gap, ' eV'
 
     ! Clean up
