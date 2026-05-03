@@ -803,7 +803,8 @@ contains
       colon_pos = index(line, ':')
       if (colon_pos > 0) then
         label_part = adjustl(line(:colon_pos-1))
-        if (trim(to_lower_ascii(label_part)) == 'bdg') then
+        select case(trim(to_lower_ascii(label_part)))
+        case('bdg')
           ! Found bdg line - extract enabled flag
           block
             character(len=255) :: bdg_value_str
@@ -819,13 +820,17 @@ contains
             label = trim(label_part) // ':'
           end block
           exit bdg_search
-        else if (trim(to_lower_ascii(label_part)) == 'b_field') then
+        case('b_field')
           ! b_field was already parsed above - skip it
           cycle bdg_search
-        end if
-        ! Not bdg - continue searching (skip this line)
+        case default
+          ! Known optional block or unknown label - stop and push back
+          backspace(data_unit)
+          found_optional = .false.
+          exit bdg_search
+        end select
       end if
-      ! Continue loop to read next line
+      ! No colon - skip this line
     end do bdg_search
     bdg_block: do
       if (found_optional .and. cfg%bdg%enabled) then
