@@ -280,39 +280,6 @@ module hamiltonianConstructor
         end if
       end if
 
-      ! Zeeman splitting: g*mu_B * B . sigma for B in z-direction
-      ! Applied to diagonal blocks when B_z /= 0
-      if (present(cfg)) then
-        if (cfg%bdg%enabled) then
-          if (abs(cfg%bdg%B_vec(3)) >= 1e-12_dp) then
-            block
-              real(kind=dp) :: mu_B, dE1, dE2, dE3, dE4, dE5, dE6, dE7, dE8
-              mu_B = e * hbar / (2.0_dp * m0)
-              ! g_J eigenvalues: HH=-1.5, LH=+0.5, SO=-0.5, CB=+1.0
-              dE1 = -1.5_dp * cfg%bdg%g_factor * mu_B * cfg%bdg%B_vec(3)
-              dE2 = -1.5_dp * cfg%bdg%g_factor * mu_B * cfg%bdg%B_vec(3)
-              dE3 =  0.5_dp * cfg%bdg%g_factor * mu_B * cfg%bdg%B_vec(3)
-              dE4 =  0.5_dp * cfg%bdg%g_factor * mu_B * cfg%bdg%B_vec(3)
-              dE5 = -0.5_dp * cfg%bdg%g_factor * mu_B * cfg%bdg%B_vec(3)
-              dE6 = -0.5_dp * cfg%bdg%g_factor * mu_B * cfg%bdg%B_vec(3)
-              dE7 = -1.0_dp * cfg%bdg%g_factor * mu_B * cfg%bdg%B_vec(3)
-              dE8 =  1.0_dp * cfg%bdg%g_factor * mu_B * cfg%bdg%B_vec(3)
-              ! Add to each 8x8 block diagonal (bands 1-8, repeated for each z grid point)
-              do i = 1, N
-                HT((i-1)*8+1, (i-1)*8+1) = HT((i-1)*8+1, (i-1)*8+1) + dE1
-                HT((i-1)*8+2, (i-1)*8+2) = HT((i-1)*8+2, (i-1)*8+2) + dE2
-                HT((i-1)*8+3, (i-1)*8+3) = HT((i-1)*8+3, (i-1)*8+3) + dE3
-                HT((i-1)*8+4, (i-1)*8+4) = HT((i-1)*8+4, (i-1)*8+4) + dE4
-                HT((i-1)*8+5, (i-1)*8+5) = HT((i-1)*8+5, (i-1)*8+5) + dE5
-                HT((i-1)*8+6, (i-1)*8+6) = HT((i-1)*8+6, (i-1)*8+6) + dE6
-                HT((i-1)*8+7, (i-1)*8+7) = HT((i-1)*8+7, (i-1)*8+7) + dE7
-                HT((i-1)*8+8, (i-1)*8+8) = HT((i-1)*8+8, (i-1)*8+8) + dE8
-              end do
-            end block
-          end if
-        end if
-      end if
-
 
     end subroutine ZB8bandQW
 
