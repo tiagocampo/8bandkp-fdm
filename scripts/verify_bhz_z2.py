@@ -10,17 +10,19 @@ Expected behavior:
 Uses topologicalAnalysis executable with mode=qshe, compute_z2=T.
 """
 
+import argparse
 import subprocess
 import os
 import re
 import tempfile
 import shutil
+import sys
 from pathlib import Path
 
 # Configuration
-TOPO_EXE = Path("build/src/topologicalAnalysis")
-CONFIG_TEMPLATE = Path("tests/regression/configs/topology_bhz_z2_trivial.cfg")
-OUTPUT_DIR = Path("docs/lecture/figures")
+REPO = Path(__file__).resolve().parent.parent
+CONFIG_TEMPLATE = REPO / "tests/regression/configs/topology_bhz_z2_trivial.cfg"
+OUTPUT_DIR = REPO / "docs" / "lecture" / "figures"
 
 # Sweep parameters
 WIDTH_MIN = 40
@@ -28,20 +30,20 @@ WIDTH_MAX = 100
 WIDTH_STEP = 2
 
 
-def parse_config_template():
+def parse_config_template(template_path: Path):
     """Read the template config file."""
-    with open(CONFIG_TEMPLATE) as f:
+    with open(template_path) as f:
         return f.read()
 
 
-def run_topological_analysis(width_angstrom):
+def run_topological_analysis(exe: Path, width_angstrom, config_template_path: Path):
     """Run topologicalAnalysis for a given wire width."""
     # Create temporary working directory
     workdir = tempfile.mkdtemp(prefix="bhz_z2_sweep_")
 
     try:
         # Create input config with modified wire_width
-        config = parse_config_template()
+        config = parse_config_template(config_template_path)
         config = config.replace("wire_width: 58.0", f"wire_width: {width_angstrom:.1f}")
 
         input_cfg = Path(workdir) / "input.cfg"
@@ -53,7 +55,7 @@ def run_topological_analysis(width_angstrom):
 
         # Run topologicalAnalysis
         result = subprocess.run(
-            [str(TOPO_EXE.absolute())],
+            [str(exe.absolute())],
             cwd=workdir,
             capture_output=True,
             text=True,
@@ -85,6 +87,16 @@ def run_topological_analysis(width_angstrom):
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Verify BHZ Z2 invariant computation')
+    parser.add_argument('--exe', type=str, default='build/src/topologicalAnalysis',
+                        help='Executable path')
+    parser.add_argument('--config', type=str, help='Config template file path')
+    parser.add_argument('--tolerance', type=float, default=0.1,
+                        help='Acceptable deviation %%')
+    args = parser.parse_args()
+    exe = REPO / args.exe if not Path(args.exe).is_absolute() else Path(args.exe)
+    config_template = Path(args.config) if args.config else CONFIG_TEMPLATE
+
     print("BHZ Z2 Verification Sweep")
     print("=" * 50)
     print(f"Sweeping wire_width from {WIDTH_MIN} to {WIDTH_MAX} Angstrom")
@@ -92,8 +104,8 @@ def main():
     print()
 
     # Check executable exists
-    if not TOPO_EXE.exists():
-        print(f"Error: {TOPO_EXE} not found.")
+    if not exe.exists():
+        print(f"Error: {exe} not found.")
         print("Run 'make all' first to build the executables.")
         return 1
 
@@ -103,7 +115,7 @@ def main():
 
     for w in widths:
         print(f"  Testing width={w}A... ", end="", flush=True)
-        z2, info = run_topological_analysis(w)
+        z2, info = run_topological_analysis(exe, w, config_template)
         if z2 is not None:
             print(f"Z2={z2}")
             results.append((w, z2))

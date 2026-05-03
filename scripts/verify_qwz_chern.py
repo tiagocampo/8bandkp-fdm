@@ -12,9 +12,11 @@ Fukui-Hatsugai-Suzuki algorithm with nk=50 internally) to verify the three
 literature Chern numbers, then generates phase-diagram and convergence figures.
 """
 
+import argparse
 import re
 import subprocess
 import tempfile
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -24,7 +26,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 REPO = Path(__file__).resolve().parent.parent
-TOPO_EXE = REPO / "build" / "src" / "topologicalAnalysis"
 OUT_DIR = REPO / "docs" / "lecture" / "figures"
 
 U_VALUES = [-0.8, 0.5, 2.5]
@@ -33,14 +34,14 @@ LIT_LABELS = {-0.8: r"$u=-0.8$ ($C=+1$)", 0.5: r"$u=+0.5$ ($C=-1$)",
              2.5: r"$u=+2.5$ ($C=0$)"}
 
 
-def run_topological_analysis(u: float, work_dir: Path) -> int | None:
+def run_topological_analysis(exe: Path, u: float, work_dir: Path) -> int | None:
     """
     Run topologicalAnalysis with given qwz_u parameter.
     The executable uses nk=50 internally (not configurable via input.cfg).
     Returns Chern number parsed from output/topology_result.dat.
     """
-    if not TOPO_EXE.exists():
-        print(f"  ERROR: {TOPO_EXE} not found (build with cmake --build build)")
+    if not exe.exists():
+        print(f"  ERROR: {exe} not found (build with cmake --build build)")
         return None
 
     input_cfg = work_dir / "input.cfg"
@@ -74,7 +75,7 @@ ldos_num_E: 200
     )
 
     result = subprocess.run(
-        [str(TOPO_EXE)],
+        [str(exe)],
         capture_output=True,
         text=True,
         cwd=str(work_dir),
@@ -159,6 +160,15 @@ def compute_chern_qwz_fhs(u: float, nk: int) -> int:
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Verify QWZ Chern number computation')
+    parser.add_argument('--exe', type=str, default='build/src/topologicalAnalysis',
+                        help='Executable path')
+    parser.add_argument('--config', type=str, help='Config file path (not used, generated internally)')
+    parser.add_argument('--tolerance', type=float, default=0.1,
+                        help='Acceptable deviation %%')
+    args = parser.parse_args()
+    exe = REPO / args.exe if not Path(args.exe).is_absolute() else Path(args.exe)
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
@@ -172,7 +182,7 @@ def main():
     for u in U_VALUES:
         with tempfile.TemporaryDirectory() as tmpdir:
             work_dir = Path(tmpdir)
-            C = run_topological_analysis(u, work_dir)
+            C = run_topological_analysis(exe, u, work_dir)
             exe_results[u] = C
             expected = LIT_EXPECTED[u]
             if C is None:
@@ -264,7 +274,8 @@ def main():
         print(f"  u={u:+.1f}: Fortran C={C_exe}, expected={expected}  [{status_exe}]")
 
     print("\nAll checks PASSED." if all_pass else "\nSome checks FAILED.")
+    return 0 if all_pass else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

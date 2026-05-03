@@ -16,6 +16,7 @@ This script:
   4. Plots computed vs analytical comparison figure
 """
 
+import argparse
 import sys
 import re
 import subprocess
@@ -30,7 +31,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 REPO = Path(__file__).resolve().parent.parent
-BAND_EXE = REPO / "build" / "src" / "bandStructure"
 LANDau_CFG = REPO / "tests" / "regression" / "configs" / "landau_InAs.cfg"
 OUT_DIR = REPO / "docs" / "lecture" / "figures"
 
@@ -67,13 +67,13 @@ def get_material_params(material_name: str) -> tuple[float, float]:
         cb_edge = 0.417
     return meff, cb_edge
 
-def run_bandstructure(work_dir: Path, material: str = 'InAs', B: float = 5.0) -> list[float] | None:
+def run_bandstructure(exe: Path, work_dir: Path, material: str = 'InAs', B: float = 5.0) -> list[float] | None:
     """
     Run bandStructure with landau config and return eigenvalues in meV.
     Returns None on timeout or if no eigenvalues found.
     """
-    if not BAND_EXE.exists():
-        print(f"  ERROR: {BAND_EXE} not found (build with cmake --build build)")
+    if not exe.exists():
+        print(f"  ERROR: {exe} not found (build with cmake --build build)")
         return None
 
     # Copy config to work dir
@@ -86,7 +86,7 @@ def run_bandstructure(work_dir: Path, material: str = 'InAs', B: float = 5.0) ->
 
     # Run with a short timeout
     result = subprocess.run(
-        [str(BAND_EXE)],
+        [str(exe)],
         capture_output=True,
         cwd=str(work_dir),
         timeout=15,
@@ -273,6 +273,16 @@ def test_qw_zeeman() -> bool:
 
 
 def main():
+    parser = argparse.ArgumentParser(description='Verify Landau level quantization')
+    parser.add_argument('--exe', type=str, default='build/src/bandStructure',
+                        help='Executable path')
+    parser.add_argument('--config', type=str, help='Config file path (default: landau_InAs.cfg)')
+    parser.add_argument('--tolerance', type=float, default=0.1,
+                        help='Acceptable deviation %%')
+    args = parser.parse_args()
+    exe = REPO / args.exe if not Path(args.exe).is_absolute() else Path(args.exe)
+    config_path = Path(args.config) if args.config else LANDau_CFG
+
     # QW Zeeman test (placeholder — runs first as independent check)
     test_qw_zeeman()
 
@@ -295,7 +305,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="landau_") as tmpdir:
         work_dir = Path(tmpdir)
         print("\nAttempting bandStructure run (timeout=15s)...")
-        eigenvalues = run_bandstructure(work_dir, material, B)
+        eigenvalues = run_bandstructure(exe, work_dir, material, B)
 
     if eigenvalues is None:
         print("\nWARNING: bandStructure did not produce eigenvalues.")
