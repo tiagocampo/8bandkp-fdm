@@ -961,7 +961,7 @@ contains
     type(simulation_config), intent(in) :: cfg
     integer :: iz, ilayer
     integer, allocatable :: layer_index(:)
-    real(kind=dp) :: sigma, z_iz, amplitude
+    real(kind=dp) :: sigma, amplitude
 
     rho_doping = 0.0_dp
     if (.not. allocated(cfg%doping)) return
@@ -972,14 +972,10 @@ contains
         if (cfg%doping(ilayer)%dtype == 'delta') then
           ! Gaussian delta-doping profile
           sigma = cfg%doping(ilayer)%delta_fwhm / (2.0_dp * sqrt(2.0_dp * log(2.0_dp)))
-          z_iz = cfg%z(iz)
-          ! NS is in 10^11 cm^-2, sigma in Angstrom
-          ! amplitude = NS * 1e11 / (sigma_cm * sqrt(2*pi))
-          ! sigma_cm = sigma * 1e-8
           amplitude = cfg%doping(ilayer)%NS * 1.0e11_dp / &
-            & (sigma * 1.0e-8_dp * sqrt(8.0_dp * atan(1.0_dp)))
+            & (sigma * 1.0e-8_dp * sqrt(2.0_dp * pi_dp))
           rho_doping(iz) = amplitude * exp(-0.5_dp * &
-            & ((z_iz - cfg%doping(ilayer)%delta_pos) / sigma)**2)
+            & ((cfg%z(iz) - cfg%doping(ilayer)%delta_pos) / sigma)**2)
         else
           ! Uniform doping (existing behavior)
           rho_doping(iz) = cfg%doping(ilayer)%ND - cfg%doping(ilayer)%NA

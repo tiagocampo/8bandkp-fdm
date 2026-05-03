@@ -848,7 +848,7 @@ contains
     ! amplitude = NS * 1e11 / (sigma_cm * sqrt(2*pi))
     ! sigma_cm = 4.247e-8 cm
     sigma = 10.0_dp / (2.0_dp * sqrt(2.0_dp * log(2.0_dp)))
-    expected_peak = 5.0e11_dp / (sigma * 1.0e-8_dp * sqrt(8.0_dp * atan(1.0_dp)))
+    expected_peak = 5.0e11_dp / (sigma * 1.0e-8_dp * sqrt(2.0_dp * pi_dp))
     @assertEqual(expected_peak, rho(51), tolerance=expected_peak * 1.0e-6_dp)
 
     ! Check symmetry: rho(51-dz) == rho(51+dz)
