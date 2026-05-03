@@ -829,7 +829,6 @@ contains
       end if
       ! Continue loop to read next line
     end do bdg_search
-    print *, 'AFTER bdg_search: found_optional=', found_optional, ' cfg%bdg%enabled=', cfg%bdg%enabled
     bdg_block: do
       if (found_optional .and. cfg%bdg%enabled) then
         print *, trim(label), cfg%bdg%enabled
