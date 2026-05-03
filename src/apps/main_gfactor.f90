@@ -471,10 +471,8 @@ program gfactor
         il_sc = 1
         iuu_sc = N
 
-        ! Allocate eigenvector array for SC k_par sweep
-        ! SC loop will manage the k_par grid internally
-        allocate(eigv_sc(N, N, 1))
-        eigv_sc = cmplx(0.0_dp, 0.0_dp, kind=dp)
+        ! Minimal dummy allocation — SC loop uses internal eigv_kpar
+        allocate(eigv_sc(1, 1, 1))
 
         print *, ''
         print *, '=== Running QW self-consistent SP loop (gfactor) ==='
