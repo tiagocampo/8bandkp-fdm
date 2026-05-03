@@ -39,6 +39,20 @@ module bdg_hamiltonian
 contains
 
   ! ==============================================================================
+  ! Check that COO index has not exceeded pre-allocated capacity.
+  ! Follows the pattern in insert_zeeman_coo (hamiltonian_wire.f90).
+  ! ==============================================================================
+  subroutine check_coo_bounds(coo_idx, coo_capacity)
+    integer, intent(in) :: coo_idx, coo_capacity
+
+    if (coo_idx > coo_capacity) then
+      print *, 'ERROR: build_bdg_hamiltonian_1d: COO capacity exceeded'
+      print *, '  coo_idx=', coo_idx, ' coo_capacity=', coo_capacity
+      stop 1
+    end if
+  end subroutine check_coo_bounds
+
+  ! ==============================================================================
   ! Build the 16N x 16N BdG Hamiltonian from the 8N x 8N wire Hamiltonian.
   !
   ! H_BdG = | H0 - mu*I    Delta      |
@@ -127,6 +141,7 @@ contains
       do kk = H0%rowptr(row), H0%rowptr(row + 1) - 1
         col = H0%colind(kk)
         coo_idx = coo_idx + 1
+        call check_coo_bounds(coo_idx, coo_capacity)
         coo_row_bdg(coo_idx) = row
         coo_col_bdg(coo_idx) = col
         coo_vals_bdg(coo_idx) = H0%values(kk)
@@ -157,6 +172,7 @@ contains
       ! Copy Zeeman entries into the main complex COO
       do i = 1, nnz_z
         coo_idx = coo_idx + 1
+        call check_coo_bounds(coo_idx, coo_capacity)
         coo_row_bdg(coo_idx) = coo_row_zeeman(i)
         coo_col_bdg(coo_idx) = coo_col_zeeman(i)
         coo_vals_bdg(coo_idx) = cmplx(coo_vals_zeeman(i), 0.0_dp, kind=dp)
@@ -166,6 +182,7 @@ contains
     ! Subtract mu from diagonal: (band_diag, band_diag) entries
     do i = 1, 8 * N
       coo_idx = coo_idx + 1
+      call check_coo_bounds(coo_idx, coo_capacity)
       coo_row_bdg(coo_idx) = i
       coo_col_bdg(coo_idx) = i
       coo_vals_bdg(coo_idx) = cmplx(-mu, 0.0_dp, kind=dp)
@@ -182,6 +199,7 @@ contains
         do col = 1, 8  ! band index (hole)
           if (abs(pairing_sign(row)) < 0.5_dp) cycle  ! skip zero entries
           coo_idx = coo_idx + 1
+          call check_coo_bounds(coo_idx, coo_capacity)
           ! Hole row = 8N + (i-1)*8 + row
           ! Electron col = (j-1)*8 + col
           ! But Delta is antidiagonal in band space, so hole at spatial i
@@ -208,6 +226,7 @@ contains
         do col = 1, 8  ! band index (hole)
           if (abs(pairing_sign(row)) < 0.5_dp) cycle  ! skip zero entries
           coo_idx = coo_idx + 1
+          call check_coo_bounds(coo_idx, coo_capacity)
           global_row = (i - 1) * 8 + row
           global_col = 8 * N + (i - 1) * 8 + col
           coo_row_bdg(coo_idx) = global_row
@@ -225,6 +244,7 @@ contains
       do kk = H0%rowptr(row), H0%rowptr(row + 1) - 1
         col = H0%colind(kk)
         coo_idx = coo_idx + 1
+        call check_coo_bounds(coo_idx, coo_capacity)
         ! Transpose: row in H0^T becomes col, col becomes row
         ! Offset by 8N for the hole block
         coo_row_bdg(coo_idx) = 8 * N + col
@@ -236,6 +256,7 @@ contains
     ! Add mu*I to block (2,2)
     do i = 1, 8 * N
       coo_idx = coo_idx + 1
+      call check_coo_bounds(coo_idx, coo_capacity)
       coo_row_bdg(coo_idx) = 8 * N + i
       coo_col_bdg(coo_idx) = 8 * N + i
       coo_vals_bdg(coo_idx) = cmplx(mu, 0.0_dp, kind=dp)
