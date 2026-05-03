@@ -788,16 +788,17 @@ layers:
 
 ![Broken-gap QW dispersion with anticrossing](../figures/qw_dispersion_broken_gap.png)
 
-*Figure 6: Subband dispersion $E(k_\parallel)$ for a symmetric InAsW/GaSbW broken-gap
-quantum well. The anticrossing between the InAsW-derived e1 state and the GaSbW-derived
-lh1 state is visible as a gap opening where the two subbands would otherwise cross.
-The anticrossing point is annotated with a vertical dashed line.*
+*Figure 6: Subband dispersion $E(k_\parallel)$ for an InAsW(8 nm)/GaSbW(8 nm) broken-gap
+quantum well with AlSbW barriers. The hybridization gap between the InAsW-derived e1
+state and the GaSbW-derived lh1 state is visible at $k_\parallel = 0$, annotated with
+a double arrow.*
 
-At $k_\parallel = 0$, the InAsW-derived electron ground state (e1) and the GaSbW-derived
-light-hole state (lh1) are separated in energy. As $k_\parallel$ increases, the e1
-state rises in energy (positive effective mass) while the lh1 state descends (negative
-effective mass for holes). At a critical $k_\parallel$ (at $k_\parallel = 0.001$ Å$^{-1}$, computed from the eigenvalue sweep),
-the two subbands approach each other and would cross in a simple single-band picture.
+At $k_\parallel = 0$, the InAsW-derived electron ground state (e1, at $-0.8$ meV) and
+the GaSbW-derived light-hole state (lh1, at $-35.1$ meV) are separated by the
+hybridization gap. As $k_\parallel$ increases, the e1 state rises in energy (positive
+effective mass) while the lh1 state descends (negative effective mass for holes), and
+the two subbands diverge further. In a simple single-band picture without interband
+coupling, these states would cross at some finite $k_\parallel$.
 
 In the 8-band k.p model, however, the off-diagonal coupling terms -- particularly the
 interband matrix element $P$ and the $S$ operator -- connect the electron and hole
@@ -805,9 +806,9 @@ states. This coupling opens a **hybridization gap** at the would-be crossing poi
 resulting subbands "repel" each other, producing the characteristic anticrossing pattern
 visible in the dispersion figure.
 
-The computed hybridization gap at the anticrossing point is **673.5 meV**. For
-InAs/GaSb structures, this gap depends on layer thicknesses, consistent with the
-results of Zakharova et al. (PRB 64, 235332,
+The computed hybridization gap at $k_\parallel = 0$ is **34 meV**, computed from the
+InAsW(8 nm)/GaSbW(8 nm) eigenvalue sweep. For InAs/GaSb structures, this gap depends
+on layer thicknesses, consistent with the results of Zakharova et al. (PRB 64, 235332,
 2001). This gap is of fundamental importance because:
 
 1. **It determines the effective band gap** of the heterostructure, which can be much

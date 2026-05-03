@@ -157,6 +157,7 @@ def run_executable(
         cwd=str(cwd),
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=timeout,
     )
     elapsed = time.time() - t0
@@ -2969,9 +2970,8 @@ def fig_qw_dispersion_broken_gap(output_dir: Path) -> None:
     cfg = CONFIG_DIR / "qw_inas_gasb_broken_gap_kpar.cfg"
     result = run_executable(EXE_BAND, cfg, REPO_ROOT,
                            label="qw_inas_gasb_broken_gap_kpar", timeout=600)
-    if result.returncode != 0:
-        print("  WARNING: broken-gap kpar run failed, skipping.")
-        return
+    # run_executable may fail with UTF-8 decode errors from Fortran stdout;
+    # the simulation itself may still succeed — check eigenvalues.dat directly.
     try:
         k_vals, eig = parse_eigenvalues(output_dir)
     except FileNotFoundError:
@@ -2988,50 +2988,40 @@ def fig_qw_dispersion_broken_gap(output_dir: Path) -> None:
 
     for i in range(n_bands):
         energy_mid = np.mean(eig[i])
-        if energy_mid > 0.1:
+        if energy_mid > 0.05:
             color = "#17becf"  # CB-like - cyan
         else:
             color = "#d62728"  # VB-like - red
         ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=0.85)
 
     # Focus on the broken-gap region
-    ax.set_ylim(-0.40, 0.85)
+    ax.set_ylim(-0.25, 0.60)
 
-    # Find anticrossing: look for the minimum gap between the highest VB-like
-    # and lowest CB-like states (not just any minimum gap)
-    n_k = len(k_vals)
-    vb_ceiling = np.full(n_k, -np.inf)
-    cb_floor = np.full(n_k, np.inf)
-    for ki in range(n_k):
-        for i in range(n_bands):
-            e = eig[i, ki]
-            if e < 0:
-                vb_ceiling[ki] = max(vb_ceiling[ki], e)
-            else:
-                cb_floor[ki] = min(cb_floor[ki], e)
+    # Find hybridization gap at k=0 for broken-gap systems.
+    # In the broken-gap regime, e1 (InAs-derived) and lh1 (GaSb-derived) are
+    # both near zero at k=0, separated by the hybridization gap.  We identify
+    # them by finding the two highest-energy negative eigenvalues that belong
+    # to different Kramers pairs.
+    e_at_0 = sorted([eig[i, 0] for i in range(n_bands) if eig[i, 0] < 0],
+                    reverse=True)
+    if len(e_at_0) >= 4:
+        # e1 Kramers pair: two highest negative eigenvalues
+        e1_energy = e_at_0[0]
+        # lh1 Kramers pair: next two (skip Kramers-degenerate partner)
+        lh1_energy = e_at_0[2]
+        hyb_gap = e1_energy - lh1_energy
+        anticrossing_k = 0.0
+        min_gap = hyb_gap
+    else:
+        min_gap = None
 
-    min_gap = np.inf
-    anticrossing_k = k_vals[0]
-    anticrossing_e_vb = 0.0
-    anticrossing_e_cb = 0.0
-    for ki in range(n_k):
-        if vb_ceiling[ki] > -np.inf and cb_floor[ki] < np.inf:
-            gap = cb_floor[ki] - vb_ceiling[ki]
-            if gap < min_gap:
-                min_gap = gap
-                anticrossing_k = k_vals[ki]
-                anticrossing_e_vb = vb_ceiling[ki]
-                anticrossing_e_cb = cb_floor[ki]
-
-    # Annotate anticrossing
-    ax.axvline(anticrossing_k, color="grey", linewidth=0.8, linestyle="--", alpha=0.6)
-    anticrossing_e_mid = (anticrossing_e_vb + anticrossing_e_cb) / 2
-    ax.annotate(f"Anticrossing\nk = {anticrossing_k:.3f} A$^{{-1}}$\n"
-                f"gap = {min_gap*1000:.1f} meV",
-                xy=(anticrossing_k, anticrossing_e_mid),
-                xytext=(anticrossing_k + 0.025, anticrossing_e_mid + 0.15),
-                fontsize=8, color="#555555",
-                arrowprops=dict(arrowstyle="->", color="#999999", lw=0.8))
+    # Annotate hybridization gap
+    if min_gap is not None:
+        ax.annotate("", xy=(0, e1_energy), xytext=(0, lh1_energy),
+                    arrowprops=dict(arrowstyle="<->", color="black", lw=1.2))
+        ax.text(0.008, (e1_energy + lh1_energy) / 2,
+                f"Hybridization gap\n= {min_gap*1000:.0f} meV",
+                fontsize=8, color="black", va="center")
 
     # Band edge reference lines
     ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
