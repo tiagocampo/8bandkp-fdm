@@ -222,10 +222,63 @@ module hamiltonianConstructor
       end do
 
       ! Full Bir-Pikus strain (k-independent, not in g-mode)
+      ! Inlined from add_bp_strain_dense to avoid compiler temporaries
+      ! that cause stack corruption with -O3 + OpenMP.
       if (present(cfg)) then
         if (.not. present(g) .and. allocated(cfg%strain_blocks%delta_Ec)) then
           do ii = 1, N
-            call add_bp_strain_dense(HT, ii, N, cfg%strain_blocks)
+            block
+              real(kind=dp) :: dEc, dEHH, dELH, dESO, dQT2
+              complex(kind=dp) :: dR, dS, dR_c, dS_c
+              dEc  = cfg%strain_blocks%delta_Ec(ii)
+              dEHH = cfg%strain_blocks%delta_EHH(ii)
+              dELH = cfg%strain_blocks%delta_ELH(ii)
+              dESO = cfg%strain_blocks%delta_ESO(ii)
+              dR   = cfg%strain_blocks%R_eps(ii)
+              dS   = cfg%strain_blocks%S_eps(ii)
+              dQT2 = cfg%strain_blocks%QT2_eps(ii)
+              dR_c = conjg(dR)
+              dS_c = conjg(dS)
+
+              HT(      ii,      ii) = HT(      ii,      ii) + dEHH
+              HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + dELH
+              HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + dELH
+              HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + dEHH
+              HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + dESO
+              HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + dESO
+              HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + dEc
+              HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + dEc
+
+              HT(      ii,  N + ii) = HT(      ii,  N + ii) + dS_c
+              HT(  N + ii,      ii) = HT(  N + ii,      ii) + dS
+              HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - dS_c
+              HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - dS
+
+              HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + dR_c
+              HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + dR
+              HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + dR_c
+              HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + dR
+
+              HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU*RQS2*dS_c
+              HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU*RQS2*dS
+              HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU*SQR2*dR_c
+              HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU*SQR2*dR
+
+              HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU*RQS2*dQT2
+              HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU*RQS2*dQT2
+              HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU*SQR3o2*dS_c
+              HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU*SQR3o2*dS
+
+              HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU*SQR3o2*dS
+              HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU*SQR3o2*dS_c
+              HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU*RQS2*dQT2
+              HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU*RQS2*dQT2
+
+              HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU*SQR2*dR
+              HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU*SQR2*dR_c
+              HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU*RQS2*dS
+              HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU*RQS2*dS_c
+            end block
           end do
         end if
       end if
@@ -529,7 +582,9 @@ module hamiltonianConstructor
               bp_bulk%QT2_eps(1)   = s%QT2_eps
             end associate
 
-            call add_bp_strain_dense(HT, 1, 1, bp_bulk)
+            call apply_bp_strain_inline(HT, 1, 1, &
+              bp_bulk%delta_Ec(1), bp_bulk%delta_EHH(1), bp_bulk%delta_ELH(1), &
+              bp_bulk%delta_ESO(1), bp_bulk%R_eps(1), bp_bulk%S_eps(1), bp_bulk%QT2_eps(1))
             call bir_pikus_blocks_free(bp_bulk)
           end if
         end block
@@ -537,58 +592,112 @@ module hamiltonianConstructor
 
 
     end subroutine ZB8bandBulk
-    subroutine add_bp_strain_dense(HT, ii, N, bp)
+    subroutine add_bp_strain_dense(HT, ii, N, delta_Ec, delta_EHH, delta_ELH, &
+        delta_ESO, R_eps, S_eps, QT2_eps)
       complex(kind=dp), intent(inout), contiguous :: HT(:,:)
       integer, intent(in) :: ii, N
-      type(bir_pikus_blocks), intent(in) :: bp
+      real(kind=dp), intent(in), contiguous :: delta_Ec(:), delta_EHH(:), delta_ELH(:)
+      real(kind=dp), intent(in), contiguous :: delta_ESO(:), QT2_eps(:)
+      complex(kind=dp), intent(in), contiguous :: R_eps(:), S_eps(:)
 
       complex(kind=dp) :: R_eps_c, S_eps_c
 
-      R_eps_c = conjg(bp%R_eps(ii))
-      S_eps_c = conjg(bp%S_eps(ii))
+      R_eps_c = conjg(R_eps(ii))
+      S_eps_c = conjg(S_eps(ii))
 
       ! === Diagonal per-band ===
-      HT(      ii,      ii) = HT(      ii,      ii) + bp%delta_EHH(ii)
-      HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + bp%delta_ELH(ii)
-      HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + bp%delta_ELH(ii)
-      HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + bp%delta_EHH(ii)
-      HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + bp%delta_ESO(ii)
-      HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + bp%delta_ESO(ii)
-      HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + bp%delta_Ec(ii)
-      HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + bp%delta_Ec(ii)
+      HT(      ii,      ii) = HT(      ii,      ii) + delta_EHH(ii)
+      HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + delta_ELH(ii)
+      HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + delta_ELH(ii)
+      HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + delta_EHH(ii)
+      HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + delta_ESO(ii)
+      HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + delta_ESO(ii)
+      HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + delta_Ec(ii)
+      HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + delta_Ec(ii)
 
       ! === Off-diagonal: S_eps (HH-LH) ===
       HT(      ii,  N + ii) = HT(      ii,  N + ii) + S_eps_c
-      HT(  N + ii,      ii) = HT(  N + ii,      ii) + bp%S_eps(ii)
+      HT(  N + ii,      ii) = HT(  N + ii,      ii) + S_eps(ii)
       HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - S_eps_c
-      HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - bp%S_eps(ii)
+      HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - S_eps(ii)
 
       ! === Off-diagonal: R_eps (HH-LH) ===
       HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + R_eps_c
-      HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + bp%R_eps(ii)
+      HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + R_eps(ii)
       HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + R_eps_c
-      HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + bp%R_eps(ii)
+      HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + R_eps(ii)
 
       ! === Off-diagonal: VB-SO coupling ===
       HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU * RQS2 * S_eps_c
-      HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU * RQS2 * bp%S_eps(ii)
+      HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU * RQS2 * S_eps(ii)
       HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU * SQR2 * R_eps_c
-      HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU * SQR2 * bp%R_eps(ii)
+      HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU * SQR2 * R_eps(ii)
 
-      HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU * RQS2 * bp%QT2_eps(ii)
-      HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU * RQS2 * bp%QT2_eps(ii)
+      HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU * RQS2 * QT2_eps(ii)
+      HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU * RQS2 * QT2_eps(ii)
       HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU * SQR3o2 * S_eps_c
-      HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU * SQR3o2 * bp%S_eps(ii)
+      HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU * SQR3o2 * S_eps(ii)
 
-      HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU * SQR3o2 * bp%S_eps(ii)
+      HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU * SQR3o2 * S_eps(ii)
       HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU * SQR3o2 * S_eps_c
-      HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU * RQS2 * bp%QT2_eps(ii)
-      HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU * RQS2 * bp%QT2_eps(ii)
+      HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU * RQS2 * QT2_eps(ii)
+      HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU * RQS2 * QT2_eps(ii)
 
-      HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU * SQR2 * bp%R_eps(ii)
+      HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU * SQR2 * R_eps(ii)
       HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU * SQR2 * R_eps_c
-      HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU * RQS2 * bp%S_eps(ii)
+      HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU * RQS2 * S_eps(ii)
       HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU * RQS2 * S_eps_c
     end subroutine add_bp_strain_dense
+
+    ! Scalar variant for bulk (single-element arrays) — avoids array temporaries.
+    subroutine apply_bp_strain_inline(HT, ii, N, dEc, dEHH, dELH, dESO, dR, dS, dQT2)
+      complex(kind=dp), intent(inout), contiguous :: HT(:,:)
+      integer, intent(in) :: ii, N
+      real(kind=dp), intent(in) :: dEc, dEHH, dELH, dESO, dQT2
+      complex(kind=dp), intent(in) :: dR, dS
+      complex(kind=dp) :: dR_c, dS_c
+
+      dR_c = conjg(dR)
+      dS_c = conjg(dS)
+
+      HT(      ii,      ii) = HT(      ii,      ii) + dEHH
+      HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + dELH
+      HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + dELH
+      HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + dEHH
+      HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + dESO
+      HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + dESO
+      HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + dEc
+      HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + dEc
+
+      HT(      ii,  N + ii) = HT(      ii,  N + ii) + dS_c
+      HT(  N + ii,      ii) = HT(  N + ii,      ii) + dS
+      HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - dS_c
+      HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - dS
+
+      HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + dR_c
+      HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + dR
+      HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + dR_c
+      HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + dR
+
+      HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU*RQS2*dS_c
+      HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU*RQS2*dS
+      HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU*SQR2*dR_c
+      HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU*SQR2*dR
+
+      HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU*RQS2*dQT2
+      HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU*RQS2*dQT2
+      HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU*SQR3o2*dS_c
+      HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU*SQR3o2*dS
+
+      HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU*SQR3o2*dS
+      HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU*SQR3o2*dS_c
+      HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU*RQS2*dQT2
+      HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU*RQS2*dQT2
+
+      HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU*SQR2*dR
+      HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU*SQR2*dR_c
+      HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU*RQS2*dS
+      HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU*RQS2*dS_c
+    end subroutine apply_bp_strain_inline
 
 end module hamiltonianConstructor

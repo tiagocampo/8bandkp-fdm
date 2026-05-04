@@ -11,7 +11,7 @@ Total PNG files generated: 77 in `docs/figures/` + 9 in `docs/lecture/figures/` 
 
 | Figure | Issue | Root Cause | Fix | Status |
 |--------|-------|------------|-----|--------|
-| `qw_strained_bands` | Strained QW run segfaults (rc=-11). Unstrained panel works. Stale PNG from 2026-04-25 remains. | SIGSEGV in eigensolver after strain modification of QW Hamiltonian with `strain_ref: AlSbW` on `qw_alsbw_gasbw_inasw.cfg`. Strain calculation completes ("QW strain calculation complete") but eigensolver crashes. Likely array bounds or memory corruption when strain shifts Hamiltonian elements. Wire strain (confinement=2) works fine; only QW strain (confinement=1) fails. | Not yet fixed. Needs debugging in `hamiltonianConstructor.f90` or `strain_solver.f90` for QW strain path. | Open |
+| `qw_strained_bands` | Fixed. Was: SIGSEGV in strained QW run (rc=-11). | gfortran -O3 created temporary array copies when passing allocatable derived-type components to `add_bp_strain_dense`, corrupting memory under OpenMP. Also: `compute_majorana_profile` left profile array partially uninitialized. | Inlined strain application with scalar extracts in `ZB8bandQW`; added scalar `apply_bp_strain_inline` for bulk; zero-initialized profile output in `compute_majorana_profile`. | Fixed |
 | `timing_dense_vs_sparse` | Wire (sparse) run exceeds 300s timeout. Stale PNG from 2026-04-25 remains. | `wire_gaas_rectangle.cfg` with full kz-sweep takes >300s on this hardware. The `run_executable` default timeout is 300s. | Increase timeout in `fig_timing_dense_vs_sparse` to 600s, or reduce wire grid size for benchmark. | Open |
 
 ## Physics Sanity Checks (all pass)

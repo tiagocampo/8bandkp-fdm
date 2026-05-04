@@ -389,7 +389,8 @@ contains
     end if
 
     if (present(profile)) then
-      profile = rho
+      profile = 0.0_dp
+      profile(1:nspatial) = rho
     end if
 
     peak_idx = maxloc(rho, dim=1)

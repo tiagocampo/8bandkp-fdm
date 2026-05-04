@@ -110,11 +110,10 @@ contains
     end do
 
     ! --- Extract profile ---
+    profile = 0.0_dp
     xi = compute_majorana_profile(evec_bdg, grid, energy_tol, 16, profile)
 
     ! --- Verify profile is non-zero and sums to ~1 ---
-    ! Relaxed tolerance: denormal FP noise (IEEE_DENORMAL) can cause tiny deviations.
-    ! Use epsilon-based relative tolerance instead of hard > 0.5 threshold.
     tol = 1.0e-10_dp
     @assertTrue(sum(profile) > 0.4_dp, message="Profile should be normalized to ~1 (relaxed for denormal FP)")
     ! Relaxed tolerance: allow tiny negative values due to denormal FP noise

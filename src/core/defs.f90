@@ -80,6 +80,11 @@ module definitions
 
   ! Per-grid-point Bir-Pikus strain Hamiltonian components.
   ! Arrays have length ngrid; unallocated when unstrained.
+  ! No FINAL binding: gfortran creates temporaries for intent(in) derived-type
+  ! arguments (copy-in/copy-out), and the finalizer would deallocate the
+  ! allocatable components of the temporary, corrupting the original via
+  ! shared allocation handles. Cleanup is done explicitly via
+  ! bir_pikus_blocks_free() and in simulation_config_finalize.
   type :: bir_pikus_blocks
     real(kind=dp), allocatable :: delta_Ec(:)    ! CB bands 7,8
     real(kind=dp), allocatable :: delta_EHH(:)   ! HH bands 1,4
@@ -88,8 +93,6 @@ module definitions
     complex(kind=dp), allocatable :: R_eps(:)    ! VB-VB coupling
     complex(kind=dp), allocatable :: S_eps(:)    ! VB-VB coupling
     real(kind=dp), allocatable :: QT2_eps(:)     ! VB-SO coupling (2*Q_eps)
-  contains
-    final :: bir_pikus_blocks_finalize
   end type bir_pikus_blocks
 
   type wavevector
@@ -402,20 +405,6 @@ module definitions
   contains
 
   ! ==================================================================
-  ! Finalizer: automatically called when a bir_pikus_blocks goes out of scope.
-  ! Deallocates all allocatable components.
-  ! ==================================================================
-  subroutine bir_pikus_blocks_finalize(bp)
-    type(bir_pikus_blocks), intent(inout) :: bp
-
-    if (allocated(bp%delta_Ec))  deallocate(bp%delta_Ec)
-    if (allocated(bp%delta_EHH)) deallocate(bp%delta_EHH)
-    if (allocated(bp%delta_ELH)) deallocate(bp%delta_ELH)
-    if (allocated(bp%delta_ESO)) deallocate(bp%delta_ESO)
-    if (allocated(bp%R_eps))     deallocate(bp%R_eps)
-    if (allocated(bp%S_eps))     deallocate(bp%S_eps)
-    if (allocated(bp%QT2_eps))   deallocate(bp%QT2_eps)
-  end subroutine bir_pikus_blocks_finalize
 
   ! ==================================================================
   ! Finalizer: automatically called when a wire_geometry goes out of scope.
@@ -462,6 +451,13 @@ module definitions
     if (allocated(cfg%params))      deallocate(cfg%params)
     if (allocated(cfg%doping))      deallocate(cfg%doping)
     if (allocated(cfg%regions))     deallocate(cfg%regions)
+    if (allocated(cfg%strain_blocks%delta_Ec))  deallocate(cfg%strain_blocks%delta_Ec)
+    if (allocated(cfg%strain_blocks%delta_EHH)) deallocate(cfg%strain_blocks%delta_EHH)
+    if (allocated(cfg%strain_blocks%delta_ELH)) deallocate(cfg%strain_blocks%delta_ELH)
+    if (allocated(cfg%strain_blocks%delta_ESO)) deallocate(cfg%strain_blocks%delta_ESO)
+    if (allocated(cfg%strain_blocks%R_eps))     deallocate(cfg%strain_blocks%R_eps)
+    if (allocated(cfg%strain_blocks%S_eps))     deallocate(cfg%strain_blocks%S_eps)
+    if (allocated(cfg%strain_blocks%QT2_eps))   deallocate(cfg%strain_blocks%QT2_eps)
   end subroutine simulation_config_finalize
 
   ! ==================================================================
