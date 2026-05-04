@@ -36,10 +36,16 @@ Closed group #6. Bulk EF shift added to ZB8bandBulk, delta-doping (Gaussian prof
 
 ## Phase 3: COMPLETED (2026-05-03)
 
-All 16 review findings resolved: 7 correctness bugs (C1-C7), 9 code quality issues (H1-H12), 5 test coverage gaps (T1-T8). 48/53 tests pass; 5 pre-existing failures (Chern, Landau, 3 topology regressions) tracked in Phase 6.
+All 21 review findings resolved: 7 correctness bugs (C1-C7), 9 code quality issues (H1-H12), 5 test coverage gaps (T1-T8), plus 5 pre-existing test failures traced to root cause and fixed. 53/53 tests pass.
 
 **Plan:** `docs/plans/2026-05-03-pr13-review-fixes-plan.md`
-**Commits:** 16 commits from `4342513` to `dbd666f`.
+**Commits:** 20 commits from `4342513` to `67a653f`.
+
+**Additional fixes (root-cained from "pre-existing" failures):**
+- `compute_chern_qwz`: non-Hermitian QWZ Hamiltonian, eigenvector cross-contamination, wrong FHS plaquette formula (fixed test_chern_number + regression_topology_qwz_chern)
+- BHZ Z2 configs: missing `compute_hall`/`qwz_u` fields caused parser field-order misalignment (fixed regression_topology_bhz_z2)
+- `mu_B = e*hbar/(2*m0)` gave 9.274e-4 instead of 5.788e-5 eV/T (16x too large); added CODATA constant (fixed regression_landau_inas)
+- Rashba config: `bdg:` block inside topology block, missing `B_vec`, `ldos_E_range` consumed `ldos_num_E` (fixed regression_topology_rashba_phase)
 
 ---
 
