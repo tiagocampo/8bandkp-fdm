@@ -99,6 +99,18 @@ contains
     ! --- Build H0 (8N x 8N wire Hamiltonian) ---
     call ZB8bandGeneralized(H0, kz, profile_2d, kpterms_2d, cfg, ws=ws)
 
+    ! Validate H0 after build
+    if (H0%nrows == 0 .or. H0%nnz == 0) then
+      print *, 'ERROR: build_bdg_hamiltonian_1d: empty H0 from ZB8bandGeneralized'
+      print *, '  nrows=', H0%nrows, ' nnz=', H0%nnz
+      stop 1
+    end if
+    if (mod(H0%nrows, 8) /= 0) then
+      print *, 'ERROR: build_bdg_hamiltonian_1d: H0 nrows not multiple of 8'
+      print *, '  nrows=', H0%nrows
+      stop 1
+    end if
+
     N = H0%nrows / 8
     Ntot = 16 * N
 

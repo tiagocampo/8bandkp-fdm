@@ -40,7 +40,7 @@ program topologicalAnalysis
   complex(kind=dp), allocatable, dimension(:,:) :: HT
 
   ! file handling
-  integer(kind=4) :: iounit
+  integer(kind=4) :: iounit, status
 
   ! --- Wire mode (confinement=2) variables ---
   real(kind=dp), allocatable       :: profile_2d(:,:)
@@ -176,7 +176,12 @@ program topologicalAnalysis
   ! ====================================================================
   call ensure_output_dir()
   call get_unit(iounit)
-  open(unit=iounit, file='output/topology_result.dat', status='replace', action='write')
+  open(unit=iounit, file='output/topology_result.dat', status='replace', &
+       action='write', iostat=status)
+  if (status /= 0) then
+    print *, 'ERROR: cannot open output/topology_result.dat (iostat=', status, ')'
+    stop 1
+  end if
   write(iounit, '(A)') '# Topological Analysis Results'
   write(iounit, '(A,A)') '# mode: ', trim(cfg%topo%mode)
   write(iounit, '(A,I0)') '# Chern number: ', topo_result%chern_number
