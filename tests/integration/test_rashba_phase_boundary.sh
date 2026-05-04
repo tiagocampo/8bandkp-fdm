@@ -21,8 +21,8 @@ echo ""
 echo "Test: Rashba wire at mu=0.5 meV, Delta=0.3 meV"
 /bin/cp "$CONFIG" "$WORKDIR/input.cfg"
 cd "$WORKDIR"
-"$EXE" > test_output.log 2>&1
-RC=$?
+RC=0
+"$EXE" > test_output.log 2>&1 || RC=$?
 if [ $RC -ne 0 ]; then
     echo "FAIL: topologicalAnalysis returned exit code $RC"
     cat test_output.log
@@ -35,8 +35,8 @@ if [ ! -f "$WORKDIR/output/topology_result.dat" ]; then
 fi
 
 # Extract min gap and edge localization length
-MIN_GAP=$(grep "Min gap" "$WORKDIR/output/topology_result.dat" | awk '{print $6}')
-EDGE_XI=$(grep "Edge localization" "$WORKDIR/output/topology_result.dat" | awk '{print $8}')
+MIN_GAP=$(grep "Min gap" "$WORKDIR/output/topology_result.dat" | awk '{print $5}')
+EDGE_XI=$(grep "Edge localization length avg" "$WORKDIR/output/topology_result.dat" | awk '{print $NF}')
 
 echo "  Min gap: $MIN_GAP eV"
 echo "  Edge localization length: $EDGE_XI AA"
