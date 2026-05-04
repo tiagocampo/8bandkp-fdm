@@ -211,4 +211,5 @@ Always check for and follow applicable superpowers skills when working. In parti
 
 ## Known Issues
 
-- None currently. The wire g-factor was fixed using the commutator-based velocity operator (`build_velocity_matrices` in `hamiltonianConstructor.f90`). The transverse perturbation construction uses $-i [r_\alpha, H]$ element-wise on the CSR Hamiltonian, which correctly captures all k.p term contributions.
+- `bir_pikus_blocks` in `defs.f90:83` has no finalizer. This is intentional: the type contains only non-allocatable fixed-size arrays (no pointers or allocatable components), so no explicit finalizer is needed. Do not add one.
+- The wire g-factor was fixed using the commutator-based velocity operator (`build_velocity_matrices` in `hamiltonianConstructor.f90`). The transverse perturbation construction uses $-i [r_\alpha, H]$ element-wise on the CSR Hamiltonian, which correctly captures all k.p term contributions.

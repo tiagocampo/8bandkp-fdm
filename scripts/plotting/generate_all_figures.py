@@ -54,6 +54,7 @@ EXE_GFACTOR = BUILD_DIR / "src" / "gfactorCalculation"
 EXE_OPTICS = BUILD_DIR / "src" / "opticalProperties"
 CONFIG_DIR = REPO_ROOT / "tests" / "regression" / "configs"
 FIGURE_DIR = REPO_ROOT / "docs" / "figures"
+LECTURE_FIG_DIR = REPO_ROOT / "docs" / "lecture" / "figures"
 INPUT_CFG = REPO_ROOT / "input.cfg"
 
 # Derived-figure constants
@@ -62,6 +63,8 @@ BOHR_MAGNETON_MEV_PER_T = 5.7883818060e-2
 # ---------------------------------------------------------------------------
 # Band names and colours (basis ordering: 1-4 valence, 5-6 SO, 7-8 CB)
 # ---------------------------------------------------------------------------
+
+
 BAND_NAMES = [
     "HH (+3/2)",
     "LH (+1/2)",
@@ -116,6 +119,7 @@ def setup_style() -> None:
 
 def ensure_dirs() -> None:
     FIGURE_DIR.mkdir(parents=True, exist_ok=True)
+    LECTURE_FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def build_fortran() -> None:
@@ -433,6 +437,15 @@ def _wire_boundary_mesh(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.nd
     yc = 0.5 * (float(np.min(y)) + float(np.max(y)))
     R = np.sqrt((X - xc) ** 2 + (Y - yc) ** 2)
     return X, Y, R
+
+
+def _band_legend_handles():
+    from matplotlib.lines import Line2D
+    return (
+        Line2D([0], [0], color="#17becf", linewidth=1.5, label="Conduction band"),
+        Line2D([0], [0], color="#d62728", linewidth=1.5, label="Valence band"),
+        Line2D([0], [0], color="#ff7f0e", linewidth=1.5, label="Split-off"),
+    )
 
 
 def parse_parts_all_k(output_dir: Path) -> Tuple[np.ndarray, List[float]]:
@@ -2406,7 +2419,7 @@ def fig_timing_dense_vs_sparse(output_dir: Path) -> None:
     cfg_wire = CONFIG_DIR / "wire_gaas_rectangle.cfg"
     if cfg_wire.exists():
         t0 = time.time()
-        r = run_executable(EXE_BAND, cfg_wire, REPO_ROOT, label="Wire (sparse)")
+        r = run_executable(EXE_BAND, cfg_wire, REPO_ROOT, label="Wire (sparse)", timeout=600)
         t_sparse = time.time() - t0
         if r.returncode == 0:
             results["Wire (sparse)"] = t_sparse
@@ -6175,9 +6188,7 @@ def fig_bandstructure_bulk_ek(output_dir: Path) -> None:
         ax.grid(True, alpha=0.3)
 
     fig.tight_layout()
-    lecture_fig_dir = REPO_ROOT / "docs" / "lecture" / "figures"
-    lecture_fig_dir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(lecture_fig_dir / "bandstructure_bulk_ek.png", dpi=150)
+    fig.savefig(LECTURE_FIG_DIR / "bandstructure_bulk_ek.png", dpi=150)
     plt.close(fig)
     print(f"  -> docs/lecture/figures/bandstructure_bulk_ek.png")
 
@@ -6200,16 +6211,26 @@ def fig_bandstructure_qw_subbands(output_dir: Path) -> None:
     n_bands = eig.shape[0]
     fig, (ax_cb, ax_vb) = plt.subplots(2, 1, figsize=(6.5, 8), sharex=True)
 
-    from matplotlib.lines import Line2D
-    cb_handle = Line2D([0], [0], color="#17becf", linewidth=1.5, label="Conduction band")
-    vb_handle = Line2D([0], [0], color="#d62728", linewidth=1.5, label="Valence band")
-    so_handle = Line2D([0], [0], color="#ff7f0e", linewidth=1.5, label="Split-off")
+    cb_handle, vb_handle, so_handle = _band_legend_handles()
 
-    # Classify bands by energy at k=0 (same threshold as fig_qw_dispersion_gaas_algaas)
+    # Classify bands using spectral gap algorithm (material-independent)
     e0 = eig[:, 0]
-    cb_indices = [i for i in range(n_bands) if e0[i] > 0.5]
-    vb_indices = [i for i in range(n_bands) if -1.1 < e0[i] <= 0.5]
-    so_indices = [i for i in range(n_bands) if e0[i] <= -1.1]
+    sorted_e = np.sort(e0)
+    gap_idx, _, e_cb_min = _spectral_gap_split(sorted_e, -2.0, 3.0)
+    cb_indices = [i for i in range(n_bands) if e0[i] >= e_cb_min]
+    # Within VB+SO, find SO-VB gap (second-largest gap below CB)
+    vbso_sorted = sorted_e[:gap_idx + 1]
+    if vbso_sorted.size > 1:
+        so_gap, _, e_vb_floor = _spectral_gap_split(vbso_sorted, vbso_sorted[0], e_cb_min)
+        if vbso_sorted[so_gap + 1] - vbso_sorted[so_gap] > 0.15:
+            vb_indices = [i for i in range(n_bands) if e_vb_floor <= e0[i] < e_cb_min]
+            so_indices = [i for i in range(n_bands) if e0[i] < e_vb_floor]
+        else:
+            vb_indices = [i for i in range(n_bands) if e0[i] < e_cb_min]
+            so_indices = []
+    else:
+        vb_indices = [i for i in range(n_bands) if e0[i] < e_cb_min]
+        so_indices = []
 
     # Barrier edge for Al30Ga70As (EC ~ 1.018 eV)
     barrier_ec = 1.018
@@ -6263,9 +6284,7 @@ def fig_bandstructure_qw_subbands(output_dir: Path) -> None:
     ax_vb.legend(handles=vb_handles, loc="best", fontsize=9, framealpha=0.9)
 
     fig.tight_layout()
-    lecture_fig_dir = REPO_ROOT / "docs" / "lecture" / "figures"
-    lecture_fig_dir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(lecture_fig_dir / "bandstructure_qw_subbands.png", dpi=150)
+    fig.savefig(LECTURE_FIG_DIR / "bandstructure_qw_subbands.png", dpi=150)
     plt.close(fig)
     print("  -> docs/lecture/figures/bandstructure_qw_subbands.png")
 
@@ -6289,10 +6308,9 @@ def fig_wavefunctions_qw(output_dir: Path) -> None:
         "confinement: 1\n"
         "FDstep: 201\n"
         "FDorder: 4\n"
-        "numLayers: 3\n"
-        "material1: Al30Ga70As -200 200 0\n"
-        "material2: GaAs -50 50 0\n"
-        "material3: Al30Ga70As -200 200 0\n"
+        "numLayers: 2\n"
+        "material1: Al30Ga70As -200 200\n"
+        "material2: GaAs -50 50\n"
         "numcb: 4\n"
         "numvb: 8\n"
         "ExternalField: 0  EF\n"
@@ -6330,14 +6348,16 @@ def fig_wavefunctions_qw(output_dir: Path) -> None:
         e0 = None
 
     # --- Construct band edge profile ---
-    # GaAs: CB bottom = 0 eV, VB top = -Eg = -1.424 eV
+    # GaAs (Winkler params): EC=0.719 eV, EV=-0.8 eV
     # Al30Ga70As: delta_Eg = 1.247*0.3 = 0.374 eV
     #   CB offset = 0.67 * 0.374 = 0.251 eV
+    #   EC_barrier = 0.719 + 0.251 = 0.970 eV
     #   VB offset = -0.33 * 0.374 = -0.123 eV (pushes VB lower)
-    well_cb = 0.0
-    barrier_cb = 0.251
-    well_vb = -1.424
-    barrier_vb = -1.424 - 0.123
+    #   EV_barrier = -0.8 - 0.123 = -0.923 eV
+    well_cb = 0.719
+    barrier_cb = 0.970
+    well_vb = -0.8
+    barrier_vb = -0.923
 
     cb_edge = np.where((z >= -50) & (z <= 50), well_cb, barrier_cb)
     vb_edge = np.where((z >= -50) & (z <= 50), well_vb, barrier_vb)
@@ -6390,7 +6410,7 @@ def fig_wavefunctions_qw(output_dir: Path) -> None:
         r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Conduction Band States"
     )
     ax_cb.legend(loc="upper right", fontsize=8, framealpha=0.9)
-    ax_cb.set_ylim(-0.15, barrier_cb + 0.15)
+    ax_cb.set_ylim(well_cb - 0.15, barrier_cb + 0.15)
     ax_cb.grid(True, alpha=0.2, linewidth=0.5)
 
     # Bottom panel: VB states on VB band edge
@@ -6422,13 +6442,11 @@ def fig_wavefunctions_qw(output_dir: Path) -> None:
         r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Valence Band States"
     )
     ax_vb.legend(loc="lower right", fontsize=8, framealpha=0.9)
-    ax_vb.set_ylim(barrier_vb - 0.15, -1.15)
+    ax_vb.set_ylim(barrier_vb - 0.15, well_vb + 0.15)
     ax_vb.grid(True, alpha=0.2, linewidth=0.5)
 
     fig.tight_layout()
-    lecture_fig_dir = REPO_ROOT / "docs" / "lecture" / "figures"
-    lecture_fig_dir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(lecture_fig_dir / "wavefunctions_qw.png", dpi=150)
+    fig.savefig(LECTURE_FIG_DIR / "wavefunctions_qw.png", dpi=150)
     plt.close(fig)
     print("  -> docs/lecture/figures/wavefunctions_qw.png")
 
@@ -6547,8 +6565,7 @@ def fig_zeeman_fan_diagram(output_dir: Path) -> None:
     """
     print("[figure] zeeman_fan_diagram")
 
-    lecture_fig_dir = REPO_ROOT / "docs" / "lecture" / "figures"
-    lecture_fig_dir.mkdir(parents=True, exist_ok=True)
+    LECTURE_FIG_DIR.mkdir(parents=True, exist_ok=True)
 
     materials = [
         ("Free electron", 2.0),
@@ -6583,10 +6600,10 @@ def fig_zeeman_fan_diagram(output_dir: Path) -> None:
         ax.legend(loc="best", fontsize=9)
         ax.grid(True, alpha=0.15, linewidth=0.5)
 
-        # Annotate splitting at B = 10 T
-        split_10 = abs(prefactor) * 10.0
+        # Annotate total splitting at B = 10 T
+        split_10 = abs(prefactor) * 10.0 * 2
         ax.annotate(
-            f"$\\Delta E$ = {split_10:.2f} meV\nat 10 T",
+            f"Total $\\Delta E$ = {split_10:.2f} meV\nat 10 T",
             xy=(10.0, split_10 / 2), xytext=(6.5, split_10 / 2 + 0.15 * split_10),
             fontsize=8, ha="center",
             arrowprops=dict(arrowstyle="->", lw=0.8, color="grey"),
@@ -6594,12 +6611,8 @@ def fig_zeeman_fan_diagram(output_dir: Path) -> None:
 
     axes[0].set_ylabel("Energy shift (meV)")
 
-    fig.suptitle(
-        "Analytical Zeeman splitting -- Fortran B-field support pending (Phase 5)",
-        fontsize=9, fontstyle="italic", y=0.02,
-    )
-    fig.tight_layout(rect=[0, 0.06, 1, 1])
-    fig.savefig(lecture_fig_dir / "zeeman_fan_diagram.png", dpi=150)
+    fig.tight_layout()
+    fig.savefig(LECTURE_FIG_DIR / "zeeman_fan_diagram.png", dpi=150)
     plt.close(fig)
     print("  -> docs/lecture/figures/zeeman_fan_diagram.png")
 
