@@ -53,7 +53,7 @@ All 21 review findings resolved: 7 correctness bugs (C1-C7), 9 code quality issu
 
 All 74 existing figures validated, ISBT cross-verified (z-dipole vs commutator velocity, rel_diff=0.007%), 5 new physics figures added (bulk E(k), QW subbands, wavefunctions, wire geometry, Zeeman fan). Ch06 + Ch08 rebuilt with verified captions. All 14 lecture chapters have zero broken figure references. Groups #22, #26, #50 -> COMPLETE.
 
-Two pre-existing issues logged in `docs/plans/phase4-discrepancy-log.md`: `qw_strained_bands` segfault (QW strain eigensolver, separate from Phase 4), `timing_dense_vs_sparse` timeout (performance).
+One remaining issue in `docs/plans/phase4-discrepancy-log.md`: `timing_dense_vs_sparse` timeout (performance). The `qw_strained_bands` segfault was fixed (commit 9afc205: gfortran -O3 array temporaries in derived-type components).
 
 **Plan:** `docs/plans/archive/2026-05-04-phase4-optics-figures-plan.md` (archived)
 **Commits:** 12 commits from `88840ce` to `79688ab`.

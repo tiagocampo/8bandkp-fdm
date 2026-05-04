@@ -53,7 +53,7 @@ Review date: 2026-05-03
 | 47 | 2026-05-02-magnetic-field-landau | design + impl plan | INCOMPLETE | Peierls not in bulk, ExternalField float fix skipped |
 | 48 | 2026-05-02-physics-figures-implementation | plan | INCOMPLETE | Same blockers as group 47 |
 | 49 | 2026-05-02-topological-suite-verification | spec + plan | INCOMPLETE | Fu-Kane, gap-sweep, Berry curvature figures missing |
-| 50 | 2026-05-03-physics-figures-extended | plan | INCOMPLETE | 0/5 tasks started |
+| 50 | 2026-05-03-physics-figures-extended | plan | COMPLETE | All 5 phases done: bulk E(k), QW subbands, wavefunctions, wire geometry, Zeeman fan |
 
 ---
 
@@ -169,11 +169,11 @@ Phases 1, 3-5 largely done (QWZ Chern verification, Peierls implementation, Land
 
 ### 50. 2026-05-03-physics-figures-extended
 
-**Status: INCOMPLETE** (0/5 tasks started)
+**Status: COMPLETE**
 
-None of the 5 planned phases started:
-- Phase 1: Band structure figures (bulk, QW, wire) — no scripts, no figures, no configs
-- Phase 2: Wavefunction figures (QW subbands, wire edge states) — no scripts, no figures
-- Phase 3: Wire geometry figures (potential profile, band edge) — no scripts, no figures
-- Phase 4: Landau fan diagram (E_n vs B) with effective mass fit — no scripts, no figures
-- Phase 5: Unified `generate_physics_figures.py` script — not created
+All 5 phases delivered in Phase 4 (commit 79688ab):
+- Phase 1: Bulk E(k) for GaAs, InAs, InSb (3-panel figure)
+- Phase 2: QW wavefunctions with band edge profile
+- Phase 3: Wire material map + radial potential cut
+- Phase 4: Analytical Zeeman fan diagram (spin splitting vs B)
+- Phase 5: Figures integrated into `generate_all_figures.py` (not separate script)
