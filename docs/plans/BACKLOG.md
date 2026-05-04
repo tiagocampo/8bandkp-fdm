@@ -49,17 +49,14 @@ All 21 review findings resolved: 7 correctness bugs (C1-C7), 9 code quality issu
 
 ---
 
-## Phase 4: Optics & Documentation Figures
+## Phase 4: COMPLETED (2026-05-04)
 
-Generate all missing Python figures. Independent of Phases 5-6.
+All 74 existing figures validated, ISBT cross-verified (z-dipole vs commutator velocity, rel_diff=0.007%), 5 new physics figures added (bulk E(k), QW subbands, wavefunctions, wire geometry, Zeeman fan). Ch06 + Ch08 rebuilt with verified captions. All 14 lecture chapters have zero broken figure references. Groups #22, #26, #50 -> COMPLETE.
 
-| Source | What | Effort |
-|--------|------|--------|
-| #22 | 11 optics figure functions in generate_all_figures.py (absorption, gain, ISBT, exciton, spin-resolved) | Medium |
-| #50 P1-3 | Bandstructure figures (bulk, QW, wire) + wavefunctions + wire geometry | Medium |
-| #26 | Figure fixes, solver repairs (ISBT dipole sign), chapter rebuilds (Ch06, Ch08) | Medium |
+Two pre-existing issues logged in `docs/plans/phase4-discrepancy-log.md`: `qw_strained_bands` segfault (QW strain eigensolver, separate from Phase 4), `timing_dense_vs_sparse` timeout (performance).
 
-**Result:** Complete documentation with all figures. Groups 22, 26, 50 -> COMPLETE.
+**Plan:** `docs/plans/archive/2026-05-04-phase4-optics-figures-plan.md` (archived)
+**Commits:** 12 commits from `88840ce` to `79688ab`.
 
 ---
 
@@ -103,7 +100,7 @@ Most advanced features. Fu-Kane is independent of Peierls but logically last.
 | 1. Testing | 4 | Full regression coverage | ~2-3 days |
 | 2. Physics wiring | 1 | Bulk SC, bulk EF, gfactor SC | DONE |
 | 3. PR review fixes | — | Correctness, compat, quality | DONE |
-| 4. Figures | 3 | Complete documentation | ~3-4 days |
+| 4. Figures | 3 | Complete documentation | DONE |
 | 5. Peierls/Landau | 2 | Magnetic field for all modes | ~5-7 days |
 | 6. Topological | 2 | Full topo suite | ~5-7 days |
-| **Total** | **10 remaining** | | **~12-18 days** |
+| **Total** | **7 remaining** | | **~10-14 days** |
