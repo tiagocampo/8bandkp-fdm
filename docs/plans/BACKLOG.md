@@ -38,8 +38,8 @@ Closed group #6. Bulk EF shift added to ZB8bandBulk, delta-doping (Gaussian prof
 
 All 21 review findings resolved: 7 correctness bugs (C1-C7), 9 code quality issues (H1-H12), 5 test coverage gaps (T1-T8), plus 5 pre-existing test failures traced to root cause and fixed. 53/53 tests pass.
 
-**Plan:** `docs/plans/2026-05-03-pr13-review-fixes-plan.md`
-**Commits:** 20 commits from `4342513` to `67a653f`.
+**Plan:** `docs/plans/archive/2026-05-03-pr13-review-fixes-plan.md` (archived)
+**Commits:** 20 commits from `4342513` to `67a653f`, plus 5 root-cause fixes to `c1fcee2`.
 
 **Additional fixes (root-cained from "pre-existing" failures):**
 - `compute_chern_qwz`: non-Hermitian QWZ Hamiltonian, eigenvector cross-contamination, wrong FHS plaquette formula (fixed test_chern_number + regression_topology_qwz_chern)
