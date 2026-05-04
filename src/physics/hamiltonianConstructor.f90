@@ -7,6 +7,7 @@ module hamiltonianConstructor
   use strain_solver, only: compute_bp_scalar, bir_pikus_blocks_free
   use confinement_init
   use hamiltonian_wire
+  use magnetic_field, only: compute_zeeman_vz
 
   implicit none
 
@@ -239,11 +240,7 @@ module hamiltonianConstructor
             real(kind=dp) :: mu_B, B_mag, Vz(8)
             mu_B = e * hbar / (2.0_dp * m0)
             B_mag = sqrt(sum(cfg%bdg%B_vec**2))
-            Vz(1:2) = -1.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! HH
-            Vz(3:4) =  0.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! LH
-            Vz(5:6) = -0.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! SO
-            Vz(7)   = -1.0_dp * cfg%bdg%g_factor * mu_B * B_mag  ! CB1
-            Vz(8)   =  1.0_dp * cfg%bdg%g_factor * mu_B * B_mag  ! CB2
+            call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag, Vz)
             do ii = 1, N
               HT(      ii,      ii) = HT(      ii,      ii) + Vz(1)
               HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + Vz(2)
@@ -467,12 +464,7 @@ module hamiltonianConstructor
             real(kind=dp) :: mu_B, B_mag, Vz(8)
             mu_B = e * hbar / (2.0_dp * m0)
             B_mag = sqrt(sum(cfg%bdg%B_vec**2))
-            ! sigma_z eigenvalues: HH=-1.5, LH=+0.5, SO=-0.5, CB=+1.0
-            Vz(1:2) = -1.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! HH
-            Vz(3:4) =  0.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! LH
-            Vz(5:6) = -0.5_dp * cfg%bdg%g_factor * mu_B * B_mag  ! SO
-            Vz(7)   = -1.0_dp * cfg%bdg%g_factor * mu_B * B_mag  ! CB1
-            Vz(8)   =  1.0_dp * cfg%bdg%g_factor * mu_B * B_mag  ! CB2
+            call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag, Vz)
             HT(1,1) = HT(1,1) + Vz(1)
             HT(2,2) = HT(2,2) + Vz(2)
             HT(3,3) = HT(3,3) + Vz(3)

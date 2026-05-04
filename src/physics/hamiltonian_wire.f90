@@ -6,6 +6,7 @@ module hamiltonian_wire
   use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar
   use confinement_init, only: confinementInitialization_2d
   use finitedifferences
+  use magnetic_field, only: compute_zeeman_vz
 
   implicit none
 
@@ -1317,11 +1318,7 @@ module hamiltonian_wire
       n_grid = grid%npoints()
 
       do i = 1, n_grid
-        Vz(1:2) = -1.5_dp * g_factor * mu_B * B_mag  ! HH
-        Vz(3:4) =  0.5_dp * g_factor * mu_B * B_mag  ! LH
-        Vz(5:6) = -0.5_dp * g_factor * mu_B * B_mag  ! SO
-        Vz(7)   = -1.0_dp * g_factor * mu_B * B_mag  ! CB1
-        Vz(8)   =  1.0_dp * g_factor * mu_B * B_mag  ! CB2
+        call compute_zeeman_vz(g_factor, mu_B, B_mag, Vz)
 
         do idx = 1, 8
           coo_idx = coo_idx + 1

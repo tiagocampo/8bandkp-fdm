@@ -5,7 +5,7 @@ module magnetic_field
   implicit none
   private
 
-  public :: add_zeeman_coo, add_peierls_coo
+  public :: add_zeeman_coo, add_peierls_coo, compute_zeeman_vz
 
   ! 8x8 spin matrices in zinc-blende basis (HH1,HH2,LH1,LH2,SO1,SO2,CB1,CB2)
   ! Derived from J=3/2 and J=1/2 angular momentum operators
@@ -33,13 +33,7 @@ contains
 
     n = grid%npoints()
     do i = 1, n
-      ! Zeeman splitting: Vz_n = g_factor * g_J * mu_B * B
-      ! g_J eigenvalues: HH=-1.5, LH=+0.5, SO=-0.5, CB=+1.0
-      Vz(1:2) = -1.5_dp * g_factor * mu_B * B_mag  ! HH (J_z = +/- 3/2)
-      Vz(3:4) =  0.5_dp * g_factor * mu_B * B_mag  ! LH (J_z = +/- 1/2)
-      Vz(5:6) = -0.5_dp * g_factor * mu_B * B_mag  ! SO (J_z = +/- 1/2)
-      Vz(7) = -1.0_dp * g_factor * mu_B * B_mag  ! CB1 (J_z = -1/2)
-      Vz(8) =  1.0_dp * g_factor * mu_B * B_mag  ! CB2 (J_z = +1/2)
+      call compute_zeeman_vz(g_factor, mu_B, B_mag, Vz)
 
       do idx = 1, 8
         nnz_offset = nnz_offset + 1
@@ -105,5 +99,18 @@ contains
       end if
     end do
   end subroutine add_peierls_coo
+
+  pure subroutine compute_zeeman_vz(g_factor, mu_B_val, B_mag, Vz)
+    ! Computes the 8-component Zeeman splitting vector:
+    !   Vz(b) = g_factor * g_J(b) * mu_B * B_mag
+    ! g_J eigenvalues: HH=-3/2, LH=+1/2, SO=-1/2, CB=+-1
+    real(kind=dp), intent(in) :: g_factor, mu_B_val, B_mag
+    real(kind=dp), intent(out) :: Vz(8)
+    Vz(1:2) = -1.5_dp * g_factor * mu_B_val * B_mag  ! HH (J_z = +/- 3/2)
+    Vz(3:4) =  0.5_dp * g_factor * mu_B_val * B_mag  ! LH (J_z = +/- 1/2)
+    Vz(5:6) = -0.5_dp * g_factor * mu_B_val * B_mag  ! SO (J_z = +/- 1/2)
+    Vz(7)   = -1.0_dp * g_factor * mu_B_val * B_mag  ! CB1 (J_z = -1/2)
+    Vz(8)   =  1.0_dp * g_factor * mu_B_val * B_mag  ! CB2 (J_z = +1/2)
+  end subroutine compute_zeeman_vz
 
 end module magnetic_field
