@@ -22,8 +22,8 @@ module green_functions
   implicit none
   private
 
+#ifdef USE_ARPACK
   public :: compute_ldos_csr
-
 contains
 
   ! ==============================================================================
@@ -153,5 +153,6 @@ contains
 
     deallocate(a_val, ia, ja, perm, rhs, sol)
   end subroutine compute_ldos_csr
+#endif
 
 end module green_functions

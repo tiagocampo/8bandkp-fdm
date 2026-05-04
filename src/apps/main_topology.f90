@@ -14,7 +14,9 @@ program topologicalAnalysis
     & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
   use topological_analysis
   use bdg_hamiltonian
-  use green_functions
+#ifdef USE_ARPACK
+  use green_functions, only: compute_ldos_csr
+#endif
   use linalg, only: mkl_set_num_threads_local
 
   implicit none
