@@ -34,9 +34,18 @@ Closed group #6. Bulk EF shift added to ZB8bandBulk, delta-doping (Gaussian prof
 
 ---
 
-## Phase 3: Optics & Documentation Figures
+## Phase 3: COMPLETED (2026-05-03)
 
-Generate all missing Python figures. Independent of Phases 4-5.
+All 16 review findings resolved: 7 correctness bugs (C1-C7), 9 code quality issues (H1-H12), 5 test coverage gaps (T1-T8). 48/53 tests pass; 5 pre-existing failures (Chern, Landau, 3 topology regressions) tracked in Phase 6.
+
+**Plan:** `docs/plans/2026-05-03-pr13-review-fixes-plan.md`
+**Commits:** 16 commits from `4342513` to `dbd666f`.
+
+---
+
+## Phase 4: Optics & Documentation Figures
+
+Generate all missing Python figures. Independent of Phases 5-6.
 
 | Source | What | Effort |
 |--------|------|--------|
@@ -48,7 +57,7 @@ Generate all missing Python figures. Independent of Phases 4-5.
 
 ---
 
-## Phase 4: Peierls / Landau Levels (New Confinement Mode)
+## Phase 5: Peierls / Landau Levels (New Confinement Mode)
 
 New physics capability. Peierls in bulk = new confinement mode (discretize x, 8Nx8N).
 
@@ -64,7 +73,7 @@ New physics capability. Peierls in bulk = new confinement mode (discretize x, 8N
 
 ---
 
-## Phase 5: Topological Suite Completion
+## Phase 6: Topological Suite Completion
 
 Most advanced features. Fu-Kane is independent of Peierls but logically last.
 
@@ -87,7 +96,8 @@ Most advanced features. Fu-Kane is independent of Peierls but logically last.
 |-------|----------------|-------------------|--------|
 | 1. Testing | 4 | Full regression coverage | ~2-3 days |
 | 2. Physics wiring | 1 | Bulk SC, bulk EF, gfactor SC | DONE |
-| 3. Figures | 3 | Complete documentation | ~3-4 days |
-| 4. Peierls/Landau | 2 | Magnetic field for all modes | ~5-7 days |
-| 5. Topological | 2 | Full topo suite | ~5-7 days |
-| **Total** | **10 remaining** | | **~15-21 days** |
+| 3. PR review fixes | — | Correctness, compat, quality | DONE |
+| 4. Figures | 3 | Complete documentation | ~3-4 days |
+| 5. Peierls/Landau | 2 | Magnetic field for all modes | ~5-7 days |
+| 6. Topological | 2 | Full topo suite | ~5-7 days |
+| **Total** | **10 remaining** | | **~12-18 days** |
