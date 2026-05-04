@@ -113,8 +113,16 @@ contains
       eigvec(1,1) = 1.0_dp; eigvec(2,1) = 0.0_dp
       eigvec(1,2) = 0.0_dp; eigvec(2,2) = 1.0_dp
     end if
-    eigvec(:,1) = eigvec(:,1) / sqrt(sum(eigvec(:,1)**2))
-    eigvec(:,2) = eigvec(:,2) / sqrt(sum(eigvec(:,2)**2))
+    if (sum(eigvec(:,1)**2) > 1.0e-30_dp) then
+      eigvec(:,1) = eigvec(:,1) / sqrt(sum(eigvec(:,1)**2))
+    else
+      eigvec(1,1) = 1.0_dp; eigvec(2,1) = 0.0_dp
+    end if
+    if (sum(eigvec(:,2)**2) > 1.0e-30_dp) then
+      eigvec(:,2) = eigvec(:,2) / sqrt(sum(eigvec(:,2)**2))
+    else
+      eigvec(1,2) = 0.0_dp; eigvec(2,2) = 1.0_dp
+    end if
   end subroutine diag_2x2
 
   function compute_berry_curvature(evecs_k, kx_arr, ky_arr, n_occ) result(Omega)
@@ -125,6 +133,7 @@ contains
     real(kind=dp), allocatable :: Omega(:,:)
 
     allocate(Omega(size(kx_arr), size(ky_arr)))
+    print *, 'WARNING: compute_berry_curvature is not yet implemented. Returning zeros.'
     Omega = 0.0_dp
   end function compute_berry_curvature
 
@@ -172,6 +181,7 @@ contains
     class(*), intent(in) :: params
     integer :: z2
 
+    print *, 'WARNING: compute_z2_fukane is not yet implemented. Returning 0.'
     z2 = 0
   end function compute_z2_fukane
 
