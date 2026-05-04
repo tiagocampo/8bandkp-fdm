@@ -6270,6 +6270,169 @@ def fig_bandstructure_qw_subbands(output_dir: Path) -> None:
     print("  -> docs/lecture/figures/bandstructure_qw_subbands.png")
 
 
+def fig_wavefunctions_qw(output_dir: Path) -> None:
+    """wavefunctions_qw.png: QW wavefunctions overlaid on band edge profile, 2-panel.
+
+    Runs bandStructure for a GaAs/AlGaAs QW, parses eigenfunctions,
+    and plots CB states (top panel) + VB states (bottom panel) as
+    filled |psi|^2 curves over the band edge step profile.
+
+    Output: docs/lecture/figures/wavefunctions_qw.png
+    """
+    print("[figure] wavefunctions_qw_lecture")
+
+    # --- Build a temporary config for a symmetric AlGaAs/GaAs/AlGaAs QW ---
+    cfg_text = (
+        "waveVector: kx\n"
+        "waveVectorMax: 0.001\n"
+        "waveVectorStep: 3\n"
+        "confinement: 1\n"
+        "FDstep: 201\n"
+        "FDorder: 4\n"
+        "numLayers: 3\n"
+        "material1: Al30Ga70As -200 200 0\n"
+        "material2: GaAs -50 50 0\n"
+        "material3: Al30Ga70As -200 200 0\n"
+        "numcb: 4\n"
+        "numvb: 8\n"
+        "ExternalField: 0  EF\n"
+        "EFParams: 0.0\n"
+    )
+    tmp_cfg = REPO_ROOT / "tmp" / "qw_wavefunctions_lecture.cfg"
+    tmp_cfg.parent.mkdir(parents=True, exist_ok=True)
+    tmp_cfg.write_text(cfg_text)
+
+    result = run_executable(EXE_BAND, tmp_cfg, REPO_ROOT,
+                           label="qw_wavefunctions_lecture", timeout=120)
+    if result.returncode != 0:
+        print("  WARNING: QW wavefunction run failed, skipping.")
+        return
+
+    n_z = 201
+    numcb = 4
+    numvb = 8
+    n_ev = numvb + numcb
+    try:
+        z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=n_ev, n_z=n_z)
+    except FileNotFoundError:
+        print("  WARNING: no eigenfunction data found, skipping.")
+        return
+
+    if z.size == 0 or wf.shape[0] < n_ev:
+        print(f"  WARNING: expected {n_ev} states, got {wf.shape[0]}, skipping.")
+        return
+
+    # Parse eigenvalues at k=0 for energy labels
+    try:
+        _, eig = parse_eigenvalues(output_dir)
+        e0 = eig[:, 0]  # energies at k=0
+    except (FileNotFoundError, IndexError):
+        e0 = None
+
+    # --- Construct band edge profile ---
+    # GaAs: CB bottom = 0 eV, VB top = -Eg = -1.424 eV
+    # Al30Ga70As: delta_Eg = 1.247*0.3 = 0.374 eV
+    #   CB offset = 0.67 * 0.374 = 0.251 eV
+    #   VB offset = -0.33 * 0.374 = -0.123 eV (pushes VB lower)
+    well_cb = 0.0
+    barrier_cb = 0.251
+    well_vb = -1.424
+    barrier_vb = -1.424 - 0.123
+
+    cb_edge = np.where((z >= -50) & (z <= 50), well_cb, barrier_cb)
+    vb_edge = np.where((z >= -50) & (z <= 50), well_vb, barrier_vb)
+
+    # --- Compute |psi|^2 for each state (sum over 8 bands) ---
+    psi2_all = np.sum(wf ** 2, axis=2)  # (n_ev, n_z)
+
+    # State ordering: states 1..numvb = VB, states numvb+1..numvb+numcb = CB
+    n_cb_show = 3
+    n_vb_show = 3
+    cb_psi2 = psi2_all[numvb:numvb + n_cb_show]  # (n_cb_show, n_z)
+    # VB states are ordered top-down (highest VB state first = state 1)
+    vb_psi2 = psi2_all[:n_vb_show]  # first 3 VB states (topmost)
+
+    # Scale wavefunctions for visibility on the band-edge plot
+    # Use a fraction of the CB-VB gap as the visual amplitude
+    scale = 0.08  # fraction of the plot range for max |psi|^2
+
+    # --- Plot ---
+    fig, (ax_cb, ax_vb) = plt.subplots(
+        2, 1, figsize=(7, 6.5), sharex=True,
+        gridspec_kw={"height_ratios": [1, 1]},
+    )
+
+    # Top panel: CB states on CB band edge
+    ax_cb.fill_between(z, well_vb - 0.5, cb_edge, alpha=0.06, color="grey")
+    ax_cb.plot(z, cb_edge, color="grey", linewidth=1.0, linestyle="--", alpha=0.5)
+    ax_cb.axhline(well_cb, color="#17becf", linewidth=0.5, linestyle=":", alpha=0.4)
+    ax_cb.axhline(barrier_cb, color="#17becf", linewidth=0.5, linestyle=":", alpha=0.4)
+
+    cb_colors = ["#17becf", "#1f77b4", "#2ca02c"]
+    for idx in range(n_cb_show):
+        psi2 = cb_psi2[idx]
+        psi2_max = psi2.max()
+        if psi2_max == 0:
+            continue
+        psi2_scaled = psi2 / psi2_max * scale * 0.5
+        state_num = numvb + idx + 1
+        label = f"e{idx + 1}"
+        if e0 is not None and state_num - 1 < len(e0):
+            label += f" ({e0[state_num - 1]:.3f} eV)"
+        ax_cb.fill_between(z, well_cb, well_cb + psi2_scaled,
+                           alpha=0.35, color=cb_colors[idx % len(cb_colors)],
+                           label=label)
+        ax_cb.plot(z, well_cb + psi2_scaled,
+                   color=cb_colors[idx % len(cb_colors)], linewidth=0.9)
+
+    ax_cb.set_ylabel("Energy (eV)")
+    ax_cb.set_title(
+        r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Conduction Band States"
+    )
+    ax_cb.legend(loc="upper right", fontsize=8, framealpha=0.9)
+    ax_cb.set_ylim(-0.15, barrier_cb + 0.15)
+    ax_cb.grid(True, alpha=0.2, linewidth=0.5)
+
+    # Bottom panel: VB states on VB band edge
+    ax_vb.fill_between(z, vb_edge, well_cb + 0.1, alpha=0.06, color="grey")
+    ax_vb.plot(z, vb_edge, color="grey", linewidth=1.0, linestyle="--", alpha=0.5)
+    ax_vb.axhline(well_vb, color="#d62728", linewidth=0.5, linestyle=":", alpha=0.4)
+    ax_vb.axhline(barrier_vb, color="#d62728", linewidth=0.5, linestyle=":", alpha=0.4)
+
+    vb_colors = ["#d62728", "#9467bd", "#1f77b4"]
+    for idx in range(n_vb_show):
+        psi2 = vb_psi2[idx]
+        psi2_max = psi2.max()
+        if psi2_max == 0:
+            continue
+        psi2_scaled = psi2 / psi2_max * scale * 0.5
+        state_num = idx + 1
+        label = f"VB{idx + 1}"
+        if e0 is not None and state_num - 1 < len(e0):
+            label += f" ({e0[state_num - 1]:.3f} eV)"
+        ax_vb.fill_between(z, well_vb, well_vb - psi2_scaled,
+                           alpha=0.35, color=vb_colors[idx % len(vb_colors)],
+                           label=label)
+        ax_vb.plot(z, well_vb - psi2_scaled,
+                   color=vb_colors[idx % len(vb_colors)], linewidth=0.9)
+
+    ax_vb.set_xlabel(r"$z$ (Å)")
+    ax_vb.set_ylabel("Energy (eV)")
+    ax_vb.set_title(
+        r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Valence Band States"
+    )
+    ax_vb.legend(loc="lower right", fontsize=8, framealpha=0.9)
+    ax_vb.set_ylim(barrier_vb - 0.15, -1.15)
+    ax_vb.grid(True, alpha=0.2, linewidth=0.5)
+
+    fig.tight_layout()
+    lecture_fig_dir = REPO_ROOT / "docs" / "lecture" / "figures"
+    lecture_fig_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(lecture_fig_dir / "wavefunctions_qw.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/lecture/figures/wavefunctions_qw.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -6346,6 +6509,7 @@ ALL_FIGURES = {
     "bulk_gaas_absorption": fig_bulk_gaas_absorption,
     "qw_absorption_optics_exe": fig_qw_absorption_optics_exe,
     "qw_absorption_spin_resolved": fig_qw_absorption_spin_resolved,
+    "wavefunctions_qw_lecture": fig_wavefunctions_qw,
 }
 
 
