@@ -143,4 +143,34 @@ contains
     call grid_free(grid)
   end subroutine
 
+  @test
+  subroutine test_zeeman_zero_field()
+    ! All Zeeman entries should be zero at B=0
+    real(kind=dp), allocatable :: coo_vals(:)
+    integer, allocatable :: coo_row(:), coo_col(:)
+    type(spatial_grid) :: grid
+    integer :: nnz_offset, i
+    integer, parameter :: nx = 1, ny = 1
+    integer :: mat2d(nx, ny)
+
+    ! Single grid point
+    mat2d = 1
+    call grid_init_rect(grid, nx, ny, 1.0_dp, 1.0_dp, mat2d)
+    allocate(coo_vals(8), coo_row(8), coo_col(8))
+    nnz_offset = 0
+
+    ! B = [0, 0, 0] — no magnetic field
+    call add_zeeman_coo(coo_vals, coo_row, coo_col, nnz_offset, &
+                         grid, [0.0_dp, 0.0_dp, 0.0_dp], g_factor=2.0_dp)
+
+    @assertEqual(8, nnz_offset)
+    ! All diagonal entries should be exactly zero when B=0
+    do i = 1, 8
+      @assertEqual(0.0_dp, coo_vals(i), tolerance=1.0e-30_dp)
+    end do
+
+    deallocate(coo_vals, coo_row, coo_col)
+    call grid_free(grid)
+  end subroutine
+
 end module

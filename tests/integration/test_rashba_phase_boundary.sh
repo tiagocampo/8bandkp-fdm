@@ -53,6 +53,17 @@ if [ -z "$MIN_GAP" ]; then
     exit 1
 fi
 
+# Verify gap is near zero for topological parameters (Vz > Vc ≈ 0.58)
+# In the topological phase the BdG spectrum should have a minuscule gap
+# (< 0.5 meV = 5e-4 eV) due to the Majorana zero mode closing the bulk gap.
+MIN_GAP_MEV=$(echo "$MIN_GAP * 1000" | bc -l)
+if (( $(echo "$MIN_GAP > 0.0005" | bc -l) )); then
+  echo "FAIL: min_gap=$MIN_GAP eV ($MIN_GAP_MEV meV) should be < 0.5 meV for topological phase"
+  exit 1
+fi
+
+echo "  Gap threshold check passed: min_gap=$MIN_GAP eV ($MIN_GAP_MEV meV) < 0.5 meV"
+
 echo "  PASS: Code executed successfully and produced output"
 echo ""
 echo "=== Rashba phase boundary test complete ==="
