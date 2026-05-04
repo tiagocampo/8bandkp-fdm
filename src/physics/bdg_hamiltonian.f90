@@ -180,7 +180,7 @@ contains
       ! Add Zeeman splitting to separate real COO array (diagonal-only)
       nnz_z = 0
       call add_zeeman_coo(coo_vals_zeeman, coo_row_zeeman, coo_col_zeeman, &
-                          nnz_z, cfg%grid, B_vec, g_f)
+                          nnz_z, cfg%grid, B_vec, g_f, nnz_zeeman)
       ! Copy Zeeman entries into the main complex COO
       do i = 1, nnz_z
         coo_idx = coo_idx + 1

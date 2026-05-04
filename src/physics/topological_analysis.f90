@@ -222,7 +222,12 @@ contains
     integer :: n_edge
     logical :: success
 
-    N = grid%npoints()
+    N = size(eigenvectors, 1) / 4
+    if (N < 1 .or. size(grid%z) < N) then
+      print *, 'Warning: extract_edge_states_wire: grid/eigenvector mismatch'
+      print *, '  N_from_evec=', N, ' grid%npoints=', grid%npoints()
+      allocate(edge_info(3)); edge_info = 0.0_dp; return
+    end if
     Nstates = size(eigenvalues)
 
     allocate(density(N, Nstates))
@@ -285,7 +290,7 @@ contains
 
     integer :: n, peak_idx, tail_start, i
     real(kind=dp) :: rho_peak, tol
-    real(kind=dp) :: sum_y_log, sum_x, sum_x2, sum_xy, denom
+    real(kind=dp) :: sum_y_log, sum_x, sum_x2, sum_xy, denom, slope
     integer :: n_fit
     real(kind=dp) :: x_start
 
@@ -339,7 +344,9 @@ contains
     denom = sum_x2 - sum_x**2 / real(n_fit, kind=dp)
     if (abs(denom) < 1.0e-14_dp .or. n_fit < 3) return
 
-    xi = abs(-1.0_dp / ((sum_xy - sum_x * sum_y_log / real(n_fit, kind=dp)) / denom))
+    slope = (sum_xy - sum_x * sum_y_log / real(n_fit, kind=dp)) / denom
+    if (abs(slope) < tiny(1.0_dp)) return
+    xi = abs(-1.0_dp / slope)
     if (xi > 0.0_dp) then
       success = .true.
     end if
@@ -360,7 +367,7 @@ contains
     real(kind=dp), allocatable :: xx(:)
     integer :: i, ib, peak_idx, i_start
     real(kind=dp) :: xi_est, norm_factor
-    real(kind=dp) :: sum_y_log, sum_x, sum_x2, sum_xy, denom
+    real(kind=dp) :: sum_y_log, sum_x, sum_x2, sum_xy, denom, slope
     integer :: n_fit
     real(kind=dp) :: tol_norm
 
@@ -390,7 +397,11 @@ contains
 
     if (present(profile)) then
       profile = 0.0_dp
-      profile(1:nspatial) = rho
+      if (size(profile) >= nspatial) then
+        profile(1:nspatial) = rho
+      else
+        profile = rho(1:size(profile))
+      end if
     end if
 
     peak_idx = maxloc(rho, dim=1)
@@ -448,8 +459,13 @@ contains
     if (abs(denom) < 1.0e-14_dp .or. n_fit < 3) then
       xi = 0.0_dp
     else
-      xi_est = -1.0_dp / ((sum_xy - sum_x * sum_y_log / real(n_fit, kind=dp)) / denom)
-      xi = abs(xi_est)
+      slope = (sum_xy - sum_x * sum_y_log / real(n_fit, kind=dp)) / denom
+      if (abs(slope) < tiny(1.0_dp)) then
+        xi = 0.0_dp
+      else
+        xi_est = -1.0_dp / slope
+        xi = abs(xi_est)
+      end if
     end if
 
     deallocate(rho)
@@ -467,6 +483,12 @@ contains
     complex(kind=dp), allocatable :: coo_vals(:)
     integer, allocatable :: coo_row(:), coo_col(:)
     integer :: nnz_offset
+
+    if (params%N < 1 .or. params%dz <= 0.0_dp) then
+      print *, 'ERROR: build_bhz_wire_hamiltonian: invalid parameters'
+      print *, '  N=', params%N, ' dz=', params%dz
+      stop 1
+    end if
 
     N = params%N
     dz = params%dz
@@ -612,6 +634,12 @@ contains
     logical :: is_gap_closing
     real(kind=dp), allocatable :: gap_line_raw(:)
     integer :: n_raw
+
+    if (nB < 1 .or. nMu < 1 .or. nB > 1000 .or. nMu > 1000) then
+      print *, 'ERROR: compute_phase_diagram: nB, nMu must be in [1, 1000]'
+      print *, '  nB=', nB, ' nMu=', nMu
+      stop 1
+    end if
 
     dB = (B_max - B_min) / real(max(1, nB - 1), kind=dp)
     dmu = (mu_max - mu_min) / real(max(1, nMu - 1), kind=dp)

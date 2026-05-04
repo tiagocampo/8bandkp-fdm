@@ -25,7 +25,7 @@ contains
 
     ! B = [0, 0, 1.0] T, g_factor = 2.0
     call add_zeeman_coo(coo_vals, coo_row, coo_col, nnz_offset, &
-                         grid, [0.0_dp, 0.0_dp, 1.0_dp], g_factor=2.0_dp)
+                         grid, [0.0_dp, 0.0_dp, 1.0_dp], g_factor=2.0_dp, coo_capacity=8)
 
     @assertEqual(8, nnz_offset)
     ! All diagonal entries
@@ -161,7 +161,7 @@ contains
 
     ! B = [0, 0, 0] — no magnetic field
     call add_zeeman_coo(coo_vals, coo_row, coo_col, nnz_offset, &
-                         grid, [0.0_dp, 0.0_dp, 0.0_dp], g_factor=2.0_dp)
+                         grid, [0.0_dp, 0.0_dp, 0.0_dp], g_factor=2.0_dp, coo_capacity=8)
 
     @assertEqual(8, nnz_offset)
     ! All diagonal entries should be exactly zero when B=0

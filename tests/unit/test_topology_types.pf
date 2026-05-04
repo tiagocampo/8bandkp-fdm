@@ -35,6 +35,7 @@ contains
     @assertEqual(0, res%z2_invariant)
     @assertEqual(0.0_dp, res%hall_conductance, tolerance=1.0e-12_dp)
     @assertEqual(0.0_dp, res%min_gap, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, res%edge_xi_min, tolerance=1.0e-12_dp)
     @assertEqual(0.0_dp, res%edge_xi, tolerance=1.0e-12_dp)
   end subroutine
 

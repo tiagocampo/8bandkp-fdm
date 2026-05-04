@@ -15,7 +15,7 @@ module magnetic_field
 contains
 
   subroutine add_zeeman_coo(coo_vals, coo_row, coo_col, nnz_offset, &
-                             grid, B_vec, g_factor)
+                             grid, B_vec, g_factor, coo_capacity)
     ! Adds g*mu_B * B . sigma to the 8-band diagonal at each grid point.
     ! Each grid point contributes 8 diagonal COO entries (one per band).
     real(kind=dp), intent(inout) :: coo_vals(:)
@@ -23,6 +23,7 @@ contains
     integer, intent(inout) :: nnz_offset
     type(spatial_grid), intent(in) :: grid
     real(kind=dp), intent(in) :: B_vec(3), g_factor
+    integer, intent(in) :: coo_capacity
 
     integer :: i, idx, n
     real(kind=dp) :: Vz(8), B_mag
@@ -35,6 +36,11 @@ contains
 
       do idx = 1, 8
         nnz_offset = nnz_offset + 1
+        if (nnz_offset > coo_capacity) then
+          print *, 'ERROR: add_zeeman_coo: COO capacity exceeded'
+          print *, '  nnz_offset=', nnz_offset, ' capacity=', coo_capacity
+          stop 1
+        end if
         coo_row(nnz_offset) = (i-1)*8 + idx
         coo_col(nnz_offset) = (i-1)*8 + idx
         coo_vals(nnz_offset) = Vz(idx)

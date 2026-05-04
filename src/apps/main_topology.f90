@@ -241,6 +241,8 @@ contains
     real(kind=dp) :: emin_local, emax_local
     real(kind=dp), allocatable :: eigvals_local(:)
     real(kind=dp) :: bhz_M_val  ! BHZ mass parameter for Z2 determination
+    integer :: bhz_N_grid       ! BHZ discretization grid points (saved for edge extraction)
+    real(kind=dp) :: bhz_dz_grid ! BHZ grid spacing (saved for edge extraction)
     integer :: i
 
     print *, '--- QSHE wire mode: Z2 from edge states ---'
@@ -287,6 +289,8 @@ contains
       ! Use coarser grid: wire_length = 70 nm, N = 70, dz = 1 nm
       bhz_p%N = 70
       bhz_p%dz = 1.0_dp  ! 1 nm grid spacing
+      bhz_N_grid = bhz_p%N    ! save for edge extraction outside this block
+      bhz_dz_grid = bhz_p%dz
       print *, '  BHZ: M=', bhz_p%M, ' meV, d=', bhz_p%d_wire, ' AA, N=', bhz_p%N, ', dz=', bhz_p%dz
       print *, '  Building BHZ Hamiltonian...'
       call build_bhz_wire_hamiltonian(H_csr_local, bhz_p)
@@ -355,8 +359,20 @@ contains
     if (cfg%topo%extract_edge_states) then
       block
         real(kind=dp), allocatable :: edge_info(:)
+        type(spatial_grid) :: bhz_grid
+        integer :: ii
+        bhz_grid%ndim = 1
+        bhz_grid%nx = 1
+        bhz_grid%ny = bhz_N_grid
+        bhz_grid%dx = 0.0_dp
+        bhz_grid%dy = bhz_dz_grid
+        allocate(bhz_grid%z(bhz_N_grid))
+        do ii = 1, bhz_N_grid
+          bhz_grid%z(ii) = (ii - 1) * bhz_dz_grid
+        end do
         edge_info = extract_edge_states_wire(eigvals_local, eigen_res_local%eigenvectors, &
-          & cfg%grid, cfg%topo%edge_E_window)
+          & bhz_grid, cfg%topo%edge_E_window)
+        deallocate(bhz_grid%z)
         result%edge_xi_min = edge_info(1)  ! min localization length
         result%edge_xi = edge_info(2)      ! average localization length
         result%min_gap = edge_info(3)      ! edge count (compatibility)

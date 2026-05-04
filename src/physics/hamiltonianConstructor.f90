@@ -284,8 +284,12 @@ module hamiltonianConstructor
       end if
 
       ! ---------------------------------------------------------------
-      ! Zeeman splitting: g*mu_B * B . sigma
+      ! Zeeman splitting: g*mu_B * |B| * sigma
       ! Applied after profile and strain so all terms are present.
+      ! Uses full B-field magnitude (not just B_z). This is physically
+      ! correct: spin splitting depends on total |B|, regardless of
+      ! direction. Orbital effects (Landau levels) from B_perp are
+      ! handled separately via Peierls substitution in wire mode.
       ! ---------------------------------------------------------------
       if (present(cfg)) then
         if (.not. present(g) .and. cfg%bdg%enabled) then
