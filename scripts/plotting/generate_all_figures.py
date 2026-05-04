@@ -6107,6 +6107,81 @@ def fig_delta_doping_potential(output_dir: Path) -> None:
     print("  -> docs/figures/sc_delta_doped_potential.png")
 
 
+def fig_bandstructure_bulk_ek(output_dir: Path) -> None:
+    """Bulk E(k) bandstructure for GaAs, InAs, and InSb (1x3 panel).
+    Runs bandStructure for each material with a 101-point k-sweep along [100].
+    Output: docs/lecture/figures/bandstructure_bulk_ek.png
+    """
+    print("[figure] bandstructure_bulk_ek")
+
+    materials = ["GaAs", "InAs", "InSb"]
+    # Base configs for GaAs and InAs; InSb derived from GaAs template
+    cfg_gaas = CONFIG_DIR / "bulk_gaas_kx.cfg"
+    cfg_inas = CONFIG_DIR / "bulk_inas_kx.cfg"
+
+    if not cfg_gaas.exists():
+        print("  WARNING: bulk_gaas_kx.cfg not found, skipping.")
+        return
+
+    overrides = {"waveVectorMax": "0.15", "waveVectorStep": "101"}
+
+    cfg_map = {
+        "GaAs": config_with_overrides(cfg_gaas, overrides, "bulk_gaas_ek"),
+        "InAs": config_with_overrides(cfg_inas, overrides, "bulk_inas_ek") if cfg_inas.exists()
+                 else None,
+        "InSb": config_with_overrides(cfg_gaas,
+                                      {**overrides, "material1": "InSb"},
+                                      "bulk_insb_ek"),
+    }
+
+    if cfg_map["InAs"] is None:
+        print("  WARNING: bulk_inas_kx.cfg not found, deriving from GaAs.")
+        cfg_map["InAs"] = config_with_overrides(cfg_gaas,
+                                                {**overrides, "material1": "InAs"},
+                                                "bulk_inas_ek")
+
+    # Run each material and capture eigenvalues (shared output dir)
+    data: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+    for mat in materials:
+        cfg = cfg_map[mat]
+        result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                                label=f"bulk_{mat}_ek", timeout=300)
+        if result.returncode != 0:
+            print(f"  WARNING: {mat} run failed, skipping panel.")
+            continue
+        k, eig = parse_eigenvalues(output_dir)
+        data[mat] = (k, eig)
+
+    if not data:
+        print("  WARNING: no data collected, skipping figure.")
+        return
+
+    n_panels = len(data)
+    fig, axes = plt.subplots(1, n_panels, figsize=(4.5 * n_panels, 4.5), squeeze=False)
+    ax_row = axes[0]
+
+    for idx, mat in enumerate(materials):
+        if mat not in data:
+            continue
+        ax = ax_row[idx]
+        k_vals, eig = data[mat]
+        n_bands = eig.shape[0]
+        for b in range(n_bands):
+            ax.plot(k_vals, eig[b], color=BAND_COLORS[b], linewidth=1.0)
+        ax.set_xlabel(r"$k$ (1/$\AA$)")
+        ax.set_ylabel("Energy (eV)")
+        ax.set_title(f"Bulk {mat}")
+        ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+        ax.grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    lecture_fig_dir = REPO_ROOT / "docs" / "lecture" / "figures"
+    lecture_fig_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(lecture_fig_dir / "bandstructure_bulk_ek.png", dpi=150)
+    plt.close(fig)
+    print(f"  -> docs/lecture/figures/bandstructure_bulk_ek.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -6127,6 +6202,7 @@ ALL_FIGURES = {
     "wire_strain_2d": fig_wire_strain_2d,
     "wire_strain_tensor": fig_wire_strain_tensor,
     "bulk_inas_bands": fig_bulk_inas_bands,
+    "bandstructure_bulk_ek": fig_bandstructure_bulk_ek,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,
     "qw_wavefunctions": fig_qw_wavefunctions,
