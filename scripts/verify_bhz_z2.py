@@ -12,7 +12,6 @@ Uses topologicalAnalysis executable with mode=qshe, compute_z2=T.
 
 import argparse
 import subprocess
-import os
 import re
 import tempfile
 import shutil

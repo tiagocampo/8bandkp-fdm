@@ -2,8 +2,6 @@ module topological_analysis
 
   use definitions
   use sparse_matrices
-  use linalg
-  use eigensolver
   implicit none
   private
 

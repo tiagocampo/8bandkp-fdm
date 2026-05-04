@@ -13,7 +13,8 @@ from pathlib import Path
 import re
 import sys
 
-EXE = Path("/data/8bandkp-fdm/build/src/topologicalAnalysis")
+REPO = Path(__file__).resolve().parent.parent
+EXE = REPO / "build" / "src" / "topologicalAnalysis"
 OUT_DIR = Path("docs/lecture/figures")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 

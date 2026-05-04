@@ -12,8 +12,7 @@ module green_functions
 
   use definitions, only: dp, pi_dp
   use sparse_matrices
-  use, intrinsic :: iso_c_binding, only: c_int, c_intptr_t, c_double_complex
-  use, intrinsic :: iso_fortran_env, only: real64
+  use, intrinsic :: iso_c_binding, only: c_int, c_intptr_t
 
 #ifdef USE_ARPACK
   use linalg, only: pardiso_c
@@ -49,7 +48,7 @@ contains
     real(kind=dp), intent(in) :: eta
     real(kind=dp), intent(out) :: ldos(:)
 
-    integer :: N, nnz, info, i, k, r
+    integer :: N, nnz, i, r
     integer :: maxfct, mnum, mtype, phase, nrhs, msglvl, error_loc
     integer(kind=c_intptr_t) :: pt(64)
     integer :: iparm(64)

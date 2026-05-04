@@ -49,7 +49,7 @@ contains
     logical, intent(out) :: found
     character(len=*), intent(out) :: label
 
-    integer :: status, rewind_status
+    integer :: status
     character(len=512) :: line
     character(len=255) :: label_part, value_str
     integer :: colon_pos
