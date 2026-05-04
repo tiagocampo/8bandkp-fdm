@@ -6532,6 +6532,78 @@ def fig_wire_geometry_potential(output_dir: Path) -> None:
     print("  -> docs/figures/wire_geometry_potential.png")
 
 
+def fig_zeeman_fan_diagram(output_dir: Path) -> None:
+    """zeeman_fan_diagram.png: analytical Zeeman fan diagram for spin-split CB levels.
+
+    Pure matplotlib figure -- no Fortran execution.  Shows the spin-up and
+    spin-down conduction band edge shifts as a function of magnetic field for
+    two materials: a free electron (g* = 2.0) and bulk InAs (g* = -14.9).
+
+    Formula:  E_CB_pm = +/- (1/2) * g* * mu_B * B
+
+    The bandStructure executable does not yet support bulk Zeeman splitting
+    (B-field is only wired into topologicalAnalysis), so this figure is
+    entirely analytical.
+    """
+    print("[figure] zeeman_fan_diagram")
+
+    lecture_fig_dir = REPO_ROOT / "docs" / "lecture" / "figures"
+    lecture_fig_dir.mkdir(parents=True, exist_ok=True)
+
+    materials = [
+        ("Free electron", 2.0),
+        ("InAs", -14.9),
+    ]
+
+    B_markers = np.array([0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0])
+    B_fine = np.linspace(0, 10, 300)
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5), sharey=True)
+
+    for ax, (name, g_star) in zip(axes, materials):
+        prefactor = 0.5 * g_star * BOHR_MAGNETON_MEV_PER_T  # meV/T
+
+        E_up_fine = prefactor * B_fine
+        E_dn_fine = -prefactor * B_fine
+        E_up_marks = prefactor * B_markers
+        E_dn_marks = -prefactor * B_markers
+
+        ax.plot(B_fine, E_up_fine, color="#d62728", linewidth=1.5,
+                label=r"$m_J = +\frac{1}{2}$")
+        ax.plot(B_fine, E_dn_fine, color="#1f77b4", linewidth=1.5,
+                label=r"$m_J = -\frac{1}{2}$")
+
+        ax.plot(B_markers, E_up_marks, "o", color="#d62728", markersize=5, zorder=5)
+        ax.plot(B_markers, E_dn_marks, "s", color="#1f77b4", markersize=5, zorder=5)
+
+        ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+        ax.set_xlabel("B (T)")
+        ax.set_title(f"{name}  ($g^* = {g_star:+.1f}$)")
+        ax.legend(loc="best", fontsize=9)
+        ax.grid(True, alpha=0.15, linewidth=0.5)
+
+        # Annotate splitting at B = 10 T
+        split_10 = abs(prefactor) * 10.0
+        ax.annotate(
+            f"$\\Delta E$ = {split_10:.2f} meV\nat 10 T",
+            xy=(10.0, split_10 / 2), xytext=(6.5, split_10 / 2 + 0.15 * split_10),
+            fontsize=8, ha="center",
+            arrowprops=dict(arrowstyle="->", lw=0.8, color="grey"),
+        )
+
+    axes[0].set_ylabel("Energy shift (meV)")
+
+    fig.suptitle(
+        "Analytical Zeeman splitting -- Fortran B-field support pending (Phase 5)",
+        fontsize=9, fontstyle="italic", y=0.02,
+    )
+    fig.tight_layout(rect=[0, 0.06, 1, 1])
+    fig.savefig(lecture_fig_dir / "zeeman_fan_diagram.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/lecture/figures/zeeman_fan_diagram.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -6610,6 +6682,7 @@ ALL_FIGURES = {
     "qw_absorption_optics_exe": fig_qw_absorption_optics_exe,
     "qw_absorption_spin_resolved": fig_qw_absorption_spin_resolved,
     "wavefunctions_qw_lecture": fig_wavefunctions_qw,
+    "zeeman_fan_diagram": fig_zeeman_fan_diagram,
 }
 
 
