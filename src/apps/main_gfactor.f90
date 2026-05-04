@@ -152,17 +152,19 @@ program gfactor
     eigen_cfg%tol      = 1.0e-10_dp
     eigen_cfg%feast_m0 = cfg%feast_m0  ! 0 = auto: 2*nev
 
-    ! Set energy window: use manual values if provided, otherwise placeholders
+    ! Set energy window: use manual values if provided, otherwise auto-compute
     if (cfg%feast_emin /= 0.0_dp .and. cfg%feast_emax /= 0.0_dp) then
       eigen_cfg%emin = cfg%feast_emin
       eigen_cfg%emax = cfg%feast_emax
     else
-      ! Placeholder values; will be updated after first Hamiltonian build
-      eigen_cfg%emin = -1.0_dp
-      eigen_cfg%emax =  1.0_dp
+      ! Build preliminary Hamiltonian to estimate energy window
+      call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+      call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
+      call csr_free(HT_csr)
+      print *, '  Auto FEAST window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
     end if
 
-    ! Self-consistent loop for wire (before Hamiltonian construction)
+    ! Self-consistent loop for wire (before production Hamiltonian construction)
     if (cfg%sc%enabled == 1) then
       block
         ! SC kx sweep arrays (separate from production kz solve)
@@ -210,11 +212,6 @@ program gfactor
 
     ! Build velocity matrix for z direction (free axis, uses existing dH/dkz)
     call ZB8bandGeneralized(vel(3), 1.0_dp, profile_2d, kpterms_2d, cfg, g='g3')
-
-    ! Update energy window from Hamiltonian if using auto mode
-    if (cfg%feast_emin == 0.0_dp .and. cfg%feast_emax == 0.0_dp) then
-      call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
-    end if
 
     ! Create polymorphic eigensolver
     eigen_solver = make_eigensolver(eigen_cfg)
