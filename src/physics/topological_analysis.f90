@@ -39,11 +39,8 @@ contains
 
     integer :: i, j, ip1, jp1
     complex(kind=dp), allocatable :: evecs(:,:,:)
-    real(kind=dp) :: kx, ky, dk, total_flux
-    complex(kind=dp) :: Ux, Uy, prod
-    real(kind=dp) :: H(2,2), eval(2), eigvec(2,2)
-    real(kind=dp) :: sin_kx_val, sin_ky_val, cos_kx_val, cos_ky_val, mz_val
-    complex(kind=dp) :: ev1_i_j, ev2_i_j, ev1_ip1_j, ev2_ip1_j, ev1_i_jp1, ev2_i_jp1
+    real(kind=dp) :: kx, ky, dk, total_flux, mz_val, E_plus, nrm
+    complex(kind=dp) :: Ux, Uy, prod, off_diag, ev_tmp(2)
 
     dk = 2.0_dp * acos(-1.0_dp) / real(nk, kind=dp)
     total_flux = 0.0_dp
@@ -54,37 +51,48 @@ contains
       ky = -acos(-1.0_dp) + real(j-1, kind=dp) * dk
       do i = 1, nk
         kx = -acos(-1.0_dp) + real(i-1, kind=dp) * dk
-        sin_kx_val = sin(kx); sin_ky_val = sin(ky)
-        cos_kx_val = cos(kx); cos_ky_val = cos(ky)
-        mz_val = u + cos_kx_val + cos_ky_val
 
-        H(1,1) = mz_val; H(1,2) = sin_kx_val; H(2,1) = sin_ky_val
-        H(2,2) = -mz_val
+        ! QWZ: H = sin(kx)*sigma_x + sin(ky)*sigma_y + mz*sigma_z
+        ! H = [[mz, sin(kx)-i*sin(ky)], [sin(kx)+i*sin(ky), -mz]]
+        mz_val = u + cos(kx) + cos(ky)
+        off_diag = cmplx(sin(kx), -sin(ky), kind=dp)
+        E_plus = sqrt(mz_val**2 + sin(kx)**2 + sin(ky)**2)
 
-        call diag_2x2(H, eval, eigvec)
-        evecs(i,j,1) = cmplx(eigvec(1,1), eigvec(1,2), kind=dp)
-        evecs(i,j,2) = cmplx(eigvec(2,1), eigvec(2,2), kind=dp)
+        ! Upper band eigenvector: [off_diag, E_plus - mz_val]
+        ev_tmp(1) = off_diag
+        ev_tmp(2) = cmplx(E_plus - mz_val, 0.0_dp, kind=dp)
+
+        nrm = sqrt(real(conjg(ev_tmp(1))*ev_tmp(1) + conjg(ev_tmp(2))*ev_tmp(2), kind=dp))
+        if (nrm > 1.0e-30_dp) then
+          evecs(i,j,1) = ev_tmp(1) / nrm
+          evecs(i,j,2) = ev_tmp(2) / nrm
+        else
+          evecs(i,j,1) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+          evecs(i,j,2) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+        end if
       end do
     end do
 
+    ! FHS plaquette: (i,j)->(i+1,j)->(i+1,j+1)->(i,j+1)->(i,j)
     do j = 1, nk
       jp1 = mod(j, nk) + 1
       do i = 1, nk
         ip1 = mod(i, nk) + 1
 
-        ev1_i_j = evecs(i,j,1)
-        ev2_i_j = evecs(i,j,2)
-        ev1_ip1_j = evecs(ip1,j,1)
-        ev2_ip1_j = evecs(ip1,j,2)
-        Ux = conjg(ev1_i_j) * ev1_ip1_j + conjg(ev2_i_j) * ev2_ip1_j
+        ! Ux(i,j) = <u(i,j)|u(i+1,j)>
+        Ux = conjg(evecs(i,j,1))*evecs(ip1,j,1) &
+           + conjg(evecs(i,j,2))*evecs(ip1,j,2)
+        ! Uy(i+1,j) = <u(i+1,j)|u(i+1,j+1)>
+        Uy = conjg(evecs(ip1,j,1))*evecs(ip1,jp1,1) &
+           + conjg(evecs(ip1,j,2))*evecs(ip1,jp1,2)
+        ! conjg(Ux(i,j+1)) = <u(i+1,j+1)|u(i,j+1)>
+        prod = conjg(evecs(i,jp1,1))*evecs(ip1,jp1,1) &
+             + conjg(evecs(i,jp1,2))*evecs(ip1,jp1,2)
+        ! conjg(Uy(i,j)) = <u(i,j+1)|u(i,j)>
+        prod = Ux * Uy * conjg(prod) &
+             * conjg(conjg(evecs(i,j,1))*evecs(i,jp1,1) &
+             + conjg(evecs(i,j,2))*evecs(i,jp1,2))
 
-        ev1_i_jp1 = evecs(i,jp1,1)
-        ev2_i_jp1 = evecs(i,jp1,2)
-        Uy = conjg(ev1_i_j) * ev1_i_jp1 + conjg(ev2_i_j) * ev2_i_jp1
-
-        prod = Ux * (conjg(ev1_ip1_j) * ev1_i_jp1 + conjg(ev2_ip1_j) * ev2_i_jp1)
-        prod = prod * (conjg(ev1_i_jp1) * ev1_ip1_j + conjg(ev2_i_jp1) * ev2_ip1_j)
-        prod = prod * conjg(Uy)
         total_flux = total_flux + aimag(log(prod))
       end do
     end do
