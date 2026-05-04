@@ -237,8 +237,7 @@ module hamiltonianConstructor
       if (present(cfg)) then
         if (.not. present(g) .and. cfg%bdg%enabled) then
           block
-            real(kind=dp) :: mu_B, B_mag, Vz(8)
-            mu_B = e * hbar / (2.0_dp * m0)
+            real(kind=dp) :: B_mag, Vz(8)
             B_mag = sqrt(sum(cfg%bdg%B_vec**2))
             call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag, Vz)
             do ii = 1, N
@@ -461,8 +460,7 @@ module hamiltonianConstructor
       if (present(cfg)) then
         if (cfg%bdg%enabled) then
           block
-            real(kind=dp) :: mu_B, B_mag, Vz(8)
-            mu_B = e * hbar / (2.0_dp * m0)
+            real(kind=dp) :: B_mag, Vz(8)
             B_mag = sqrt(sum(cfg%bdg%B_vec**2))
             call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag, Vz)
             HT(1,1) = HT(1,1) + Vz(1)

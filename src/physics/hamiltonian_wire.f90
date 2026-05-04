@@ -1311,9 +1311,8 @@ module hamiltonian_wire
       integer, intent(in) :: N
 
       integer :: i, idx, n_grid
-      real(kind=dp) :: mu_B, B_mag, Vz(8)
+      real(kind=dp) :: B_mag, Vz(8)
 
-      mu_B = e * hbar / (2.0_dp * m0)
       B_mag = sqrt(sum(B_vec**2))
       n_grid = grid%npoints()
 

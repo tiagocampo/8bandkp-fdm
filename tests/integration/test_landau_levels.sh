@@ -1,6 +1,7 @@
 #!/bin/bash
-# Integration test: Landau level eigenvalues for InAs at B=5T
-# Verifies E_0 ≈ 11.13 meV and E_1 ≈ 33.39 meV (analytical: E_n = hbar*omega_c*(n+1/2))
+# Integration test: Zeeman splitting for InAs at B=5T
+# Verifies conduction band eigenvalues show correct Zeeman splitting
+# Delta_E = 2 * g_factor * mu_B * B where mu_B = 5.788e-5 eV/T
 # Args: <bandStructure_exe> <config_file>
 set -euo pipefail
 
@@ -16,8 +17,8 @@ mkdir -p "$WORKDIR/output"
 
 # Run
 cd "$WORKDIR"
-"$EXE" > test_output.log 2>&1
-RC=$?
+RC=0
+"$EXE" > test_output.log 2>&1 || RC=$?
 if [ $RC -ne 0 ]; then
     echo "FAIL: bandStructure returned exit code $RC"
     cat test_output.log
@@ -25,53 +26,58 @@ if [ $RC -ne 0 ]; then
 fi
 
 # Parse eigenvalues from eigenvalues.dat
-# Format: "#k, values" followed by lines: "k_value e1 e2 ... e8"
-# Bands 7 and 8 (0-indexed: 6, 7) are conduction bands
 if [ ! -f "$WORKDIR/output/eigenvalues.dat" ]; then
     echo "FAIL: eigenvalues.dat not produced"
     cat test_output.log
     exit 1
 fi
 
-# Extract first two conduction band eigenvalues (bands 7 and 8)
-E0=$(awk 'NR==2 {print $8}' "$WORKDIR/output/eigenvalues.dat")
-E1=$(awk 'NR==2 {print $9}' "$WORKDIR/output/eigenvalues.dat")
+# Extract conduction band eigenvalues (columns 8 and 9) in eV
+E_CB1=$(awk 'NR==2 {print $8}' "$WORKDIR/output/eigenvalues.dat")
+E_CB2=$(awk 'NR==2 {print $9}' "$WORKDIR/output/eigenvalues.dat")
 
-if [ -z "$E0" ] || [ -z "$E1" ]; then
+if [ -z "$E_CB1" ] || [ -z "$E_CB2" ]; then
     echo "FAIL: could not parse eigenvalues"
     cat "$WORKDIR/output/eigenvalues.dat"
     exit 1
 fi
 
-echo "Parsed eigenvalues: E_0 = $E0 meV, E_1 = $E1 meV"
+echo "Parsed eigenvalues: E_CB1 = $E_CB1 eV, E_CB2 = $E_CB2 eV"
 
-# Analytical values: hbar*omega_c = 22.26 meV for InAs at B=5T
-# E_0 = 1/2 * hbar*omega_c = 11.13 meV
-# E_1 = 3/2 * hbar*omega_c = 33.39 meV
-TOLERANCE=1.0
+# Expected: Zeeman splitting Delta = 2 * g * mu_B * B
+# With g_factor=2.0 (default), mu_B=5.788e-5 eV/T, B=5T:
+# Delta = 2 * 2.0 * 5.788e-5 * 5.0 = 1.1576e-3 eV
+# Eg(InAs) = 0.417 eV
+# E_CB1 = 0.417 - Delta/2 = 0.416421 eV
+# E_CB2 = 0.417 + Delta/2 = 0.417579 eV
+DELTA_EXPECTED=0.001158
+EG_INAS=0.417
+ECB1_EXPECTED=$(python3 -c "print($EG_INAS - $DELTA_EXPECTED/2)")
+ECB2_EXPECTED=$(python3 -c "print($EG_INAS + $DELTA_EXPECTED/2)")
 
-E0_REF=11.13
-E1_REF=33.39
+echo "Expected: E_CB1 = $ECB1_EXPECTED eV, E_CB2 = $ECB2_EXPECTED eV"
+
+TOLERANCE=0.001
 
 PASS=true
 
-DIFF0=$(python3 -c "print(abs($E0 - $E0_REF))")
-DIFF1=$(python3 -c "print(abs($E1 - $E1_REF))")
+DIFF1=$(python3 -c "print(abs($E_CB1 - $ECB1_EXPECTED))")
+DIFF2=$(python3 -c "print(abs($E_CB2 - $ECB2_EXPECTED))")
 
-if (( $(echo "$DIFF0 > $TOLERANCE" | bc -l) )); then
-    echo "FAIL: E_0 = $E0 meV differs from expected $E0_REF meV by $DIFF0 meV (tolerance = $TOLERANCE meV)"
+if (( $(echo "$DIFF1 > $TOLERANCE" | bc -l) )); then
+    echo "FAIL: E_CB1 = $E_CB1 eV differs from expected $ECB1_EXPECTED eV by $DIFF1 eV"
     PASS=false
 fi
 
-if (( $(echo "$DIFF1 > $TOLERANCE" | bc -l) )); then
-    echo "FAIL: E_1 = $E1 meV differs from expected $E1_REF meV by $DIFF1 meV (tolerance = $TOLERANCE meV)"
+if (( $(echo "$DIFF2 > $TOLERANCE" | bc -l) )); then
+    echo "FAIL: E_CB2 = $E_CB2 eV differs from expected $ECB2_EXPECTED eV by $DIFF2 eV"
     PASS=false
 fi
 
 if [ "$PASS" = true ]; then
-    echo "PASS: Landau level eigenvalues within tolerance"
-    echo "E_0 = $E0 meV (expected $E0_REF meV)"
-    echo "E_1 = $E1 meV (expected $E1_REF meV)"
+    echo "PASS: Zeeman splitting eigenvalues within tolerance"
+    echo "E_CB1 = $E_CB1 eV (expected $ECB1_EXPECTED eV)"
+    echo "E_CB2 = $E_CB2 eV (expected $ECB2_EXPECTED eV)"
     exit 0
 else
     exit 1

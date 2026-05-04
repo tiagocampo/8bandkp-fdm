@@ -11,7 +11,7 @@ module definitions
   ! Physical constants
   public :: pi_sp, pi_dp, pi_qp
   public :: a0, hbar, const, c, m0, e, e0
-  public :: kB_eV, tolerance, renormalization, hbar2O2m0
+  public :: kB_eV, mu_B, tolerance, renormalization, hbar2O2m0
   public :: NUM_CB_STATES, NUM_VB_STATES, g_free
   public :: SQR3, SQR2, SQR2o3, SQR3o2, RQS3, RQS2
   public :: IU, ZERO, UM
@@ -46,6 +46,7 @@ module definitions
   real(kind=dp), parameter :: hbar2O2m0 = (hbar)**2 / (2.*m0) !eV AA**2
   real(kind=dp), parameter :: e0 = 8.854187817_dp*1E-12*(1E-9) ! C V-1 nm-1
   real(kind=dp), parameter :: kB_eV = 8.617333262e-5_dp        ! Boltzmann constant (eV/K)
+  real(kind=dp), parameter :: mu_B = 5.7883818012e-5_dp       ! Bohr magneton (eV/T)
   real(kind=dp), parameter :: tolerance=1e-7
   logical, parameter :: renormalization = .False.
 

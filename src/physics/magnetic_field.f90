@@ -25,10 +25,8 @@ contains
     real(kind=dp), intent(in) :: B_vec(3), g_factor
 
     integer :: i, idx, n
-    real(kind=dp) :: Vz(8), mu_B, B_mag
+    real(kind=dp) :: Vz(8), B_mag
 
-    ! mu_B = e * hbar / (2 * m0) in eV/T
-    mu_B = e * hbar / (2.0_dp * m0)
     B_mag = sqrt(sum(B_vec**2))
 
     n = grid%npoints()

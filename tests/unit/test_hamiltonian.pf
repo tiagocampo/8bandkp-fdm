@@ -501,7 +501,7 @@ contains
     deallocate(profile, kpterms)
 
     ! ---- Compute expected Zeeman shifts ----
-    mu_B_val = e * hbar / (2.0_dp * m0)  ! Bohr magneton in eV/T
+    mu_B_val = mu_B  ! Bohr magneton from defs.f90 (CODATA value in eV/T)
     B_mag = 1.0_dp
     g_f = 2.0_dp
     call compute_zeeman_vz(g_f, mu_B_val, B_mag, Vz)
