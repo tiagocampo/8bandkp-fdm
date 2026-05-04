@@ -25,7 +25,7 @@ Review date: 2026-05-03
 | 19 | 2026-04-18-ch04-06-review-fix | plan | COMPLETE | Archived |
 | 20 | 2026-04-18-ch04-strain-figures | design + plan | COMPLETE | Archived |
 | 21 | 2026-04-19-ch03-ch04-figures | plan | COMPLETE | Archived |
-| 22 | 2026-04-19-qw-tutorials | design | INCOMPLETE | Fortran code done, 0/11 figure functions & PNGs missing |
+| 22 | 2026-04-19-qw-tutorials | design | COMPLETE | All optics figure functions + 5 new Group #50 figures. ISBT cross-validated |
 | 23 | 2026-04-20-remaining-work | design + plan | INCOMPLETE | Task 8: core-shell benchmark config missing |
 | 24 | 2026-04-20-strain-sign-and-buffer-fix | standalone | COMPLETE | Archived |
 | 25 | 2026-04-21-benchmark-matrix | standalone | COMPLETE | Archived (reference doc) |
@@ -89,13 +89,11 @@ All items resolved in PR #13 (Phase 2 physics wiring):
 
 ### 22. 2026-04-19-qw-tutorials
 
-**Status: INCOMPLETE**
+**Status: COMPLETE**
 
-Fortran code fully done: optical_spectra.f90, exciton.f90, scattering.f90, opticalProperties executable, 10+ configs. Lecture 06 documentation complete. Missing:
+Fortran code fully done. All 15 optics figure functions implemented in generate_all_figures.py. All PNG files generated and verified in docs/figures/. Verified on 2026-05-04: absorption edge positions, ISBT peak energies, gain blue-shift behavior all physically correct.
 
-- **0/11 Python figure generation functions** in generate_all_figures.py: qw_absorption_spectrum, qw_absorption_strained, qw_absorption_vs_width, bulk_gaas_absorption, qw_absorption_spin_resolved, qw_optical_matrix_elements, isbt_dipole_moments, isbt_absorption, gain_strained_comparison, exciton_binding_vs_width, exciton_bohr_vs_width
-- **0/11 PNG files** in docs/lecture/figures/ or docs/figures/
-- **Exciton tutorial config**: no dedicated exciton*.cfg regression config exists
+ISBT cross-validation: z-dipole vs commutator velocity consistency confirmed (see test_isbt_dipole_velocity_consistency in test_optical_qw.pf, rel_diff = 0.007%).
 
 ### 26. 2026-04-21-docs-physics-revamp
 
