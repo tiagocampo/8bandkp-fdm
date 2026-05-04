@@ -6182,6 +6182,94 @@ def fig_bandstructure_bulk_ek(output_dir: Path) -> None:
     print(f"  -> docs/lecture/figures/bandstructure_bulk_ek.png")
 
 
+def fig_bandstructure_qw_subbands(output_dir: Path) -> None:
+    """bandstructure_qw_subbands.png: GaAs/AlGaAs QW subband dispersion, 2-panel (CB + VB)."""
+    print("[figure] bandstructure_qw_subbands")
+    cfg = CONFIG_DIR / "qw_gaas_algaas_absorption.cfg"
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                           label="qw_gaas_algaas_absorption", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: qw_gaas_algaas_absorption run failed, skipping.")
+        return
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: eigenvalues.dat not found, skipping.")
+        return
+
+    n_bands = eig.shape[0]
+    fig, (ax_cb, ax_vb) = plt.subplots(2, 1, figsize=(6.5, 8), sharex=True)
+
+    from matplotlib.lines import Line2D
+    cb_handle = Line2D([0], [0], color="#17becf", linewidth=1.5, label="Conduction band")
+    vb_handle = Line2D([0], [0], color="#d62728", linewidth=1.5, label="Valence band")
+    so_handle = Line2D([0], [0], color="#ff7f0e", linewidth=1.5, label="Split-off")
+
+    # Classify bands by energy at k=0 (same threshold as fig_qw_dispersion_gaas_algaas)
+    e0 = eig[:, 0]
+    cb_indices = [i for i in range(n_bands) if e0[i] > 0.5]
+    vb_indices = [i for i in range(n_bands) if -1.1 < e0[i] <= 0.5]
+    so_indices = [i for i in range(n_bands) if e0[i] <= -1.1]
+
+    # Barrier edge for Al30Ga70As (EC ~ 1.018 eV)
+    barrier_ec = 1.018
+
+    # ---- Top panel: CB subbands ----
+    for i in cb_indices:
+        ax_cb.plot(k_vals, eig[i], color="#17becf", linewidth=0.9, alpha=0.85)
+    ax_cb.axhline(barrier_ec, color="#17becf", linewidth=0.6, linestyle=":",
+                  alpha=0.5)
+    ax_cb.text(k_vals[-1], barrier_ec + 0.005, "  Barrier $E_C$",
+               fontsize=7, color="#17becf", ha="right", alpha=0.7)
+    ax_cb.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+    ax_cb.grid(True, alpha=0.2, linewidth=0.5)
+    ax_cb.set_ylabel("Energy (eV)")
+    ax_cb.set_title(r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Conduction Subbands")
+
+    # Label first few CB subbands
+    if cb_indices:
+        cb_bands_at_0 = sorted(e0[i] for i in cb_indices)
+        for j, e_cb in enumerate(cb_bands_at_0[:4]):
+            ax_cb.annotate(f"e{j+1}", xy=(k_vals[-1], e_cb), fontsize=7,
+                           color="#17becf", fontweight="bold",
+                           xytext=(5, 0), textcoords="offset points",
+                           va="center")
+    ax_cb.legend(handles=[cb_handle], loc="best", fontsize=9, framealpha=0.9)
+
+    # ---- Bottom panel: VB subbands (VB + SO) ----
+    for i in vb_indices:
+        ax_vb.plot(k_vals, eig[i], color="#d62728", linewidth=0.9, alpha=0.85)
+    for i in so_indices:
+        ax_vb.plot(k_vals, eig[i], color="#ff7f0e", linewidth=0.9, alpha=0.85)
+
+    ax_vb.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+    ax_vb.grid(True, alpha=0.2, linewidth=0.5)
+    ax_vb.set_xlabel(r"$k$ (1/$\AA$)")
+    ax_vb.set_ylabel("Energy (eV)")
+    ax_vb.set_title(r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Valence Subbands")
+
+    # Label first few VB subbands
+    if vb_indices:
+        vb_bands_at_0 = sorted((e0[i] for i in vb_indices), reverse=True)
+        labels = ["HH1", "LH1", "HH2", "LH2"]
+        for j, e_vb in enumerate(vb_bands_at_0[:4]):
+            lbl = labels[j] if j < len(labels) else f"VB{j+1}"
+            ax_vb.annotate(lbl, xy=(k_vals[1], e_vb), fontsize=7,
+                            color="#d62728", fontweight="bold", va="top")
+
+    vb_handles = [vb_handle]
+    if so_indices:
+        vb_handles.append(so_handle)
+    ax_vb.legend(handles=vb_handles, loc="best", fontsize=9, framealpha=0.9)
+
+    fig.tight_layout()
+    lecture_fig_dir = REPO_ROOT / "docs" / "lecture" / "figures"
+    lecture_fig_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(lecture_fig_dir / "bandstructure_qw_subbands.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/lecture/figures/bandstructure_qw_subbands.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -6203,6 +6291,7 @@ ALL_FIGURES = {
     "wire_strain_tensor": fig_wire_strain_tensor,
     "bulk_inas_bands": fig_bulk_inas_bands,
     "bandstructure_bulk_ek": fig_bandstructure_bulk_ek,
+    "bandstructure_qw_subbands": fig_bandstructure_qw_subbands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,
     "qw_wavefunctions": fig_qw_wavefunctions,
