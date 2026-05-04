@@ -1,9 +1,14 @@
 module test_bdg_hamiltonian
   use funit
   use definitions
+  use parameters
   use bdg_hamiltonian
   use sparse_matrices
   use topological_analysis
+  use geometry
+  use confinement_init, only: confinementInitialization_2d
+  use hamiltonian_wire, only: wire_workspace, wire_workspace_free
+  use linalg, only: zheevx
   implicit none
 
 contains
@@ -174,5 +179,149 @@ contains
 
     deallocate(evec_bdg, profile, grid%z)
   end subroutine
+
+  ! ==================================================================
+  ! T1: BdG CSR assembly test
+  ! Build a minimal wire BdG Hamiltonian and verify:
+  !   - CSR dimension is 16*N
+  !   - Matrix is Hermitian
+  !   - Eigenvalues come in +/- E pairs (particle-hole symmetry)
+  ! ==================================================================
+
+  @test
+  subroutine test_bdg_csr_assembly()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, N, Ntot_bdg, ij, i, j, info, m
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    integer :: mat2d(nx, ny)
+    real(kind=dp) :: mu, delta_0
+
+    ! For Hermiticity check
+    complex(kind=dp), allocatable :: Hd(:,:)
+    real(kind=dp) :: herr
+
+    ! For eigenvalue check
+    complex(kind=dp), allocatable :: H_eig(:,:), work(:), z_mat(:,:)
+    real(kind=dp), allocatable :: eig(:), rwork(:)
+    integer, allocatable :: iwork(:), ifail(:)
+    real(kind=dp) :: abstol, vl, vu, tol
+    integer :: il, iu, lwork
+    real(kind=dp) :: max_err
+
+    ngrid = nx * ny
+    N = ngrid
+    mat2d = 1  ! single material
+
+    ! Build grid
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    ! Setup materials
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    ! Build kpterms_2d
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    ! Minimal config
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    mu = 0.0_dp
+    delta_0 = 0.25e-3_dp  ! 0.25 meV pairing gap
+
+    ! Build BdG Hamiltonian (no B field)
+    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
+                                   kz=0.0_dp, mu=mu, delta_0=delta_0, ws=ws)
+
+    ! --- Check 1: Dimension ---
+    Ntot_bdg = 16 * N
+    @assertEqual(Ntot_bdg, H_bdg%nrows, message="BdG dimension = 16*N")
+    @assertEqual(Ntot_bdg, H_bdg%ncols, message="BdG dimension = 16*N")
+    @assertTrue(H_bdg%nnz > 0, message="BdG matrix has nonzeros")
+
+    ! --- Check 2: Hermiticity H = H^dagger ---
+    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
+    call csr_to_dense_local(H_bdg, Hd)
+    herr = 0.0_dp
+    do j = 1, H_bdg%ncols
+      do i = 1, H_bdg%nrows
+        herr = max(herr, abs(Hd(i,j) - conjg(Hd(j,i))))
+      end do
+    end do
+    @assertTrue(herr < 1.0e-10_dp, message="BdG Hamiltonian is Hermitian")
+
+    ! --- Check 3: Particle-hole symmetry (eigenvalue +/- E pairs) ---
+    ! Diagonalize and verify eigenvalues are symmetric around zero.
+    ! Use zheevx to get all eigenvalues.
+    allocate(H_eig(Ntot_bdg, Ntot_bdg))
+    H_eig = Hd  ! copy (zheevx destroys input)
+    allocate(eig(Ntot_bdg), work(1), rwork(7*Ntot_bdg))
+    allocate(iwork(5*Ntot_bdg), ifail(Ntot_bdg))
+    allocate(z_mat(Ntot_bdg, Ntot_bdg))
+
+    ! Query workspace
+    abstol = 0.0_dp
+    il = 1
+    iu = Ntot_bdg
+    call zheevx('N', 'I', 'U', Ntot_bdg, H_eig, Ntot_bdg, vl, vu, il, iu, &
+                abstol, m, eig, z_mat, Ntot_bdg, work, -1, rwork, iwork, ifail, info)
+    lwork = int(real(work(1)))
+    deallocate(work)
+    allocate(work(lwork))
+    call zheevx('N', 'I', 'U', Ntot_bdg, H_eig, Ntot_bdg, vl, vu, il, iu, &
+                abstol, m, eig, z_mat, Ntot_bdg, work, lwork, rwork, iwork, ifail, info)
+    @assertEqual(0, info, message="BdG diagonalization succeeded")
+    @assertEqual(Ntot_bdg, m, message="All eigenvalues computed")
+
+    ! Check that eigenvalues come in +/- E pairs.
+    ! For an even number of eigenvalues sorted ascending, eig(i) ~ -eig(N+1-i).
+    ! Tolerance is relaxed: FD boundary conditions break exact particle-hole symmetry.
+    tol = 1.0e-6_dp
+    max_err = 0.0_dp
+    do i = 1, Ntot_bdg / 2
+      max_err = max(max_err, abs(eig(i) + eig(Ntot_bdg + 1 - i)))
+    end do
+    @assertTrue(max_err < tol * (1.0_dp + maxval(abs(eig))), message="Particle-hole symmetry: eig(i) ~ -eig(N+1-i)")
+
+    ! Cleanup
+    deallocate(Hd, H_eig, eig, work, rwork, iwork, ifail, z_mat)
+    call csr_free(H_bdg)
+    call wire_workspace_free(ws)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_bdg_csr_assembly
+
+  ! ------------------------------------------------------------------
+  ! Local helper: convert CSR to dense matrix
+  ! ------------------------------------------------------------------
+  subroutine csr_to_dense_local(mat, dense)
+    type(csr_matrix), intent(in) :: mat
+    complex(kind=dp), intent(out) :: dense(:,:)
+    integer :: row, k
+
+    dense = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do row = 1, mat%nrows
+      do k = mat%rowptr(row), mat%rowptr(row + 1) - 1
+        dense(row, mat%colind(k)) = mat%values(k)
+      end do
+    end do
+  end subroutine csr_to_dense_local
 
 end module

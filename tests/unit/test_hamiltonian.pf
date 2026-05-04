@@ -6,6 +6,7 @@ module test_hamiltonian
   use hamiltonianConstructor
   use confinement_init, only: confinementInitialization_raw
   use hamiltonian_wire, only: build_velocity_matrices
+  use magnetic_field, only: compute_zeeman_vz
   implicit none
 
 contains
@@ -419,5 +420,113 @@ contains
 
     deallocate(work, rwork)
   end subroutine test_bulk_ef_shift
+
+  ! ==================================================================
+  ! T3: Zeeman QW test
+  ! Build QW Hamiltonian with B_z = 1T, g = 2.0 and verify that the
+  ! diagonal Zeeman splitting matches g_J * g * mu_B * B values.
+  ! The QW basis ordering is band-major: H(b*N+i, b*N+i) for band b,
+  ! spatial point i. Zeeman adds Vz(b) to each diagonal element of band b.
+  ! ==================================================================
+
+  @test
+  subroutine test_qw_zeeman_splitting()
+    integer, parameter :: ngrid = 5
+    real(kind=dp), parameter :: dz_val = 5.0_dp  ! Angstrom
+    integer :: matSize, info, i, b
+
+    ! Grid
+    real(kind=dp) :: z(ngrid)
+
+    ! Materials: single-layer GaAs
+    integer, parameter :: nlayers = 1
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: intStartPos(nlayers), intEndPos(nlayers)
+
+    ! Confinement
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    ! Hamiltonians: without and with Zeeman
+    complex(kind=dp), allocatable :: HT_noZ(:,:), HT_zeeman(:,:)
+
+    ! Config for Zeeman-enabled run
+    type(simulation_config) :: cfg
+
+    ! Expected Zeeman shifts
+    real(kind=dp) :: mu_B_val, B_mag, g_f, Vz(8)
+    real(kind=dp) :: expected_shift(8)
+    real(kind=dp) :: diag_noZ, diag_zeeman, actual_shift, max_err
+    real(kind=dp) :: tol
+
+    matSize = ngrid * 8
+
+    ! ---- Setup grid ----
+    do i = 1, ngrid
+      z(i) = real(i - 1, kind=dp) * dz_val
+    end do
+
+    ! Single-layer GaAs
+    intStartPos(1) = 1;  intEndPos(1) = ngrid
+    material(1) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Build kpterms (shared by both runs) ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    ! ---- Run 1: Without Zeeman ----
+    allocate(HT_noZ(matSize, matSize))
+    HT_noZ = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT_noZ, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+    deallocate(profile, kpterms)
+
+    ! ---- Run 2: With Zeeman (B_z = 1T, g = 2.0) ----
+    ! Rebuild kpterms
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    ! Configure Zeeman: cfg%bdg%enabled = .true. triggers Zeeman in ZB8bandQW
+    cfg%bdg%enabled = .true.
+    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 1.0_dp]  ! B_z = 1T
+    cfg%bdg%g_factor = 2.0_dp
+
+    allocate(HT_zeeman(matSize, matSize))
+    HT_zeeman = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT_zeeman, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms, cfg=cfg)
+    deallocate(profile, kpterms)
+
+    ! ---- Compute expected Zeeman shifts ----
+    mu_B_val = e * hbar / (2.0_dp * m0)  ! Bohr magneton in eV/T
+    B_mag = 1.0_dp
+    g_f = 2.0_dp
+    call compute_zeeman_vz(g_f, mu_B_val, B_mag, Vz)
+    ! Vz(1:2) = HH: -1.5*g*mu_B*B
+    ! Vz(3:4) = LH: +0.5*g*mu_B*B
+    ! Vz(5:6) = SO: -0.5*g*mu_B*B
+    ! Vz(7)   = CB1: -1.0*g*mu_B*B
+    ! Vz(8)   = CB2: +1.0*g*mu_B*B
+
+    ! ---- Verify: diagonal of each band should differ by Vz(band) ----
+    ! QW basis ordering is band-major: band b occupies rows (b-1)*N+1 .. b*N
+    ! So diagonal of band b at spatial point i is HT((b-1)*N+i, (b-1)*N+i)
+    tol = 1.0e-12_dp
+    max_err = 0.0_dp
+    do b = 1, 8
+      do i = 1, ngrid
+        diag_noZ = real(HT_noZ((b-1)*ngrid + i, (b-1)*ngrid + i), kind=dp)
+        diag_zeeman = real(HT_zeeman((b-1)*ngrid + i, (b-1)*ngrid + i), kind=dp)
+        actual_shift = diag_zeeman - diag_noZ
+        max_err = max(max_err, abs(actual_shift - Vz(b)))
+      end do
+    end do
+    @assertTrue(max_err < tol, message="QW Zeeman diagonal shift matches Vz(band)")
+
+    deallocate(HT_noZ, HT_zeeman)
+  end subroutine test_qw_zeeman_splitting
 
 end module test_hamiltonian
