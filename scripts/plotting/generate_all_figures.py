@@ -6433,6 +6433,105 @@ def fig_wavefunctions_qw(output_dir: Path) -> None:
     print("  -> docs/lecture/figures/wavefunctions_qw.png")
 
 
+def fig_wire_geometry_potential(output_dir: Path) -> None:
+    """wire_geometry_potential.png: 2-panel wire geometry (material map) and radial potential cut."""
+    print("[figure] wire_geometry_potential")
+
+    # Reuse existing wire snapshot if available (same config/params as wire_inas_gaas_profile)
+    reuse_dir = REPO_ROOT / "tmp" / "wire_inas_gaas_profile"
+    if (reuse_dir / "potential_profile.dat").exists():
+        print("  Reusing existing wire_inas_gaas_profile snapshot")
+        run_dir = reuse_dir
+        cfg = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
+    else:
+        cfg = config_with_overrides(
+            CONFIG_DIR / "wire_inas_gaas_strain.cfg",
+            {"waveVectorMax": "0.01", "waveVectorStep": "2"},
+            "wire_geometry_potential",
+        )
+        result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_geometry_potential", timeout=600)
+        if result.returncode != 0:
+            print("  SKIP: wire_geometry_potential run failed")
+            return
+        run_dir = snapshot_output_dir(output_dir, REPO_ROOT / "tmp" / "wire_geometry_potential")
+
+    try:
+        x, y, EV, EV_SO, EC = _parse_wire_potential_profile(run_dir)
+    except FileNotFoundError:
+        print("  SKIP: output/potential_profile.dat not found")
+        return
+
+    if x.size == 0:
+        print("  SKIP: empty potential profile data")
+        return
+
+    # Parse geometry from config
+    core_outer = _wire_material_boundary(cfg)
+    wire_w = float(
+        next(
+            (l.split(":")[1].strip() for l in open(cfg) if l.strip().startswith("wire_width")),
+            "150.0",
+        )
+    )
+
+    # Build a material map: 0 = GaAs (shell), 1 = InAs (core)
+    X, Y, R = _wire_boundary_mesh(x, y)
+    material = (R <= core_outer).astype(float)
+
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(10, 4.5))
+
+    # --- Left panel: material map ---
+    from matplotlib.colors import ListedColormap
+    from matplotlib.patches import Patch
+    cmap_mat = ListedColormap(["#4c72b0", "#dd8452"])  # GaAs blue, InAs orange
+    ax_left.pcolormesh(x, y, material, cmap=cmap_mat, shading="auto", vmin=0, vmax=1)
+
+    # Overlay core boundary circle
+    if core_outer > 0:
+        ax_left.contour(X, Y, R, levels=[core_outer], colors="white", linewidths=1.5,
+                        linestyles="--")
+
+    # Draw wire outer boundary (rectangle)
+    rect = plt.Rectangle(
+        (0.0, 0.0), wire_w, wire_w,
+        linewidth=1.0, edgecolor="white", facecolor="none", linestyle=":",
+    )
+    ax_left.add_patch(rect)
+
+    legend_elements = [
+        Patch(facecolor="#dd8452", edgecolor="k", label="InAs (core)"),
+        Patch(facecolor="#4c72b0", edgecolor="k", label="GaAs (shell)"),
+    ]
+    ax_left.legend(handles=legend_elements, loc="upper right", fontsize=8, framealpha=0.8)
+
+    ax_left.set_xlabel(r"$x$ ($\AA$)")
+    ax_left.set_ylabel(r"$y$ ($\AA$)")
+    ax_left.set_title("Material map")
+    ax_left.set_aspect("equal")
+
+    # --- Right panel: EC along a radial cut through the center ---
+    xc = 0.5 * (x[0] + x[-1])
+    iy_center = int(np.argmin(np.abs(y - xc)))
+    ec_radial = EC[iy_center, :]
+    ax_right.plot(x, ec_radial, "-", color="#dd8452", linewidth=1.5)
+
+    # Mark core boundary
+    if core_outer > 0:
+        ax_right.axvline(xc - core_outer, color="gray", ls="--", lw=0.8, label="Core edge")
+        ax_right.axvline(xc + core_outer, color="gray", ls="--", lw=0.8)
+
+    ax_right.set_xlabel(r"$x$ ($\AA$)")
+    ax_right.set_ylabel(r"$E_C$ (eV)")
+    ax_right.set_title(r"Radial cut ($y = y_{\rm center}$)")
+    ax_right.legend(fontsize=8)
+    ax_right.grid(True, alpha=0.2, linewidth=0.5)
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "wire_geometry_potential.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/wire_geometry_potential.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -6503,6 +6602,7 @@ ALL_FIGURES = {
     "wire_inas_gaas_wavefunctions": fig_wire_inas_gaas_wavefunctions,
     "wire_gfactor_vs_size": fig_wire_gfactor_vs_size,
     "wire_optical_spectrum": fig_wire_optical_spectrum,
+    "wire_geometry_potential": fig_wire_geometry_potential,
     "sc_inas_alsb_potential": fig_sc_inas_alsb_potential,
     "sc_inas_alsb_convergence": fig_sc_inas_alsb_convergence,
     "qw_gfactor_vs_width": fig_qw_gfactor_vs_width,
