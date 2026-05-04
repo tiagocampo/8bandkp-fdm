@@ -60,15 +60,11 @@ program topologicalAnalysis
 
   call read_and_setup(cfg, profile, kpterms)
 
-  ! Force compute_z2 for wire QSHE mode - needed because the parser has a bug
-  ! where cfg%topo%compute_z2 remains .false. even when compute_z2: T is in the config
-  if (cfg%confinement == 2 .and. trim(cfg%topo%mode) == 'qshe') then
-    cfg%topo%compute_z2 = .true.
-  end if
-
   ! Validate topology mode is set
-  ! Note: cfg%topo%enabled may appear .false. due to a parsing quirk with
-  ! "T" format values in read_optional_logical_flag. Use mode presence as indicator.
+  if (.not. cfg%topo%enabled) then
+    print *, 'Error: topology analysis requires topology: T in input.cfg'
+    stop 1
+  end if
   if (len_trim(cfg%topo%mode) == 0) then
     print *, 'Error: topology analysis requires topology: block with mode set in input.cfg'
     print *, '  cfg%topo%mode is empty'

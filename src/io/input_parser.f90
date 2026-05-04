@@ -148,7 +148,7 @@ contains
     integer :: status
     character(len=255) :: data_filename, label
     character(len=512) :: line
-    character(len=255) :: label_part
+    character(len=255) :: label_part, value_str
     integer :: colon_pos
     logical :: found_optional
 
@@ -739,32 +739,62 @@ contains
         if (status /= 0) then; status = 0; exit topology_block; end if
         print *, trim(label), trim(cfg%topo%mode)
 
-        read(data_unit, *, iostat=status) label, cfg%topo%compute_chern
+        read(data_unit, '(A)', iostat=status) line
         if (status /= 0) then; status = 0; exit topology_block; end if
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          value_str = adjustl(line(colon_pos+1:))
+          cfg%topo%compute_chern = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
+        end if
+        label = adjustl(line(:colon_pos-1)) // ':'
         print *, trim(label), cfg%topo%compute_chern
 
-        read(data_unit, *, iostat=status) label, cfg%topo%compute_hall
+        read(data_unit, '(A)', iostat=status) line
         if (status /= 0) then; status = 0; exit topology_block; end if
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          value_str = adjustl(line(colon_pos+1:))
+          cfg%topo%compute_hall = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
+        end if
+        label = adjustl(line(:colon_pos-1)) // ':'
         print *, trim(label), cfg%topo%compute_hall
 
         read(data_unit, *, iostat=status) label, cfg%topo%qwz_u
         if (status /= 0) then; status = 0; exit topology_block; end if
         print *, trim(label), cfg%topo%qwz_u
 
-        read(data_unit, *, iostat=status) label, cfg%topo%compute_z2
+        read(data_unit, '(A)', iostat=status) line
         if (status /= 0) then; status = 0; exit topology_block; end if
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          value_str = adjustl(line(colon_pos+1:))
+          cfg%topo%compute_z2 = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
+        end if
+        label = adjustl(line(:colon_pos-1)) // ':'
         print *, trim(label), cfg%topo%compute_z2
 
-        read(data_unit, *, iostat=status) label, cfg%topo%extract_edge_states
+        read(data_unit, '(A)', iostat=status) line
         if (status /= 0) then; status = 0; exit topology_block; end if
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          value_str = adjustl(line(colon_pos+1:))
+          cfg%topo%extract_edge_states = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
+        end if
+        label = adjustl(line(:colon_pos-1)) // ':'
         print *, trim(label), cfg%topo%extract_edge_states
 
         read(data_unit, *, iostat=status) label, cfg%topo%edge_E_window
         if (status /= 0) then; status = 0; exit topology_block; end if
         print *, trim(label), cfg%topo%edge_E_window
 
-        read(data_unit, *, iostat=status) label, cfg%topo%compute_ldos
+        read(data_unit, '(A)', iostat=status) line
         if (status /= 0) then; status = 0; exit topology_block; end if
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          value_str = adjustl(line(colon_pos+1:))
+          cfg%topo%compute_ldos = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
+        end if
+        label = adjustl(line(:colon_pos-1)) // ':'
         print *, trim(label), cfg%topo%compute_ldos
 
         read(data_unit, *, iostat=status) label, cfg%topo%ldos_eta
