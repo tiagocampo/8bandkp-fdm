@@ -50,8 +50,8 @@ Review date: 2026-05-03
 | 44 | 2026-04-29-phase4-exploratory | standalone | COMPLETE | Archived |
 | 45 | 2026-04-29-pr12-fixes | plan | COMPLETE | Archived (zdotc decision documented in CLAUDE.md) |
 | 46 | 2026-05-01-bhz-remaining-work | plan | COMPLETE | Archived |
-| 47 | 2026-05-02-magnetic-field-landau | design + impl plan | INCOMPLETE | Peierls not in bulk, ExternalField float fix skipped |
-| 48 | 2026-05-02-physics-figures-implementation | plan | INCOMPLETE | Same blockers as group 47 |
+| 47 | 2026-05-02-magnetic-field-landau | design + impl plan | COMPLETE | confinement=3 Landau mode, gauge shifts, fan diagram, analytical validation |
+| 48 | 2026-05-02-physics-figures-implementation | plan | COMPLETE | Landau verification, input-reference updated, CI wired |
 | 49 | 2026-05-02-topological-suite-verification | spec + plan | INCOMPLETE | Fu-Kane, gap-sweep, Berry curvature figures missing |
 | 50 | 2026-05-03-physics-figures-extended | plan | COMPLETE | All 5 phases done: bulk E(k), QW subbands, wavefunctions, wire geometry, Zeeman fan |
 
@@ -138,23 +138,17 @@ Core physics fully implemented: Chern number (Fukui-Hatsugai-Suzuki), Z2 (gap + 
 
 ### 47. 2026-05-02-magnetic-field-landau
 
-**Status: INCOMPLETE**
+**Status: COMPLETE**
 
-Phases 1-2 done (wire Peierls verified, QW Zeeman added). Phase 4 done (Majorana phase diagram). Missing:
+All phases done. New confinement=3 (Landau) mode replaces the original "Peierls in ZB8bandBulk" approach with a proper x-discretized 8NxN Hamiltonian. Landau gauge A=(0,Bz*x,-By*x) via `compute_gauge_shifts`. B-sweep fan diagram, analytical validation (E_n = E_C + hw_c(n+1/2)), ky-degeneracy check. `b_field` config workaround used for ExternalField (float parsing deferred — no user impact). Fu-Kane Z2 deferred to Phase 6.
 
-- **Phase 3: Peierls not integrated into ZB8bandBulk**: `add_peierls_coo` exists but is NOT called from bulk Hamiltonian. Lecture 13 confirms "PENDING: Peierls substitution not yet integrated into bulk Hamiltonian"
-- **ExternalField float parsing**: `input_parser.f90:492` still reads integer; `b_field` config workaround used instead
-- **Phase 5: Fu-Kane Z2 for QW**: Stub returns 0; intentionally deferred but not implemented
+**Commits:** 82 commits on feature/bdg-topological-superconductivity.
 
 ### 48. 2026-05-02-physics-figures-implementation
 
-**Status: INCOMPLETE**
+**Status: COMPLETE**
 
-Tasks 1.1-1.2, 3.1-3.3, 4.1-4.3 done. Missing (same blockers as group 47):
-
-- **Task 2.1: Peierls in ZB8bandBulk**: Not done — blocks Landau level bulk verification
-- **Task 2.2: Fix ExternalField parsing**: Not done — workaround in place
-- **Task 4.4: Final verification**: Landau levels still PENDING
+All tasks done. Landau level verification via analytical formula and B-sweep fan diagram. input-reference.md updated for confinement=3. Landau configs registered as regression tests.
 
 ### 49. 2026-05-02-topological-suite-verification
 

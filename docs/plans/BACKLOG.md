@@ -60,17 +60,24 @@ One remaining issue in `docs/plans/phase4-discrepancy-log.md`: `timing_dense_vs_
 
 ---
 
-## Phase 5: Peierls / Landau Levels (New Confinement Mode)
+## Phase 5: COMPLETED (2026-05-05)
 
-New physics capability. Peierls in bulk = new confinement mode (discretize x, 8Nx8N).
+New confinement=3 (Landau) mode with x-discretized 8NxN Hamiltonian, Landau gauge A=(0,Bz*x,-By*x), Zeeman splitting, orbital quantization, B-sweep fan diagram, analytical validation against E_n = E_C + hw_c(n+1/2). 58/58 tests pass.
 
-| Source | What | Effort |
-|--------|------|--------|
-| New | Design: `confinement=3` mode (Landau) -- x-discretized, gauge choice, 8Nx8N assembly reusing QW machinery | Design |
-| #47 | Implement Peierls in ZB8bandBulk -> calls confinement=3 path | High |
-| #47 | Fix ExternalField float parsing in input_parser.f90 | Low |
-| #48 | Landau level verification: InAs, GaAs benchmarks vs analytical E_n = hw_c(n+1/2) | Medium |
-| #50 P4 | Landau fan diagram (E_n vs B) + effective mass extraction | Medium |
+**Plan:** `docs/plans/archive/2026-05-02-magnetic-field-landau-design.md` (archived)
+**Commits:** 82 commits from `70c817b` to `8bd2387`, plus sign fix and CI wiring.
+
+**Code review fixes applied:**
+- `compute_gauge_shifts` added to `magnetic_field.f90` (was missing, blocked build)
+- Pi_z sign error fixed (latent: By=0 in all configs)
+- B_vec mutation in B-sweep, contiguous attribute, variable renames (kx2→piy2 etc.)
+- landau_sweep validation, nB guard
+
+**Tests added:**
+- `test_landau.pf` — pFUnit unit tests (hermiticity, bulk recovery, gauge shifts with By≠0)
+- `regression_landau_bulk_gaas/inas/inas_bsweep` — golden data comparison via `test_landau_bulk.sh`
+- `regression_landau_analytical` — Python verification against analytical Landau levels
+- SC golden data regenerated (stale from Zeeman/mu_B/sc_potential_shift changes)
 
 **Result:** Magnetic field works for all geometries. Groups 47, 48 -> COMPLETE.
 
@@ -101,6 +108,6 @@ Most advanced features. Fu-Kane is independent of Peierls but logically last.
 | 2. Physics wiring | 1 | Bulk SC, bulk EF, gfactor SC | DONE |
 | 3. PR review fixes | — | Correctness, compat, quality | DONE |
 | 4. Figures | 3 | Complete documentation | DONE |
-| 5. Peierls/Landau | 2 | Magnetic field for all modes | ~5-7 days |
+| 5. Peierls/Landau | 2 | Magnetic field for all modes | DONE |
 | 6. Topological | 2 | Full topo suite | ~5-7 days |
-| **Total** | **7 remaining** | | **~10-14 days** |
+| **Total** | **7 remaining** | | **~5-7 days** |

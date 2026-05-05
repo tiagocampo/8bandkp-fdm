@@ -5,7 +5,7 @@ module magnetic_field
   implicit none
   private
 
-  public :: add_zeeman_coo, add_peierls_coo, compute_zeeman_vz
+  public :: add_zeeman_coo, add_peierls_coo, compute_zeeman_vz, compute_gauge_shifts
 
   ! 8x8 spin matrices in zinc-blende basis (HH1,HH2,LH1,LH2,SO1,SO2,CB1,CB2)
   ! Derived from J=3/2 and J=1/2 angular momentum operators
@@ -103,6 +103,24 @@ contains
       end if
     end do
   end subroutine add_peierls_coo
+
+  pure subroutine compute_gauge_shifts(x_grid, B_vec, ky, kz, Pi_y, Pi_z)
+    ! Landau gauge A = (0, Bz*x, -By*x) for B = (Bx, By, Bz).
+    ! Canonical momentum shifts in 1/AA:
+    !   Pi_y(i) = ky + Bz * x(i) * 1e-20 / hbar
+    !   Pi_z(i) = kz - By * x(i) * 1e-20 / hbar
+    real(kind=dp), intent(in), contiguous :: x_grid(:)
+    real(kind=dp), intent(in) :: B_vec(3), ky, kz
+    real(kind=dp), intent(out), contiguous :: Pi_y(:), Pi_z(:)
+
+    real(kind=dp), parameter :: inv_hbar_AA = 1.0e-20_dp / hbar  ! 1/(eV*s*T*AA) -> shift factor
+    integer :: i
+
+    do i = 1, size(x_grid)
+      Pi_y(i) = ky + B_vec(3) * x_grid(i) * inv_hbar_AA
+      Pi_z(i) = kz - B_vec(2) * x_grid(i) * inv_hbar_AA
+    end do
+  end subroutine compute_gauge_shifts
 
   pure subroutine compute_zeeman_vz(g_factor, mu_B_val, B_mag, Vz)
     ! Computes the 8-component Zeeman splitting vector:
