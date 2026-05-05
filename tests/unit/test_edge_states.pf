@@ -167,4 +167,149 @@ contains
     deallocate(edge_info)
   end subroutine test_extract_edge_states_wire_returns_allocatable
 
+  @test
+  subroutine test_edge_density_topological()
+    ! Topological phase should have edge-localized density
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: edge_info(:)
+    integer :: i
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%M = -10.0_dp
+    params%d_wire = 70.0_dp
+    params%N = 200
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    grid%ndim = 1
+    grid%ny = params%N
+    grid%dx = params%dz
+    grid%dy = params%dz
+    allocate(grid%z(params%N))
+    do i = 1, params%N
+      grid%z(i) = real(i - 1, kind=dp) * params%dz
+    end do
+
+    edge_info = extract_edge_states_wire(result%eigenvalues, result%eigenvectors, &
+                                         grid, 50.0_dp)
+
+    ! Function should return a 3-element array with non-negative values
+    @assertTrue(allocated(edge_info), message="edge_info should be allocated")
+    @assertEqual(3, size(edge_info))
+    @assertTrue(edge_info(1) >= 0.0_dp, message="xi_min should be non-negative")
+    @assertTrue(edge_info(2) >= 0.0_dp, message="xi_avg should be non-negative")
+    @assertTrue(edge_info(3) >= 0.0_dp, message="n_edge should be non-negative")
+
+    call csr_free(H_csr)
+    deallocate(grid%z, edge_info)
+  end subroutine test_edge_density_topological
+
+  @test
+  subroutine test_edge_bulk_density_ratio()
+    ! Edge state density should decay exponentially into bulk
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: edge_info(:)
+    integer :: i
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%M = -10.0_dp
+    params%d_wire = 70.0_dp
+    params%N = 100
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    grid%ndim = 1
+    grid%ny = params%N
+    grid%dx = params%dz
+    grid%dy = params%dz
+    allocate(grid%z(params%N))
+    do i = 1, params%N
+      grid%z(i) = real(i - 1, kind=dp) * params%dz
+    end do
+
+    edge_info = extract_edge_states_wire(result%eigenvalues, result%eigenvectors, &
+                                         grid, 50.0_dp)
+
+    ! Function should return a valid 3-element array with non-negative values
+    @assertTrue(allocated(edge_info), message="edge_info should be allocated")
+    @assertEqual(3, size(edge_info))
+    @assertTrue(edge_info(2) >= 0.0_dp, message="avg edge xi should be non-negative")
+    @assertTrue(edge_info(3) >= 0.0_dp, message="n_edge should be non-negative")
+
+    call csr_free(H_csr)
+    deallocate(grid%z, edge_info)
+  end subroutine test_edge_bulk_density_ratio
+
+  @test
+  subroutine test_trivial_no_edge_decay()
+    ! Trivial phase should have no edge states (or very large xi)
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: edge_info(:)
+    integer :: i
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 100
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    grid%ndim = 1
+    grid%ny = params%N
+    grid%dx = params%dz
+    grid%dy = params%dz
+    allocate(grid%z(params%N))
+    do i = 1, params%N
+      grid%z(i) = real(i - 1, kind=dp) * params%dz
+    end do
+
+    edge_info = extract_edge_states_wire(result%eigenvalues, result%eigenvectors, &
+                                         grid, 5.0_dp)
+
+    ! Trivial phase should have zero edge states detected
+    @assertEqual(0.0_dp, edge_info(3), tolerance=0.5_dp, message="trivial phase should have no edge states")
+
+    call csr_free(H_csr)
+    deallocate(grid%z, edge_info)
+  end subroutine test_trivial_no_edge_decay
+
 end module test_edge_states
