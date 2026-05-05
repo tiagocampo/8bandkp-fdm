@@ -1,0 +1,202 @@
+module test_landau
+  use funit
+  use definitions
+  use magnetic_field
+  use hamiltonianConstructor
+  implicit none
+
+contains
+
+  @test
+  subroutine test_gauge_shifts_zero_B()
+    ! At B=0, gauge-shifted k-values should equal the input k-values
+    real(kind=dp) :: x_grid(5)
+    real(kind=dp) :: Pi_y(5), Pi_z(5)
+    integer, parameter :: N = 5
+    integer :: i
+
+    x_grid = [0.0_dp, 10.0_dp, 20.0_dp, 30.0_dp, 40.0_dp]
+
+    call compute_gauge_shifts(x_grid, [0.0_dp, 0.0_dp, 0.0_dp], 0.05_dp, 0.03_dp, Pi_y, Pi_z)
+
+    do i = 1, N
+      @assertEqual(0.05_dp, Pi_y(i), tolerance=1e-14_dp)
+      @assertEqual(0.03_dp, Pi_z(i), tolerance=1e-14_dp)
+    end do
+  end subroutine
+
+  @test
+  subroutine test_gauge_shifts_nonzero_B()
+    ! Verify Pi_y(i) = ky + e*Bz*x_i_m / hbar_J (converted to 1/AA)
+    real(kind=dp) :: x_grid(3)
+    real(kind=dp) :: Pi_y(3), Pi_z(3)
+    real(kind=dp) :: ky, kz, Bz, By
+    real(kind=dp) :: expected_shift_y, expected_shift_z
+
+    x_grid = [0.0_dp, 100.0_dp, 200.0_dp]  ! in Angstrom
+    ky = 0.0_dp
+    kz = 0.0_dp
+    Bz = 5.0_dp   ! 5 Tesla
+    By = 0.0_dp
+
+    call compute_gauge_shifts(x_grid, [0.0_dp, By, Bz], ky, kz, Pi_y, Pi_z)
+
+    ! At x=0: Pi_y = ky = 0
+    @assertEqual(0.0_dp, Pi_y(1), tolerance=1e-14_dp)
+
+    ! At x=100 AA: Pi_y = 0 + Bz * x * 1e-20 / hbar
+    expected_shift_y = Bz * 100.0_dp * 1.0e-20_dp / hbar
+    @assertEqual(expected_shift_y, Pi_y(2), tolerance=1e-14_dp)
+    ! Expected: 5 * 100 * 1e-20 / 6.582e-16 = 7.596e-3 1/AA
+
+    ! At x=200 AA: double the shift
+    @assertEqual(2.0_dp * expected_shift_y, Pi_y(3), tolerance=1e-14_dp)
+  end subroutine
+
+  @test
+  subroutine test_gauge_shifts_By_component()
+    ! Verify Pi_z(i) = kz - By*x*1e-20/hbar
+    real(kind=dp) :: x_grid(2)
+    real(kind=dp) :: Pi_y(2), Pi_z(2)
+    real(kind=dp) :: expected_shift_z
+
+    x_grid = [0.0_dp, 100.0_dp]
+    call compute_gauge_shifts(x_grid, [0.0_dp, 3.0_dp, 0.0_dp], 0.0_dp, 0.0_dp, Pi_y, Pi_z)
+
+    ! Pi_y should be zero (Bz=0)
+    @assertEqual(0.0_dp, Pi_y(2), tolerance=1e-14_dp)
+
+    ! Pi_z = 0 - By * x * 1e-20 / hbar
+    expected_shift_z = -3.0_dp * 100.0_dp * 1.0e-20_dp / hbar
+    @assertEqual(expected_shift_z, Pi_z(2), tolerance=1e-14_dp)
+  end subroutine
+
+  @test
+  subroutine test_landau_hermitian()
+    ! ZB8bandLandau should produce a Hermitian matrix at nonzero B
+    use parameters
+    use confinement_init, only: confinementInitialization_landau
+    use magnetic_field, only: compute_zeeman_vz
+
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+    type(simulation_config) :: cfg
+    type(wavevector) :: wv
+
+    integer, parameter :: N = 21
+    real(kind=dp) :: x_grid(N), delta_x
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:)
+    real(kind=dp) :: max_err
+    integer :: i, j
+
+    material(1) = "InAs"
+    call paramDatabase(material, 1, params)
+
+    delta_x = 10.0_dp  ! 10 AA spacing, 200 AA total
+    do i = 1, N
+      x_grid(i) = (i - 1) * delta_x
+    end do
+
+    allocate(profile(N, 3), kpterms(N, N, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_landau(x_grid, material, params, profile, kpterms)
+
+    cfg%confinement = 3
+    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 5.0_dp]
+    cfg%bdg%g_factor = 2.0_dp
+    cfg%bdg%enabled = .false.
+
+    wv%kx = 0.0_dp; wv%ky = 0.0_dp; wv%kz = 0.0_dp
+
+    allocate(HT(8*N, 8*N))
+    HT = (0.0_dp, 0.0_dp)
+    call ZB8bandLandau(HT, wv, profile, kpterms, x_grid, cfg)
+
+    max_err = 0.0_dp
+    do j = 1, 8*N
+      do i = 1, 8*N
+        max_err = max(max_err, abs(HT(i,j) - conjg(HT(j,i))))
+      end do
+    end do
+    @assertTrue(max_err < 1.0e-12_dp, message="Landau Hamiltonian is Hermitian")
+
+    deallocate(HT, profile, kpterms)
+  end subroutine
+
+  @test
+  subroutine test_landau_recovers_bulk_at_B0()
+    ! At B=0, k=0: the Landau diagonal elements at each grid point
+    ! should match the bulk Hamiltonian diagonal (band edges + SOC).
+    ! The HT matrix is in band-major order: HT((b-1)*N+i, (b-1)*N+i)
+    ! is band b, grid point i.
+    use parameters
+    use confinement_init, only: confinementInitialization_landau
+
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+    type(simulation_config) :: cfg
+    type(wavevector) :: wv
+
+    integer, parameter :: N = 11
+    real(kind=dp) :: x_grid(N), delta_x
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:)
+
+    real(kind=dp) :: diag_landau(8), diag_bulk(8)
+    integer :: i, ic
+
+    material(1) = "InAs"
+    call paramDatabase(material, 1, params)
+
+    delta_x = 200.0_dp
+    do i = 1, N
+      x_grid(i) = (i - 1) * delta_x
+    end do
+
+    allocate(profile(N, 3), kpterms(N, N, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_landau(x_grid, material, params, profile, kpterms)
+
+    cfg%confinement = 3
+    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 0.0_dp]
+    cfg%bdg%g_factor = 2.0_dp
+    cfg%bdg%enabled = .false.
+
+    wv%kx = 0.0_dp; wv%ky = 0.0_dp; wv%kz = 0.0_dp
+
+    allocate(HT(8*N, 8*N))
+    HT = (0.0_dp, 0.0_dp)
+    call ZB8bandLandau(HT, wv, profile, kpterms, x_grid, cfg)
+
+    ! Extract diagonal elements at center grid point
+    ! Band-major layout: band b, grid i => index (b-1)*N + i
+    ic = N / 2 + 1  ! center grid point (6 for N=11)
+    diag_landau(1) = real(HT(ic, ic))
+    diag_landau(2) = real(HT(N + ic, N + ic))
+    diag_landau(3) = real(HT(2*N + ic, 2*N + ic))
+    diag_landau(4) = real(HT(3*N + ic, 3*N + ic))
+    diag_landau(5) = real(HT(4*N + ic, 4*N + ic))
+    diag_landau(6) = real(HT(5*N + ic, 5*N + ic))
+    diag_landau(7) = real(HT(6*N + ic, 6*N + ic))
+    diag_landau(8) = real(HT(7*N + ic, 7*N + ic))
+
+    ! Expected bulk diagonal at k=0:
+    ! Bands 1-4 (VB): profile EV
+    ! Bands 5-6 (SO): profile EV - DeltaSO
+    ! Bands 7-8 (CB): profile EC
+    ! With small FD stencil correction (delta_x=200 AA makes this negligible)
+    diag_bulk(1:4) = params(1)%EV
+    diag_bulk(5:6) = params(1)%EV - params(1)%DeltaSO
+    diag_bulk(7:8) = params(1)%EC
+
+    ! Check diagonal elements match bulk band edges
+    ! FD stencil adds ~(gamma/delta^2) ~ 1e-4 eV at delta=200 AA
+    do i = 1, 8
+      @assertTrue(abs(diag_landau(i) - diag_bulk(i)) < 0.01_dp)
+    end do
+
+    deallocate(HT, profile, kpterms)
+  end subroutine
+
+end module
