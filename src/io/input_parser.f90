@@ -542,7 +542,7 @@ contains
       cfg%fdStep = cfg%landau_nx
       cfg%dz = cfg%landau_width / real(cfg%landau_nx - 1, kind=dp)
       cfg%totalSize = cfg%landau_width
-      cfg%z = [ ((i - 1) * cfg%dz, i=1, cfg%landau_nx) ]
+      cfg%z = [ ((i - 1) * cfg%dz - 0.5_dp * cfg%landau_width, i=1, cfg%landau_nx) ]
 
       ! Allocate intStartPos/intEndPos for single material
       allocate(cfg%intStartPos(1))

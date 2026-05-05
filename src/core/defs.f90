@@ -643,17 +643,19 @@ module definitions
 
     case (3)
       ! Landau: 1D x-discretization for orbital Landau quantization
+      ! Grid centered at x=0 so that ky=0 places the oscillator at the
+      ! center of the domain, maximising flatness of Landau levels vs ky.
       cfg%grid%ndim = 1
       cfg%grid%nx   = cfg%landau_nx
       cfg%grid%ny   = 1
       cfg%grid%dx   = cfg%landau_width / real(cfg%landau_nx - 1, kind=dp)
       cfg%grid%dy   = 0.0_dp
 
-      ! Build x-coordinate array
+      ! Build x-coordinate array centered at origin [-W/2, +W/2]
       if (.not. allocated(cfg%grid%x)) then
         allocate(cfg%grid%x(cfg%landau_nx))
         do i = 1, cfg%landau_nx
-          cfg%grid%x(i) = (i - 1) * cfg%grid%dx
+          cfg%grid%x(i) = (i - 1) * cfg%grid%dx - 0.5_dp * cfg%landau_width
         end do
       end if
 
