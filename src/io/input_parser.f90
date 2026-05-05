@@ -962,6 +962,61 @@ contains
         if (status /= 0) then; status = 0; exit topology_block; end if
         print *, trim(label), cfg%topo%ldos_num_E
 
+        ! Gap sweep / phase diagram
+        read(data_unit, *, iostat=status) label, cfg%topo%compute_gap_sweep
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%compute_gap_sweep
+        if (cfg%topo%compute_gap_sweep) then
+          read(data_unit, *, iostat=status) label, cfg%topo%gap_sweep_B_min, &
+            cfg%topo%gap_sweep_B_max, cfg%topo%gap_sweep_nB
+          if (status /= 0) then; status = 0; exit topology_block; end if
+          print *, trim(label), cfg%topo%gap_sweep_B_min, &
+            cfg%topo%gap_sweep_B_max, cfg%topo%gap_sweep_nB
+
+          read(data_unit, *, iostat=status) label, cfg%topo%gap_sweep_mu_min, &
+            cfg%topo%gap_sweep_mu_max, cfg%topo%gap_sweep_nMu
+          if (status /= 0) then; status = 0; exit topology_block; end if
+          print *, trim(label), cfg%topo%gap_sweep_mu_min, &
+            cfg%topo%gap_sweep_mu_max, cfg%topo%gap_sweep_nMu
+        end if
+
+        ! Conductance
+        read(data_unit, *, iostat=status) label, cfg%topo%compute_conductance
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%compute_conductance
+        if (cfg%topo%compute_conductance) then
+          read(data_unit, '(A)', iostat=status) line
+          if (status /= 0) then; status = 0; exit topology_block; end if
+          colon_pos = index(line, ':')
+          if (colon_pos > 0) then
+            read(line(colon_pos+1:), '(A)', iostat=status) cfg%topo%conductance_method
+            label = adjustl(line(:colon_pos-1)) // ':'
+            if (status /= 0) then; status = 0; exit topology_block; end if
+          else
+            status = 0
+            exit topology_block
+          end if
+          print *, trim(label), trim(cfg%topo%conductance_method)
+        end if
+
+        ! Spectral function
+        read(data_unit, *, iostat=status) label, cfg%topo%compute_spectral
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%compute_spectral
+        if (cfg%topo%compute_spectral) then
+          read(data_unit, *, iostat=status) label, cfg%topo%spectral_k_min, &
+            cfg%topo%spectral_k_max, cfg%topo%spectral_nk
+          if (status /= 0) then; status = 0; exit topology_block; end if
+          print *, trim(label), cfg%topo%spectral_k_min, &
+            cfg%topo%spectral_k_max, cfg%topo%spectral_nk
+
+          read(data_unit, *, iostat=status) label, cfg%topo%spectral_E_min, &
+            cfg%topo%spectral_E_max, cfg%topo%spectral_nE, cfg%topo%spectral_eta
+          if (status /= 0) then; status = 0; exit topology_block; end if
+          print *, trim(label), cfg%topo%spectral_E_min, &
+            cfg%topo%spectral_E_max, cfg%topo%spectral_nE, cfg%topo%spectral_eta
+        end if
+
       else if (found_optional) then
         ! topology=F, skip remaining topology lines
         print *, trim(label), cfg%topo%enabled
