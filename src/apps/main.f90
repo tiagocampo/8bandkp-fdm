@@ -835,6 +835,96 @@ program kpfdm
       end if
     end do
 
+    ! ==================================================================
+    ! B-sweep fan diagram for Landau mode (landau_sweep='B')
+    ! ==================================================================
+    if (trim(cfg%landau_sweep) == 'B') then
+      block
+        real(kind=dp) :: B_min, B_max, B_step, B_val
+        integer :: nB, iB, nL
+        real(kind=dp), allocatable :: eig_B(:,:)
+        complex(kind=dp), allocatable :: HT_B(:,:), work_B(:)
+        real(kind=dp), allocatable :: rwork_B(:)
+        integer, allocatable :: iwork_B(:), ifail_B(:)
+        integer :: info_B, M_B
+        character(len=64) :: fmt_str
+        type(wavevector) :: wv0
+
+        B_min  = cfg%bdg%B_sweep(1)
+        B_max  = cfg%bdg%B_sweep(2)
+        B_step = cfg%bdg%B_sweep(3)
+
+        if (B_step <= 0.0_dp) then
+          print *, 'ERROR: b_sweep step must be > 0, got:', B_step
+          stop 1
+        end if
+        nB = int((B_max - B_min) / B_step) + 1
+        nL = iuu - il + 1
+
+        print '(A,I0,A,F6.2,A,F6.2,A,F6.2)', ' Landau B-sweep: ', nB, &
+          & ' points, B=[', B_min, ',', B_max, '] T, step=', B_step
+
+        allocate(eig_B(nL, nB))
+        eig_B = 0.0_dp
+
+        ! Fixed Gamma-point wavevector
+        wv0%kx = 0.0_dp
+        wv0%ky = 0.0_dp
+        wv0%kz = 0.0_dp
+
+        ! Workspace allocation
+        allocate(HT_B(N, N))
+        allocate(work_B(lwork))
+        allocate(rwork_B(7*N))
+        allocate(iwork_B(5*N))
+        allocate(ifail_B(N))
+        HT_B = (0.0_dp, 0.0_dp)
+
+        do iB = 1, nB
+          B_val = B_min + (iB - 1) * B_step
+
+          ! Update B_vec for this sweep point
+          cfg%bdg%B_vec(3) = B_val
+
+          ! Build Landau Hamiltonian with updated B field
+          call ZB8bandLandau(HT_B, wv0, profile, kpterms, cfg%grid%x, cfg=cfg)
+
+          ! Diagonalize (eigenvalues only for speed)
+          call zheevx('N', 'I', 'U', N, HT_B, N, vl, vu, il, iuu, abstol, M_B, &
+            eig_B(:, iB), HT_B, N, work_B, lwork, rwork_B, iwork_B, &
+            ifail_B, info_B)
+          if (info_B /= 0) then
+            print *, 'ERROR: B-sweep diagonalization failed at B=', B_val, &
+              & ' info=', info_B
+            stop 1
+          end if
+        end do
+
+        ! Write fan diagram to output/landau_fan.dat
+        call ensure_output_dir()
+        call get_unit(iounit)
+        open(unit=iounit, file='output/landau_fan.dat', status='replace', action='write')
+
+        ! Header: # B[T] E_0 E_1 ... E_{nL-1}
+        write(fmt_str, '(A,I0,A)') '(g14.6,', nL, '(1x,g14.6))'
+        write(iounit, '(A)', advance='no') '# B[T]'
+        do i = 1, nL
+          write(iounit, '(A,I0)', advance='no') ' E_', i - 1
+        end do
+        write(iounit, '(A)') ''
+
+        do iB = 1, nB
+          B_val = B_min + (iB - 1) * B_step
+          write(iounit, fmt_str) B_val, (eig_B(i, iB), i=1, nL)
+        end do
+        close(iounit)
+
+        print '(A,I0,A)', ' Landau fan diagram written to output/landau_fan.dat (', nB, ' B-points)'
+
+        deallocate(eig_B, HT_B, work_B, rwork_B, iwork_B, ifail_B)
+      end block
+    end if
+
   end if
   call writeEigenvalues(smallk, eig(:,:), cfg%waveVectorStep)
 

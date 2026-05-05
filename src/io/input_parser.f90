@@ -641,6 +641,55 @@ contains
       end if
     end if
 
+      ! Optional: g_factor for Landau mode Zeeman splitting
+      call read_next_data_line(data_unit, line, status)
+      if (status == 0) then
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          label_part = adjustl(line(:colon_pos-1))
+          if (trim(to_lower_ascii(label_part)) == 'g_factor') then
+            read(line(colon_pos+1:), *, iostat=status) cfg%bdg%g_factor
+            if (status == 0) then
+              print *, trim(label_part) // ':', cfg%bdg%g_factor
+            else
+              cfg%bdg%g_factor = 2.0_dp
+              status = 0
+            end if
+          else
+            ! Not g_factor — put line back for next reader
+            backspace(data_unit)
+          end if
+        else
+          ! No colon — put back
+          backspace(data_unit)
+        end if
+      end if
+
+      ! Optional: b_sweep for Landau B-sweep fan diagrams
+      call read_next_data_line(data_unit, line, status)
+      if (status == 0) then
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          label_part = adjustl(line(:colon_pos-1))
+          if (trim(to_lower_ascii(label_part)) == 'b_sweep') then
+            read(line(colon_pos+1:), *, iostat=status) &
+              cfg%bdg%B_sweep(1), cfg%bdg%B_sweep(2), cfg%bdg%B_sweep(3)
+            if (status == 0) then
+              print *, trim(label_part) // ':', cfg%bdg%B_sweep
+            else
+              cfg%bdg%B_sweep = 0.0_dp
+              status = 0
+            end if
+          else
+            ! Not b_sweep — put line back for next reader
+            backspace(data_unit)
+          end if
+        else
+          ! No colon — put back
+          backspace(data_unit)
+        end if
+      end if
+
       ! Try reading gfactor params; use defaults if missing (backward compatible)
       ! Peek at the next line to check if it's a whichBand line
       call read_next_data_line(data_unit, line, status)
