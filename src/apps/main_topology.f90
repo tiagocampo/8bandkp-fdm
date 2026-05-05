@@ -5,7 +5,7 @@ program topologicalAnalysis
   use hamiltonianConstructor
   use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free, &
     & wire_workspace, wire_workspace_free, ZB8bandGeneralized
-  use confinement_init, only: confinementInitialization_2d
+  use confinement_init, only: confinementInitialization, confinementInitialization_2d
   use finitedifferences
   use outputFunctions
   use input_parser
@@ -17,6 +17,7 @@ program topologicalAnalysis
 #ifdef USE_ARPACK
   use green_functions, only: compute_ldos_csr
 #endif
+  use green_functions, only: compute_spectral_function_qw
   use linalg, only: mkl_set_num_threads_local
 
   implicit none
@@ -164,9 +165,30 @@ program topologicalAnalysis
 
       print *, '=== BdG analysis complete ==='
 
+    ! ==================================================================
+    case('spectral')
+    ! Spectral function A(k, E) for QW systems
+    ! ==================================================================
+      call run_spectral(cfg, profile, kpterms, topo_result)
+      print *, '=== Spectral function analysis complete ==='
+
+    ! ==================================================================
+    case('conductance')
+    ! Hall conductance via Kubo formula
+    ! ==================================================================
+      call run_conductance(cfg, topo_result)
+      print *, '=== Conductance analysis complete ==='
+
+    ! ==================================================================
+    case('sweep')
+    ! Z2 phase diagram via gap sweep over (B, mu) parameter space
+    ! ==================================================================
+      call run_gap_sweep(cfg, topo_result)
+      print *, '=== Gap sweep analysis complete ==='
+
     case default
       print *, 'Error: Unknown topology mode: ', trim(cfg%topo%mode)
-      print *, '  Supported modes: qhe, qshe, bdg'
+      print *, '  Supported modes: qhe, qshe, bdg, spectral, conductance, sweep'
       stop 1
 
   end select
@@ -556,5 +578,194 @@ contains
     end if
 
   end subroutine run_bdg_wire
+
+  ! ==================================================================
+  ! Spectral function A(k, E) for QW system
+  ! ==================================================================
+  subroutine run_spectral(cfg_in, profile_in, kpterms_in, result)
+    type(simulation_config), intent(in) :: cfg_in
+    real(kind=dp), contiguous, intent(in) :: profile_in(:,:)
+    real(kind=dp), contiguous, intent(in) :: kpterms_in(:,:,:)
+    type(topological_result), intent(inout) :: result
+
+    real(kind=dp), allocatable :: k_arr(:), E_arr(:)
+    real(kind=dp), allocatable :: A_kE(:,:)
+    real(kind=dp) :: dk, dE
+    integer :: ik, iE, nk, nE, iounit_loc, status_loc
+
+    print *, '--- Spectral function A(k, E) ---'
+
+    if (cfg_in%confinement /= 1) then
+      print *, 'Error: spectral mode requires confinement=1 (QW)'
+      stop 1
+    end if
+
+    ! Build k and E grids from config
+    nk = cfg_in%topo%spectral_nk
+    nE = cfg_in%topo%spectral_nE
+    allocate(k_arr(nk), E_arr(nE))
+
+    if (nk > 1) then
+      dk = (cfg_in%topo%spectral_k_max - cfg_in%topo%spectral_k_min) / real(nk - 1, kind=dp)
+    else
+      dk = 0.0_dp
+    end if
+    do ik = 1, nk
+      k_arr(ik) = cfg_in%topo%spectral_k_min + real(ik - 1, kind=dp) * dk
+    end do
+
+    if (nE > 1) then
+      dE = (cfg_in%topo%spectral_E_max - cfg_in%topo%spectral_E_min) / real(nE - 1, kind=dp)
+    else
+      dE = 0.0_dp
+    end if
+    do iE = 1, nE
+      E_arr(iE) = cfg_in%topo%spectral_E_min + real(iE - 1, kind=dp) * dE
+    end do
+
+    print *, '  nk=', nk, ' nE=', nE, ' eta=', cfg_in%topo%spectral_eta
+    print *, '  k range: [', k_arr(1), ',', k_arr(nk), '] 1/A'
+    print *, '  E range: [', E_arr(1), ',', E_arr(nE), '] eV'
+
+    ! Compute spectral function
+    call compute_spectral_function_qw(cfg_in, profile_in, kpterms_in, &
+      & k_arr, E_arr, cfg_in%topo%spectral_eta, A_kE)
+
+    ! Store in result
+    if (allocated(result%spectral_function)) deallocate(result%spectral_function)
+    allocate(result%spectral_function(nk, nE))
+    result%spectral_function = A_kE
+
+    ! Write output file
+    call ensure_output_dir()
+    call get_unit(iounit_loc)
+    open(unit=iounit_loc, file='output/spectral_function.dat', status='replace', &
+         action='write', iostat=status_loc)
+    if (status_loc /= 0) then
+      print *, 'ERROR: cannot open output/spectral_function.dat'
+      stop 1
+    end if
+    write(iounit_loc, '(A)') '# Spectral function A(k, E)'
+    write(iounit_loc, '(A,I0,A,I0)') '# nk=', nk, '  nE=', nE
+    write(iounit_loc, '(A,ES12.4)') '# eta (eV) = ', cfg_in%topo%spectral_eta
+    write(iounit_loc, '(A)') '# Columns: k (1/A), E (eV), A(k,E)'
+    do ik = 1, nk
+      do iE = 1, nE
+        write(iounit_loc, '(3ES16.8)') k_arr(ik), E_arr(iE), A_kE(ik, iE)
+      end do
+    end do
+    close(iounit_loc)
+    print *, '  Spectral function written to output/spectral_function.dat'
+
+    deallocate(k_arr, E_arr, A_kE)
+  end subroutine run_spectral
+
+  ! ==================================================================
+  ! Hall conductance via Kubo formula
+  ! ==================================================================
+  subroutine run_conductance(cfg_in, result)
+    type(simulation_config), intent(in) :: cfg_in
+    type(topological_result), intent(inout) :: result
+
+    real(kind=dp) :: sigma_xy
+
+    print *, '--- Conductance analysis ---'
+
+    if (trim(cfg_in%topo%conductance_method) == 'kubo') then
+      ! Use Kubo formula from precomputed Chern number
+      sigma_xy = compute_conductance_kubo_chern(result%chern_number)
+      result%conductance_xy = sigma_xy
+      print *, '  Method: Kubo (from Chern number)'
+      print *, '  Chern number C = ', result%chern_number
+      print *, '  Hall conductance sigma_xy = ', sigma_xy, ' e^2/h'
+    else
+      print *, '  Warning: conductance method "', trim(cfg_in%topo%conductance_method), &
+        & '" not implemented, using kubo'
+      sigma_xy = compute_conductance_kubo_chern(result%chern_number)
+      result%conductance_xy = sigma_xy
+      print *, '  Hall conductance sigma_xy = ', sigma_xy, ' e^2/h'
+    end if
+
+  end subroutine run_conductance
+
+  ! ==================================================================
+  ! Z2 phase diagram via gap sweep over (B, mu)
+  ! ==================================================================
+  subroutine run_gap_sweep(cfg_in, result)
+    type(simulation_config), intent(in) :: cfg_in
+    type(topological_result), intent(inout) :: result
+
+    integer, allocatable :: z2_map_int(:,:)
+    real(kind=dp), allocatable :: gap_map_real(:,:), transitions(:,:)
+    real(kind=dp) :: gap_threshold
+    integer :: iB, iMu, nB, nMu, iounit_loc, status_loc
+
+    print *, '--- Z2 gap sweep ---'
+
+    nB = cfg_in%topo%gap_sweep_nB
+    nMu = cfg_in%topo%gap_sweep_nMu
+    gap_threshold = 1.0e-4_dp
+
+    print *, '  nB=', nB, ' nMu=', nMu
+    print *, '  B range: [', cfg_in%topo%gap_sweep_B_min, ',', cfg_in%topo%gap_sweep_B_max, ']'
+    print *, '  mu range: [', cfg_in%topo%gap_sweep_mu_min, ',', cfg_in%topo%gap_sweep_mu_max, ']'
+
+    call compute_z2_gap_sweep(cfg_in, &
+      & cfg_in%topo%gap_sweep_B_min, cfg_in%topo%gap_sweep_B_max, nB, &
+      & cfg_in%topo%gap_sweep_mu_min, cfg_in%topo%gap_sweep_mu_max, nMu, &
+      & gap_threshold, z2_map_int, gap_map_real, transitions)
+
+    ! Convert integer z2_map to real(dp) for storage in result
+    if (allocated(result%z2_map)) deallocate(result%z2_map)
+    if (allocated(result%gap_map)) deallocate(result%gap_map)
+    allocate(result%z2_map(nMu, nB))
+    allocate(result%gap_map(nMu, nB))
+    do iMu = 1, nMu
+      do iB = 1, nB
+        result%z2_map(iMu, iB) = real(z2_map_int(iMu, iB), kind=dp)
+        result%gap_map(iMu, iB) = gap_map_real(iMu, iB)
+      end do
+    end do
+
+    ! Write phase diagram output
+    call ensure_output_dir()
+    call get_unit(iounit_loc)
+    open(unit=iounit_loc, file='output/z2_phase_diagram.dat', status='replace', &
+         action='write', iostat=status_loc)
+    if (status_loc /= 0) then
+      print *, 'ERROR: cannot open output/z2_phase_diagram.dat'
+      stop 1
+    end if
+    write(iounit_loc, '(A)') '# Z2 phase diagram'
+    write(iounit_loc, '(A,I0,A,I0)') '# nB=', nB, '  nMu=', nMu
+    write(iounit_loc, '(A)') '# Columns: B, mu, Z2, gap'
+    do iB = 1, nB
+      do iMu = 1, nMu
+        write(iounit_loc, '(4ES16.8)') &
+          & cfg_in%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * &
+          & (cfg_in%topo%gap_sweep_B_max - cfg_in%topo%gap_sweep_B_min) / real(max(1, nB - 1), kind=dp), &
+          & cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * &
+          & (cfg_in%topo%gap_sweep_mu_max - cfg_in%topo%gap_sweep_mu_min) / real(max(1, nMu - 1), kind=dp), &
+          & result%z2_map(iMu, iB), result%gap_map(iMu, iB)
+      end do
+    end do
+    close(iounit_loc)
+    print *, '  Z2 phase diagram written to output/z2_phase_diagram.dat'
+
+    if (size(transitions, 1) > 0) then
+      print *, '  Phase transitions detected: ', size(transitions, 1)
+      do iB = 1, size(transitions, 1)
+        print '(A,ES12.4,A,ES12.4)', '    B=', transitions(iB, 1), ' mu=', transitions(iB, 2)
+      end do
+      ! Store transitions as phase_boundary
+      if (allocated(result%phase_boundary)) deallocate(result%phase_boundary)
+      allocate(result%phase_boundary(size(transitions, 1), 2))
+      result%phase_boundary = transitions
+    else
+      print *, '  No phase transitions detected'
+    end if
+
+    deallocate(z2_map_int, gap_map_real, transitions)
+  end subroutine run_gap_sweep
 
 end program topologicalAnalysis
