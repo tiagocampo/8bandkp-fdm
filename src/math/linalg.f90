@@ -14,6 +14,7 @@ module linalg
   public :: zheevx
   public :: zheevd
   public :: dgesv
+  public :: zgetrf
   public :: ilaenv
   public :: dlamch
 
@@ -72,6 +73,17 @@ module linalg
       use definitions, only: dp
       integer, intent(in) :: n, nrhs, lda, ldb
       real(kind=dp), intent(inout) :: a(lda, *), b(ldb, *)
+      integer, intent(out) :: ipiv(*)
+      integer, intent(out) :: info
+    end subroutine
+  end interface
+
+  ! zgetrf - LAPACK complex LU factorization (partial pivoting)
+  interface
+    subroutine zgetrf(m, n, a, lda, ipiv, info)
+      use definitions, only: dp
+      integer, intent(in) :: m, n, lda
+      complex(kind=dp), intent(inout) :: a(lda, *)
       integer, intent(out) :: ipiv(*)
       integer, intent(out) :: info
     end subroutine

@@ -2,11 +2,13 @@ module topological_analysis
 
   use definitions
   use sparse_matrices
+  use linalg
   implicit none
   private
 
   public :: compute_chern_qwz
   public :: compute_berry_curvature
+  public :: compute_berry_curvature_lattice
   public :: compute_hall_conductance
   public :: compute_z2_gap
   public :: compute_z2_fukane
@@ -138,10 +140,112 @@ contains
     integer, intent(in) :: n_occ
     real(kind=dp), allocatable :: Omega(:,:)
 
-    allocate(Omega(size(kx_arr), size(ky_arr)))
-    print *, 'WARNING: compute_berry_curvature is not yet implemented. Returning zeros.'
-    Omega = 0.0_dp
+    ! Delegate to lattice method
+    Omega = compute_berry_curvature_lattice(evecs_k, kx_arr, ky_arr, n_occ)
   end function compute_berry_curvature
+
+  function compute_berry_curvature_lattice(evecs_k, kx_arr, ky_arr, n_occ) result(Omega)
+    implicit none
+    complex(kind=dp), intent(in) :: evecs_k(:,:,:,:)  ! (basis, n_occ, nkx, nky)
+    real(kind=dp), intent(in) :: kx_arr(:), ky_arr(:)
+    integer, intent(in) :: n_occ
+    real(kind=dp), allocatable :: Omega(:,:)
+
+    integer :: nkx, nky, i, j, ip1, jp1
+    complex(kind=dp) :: M_xx, M_yx, M_xy, M_yy
+    real(kind=dp) :: dkx, dky, dA
+
+    nkx = size(kx_arr)
+    nky = size(ky_arr)
+    allocate(Omega(nkx, nky))
+    Omega = 0.0_dp
+
+    dkx = kx_arr(min(2, nkx)) - kx_arr(1)
+    dky = ky_arr(min(2, nky)) - ky_arr(1)
+    dA = dkx * dky
+
+    do j = 1, nky
+      jp1 = mod(j, nky) + 1
+      do i = 1, nkx
+        ip1 = mod(i, nkx) + 1
+
+        block
+          complex(kind=dp), allocatable :: overlap(:,:)
+          integer :: m, p
+
+          allocate(overlap(n_occ, n_occ))
+
+          ! U_x = det(<u_n(k)|u_m(k+x)>)
+          do m = 1, n_occ
+            do p = 1, n_occ
+              overlap(m, p) = sum(conjg(evecs_k(:, m, i, j)) * evecs_k(:, p, ip1, j))
+            end do
+          end do
+          M_xx = det_small(overlap, n_occ)
+
+          ! U_y(k+x) = det(<u_n(k+x)|u_m(k+x+y)>)
+          do m = 1, n_occ
+            do p = 1, n_occ
+              overlap(m, p) = sum(conjg(evecs_k(:, m, ip1, j)) * evecs_k(:, p, ip1, jp1))
+            end do
+          end do
+          M_yx = det_small(overlap, n_occ)
+
+          ! conjg(U_x(k+y)): overlap computes <u_m(k+x+y)|u_p(k+y)>
+          ! which is the adjoint of <u(k+y)|u(k+x+y)>, so its det = conjg(Ux(k,y+1))
+          do m = 1, n_occ
+            do p = 1, n_occ
+              overlap(m, p) = sum(conjg(evecs_k(:, m, ip1, jp1)) * evecs_k(:, p, i, jp1))
+            end do
+          end do
+          M_xy = det_small(overlap, n_occ)
+
+          ! conjg(U_y(k)): overlap computes <u_m(k+y)|u_p(k)>
+          ! which is the adjoint of <u(k)|u(k+y)>, so its det = conjg(Uy(k))
+          do m = 1, n_occ
+            do p = 1, n_occ
+              overlap(m, p) = sum(conjg(evecs_k(:, m, i, jp1)) * evecs_k(:, p, i, j))
+            end do
+          end do
+          M_yy = det_small(overlap, n_occ)
+
+          Omega(i, j) = aimag(log(M_xx * M_yx * M_xy * M_yy)) / dA
+
+          deallocate(overlap)
+        end block
+
+      end do
+    end do
+
+  end function compute_berry_curvature_lattice
+
+  function det_small(A, n) result(d)
+    implicit none
+    complex(kind=dp), intent(in) :: A(:,:)
+    integer, intent(in) :: n
+    complex(kind=dp) :: d
+
+    complex(kind=dp), allocatable :: LU(:,:)
+    integer, allocatable :: pivot(:)
+    integer :: info, i
+
+    select case(n)
+    case(1)
+      d = A(1,1)
+    case(2)
+      d = A(1,1)*A(2,2) - A(1,2)*A(2,1)
+    case default
+      allocate(LU(n, n), pivot(n))
+      LU = A
+      call zgetrf(n, n, LU, n, pivot, info)
+      d = cmplx(1.0_dp, 0.0_dp, kind=dp)
+      do i = 1, n
+        d = d * LU(i, i)
+        if (pivot(i) /= i) d = -d
+      end do
+      deallocate(LU, pivot)
+    end select
+  end function det_small
 
   function compute_hall_conductance(C) result(sigma_xy)
     implicit none
