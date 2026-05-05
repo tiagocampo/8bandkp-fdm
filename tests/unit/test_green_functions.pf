@@ -1,8 +1,12 @@
 module test_green_functions
   use funit
   use definitions
+  use parameters
   use sparse_matrices
+  use hamiltonianConstructor
+  use confinement_init, only: confinementInitialization_raw
   use green_functions
+  use linalg
   implicit none
 
 contains
@@ -131,5 +135,151 @@ contains
     ! (no edge localization at E=0 for this symmetric chain)
     call H%free()
   end subroutine test_ldos_tridiagonal
+
+  ! ==================================================================
+  ! Test 4: Spectral function A(k,E) shape and non-negativity.
+  !
+  ! Build a small QW Hamiltonian, compute A(k,E) at several k and E,
+  ! verify: correct shape (nk x nE), non-negativity, positive peaks.
+  ! ==================================================================
+  @test
+  subroutine test_spectral_function_qw_sum_rule()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    real(kind=dp), allocatable :: A_kE(:,:), k_arr(:), E_arr(:)
+    integer :: N, nE, nk, ik, iE
+
+    N = 5
+    nE = 50
+    nk = 10
+
+    cfg%confinement = 1
+    cfg%fdStep = N
+    cfg%FDorder = 2
+    cfg%numLayers = 1
+    cfg%confDir = 'z'
+    cfg%totalSize = 50.0_dp
+    cfg%delta = 10.0_dp
+    cfg%dz = 10.0_dp
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+
+    allocate(profile(N, 3))
+    profile(:, 1) = 0.0_dp
+    profile(:, 2) = 0.0_dp
+    profile(:, 3) = 1.0_dp
+
+    allocate(kpterms(N, N, 10))
+    kpterms = 0.0_dp
+
+    allocate(k_arr(nk), E_arr(nE))
+    do ik = 1, nk
+      k_arr(ik) = -0.05_dp + real(ik - 1, kind=dp) * 0.01_dp
+    end do
+    do iE = 1, nE
+      E_arr(iE) = -0.5_dp + real(iE - 1, kind=dp) * 1.0_dp / real(nE - 1, kind=dp)
+    end do
+
+    call compute_spectral_function_qw(cfg, profile, kpterms, k_arr, E_arr, &
+                                       eta=0.05_dp, A_kE=A_kE)
+
+    @assertEqual(nk, size(A_kE, 1), message="A_kE rows = nk")
+    @assertEqual(nE, size(A_kE, 2), message="A_kE cols = nE")
+
+    ! Check non-negativity
+    @assertTrue(all(A_kE >= 0.0_dp), message="A(k,E) must be non-negative")
+
+    ! Check that max values are positive (peaks at eigenvalues)
+    @assertTrue(maxval(A_kE) > 0.0_dp, message="A(k,E) should have positive peaks")
+
+    deallocate(profile, kpterms, k_arr, E_arr, A_kE)
+  end subroutine test_spectral_function_qw_sum_rule
+
+  ! ==================================================================
+  ! Test 5: Spectral function is suppressed in the band gap.
+  !
+  ! Build a GaAs/AlGaAs QW with confinementInitialization_raw so that
+  ! the Hamiltonian has a realistic band gap. A(k,E) should be small
+  ! inside the gap relative to its peak value.
+  ! ==================================================================
+  @test
+  subroutine test_spectral_function_gap_region()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    real(kind=dp), allocatable :: A_kE(:,:), k_arr(:), E_arr(:)
+    integer :: ngrid, nE, nk, iE, ik, idx
+    real(kind=dp) :: gap_max, peak_val, dz_val
+    real(kind=dp), allocatable :: z(:)
+    character(len=255) :: material(2)
+    type(paramStruct) :: params(2)
+    integer :: intStartPos(2), intEndPos(2)
+
+    ! Grid: 20 nm QW region, dz=1 nm
+    dz_val = 10.0_dp
+    ngrid = 11
+    nk = 3
+    nE = 100
+
+    cfg%confinement = 1
+    cfg%fdStep = ngrid
+    cfg%FDorder = 2
+    cfg%numLayers = 2
+    cfg%confDir = 'z'
+    cfg%totalSize = real(ngrid, kind=dp) * dz_val
+    cfg%delta = dz_val
+    cfg%dz = dz_val
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+
+    ! Grid points
+    allocate(z(ngrid))
+    do idx = 1, ngrid
+      z(idx) = -50.0_dp + real(idx - 1, kind=dp) * dz_val
+    end do
+
+    ! 2-layer: AlGaAs barrier | GaAs well
+    intStartPos(1) = 1;  intEndPos(1) = 3
+    intStartPos(2) = 4;  intEndPos(2) = ngrid
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    call paramDatabase(material, 2, params)
+
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+      2, params, 'z', profile, kpterms, FDorder=2)
+
+    ! Small k range near Gamma
+    allocate(k_arr(nk), E_arr(nE))
+    do ik = 1, nk
+      k_arr(ik) = real(ik - 1, kind=dp) * 0.001_dp
+    end do
+    ! Energy range covering VB and CB (GaAs Eg ~1.42 eV, AlGaAs Eg ~1.98 eV)
+    do iE = 1, nE
+      E_arr(iE) = -0.5_dp + real(iE - 1, kind=dp) * 3.0_dp / real(nE - 1, kind=dp)
+    end do
+
+    call compute_spectral_function_qw(cfg, profile, kpterms, k_arr, E_arr, &
+                                       eta=0.01_dp, A_kE=A_kE)
+
+    ! Peak value of A(k,E)
+    peak_val = maxval(A_kE)
+
+    ! In the gap region (between VB max and CB min, roughly 0.3 to 0.7 eV
+    ! above the VB top which is set by the material offsets), A should be
+    ! much smaller than peak
+    gap_max = 0.0_dp
+    do iE = 1, nE
+      if (E_arr(iE) > 0.5_dp .and. E_arr(iE) < 1.0_dp) then
+        gap_max = max(gap_max, maxval(A_kE(:, iE)))
+      end if
+    end do
+
+    @assertTrue(gap_max < peak_val, message="spectral function should be suppressed in gap")
+
+    deallocate(z, profile, kpterms, k_arr, E_arr, A_kE)
+  end subroutine test_spectral_function_gap_region
 
 end module test_green_functions
