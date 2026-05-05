@@ -37,7 +37,7 @@ Compute Z2 from parity eigenvalues at 4 Time-Reversal Invariant Momenta (TRIM) i
 2. At each TRIM, diagonalize the 8N x 8N QW Hamiltonian (dense `zheevx`)
 3. For occupied bands (below Fermi level), compute parity eigenvalue:
    - Band-space parity: `P_band = [+1,+1,+1,+1,+1,+1,-1,-1]` (inversion acts as +1 on valence, -1 on conduction)
-   - Envelope parity: `int psi_n(z) * psi_n(-z) dz`
+   - Envelope parity: `int psi_n(z) * psi_n(-z) dz` (assumes symmetric QW — parity undefined for asymmetric structures)
    - Total: delta_n(k_i) = P_band(b) * envelope_parity
 4. Product over occupied bands at each TRIM: delta_i = prod_n delta_n(k_i)
 5. Z2 = prod_i (delta_i / delta_Gamma) — Z2=1 if negative (topological), Z2=0 if positive (trivial)
@@ -147,6 +147,8 @@ Where U_x = `<u_n(k)|u_n(k+x)> / |<u_n(k)|u_n(k+x)>|` is the normalized overlap.
 
 Refactor `compute_chern_qwz` to also output the per-point curvature array (currently internal).
 
+**Eigenvector source:** For QWZ, eigenvectors come from the QWZ model Hamiltonian on a (kx, ky) mesh. For QW, a k_parallel mesh sweep via `ZB8bandQW` provides eigenvectors at each mesh point. The calling code is responsible for providing the eigenvector array — the Berry curvature function is pure math on eigenvectors.
+
 ### Interface
 
 ```fortran
@@ -250,7 +252,7 @@ k-resolved spectral function — momentum-resolved LDOS:
 3. Fast: no matrix inversion needed, just eigenvalue evaluation
 
 **Wire path (CSR):**
-1. Build H(kz) from CSR + Bloch phase factor
+1. For each kz, call the existing wire Hamiltonian builder with that kz value (kz is a parameter, not a Bloch phase on the CSR)
 2. For each E, solve `(E + i*eta - H(kz)) * x = e_j` via PARDISO
 3. `A(kz, E) = -(1/pi) * Im[sum_j G_jj(kz, E)]`
 
