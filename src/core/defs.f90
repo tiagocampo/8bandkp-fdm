@@ -378,6 +378,11 @@ module definitions
     integer            :: numRegions = 0         ! number of material regions
     type(region_spec), allocatable :: regions(:) ! region specifications
 
+    ! ---- Landau level fields (confinement=3) ----
+    integer            :: landau_nx = 100          ! grid points in x-direction
+    real(kind=dp)      :: landau_width = 2000.0_dp ! domain width in Angstrom
+    character(len=4)   :: landau_sweep = 'ky'      ! sweep mode: ky, kz, or B
+
     ! ---- FEAST eigensolver tuning ----
     real(kind=dp)      :: feast_emin = 0.0_dp   ! manual energy window (0=auto)
     real(kind=dp)      :: feast_emax = 0.0_dp   ! manual energy window (0=auto)
@@ -509,9 +514,17 @@ module definitions
         error stop 'validate_simulation_config: numLayers must be >= 1'
       end if
 
-      ! confinement: must be 0, 1, or 2
-      if (cfg%confinement < 0 .or. cfg%confinement > 2) then
-        error stop 'validate_simulation_config: confinement must be 0, 1, or 2'
+      ! confinement: must be 0, 1, 2, or 3
+      if (cfg%confinement < 0 .or. cfg%confinement > 3) then
+        error stop 'validate_simulation_config: confinement must be 0, 1, 2, or 3'
+      end if
+      if (cfg%confinement == 3) then
+        if (cfg%landau_nx < 3) then
+          error stop 'validate_simulation_config: landau_nx must be >= 3'
+        end if
+        if (cfg%landau_width <= 0.0_dp) then
+          error stop 'validate_simulation_config: landau_width must be > 0'
+        end if
       end if
 
       ! FDorder: must be one of the supported values
@@ -627,6 +640,22 @@ module definitions
       cfg%grid%ny   = cfg%wire_ny
       cfg%grid%dx   = cfg%wire_dx
       cfg%grid%dy   = cfg%wire_dy
+
+    case (3)
+      ! Landau: 1D x-discretization for orbital Landau quantization
+      cfg%grid%ndim = 1
+      cfg%grid%nx   = cfg%landau_nx
+      cfg%grid%ny   = 1
+      cfg%grid%dx   = cfg%landau_width / real(cfg%landau_nx - 1, kind=dp)
+      cfg%grid%dy   = 0.0_dp
+
+      ! Build x-coordinate array
+      if (.not. allocated(cfg%grid%x)) then
+        allocate(cfg%grid%x(cfg%landau_nx))
+        do i = 1, cfg%landau_nx
+          cfg%grid%x(i) = (i - 1) * cfg%grid%dx
+        end do
+      end if
 
     end select
 
