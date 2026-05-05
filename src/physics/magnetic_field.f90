@@ -7,9 +7,9 @@ module magnetic_field
 
   public :: add_zeeman_coo, add_peierls_coo, compute_zeeman_vz, compute_gauge_shifts
 
-  ! 8x8 spin matrices in zinc-blende basis (HH1,HH2,LH1,LH2,SO1,SO2,CB1,CB2)
-  ! Derived from J=3/2 and J=1/2 angular momentum operators
-  ! Spin-up diagonal: +mu_B * B, spin-down: -mu_B * B
+  ! 8x8 spin matrices in zinc-blende basis (HH↑,LH↑,LH↓,HH↓,SO↑,SO↓,CB↓,CB↑)
+  ! Winkler ordering: bands 1-4 = valence (HH,LH,LH,HH), 5-6 = SO, 7-8 = CB
+  ! Zeeman: Vz(b) = g_eff(b) * mu_B * B_mag, Kramers partners split opposite
   ! mu_B = e * hbar / (2 * m0) = 5.7884e-5 eV/T
 
 contains
@@ -124,15 +124,24 @@ contains
 
   pure subroutine compute_zeeman_vz(g_factor, mu_B_val, B_mag, Vz)
     ! Computes the 8-component Zeeman splitting vector:
-    !   Vz(b) = g_factor * g_J(b) * mu_B * B_mag
-    ! g_J eigenvalues: HH=-3/2, LH=+1/2, SO=-1/2, CB=+-1
+    !   Vz(b) = g_factor * c_b * mu_B * B_mag
+    ! Coefficients c_b are g_J * m_J for each band in Winkler basis:
+    !   Band 1 (HH mJ=+3/2): -3/2,  Band 2 (LH mJ=+1/2): +1/2
+    !   Band 3 (LH mJ=-1/2): -1/2,  Band 4 (HH mJ=-3/2): +3/2
+    !   Band 5 (SO mJ=+1/2): -1/2,  Band 6 (SO mJ=-1/2): +1/2
+    !   Band 7 (CB mJ=-1/2): -1,    Band 8 (CB mJ=+1/2): +1
     real(kind=dp), intent(in) :: g_factor, mu_B_val, B_mag
     real(kind=dp), intent(out) :: Vz(8)
-    Vz(1:2) = -1.5_dp * g_factor * mu_B_val * B_mag  ! HH (J_z = +/- 3/2)
-    Vz(3:4) =  0.5_dp * g_factor * mu_B_val * B_mag  ! LH (J_z = +/- 1/2)
-    Vz(5:6) = -0.5_dp * g_factor * mu_B_val * B_mag  ! SO (J_z = +/- 1/2)
-    Vz(7)   = -1.0_dp * g_factor * mu_B_val * B_mag  ! CB1 (J_z = -1/2)
-    Vz(8)   =  1.0_dp * g_factor * mu_B_val * B_mag  ! CB2 (J_z = +1/2)
+    real(kind=dp) :: E0
+    E0 = g_factor * mu_B_val * B_mag
+    Vz(1) = -1.5_dp * E0  ! HH  (mJ = +3/2)
+    Vz(2) =  0.5_dp * E0  ! LH  (mJ = +1/2)
+    Vz(3) = -0.5_dp * E0  ! LH  (mJ = -1/2)
+    Vz(4) =  1.5_dp * E0  ! HH  (mJ = -3/2)
+    Vz(5) = -0.5_dp * E0  ! SO  (mJ = +1/2)
+    Vz(6) =  0.5_dp * E0  ! SO  (mJ = -1/2)
+    Vz(7) = -1.0_dp * E0  ! CB↓ (mJ = -1/2)
+    Vz(8) =  1.0_dp * E0  ! CB↑ (mJ = +1/2)
   end subroutine compute_zeeman_vz
 
 end module magnetic_field

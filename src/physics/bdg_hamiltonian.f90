@@ -118,11 +118,11 @@ contains
     ! H0 has H0%nnz nonzeros
     ! Block (1,1): H0 - mu*I  => H0%nnz + 8N (diagonal)
     ! Block (2,2): -H0^T + mu*I => H0%nnz + 8N (diagonal, transpose)
-    ! Block (1,2): Delta => 64*N (antidiagonal, 8x8 band matrix per spatial point)
-    ! Block (2,1): Delta^dagger => 64*N (conjugate transpose, 8x8 band matrix)
+    ! Block (1,2): Delta => 8*N (antidiagonal, one entry per band per spatial point)
+    ! Block (2,1): Delta^dagger => 8*N (conjugate transpose)
     ! mu*I diagonal: 16*N (8N in each of blocks (1,1) and (2,2))
     ! Zeeman/Peierls: 8*N additional diagonal entries (added to (1,1) when B != 0)
-    nnz_bdg = 2 * H0%nnz + 2 * (64 * N) + 16 * N + 8 * N
+    nnz_bdg = 2 * H0%nnz + 2 * (8 * N) + 16 * N + 8 * N
 
     coo_capacity = nnz_bdg + nnz_bdg / 5  ! small safety margin
     allocate(coo_row_bdg(coo_capacity))
@@ -202,49 +202,36 @@ contains
 
     ! ==================================================================
     ! Block (2,1): Delta^dagger  (rows 8N..16N-1, cols 0..8N-1)
-    ! Delta^dagger(i,j) = conjg(Delta(j,i))
-    ! For wire: Delta is block-antidiagonal per spatial point.
-    ! Delta^dagger has the pairing signs on the hole side.
+    ! Antidiagonal pairing: Delta(b, 9-b) = delta_0 * pairing_sign(b)
+    ! Delta^dagger(b', 9-b') = delta_0 * pairing_sign(9-b')
     ! ==================================================================
     do i = 1, N  ! spatial index
-      do row = 1, 8  ! band index (electron)
-        do col = 1, 8  ! band index (hole)
-          if (abs(pairing_sign(row)) < 0.5_dp) cycle  ! skip zero entries
-          coo_idx = coo_idx + 1
-          call check_coo_bounds(coo_idx, coo_capacity)
-          ! Hole row = 8N + (i-1)*8 + row
-          ! Electron col = (j-1)*8 + col
-          ! But Delta is antidiagonal in band space, so hole at spatial i
-          ! couples to electron at spatial i with sign pairing_sign(row)
-          global_row = 8 * N + (i - 1) * 8 + row
-          global_col = (i - 1) * 8 + col
-          coo_row_bdg(coo_idx) = global_row
-          coo_col_bdg(coo_idx) = global_col
-          ! Delta^dagger(i,j) = conjg(Delta(j,i))
-          ! Delta(j,i) = delta_0 * pairing_sign(col) * delta_{ij}
-          ! So Delta^dagger(i,j) = conjg(delta_0 * pairing_sign(j) * delta_{ji})
-          !                     = delta_0 * pairing_sign(j) * delta_{ij}
-          coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(col), 0.0_dp, kind=dp)
-        end do
+      do row = 1, 8  ! hole band
+        col = 9 - row  ! antidiagonal electron partner
+        coo_idx = coo_idx + 1
+        call check_coo_bounds(coo_idx, coo_capacity)
+        global_row = 8 * N + (i - 1) * 8 + row
+        global_col = (i - 1) * 8 + col
+        coo_row_bdg(coo_idx) = global_row
+        coo_col_bdg(coo_idx) = global_col
+        coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(col), 0.0_dp, kind=dp)
       end do
     end do
 
     ! ==================================================================
     ! Block (1,2): Delta  (rows 0..8N-1, cols 8N..16N-1)
-    ! Delta(i,j) = delta_0 * pairing_sign(i) * delta_{ij} (antidiagonal in band)
+    ! Antidiagonal pairing: Delta(b, 9-b) = delta_0 * pairing_sign(b)
     ! ==================================================================
     do i = 1, N  ! spatial index
-      do row = 1, 8  ! band index (electron)
-        do col = 1, 8  ! band index (hole)
-          if (abs(pairing_sign(row)) < 0.5_dp) cycle  ! skip zero entries
-          coo_idx = coo_idx + 1
-          call check_coo_bounds(coo_idx, coo_capacity)
-          global_row = (i - 1) * 8 + row
-          global_col = 8 * N + (i - 1) * 8 + col
-          coo_row_bdg(coo_idx) = global_row
-          coo_col_bdg(coo_idx) = global_col
-          coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(row), 0.0_dp, kind=dp)
-        end do
+      do row = 1, 8  ! electron band
+        col = 9 - row  ! antidiagonal hole partner
+        coo_idx = coo_idx + 1
+        call check_coo_bounds(coo_idx, coo_capacity)
+        global_row = (i - 1) * 8 + row
+        global_col = 8 * N + (i - 1) * 8 + col
+        coo_row_bdg(coo_idx) = global_row
+        coo_col_bdg(coo_idx) = global_col
+        coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(row), 0.0_dp, kind=dp)
       end do
     end do
 
