@@ -398,19 +398,14 @@ contains
       end do
     end do
 
-    ! --- Block (2,2): -H0^T + 2*mu*I ---
-    ! Since H0 already has -mu subtracted, the hole block needs:
-    !   -(H0 + mu*I)^T + mu*I = -conjg(H0)^T + 2*mu*I
-    ! For real-parameter Hamiltonians H0 is complex Hermitian, so
-    !   block(2,2) = -conjg(H0)^T + 2*mu*I
+    ! --- Block (2,2): -H0^* + mu*I ---
+    ! H0 already has -mu subtracted: H0_after = H_0 - mu*I
+    ! Hole sector: -(H_0)^* + mu*I = -(H0_after + mu*I)^* + mu*I
+    !            = -H0_after^* - mu*I + mu*I = -H0_after^*
     do row = 1, N8
       do col = 1, N8
         H_bdg(N8 + row, N8 + col) = -conjg(H0(col, row))
       end do
-    end do
-    ! Add 2*mu to the diagonal of block (2,2)
-    do i = 1, N8
-      H_bdg(N8 + i, N8 + i) = H_bdg(N8 + i, N8 + i) + cmplx(2.0_dp * mu, 0.0_dp, kind=dp)
     end do
 
     deallocate(H0)
