@@ -11,6 +11,7 @@ module linalg
   private
 
   ! Standard LAPACK
+  public :: zheev
   public :: zheevx
   public :: zheevd
   public :: dgesv
@@ -46,6 +47,20 @@ module linalg
   ! ================================================================
   ! Interface blocks
   ! ================================================================
+
+  ! zheev - LAPACK Hermitian eigensolver (all eigenvalues/vectors)
+  interface
+    subroutine zheev(jobz, uplo, n, a, lda, w, work, lwork, rwork, info)
+      use definitions, only: dp
+      character(len=1), intent(in) :: jobz, uplo
+      integer, intent(in) :: n, lda, lwork
+      complex(kind=dp), intent(inout) :: a(lda, *)
+      real(kind=dp), intent(out) :: w(*)
+      complex(kind=dp), intent(inout) :: work(*)
+      real(kind=dp), intent(out) :: rwork(*)
+      integer, intent(out) :: info
+    end subroutine
+  end interface
 
   ! zheevx - LAPACK Hermitian eigensolver (selected eigenvalues/vectors)
   interface

@@ -11,6 +11,8 @@ module topological_analysis
   public :: compute_berry_curvature
   public :: compute_berry_curvature_lattice
   public :: compute_hall_conductance
+  public :: compute_conductance_kubo
+  public :: compute_conductance_kubo_chern
   public :: compute_z2_gap
   public :: compute_z2_fukane
   public :: compute_z2_fukane_qw
@@ -257,6 +259,37 @@ contains
 
     sigma_xy = real(C, kind=dp)
   end function compute_hall_conductance
+
+  function compute_conductance_kubo_chern(C) result(sigma_xy)
+    implicit none
+    integer, intent(in) :: C
+    real(kind=dp) :: sigma_xy
+
+    ! Returns sigma_xy in units of e^2/h (= C * e^2/h)
+    sigma_xy = real(C, kind=dp)
+  end function compute_conductance_kubo_chern
+
+  function compute_conductance_kubo(berry_curvature, kx_arr, ky_arr, n_occ) result(sigma_xy)
+    implicit none
+    real(kind=dp), contiguous, intent(in) :: berry_curvature(:,:)
+    real(kind=dp), contiguous, intent(in) :: kx_arr(:), ky_arr(:)
+    integer, intent(in) :: n_occ
+    real(kind=dp) :: sigma_xy
+
+    integer :: nkx, nky
+    real(kind=dp) :: dkx, dky
+
+    nkx = size(kx_arr)
+    nky = size(ky_arr)
+
+    dkx = 0.0_dp
+    if (nkx > 1) dkx = kx_arr(2) - kx_arr(1)
+    dky = 0.0_dp
+    if (nky > 1) dky = ky_arr(2) - ky_arr(1)
+
+    ! sigma_xy = (1/2*pi) * sum Omega * dk^2, in units of e^2/h
+    sigma_xy = sum(berry_curvature) * dkx * dky / (2.0_dp * acos(-1.0_dp))
+  end function compute_conductance_kubo
 
   function compute_z2_gap(N, eigenvalues, gap_threshold) result(z2)
     implicit none
