@@ -5,7 +5,7 @@ program kpfdm
   use hamiltonianConstructor
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
     & wire_coo_cache, wire_coo_cache_free, ZB8bandGeneralized
-  use confinement_init, only: confinementInitialization_2d
+  use confinement_init, only: confinementInitialization_2d, confinementInitialization_landau
   use OMP_lib
   use outputFunctions
   use input_parser
@@ -474,6 +474,27 @@ program kpfdm
   end if
 
   ! ====================================================================
+  ! Landau mode initialization (confinement=3)
+  ! ====================================================================
+  if (cfg%confinement == 3) then
+    block
+      character(len=255) :: lmat(1)
+      type(paramStruct) :: lparams(1)
+
+      lmat(1) = cfg%materialN(1)
+      lparams(1) = cfg%params(1)
+
+      N = cfg%landau_nx * 8
+      allocate(kpterms(cfg%landau_nx, cfg%landau_nx, 10))
+      kpterms = 0.0_dp
+      call confinementInitialization_landau(cfg%grid%x, lmat, lparams, &
+        & profile, kpterms, cfg%FDorder)
+    end block
+
+    print '(A,I0,A)', ' Landau mode: N=', N, ' (single material)'
+  end if
+
+  ! ====================================================================
   ! Bulk / QW mode (confinement=0 or 1): dense LAPACK path
   ! ====================================================================
 
@@ -546,13 +567,22 @@ program kpfdm
   if (allocated(work)) deallocate(work)
   allocate(work(N))  ! Will be resized after workspace query
 
-  ! Print profile for QW mode
+  ! Print profile for QW and Landau modes
   if (cfg%confDir == 'z') then
     call ensure_output_dir()
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
     do i = 1, cfg%fdStep, 1
       write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
+    end do
+    close(iounit)
+  else if (cfg%confDir == 'x') then
+    ! Landau mode: print profile along x
+    call ensure_output_dir()
+    call get_unit(iounit)
+    open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
+    do i = 1, cfg%landau_nx, 1
+      write(iounit,*) cfg%grid%x(i), profile(i,1), profile(i,2), profile(i,3)
     end do
     close(iounit)
   end if
@@ -641,10 +671,25 @@ program kpfdm
     lwork = int(real(work(1)))
     if (allocated(work)) deallocate(work)
     allocate(work(lwork))
+  else if (cfg%confDir == 'x') then
+    ! LANDAU: NxN workspace query
+    call ZB8bandLandau(HT, smallk(1), profile, kpterms, cfg%grid%x, cfg=cfg)
+    if (allocated(work)) deallocate(work)
+    allocate(work(1))
+    lwork = -1
+    call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,1), &
+               HT, N, work, lwork, rwork, iwork, ifail, info)
+    if (info /= 0) then
+      print *, 'Error: zheevx Landau workspace query failed, info =', info
+      stop 1
+    end if
+    lwork = int(real(work(1)))
+    if (allocated(work)) deallocate(work)
+    allocate(work(lwork))
   end if
 
   ! ====================================================================
-  ! k-vector sweep: sequential for bulk, OpenMP parallel for QW
+  ! k-vector sweep: sequential for bulk, OpenMP parallel for QW/Landau
   ! ====================================================================
   if (cfg%confDir == 'n') then
     ! --- BULK (8x8, trivially fast — no parallelization needed) ---
@@ -731,6 +776,65 @@ program kpfdm
       end if
     end do
 
+  else if (cfg%confDir == 'x') then
+    ! --- LANDAU (8NxN, OpenMP parallel) ---
+    ! Disable MKL internal threading so each OpenMP thread calls
+    ! zheevx in serial — avoids oversubscription.
+    info = mkl_set_num_threads_local(1)
+
+    print '(A,I0,A,I0,A)', ' Landau: N=', cfg%landau_nx, ', ', &
+      & cfg%waveVectorStep, ' k-points (OpenMP parallel)'
+
+    block
+      ! Thread-private temporaries for the parallel region
+      complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
+      real(kind=dp), allocatable    :: rwork_loc(:)
+      integer, allocatable          :: iwork_loc(:), ifail_loc(:)
+      integer :: info_loc, M_loc
+
+      !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
+      ! Each thread allocates its own workspace
+      allocate(HT_loc(N, N))
+      allocate(work_loc(lwork))
+      allocate(rwork_loc(7*N))
+      allocate(iwork_loc(5*N))
+      allocate(ifail_loc(N))
+      HT_loc = (0.0_dp, 0.0_dp)
+
+      !$omp do schedule(static)
+      do k = 1, cfg%waveVectorStep
+        ! Build Landau Hamiltonian for this k-point
+        call ZB8bandLandau(HT_loc, smallk(k), profile, kpterms, cfg%grid%x, cfg=cfg)
+
+        ! Diagonalize
+        call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
+                   eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
+                   ifail_loc, info_loc)
+        if (info_loc /= 0) then
+          !$omp critical
+          print *, "ERROR: Landau diagonalization failed at k=", k, "info=", info_loc
+          if (info_loc < 0) print *, "  Parameter ", -info_loc, " had illegal value"
+          !$omp end critical
+          stop 1
+        end if
+
+        ! Store eigenvectors (HT_loc now holds them, zheevx overwrites input)
+        eigv(:,:,k) = HT_loc(:, 1:iuu-il+1)
+      end do
+      !$omp end do
+
+      deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
+    !$omp end parallel
+    end block
+
+    ! Write Landau eigenfunctions at start, middle, end k-points (serial)
+    do k = 1, cfg%waveVectorStep
+      if (k == 1 .or. k == int(cfg%waveVectorStep/2) .or. k == cfg%waveVectorStep) then
+        call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
+          & k, cfg%landau_nx, cfg%grid%x, .false.)
+      end if
+    end do
+
   end if
   call writeEigenvalues(smallk, eig(:,:), cfg%waveVectorStep)
 
@@ -761,6 +865,8 @@ program kpfdm
 
 
   if (allocated(smallk)) deallocate(smallk)
+  if (allocated(profile)) deallocate(profile)
+  if (allocated(kpterms)) deallocate(kpterms)
   if (allocated(HT)) deallocate(HT)
   if (allocated(HTmp)) deallocate(HTmp)
   if (allocated(eig)) deallocate(eig)
