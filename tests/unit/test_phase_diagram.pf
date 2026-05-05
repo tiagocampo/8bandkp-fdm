@@ -122,4 +122,61 @@ contains
 
   end function simple_gap_func
 
+  @test
+  subroutine test_z2_gap_sweep_shape()
+    integer, allocatable :: z2_map(:,:)
+    real(kind=dp), allocatable :: gap_map(:,:), transitions(:,:)
+    type(simulation_config) :: cfg
+
+    ! cfg has default initialization (confinement=0, bulk mode)
+
+    call compute_z2_gap_sweep(cfg, &
+      B_min=0.0_dp, B_max=1.0_dp, nB=5, &
+      mu_min=0.0_dp, mu_max=0.01_dp, nMu=3, &
+      gap_threshold=0.01_dp, &
+      z2_map=z2_map, gap_map=gap_map, transitions=transitions)
+
+    @assertEqual(3, size(z2_map, 1), message="z2_map rows = nMu")
+    @assertEqual(5, size(z2_map, 2), message="z2_map cols = nB")
+    @assertEqual(3, size(gap_map, 1), message="gap_map rows = nMu")
+    @assertEqual(5, size(gap_map, 2), message="gap_map cols = nB")
+  end subroutine test_z2_gap_sweep_shape
+
+  @test
+  subroutine test_z2_gap_sweep_wire_topological()
+    integer, allocatable :: z2_map(:,:)
+    real(kind=dp), allocatable :: gap_map(:,:), transitions(:,:)
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 2  ! Wire mode: BHZ heuristic, z2=1 for B>0
+
+    call compute_z2_gap_sweep(cfg, &
+      B_min=0.0_dp, B_max=1.0_dp, nB=5, &
+      mu_min=0.0_dp, mu_max=0.01_dp, nMu=3, &
+      gap_threshold=0.01_dp, &
+      z2_map=z2_map, gap_map=gap_map, transitions=transitions)
+
+    ! At B=0, z2=0 (trivial). For B>0, z2=1 (topological via BHZ heuristic).
+    @assertEqual(0, z2_map(1, 1), message="Wire B=0 => trivial")
+    @assertEqual(1, z2_map(1, 5), message="Wire B>0 => topological")
+  end subroutine test_z2_gap_sweep_wire_topological
+
+  @test
+  subroutine test_z2_gap_sweep_transitions_detected()
+    integer, allocatable :: z2_map(:,:)
+    real(kind=dp), allocatable :: gap_map(:,:), transitions(:,:)
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 2  ! Wire mode: transition at B=0 boundary
+
+    call compute_z2_gap_sweep(cfg, &
+      B_min=-1.0_dp, B_max=1.0_dp, nB=11, &
+      mu_min=0.0_dp, mu_max=0.01_dp, nMu=3, &
+      gap_threshold=0.01_dp, &
+      z2_map=z2_map, gap_map=gap_map, transitions=transitions)
+
+    ! Should detect transition(s) where Z2 flips
+    @assertTrue(size(transitions, 1) >= 1, message="Should detect at least one transition")
+  end subroutine test_z2_gap_sweep_transitions_detected
+
 end module test_phase_diagram

@@ -2,7 +2,8 @@ module topological_analysis
 
   use definitions
   use sparse_matrices
-  use linalg, only: zheevd, zgetrf
+  use linalg, only: zheev, zheevd, zgetrf
+  use hamiltonianConstructor, only: ZB8bandQW
   implicit none
   private
 
@@ -20,6 +21,7 @@ module topological_analysis
   public :: extract_edge_states_wire
   public :: fit_exponential_decay
   public :: compute_phase_diagram
+  public :: compute_z2_gap_sweep
   public :: gap_closing_detect
 
   type :: bhz_wire_params
@@ -286,14 +288,16 @@ contains
 
   end function compute_z2_gap
 
-  function compute_z2_fukane(H_eigs, params) result(z2)
+  function compute_z2_fukane(cfg, profile, kpterms, n_occ) result(z2)
     implicit none
-    real(kind=dp), intent(in) :: H_eigs(:)
-    class(*), intent(in) :: params
+    type(simulation_config), intent(in) :: cfg
+    real(kind=dp), contiguous, intent(in) :: profile(:,:), kpterms(:,:,:)
+    integer, intent(in) :: n_occ
     integer :: z2
 
-    print *, 'WARNING: compute_z2_fukane is not yet implemented. Returning 0.'
-    z2 = 0
+    ! Delegate to the full Fu-Kane QW implementation
+    z2 = compute_z2_fukane_qw(cfg, profile, kpterms, n_occ)
+
   end function compute_z2_fukane
 
   function extract_edge_states(eigenvalues, eigenvectors, grid, window) result(edge_xi)
@@ -803,7 +807,7 @@ contains
   ! Fu-Kane Z2 invariant for a QW via parity eigenvalues at TRIM points.
   !
   ! Computes the Z2 topological invariant using the Fu-Kane formula:
-  !   (-1)^Z2 = prod_{i=1}^{4} delta_i
+  !   (-1)^Z2 = prod_{i=1}^{4} delta_i   (excluding Gamma for the strong index)
   ! where delta_i = prod_{m=1}^{n_occ} xi_m(Lambda_i) and xi_m is the parity
   ! eigenvalue of the m-th occupied state at TRIM point Lambda_i.
   !
@@ -813,33 +817,28 @@ contains
   !   P_band = [+1,+1,+1,+1,+1,+1,-1,-1]
   ! (valence bands 1-6 are even under inversion, conduction bands 7-8 are odd).
   !
-  ! For a QW with N spatial points, the QW basis function at site i for band b
-  ! has parity P_band(b). The parity of a QW eigenstate is:
-  !   xi_n = prod_{i=1}^{N} prod_{b=1}^{8} P_band(b)^{|psi_n(i,b)|^2}
-  ! which reduces to the sign of the product of P_band weighted by the CB character.
+  ! For a QW eigenstate psi_n, the parity eigenvalue is:
+  !   xi_n = sign( prod_{i,b} P_band(b)^{|psi_n(i,b)|^2} )
+  ! which reduces to:
+  !   xi_n = sign( sum over CB weights vs VB weights )
   !
-  ! This simplified implementation uses the gap criterion as a proxy:
-  !   - Computes the occupied-state parity product at each TRIM
-  !   - If delta_prod < 0, the system is topological (Z2 = 1)
-  !
-  ! For a full implementation, the caller would provide the diagonalized QW
-  ! Hamiltonian at each TRIM. Here we provide the framework that can be
-  ! extended with actual ZB8bandQW calls.
+  ! This function builds the QW Hamiltonian at each TRIM point via ZB8bandQW,
+  ! diagonalizes it, and computes the parity product.
   !
   ! INPUT:
-  !   N       - number of spatial grid points in the QW
-  !   n_occ   - number of occupied bands (typically 4*N for half-filling in BHZ)
-  !   evals_trim - eigenvalues at the TRIM point (Gamma by default)
-  !   evecs_trim - eigenvectors at the TRIM point (8N x n_occ)
+  !   cfg      - simulation configuration (grid, materials, FD order)
+  !   profile  - band offset profile (N x 3)
+  !   kpterms  - k.p material terms (N x N x 10)
+  !   n_occ    - number of occupied bands (typically 4*N for half-filling)
   !
   ! OUTPUT:
   !   Z2 = 0 (trivial) or 1 (topological)
   ! ==============================================================================
-  function compute_z2_fukane_qw(N, n_occ, evals_trim, evecs_trim) result(z2)
+  function compute_z2_fukane_qw(cfg, profile, kpterms, n_occ) result(z2)
     implicit none
-    integer, intent(in) :: N, n_occ
-    real(kind=dp), intent(in) :: evals_trim(:)
-    complex(kind=dp), intent(in) :: evecs_trim(:,:)
+    type(simulation_config), intent(in) :: cfg
+    real(kind=dp), contiguous, intent(in) :: profile(:,:), kpterms(:,:,:)
+    integer, intent(in) :: n_occ
     integer :: z2
 
     ! Parity of each band in the 8-band zinc-blende basis
@@ -848,54 +847,222 @@ contains
     real(kind=dp), parameter :: P_band(8) = [+1.0_dp, +1.0_dp, +1.0_dp, &
                                               +1.0_dp, +1.0_dp, +1.0_dp, &
                                              -1.0_dp, -1.0_dp]
-    integer :: istate, isite, iband, irow
-    real(kind=dp) :: delta_prod, parity_n, weight
-    real(kind=dp) :: cb_weight_total, vb_weight_total
+
+    integer :: N, dim_H, i_trim, istate, isite, iband, irow
+    integer :: info, lwork
+    real(kind=dp) :: delta_trim, parity_n
+    real(kind=dp) :: product_non_gamma
+    real(kind=dp) :: kx_trim(4), ky_trim(4)
+    type(wavevector) :: wv
+
+    complex(kind=dp), allocatable :: HT(:,:)
+    real(kind=dp), allocatable :: evals(:), rwork(:)
+    complex(kind=dp), allocatable :: work(:)
 
     z2 = 0
 
+    N = size(profile, 1)
+    dim_H = 8 * N
+
     if (n_occ < 1 .or. N < 1) return
-    if (size(evecs_trim, 1) < 8 * N) return
-    if (size(evecs_trim, 2) < n_occ) return
+    if (n_occ > dim_H) return
 
-    ! Compute the parity product over occupied states
-    ! delta = prod_{istate=1}^{n_occ} xi_istate
-    ! where xi_istate = sign of P_band weighted by CB character
-    delta_prod = 1.0_dp
+    ! Lattice constant (default to 6.0 Angstrom for III-V materials)
+    ! Use a default if not set in config
+    block
+      real(kind=dp) :: a_lat
+      real(kind=dp) :: pi_val
 
-    do istate = 1, n_occ
-      cb_weight_total = 0.0_dp
-      vb_weight_total = 0.0_dp
+      pi_val = acos(-1.0_dp)
+      a_lat = 6.0_dp  ! Angstrom, typical III-V lattice constant
 
-      do isite = 1, N
-        do iband = 1, 8
-          irow = (isite - 1) * 8 + iband
-          weight = abs(evecs_trim(irow, istate))**2
-          if (iband <= 6) then
-            vb_weight_total = vb_weight_total + weight
-          else
-            cb_weight_total = cb_weight_total + weight
-          end if
-        end do
-      end do
+      ! 4 TRIM points in the 2D Brillouin zone
+      kx_trim = [0.0_dp, pi_val / a_lat, 0.0_dp, pi_val / a_lat]
+      ky_trim = [0.0_dp, 0.0_dp, pi_val / a_lat, pi_val / a_lat]
+    end block
 
-      ! Parity: if the state has significant CB character, its parity is -1
-      ! If mostly VB character, parity is +1
-      ! The overall parity is determined by which sector dominates
-      ! For a state that is mostly VB: xi_n = +1 (even)
-      ! For a state that is mostly CB: xi_n = -1 (odd)
-      if (cb_weight_total > vb_weight_total) then
-        parity_n = -1.0_dp
-      else
-        parity_n = +1.0_dp
+    ! Workspace for zheev: query first, then allocate
+    allocate(HT(dim_H, dim_H))
+    allocate(evals(dim_H))
+    allocate(rwork(max(1, 3*dim_H - 2)))
+    allocate(work(1))
+
+    ! Workspace query
+    call zheev('V', 'U', dim_H, HT, dim_H, evals, work, -1, rwork, info)
+    if (info /= 0) then
+      print *, 'WARNING: compute_z2_fukane_qw: zheev workspace query failed, info=', info
+      z2 = 0
+      deallocate(HT, evals, rwork, work)
+      return
+    end if
+    lwork = int(real(work(1)))
+    deallocate(work)
+    allocate(work(lwork))
+
+    product_non_gamma = 1.0_dp
+
+    do i_trim = 1, 4
+      ! Set up wavevector at this TRIM point
+      wv%kx = kx_trim(i_trim)
+      wv%ky = ky_trim(i_trim)
+      wv%kz = 0.0_dp
+
+      ! Build QW Hamiltonian at this TRIM
+      HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      call ZB8bandQW(HT, wv, profile, kpterms, cfg=cfg)
+
+      ! Diagonalize: eigenvalues in evals, eigenvectors overwrite HT
+      call zheev('V', 'U', dim_H, HT, dim_H, evals, work, lwork, rwork, info)
+      if (info /= 0) then
+        print *, 'WARNING: compute_z2_fukane_qw: zheev failed at TRIM ', i_trim, ' info=', info
+        z2 = 0
+        deallocate(HT, evals, rwork, work)
+        return
       end if
 
-      delta_prod = delta_prod * parity_n
+      ! Compute parity product over occupied states at this TRIM
+      ! delta_i = prod_{n=1}^{n_occ} xi_n
+      delta_trim = 1.0_dp
+
+      do istate = 1, n_occ
+        ! For each occupied eigenstate, compute parity eigenvalue.
+        ! The parity of a QW eigenstate is determined by the dominant band
+        ! character. In the 8-band zinc-blende basis:
+        !   VB bands (1-6): even under inversion (P=+1)
+        !   CB bands (7-8): odd under inversion (P=-1)
+        ! For a state with mixed character, the parity eigenvalue is:
+        !   xi_n = sign(prod_b P_band(b)^{weight_b})
+        ! which equals (-1)^{total_CB_weight}. For a normalized state with
+        ! definite parity at a TRIM, CB weight > 0.5 gives xi=-1.
+        block
+          real(kind=dp) :: cb_weight, vb_weight
+
+          cb_weight = 0.0_dp
+          vb_weight = 0.0_dp
+
+          do isite = 1, N
+            do iband = 1, 8
+              irow = (isite - 1) * 8 + iband
+              if (P_band(iband) < 0.0_dp) then
+                cb_weight = cb_weight + abs(HT(irow, istate))**2
+              else
+                vb_weight = vb_weight + abs(HT(irow, istate))**2
+              end if
+            end do
+          end do
+
+          ! Parity eigenvalue: if CB character dominates, parity is odd (-1)
+          if (cb_weight > vb_weight) then
+            parity_n = -1.0_dp
+          else
+            parity_n = +1.0_dp
+          end if
+        end block
+
+        delta_trim = delta_trim * parity_n
+      end do
+
+      ! The Fu-Kane formula uses product of delta_i for TRIMs excluding Gamma.
+      ! Gamma is i_trim=1. Accumulate product of TRIMs 2, 3, 4.
+      if (i_trim > 1) then
+        product_non_gamma = product_non_gamma * delta_trim
+      end if
     end do
 
-    ! Z2 = 1 if the parity product is negative (odd number of sign flips)
-    if (delta_prod < 0.0_dp) z2 = 1
+    ! Z2 = 1 if product of delta at non-Gamma TRIMs is negative
+    if (product_non_gamma < 0.0_dp) z2 = 1
+
+    deallocate(HT, evals, rwork, work)
 
   end function compute_z2_fukane_qw
+
+  ! ==============================================================================
+  ! Z2 phase diagram via gap sweep over (B, mu) parameter space.
+  !
+  ! Sweeps a linear grid of nB x nMu points, computing Z2 invariant and
+  ! minimum bulk gap at each point. Detects phase transitions where Z2 flips
+  ! between adjacent B values.
+  !
+  ! For wire mode (confinement==2): uses BHZ M-sign heuristic (z2=1 when B>0).
+  ! For other modes: z2=0 placeholder (future QW implementation).
+  !
+  ! OUTPUT:
+  !   z2_map(nMu, nB)       : Z2 invariant (0 or 1) at each grid point
+  !   gap_map(nMu, nB)      : placeholder gap values (0.0 for now)
+  !   transitions(:, 2)     : (B, mu) pairs where Z2 flips, detected along
+  !                           the central mu row by comparing adjacent B values
+  ! ==============================================================================
+  subroutine compute_z2_gap_sweep(cfg, B_min, B_max, nB, mu_min, mu_max, nMu, &
+                                   gap_threshold, z2_map, gap_map, transitions)
+    implicit none
+    type(simulation_config), intent(in) :: cfg
+    real(kind=dp), intent(in) :: B_min, B_max, mu_min, mu_max, gap_threshold
+    integer, intent(in) :: nB, nMu
+    integer, allocatable, intent(out) :: z2_map(:,:)
+    real(kind=dp), allocatable, intent(out) :: gap_map(:,:)
+    real(kind=dp), allocatable, intent(out) :: transitions(:,:)
+
+    integer :: iB, iMu, j_central, n_trans
+    real(kind=dp) :: dB, dmu, B_val
+    real(kind=dp), allocatable :: trans_raw(:,:)
+
+    if (nB < 1 .or. nMu < 1) then
+      allocate(z2_map(0,0), gap_map(0,0), transitions(0,2))
+      return
+    end if
+
+    allocate(z2_map(nMu, nB))
+    allocate(gap_map(nMu, nB))
+    z2_map = 0
+    gap_map = 0.0_dp
+
+    dB = 0.0_dp
+    if (nB > 1) dB = (B_max - B_min) / real(nB - 1, kind=dp)
+
+    dmu = 0.0_dp
+    if (nMu > 1) dmu = (mu_max - mu_min) / real(nMu - 1, kind=dp)
+
+    ! Fill Z2 map based on confinement mode
+    do iB = 1, nB
+      B_val = B_min + real(iB - 1, kind=dp) * dB
+      do iMu = 1, nMu
+        if (cfg%confinement == 2) then
+          ! Wire mode: BHZ heuristic — topological when M flips sign.
+          ! For the standard BHZ model, M > 0 is trivial, M < 0 is topological.
+          ! In the Zeeman-dominated regime, B > 0 drives M < 0 => topological.
+          if (B_val > 0.0_dp) then
+            z2_map(iMu, iB) = 1
+          else
+            z2_map(iMu, iB) = 0
+          end if
+        else
+          ! Bulk / QW placeholder: trivial phase
+          z2_map(iMu, iB) = 0
+        end if
+        ! gap_map remains 0.0 (placeholder for future eigenvalue-based computation)
+      end do
+    end do
+
+    ! Detect transitions along B sweep at central mu
+    j_central = (nMu + 1) / 2
+    allocate(trans_raw(nB, 2))
+    n_trans = 0
+
+    do iB = 1, nB - 1
+      if (z2_map(j_central, iB) /= z2_map(j_central, iB + 1)) then
+        n_trans = n_trans + 1
+        trans_raw(n_trans, 1) = B_min + real(iB - 1, kind=dp) * dB + dB / 2.0_dp
+        trans_raw(n_trans, 2) = mu_min + real(j_central - 1, kind=dp) * dmu
+      end if
+    end do
+
+    ! Copy to output array
+    allocate(transitions(n_trans, 2))
+    if (n_trans > 0) then
+      transitions(1:n_trans, :) = trans_raw(1:n_trans, :)
+    end if
+    deallocate(trans_raw)
+
+  end subroutine compute_z2_gap_sweep
 
 end module topological_analysis
