@@ -28,13 +28,15 @@ module bdg_hamiltonian
   use definitions
   use sparse_matrices
   use hamiltonian_wire, only: ZB8bandGeneralized, wire_workspace
-  use magnetic_field, only: add_zeeman_coo, add_peierls_coo
+  use hamiltonianConstructor, only: ZB8bandQW
+  use magnetic_field, only: add_zeeman_coo, add_peierls_coo, compute_zeeman_vz
 
   implicit none
 
   private
 
   public :: build_bdg_hamiltonian_1d
+  public :: build_bdg_hamiltonian_qw
 
 contains
 
@@ -273,5 +275,146 @@ contains
     call csr_free(H0)
 
   end subroutine build_bdg_hamiltonian_1d
+
+  ! ==============================================================================
+  ! Build the 16N x 16N dense BdG Hamiltonian for a quantum well (QW).
+  !
+  ! H_BdG = | H0 - mu*I    Delta       |
+  !         | Delta^dagger  -H0^T+mu*I  |
+  !
+  ! H0 is the 8N x 8N dense QW Hamiltonian from ZB8bandQW.
+  ! Delta is diagonal with antidiagonal band pairing within each spatial site.
+  !
+  ! Arguments:
+  !   H_bdg    - (out) 16N x 16N dense BdG matrix (allocated here)
+  !   cfg      - (in)  simulation configuration
+  !   profile  - (in)  N x 3 band edge profile
+  !   kpterms  - (in)  N x N x 10 k.p parameter matrices
+  !   k_par    - (in)  in-plane wavevector (k_parallel)
+  !   mu       - (in)  chemical potential
+  !   delta_0  - (in)  superconducting pairing amplitude
+  !   B_vec    - (in, opt) magnetic field vector [Bx, By, Bz]
+  !   g_factor - (in, opt) effective g-factor for Zeeman splitting
+  ! ==============================================================================
+  subroutine build_bdg_hamiltonian_qw(H_bdg, cfg, profile, kpterms, &
+                                        k_par, mu, delta_0, B_vec, g_factor)
+
+    complex(kind=dp), allocatable, intent(out) :: H_bdg(:,:)
+    type(simulation_config), intent(in) :: cfg
+    real(kind=dp), contiguous, intent(in) :: profile(:,:)
+    real(kind=dp), contiguous, intent(in) :: kpterms(:,:,:)
+    real(kind=dp), intent(in) :: k_par, mu, delta_0
+    real(kind=dp), intent(in), optional :: B_vec(3)
+    real(kind=dp), intent(in), optional :: g_factor
+
+    integer :: N, N8, Ntot, i, ib, row, col
+    complex(kind=dp), allocatable :: H0(:,:)
+    type(wavevector) :: wv
+    real(kind=dp) :: pairing_sign(8)
+    real(kind=dp) :: Vz(8), g_f
+
+    ! --- Dimension setup ---
+    N = cfg%fdStep
+    if (N <= 0) then
+      print *, 'ERROR: build_bdg_hamiltonian_qw: invalid fdStep=', N
+      stop 1
+    end if
+    N8 = 8 * N
+    Ntot = 16 * N
+
+    ! --- Build 8N x 8N electron Hamiltonian H0(k_par) ---
+    allocate(H0(N8, N8))
+    H0 = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! Set wavevector: in-plane k_par along kx, kz=0 for QW
+    wv%kx = k_par
+    wv%ky = 0.0_dp
+    wv%kz = 0.0_dp
+
+    call ZB8bandQW(H0, wv, profile, kpterms, cfg=cfg)
+
+    ! --- Optional: add Zeeman splitting to H0 diagonal ---
+    if (present(B_vec)) then
+      if (abs(B_vec(1)) > 1e-12_dp .or. &
+          abs(B_vec(2)) > 1e-12_dp .or. &
+          abs(B_vec(3)) > 1e-12_dp) then
+        if (present(g_factor)) then
+          g_f = g_factor
+        else
+          g_f = cfg%bdg%g_factor
+        end if
+        call compute_zeeman_vz(g_f, mu_B, sqrt(sum(B_vec**2)), Vz)
+        ! Add Zeeman to diagonal of H0 at each spatial site
+        do i = 1, N
+          do ib = 1, 8
+            row = (i - 1) * 8 + ib
+            H0(row, row) = H0(row, row) + cmplx(Vz(ib), 0.0_dp, kind=dp)
+          end do
+        end do
+      end if
+    end if
+
+    ! --- Subtract mu from diagonal of H0 ---
+    do i = 1, N8
+      H0(i, i) = H0(i, i) - cmplx(mu, 0.0_dp, kind=dp)
+    end do
+
+    ! --- Allocate the full 16N x 16N BdG matrix ---
+    allocate(H_bdg(Ntot, Ntot))
+    H_bdg = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! --- Block (1,1): H0 - mu*I ---
+    H_bdg(1:N8, 1:N8) = H0
+
+    ! --- Pairing sign pattern for zinc-blende 8-band basis ---
+    pairing_sign = [ &
+      +1.0_dp, &  ! band 1 (HH)
+      -1.0_dp, &  ! band 2 (LH)
+      +1.0_dp, &  ! band 3 (LH)
+      -1.0_dp, &  ! band 4 (HH)
+      -1.0_dp, &  ! band 5 (SO)
+      +1.0_dp, &  ! band 6 (SO)
+      +1.0_dp, &  ! band 7 (CB)
+      -1.0_dp &   ! band 8 (CB)
+    ]
+
+    ! --- Block (1,2): Delta (antidiagonal pairing) ---
+    ! Delta(b, 9-b) = delta_0 * pairing_sign(b) at each spatial site
+    do i = 1, N
+      do ib = 1, 8
+        row = (i - 1) * 8 + ib
+        col = (i - 1) * 8 + (9 - ib)
+        H_bdg(row, N8 + col) = cmplx(delta_0 * pairing_sign(ib), 0.0_dp, kind=dp)
+      end do
+    end do
+
+    ! --- Block (2,1): Delta^dagger = Delta^T (real-valued, symmetric within site) ---
+    ! Since Delta is real and antidiagonal: Delta^dagger(b',b) = Delta(b,b')
+    do i = 1, N
+      do ib = 1, 8
+        row = (i - 1) * 8 + ib
+        col = (i - 1) * 8 + (9 - ib)
+        H_bdg(N8 + row, col) = cmplx(delta_0 * pairing_sign(9 - ib), 0.0_dp, kind=dp)
+      end do
+    end do
+
+    ! --- Block (2,2): -H0^T + 2*mu*I ---
+    ! Since H0 already has -mu subtracted, the hole block needs:
+    !   -(H0 + mu*I)^T + mu*I = -conjg(H0)^T + 2*mu*I
+    ! For real-parameter Hamiltonians H0 is complex Hermitian, so
+    !   block(2,2) = -conjg(H0)^T + 2*mu*I
+    do row = 1, N8
+      do col = 1, N8
+        H_bdg(N8 + row, N8 + col) = -conjg(H0(col, row))
+      end do
+    end do
+    ! Add 2*mu to the diagonal of block (2,2)
+    do i = 1, N8
+      H_bdg(N8 + i, N8 + i) = H_bdg(N8 + i, N8 + i) + cmplx(2.0_dp * mu, 0.0_dp, kind=dp)
+    end do
+
+    deallocate(H0)
+
+  end subroutine build_bdg_hamiltonian_qw
 
 end module bdg_hamiltonian

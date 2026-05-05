@@ -8,6 +8,7 @@ module test_bdg_hamiltonian
   use geometry
   use confinement_init, only: confinementInitialization_2d
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free
+  use hamiltonianConstructor, only: ZB8bandQW
   use linalg, only: zheevx
   implicit none
 
@@ -322,5 +323,96 @@ contains
       end do
     end do
   end subroutine csr_to_dense_local
+
+  ! ==================================================================
+  ! T4: Dense QW BdG Hamiltonian tests
+  ! Build a minimal QW BdG Hamiltonian and verify:
+  !   - Dimension is 16N x 16N
+  !   - Matrix is Hermitian
+  ! ==================================================================
+
+  @test
+  subroutine test_bdg_qw_dimension()
+    ! Dense QW BdG should produce 16N x 16N matrix
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: H_bdg(:,:)
+    integer :: N
+
+    N = 5
+    cfg%confinement = 1
+    cfg%fdStep = N
+    cfg%FDorder = 2
+    cfg%numLayers = 1
+    cfg%confDir = 'z'
+    cfg%totalSize = 50.0_dp  ! 50 AA
+    cfg%delta = 10.0_dp      ! step size
+    cfg%dz = 10.0_dp
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+
+    ! Minimal single-material profile
+    allocate(profile(N, 3))
+    profile(:, 1) = 0.0_dp   ! HH/LH band edge
+    profile(:, 2) = 0.0_dp   ! SO band edge
+    profile(:, 3) = 1.0_dp   ! CB band edge
+
+    allocate(kpterms(N, N, 10))
+    kpterms = 0.0_dp
+
+    call build_bdg_hamiltonian_qw(H_bdg, cfg, profile, kpterms, &
+                                   k_par=0.0_dp, mu=0.5_dp, delta_0=0.001_dp)
+
+    @assertEqual(16 * N, size(H_bdg, 1), message="QW BdG should be 16N x 16N")
+    @assertEqual(16 * N, size(H_bdg, 2), message="QW BdG should be 16N x 16N")
+
+    deallocate(profile, kpterms, H_bdg)
+  end subroutine test_bdg_qw_dimension
+
+  @test
+  subroutine test_bdg_qw_hermitian()
+    ! QW BdG matrix must be Hermitian
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: H_bdg(:,:)
+    integer :: N, i, j
+    real(kind=dp) :: hermiticity_err
+
+    N = 5
+    cfg%confinement = 1
+    cfg%fdStep = N
+    cfg%FDorder = 2
+    cfg%numLayers = 1
+    cfg%confDir = 'z'
+    cfg%totalSize = 50.0_dp
+    cfg%delta = 10.0_dp
+    cfg%dz = 10.0_dp
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+
+    allocate(profile(N, 3))
+    profile(:, 1) = 0.0_dp
+    profile(:, 2) = 0.0_dp
+    profile(:, 3) = 1.0_dp
+
+    allocate(kpterms(N, N, 10))
+    kpterms = 0.0_dp
+
+    call build_bdg_hamiltonian_qw(H_bdg, cfg, profile, kpterms, &
+                                   k_par=0.0_dp, mu=0.5_dp, delta_0=0.001_dp)
+
+    hermiticity_err = 0.0_dp
+    do j = 1, 16*N
+      do i = 1, j
+        hermiticity_err = max(hermiticity_err, abs(H_bdg(i,j) - conjg(H_bdg(j,i))))
+      end do
+    end do
+
+    @assertTrue(hermiticity_err < 1.0e-12_dp, message="QW BdG must be Hermitian")
+
+    deallocate(profile, kpterms, H_bdg)
+  end subroutine test_bdg_qw_hermitian
 
 end module
