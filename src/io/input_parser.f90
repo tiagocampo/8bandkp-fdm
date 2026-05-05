@@ -208,8 +208,8 @@ contains
     print *, trim(label), cfg%numLayers
 
     ! Validate confinement value
-    if (cfg%confinement < 0 .or. cfg%confinement > 2) then
-      print *, 'Error: confinement must be 0, 1, or 2, got:', cfg%confinement
+    if (cfg%confinement < 0 .or. cfg%confinement > 3) then
+      print *, 'Error: confinement must be 0, 1, 2, or 3, got:', cfg%confinement
       stop 1
     end if
 
@@ -471,6 +471,91 @@ contains
       cfg%startPos(1) = 0.0_dp
       cfg%endPos(1) = real(cfg%wire_ny - 1, kind=dp) * cfg%wire_dy
 
+    else if (cfg%confinement == 3) then
+      ! ---- Landau mode (1D x-discretization for orbital quantization) ----
+      cfg%confDir = 'x'
+
+      ! Single material (like bulk)
+      read(data_unit, *, iostat=status) label, cfg%materialN(1)
+      if (status /= 0) then
+        print *, 'Error: Failed to read material name from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%materialN(1)
+      cfg%materialN(1) = trim(cfg%materialN(1))
+
+      ! Grid parameters
+      read(data_unit, *, iostat=status) label, cfg%landau_nx
+      if (status /= 0) then
+        print *, 'Error: Failed to read landau_nx from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%landau_nx
+
+      read(data_unit, *, iostat=status) label, cfg%landau_width
+      if (status /= 0) then
+        print *, 'Error: Failed to read landau_width from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%landau_width
+
+      ! Optional: landau_sweep (ky, kz, or B)
+      call read_next_data_line(data_unit, line, status)
+      if (status == 0) then
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          label_part = adjustl(line(:colon_pos-1))
+          if (trim(to_lower_ascii(label_part)) == 'landau_sweep') then
+            read(line(colon_pos+1:), *, iostat=status) cfg%landau_sweep
+            if (status == 0) then
+              print *, trim(label_part) // ':', trim(cfg%landau_sweep)
+            else
+              cfg%landau_sweep = 'ky'
+              status = 0
+            end if
+          else
+            ! Not landau_sweep — put line back for next reader
+            backspace(data_unit)
+          end if
+        else
+          ! No colon — put back
+          backspace(data_unit)
+        end if
+      end if
+
+      ! Validate Landau grid parameters
+      if (cfg%landau_nx < 3) then
+        print *, 'Error: landau_nx must be >= 3, got:', cfg%landau_nx
+        stop 1
+      end if
+      if (cfg%landau_width <= 0.0_dp) then
+        print *, 'Error: landau_width must be > 0, got:', cfg%landau_width
+        stop 1
+      end if
+      if (cfg%landau_nx < cfg%FDorder + 1) then
+        print *, 'Error: landau_nx must be >= FDorder + 1'
+        print *, '  landau_nx=', cfg%landau_nx, ' FDorder=', cfg%FDorder
+        stop 1
+      end if
+
+      ! Set grid compatibility fields
+      cfg%fdStep = cfg%landau_nx
+      cfg%dz = cfg%landau_width / real(cfg%landau_nx - 1, kind=dp)
+      cfg%totalSize = cfg%landau_width
+      cfg%z = [ ((i - 1) * cfg%dz, i=1, cfg%landau_nx) ]
+
+      ! Allocate intStartPos/intEndPos for single material
+      allocate(cfg%intStartPos(1))
+      allocate(cfg%intEndPos(1))
+      cfg%intStartPos(1) = 1
+      cfg%intEndPos(1) = cfg%landau_nx
+
+      ! Allocate dummy startPos/endPos for routines that expect them
+      allocate(cfg%startPos(1))
+      allocate(cfg%endPos(1))
+      cfg%startPos(1) = 0.0_dp
+      cfg%endPos(1) = cfg%landau_width
+
     end if
 
     ! --- Common fields: numcb, numvb, external field, gfactor, SC ---
@@ -510,7 +595,7 @@ contains
         read(data_unit, *, iostat=status) cfg%b_field(2), cfg%b_field(3)
         if (status == 0 .or. status == -1) then
           cfg%bdg%B_vec = cfg%b_field
-          cfg%bdg%enabled = .true.
+          if (cfg%confinement /= 3) cfg%bdg%enabled = .true.
         else
           cfg%b_field = 0.0_dp
           cfg%bdg%B_vec = 0.0_dp
@@ -540,7 +625,7 @@ contains
                 cfg%b_field(1), cfg%b_field(2), cfg%b_field(3)
             if (status == 0) then
               cfg%bdg%B_vec = cfg%b_field
-              cfg%bdg%enabled = .true.
+              if (cfg%confinement /= 3) cfg%bdg%enabled = .true.
             else
               cfg%b_field = 0.0_dp
               status = 0

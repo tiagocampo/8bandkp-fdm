@@ -486,8 +486,8 @@ module definitions
     class(simulation_config), intent(in) :: self
 
     associate(cfg => self)
-      ! confDir: set internally ('n'=bulk, 'z'=QW/wire)
-      if (cfg%confDir /= 'z' .and. cfg%confDir /= 'n') then
+      ! confDir: set internally ('n'=bulk, 'z'=QW/wire, 'x'=Landau)
+      if (cfg%confDir /= 'z' .and. cfg%confDir /= 'n' .and. cfg%confDir /= 'x') then
         error stop 'validate_simulation_config: invalid confDir'
       end if
 
