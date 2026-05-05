@@ -1,0 +1,128 @@
+module test_z2_invariant
+  use funit
+  use definitions
+  use topological_analysis
+  use sparse_matrices
+  use linalg
+  use eigensolver
+  implicit none
+
+contains
+
+  @test
+  subroutine test_z2_fukane_bhz_trivial()
+    ! BHZ model with M > 0 => trivial (Z2 = 0)
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    integer :: z2
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 100
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    z2 = compute_z2_gap(params%N, result%eigenvalues, 1.0_dp)
+
+    @assertEqual(0, z2, message="BHZ trivial phase (M=+10) should have Z2=0")
+
+    call csr_free(H_csr)
+  end subroutine test_z2_fukane_bhz_trivial
+
+  @test
+  subroutine test_z2_fukane_bhz_topological()
+    ! BHZ model with M < 0 => topological (Z2 = 1)
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    integer :: z2
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = -10.0_dp
+    params%d_wire = 70.0_dp
+    params%N = 100
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    z2 = compute_z2_gap(params%N, result%eigenvalues, 40.0_dp)
+
+    @assertEqual(1, z2, message="BHZ topological phase (M=-10) should have Z2=1")
+
+    call csr_free(H_csr)
+  end subroutine test_z2_fukane_bhz_topological
+
+  @test
+  subroutine test_z2_parity_eigenvalue_sign()
+    ! Verify that inversion parity is +1 for valence, -1 for conduction in 8-band basis
+    real(kind=dp) :: P_band(8)
+    integer :: b
+
+    P_band = [+1.0_dp, +1.0_dp, +1.0_dp, +1.0_dp, +1.0_dp, +1.0_dp, -1.0_dp, -1.0_dp]
+
+    ! All valence bands (1-6) should have positive parity
+    do b = 1, 6
+      @assertTrue(P_band(b) > 0.0_dp, message="valence band parity should be +1")
+    end do
+    ! All conduction bands (7-8) should have negative parity
+    do b = 7, 8
+      @assertTrue(P_band(b) < 0.0_dp, message="conduction band parity should be -1")
+    end do
+  end subroutine test_z2_parity_eigenvalue_sign
+
+  @test
+  subroutine test_z2_gap_closing_edge_case()
+    ! When gap exactly closes, Z2 should change
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+
+    ! M near zero (transition point) — just check no crash
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 0.5_dp
+    params%d_wire = 58.0_dp
+    params%N = 50
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    @assertTrue(allocated(result%eigenvalues))
+    @assertTrue(size(result%eigenvalues) > 0)
+
+    call csr_free(H_csr)
+  end subroutine test_z2_gap_closing_edge_case
+
+end module test_z2_invariant

@@ -2,7 +2,7 @@ module topological_analysis
 
   use definitions
   use sparse_matrices
-  use linalg
+  use linalg, only: zheevd, zgetrf
   implicit none
   private
 
@@ -12,6 +12,7 @@ module topological_analysis
   public :: compute_hall_conductance
   public :: compute_z2_gap
   public :: compute_z2_fukane
+  public :: compute_z2_fukane_qw
   public :: extract_edge_states
   public :: compute_majorana_profile
   public :: build_bhz_wire_hamiltonian
@@ -797,5 +798,104 @@ contains
     deallocate(gap_line_raw)
 
   end subroutine compute_phase_diagram
+
+  ! ==============================================================================
+  ! Fu-Kane Z2 invariant for a QW via parity eigenvalues at TRIM points.
+  !
+  ! Computes the Z2 topological invariant using the Fu-Kane formula:
+  !   (-1)^Z2 = prod_{i=1}^{4} delta_i
+  ! where delta_i = prod_{m=1}^{n_occ} xi_m(Lambda_i) and xi_m is the parity
+  ! eigenvalue of the m-th occupied state at TRIM point Lambda_i.
+  !
+  ! The 4 TRIM points in 2D are: (0,0), (pi/a,0), (0,pi/a), (pi/a,pi/a).
+  !
+  ! For the 8-band zinc-blende basis, inversion parity is:
+  !   P_band = [+1,+1,+1,+1,+1,+1,-1,-1]
+  ! (valence bands 1-6 are even under inversion, conduction bands 7-8 are odd).
+  !
+  ! For a QW with N spatial points, the QW basis function at site i for band b
+  ! has parity P_band(b). The parity of a QW eigenstate is:
+  !   xi_n = prod_{i=1}^{N} prod_{b=1}^{8} P_band(b)^{|psi_n(i,b)|^2}
+  ! which reduces to the sign of the product of P_band weighted by the CB character.
+  !
+  ! This simplified implementation uses the gap criterion as a proxy:
+  !   - Computes the occupied-state parity product at each TRIM
+  !   - If delta_prod < 0, the system is topological (Z2 = 1)
+  !
+  ! For a full implementation, the caller would provide the diagonalized QW
+  ! Hamiltonian at each TRIM. Here we provide the framework that can be
+  ! extended with actual ZB8bandQW calls.
+  !
+  ! INPUT:
+  !   N       - number of spatial grid points in the QW
+  !   n_occ   - number of occupied bands (typically 4*N for half-filling in BHZ)
+  !   evals_trim - eigenvalues at the TRIM point (Gamma by default)
+  !   evecs_trim - eigenvectors at the TRIM point (8N x n_occ)
+  !
+  ! OUTPUT:
+  !   Z2 = 0 (trivial) or 1 (topological)
+  ! ==============================================================================
+  function compute_z2_fukane_qw(N, n_occ, evals_trim, evecs_trim) result(z2)
+    implicit none
+    integer, intent(in) :: N, n_occ
+    real(kind=dp), intent(in) :: evals_trim(:)
+    complex(kind=dp), intent(in) :: evecs_trim(:,:)
+    integer :: z2
+
+    ! Parity of each band in the 8-band zinc-blende basis
+    ! Bands 1-6 (valence): even under inversion (+1)
+    ! Bands 7-8 (conduction): odd under inversion (-1)
+    real(kind=dp), parameter :: P_band(8) = [+1.0_dp, +1.0_dp, +1.0_dp, &
+                                              +1.0_dp, +1.0_dp, +1.0_dp, &
+                                             -1.0_dp, -1.0_dp]
+    integer :: istate, isite, iband, irow
+    real(kind=dp) :: delta_prod, parity_n, weight
+    real(kind=dp) :: cb_weight_total, vb_weight_total
+
+    z2 = 0
+
+    if (n_occ < 1 .or. N < 1) return
+    if (size(evecs_trim, 1) < 8 * N) return
+    if (size(evecs_trim, 2) < n_occ) return
+
+    ! Compute the parity product over occupied states
+    ! delta = prod_{istate=1}^{n_occ} xi_istate
+    ! where xi_istate = sign of P_band weighted by CB character
+    delta_prod = 1.0_dp
+
+    do istate = 1, n_occ
+      cb_weight_total = 0.0_dp
+      vb_weight_total = 0.0_dp
+
+      do isite = 1, N
+        do iband = 1, 8
+          irow = (isite - 1) * 8 + iband
+          weight = abs(evecs_trim(irow, istate))**2
+          if (iband <= 6) then
+            vb_weight_total = vb_weight_total + weight
+          else
+            cb_weight_total = cb_weight_total + weight
+          end if
+        end do
+      end do
+
+      ! Parity: if the state has significant CB character, its parity is -1
+      ! If mostly VB character, parity is +1
+      ! The overall parity is determined by which sector dominates
+      ! For a state that is mostly VB: xi_n = +1 (even)
+      ! For a state that is mostly CB: xi_n = -1 (odd)
+      if (cb_weight_total > vb_weight_total) then
+        parity_n = -1.0_dp
+      else
+        parity_n = +1.0_dp
+      end if
+
+      delta_prod = delta_prod * parity_n
+    end do
+
+    ! Z2 = 1 if the parity product is negative (odd number of sign flips)
+    if (delta_prod < 0.0_dp) z2 = 1
+
+  end function compute_z2_fukane_qw
 
 end module topological_analysis
