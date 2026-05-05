@@ -314,6 +314,26 @@ module definitions
     real(kind=dp)    :: ldos_eta = 0.001_dp  ! Lorentzian broadening
     real(kind=dp)    :: ldos_E_range(2) = [-0.1_dp, 0.1_dp]
     integer          :: ldos_num_E = 200
+    ! Gap sweep / phase diagram
+    logical          :: compute_gap_sweep = .false.
+    real(kind=dp)    :: gap_sweep_B_min = 0.0_dp
+    real(kind=dp)    :: gap_sweep_B_max = 1.0_dp
+    integer          :: gap_sweep_nB = 20
+    real(kind=dp)    :: gap_sweep_mu_min = 0.0_dp
+    real(kind=dp)    :: gap_sweep_mu_max = 0.01_dp
+    integer          :: gap_sweep_nMu = 20
+    ! Conductance
+    logical          :: compute_conductance = .false.
+    character(len=20) :: conductance_method = 'kubo'  ! kubo | landauer
+    ! Spectral function
+    logical          :: compute_spectral = .false.
+    real(kind=dp)    :: spectral_k_min = -0.1_dp
+    real(kind=dp)    :: spectral_k_max = 0.1_dp
+    integer          :: spectral_nk = 100
+    real(kind=dp)    :: spectral_E_min = -0.05_dp
+    real(kind=dp)    :: spectral_E_max = 0.05_dp
+    integer          :: spectral_nE = 200
+    real(kind=dp)    :: spectral_eta = 0.001_dp
   end type
 
   ! ------------------------------------------------------------------
@@ -329,6 +349,11 @@ module definitions
     real(kind=dp), allocatable :: edge_energies(:)
     real(kind=dp), allocatable :: phase_boundary(:,:)  ! (B, mu) pairs
     real(kind=dp), allocatable :: berry_curvature(:,:) ! Omega(kx, ky) if computed
+    real(kind=dp)              :: conductance_xy = 0.0_dp  ! Hall conductance (e^2/h)
+    real(kind=dp)              :: conductance_zz = 0.0_dp  ! longitudinal (2e^2/h)
+    real(kind=dp), allocatable :: spectral_function(:,:)   ! A(k, E) heatmap
+    real(kind=dp), allocatable :: z2_map(:,:)              ! Z2 phase diagram (nMu x nB)
+    real(kind=dp), allocatable :: gap_map(:,:)             ! gap phase diagram (nMu x nB)
   contains
     final :: topological_result_finalize
   end type
@@ -475,6 +500,9 @@ module definitions
     if (allocated(res%edge_energies))    deallocate(res%edge_energies)
     if (allocated(res%phase_boundary))   deallocate(res%phase_boundary)
     if (allocated(res%berry_curvature))  deallocate(res%berry_curvature)
+    if (allocated(res%spectral_function)) deallocate(res%spectral_function)
+    if (allocated(res%z2_map)) deallocate(res%z2_map)
+    if (allocated(res%gap_map)) deallocate(res%gap_map)
   end subroutine topological_result_finalize
 
   ! ==================================================================
