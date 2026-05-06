@@ -985,6 +985,19 @@ contains
             if (status /= 0) then; status = 0; exit topology_block; end if
             print *, trim(label), cfg%topo%gap_sweep_mu_min, &
               cfg%topo%gap_sweep_mu_max, cfg%topo%gap_sweep_nMu
+
+            read(data_unit, '(A)', iostat=status) line
+            if (status == 0) then
+              if (index(to_lower_ascii(adjustl(line)), 'sweep_model') > 0) then
+                read(line, *, iostat=status) label, cfg%topo%sweep_model
+                if (status /= 0) then; status = 0; exit topology_block; end if
+                print *, trim(label), trim(cfg%topo%sweep_model)
+              else
+                backspace(data_unit)
+              end if
+            else
+              status = 0
+            end if
           end if
         else
           backspace(data_unit)
@@ -1002,14 +1015,38 @@ contains
             if (status /= 0) then; status = 0; exit topology_block; end if
             colon_pos = index(line, ':')
             if (colon_pos > 0) then
-              read(line(colon_pos+1:), '(A)', iostat=status) cfg%topo%conductance_method
-              label = adjustl(line(:colon_pos-1)) // ':'
-              if (status /= 0) then; status = 0; exit topology_block; end if
+              label_part = adjustl(line(:colon_pos-1))
+              if (trim(to_lower_ascii(label_part)) == 'conductance_method') then
+                read(line(colon_pos+1:), '(A)', iostat=status) cfg%topo%conductance_method
+                label = trim(label_part) // ':'
+                if (status /= 0) then; status = 0; exit topology_block; end if
+                print *, trim(label), trim(cfg%topo%conductance_method)
+              else
+                backspace(data_unit)
+              end if
             else
-              status = 0
-              exit topology_block
+              backspace(data_unit)
             end if
-            print *, trim(label), trim(cfg%topo%conductance_method)
+
+            read(data_unit, '(A)', iostat=status) line
+            if (status /= 0) then; status = 0; exit topology_block; end if
+            if (index(to_lower_ascii(adjustl(line)), 'berry_nk') > 0) then
+              read(line, *, iostat=status) label, cfg%topo%berry_nk
+              if (status /= 0) then; status = 0; exit topology_block; end if
+              print *, trim(label), cfg%topo%berry_nk
+            else
+              backspace(data_unit)
+            end if
+
+            read(data_unit, '(A)', iostat=status) line
+            if (status /= 0) then; status = 0; exit topology_block; end if
+            if (index(to_lower_ascii(adjustl(line)), 'landauer_energy') > 0) then
+              read(line, *, iostat=status) label, cfg%topo%landauer_energy
+              if (status /= 0) then; status = 0; exit topology_block; end if
+              print *, trim(label), cfg%topo%landauer_energy
+            else
+              backspace(data_unit)
+            end if
           end if
         else
           backspace(data_unit)
