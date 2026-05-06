@@ -83,4 +83,50 @@ contains
     close(unit=99, status='delete')
   end subroutine
 
+  @test
+  subroutine test_parse_topology_sweep_model()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    open(unit=99, file='input.cfg', status='replace', action='write')
+    write(99, '(A)') 'waveVector k0'
+    write(99, '(A)') 'waveVectorMax 0.0'
+    write(99, '(A)') 'waveVectorStep 1'
+    write(99, '(A)') 'confinement 0'
+    write(99, '(A)') 'FDstep 1'
+    write(99, '(A)') 'FDorder 2'
+    write(99, '(A)') 'numLayers 1'
+    write(99, '(A)') 'material1 InAs'
+    write(99, '(A)') 'numcb 1'
+    write(99, '(A)') 'numvb 2'
+    write(99, '(A)') 'SC 0'
+    write(99, '(A)') 'topology: T'
+    write(99, '(A)') 'topology_mode sweep'
+    write(99, '(A)') 'topology_compute_chern F'
+    write(99, '(A)') 'topology_compute_hall F'
+    write(99, '(A)') 'topology_qwz_u 0.0'
+    write(99, '(A)') 'topology_compute_z2 F'
+    write(99, '(A)') 'topology_extract_edge_states F'
+    write(99, '(A)') 'topology_edge_E_window 0.01'
+    write(99, '(A)') 'topology_compute_ldos F'
+    write(99, '(A)') 'topology_ldos_eta 0.001'
+    write(99, '(A)') 'topology_ldos_E_range: -0.1'
+    write(99, '(A)') 'topology_ldos_E_range: 0.1'
+    write(99, '(A)') 'topology_ldos_num_E 10'
+    write(99, '(A)') 'compute_gap_sweep T'
+    write(99, '(A)') 'gap_sweep_B -0.01 0.01 3'
+    write(99, '(A)') 'gap_sweep_mu 0.0 0.001 2'
+    write(99, '(A)') 'sweep_model qw_fukane'
+    close(99)
+
+    call read_and_setup(cfg, profile, kpterms)
+
+    @assertTrue(cfg%topo%compute_gap_sweep)
+    @assertEqual('qw_fukane', trim(cfg%topo%sweep_model))
+    @assertEqual(3, cfg%topo%gap_sweep_nB)
+    @assertEqual(2, cfg%topo%gap_sweep_nMu)
+
+    close(unit=99, status='delete')
+  end subroutine
+
 end module

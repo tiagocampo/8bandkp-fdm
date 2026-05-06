@@ -143,40 +143,41 @@ contains
   end subroutine test_z2_gap_sweep_shape
 
   @test
-  subroutine test_z2_gap_sweep_wire_topological()
+  subroutine test_transition_detection_scans_b_and_mu()
     integer, allocatable :: z2_map(:,:)
     real(kind=dp), allocatable :: gap_map(:,:), transitions(:,:)
-    type(simulation_config) :: cfg
 
-    cfg%confinement = 2  ! Wire mode: BHZ heuristic, z2=1 for B>0
+    allocate(z2_map(2, 3), gap_map(2, 3))
+    z2_map = reshape([0, 0, 1, 1, 1, 0], [2, 3])
+    gap_map = 0.01_dp
 
-    call compute_z2_gap_sweep(cfg, &
-      B_min=0.0_dp, B_max=1.0_dp, nB=5, &
-      mu_min=0.0_dp, mu_max=0.01_dp, nMu=3, &
-      gap_threshold=0.01_dp, &
-      z2_map=z2_map, gap_map=gap_map, transitions=transitions)
+    call detect_z2_transitions(z2_map, gap_map, 0.0_dp, 1.0_dp, 0.0_dp, 1.0_dp, &
+      0.001_dp, transitions)
 
-    ! At B=0, z2=0 (trivial). For B>0, z2=1 (topological via BHZ heuristic).
-    @assertEqual(0, z2_map(1, 1), message="Wire B=0 => trivial")
-    @assertEqual(1, z2_map(1, 5), message="Wire B>0 => topological")
-  end subroutine test_z2_gap_sweep_wire_topological
+    @assertTrue(size(transitions, 1) >= 2, message="transitions must be found along B and mu directions")
+
+    deallocate(z2_map, gap_map, transitions)
+  end subroutine test_transition_detection_scans_b_and_mu
 
   @test
-  subroutine test_z2_gap_sweep_transitions_detected()
+  subroutine test_bhz_analytic_gap_sweep_has_nonzero_gaps()
     integer, allocatable :: z2_map(:,:)
     real(kind=dp), allocatable :: gap_map(:,:), transitions(:,:)
     type(simulation_config) :: cfg
 
-    cfg%confinement = 2  ! Wire mode: transition at B=0 boundary
+    cfg%topo%sweep_model = 'bhz_analytic'
+    cfg%topo%bhz_M = 0.0_dp
 
     call compute_z2_gap_sweep(cfg, &
-      B_min=-1.0_dp, B_max=1.0_dp, nB=11, &
-      mu_min=0.0_dp, mu_max=0.01_dp, nMu=3, &
-      gap_threshold=0.01_dp, &
+      B_min=-0.01_dp, B_max=0.01_dp, nB=3, &
+      mu_min=0.0_dp, mu_max=0.0_dp, nMu=1, &
+      gap_threshold=1.0e-6_dp, &
       z2_map=z2_map, gap_map=gap_map, transitions=transitions)
 
-    ! Should detect transition(s) where Z2 flips
-    @assertTrue(size(transitions, 1) >= 1, message="Should detect at least one transition")
-  end subroutine test_z2_gap_sweep_transitions_detected
+    @assertTrue(any(gap_map > 0.0_dp), message="gap sweep must compute non-placeholder gaps")
+    @assertTrue(any(z2_map == 0) .and. any(z2_map == 1), message="BHZ sweep must cross phases")
+
+    deallocate(z2_map, gap_map, transitions)
+  end subroutine test_bhz_analytic_gap_sweep_has_nonzero_gaps
 
 end module test_phase_diagram

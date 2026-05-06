@@ -580,6 +580,68 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# QW Fu-Kane parity Z2 regression
+add_test(
+    NAME regression_topology_qw_fukane_z2
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_fukane_z2.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_qw_fukane.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_qw_fukane_z2
+    PROPERTIES LABELS "regression"
+)
+
+# QWZ conductance regression
+add_test(
+    NAME regression_topology_conductance_qwz
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_conductance_qwz.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_conductance_qwz.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_conductance_qwz
+    PROPERTIES LABELS "regression"
+)
+
+# Topological spectral mode regressions
+add_test(
+    NAME regression_topology_spectral_bulk
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_spectral.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_spectral_bulk.cfg
+        1
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_topology_spectral_qw
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_spectral.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_spectral_qw.cfg
+        1
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_topology_spectral_wire
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_spectral.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_spectral_wire.cfg
+        1
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_spectral_bulk regression_topology_spectral_qw
+    regression_topology_spectral_wire
+    PROPERTIES LABELS "regression"
+)
+
 # Rashba wire phase boundary regression (mu=0.5 meV, Delta=0.3 meV)
 add_test(
     NAME regression_topology_rashba_phase

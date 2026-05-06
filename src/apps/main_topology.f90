@@ -5,7 +5,7 @@ program topologicalAnalysis
   use hamiltonianConstructor
   use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free, &
     & wire_workspace, wire_workspace_free, ZB8bandGeneralized
-  use confinement_init, only: confinementInitialization, confinementInitialization_2d
+  use confinement_init, only: confinementInitialization_2d
   use finitedifferences
   use outputFunctions
   use input_parser
@@ -17,8 +17,10 @@ program topologicalAnalysis
 #ifdef USE_ARPACK
   use green_functions, only: compute_ldos_csr
 #endif
-  use green_functions, only: compute_spectral_function_qw
-  use linalg, only: mkl_set_num_threads_local
+  use green_functions, only: compute_spectral_function_bulk, compute_spectral_function_qw, &
+    & compute_spectral_function_wire, compute_landauer_transmission_1d, &
+    & compute_conductance_landauer_from_transmission
+  use linalg, only: mkl_set_num_threads_local, zheev
 
   implicit none
 
@@ -129,15 +131,32 @@ program topologicalAnalysis
     ! Quantum Spin Hall Effect: compute Z2 invariant via Fu-Kane
     ! ==================================================================
       if (cfg%topo%compute_z2) then
-        print *, '  DEBUG: about to call run_qshe_wire, compute_z2=', cfg%topo%compute_z2
         if (cfg%confinement == 2) then
           ! --- Wire mode: compute Z2 from 1D edge states ---
           call run_qshe_wire(cfg, topo_result)
+        else if (cfg%confinement == 1) then
+          ! --- QW mode: Fu-Kane parity invariant at the four 2D TRIM points ---
+          block
+            integer :: z2_status, n_occ
+            integer, parameter :: NUM_VB_STATES = 6
+
+            print *, '--- Computing Z2 invariant (QW Fu-Kane parity) ---'
+            n_occ = NUM_VB_STATES * size(profile, 1)
+            call compute_z2_fukane_qw_result(cfg, profile, kpterms, n_occ, &
+              & topo_result%z2_invariant, topo_result%min_gap, z2_status)
+            if (z2_status /= 0) then
+              print *, 'Error: QW Fu-Kane Z2 calculation failed with status ', z2_status
+              print *, '  status 1: invalid inputs or missing lattice constant'
+              print *, '  status 2: QW profile is not inversion symmetric'
+              print *, '  status 3: LAPACK zheev failed'
+              stop 1
+            end if
+            print *, '  Z2 invariant: ', topo_result%z2_invariant
+            print *, '  Minimum direct gap: ', topo_result%min_gap, ' eV'
+          end block
         else
-          ! --- Bulk/QW: Z2 from band structure (placeholder) ---
-          print *, '--- Computing Z2 invariant (QSHE) ---'
-          print *, '  Note: Full Z2 computation for bulk/QW requires band structure sweep'
-          print *, '  Z2 = 0 (placeholder — implement with band inversion analysis)'
+          print *, 'Error: QSHE Z2 mode requires confinement=1 (QW) or confinement=2 (wire)'
+          stop 1
         end if
       end if
 
@@ -158,8 +177,10 @@ program topologicalAnalysis
 
       if (cfg%confinement == 2) then
         call run_bdg_wire(cfg, topo_result)
+      else if (cfg%confinement == 1) then
+        call run_bdg_qw(cfg, profile, kpterms, topo_result)
       else
-        print *, 'Error: BdG mode currently requires confinement=2 (wire mode)'
+        print *, 'Error: BdG mode requires confinement=1 (QW) or confinement=2 (wire)'
         stop 1
       end if
 
@@ -169,7 +190,12 @@ program topologicalAnalysis
     case('spectral')
     ! Spectral function A(k, E) for QW systems
     ! ==================================================================
-      call run_spectral(cfg, profile, kpterms, topo_result)
+      select case (cfg%confinement)
+      case (1)
+        call run_spectral(cfg, topo_result, profile, kpterms)
+      case default
+        call run_spectral(cfg, topo_result)
+      end select
       print *, '=== Spectral function analysis complete ==='
 
     ! ==================================================================
@@ -183,7 +209,11 @@ program topologicalAnalysis
     case('sweep')
     ! Z2 phase diagram via gap sweep over (B, mu) parameter space
     ! ==================================================================
-      call run_gap_sweep(cfg, topo_result)
+      if (cfg%confinement == 1) then
+        call run_gap_sweep(cfg, topo_result, profile, kpterms)
+      else
+        call run_gap_sweep(cfg, topo_result)
+      end if
       print *, '=== Gap sweep analysis complete ==='
 
     case default
@@ -209,6 +239,8 @@ program topologicalAnalysis
   write(iounit, '(A,I0)') '# Chern number: ', topo_result%chern_number
   write(iounit, '(A,I0)') '# Z2 invariant: ', topo_result%z2_invariant
   write(iounit, '(A,F12.6)') '# Hall conductance (e^2/h): ', topo_result%hall_conductance
+  write(iounit, '(A,F12.6)') '# Conductance xy (e^2/h): ', topo_result%conductance_xy
+  write(iounit, '(A,F12.6)') '# Conductance zz: ', topo_result%conductance_zz
   write(iounit, '(A,F12.6)') '# Min gap (eV): ', topo_result%min_gap
   write(iounit, '(A,F12.6)') '# Edge localization length min (AA): ', topo_result%edge_xi_min
   write(iounit, '(A,F12.6)') '# Edge localization length avg (AA): ', topo_result%edge_xi
@@ -513,7 +545,8 @@ contains
       block
         integer :: n_zero
         real(kind=dp), allocatable :: majorana_xi(:)
-        integer :: n_majorana
+        integer :: n_majorana, n_fit_ok, n_fit_failed
+        real(kind=dp) :: xi_val
 
         n_zero = 0
         do i = 1, eigen_res_local%nev_found
@@ -531,18 +564,32 @@ contains
           ! Compute Majorana localization length for zero-energy states
           allocate(majorana_xi(n_zero))
           n_majorana = 0
+          n_fit_ok = 0
+          n_fit_failed = 0
           do i = 1, eigen_res_local%nev_found
             if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
               n_majorana = n_majorana + 1
-              majorana_xi(n_majorana) = compute_majorana_profile( &
+              xi_val = compute_majorana_profile( &
                 & eigen_res_local%eigenvectors(:, i), cfg%grid, &
                 & cfg%bdg%delta_0 * 0.01_dp, Ntot_local)
+              if (xi_val > 0.0_dp) then
+                n_fit_ok = n_fit_ok + 1
+                majorana_xi(n_fit_ok) = xi_val
+              else
+                n_fit_failed = n_fit_failed + 1
+              end if
             end if
           end do
 
-          if (n_majorana > 0) then
-            result%edge_xi = sum(majorana_xi(1:n_majorana)) / real(n_majorana, kind=dp)
+          if (n_fit_ok > 0) then
+            result%edge_xi = sum(majorana_xi(1:n_fit_ok)) / real(n_fit_ok, kind=dp)
             print *, '  Average Majorana localization length: ', result%edge_xi, ' AA'
+          else
+            result%edge_xi = 0.0_dp
+            print *, '  Average Majorana localization length: unavailable'
+          end if
+          if (n_fit_failed > 0) then
+            print *, '  Majorana localization fits failed: ', n_fit_failed
           end if
 
           allocate(result%edge_energies(n_zero))
@@ -580,13 +627,137 @@ contains
   end subroutine run_bdg_wire
 
   ! ==================================================================
-  ! Spectral function A(k, E) for QW system
+  ! BdG QW mode: compute Majorana summary from dense 16N x 16N BdG matrix
   ! ==================================================================
-  subroutine run_spectral(cfg_in, profile_in, kpterms_in, result)
+  subroutine run_bdg_qw(cfg_in, profile_in, kpterms_in, result)
     type(simulation_config), intent(in) :: cfg_in
     real(kind=dp), contiguous, intent(in) :: profile_in(:,:)
     real(kind=dp), contiguous, intent(in) :: kpterms_in(:,:,:)
     type(topological_result), intent(inout) :: result
+
+    complex(kind=dp), allocatable :: H_bdg(:,:), work_local(:)
+    real(kind=dp), allocatable :: eigvals_bdg(:), rwork_local(:), profile_majorana(:)
+    type(spatial_grid) :: qw_grid
+    integer :: N_local, Ntot_local, Nbdg_local, lwork_local, info_local
+    integer :: i, j, n_zero, n_fit_ok, n_fit_failed
+    real(kind=dp) :: zero_tol, xi_val, dz_local
+    real(kind=dp), allocatable :: majorana_xi(:)
+
+    print *, '--- BdG QW mode: dense Majorana modes ---'
+
+    N_local = cfg_in%fdStep
+    Ntot_local = 8 * N_local
+    Nbdg_local = 16 * N_local
+    zero_tol = max(1.0e-10_dp, 0.001_dp * abs(cfg_in%bdg%delta_0))
+
+    print *, '  Grid: N=', N_local
+    print *, '  8N x 8N = ', Ntot_local, 'x', Ntot_local, ' (electron)'
+    print *, '  16N x 16N BdG matrix'
+    print *, '  mu=', cfg_in%bdg%mu, ' eV'
+    print *, '  delta_0=', cfg_in%bdg%delta_0, ' eV'
+    print *, '  B_vec=', cfg_in%bdg%B_vec
+
+    call build_bdg_hamiltonian_qw(H_bdg, cfg_in, profile_in, kpterms_in, &
+      & 0.0_dp, cfg_in%bdg%mu, cfg_in%bdg%delta_0, &
+      & cfg_in%bdg%B_vec, cfg_in%bdg%g_factor)
+
+    allocate(eigvals_bdg(Nbdg_local), rwork_local(max(1, 3 * Nbdg_local - 2)), work_local(1))
+    call zheev('V', 'U', Nbdg_local, H_bdg, Nbdg_local, eigvals_bdg, &
+      & work_local, -1, rwork_local, info_local)
+    lwork_local = max(1, nint(real(work_local(1), kind=dp)))
+    deallocate(work_local)
+    allocate(work_local(lwork_local))
+    call zheev('V', 'U', Nbdg_local, H_bdg, Nbdg_local, eigvals_bdg, &
+      & work_local, lwork_local, rwork_local, info_local)
+    if (info_local /= 0) then
+      print *, 'Error: QW BdG zheev failed with info=', info_local
+      stop 1
+    end if
+
+    result%min_gap = 2.0_dp * minval(abs(eigvals_bdg))
+
+    n_zero = 0
+    do i = 1, Nbdg_local
+      if (abs(eigvals_bdg(i)) < zero_tol) n_zero = n_zero + 1
+    end do
+
+    print *, '  Eigenvalues found: ', Nbdg_local
+    print *, '  Near-zero modes (|E| < tol): ', n_zero
+
+    qw_grid = cfg_in%grid
+    qw_grid%ndim = 1
+    qw_grid%nx = 1
+    qw_grid%ny = N_local
+    if (.not. allocated(qw_grid%z)) then
+      allocate(qw_grid%z(N_local))
+      if (cfg_in%dz > 0.0_dp) then
+        dz_local = cfg_in%dz
+      else if (cfg_in%delta > 0.0_dp) then
+        dz_local = cfg_in%delta
+      else
+        dz_local = 1.0_dp
+      end if
+      do i = 1, N_local
+        qw_grid%z(i) = real(i - 1, kind=dp) * dz_local
+      end do
+    end if
+
+    if (n_zero > 0) then
+      print *, '  Majorana modes detected!'
+      allocate(majorana_xi(n_zero), profile_majorana(N_local))
+      n_fit_ok = 0
+      n_fit_failed = 0
+      do i = 1, Nbdg_local
+        if (abs(eigvals_bdg(i)) < zero_tol) then
+          xi_val = compute_majorana_profile(H_bdg(:, i), qw_grid, &
+            & zero_tol, Ntot_local, profile_majorana)
+          if (xi_val > 0.0_dp) then
+            n_fit_ok = n_fit_ok + 1
+            majorana_xi(n_fit_ok) = xi_val
+          else
+            n_fit_failed = n_fit_failed + 1
+          end if
+        end if
+      end do
+
+      if (n_fit_ok > 0) then
+        result%edge_xi = sum(majorana_xi(1:n_fit_ok)) / real(n_fit_ok, kind=dp)
+        result%edge_xi_min = minval(majorana_xi(1:n_fit_ok))
+        print *, '  Average Majorana localization length: ', result%edge_xi, ' AA'
+        print *, '  Minimum Majorana localization length: ', result%edge_xi_min, ' AA'
+      else
+        result%edge_xi = 0.0_dp
+        result%edge_xi_min = 0.0_dp
+        print *, '  Majorana localization length: unavailable'
+      end if
+      if (n_fit_failed > 0) print *, '  Majorana localization fits failed: ', n_fit_failed
+
+      allocate(result%edge_energies(n_zero))
+      j = 0
+      do i = 1, Nbdg_local
+        if (abs(eigvals_bdg(i)) < zero_tol) then
+          j = j + 1
+          result%edge_energies(j) = eigvals_bdg(i)
+        end if
+      end do
+      deallocate(majorana_xi, profile_majorana)
+    end if
+
+    print *, '  Zero-energy BdG gap: ', result%min_gap, ' eV'
+
+    if (allocated(qw_grid%z)) deallocate(qw_grid%z)
+    deallocate(H_bdg, eigvals_bdg, rwork_local, work_local)
+
+  end subroutine run_bdg_qw
+
+  ! ==================================================================
+  ! Spectral function A(k, E)
+  ! ==================================================================
+  subroutine run_spectral(cfg_in, result, profile_in, kpterms_in)
+    type(simulation_config), intent(in) :: cfg_in
+    type(topological_result), intent(inout) :: result
+    real(kind=dp), contiguous, optional, intent(in) :: profile_in(:,:)
+    real(kind=dp), contiguous, optional, intent(in) :: kpterms_in(:,:,:)
 
     real(kind=dp), allocatable :: k_arr(:), E_arr(:)
     real(kind=dp), allocatable :: A_kE(:,:)
@@ -595,14 +766,22 @@ contains
 
     print *, '--- Spectral function A(k, E) ---'
 
-    if (cfg_in%confinement /= 1) then
-      print *, 'Error: spectral mode requires confinement=1 (QW)'
+    if (cfg_in%topo%spectral_eta <= 0.0_dp) then
+      print *, 'Error: spectral mode requires spectral_eta > 0'
       stop 1
     end if
 
     ! Build k and E grids from config
     nk = cfg_in%topo%spectral_nk
     nE = cfg_in%topo%spectral_nE
+    if (nk < 1) then
+      print *, 'Error: spectral mode requires spectral_nk >= 1'
+      stop 1
+    end if
+    if (nE < 1) then
+      print *, 'Error: spectral mode requires spectral_nE >= 1'
+      stop 1
+    end if
     allocate(k_arr(nk), E_arr(nE))
 
     if (nk > 1) then
@@ -627,9 +806,28 @@ contains
     print *, '  k range: [', k_arr(1), ',', k_arr(nk), '] 1/A'
     print *, '  E range: [', E_arr(1), ',', E_arr(nE), '] eV'
 
-    ! Compute spectral function
-    call compute_spectral_function_qw(cfg_in, profile_in, kpterms_in, &
-      & k_arr, E_arr, cfg_in%topo%spectral_eta, A_kE)
+    select case (cfg_in%confinement)
+    case (0)
+      call compute_spectral_function_bulk(cfg_in, k_arr, E_arr, &
+        & cfg_in%topo%spectral_eta, A_kE)
+    case (1)
+      if (.not. present(profile_in) .or. .not. present(kpterms_in)) then
+        print *, 'Error: QW spectral mode requires allocated profile and kpterms'
+        stop 1
+      end if
+      call compute_spectral_function_qw(cfg_in, profile_in, kpterms_in, &
+        & k_arr, E_arr, cfg_in%topo%spectral_eta, A_kE)
+    case (2)
+      call compute_spectral_function_wire(cfg_in, k_arr, E_arr, &
+        & cfg_in%topo%spectral_eta, A_kE)
+    case default
+      print *, 'Error: unsupported confinement for spectral mode: ', cfg_in%confinement
+      stop 1
+    end select
+    if (.not. allocated(A_kE) .or. size(A_kE, 1) == 0 .or. size(A_kE, 2) == 0) then
+      print *, 'Error: spectral function calculation failed'
+      stop 1
+    end if
 
     ! Store in result
     if (allocated(result%spectral_function)) deallocate(result%spectral_function)
@@ -646,8 +844,12 @@ contains
       stop 1
     end if
     write(iounit_loc, '(A)') '# Spectral function A(k, E)'
+    write(iounit_loc, '(A,I0)') '# confinement=', cfg_in%confinement
     write(iounit_loc, '(A,I0,A,I0)') '# nk=', nk, '  nE=', nE
     write(iounit_loc, '(A,ES12.4)') '# eta (eV) = ', cfg_in%topo%spectral_eta
+    write(iounit_loc, '(A,2ES16.8)') '# k_grid_min_max (1/A) = ', k_arr(1), k_arr(nk)
+    write(iounit_loc, '(A,2ES16.8)') '# E_grid_min_max (eV) = ', E_arr(1), E_arr(nE)
+    write(iounit_loc, '(A)') '# units: k in 1/A, E in eV, A in 1/eV'
     write(iounit_loc, '(A)') '# Columns: k (1/A), E (eV), A(k,E)'
     do ik = 1, nk
       do iE = 1, nE
@@ -667,33 +869,88 @@ contains
     type(simulation_config), intent(in) :: cfg_in
     type(topological_result), intent(inout) :: result
 
-    real(kind=dp) :: sigma_xy
+    real(kind=dp) :: sigma_xy, T
 
     print *, '--- Conductance analysis ---'
 
-    if (trim(cfg_in%topo%conductance_method) == 'kubo') then
-      ! Use Kubo formula from precomputed Chern number
-      sigma_xy = compute_conductance_kubo_chern(result%chern_number)
+    select case(trim(adjustl(cfg_in%topo%conductance_method)))
+    case('kubo_chern', 'kubo')
+      result%chern_number = compute_chern_qwz(cfg_in%topo%qwz_u, cfg_in%topo%berry_nk)
+      sigma_xy = compute_hall_conductance_from_chern(result%chern_number)
       result%conductance_xy = sigma_xy
+      result%hall_conductance = sigma_xy
       print *, '  Method: Kubo (from Chern number)'
       print *, '  Chern number C = ', result%chern_number
       print *, '  Hall conductance sigma_xy = ', sigma_xy, ' e^2/h'
-    else
-      print *, '  Warning: conductance method "', trim(cfg_in%topo%conductance_method), &
-        & '" not implemented, using kubo'
-      sigma_xy = compute_conductance_kubo_chern(result%chern_number)
+    case('kubo_berry')
+      block
+        complex(kind=dp), allocatable :: evecs(:,:,:,:)
+        real(kind=dp), allocatable :: Omega(:,:), kx_arr(:), ky_arr(:)
+        real(kind=dp) :: dk, kx_val, ky_val, mz_val, E_plus, nrm
+        complex(kind=dp) :: off_diag, ev_tmp(2)
+        integer :: nk, i, j
+
+        nk = max(2, cfg_in%topo%berry_nk)
+        dk = 2.0_dp * pi_dp / real(nk, kind=dp)
+        allocate(evecs(2, 1, nk, nk), kx_arr(nk), ky_arr(nk))
+
+        do i = 1, nk
+          kx_arr(i) = -pi_dp + real(i - 1, kind=dp) * dk
+          ky_arr(i) = -pi_dp + real(i - 1, kind=dp) * dk
+        end do
+
+        do j = 1, nk
+          ky_val = ky_arr(j)
+          do i = 1, nk
+            kx_val = kx_arr(i)
+            mz_val = cfg_in%topo%qwz_u + cos(kx_val) + cos(ky_val)
+            off_diag = cmplx(sin(kx_val), -sin(ky_val), kind=dp)
+            E_plus = sqrt(mz_val**2 + sin(kx_val)**2 + sin(ky_val)**2)
+            ev_tmp(1) = off_diag
+            ev_tmp(2) = cmplx(E_plus - mz_val, 0.0_dp, kind=dp)
+            nrm = sqrt(real(conjg(ev_tmp(1))*ev_tmp(1) + conjg(ev_tmp(2))*ev_tmp(2), kind=dp))
+            if (nrm > 1.0e-30_dp) then
+              evecs(1, 1, i, j) = ev_tmp(1) / nrm
+              evecs(2, 1, i, j) = ev_tmp(2) / nrm
+            else
+              evecs(1, 1, i, j) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+              evecs(2, 1, i, j) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+            end if
+          end do
+        end do
+
+        Omega = compute_berry_curvature_lattice(evecs, kx_arr, ky_arr, 1)
+        sigma_xy = compute_conductance_kubo(Omega, kx_arr, ky_arr)
+        result%berry_curvature = Omega
+        deallocate(evecs, kx_arr, ky_arr, Omega)
+      end block
       result%conductance_xy = sigma_xy
+      result%hall_conductance = sigma_xy
+      result%chern_number = nint(sigma_xy)
+      print *, '  Method: Kubo (Berry curvature integration)'
       print *, '  Hall conductance sigma_xy = ', sigma_xy, ' e^2/h'
-    end if
+    case('landauer')
+      T = compute_landauer_transmission_1d(cfg_in%topo%landauer_energy, 0.0_dp, -1.0_dp, &
+        & cfg_in%topo%spectral_eta)
+      result%conductance_zz = compute_conductance_landauer_from_transmission(T)
+      print *, '  Method: Landauer single-channel chain'
+      print *, '  Transmission T = ', T
+      print *, '  Conductance G = ', result%conductance_zz, ' e^2/h'
+    case default
+      print *, 'Error: unsupported conductance_method: ', trim(cfg_in%topo%conductance_method)
+      stop 1
+    end select
 
   end subroutine run_conductance
 
   ! ==================================================================
   ! Z2 phase diagram via gap sweep over (B, mu)
   ! ==================================================================
-  subroutine run_gap_sweep(cfg_in, result)
+  subroutine run_gap_sweep(cfg_in, result, profile_in, kpterms_in)
     type(simulation_config), intent(in) :: cfg_in
     type(topological_result), intent(inout) :: result
+    real(kind=dp), contiguous, optional, intent(in) :: profile_in(:,:)
+    real(kind=dp), contiguous, optional, intent(in) :: kpterms_in(:,:,:)
 
     integer, allocatable :: z2_map_int(:,:)
     real(kind=dp), allocatable :: gap_map_real(:,:), transitions(:,:)
@@ -709,11 +966,31 @@ contains
     print *, '  nB=', nB, ' nMu=', nMu
     print *, '  B range: [', cfg_in%topo%gap_sweep_B_min, ',', cfg_in%topo%gap_sweep_B_max, ']'
     print *, '  mu range: [', cfg_in%topo%gap_sweep_mu_min, ',', cfg_in%topo%gap_sweep_mu_max, ']'
+    print *, '  sweep_model=', trim(cfg_in%topo%sweep_model)
 
-    call compute_z2_gap_sweep(cfg_in, &
-      & cfg_in%topo%gap_sweep_B_min, cfg_in%topo%gap_sweep_B_max, nB, &
-      & cfg_in%topo%gap_sweep_mu_min, cfg_in%topo%gap_sweep_mu_max, nMu, &
-      & gap_threshold, z2_map_int, gap_map_real, transitions)
+    select case (trim(cfg_in%topo%sweep_model))
+    case ('bhz_analytic')
+      call compute_z2_gap_sweep(cfg_in, &
+        & cfg_in%topo%gap_sweep_B_min, cfg_in%topo%gap_sweep_B_max, nB, &
+        & cfg_in%topo%gap_sweep_mu_min, cfg_in%topo%gap_sweep_mu_max, nMu, &
+        & gap_threshold, z2_map_int, gap_map_real, transitions)
+    case ('qw_fukane')
+      if (cfg_in%confinement /= 1 .or. .not. present(profile_in) .or. .not. present(kpterms_in)) then
+        print *, 'ERROR: sweep_model=qw_fukane requires confinement=1 with QW profile/kpterms'
+        stop 1
+      end if
+      call compute_qw_fukane_gap_sweep(cfg_in, profile_in, kpterms_in, gap_threshold, &
+        & z2_map_int, gap_map_real, transitions)
+    case ('wire_bdg')
+      if (cfg_in%confinement /= 2) then
+        print *, 'ERROR: sweep_model=wire_bdg requires confinement=2'
+        stop 1
+      end if
+      call compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map_int, gap_map_real, transitions)
+    case default
+      print *, 'ERROR: unknown topology sweep_model: ', trim(cfg_in%topo%sweep_model)
+      stop 1
+    end select
 
     ! Convert integer z2_map to real(dp) for storage in result
     if (allocated(result%z2_map)) deallocate(result%z2_map)
@@ -738,7 +1015,7 @@ contains
     end if
     write(iounit_loc, '(A)') '# Z2 phase diagram'
     write(iounit_loc, '(A,I0,A,I0)') '# nB=', nB, '  nMu=', nMu
-    write(iounit_loc, '(A)') '# Columns: B, mu, Z2, gap'
+    write(iounit_loc, '(A)') '# B(T) mu(eV) z2 gap(eV)'
     do iB = 1, nB
       do iMu = 1, nMu
         write(iounit_loc, '(4ES16.8)') &
@@ -751,6 +1028,19 @@ contains
     end do
     close(iounit_loc)
     print *, '  Z2 phase diagram written to output/z2_phase_diagram.dat'
+
+    call get_unit(iounit_loc)
+    open(unit=iounit_loc, file='output/z2_transitions.dat', status='replace', &
+         action='write', iostat=status_loc)
+    if (status_loc /= 0) then
+      print *, 'ERROR: cannot open output/z2_transitions.dat'
+      stop 1
+    end if
+    write(iounit_loc, '(A)') '# B(T) mu(eV)'
+    do iB = 1, size(transitions, 1)
+      write(iounit_loc, '(2ES16.8)') transitions(iB, 1), transitions(iB, 2)
+    end do
+    close(iounit_loc)
 
     if (size(transitions, 1) > 0) then
       print *, '  Phase transitions detected: ', size(transitions, 1)
@@ -767,5 +1057,148 @@ contains
 
     deallocate(z2_map_int, gap_map_real, transitions)
   end subroutine run_gap_sweep
+
+  subroutine compute_qw_fukane_gap_sweep(cfg_in, profile_in, kpterms_in, gap_threshold, &
+      & z2_map, gap_map, transitions)
+    type(simulation_config), intent(in) :: cfg_in
+    real(kind=dp), contiguous, intent(in) :: profile_in(:,:)
+    real(kind=dp), contiguous, intent(in) :: kpterms_in(:,:,:)
+    real(kind=dp), intent(in) :: gap_threshold
+    integer, allocatable, intent(out) :: z2_map(:,:)
+    real(kind=dp), allocatable, intent(out) :: gap_map(:,:), transitions(:,:)
+
+    integer :: iB, iMu, nB, nMu, z2_status, z2_val, n_occ
+    real(kind=dp) :: min_gap
+
+    nB = cfg_in%topo%gap_sweep_nB
+    nMu = cfg_in%topo%gap_sweep_nMu
+    if (nB < 1 .or. nMu < 1) then
+      allocate(z2_map(0,0), gap_map(0,0), transitions(0,2))
+      return
+    end if
+
+    n_occ = 6 * size(profile_in, 1)
+    call compute_z2_fukane_qw_result(cfg_in, profile_in, kpterms_in, n_occ, &
+      & z2_val, min_gap, z2_status)
+    if (z2_status /= 0) then
+      print *, 'ERROR: QW Fu-Kane gap sweep failed with status ', z2_status
+      stop 1
+    end if
+
+    allocate(z2_map(nMu, nB), gap_map(nMu, nB))
+    do iB = 1, nB
+      do iMu = 1, nMu
+        z2_map(iMu, iB) = z2_val
+        gap_map(iMu, iB) = min_gap
+      end do
+    end do
+
+    call detect_z2_transitions(z2_map, gap_map, cfg_in%topo%gap_sweep_B_min, &
+      & cfg_in%topo%gap_sweep_B_max, cfg_in%topo%gap_sweep_mu_min, &
+      & cfg_in%topo%gap_sweep_mu_max, gap_threshold, transitions)
+  end subroutine compute_qw_fukane_gap_sweep
+
+  subroutine compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map, gap_map, transitions)
+    type(simulation_config), intent(in) :: cfg_in
+    real(kind=dp), intent(in) :: gap_threshold
+    integer, allocatable, intent(out) :: z2_map(:,:)
+    real(kind=dp), allocatable, intent(out) :: gap_map(:,:), transitions(:,:)
+
+    integer :: iB, iMu, nB, nMu
+    real(kind=dp) :: dB, dmu, B_val, mu_val
+
+    nB = cfg_in%topo%gap_sweep_nB
+    nMu = cfg_in%topo%gap_sweep_nMu
+    if (nB < 1 .or. nMu < 1) then
+      allocate(z2_map(0,0), gap_map(0,0), transitions(0,2))
+      return
+    end if
+
+    allocate(z2_map(nMu, nB), gap_map(nMu, nB))
+    dB = 0.0_dp
+    if (nB > 1) dB = (cfg_in%topo%gap_sweep_B_max - cfg_in%topo%gap_sweep_B_min) / real(nB - 1, kind=dp)
+    dmu = 0.0_dp
+    if (nMu > 1) dmu = (cfg_in%topo%gap_sweep_mu_max - cfg_in%topo%gap_sweep_mu_min) / real(nMu - 1, kind=dp)
+
+    do iB = 1, nB
+      B_val = cfg_in%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * dB
+      do iMu = 1, nMu
+        mu_val = cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * dmu
+        call eval_wire_bdg_gap_app(cfg_in, B_val, mu_val, gap_threshold, &
+          & z2_map(iMu, iB), gap_map(iMu, iB))
+      end do
+    end do
+
+    call detect_z2_transitions(z2_map, gap_map, cfg_in%topo%gap_sweep_B_min, &
+      & cfg_in%topo%gap_sweep_B_max, cfg_in%topo%gap_sweep_mu_min, &
+      & cfg_in%topo%gap_sweep_mu_max, gap_threshold, transitions)
+  end subroutine compute_wire_bdg_gap_sweep
+
+  subroutine eval_wire_bdg_gap_app(cfg_in, B_val, mu_val, gap_threshold, z2, gap)
+    type(simulation_config), intent(in) :: cfg_in
+    real(kind=dp), intent(in) :: B_val, mu_val, gap_threshold
+    integer, intent(out) :: z2
+    real(kind=dp), intent(out) :: gap
+
+    type(simulation_config) :: cfg
+    type(csr_matrix), allocatable :: kpterms_2d_local(:)
+    real(kind=dp), allocatable :: profile_2d_local(:,:)
+    type(csr_matrix) :: H_bdg_csr
+    type(wire_workspace) :: wire_ws_local
+    class(eigensolver_base), allocatable :: eigen_solver_local
+    type(eigensolver_config) :: eigen_cfg_local
+    type(eigensolver_result) :: eigen_res_local
+    real(kind=dp), allocatable :: eigvals_bdg(:)
+    integer :: Ngrid_local, Ntot_local, nev_local, i
+
+    cfg = cfg_in
+    cfg%bdg%enabled = .true.
+    cfg%bdg%mu = mu_val
+    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, B_val]
+
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+      & profile_2d_local, kpterms_2d_local, cfg%FDorder)
+
+    Ngrid_local = grid_ngrid(cfg%grid)
+    Ntot_local = 8 * Ngrid_local
+    call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d_local, kpterms_2d_local, &
+      & 0.0_dp, cfg%bdg%mu, cfg%bdg%delta_0, wire_ws_local, &
+      & cfg%bdg%B_vec, cfg%bdg%g_factor)
+
+    nev_local = max(2, cfg%numcb + cfg%numvb)
+    eigen_cfg_local%method = 'FEAST'
+    eigen_cfg_local%nev = nev_local
+    eigen_cfg_local%max_iter = 200
+    eigen_cfg_local%tol = 1.0e-10_dp
+    eigen_cfg_local%feast_m0 = max(8 * nev_local, 200)
+    eigen_cfg_local%emin = -5.0_dp * cfg%bdg%delta_0
+    eigen_cfg_local%emax =  5.0_dp * cfg%bdg%delta_0
+
+    eigen_solver_local = make_eigensolver(eigen_cfg_local)
+    call eigen_solver_local%solve(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+
+    if (eigen_res_local%nev_found > 0) then
+      allocate(eigvals_bdg(eigen_res_local%nev_found))
+      eigvals_bdg = eigen_res_local%eigenvalues
+      gap = 2.0_dp * minval(abs(eigvals_bdg))
+      z2 = compute_z2_gap(Ntot_local, eigvals_bdg, gap_threshold)
+      deallocate(eigvals_bdg)
+    else
+      gap = huge(1.0_dp)
+      z2 = 0
+    end if
+
+    call csr_free(H_bdg_csr)
+    call eigensolver_result_free(eigen_res_local)
+    if (allocated(eigen_solver_local)) deallocate(eigen_solver_local)
+    call wire_workspace_free(wire_ws_local)
+    if (allocated(profile_2d_local)) deallocate(profile_2d_local)
+    if (allocated(kpterms_2d_local)) then
+      do i = 1, size(kpterms_2d_local)
+        call csr_free(kpterms_2d_local(i))
+      end do
+      deallocate(kpterms_2d_local)
+    end if
+  end subroutine eval_wire_bdg_gap_app
 
 end program topologicalAnalysis

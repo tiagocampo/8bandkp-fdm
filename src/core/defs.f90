@@ -322,9 +322,12 @@ module definitions
     real(kind=dp)    :: gap_sweep_mu_min = 0.0_dp
     real(kind=dp)    :: gap_sweep_mu_max = 0.01_dp
     integer          :: gap_sweep_nMu = 20
+    character(len=20) :: sweep_model = 'bhz_analytic'  ! bhz_analytic | wire_bdg | qw_fukane
     ! Conductance
     logical          :: compute_conductance = .false.
-    character(len=20) :: conductance_method = 'kubo'  ! kubo | landauer
+    character(len=20) :: conductance_method = 'kubo_chern'  ! kubo_chern | kubo_berry | landauer
+    integer          :: berry_nk = 50
+    real(kind=dp)    :: landauer_energy = 0.0_dp
     ! Spectral function
     logical          :: compute_spectral = .false.
     real(kind=dp)    :: spectral_k_min = -0.1_dp

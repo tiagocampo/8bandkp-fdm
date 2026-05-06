@@ -94,6 +94,87 @@ contains
   end subroutine test_z2_parity_eigenvalue_sign
 
   @test
+  subroutine test_qw_parity_expectation_band_major_cb_odd()
+    complex(kind=dp) :: psi(16)
+    real(kind=dp) :: parity
+    integer :: N
+
+    N = 2
+    psi = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    psi((7 - 1) * N + 1) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+    psi((7 - 1) * N + 2) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+
+    parity = qw_inversion_expectation(psi, N)
+    @assertEqual(-1.0_dp, parity, tolerance=1.0e-12_dp)
+  end subroutine test_qw_parity_expectation_band_major_cb_odd
+
+  @test
+  subroutine test_qw_parity_expectation_envelope_odd()
+    complex(kind=dp) :: psi(16)
+    real(kind=dp) :: parity
+    integer :: N
+
+    N = 2
+    psi = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    psi((1 - 1) * N + 1) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+    psi((1 - 1) * N + 2) = cmplx(-1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+
+    parity = qw_inversion_expectation(psi, N)
+    @assertEqual(-1.0_dp, parity, tolerance=1.0e-12_dp)
+  end subroutine test_qw_parity_expectation_envelope_odd
+
+  @test
+  subroutine test_fukane_product_includes_gamma()
+    real(kind=dp) :: delta_trim(4)
+    integer :: z2
+
+    delta_trim = [-1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp]
+    z2 = z2_from_trim_parities(delta_trim)
+    @assertEqual(1, z2, message="Gamma parity inversion must affect Z2")
+  end subroutine test_fukane_product_includes_gamma
+
+  @test
+  subroutine test_qw_pair_parity_sign_odd_conduction_pair()
+    complex(kind=dp) :: psi_a(16), psi_b(16)
+    real(kind=dp) :: pair_sign
+    integer :: N
+
+    N = 2
+    psi_a = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    psi_b = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    psi_a((7 - 1) * N + 1) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+    psi_a((7 - 1) * N + 2) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+    psi_b((8 - 1) * N + 1) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+    psi_b((8 - 1) * N + 2) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+
+    pair_sign = qw_pair_inversion_sign(psi_a, psi_b, N)
+    @assertEqual(-1.0_dp, pair_sign, tolerance=1.0e-12_dp)
+  end subroutine test_qw_pair_parity_sign_odd_conduction_pair
+
+  @test
+  subroutine test_qw_pair_parity_sign_rotated_odd_conduction_pair()
+    complex(kind=dp) :: psi_7(16), psi_8(16), psi_a(16), psi_b(16)
+    real(kind=dp) :: pair_sign
+    integer :: N
+
+    N = 2
+    psi_7 = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    psi_8 = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    psi_7((7 - 1) * N + 1) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+    psi_7((7 - 1) * N + 2) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+    psi_8((8 - 1) * N + 1) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+    psi_8((8 - 1) * N + 2) = cmplx(1.0_dp / sqrt(2.0_dp), 0.0_dp, kind=dp)
+
+    psi_a = (psi_7 + psi_8) / sqrt(2.0_dp)
+    psi_b = (psi_7 - psi_8) / sqrt(2.0_dp)
+
+    pair_sign = qw_pair_inversion_sign(psi_a, psi_b, N)
+    @assertEqual(-1.0_dp, pair_sign, tolerance=1.0e-12_dp)
+  end subroutine test_qw_pair_parity_sign_rotated_odd_conduction_pair
+
+  @test
   subroutine test_z2_gap_closing_edge_case()
     ! When gap exactly closes, Z2 should change
     type(bhz_wire_params) :: params
