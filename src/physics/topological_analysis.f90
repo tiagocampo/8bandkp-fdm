@@ -2,7 +2,7 @@ module topological_analysis
 
   use definitions
   use sparse_matrices
-  use linalg, only: zheev, zheevd, zgetrf
+  use linalg, only: zheev, zgetrf
   use hamiltonianConstructor, only: ZB8bandQW
   implicit none
   private
@@ -11,11 +11,16 @@ module topological_analysis
   public :: compute_berry_curvature
   public :: compute_berry_curvature_lattice
   public :: compute_hall_conductance
+  public :: compute_hall_conductance_from_chern
   public :: compute_conductance_kubo
   public :: compute_conductance_kubo_chern
   public :: compute_z2_gap
   public :: compute_z2_fukane
   public :: compute_z2_fukane_qw
+  public :: compute_z2_fukane_qw_result
+  public :: qw_inversion_expectation
+  public :: qw_pair_inversion_sign
+  public :: z2_from_trim_parities
   public :: extract_edge_states
   public :: compute_majorana_profile
   public :: build_bhz_wire_hamiltonian
@@ -24,7 +29,13 @@ module topological_analysis
   public :: fit_exponential_decay
   public :: compute_phase_diagram
   public :: compute_z2_gap_sweep
+  public :: detect_z2_transitions
   public :: gap_closing_detect
+
+  integer, parameter :: topo_status_ok = 0
+  integer, parameter :: topo_status_invalid = 1
+  integer, parameter :: topo_status_asymmetric = 2
+  integer, parameter :: topo_status_lapack = 3
 
   type :: bhz_wire_params
     real(kind=dp) :: A = 364.5_dp
@@ -49,15 +60,15 @@ contains
     real(kind=dp) :: kx, ky, dk, total_flux, mz_val, E_plus, nrm
     complex(kind=dp) :: Ux, Uy, prod, off_diag, ev_tmp(2)
 
-    dk = 2.0_dp * acos(-1.0_dp) / real(nk, kind=dp)
+    dk = 2.0_dp * pi_dp / real(nk, kind=dp)
     total_flux = 0.0_dp
 
     allocate(evecs(nk, nk, 2))
 
     do j = 1, nk
-      ky = -acos(-1.0_dp) + real(j-1, kind=dp) * dk
+      ky = -pi_dp + real(j-1, kind=dp) * dk
       do i = 1, nk
-        kx = -acos(-1.0_dp) + real(i-1, kind=dp) * dk
+        kx = -pi_dp + real(i-1, kind=dp) * dk
 
         ! QWZ: H = sin(kx)*sigma_x + sin(ky)*sigma_y + mz*sigma_z
         ! H = [[mz, sin(kx)-i*sin(ky)], [sin(kx)+i*sin(ky), -mz]]
@@ -104,7 +115,7 @@ contains
       end do
     end do
 
-    C = nint(total_flux / (2.0_dp * acos(-1.0_dp)))
+    C = nint(total_flux / (2.0_dp * pi_dp))
     deallocate(evecs)
   end function compute_chern_qwz
 
@@ -158,69 +169,74 @@ contains
 
     integer :: nkx, nky, i, j, ip1, jp1
     complex(kind=dp) :: M_xx, M_yx, M_xy, M_yy
+    complex(kind=dp), allocatable :: overlap(:,:)
     real(kind=dp) :: dkx, dky, dA
+    integer :: m, p
 
     nkx = size(kx_arr)
     nky = size(ky_arr)
-    allocate(Omega(nkx, nky))
-    Omega = 0.0_dp
+    if (nkx < 2 .or. nky < 2 .or. n_occ < 1 .or. size(evecs_k, 2) < n_occ) then
+      allocate(Omega(0, 0))
+      return
+    end if
 
     dkx = kx_arr(min(2, nkx)) - kx_arr(1)
     dky = ky_arr(min(2, nky)) - ky_arr(1)
+    if (abs(dkx) <= 1.0e-14_dp .or. abs(dky) <= 1.0e-14_dp) then
+      allocate(Omega(0, 0))
+      return
+    end if
+
+    allocate(Omega(nkx, nky))
+    Omega = 0.0_dp
+
     dA = dkx * dky
 
+    allocate(overlap(n_occ, n_occ))
     do j = 1, nky
       jp1 = mod(j, nky) + 1
       do i = 1, nkx
         ip1 = mod(i, nkx) + 1
 
-        block
-          complex(kind=dp), allocatable :: overlap(:,:)
-          integer :: m, p
-
-          allocate(overlap(n_occ, n_occ))
-
-          ! U_x = det(<u_n(k)|u_m(k+x)>)
-          do m = 1, n_occ
-            do p = 1, n_occ
-              overlap(m, p) = sum(conjg(evecs_k(:, m, i, j)) * evecs_k(:, p, ip1, j))
-            end do
+        ! U_x = det(<u_n(k)|u_m(k+x)>)
+        do m = 1, n_occ
+          do p = 1, n_occ
+            overlap(m, p) = sum(conjg(evecs_k(:, m, i, j)) * evecs_k(:, p, ip1, j))
           end do
-          M_xx = det_small(overlap, n_occ)
+        end do
+        M_xx = det_small(overlap, n_occ)
 
-          ! U_y(k+x) = det(<u_n(k+x)|u_m(k+x+y)>)
-          do m = 1, n_occ
-            do p = 1, n_occ
-              overlap(m, p) = sum(conjg(evecs_k(:, m, ip1, j)) * evecs_k(:, p, ip1, jp1))
-            end do
+        ! U_y(k+x) = det(<u_n(k+x)|u_m(k+x+y)>)
+        do m = 1, n_occ
+          do p = 1, n_occ
+            overlap(m, p) = sum(conjg(evecs_k(:, m, ip1, j)) * evecs_k(:, p, ip1, jp1))
           end do
-          M_yx = det_small(overlap, n_occ)
+        end do
+        M_yx = det_small(overlap, n_occ)
 
-          ! conjg(U_x(k+y)): overlap computes <u_m(k+x+y)|u_p(k+y)>
-          ! which is the adjoint of <u(k+y)|u(k+x+y)>, so its det = conjg(Ux(k,y+1))
-          do m = 1, n_occ
-            do p = 1, n_occ
-              overlap(m, p) = sum(conjg(evecs_k(:, m, ip1, jp1)) * evecs_k(:, p, i, jp1))
-            end do
+        ! conjg(U_x(k+y)): overlap computes <u_m(k+x+y)|u_p(k+y)>
+        ! which is the adjoint of <u(k+y)|u(k+x+y)>, so its det = conjg(Ux(k,y+1))
+        do m = 1, n_occ
+          do p = 1, n_occ
+            overlap(m, p) = sum(conjg(evecs_k(:, m, ip1, jp1)) * evecs_k(:, p, i, jp1))
           end do
-          M_xy = det_small(overlap, n_occ)
+        end do
+        M_xy = det_small(overlap, n_occ)
 
-          ! conjg(U_y(k)): overlap computes <u_m(k+y)|u_p(k)>
-          ! which is the adjoint of <u(k)|u(k+y)>, so its det = conjg(Uy(k))
-          do m = 1, n_occ
-            do p = 1, n_occ
-              overlap(m, p) = sum(conjg(evecs_k(:, m, i, jp1)) * evecs_k(:, p, i, j))
-            end do
+        ! conjg(U_y(k)): overlap computes <u_m(k+y)|u_p(k)>
+        ! which is the adjoint of <u(k)|u(k+y)>, so its det = conjg(Uy(k))
+        do m = 1, n_occ
+          do p = 1, n_occ
+            overlap(m, p) = sum(conjg(evecs_k(:, m, i, jp1)) * evecs_k(:, p, i, j))
           end do
-          M_yy = det_small(overlap, n_occ)
+        end do
+        M_yy = det_small(overlap, n_occ)
 
-          Omega(i, j) = aimag(log(M_xx * M_yx * M_xy * M_yy)) / dA
-
-          deallocate(overlap)
-        end block
+        Omega(i, j) = aimag(log(M_xx * M_yx * M_xy * M_yy)) / dA
 
       end do
     end do
+    deallocate(overlap)
 
   end function compute_berry_curvature_lattice
 
@@ -252,7 +268,7 @@ contains
     end select
   end function det_small
 
-  function compute_hall_conductance(C) result(sigma_xy)
+  elemental function compute_hall_conductance(C) result(sigma_xy)
     implicit none
     integer, intent(in) :: C
     real(kind=dp) :: sigma_xy
@@ -260,35 +276,40 @@ contains
     sigma_xy = real(C, kind=dp)
   end function compute_hall_conductance
 
-  function compute_conductance_kubo_chern(C) result(sigma_xy)
+  elemental function compute_hall_conductance_from_chern(C) result(sigma_xy)
     implicit none
     integer, intent(in) :: C
     real(kind=dp) :: sigma_xy
 
-    ! Returns sigma_xy in units of e^2/h (= C * e^2/h)
     sigma_xy = real(C, kind=dp)
+  end function compute_hall_conductance_from_chern
+
+  elemental function compute_conductance_kubo_chern(C) result(sigma_xy)
+    implicit none
+    integer, intent(in) :: C
+    real(kind=dp) :: sigma_xy
+
+    sigma_xy = compute_hall_conductance_from_chern(C)
   end function compute_conductance_kubo_chern
 
-  function compute_conductance_kubo(berry_curvature, kx_arr, ky_arr, n_occ) result(sigma_xy)
+  function compute_conductance_kubo(berry_curvature, kx_arr, ky_arr) result(sigma_xy)
     implicit none
     real(kind=dp), contiguous, intent(in) :: berry_curvature(:,:)
     real(kind=dp), contiguous, intent(in) :: kx_arr(:), ky_arr(:)
-    integer, intent(in) :: n_occ
     real(kind=dp) :: sigma_xy
 
-    integer :: nkx, nky
     real(kind=dp) :: dkx, dky
 
-    nkx = size(kx_arr)
-    nky = size(ky_arr)
+    sigma_xy = 0.0_dp
+    if (size(kx_arr) < 2 .or. size(ky_arr) < 2) return
+    if (size(berry_curvature, 1) /= size(kx_arr)) return
+    if (size(berry_curvature, 2) /= size(ky_arr)) return
 
-    dkx = 0.0_dp
-    if (nkx > 1) dkx = kx_arr(2) - kx_arr(1)
-    dky = 0.0_dp
-    if (nky > 1) dky = ky_arr(2) - ky_arr(1)
+    dkx = kx_arr(2) - kx_arr(1)
+    dky = ky_arr(2) - ky_arr(1)
 
-    ! sigma_xy = (1/2*pi) * sum Omega * dk^2, in units of e^2/h
-    sigma_xy = sum(berry_curvature) * dkx * dky / (2.0_dp * acos(-1.0_dp))
+    ! Periodic plaquette curvature: direct uniform integration in units of e^2/h.
+    sigma_xy = sum(berry_curvature) * dkx * dky / (2.0_dp * pi_dp)
   end function compute_conductance_kubo
 
   function compute_z2_gap(N, eigenvalues, gap_threshold) result(z2)
@@ -495,6 +516,89 @@ contains
 
   end subroutine fit_exponential_decay
 
+  elemental integer function band_major_row(iband, isite, nsite) result(irow)
+    implicit none
+    integer, intent(in) :: iband, isite, nsite
+    irow = (iband - 1) * nsite + isite
+  end function band_major_row
+
+  elemental real(kind=dp) function band_inversion_parity(iband) result(p)
+    implicit none
+    integer, intent(in) :: iband
+
+    if (iband <= 6) then
+      p = 1.0_dp
+    else
+      p = -1.0_dp
+    end if
+  end function band_inversion_parity
+
+  function qw_inversion_expectation(psi, nsite) result(parity)
+    implicit none
+    complex(kind=dp), intent(in) :: psi(:)
+    integer, intent(in) :: nsite
+    real(kind=dp) :: parity
+    integer :: ib, isite, imirror, irow, jrow
+
+    parity = 0.0_dp
+    if (nsite < 1 .or. size(psi) < 8 * nsite) return
+
+    do ib = 1, 8
+      do isite = 1, nsite
+        imirror = nsite + 1 - isite
+        irow = band_major_row(ib, isite, nsite)
+        jrow = band_major_row(ib, imirror, nsite)
+        parity = parity + band_inversion_parity(ib) * real(conjg(psi(irow)) * psi(jrow), kind=dp)
+      end do
+    end do
+  end function qw_inversion_expectation
+
+  function qw_inversion_matrix_element(psi_left, psi_right, nsite) result(element)
+    implicit none
+    complex(kind=dp), intent(in) :: psi_left(:), psi_right(:)
+    integer, intent(in) :: nsite
+    complex(kind=dp) :: element
+    integer :: ib, isite, imirror, irow, jrow
+
+    element = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    if (nsite < 1) return
+    if (size(psi_left) < 8 * nsite .or. size(psi_right) < 8 * nsite) return
+
+    do ib = 1, 8
+      do isite = 1, nsite
+        imirror = nsite + 1 - isite
+        irow = band_major_row(ib, isite, nsite)
+        jrow = band_major_row(ib, imirror, nsite)
+        element = element + band_inversion_parity(ib) * conjg(psi_left(irow)) * psi_right(jrow)
+      end do
+    end do
+  end function qw_inversion_matrix_element
+
+  function qw_pair_inversion_sign(psi_a, psi_b, nsite) result(pair_sign)
+    implicit none
+    complex(kind=dp), intent(in) :: psi_a(:), psi_b(:)
+    integer, intent(in) :: nsite
+    real(kind=dp) :: pair_sign
+    complex(kind=dp) :: p11, p22
+
+    p11 = qw_inversion_matrix_element(psi_a, psi_a, nsite)
+    p22 = qw_inversion_matrix_element(psi_b, psi_b, nsite)
+    pair_sign = 0.5_dp * real(p11 + p22, kind=dp)
+  end function qw_pair_inversion_sign
+
+  integer function z2_from_trim_parities(delta_trim) result(z2)
+    implicit none
+    real(kind=dp), intent(in) :: delta_trim(4)
+    real(kind=dp) :: trim_product
+
+    trim_product = delta_trim(1) * delta_trim(2) * delta_trim(3) * delta_trim(4)
+    if (trim_product < 0.0_dp) then
+      z2 = 1
+    else
+      z2 = 0
+    end if
+  end function z2_from_trim_parities
+
   function compute_majorana_profile(evec_bdg, grid, energy_tol, half_n_in, profile) result(xi)
     implicit none
     complex(kind=dp), intent(in) :: evec_bdg(:)
@@ -518,7 +622,7 @@ contains
     if (half_n * 2 > size(evec_bdg)) then
       print *, 'ERROR: compute_majorana_profile: eigenvector too small'
       print *, '  half_n=', half_n, ' size(evec)=', size(evec_bdg)
-      xi = 0.0_dp
+      xi = -1.0_dp
       return
     end if
     nspatial = half_n / 8
@@ -527,8 +631,8 @@ contains
     do i = 1, nspatial
       rho(i) = 0.0_dp
       do ib = 1, 8
-        rho(i) = rho(i) + abs(evec_bdg((i-1)*8 + ib))**2
-        rho(i) = rho(i) + abs(evec_bdg(half_n + (i-1)*8 + ib))**2
+        rho(i) = rho(i) + abs(evec_bdg(band_major_row(ib, i, nspatial)))**2
+        rho(i) = rho(i) + abs(evec_bdg(half_n + band_major_row(ib, i, nspatial)))**2
       end do
     end do
 
@@ -576,7 +680,7 @@ contains
     end if
 
     if (i_start == 0 .or. i_start >= nspatial) then
-      xi = 0.0_dp
+      xi = -1.0_dp
       deallocate(rho)
       if (.not. allocated(grid%z)) deallocate(xx)
       return
@@ -599,11 +703,11 @@ contains
 
     denom = sum_x2 - sum_x**2 / real(n_fit, kind=dp)
     if (abs(denom) < 1.0e-14_dp .or. n_fit < 3) then
-      xi = 0.0_dp
+      xi = -1.0_dp
     else
       slope = (sum_xy - sum_x * sum_y_log / real(n_fit, kind=dp)) / denom
       if (abs(slope) < tiny(1.0_dp)) then
-        xi = 0.0_dp
+        xi = -1.0_dp
       else
         xi_est = -1.0_dp / slope
         xi = abs(xi_est)
@@ -867,24 +971,19 @@ contains
   ! OUTPUT:
   !   Z2 = 0 (trivial) or 1 (topological)
   ! ==============================================================================
-  function compute_z2_fukane_qw(cfg, profile, kpterms, n_occ) result(z2)
+  subroutine compute_z2_fukane_qw_result(cfg, profile, kpterms, n_occ, z2, min_gap, status)
     implicit none
     type(simulation_config), intent(in) :: cfg
     real(kind=dp), contiguous, intent(in) :: profile(:,:), kpterms(:,:,:)
     integer, intent(in) :: n_occ
-    integer :: z2
+    integer, intent(out) :: z2, status
+    real(kind=dp), intent(out) :: min_gap
 
-    ! Parity of each band in the 8-band zinc-blende basis
-    ! Bands 1-6 (valence): even under inversion (+1)
-    ! Bands 7-8 (conduction): odd under inversion (-1)
-    real(kind=dp), parameter :: P_band(8) = [+1.0_dp, +1.0_dp, +1.0_dp, &
-                                              +1.0_dp, +1.0_dp, +1.0_dp, &
-                                             -1.0_dp, -1.0_dp]
-
-    integer :: N, dim_H, i_trim, istate, isite, iband, irow
+    integer :: N, dim_H, i_trim, istate, isite, ncol
     integer :: info, lwork
-    real(kind=dp) :: delta_trim, parity_n
-    real(kind=dp) :: product_non_gamma
+    real(kind=dp), parameter :: parity_sign_tol = 1.0e-8_dp
+    real(kind=dp) :: parity_sign, a_lat
+    real(kind=dp) :: delta_trim(4)
     real(kind=dp) :: kx_trim(4), ky_trim(4)
     type(wavevector) :: wv
 
@@ -893,26 +992,30 @@ contains
     complex(kind=dp), allocatable :: work(:)
 
     z2 = 0
+    min_gap = huge(1.0_dp)
+    status = topo_status_invalid
 
     N = size(profile, 1)
     dim_H = 8 * N
 
-    if (n_occ < 1 .or. N < 1) return
-    if (n_occ > dim_H) return
+    if (N < 1 .or. size(profile, 2) < 1) return
+    if (size(kpterms, 1) < N .or. size(kpterms, 2) < N) return
+    if (n_occ < 2 .or. mod(n_occ, 2) /= 0 .or. n_occ >= dim_H) return
 
-    ! Lattice constant (default to 6.0 Angstrom for III-V materials)
-    ! Use a default if not set in config
-    block
-      real(kind=dp) :: a_lat
-      real(kind=dp) :: pi_val
+    ncol = size(profile, 2)
+    do isite = 1, N / 2
+      if (maxval(abs(profile(isite, 1:ncol) - profile(N + 1 - isite, 1:ncol))) > 1.0e-8_dp) then
+        status = topo_status_asymmetric
+        return
+      end if
+    end do
 
-      pi_val = acos(-1.0_dp)
-      a_lat = 6.0_dp  ! Angstrom, typical III-V lattice constant
+    a_lat = qw_lattice_constant(cfg)
+    if (a_lat <= 0.0_dp) return
 
-      ! 4 TRIM points in the 2D Brillouin zone
-      kx_trim = [0.0_dp, pi_val / a_lat, 0.0_dp, pi_val / a_lat]
-      ky_trim = [0.0_dp, 0.0_dp, pi_val / a_lat, pi_val / a_lat]
-    end block
+    kx_trim = [0.0_dp, pi_dp / a_lat, 0.0_dp, pi_dp / a_lat]
+    ky_trim = [0.0_dp, 0.0_dp, pi_dp / a_lat, pi_dp / a_lat]
+    delta_trim = 1.0_dp
 
     ! Workspace for zheev: query first, then allocate
     allocate(HT(dim_H, dim_H))
@@ -923,16 +1026,14 @@ contains
     ! Workspace query
     call zheev('V', 'U', dim_H, HT, dim_H, evals, work, -1, rwork, info)
     if (info /= 0) then
-      print *, 'WARNING: compute_z2_fukane_qw: zheev workspace query failed, info=', info
+      status = topo_status_lapack
       z2 = 0
       deallocate(HT, evals, rwork, work)
       return
     end if
-    lwork = int(real(work(1)))
+    lwork = max(1, int(real(work(1), kind=dp)))
     deallocate(work)
     allocate(work(lwork))
-
-    product_non_gamma = 1.0_dp
 
     do i_trim = 1, 4
       ! Set up wavevector at this TRIM point
@@ -947,67 +1048,70 @@ contains
       ! Diagonalize: eigenvalues in evals, eigenvectors overwrite HT
       call zheev('V', 'U', dim_H, HT, dim_H, evals, work, lwork, rwork, info)
       if (info /= 0) then
-        print *, 'WARNING: compute_z2_fukane_qw: zheev failed at TRIM ', i_trim, ' info=', info
+        status = topo_status_lapack
         z2 = 0
         deallocate(HT, evals, rwork, work)
         return
       end if
 
-      ! Compute parity product over occupied states at this TRIM
-      ! delta_i = prod_{n=1}^{n_occ} xi_n
-      delta_trim = 1.0_dp
+      min_gap = min(min_gap, evals(n_occ + 1) - evals(n_occ))
 
-      do istate = 1, n_occ
-        ! For each occupied eigenstate, compute parity eigenvalue.
-        ! The parity of a QW eigenstate is determined by the dominant band
-        ! character. In the 8-band zinc-blende basis:
-        !   VB bands (1-6): even under inversion (P=+1)
-        !   CB bands (7-8): odd under inversion (P=-1)
-        ! For a state with mixed character, the parity eigenvalue is:
-        !   xi_n = sign(prod_b P_band(b)^{weight_b})
-        ! which equals (-1)^{total_CB_weight}. For a normalized state with
-        ! definite parity at a TRIM, CB weight > 0.5 gives xi=-1.
-        block
-          real(kind=dp) :: cb_weight, vb_weight
-
-          cb_weight = 0.0_dp
-          vb_weight = 0.0_dp
-
-          do isite = 1, N
-            do iband = 1, 8
-              irow = (isite - 1) * 8 + iband
-              if (P_band(iband) < 0.0_dp) then
-                cb_weight = cb_weight + abs(HT(irow, istate))**2
-              else
-                vb_weight = vb_weight + abs(HT(irow, istate))**2
-              end if
-            end do
-          end do
-
-          ! Parity eigenvalue: if CB character dominates, parity is odd (-1)
-          if (cb_weight > vb_weight) then
-            parity_n = -1.0_dp
-          else
-            parity_n = +1.0_dp
-          end if
-        end block
-
-        delta_trim = delta_trim * parity_n
+      do istate = 1, n_occ, 2
+        parity_sign = qw_pair_inversion_sign(HT(:, istate), HT(:, istate + 1), N)
+        if (abs(parity_sign) <= parity_sign_tol) then
+          status = topo_status_invalid
+          z2 = 0
+          deallocate(HT, evals, rwork, work)
+          return
+        end if
+        if (parity_sign > 0.0_dp) then
+          delta_trim(i_trim) = delta_trim(i_trim) * 1.0_dp
+        else
+          delta_trim(i_trim) = delta_trim(i_trim) * (-1.0_dp)
+        end if
       end do
-
-      ! The Fu-Kane formula uses product of delta_i for TRIMs excluding Gamma.
-      ! Gamma is i_trim=1. Accumulate product of TRIMs 2, 3, 4.
-      if (i_trim > 1) then
-        product_non_gamma = product_non_gamma * delta_trim
-      end if
     end do
 
-    ! Z2 = 1 if product of delta at non-Gamma TRIMs is negative
-    if (product_non_gamma < 0.0_dp) z2 = 1
+    z2 = z2_from_trim_parities(delta_trim)
+    status = topo_status_ok
 
     deallocate(HT, evals, rwork, work)
 
+  end subroutine compute_z2_fukane_qw_result
+
+  function compute_z2_fukane_qw(cfg, profile, kpterms, n_occ) result(z2)
+    implicit none
+    type(simulation_config), intent(in) :: cfg
+    real(kind=dp), contiguous, intent(in) :: profile(:,:), kpterms(:,:,:)
+    integer, intent(in) :: n_occ
+    integer :: z2
+    integer :: status
+    real(kind=dp) :: min_gap
+
+    call compute_z2_fukane_qw_result(cfg, profile, kpterms, n_occ, z2, min_gap, status)
+    if (status /= topo_status_ok) z2 = 0
   end function compute_z2_fukane_qw
+
+  real(kind=dp) function qw_lattice_constant(cfg) result(a_lat)
+    implicit none
+    type(simulation_config), intent(in) :: cfg
+    integer :: layer, i
+
+    a_lat = 0.0_dp
+    if (.not. allocated(cfg%params)) return
+    if (size(cfg%params) < 1) return
+
+    layer = max(1, (cfg%numLayers + 1) / 2)
+    if (layer <= size(cfg%params)) a_lat = cfg%params(layer)%a0
+    if (a_lat > 0.0_dp) return
+
+    do i = 1, size(cfg%params)
+      if (cfg%params(i)%a0 > 0.0_dp) then
+        a_lat = cfg%params(i)%a0
+        return
+      end if
+    end do
+  end function qw_lattice_constant
 
   ! ==============================================================================
   ! Z2 phase diagram via gap sweep over (B, mu) parameter space.
@@ -1016,14 +1120,12 @@ contains
   ! minimum bulk gap at each point. Detects phase transitions where Z2 flips
   ! between adjacent B values.
   !
-  ! For wire mode (confinement==2): uses BHZ M-sign heuristic (z2=1 when B>0).
-  ! For other modes: z2=0 placeholder (future QW implementation).
+  ! Uses evaluator selected by cfg%topo%sweep_model.
   !
   ! OUTPUT:
   !   z2_map(nMu, nB)       : Z2 invariant (0 or 1) at each grid point
-  !   gap_map(nMu, nB)      : placeholder gap values (0.0 for now)
-  !   transitions(:, 2)     : (B, mu) pairs where Z2 flips, detected along
-  !                           the central mu row by comparing adjacent B values
+  !   gap_map(nMu, nB)      : minimum gap at each grid point
+  !   transitions(:, 2)     : (B, mu) transition midpoints
   ! ==============================================================================
   subroutine compute_z2_gap_sweep(cfg, B_min, B_max, nB, mu_min, mu_max, nMu, &
                                    gap_threshold, z2_map, gap_map, transitions)
@@ -1035,9 +1137,8 @@ contains
     real(kind=dp), allocatable, intent(out) :: gap_map(:,:)
     real(kind=dp), allocatable, intent(out) :: transitions(:,:)
 
-    integer :: iB, iMu, j_central, n_trans
-    real(kind=dp) :: dB, dmu, B_val
-    real(kind=dp), allocatable :: trans_raw(:,:)
+    integer :: iB, iMu, status_eval
+    real(kind=dp) :: dB, dmu, B_val, mu_val
 
     if (nB < 1 .or. nMu < 1) then
       allocate(z2_map(0,0), gap_map(0,0), transitions(0,2))
@@ -1055,47 +1156,114 @@ contains
     dmu = 0.0_dp
     if (nMu > 1) dmu = (mu_max - mu_min) / real(nMu - 1, kind=dp)
 
-    ! Fill Z2 map based on confinement mode
     do iB = 1, nB
       B_val = B_min + real(iB - 1, kind=dp) * dB
       do iMu = 1, nMu
-        if (cfg%confinement == 2) then
-          ! Wire mode: BHZ heuristic — topological when M flips sign.
-          ! For the standard BHZ model, M > 0 is trivial, M < 0 is topological.
-          ! In the Zeeman-dominated regime, B > 0 drives M < 0 => topological.
-          if (B_val > 0.0_dp) then
-            z2_map(iMu, iB) = 1
-          else
-            z2_map(iMu, iB) = 0
-          end if
-        else
-          ! Bulk / QW placeholder: trivial phase
-          z2_map(iMu, iB) = 0
+        mu_val = mu_min + real(iMu - 1, kind=dp) * dmu
+        select case (trim(cfg%topo%sweep_model))
+        case ('bhz_analytic')
+          call eval_bhz_analytic(B_val, mu_val, cfg, z2_map(iMu, iB), &
+            gap_map(iMu, iB), status_eval)
+        case default
+          print *, 'ERROR: compute_z2_gap_sweep supports sweep_model=bhz_analytic only'
+          print *, '       Use topologicalAnalysis sweep mode for QW Fu-Kane or wire BdG sweeps.'
+          stop 1
+        end select
+        if (status_eval /= topo_status_ok) then
+          print *, 'ERROR: topology gap sweep evaluator failed for model ', &
+            trim(cfg%topo%sweep_model)
+          stop 1
         end if
-        ! gap_map remains 0.0 (placeholder for future eigenvalue-based computation)
       end do
     end do
 
-    ! Detect transitions along B sweep at central mu
-    j_central = (nMu + 1) / 2
-    allocate(trans_raw(nB, 2))
-    n_trans = 0
-
-    do iB = 1, nB - 1
-      if (z2_map(j_central, iB) /= z2_map(j_central, iB + 1)) then
-        n_trans = n_trans + 1
-        trans_raw(n_trans, 1) = B_min + real(iB - 1, kind=dp) * dB + dB / 2.0_dp
-        trans_raw(n_trans, 2) = mu_min + real(j_central - 1, kind=dp) * dmu
-      end if
-    end do
-
-    ! Copy to output array
-    allocate(transitions(n_trans, 2))
-    if (n_trans > 0) then
-      transitions(1:n_trans, :) = trans_raw(1:n_trans, :)
-    end if
-    deallocate(trans_raw)
+    call detect_z2_transitions(z2_map, gap_map, B_min, B_max, mu_min, mu_max, &
+      gap_threshold, transitions)
 
   end subroutine compute_z2_gap_sweep
+
+  subroutine detect_z2_transitions(z2_map, gap_map, B_min, B_max, mu_min, mu_max, &
+                                   gap_threshold, transitions)
+    implicit none
+    integer, intent(in) :: z2_map(:,:)
+    real(kind=dp), intent(in) :: gap_map(:,:)
+    real(kind=dp), intent(in) :: B_min, B_max, mu_min, mu_max, gap_threshold
+    real(kind=dp), allocatable, intent(out) :: transitions(:,:)
+
+    integer :: nMu, nB, iMu, iB, n_trans, max_trans
+    real(kind=dp) :: dB, dmu
+    real(kind=dp), allocatable :: trans_raw(:,:), trans_trim(:,:)
+
+    nMu = size(z2_map, 1)
+    nB = size(z2_map, 2)
+    if (nMu < 1 .or. nB < 1) then
+      allocate(transitions(0, 2))
+      return
+    end if
+
+    dB = 0.0_dp
+    if (nB > 1) dB = (B_max - B_min) / real(nB - 1, kind=dp)
+    dmu = 0.0_dp
+    if (nMu > 1) dmu = (mu_max - mu_min) / real(nMu - 1, kind=dp)
+
+    max_trans = nMu * max(0, nB - 1) + nB * max(0, nMu - 1)
+    allocate(trans_raw(max_trans, 2))
+    n_trans = 0
+
+    do iMu = 1, nMu
+      do iB = 1, nB - 1
+        if (is_z2_transition(z2_map(iMu, iB), z2_map(iMu, iB + 1), &
+            gap_map(iMu, iB), gap_map(iMu, iB + 1), gap_threshold)) then
+          n_trans = n_trans + 1
+          trans_raw(n_trans, 1) = B_min + (real(iB - 1, kind=dp) + 0.5_dp) * dB
+          trans_raw(n_trans, 2) = mu_min + real(iMu - 1, kind=dp) * dmu
+        end if
+      end do
+    end do
+
+    do iMu = 1, nMu - 1
+      do iB = 1, nB
+        if (is_z2_transition(z2_map(iMu, iB), z2_map(iMu + 1, iB), &
+            gap_map(iMu, iB), gap_map(iMu + 1, iB), gap_threshold)) then
+          n_trans = n_trans + 1
+          trans_raw(n_trans, 1) = B_min + real(iB - 1, kind=dp) * dB
+          trans_raw(n_trans, 2) = mu_min + (real(iMu - 1, kind=dp) + 0.5_dp) * dmu
+        end if
+      end do
+    end do
+
+    allocate(trans_trim(n_trans, 2))
+    if (n_trans > 0) trans_trim = trans_raw(1:n_trans, :)
+    call move_alloc(trans_trim, transitions)
+    deallocate(trans_raw)
+
+  end subroutine detect_z2_transitions
+
+  elemental logical function is_z2_transition(z2_a, z2_b, gap_a, gap_b, gap_threshold) result(is_transition)
+    implicit none
+    integer, intent(in) :: z2_a, z2_b
+    real(kind=dp), intent(in) :: gap_a, gap_b, gap_threshold
+
+    is_transition = (z2_a /= z2_b) .or. (gap_a <= gap_threshold) .or. (gap_b <= gap_threshold)
+  end function is_z2_transition
+
+  subroutine eval_bhz_analytic(B_val, mu_val, cfg, z2, gap, status)
+    implicit none
+    real(kind=dp), intent(in) :: B_val, mu_val
+    type(simulation_config), intent(in) :: cfg
+    integer, intent(out) :: z2, status
+    real(kind=dp), intent(out) :: gap
+
+    real(kind=dp) :: M_eff
+
+    M_eff = 1.0e-3_dp * cfg%topo%bhz_M + B_val - mu_val
+    gap = abs(2.0_dp * M_eff)
+    if (M_eff < 0.0_dp) then
+      z2 = 1
+    else
+      z2 = 0
+    end if
+    status = topo_status_ok
+  end subroutine eval_bhz_analytic
 
 end module topological_analysis

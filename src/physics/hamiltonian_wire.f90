@@ -1325,8 +1325,9 @@ module hamiltonian_wire
             print *, "ERROR: COO capacity exceeded in insert_zeeman_coo"
             stop 1
           end if
-          coo_r(coo_idx) = (i - 1) * 8 + idx
-          coo_c(coo_idx) = (i - 1) * 8 + idx
+          ! band-major: row = (band-1)*N + site
+          coo_r(coo_idx) = (idx - 1) * N + i
+          coo_c(coo_idx) = (idx - 1) * N + i
           coo_v(coo_idx) = cmplx(Vz(idx), 0.0_dp, kind=dp)
         end do
       end do

@@ -9,7 +9,8 @@ module test_bdg_hamiltonian
   use confinement_init, only: confinementInitialization_2d
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free
   use hamiltonianConstructor, only: ZB8bandQW
-  use linalg, only: zheevx
+  use linalg, only: zheev, zheevx
+  use magnetic_field, only: compute_zeeman_vz
   implicit none
 
 contains
@@ -123,10 +124,10 @@ contains
     ! --- Verify profile peaks at the leftmost point (z=0) ---
     @assertTrue(profile(1) >= profile(2), message="Profile should peak at left edge")
 
-    ! --- Verify localization length is positive (or zero if fit fails on minimal grid) ---
+    ! --- Verify localization length is positive, or -1 if fit fails on minimal grid ---
     ! For a 2-point grid with exponential decay, the tail is too short to fit reliably.
-    ! We accept xi >= 0 (including 0 for insufficient tail data).
-    @assertTrue(xi >= 0.0_dp, message="Localization length should be non-negative")
+    ! Failed fits return -1 by contract.
+    @assertTrue(xi > 0.0_dp .or. xi == -1.0_dp, message="Localization length should be positive or -1 on fit failure")
 
     deallocate(grid%z)
   end subroutine
@@ -179,6 +180,38 @@ contains
 
     deallocate(evec_bdg, profile, grid%z)
   end subroutine
+
+  @test
+  subroutine test_majorana_profile_uses_band_major_order()
+    type(spatial_grid) :: grid
+    complex(kind=dp), allocatable :: psi(:)
+    real(kind=dp), allocatable :: profile(:)
+    real(kind=dp) :: xi
+    integer :: N, half_n, ib, site
+
+    N = 3
+    half_n = 8 * N
+    allocate(psi(2 * half_n), profile(N))
+    psi = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    site = 2
+    do ib = 1, 8
+      psi((ib - 1) * N + site) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+      psi(half_n + (ib - 1) * N + site) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    end do
+
+    grid%nx = 1
+    grid%ny = N
+    allocate(grid%z(N))
+    grid%z = [0.0_dp, 1.0_dp, 2.0_dp]
+
+    xi = compute_majorana_profile(psi, grid, 1.0e-8_dp, half_n, profile)
+
+    @assertTrue(profile(2) > 0.99_dp, message="density peak must be at band-major site 2")
+    @assertTrue(profile(1) < 1.0e-12_dp, message="site 1 should have no density")
+    @assertTrue(profile(3) < 1.0e-12_dp, message="site 3 should have no density")
+
+    deallocate(psi, profile, grid%z)
+  end subroutine test_majorana_profile_uses_band_major_order
 
   ! ==================================================================
   ! T1: BdG CSR assembly test
@@ -324,6 +357,164 @@ contains
     end do
   end subroutine csr_to_dense_local
 
+  subroutine setup_minimal_qw_bdg_fixture(cfg, profile, kpterms)
+    type(simulation_config), intent(out) :: cfg
+    real(kind=dp), allocatable, intent(out) :: profile(:,:), kpterms(:,:,:)
+    integer :: N, i
+
+    N = 3
+    cfg%confinement = 1
+    cfg%fdStep = N
+    cfg%FDorder = 2
+    cfg%numLayers = 1
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%bdg%enabled = .true.
+    cfg%bdg%delta_0 = 0.001_dp
+    cfg%bdg%mu = 0.0_dp
+    cfg%bdg%g_factor = 2.0_dp
+    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 0.0_dp]
+    allocate(profile(N,3), kpterms(N,N,10))
+    profile = 0.0_dp
+    kpterms = 0.0_dp
+    do i = 1, N
+      profile(i,1) = -0.1_dp
+      profile(i,2) = -0.05_dp
+      profile(i,3) = 0.5_dp
+      kpterms(i,i,1) = 1.0_dp
+      kpterms(i,i,4) = 0.2_dp
+      kpterms(i,i,9) = 0.3_dp
+    end do
+  end subroutine setup_minimal_qw_bdg_fixture
+
+  @test
+  subroutine test_bdg_wire_optional_bvec_applies_zeeman()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ij, i
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_noB, H_withB
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws_noB, ws_withB
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: dense_noB(:,:), dense_withB(:,:)
+    real(kind=dp) :: max_diag_delta
+
+    mat2d = 1
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    cfg%bdg%enabled = .false.
+
+    call build_bdg_hamiltonian_1d(H_noB, cfg, profile_2d, kpterms_2d, &
+                                  kz=0.0_dp, mu=0.0_dp, delta_0=0.001_dp, ws=ws_noB)
+    call build_bdg_hamiltonian_1d(H_withB, cfg, profile_2d, kpterms_2d, &
+                                  kz=0.0_dp, mu=0.0_dp, delta_0=0.001_dp, ws=ws_withB, &
+                                  B_vec=[0.0_dp, 0.0_dp, 1.0_dp], g_factor=10.0_dp)
+
+    allocate(dense_noB(H_noB%nrows, H_noB%ncols))
+    allocate(dense_withB(H_withB%nrows, H_withB%ncols))
+    call csr_to_dense_local(H_noB, dense_noB)
+    call csr_to_dense_local(H_withB, dense_withB)
+
+    max_diag_delta = 0.0_dp
+    do i = 1, H_noB%nrows
+      max_diag_delta = max(max_diag_delta, abs(dense_withB(i, i) - dense_noB(i, i)))
+    end do
+    @assertTrue(max_diag_delta > 1.0e-5_dp, message="optional B_vec/g_factor must apply Zeeman splitting")
+
+    deallocate(dense_noB, dense_withB)
+    call csr_free(H_noB)
+    call csr_free(H_withB)
+    call wire_workspace_free(ws_noB)
+    call wire_workspace_free(ws_withB)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_bdg_wire_optional_bvec_applies_zeeman
+
+  @test
+  subroutine test_bdg_wire_bx_hole_block_negative_transpose()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ij, i, j, n8
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: dense(:,:)
+    real(kind=dp) :: ph_err, max_imag_electron
+
+    mat2d = 1
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    cfg%bdg%enabled = .false.
+
+    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
+                                  kz=0.0_dp, mu=0.0_dp, delta_0=0.001_dp, ws=ws, &
+                                  B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
+
+    n8 = H_bdg%nrows / 2
+    allocate(dense(H_bdg%nrows, H_bdg%ncols))
+    call csr_to_dense_local(H_bdg, dense)
+
+    ph_err = 0.0_dp
+    max_imag_electron = 0.0_dp
+    do j = 1, n8
+      do i = 1, n8
+        ph_err = max(ph_err, abs(dense(n8 + j, n8 + i) + dense(i, j)))
+        max_imag_electron = max(max_imag_electron, abs(aimag(dense(i, j))))
+      end do
+    end do
+    @assertTrue(max_imag_electron > 1.0e-12_dp, message="finite Bx test must exercise complex Peierls phases")
+    @assertTrue(ph_err < 1.0e-10_dp, message="finite Bx hole block must be -transpose of phased electron Hamiltonian")
+
+    deallocate(dense)
+    call csr_free(H_bdg)
+    call wire_workspace_free(ws)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_bdg_wire_bx_hole_block_negative_transpose
+
   ! ==================================================================
   ! T4: Dense QW BdG Hamiltonian tests
   ! Build a minimal QW BdG Hamiltonian and verify:
@@ -414,5 +605,92 @@ contains
 
     deallocate(profile, kpterms, H_bdg)
   end subroutine test_bdg_qw_hermitian
+
+  @test
+  subroutine test_bdg_qw_particle_hole_nonzero_k()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:), evals(:), rwork(:)
+    complex(kind=dp), allocatable :: H(:,:), H_plus(:,:), H_minus(:,:), work(:)
+    type(wavevector) :: wv
+    integer :: dim, info, lwork, i, row, col, n8
+    real(kind=dp) :: k_par, minus_k_err, same_k_err
+
+    call setup_minimal_qw_bdg_fixture(cfg, profile, kpterms)
+    k_par = 0.01_dp
+    call build_bdg_hamiltonian_qw(H, cfg, profile, kpterms, k_par, 0.0_dp, 0.001_dp)
+    dim = size(H, 1)
+    n8 = dim / 2
+
+    allocate(H_plus(n8, n8), H_minus(n8, n8))
+    H_plus = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    H_minus = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    wv%kx = k_par
+    wv%ky = 0.0_dp
+    wv%kz = 0.0_dp
+    call ZB8bandQW(H_plus, wv, profile, kpterms, cfg=cfg)
+    wv%kx = -k_par
+    call ZB8bandQW(H_minus, wv, profile, kpterms, cfg=cfg)
+
+    minus_k_err = 0.0_dp
+    same_k_err = 0.0_dp
+    do col = 1, n8
+      do row = 1, n8
+        minus_k_err = max(minus_k_err, abs(H(n8 + row, n8 + col) + conjg(H_minus(row, col))))
+        same_k_err = max(same_k_err, abs(H(n8 + row, n8 + col) + conjg(H_plus(row, col))))
+      end do
+    end do
+    @assertTrue(same_k_err > 1.0e-8_dp, message="finite-k fixture must distinguish +k from -k hole construction")
+    @assertTrue(minus_k_err < 1.0e-12_dp, message="QW hole block must use H_h(-k)")
+
+    allocate(evals(dim), rwork(max(1, 3*dim - 2)), work(1))
+    call zheev('N', 'U', dim, H, dim, evals, work, -1, rwork, info)
+    lwork = max(1, nint(real(work(1), kind=dp)))
+    deallocate(work)
+    allocate(work(lwork))
+    call zheev('N', 'U', dim, H, dim, evals, work, lwork, rwork, info)
+
+    @assertEqual(0, info, message="QW BdG diagonalization must succeed")
+    do i = 1, dim / 2
+      @assertEqual(-evals(i), evals(dim + 1 - i), tolerance=1.0e-7_dp)
+    end do
+
+    deallocate(profile, kpterms, H, H_plus, H_minus, evals, rwork, work)
+  end subroutine test_bdg_qw_particle_hole_nonzero_k
+
+  @test
+  subroutine test_bdg_qw_optional_zeeman_not_double_counted()
+    type(simulation_config) :: cfg_zero, cfg_field
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: H_zero(:,:), H_field(:,:)
+    real(kind=dp) :: Vz(8), B_vec(3), diag_delta, hole_delta
+    integer :: ib, row, n8
+
+    call setup_minimal_qw_bdg_fixture(cfg_zero, profile, kpterms)
+    cfg_zero%bdg%enabled = .false.
+
+    cfg_field = cfg_zero
+    cfg_field%bdg%enabled = .true.
+    cfg_field%bdg%g_factor = 4.0_dp
+    cfg_field%bdg%B_vec = [0.0_dp, 0.0_dp, 1.5_dp]
+    B_vec = cfg_field%bdg%B_vec
+
+    call build_bdg_hamiltonian_qw(H_zero, cfg_zero, profile, kpterms, &
+      & 0.0_dp, 0.0_dp, 0.001_dp)
+    call build_bdg_hamiltonian_qw(H_field, cfg_field, profile, kpterms, &
+      & 0.0_dp, 0.0_dp, 0.001_dp, B_vec=B_vec, g_factor=cfg_field%bdg%g_factor)
+
+    call compute_zeeman_vz(cfg_field%bdg%g_factor, mu_B, sqrt(sum(B_vec**2)), Vz)
+
+    n8 = 8 * cfg_field%fdStep
+    do ib = 1, 8
+      row = (ib - 1) * cfg_field%fdStep + 1
+      diag_delta = real(H_field(row, row) - H_zero(row, row), kind=dp)
+      hole_delta = real(H_field(n8 + row, n8 + row) - H_zero(n8 + row, n8 + row), kind=dp)
+      @assertEqual(Vz(ib), diag_delta, tolerance=1.0e-12_dp)
+      @assertEqual(-Vz(ib), hole_delta, tolerance=1.0e-12_dp)
+    end do
+
+    deallocate(profile, kpterms, H_zero, H_field)
+  end subroutine test_bdg_qw_optional_zeeman_not_double_counted
 
 end module

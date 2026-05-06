@@ -86,10 +86,9 @@ contains
     do idx = 1, nnz_offset
       if (coo_row(idx) /= coo_col(idx)) then
         ! Get y-coordinates of the two sites (z array holds y for wire mode)
-        ! Grid point indices are 1-based: grid_pt = (row-1)/8 + 1
-        ! For wire mode with 8 bands per grid point
-        y_i = grid%z((coo_row(idx) - 1) / 8 + 1) * 1.0e-10_dp  ! meters
-        y_j = grid%z((coo_col(idx) - 1) / 8 + 1) * 1.0e-10_dp  ! meters
+        ! Band-major basis: grid_pt = mod(row-1, ngrid) + 1
+        y_i = grid%z(mod(coo_row(idx) - 1, ngrid) + 1) * 1.0e-10_dp  ! meters
+        y_j = grid%z(mod(coo_col(idx) - 1, ngrid) + 1) * 1.0e-10_dp  ! meters
 
         ! Peierls phase: phi = e * Bx * (y_i - y_j) * dz / hbar
         ! Using SI units: e in C, B in T, y and dz in m, hbar in J*s

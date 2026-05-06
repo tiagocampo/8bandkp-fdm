@@ -29,7 +29,7 @@ module bdg_hamiltonian
   use sparse_matrices
   use hamiltonian_wire, only: ZB8bandGeneralized, wire_workspace
   use hamiltonianConstructor, only: ZB8bandQW
-  use magnetic_field, only: add_zeeman_coo, add_peierls_coo, compute_zeeman_vz
+  use magnetic_field, only: add_peierls_coo, compute_zeeman_vz
 
   implicit none
 
@@ -82,21 +82,18 @@ contains
     real(kind=dp), intent(in), optional :: g_factor
 
     type(csr_matrix) :: H0
-    integer :: N, Ntot, nnz_bdg, nnz_zeeman
+    integer :: N, Ntot, nnz_bdg
     integer :: coo_idx, coo_capacity
     integer, allocatable :: coo_row_bdg(:), coo_col_bdg(:)
     complex(kind=dp), allocatable :: coo_vals_bdg(:)
-    ! Separate REAL COO for Zeeman/Peierls (merged during assembly)
-    integer, allocatable :: coo_row_zeeman(:), coo_col_zeeman(:)
-    real(kind=dp), allocatable :: coo_vals_zeeman(:)
 
-    ! Pairing sign pattern for 8-band zinc-blende basis
-    ! CB1=+1, CB2=-1, VB signs alternate, then negate for particle-hole
+    ! Pairing sign pattern for 8-band zinc-blende basis, bands 1..8.
     real(kind=dp) :: pairing_sign(8)
 
     ! Temporary for -H0^T + mu*I
-    integer :: i, kk, row, col, global_row, global_col, nnz_z
-    real(kind=dp) :: g_f
+    integer :: i, kk, row, col, global_row, global_col, normal_nnz
+    real(kind=dp) :: Vz_opt(8), Vz_cfg(8), Vz_delta(8), g_f, B_mag_opt, B_mag_cfg
+    logical :: add_optional_zeeman
 
     ! --- Build H0 (8N x 8N wire Hamiltonian) ---
     call ZB8bandGeneralized(H0, kz, profile_2d, kpterms_2d, cfg, ws=ws)
@@ -123,29 +120,25 @@ contains
     ! Block (1,2): Delta => 8*N (antidiagonal, one entry per band per spatial point)
     ! Block (2,1): Delta^dagger => 8*N (conjugate transpose)
     ! mu*I diagonal: 16*N (8N in each of blocks (1,1) and (2,2))
-    ! Zeeman/Peierls: 8*N additional diagonal entries (added to (1,1) when B != 0)
-    nnz_bdg = 2 * H0%nnz + 2 * (8 * N) + 16 * N + 8 * N
+    ! Optional Zeeman can add one electron and one hole diagonal entry per band/site.
+    nnz_bdg = 2 * H0%nnz + 2 * (8 * N) + 16 * N + 16 * N
 
     coo_capacity = nnz_bdg + nnz_bdg / 5  ! small safety margin
     allocate(coo_row_bdg(coo_capacity))
     allocate(coo_col_bdg(coo_capacity))
     allocate(coo_vals_bdg(coo_capacity))
-    nnz_zeeman = 8 * N  ! maximum Zeeman diagonal entries
-    allocate(coo_row_zeeman(nnz_zeeman))
-    allocate(coo_col_zeeman(nnz_zeeman))
-    allocate(coo_vals_zeeman(nnz_zeeman))
     coo_idx = 0
 
     ! --- Pairing sign pattern: antidiag(+1,-1,+1,-1,-1,+1,+1,-1) ---
     pairing_sign = [ &
-      +1.0_dp, &  ! CB1 (band 7)
-      -1.0_dp, &  ! CB2 (band 8)
-      +1.0_dp, &  ! HH1 (band 1)
-      -1.0_dp, &  ! HH2 (band 4)
-      -1.0_dp, &  ! SO1 (band 5)
-      +1.0_dp, &  ! SO2 (band 6)
-      +1.0_dp, &  ! LH1 (band 2)
-      -1.0_dp &   ! LH2 (band 3)
+      +1.0_dp, &  ! band 1
+      -1.0_dp, &  ! band 2
+      +1.0_dp, &  ! band 3
+      -1.0_dp, &  ! band 4
+      -1.0_dp, &  ! band 5
+      +1.0_dp, &  ! band 6
+      +1.0_dp, &  ! band 7
+      -1.0_dp &   ! band 8
     ]
 
     ! ==================================================================
@@ -163,34 +156,39 @@ contains
     end do
 
     ! ==================================================================
-    ! Add Peierls and Zeeman corrections to electron block (1,1)
+    ! Add Peierls phase correction to electron block (1,1)
     ! Peierls phase modifies existing off-diagonal entries in-place.
-    ! Zeeman splitting adds new diagonal entries (merged during CSR assembly).
+    ! Zeeman is already added by ZB8bandGeneralized (insert_zeeman_coo
+    ! when cfg%bdg%enabled), so we must not add it again here.
     ! ==================================================================
-    if (present(B_vec) .and. (abs(B_vec(1)) > 1e-12_dp .or. &
-                              abs(B_vec(2)) > 1e-12_dp .or. &
-                              abs(B_vec(3)) > 1e-12_dp)) then
-      if (present(g_factor)) then
-        g_f = g_factor
-      else
-        g_f = cfg%bdg%g_factor
+    if (present(B_vec)) then
+      if (abs(B_vec(1)) > 1.0e-12_dp) then
+        call add_peierls_coo(coo_vals_bdg, coo_row_bdg, coo_col_bdg, &
+                              coo_idx, cfg%grid, B_vec)
       end if
-      ! Apply Peierls phase to off-diagonal entries of the already-populated
-      ! electron block (1,1) in the main complex COO array.
-      call add_peierls_coo(coo_vals_bdg, coo_row_bdg, coo_col_bdg, &
-                            coo_idx, cfg%grid, B_vec)
-      ! Add Zeeman splitting to separate real COO array (diagonal-only)
-      nnz_z = 0
-      call add_zeeman_coo(coo_vals_zeeman, coo_row_zeeman, coo_col_zeeman, &
-                          nnz_z, cfg%grid, B_vec, g_f, nnz_zeeman)
-      ! Copy Zeeman entries into the main complex COO
-      do i = 1, nnz_z
-        coo_idx = coo_idx + 1
-        call check_coo_bounds(coo_idx, coo_capacity)
-        coo_row_bdg(coo_idx) = coo_row_zeeman(i)
-        coo_col_bdg(coo_idx) = coo_col_zeeman(i)
-        coo_vals_bdg(coo_idx) = cmplx(coo_vals_zeeman(i), 0.0_dp, kind=dp)
-      end do
+    end if
+    normal_nnz = coo_idx
+
+    add_optional_zeeman = .false.
+    Vz_delta = 0.0_dp
+    if (present(B_vec)) then
+      B_mag_opt = sqrt(sum(B_vec**2))
+      if (B_mag_opt > 1.0e-12_dp) then
+        if (present(g_factor)) then
+          g_f = g_factor
+        else
+          g_f = cfg%bdg%g_factor
+        end if
+        call compute_zeeman_vz(g_f, mu_B, B_mag_opt, Vz_opt)
+        if (cfg%bdg%enabled) then
+          B_mag_cfg = sqrt(sum(cfg%bdg%B_vec**2))
+          call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag_cfg, Vz_cfg)
+          Vz_delta = Vz_opt - Vz_cfg
+        else
+          Vz_delta = Vz_opt
+        end if
+        add_optional_zeeman = maxval(abs(Vz_delta)) > 1.0e-14_dp
+      end if
     end if
 
     ! Subtract mu from diagonal: (band_diag, band_diag) entries
@@ -202,18 +200,30 @@ contains
       coo_vals_bdg(coo_idx) = cmplx(-mu, 0.0_dp, kind=dp)
     end do
 
+    if (add_optional_zeeman) then
+      do i = 1, N
+        do row = 1, 8
+          coo_idx = coo_idx + 1
+          call check_coo_bounds(coo_idx, coo_capacity)
+          global_row = (row - 1) * N + i
+          coo_row_bdg(coo_idx) = global_row
+          coo_col_bdg(coo_idx) = global_row
+          coo_vals_bdg(coo_idx) = cmplx(Vz_delta(row), 0.0_dp, kind=dp)
+        end do
+      end do
+    end if
+
     ! ==================================================================
     ! Block (2,1): Delta^dagger  (rows 8N..16N-1, cols 0..8N-1)
-    ! Antidiagonal pairing: Delta(b, 9-b) = delta_0 * pairing_sign(b)
-    ! Delta^dagger(b', 9-b') = delta_0 * pairing_sign(9-b')
+    ! Antidiagonal pairing in band-major: row = (band-1)*N + site
     ! ==================================================================
     do i = 1, N  ! spatial index
       do row = 1, 8  ! hole band
         col = 9 - row  ! antidiagonal electron partner
         coo_idx = coo_idx + 1
         call check_coo_bounds(coo_idx, coo_capacity)
-        global_row = 8 * N + (i - 1) * 8 + row
-        global_col = (i - 1) * 8 + col
+        global_row = 8 * N + (row - 1) * N + i
+        global_col = (col - 1) * N + i
         coo_row_bdg(coo_idx) = global_row
         coo_col_bdg(coo_idx) = global_col
         coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(col), 0.0_dp, kind=dp)
@@ -222,15 +232,15 @@ contains
 
     ! ==================================================================
     ! Block (1,2): Delta  (rows 0..8N-1, cols 8N..16N-1)
-    ! Antidiagonal pairing: Delta(b, 9-b) = delta_0 * pairing_sign(b)
+    ! Antidiagonal pairing in band-major: row = (band-1)*N + site
     ! ==================================================================
     do i = 1, N  ! spatial index
       do row = 1, 8  ! electron band
         col = 9 - row  ! antidiagonal hole partner
         coo_idx = coo_idx + 1
         call check_coo_bounds(coo_idx, coo_capacity)
-        global_row = (i - 1) * 8 + row
-        global_col = 8 * N + (i - 1) * 8 + col
+        global_row = (row - 1) * N + i
+        global_col = 8 * N + (col - 1) * N + i
         coo_row_bdg(coo_idx) = global_row
         coo_col_bdg(coo_idx) = global_col
         coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(row), 0.0_dp, kind=dp)
@@ -241,17 +251,16 @@ contains
     ! Block (2,2): -H0^T + mu*I  (rows 8N..16N-1, cols 8N..16N-1)
     ! -H0^T flips the transpose relationship
     ! ==================================================================
-    do row = 1, H0%nrows
-      do kk = H0%rowptr(row), H0%rowptr(row + 1) - 1
-        col = H0%colind(kk)
-        coo_idx = coo_idx + 1
-        call check_coo_bounds(coo_idx, coo_capacity)
-        ! Transpose: row in H0^T becomes col, col becomes row
-        ! Offset by 8N for the hole block
-        coo_row_bdg(coo_idx) = 8 * N + col
-        coo_col_bdg(coo_idx) = 8 * N + row
-        coo_vals_bdg(coo_idx) = -conjg(H0%values(kk))  ! -H0^T: negate and conjugate
-      end do
+    do kk = 1, normal_nnz
+      row = coo_row_bdg(kk)
+      col = coo_col_bdg(kk)
+      coo_idx = coo_idx + 1
+      call check_coo_bounds(coo_idx, coo_capacity)
+      ! Hole block is -H_e^T. Do not conjugate here: complex Peierls
+      ! phases must transpose into the hole sector with their phase intact.
+      coo_row_bdg(coo_idx) = 8 * N + col
+      coo_col_bdg(coo_idx) = 8 * N + row
+      coo_vals_bdg(coo_idx) = -coo_vals_bdg(kk)
     end do
 
     ! Add mu*I to block (2,2)
@@ -263,6 +272,19 @@ contains
       coo_vals_bdg(coo_idx) = cmplx(mu, 0.0_dp, kind=dp)
     end do
 
+    if (add_optional_zeeman) then
+      do i = 1, N
+        do row = 1, 8
+          coo_idx = coo_idx + 1
+          call check_coo_bounds(coo_idx, coo_capacity)
+          global_row = 8 * N + (row - 1) * N + i
+          coo_row_bdg(coo_idx) = global_row
+          coo_col_bdg(coo_idx) = global_row
+          coo_vals_bdg(coo_idx) = cmplx(-Vz_delta(row), 0.0_dp, kind=dp)
+        end do
+      end do
+    end if
+
     ! ==================================================================
     ! Build the final CSR matrix from COO
     ! ==================================================================
@@ -271,7 +293,6 @@ contains
                              coo_vals_bdg(1:coo_idx))
 
     deallocate(coo_row_bdg, coo_col_bdg, coo_vals_bdg)
-    deallocate(coo_row_zeeman, coo_col_zeeman, coo_vals_zeeman)
     call csr_free(H0)
 
   end subroutine build_bdg_hamiltonian_1d
@@ -308,10 +329,10 @@ contains
     real(kind=dp), intent(in), optional :: g_factor
 
     integer :: N, N8, Ntot, i, ib, row, col
-    complex(kind=dp), allocatable :: H0(:,:)
+    complex(kind=dp), allocatable :: H_e(:,:), H_h(:,:)
     type(wavevector) :: wv
+    type(simulation_config) :: cfg_normal
     real(kind=dp) :: pairing_sign(8)
-    real(kind=dp) :: Vz(8), g_f
 
     ! --- Dimension setup ---
     N = cfg%fdStep
@@ -322,49 +343,36 @@ contains
     N8 = 8 * N
     Ntot = 16 * N
 
-    ! --- Build 8N x 8N electron Hamiltonian H0(k_par) ---
-    allocate(H0(N8, N8))
-    H0 = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    ! --- Build 8N x 8N normal Hamiltonians H_e(+k) and H_h(-k) ---
+    allocate(H_e(N8, N8), H_h(N8, N8))
+    H_e = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    H_h = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    cfg_normal = cfg
+    if (present(B_vec)) then
+      cfg_normal%bdg%B_vec = B_vec
+      cfg_normal%bdg%enabled = any(abs(B_vec) > 1.0e-12_dp)
+      if (present(g_factor)) cfg_normal%bdg%g_factor = g_factor
+    end if
 
     ! Set wavevector: in-plane k_par along kx, kz=0 for QW
     wv%kx = k_par
     wv%ky = 0.0_dp
     wv%kz = 0.0_dp
 
-    call ZB8bandQW(H0, wv, profile, kpterms, cfg=cfg)
-
-    ! --- Optional: add Zeeman splitting to H0 diagonal ---
-    if (present(B_vec)) then
-      if (abs(B_vec(1)) > 1e-12_dp .or. &
-          abs(B_vec(2)) > 1e-12_dp .or. &
-          abs(B_vec(3)) > 1e-12_dp) then
-        if (present(g_factor)) then
-          g_f = g_factor
-        else
-          g_f = cfg%bdg%g_factor
-        end if
-        call compute_zeeman_vz(g_f, mu_B, sqrt(sum(B_vec**2)), Vz)
-        ! Add Zeeman to diagonal of H0 at each spatial site
-        do i = 1, N
-          do ib = 1, 8
-            row = (i - 1) * 8 + ib
-            H0(row, row) = H0(row, row) + cmplx(Vz(ib), 0.0_dp, kind=dp)
-          end do
-        end do
-      end if
-    end if
-
-    ! --- Subtract mu from diagonal of H0 ---
-    do i = 1, N8
-      H0(i, i) = H0(i, i) - cmplx(mu, 0.0_dp, kind=dp)
-    end do
+    call ZB8bandQW(H_e, wv, profile, kpterms, cfg=cfg_normal)
+    wv%kx = -k_par
+    call ZB8bandQW(H_h, wv, profile, kpterms, cfg=cfg_normal)
 
     ! --- Allocate the full 16N x 16N BdG matrix ---
     allocate(H_bdg(Ntot, Ntot))
     H_bdg = cmplx(0.0_dp, 0.0_dp, kind=dp)
 
-    ! --- Block (1,1): H0 - mu*I ---
-    H_bdg(1:N8, 1:N8) = H0
+    ! --- Block (1,1): H_e(+k) - mu*I ---
+    H_bdg(1:N8, 1:N8) = H_e
+    do i = 1, N8
+      H_bdg(i, i) = H_bdg(i, i) - cmplx(mu, 0.0_dp, kind=dp)
+    end do
 
     ! --- Pairing sign pattern for zinc-blende 8-band basis ---
     pairing_sign = [ &
@@ -378,12 +386,12 @@ contains
       -1.0_dp &   ! band 8 (CB)
     ]
 
-    ! --- Block (1,2): Delta (antidiagonal pairing) ---
+    ! --- Block (1,2): Delta (antidiagonal pairing, band-major) ---
     ! Delta(b, 9-b) = delta_0 * pairing_sign(b) at each spatial site
     do i = 1, N
       do ib = 1, 8
-        row = (i - 1) * 8 + ib
-        col = (i - 1) * 8 + (9 - ib)
+        row = (ib - 1) * N + i
+        col = (9 - ib - 1) * N + i
         H_bdg(row, N8 + col) = cmplx(delta_0 * pairing_sign(ib), 0.0_dp, kind=dp)
       end do
     end do
@@ -392,23 +400,23 @@ contains
     ! Since Delta is real and antidiagonal: Delta^dagger(b',b) = Delta(b,b')
     do i = 1, N
       do ib = 1, 8
-        row = (i - 1) * 8 + ib
-        col = (i - 1) * 8 + (9 - ib)
+        row = (ib - 1) * N + i
+        col = (9 - ib - 1) * N + i
         H_bdg(N8 + row, col) = cmplx(delta_0 * pairing_sign(9 - ib), 0.0_dp, kind=dp)
       end do
     end do
 
-    ! --- Block (2,2): -H0^* + mu*I ---
-    ! H0 already has -mu subtracted: H0_after = H_0 - mu*I
-    ! Hole sector: -(H_0)^* + mu*I = -(H0_after + mu*I)^* + mu*I
-    !            = -H0_after^* - mu*I + mu*I = -H0_after^*
+    ! --- Block (2,2): -H_h(-k)^* + mu*I ---
     do row = 1, N8
       do col = 1, N8
-        H_bdg(N8 + row, N8 + col) = -conjg(H0(col, row))
+        H_bdg(N8 + row, N8 + col) = -conjg(H_h(row, col))
       end do
     end do
+    do i = 1, N8
+      H_bdg(N8 + i, N8 + i) = H_bdg(N8 + i, N8 + i) + cmplx(mu, 0.0_dp, kind=dp)
+    end do
 
-    deallocate(H0)
+    deallocate(H_e, H_h)
 
   end subroutine build_bdg_hamiltonian_qw
 

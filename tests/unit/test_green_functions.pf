@@ -148,9 +148,10 @@ contains
     real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
     real(kind=dp), allocatable :: A_kE(:,:), k_arr(:), E_arr(:)
     integer :: N, nE, nk, ik, iE
+    real(kind=dp) :: dE, integral
 
     N = 5
-    nE = 50
+    nE = 801
     nk = 10
 
     cfg%confinement = 1
@@ -178,7 +179,7 @@ contains
       k_arr(ik) = -0.05_dp + real(ik - 1, kind=dp) * 0.01_dp
     end do
     do iE = 1, nE
-      E_arr(iE) = -0.5_dp + real(iE - 1, kind=dp) * 1.0_dp / real(nE - 1, kind=dp)
+      E_arr(iE) = -10.0_dp + real(iE - 1, kind=dp) * 20.0_dp / real(nE - 1, kind=dp)
     end do
 
     call compute_spectral_function_qw(cfg, profile, kpterms, k_arr, E_arr, &
@@ -193,8 +194,81 @@ contains
     ! Check that max values are positive (peaks at eigenvalues)
     @assertTrue(maxval(A_kE) > 0.0_dp, message="A(k,E) should have positive peaks")
 
+    dE = E_arr(2) - E_arr(1)
+    integral = sum(A_kE(1,:)) * dE
+    @assertTrue(abs(integral - real(8 * cfg%fdStep, kind=dp)) < 1.0_dp, message="spectral integral should recover the number of states")
+
     deallocate(profile, kpterms, k_arr, E_arr, A_kE)
   end subroutine test_spectral_function_qw_sum_rule
+
+  @test
+  subroutine test_ldos_csr_shifts_diagonal_only()
+    type(csr_matrix) :: H
+    real(kind=dp) :: ldos(2), expected_ldos
+    integer :: rows(4), cols(4)
+    complex(kind=dp) :: vals(4), z, det, dense_g11
+
+    rows = [1, 1, 2, 2]
+    cols = [1, 2, 1, 2]
+    vals = [cmplx(0.0_dp, 0.0_dp, kind=dp), cmplx(-0.5_dp, 0.0_dp, kind=dp), &
+            cmplx(-0.5_dp, 0.0_dp, kind=dp), cmplx(0.0_dp, 0.0_dp, kind=dp)]
+    call csr_build_from_coo(H, 2, 2, 4, rows, cols, vals)
+
+    call compute_ldos_csr(H, 0.0_dp, 0.1_dp, ldos)
+
+    z = cmplx(0.0_dp, 0.1_dp, kind=dp)
+    det = z * z - cmplx(0.25_dp, 0.0_dp, kind=dp)
+    dense_g11 = z / det
+    expected_ldos = -aimag(dense_g11) / pi_dp
+
+    @assertTrue(all(ldos > 0.0_dp), message="coupled LDOS must be positive")
+    @assertEqual(expected_ldos, ldos(1), tolerance=1.0e-10_dp)
+    @assertEqual(expected_ldos, ldos(2), tolerance=1.0e-10_dp)
+
+    call H%free()
+  end subroutine test_ldos_csr_shifts_diagonal_only
+
+  @test
+  subroutine test_spectral_function_rejects_zero_eta()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:), k_arr(:), E_arr(:), A(:,:)
+
+    cfg%confinement = 1
+    cfg%fdStep = 3
+    allocate(profile(3,3), kpterms(3,3,10), k_arr(1), E_arr(3))
+    profile = 0.0_dp
+    kpterms = 0.0_dp
+    k_arr = [0.0_dp]
+    E_arr = [-1.0_dp, 0.0_dp, 1.0_dp]
+
+    call compute_spectral_function_qw(cfg, profile, kpterms, k_arr, E_arr, 0.0_dp, A)
+    @assertTrue(allocated(A), message="invalid eta returns allocated empty output")
+    @assertEqual(0, size(A, 1), message="eta=0 must not compute NaN spectrum")
+
+    deallocate(profile, kpterms, k_arr, E_arr)
+    if (allocated(A)) deallocate(A)
+  end subroutine test_spectral_function_rejects_zero_eta
+
+  @test
+  subroutine test_landauer_single_perfect_channel()
+    real(kind=dp) :: T, G
+
+    T = compute_landauer_transmission_1d(E=0.0_dp, onsite=0.0_dp, hopping=-1.0_dp, eta=1.0e-6_dp)
+    G = compute_conductance_landauer_from_transmission(T)
+
+    @assertEqual(1.0_dp, T, tolerance=1.0e-5_dp)
+    @assertEqual(1.0_dp, G, tolerance=1.0e-5_dp)
+  end subroutine test_landauer_single_perfect_channel
+
+  @test
+  subroutine test_landauer_transmission_is_bounded_near_band_edge()
+    real(kind=dp) :: T
+
+    T = compute_landauer_transmission_1d(E=2.0_dp, onsite=0.0_dp, hopping=-1.0_dp, eta=1.0e-3_dp)
+
+    @assertTrue(T >= 0.0_dp, message="single-channel transmission must be non-negative")
+    @assertTrue(T <= 1.0_dp, message="single-channel transmission must not exceed one")
+  end subroutine test_landauer_transmission_is_bounded_near_band_edge
 
   ! ==================================================================
   ! Test 5: Spectral function is suppressed in the band gap.

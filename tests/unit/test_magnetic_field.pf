@@ -95,30 +95,33 @@ contains
     mat2d = 1
     call grid_init_rect(grid, nx, ny, 1.0_dp, 1.0_dp, mat2d)
 
-    ! Set up COO with:
-    ! - Two diagonal entries (rows 1, 10) - should NOT be modified
-    ! - One off-diagonal hopping (row 2, col 10) - should get phase factor
+    ! Set up COO with band-major indexing: row = (band-1)*ngrid + site
+    ! ngrid = 2 grid points: site 1 -> row offset 1, site 2 -> row offset 2
+    ! band 1, site 1 -> row 1;  band 1, site 2 -> row 2
+    ! band 2, site 1 -> row 3;  band 2, site 2 -> row 4
+    ! - Two diagonal entries (rows 1, 2) - should NOT be modified
+    ! - One off-diagonal hopping (row 1, col 2) - should get phase factor
     allocate(coo_vals(3), coo_row(3), coo_col(3))
     nnz_offset = 0
 
-    ! Diagonal entry at row 1 (band 1 of grid point 1)
+    ! Diagonal entry at row 1 (band 1, site 1)
     nnz_offset = nnz_offset + 1
     coo_row(nnz_offset) = 1
     coo_col(nnz_offset) = 1
     coo_vals(nnz_offset) = cmplx(1.0_dp, 0.0_dp, kind=dp)
 
-    ! Off-diagonal entry: row 2 (band 2 of grid pt 1) to col 10 (band 2 of grid pt 2)
+    ! Off-diagonal entry: row 1 (band 1, site 1) to col 2 (band 1, site 2)
     ! grid pt 1: y(1) = 0.5 Angstrom
     ! grid pt 2: y(2) = 1.5 Angstrom
     nnz_offset = nnz_offset + 1
-    coo_row(nnz_offset) = 2
-    coo_col(nnz_offset) = 10
+    coo_row(nnz_offset) = 1
+    coo_col(nnz_offset) = 2
     coo_vals(nnz_offset) = cmplx(0.5_dp, 0.0_dp, kind=dp)
 
-    ! Another diagonal entry at row 10
+    ! Another diagonal entry at row 2 (band 1, site 2)
     nnz_offset = nnz_offset + 1
-    coo_row(nnz_offset) = 10
-    coo_col(nnz_offset) = 10
+    coo_row(nnz_offset) = 2
+    coo_col(nnz_offset) = 2
     coo_vals(nnz_offset) = cmplx(2.0_dp, 0.0_dp, kind=dp)
 
     ! Apply Peierls phase with Bx = 5 Tesla
