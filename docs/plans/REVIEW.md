@@ -178,7 +178,7 @@ Verification on 2026-05-06: `ctest --test-dir build -j4 --output-on-failure` pas
 
 **Status: COMPLETE**
 
-**Archive:** `docs/plans/archive/2026-05-05-phase6-completion-repair.md`
+**Archive:** `docs/plans/archive/2026-05-05-phase6-topological-suite.md`, `docs/plans/archive/2026-05-05-phase6-completion-repair.md`
 
 Executed task-by-task with review gates. Final branch state pushed to `origin/feature/bdg-topological-superconductivity` through:
 
