@@ -4,6 +4,9 @@ Run date: 2026-05-04
 Script: `scripts/plotting/generate_all_figures.py --skip-build`
 Result: **74 succeeded, 1 failed out of 75 registered figures**
 
+Archived on 2026-05-06. The remaining timeout item was addressed in code by using
+the 600s timeout listed below as the fix for `fig_timing_dense_vs_sparse`.
+
 Total PNG files generated: 77 in `docs/figures/` + 9 in `docs/lecture/figures/` = 86 PNG files
 (some figure functions produce multiple PNG files, e.g. auxiliary panels)
 
@@ -12,7 +15,7 @@ Total PNG files generated: 77 in `docs/figures/` + 9 in `docs/lecture/figures/` 
 | Figure | Issue | Root Cause | Fix | Status |
 |--------|-------|------------|-----|--------|
 | `qw_strained_bands` | Fixed. Was: SIGSEGV in strained QW run (rc=-11). | gfortran -O3 created temporary array copies when passing allocatable derived-type components to `add_bp_strain_dense`, corrupting memory under OpenMP. Also: `compute_majorana_profile` left profile array partially uninitialized. | Inlined strain application with scalar extracts in `ZB8bandQW`; added scalar `apply_bp_strain_inline` for bulk; zero-initialized profile output in `compute_majorana_profile`. | Fixed |
-| `timing_dense_vs_sparse` | Wire (sparse) run exceeds 300s timeout. Stale PNG from 2026-04-25 remains. | `wire_gaas_rectangle.cfg` with full kz-sweep takes >300s on this hardware. The `run_executable` default timeout is 300s. | Increase timeout in `fig_timing_dense_vs_sparse` to 600s, or reduce wire grid size for benchmark. | Open |
+| `timing_dense_vs_sparse` | Fixed. Was: wire (sparse) run exceeds 300s timeout. | `wire_gaas_rectangle.cfg` with full kz-sweep takes >300s on this hardware. The `run_executable` default timeout was 300s. | `fig_timing_dense_vs_sparse` now passes `timeout=600` to `run_executable`. | Fixed |
 
 ## Physics Sanity Checks (all pass)
 

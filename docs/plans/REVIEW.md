@@ -26,7 +26,7 @@ Review date: 2026-05-06
 | 20 | 2026-04-18-ch04-strain-figures | design + plan | COMPLETE | Archived |
 | 21 | 2026-04-19-ch03-ch04-figures | plan | COMPLETE | Archived |
 | 22 | 2026-04-19-qw-tutorials | design | COMPLETE | All optics figure functions + 5 new Group #50 figures. ISBT cross-validated |
-| 23 | 2026-04-20-remaining-work | design + plan | INCOMPLETE | Task 8: core-shell benchmark config missing |
+| 23 | 2026-04-20-remaining-work | design + plan | COMPLETE | Archived; core-shell benchmark is registered as `regression_wire_inas_gaas_core_shell` using `wire_inas_gaas_strain.cfg` |
 | 24 | 2026-04-20-strain-sign-and-buffer-fix | standalone | COMPLETE | Archived |
 | 25 | 2026-04-21-benchmark-matrix | standalone | COMPLETE | Archived (reference doc) |
 | 26 | 2026-04-21-docs-physics-revamp | design + plan | INCOMPLETE | 10/12 tasks missing, design archived |
@@ -110,11 +110,11 @@ Design doc archived (defines scope only). Plan has 12 tasks; Tasks 1-2 (control 
 
 ### 23. 2026-04-20-remaining-work
 
-**Status: INCOMPLETE**
+**Status: COMPLETE**
 
-13/14 tasks done. Missing:
+**Archive:** `docs/plans/archive/2026-04-20-remaining-work-design.md`, `docs/plans/archive/2026-04-20-remaining-work-plan.md`
 
-- **Task 8 (Stier & Bimberg core-shell wire benchmark)**: Integration test `test_wire_core_shell.sh` exists but regression config `wire_inas_gaas_core_shell.cfg` was never created — test cannot function without it
+All tracked tasks are complete. The Stier & Bimberg core-shell benchmark is registered as `regression_wire_inas_gaas_core_shell` and uses `tests/regression/configs/wire_inas_gaas_strain.cfg` with golden data in `tests/regression/data/wire_inas_gaas_core_shell/`. The historical plan name `wire_inas_gaas_core_shell.cfg` was not kept as the final config filename.
 
 ### 37. 2026-04-26-modern-fortran-migration
 

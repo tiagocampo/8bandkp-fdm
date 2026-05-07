@@ -53,7 +53,7 @@ All 21 review findings resolved: 7 correctness bugs (C1-C7), 9 code quality issu
 
 All 74 existing figures validated, ISBT cross-verified (z-dipole vs commutator velocity, rel_diff=0.007%), 5 new physics figures added (bulk E(k), QW subbands, wavefunctions, wire geometry, Zeeman fan). Ch06 + Ch08 rebuilt with verified captions. All 14 lecture chapters have zero broken figure references. Groups #22, #26, #50 -> COMPLETE.
 
-One remaining issue in `docs/plans/phase4-discrepancy-log.md`: `timing_dense_vs_sparse` timeout (performance). The `qw_strained_bands` segfault was fixed (commit 9afc205: gfortran -O3 array temporaries in derived-type components).
+The historical `timing_dense_vs_sparse` timeout note is archived in `docs/plans/archive/phase4-discrepancy-log.md`; `fig_timing_dense_vs_sparse` now uses the 600s timeout identified in that log. The `qw_strained_bands` segfault was fixed (commit 9afc205: gfortran -O3 array temporaries in derived-type components).
 
 **Plan:** `docs/plans/archive/2026-05-04-phase4-optics-figures-plan.md` (archived)
 **Commits:** 12 commits from `88840ce` to `79688ab`.
@@ -114,7 +114,6 @@ Only non-Phase-6 items remain from the review:
 | Source | What | Effort |
 |--------|------|--------|
 | #4 | 5 gfactor regression tests (bulk CB/VB GaAs, GaAsW, InAsW, QW VB) | Low |
-| #23 | Core-shell benchmark: create `wire_inas_gaas_core_shell.cfg` | Low |
 | #37 | `validate_simulation_config` + close `contiguous` gaps (3 known sites) | Medium |
 | #8 | 3 integration tests (wire hexagon, wire strain, SC wire) + 2 regression datasets | Medium |
 | #26 | Docs physics revamp remaining tasks 3-12 | Medium-High |
