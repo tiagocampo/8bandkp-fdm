@@ -87,7 +87,7 @@ New confinement=3 (Landau) mode with x-discretized 8NxN Hamiltonian, Landau gaug
 
 Full topological suite completion repair delivered and pushed.
 
-**Plan:** `docs/superpowers/plans/2026-05-05-phase6-completion-repair.md`
+**Plan:** `docs/plans/archive/2026-05-05-phase6-completion-repair.md` (archived)
 **Commits:** `c56fbd4` through `20c3f19`.
 
 **Delivered:**
