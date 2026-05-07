@@ -1,6 +1,6 @@
 # Implementation Backlog — Ordered by Priority
 
-Consolidated from REVIEW.md on 2026-05-03.
+Consolidated from REVIEW.md on 2026-05-06.
 Piezoelectric explicitly excluded (ZB [001] = zero by symmetry, wires = negligible).
 
 ---
@@ -83,20 +83,39 @@ New confinement=3 (Landau) mode with x-discretized 8NxN Hamiltonian, Landau gaug
 
 ---
 
-## Phase 6: Topological Suite Completion
+## Phase 6: COMPLETED (2026-05-06)
 
-Most advanced features. Fu-Kane is independent of Peierls but logically last.
+Full topological suite completion repair delivered and pushed.
+
+**Plan:** `docs/superpowers/plans/2026-05-05-phase6-completion-repair.md`
+**Commits:** `c56fbd4` through `20c3f19`.
+
+**Delivered:**
+- Dense QW BdG path and app dispatch.
+- QW Fu-Kane parity invariant using band-major inversion and Kramers-pair parity sign.
+- Berry/Kubo conductance and Landauer helper.
+- Bulk/QW/wire spectral functions and LDOS shifted-matrix fix.
+- Real gap sweep evaluators: BHZ analytic, QW Fu-Kane, wire BdG.
+- Phase 6 parser fields, output fields, docs, and regression wiring.
+- New/expanded regressions for QW Fu-Kane, conductance, spectral bulk/QW/wire, and sweep BHZ/QW.
+
+**Verification:** fresh configure/build passed; full suite `66/66` passed; manual topologicalAnalysis smoke configs passed.
+
+**Result:** Full topological analysis suite. Groups #38, #49, #51 -> COMPLETE.
+
+---
+
+## Remaining Backlog
+
+Only non-Phase-6 items remain from the review:
 
 | Source | What | Effort |
 |--------|------|--------|
-| #38 | `build_bdg_hamiltonian_qw` (dense variant for QW BdG) | Medium |
-| #49 | `compute_z2_fukane` for QW (Fu-Kane parity method) | Medium |
-| #49 | `compute_z2_gap_sweep` for wire (phase diagram M vs width) | Medium |
-| #49 | Berry curvature heatmap figures + BHZ phase transition figures | Low-Medium |
-| #38 | 4 unit test files (magnetic_field, z2, edge_states, green_functions) | Medium |
-| #38 | `compute_longitudinal_conductance` + `compute_spectral_function` | Medium-High |
-
-**Result:** Full topological analysis suite. Groups 38, 49 -> COMPLETE.
+| #4 | 5 gfactor regression tests (bulk CB/VB GaAs, GaAsW, InAsW, QW VB) | Low |
+| #23 | Core-shell benchmark: create `wire_inas_gaas_core_shell.cfg` | Low |
+| #37 | `validate_simulation_config` + close `contiguous` gaps (3 known sites) | Medium |
+| #8 | 3 integration tests (wire hexagon, wire strain, SC wire) + 2 regression datasets | Medium |
+| #26 | Docs physics revamp remaining tasks 3-12 | Medium-High |
 
 ---
 
@@ -109,5 +128,5 @@ Most advanced features. Fu-Kane is independent of Peierls but logically last.
 | 3. PR review fixes | — | Correctness, compat, quality | DONE |
 | 4. Figures | 3 | Complete documentation | DONE |
 | 5. Peierls/Landau | 2 | Magnetic field for all modes | DONE |
-| 6. Topological | 2 | Full topo suite | ~5-7 days |
-| **Total** | **7 remaining** | | **~5-7 days** |
+| 6. Topological | 3 | Full topo suite | DONE |
+| **Remaining** | **5 groups** | Non-Phase-6 backlog above | TBD |

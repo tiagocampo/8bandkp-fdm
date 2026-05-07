@@ -1,6 +1,6 @@
 # Plans Review — Implementation Status
 
-Review date: 2026-05-03
+Review date: 2026-05-06
 
 | # | Group | Files | Status | Notes |
 |---|-------|-------|--------|-------|
@@ -41,7 +41,7 @@ Review date: 2026-05-03
 | 35 | 2026-04-25-wire-gfactor-commutator | design | COMPLETE | Archived |
 | 36 | 2026-04-26-hamiltonian-performance-refactor | design + plan | COMPLETE | Archived |
 | 37 | 2026-04-26-modern-fortran-migration | design + plan | MOSTLY COMPLETE | validate_simulation_config missing |
-| 38 | 2026-04-27-bdg-topological-sc | design + impl plan | MOSTLY COMPLETE | QW BdG, 4 unit test files, 2 analysis funcs missing |
+| 38 | 2026-04-27-bdg-topological-sc | design + impl plan | COMPLETE | Phase 6 completion repair delivered QW BdG, Fu-Kane QW, conductance, spectral, LDOS, and sweep paths |
 | 39 | 2026-04-27-pr11-review-fixes | design + plan | COMPLETE | Archived |
 | 40 | 2026-04-27-wire-fastpath-followup | doc + plan | COMPLETE | Archived |
 | 41 | 2026-04-28-modern-fortran-phase2 | plan | COMPLETE | Archived |
@@ -52,7 +52,8 @@ Review date: 2026-05-03
 | 46 | 2026-05-01-bhz-remaining-work | plan | COMPLETE | Archived |
 | 47 | 2026-05-02-magnetic-field-landau | design + impl plan | COMPLETE | confinement=3 Landau mode, gauge shifts, fan diagram, analytical validation |
 | 48 | 2026-05-02-physics-figures-implementation | plan | COMPLETE | Landau verification, input-reference updated, CI wired |
-| 49 | 2026-05-02-topological-suite-verification | spec + plan | INCOMPLETE | Fu-Kane, gap-sweep, Berry curvature figures missing |
+| 49 | 2026-05-02-topological-suite-verification | spec + plan | COMPLETE | Phase 6 completion repair delivered Fu-Kane QW, gap sweep, conductance/spectral regressions; Berry/phase figures already present |
+| 51 | 2026-05-05-phase6-completion-repair | plan | COMPLETE | 66/66 tests passed; pushed through commit 20c3f19 |
 | 50 | 2026-05-03-physics-figures-extended | plan | COMPLETE | All 5 phases done: bulk E(k), QW subbands, wavefunctions, wire geometry, Zeeman fan |
 
 ---
@@ -127,14 +128,18 @@ Phases 1-2 done (forall→do concurrent, goto→named blocks, dsqrt→sqrt, exte
 
 ### 38. 2026-04-27-bdg-topological-sc
 
-**Status: MOSTLY COMPLETE**
+**Status: COMPLETE**
 
-Core physics fully implemented: Chern number (Fukui-Hatsugai-Suzuki), Z2 (gap + Fu-Kane parity), BdG 1D wire assembly, LDOS via complex PARDISO, Majorana extraction, phase diagrams, Berry curvature, topologicalAnalysis executable, lecture 13. Design doc archived. Missing:
+Core physics and Phase 6 repair items are complete:
 
-- **`build_bdg_hamiltonian_qw`**: Only wire CSR path exists; no dense QW BdG variant — limits BdG analysis to 2D wires
-- **`compute_longitudinal_conductance`** (sigma_zz chiral anomaly): Not implemented
-- **`compute_spectral_function`** (k-resolved A(k,E)): Not implemented
-- **4 unit test files missing**: test_magnetic_field.pf, test_z2_invariant.pf, test_edge_states.pf, test_green_functions.pf — integration/regression tests partially cover this
+- Dense QW BdG assembly and QW app path implemented.
+- QW Fu-Kane parity invariant implemented with band-major inversion operator and pair-subspace parity sign.
+- Berry/Kubo conductance and Landauer helper implemented.
+- QW, bulk, and wire spectral functions implemented; LDOS shifted-matrix bug fixed.
+- Gap sweep now uses real evaluators: module-level BHZ analytic, app-level QW Fu-Kane, and app-level wire BdG.
+- Unit and regression coverage added for BdG, Z2/Fu-Kane, Berry/Kubo, Green/LDOS/Landauer, parser, spectral, conductance, and sweep paths.
+
+Verification on 2026-05-06: fresh configure/build passed; full suite `66/66` passed; manual topologicalAnalysis smoke configs passed.
 
 ### 47. 2026-05-02-magnetic-field-landau
 
@@ -152,14 +157,35 @@ All tasks done. Landau level verification via analytical formula and B-sweep fan
 
 ### 49. 2026-05-02-topological-suite-verification
 
-**Status: INCOMPLETE**
+**Status: COMPLETE**
 
-Phases 1, 3-5 largely done (QWZ Chern verification, Peierls implementation, Landau config/figures, BdG parsing, Majorana figure, lecture 13 updated). Missing:
+Phase 6 completion repair closed the remaining verification gaps:
 
-- **Phase 2: Fu-Kane Z2 for QW**: `compute_z2_fukane` stub returns 0 — not implemented
-- **Gap-sweep function**: `compute_z2_gap_sweep` does not exist; wire uses M-sign heuristic
-- **Berry curvature heatmap figures**: `chern_berry_curvature_*.png` not generated
-- **BHZ phase transition figures**: `bhz_z2_phase_transition.png` and `bhz_edge_localization.png` not generated
+- Fu-Kane Z2 for QW implemented and regression-tested (`regression_topology_qw_fukane_z2`).
+- Gap sweep implemented with BHZ analytic, QW Fu-Kane, and wire BdG executable paths; sweep regressions registered.
+- Conductance and spectral modes registered as regressions.
+- Berry curvature / phase-diagram / edge / spectral figure support was delivered earlier in the branch.
+
+Verification on 2026-05-06: `ctest --test-dir build -j4 --output-on-failure` passed `66/66`.
+
+### 51. 2026-05-05-phase6-completion-repair
+
+**Status: COMPLETE**
+
+Executed task-by-task with review gates. Final branch state pushed to `origin/feature/bdg-topological-superconductivity` through:
+
+- `c56fbd4 docs(topo): design phase 6 completion repair`
+- `ad63187 fix(topo): repair phase 6 foundation defects`
+- `bd3b98f feat(topo): complete Phase 6 topological suite wiring`
+- `b35a979 feat(topo): add Phase 6 parser fields and regression configs`
+- `889109d test(topo): add Phase 6 integration test scripts`
+- `20c3f19 fix(topo): resolve phase 6 verification issues`
+
+Final verification:
+
+- Fresh configure/build passed.
+- Full suite passed: `66/66`.
+- Manual smoke passed for conductance QWZ, QW Fu-Kane, QW BdG, spectral QW/wire/bulk, sweep BHZ, and sweep QW.
 
 ### 50. 2026-05-03-physics-figures-extended
 
