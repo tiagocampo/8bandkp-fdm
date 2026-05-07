@@ -50,7 +50,7 @@ Review date: 2026-05-06
 | 44 | 2026-04-29-phase4-exploratory | standalone | COMPLETE | Archived |
 | 45 | 2026-04-29-pr12-fixes | plan | COMPLETE | Archived (zdotc decision documented in CLAUDE.md) |
 | 46 | 2026-05-01-bhz-remaining-work | plan | COMPLETE | Archived |
-| 47 | 2026-05-02-magnetic-field-landau | design + impl plan | COMPLETE | confinement=3 Landau mode, gauge shifts, fan diagram, analytical validation |
+| 47 | 2026-05-02-magnetic-field-landau | design + impl plan | COMPLETE | Archived; confinement=3 Landau mode, gauge shifts, fan diagram, analytical validation |
 | 48 | 2026-05-02-physics-figures-implementation | plan | COMPLETE | Landau verification, input-reference updated, CI wired |
 | 49 | 2026-05-02-topological-suite-verification | spec + plan | COMPLETE | Archived; Phase 6 completion repair delivered Fu-Kane QW, gap sweep, conductance/spectral regressions; Berry/phase figures already present |
 | 51 | 2026-05-05-phase6-completion-repair | plan | COMPLETE | Archived; 66/66 tests passed; pushed through commit 20c3f19 |
@@ -146,6 +146,8 @@ Verification on 2026-05-06: fresh configure/build passed; full suite `66/66` pas
 ### 47. 2026-05-02-magnetic-field-landau
 
 **Status: COMPLETE**
+
+**Archive:** `docs/plans/archive/2026-05-02-magnetic-field-landau-design.md`, `docs/plans/archive/2026-05-02-magnetic-field-landau-implementation-plan.md`, `docs/plans/archive/2026-05-04-landau-bulk-phase5.md`
 
 All phases done. New confinement=3 (Landau) mode replaces the original "Peierls in ZB8bandBulk" approach with a proper x-discretized 8NxN Hamiltonian. Landau gauge A=(0,Bz*x,-By*x) via `compute_gauge_shifts`. B-sweep fan diagram, analytical validation (E_n = E_C + hw_c(n+1/2)), ky-degeneracy check. `b_field` config workaround used for ExternalField (float parsing deferred — no user impact). Fu-Kane Z2 deferred to Phase 6.
 

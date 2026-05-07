@@ -65,6 +65,7 @@ One remaining issue in `docs/plans/phase4-discrepancy-log.md`: `timing_dense_vs_
 New confinement=3 (Landau) mode with x-discretized 8NxN Hamiltonian, Landau gauge A=(0,Bz*x,-By*x), Zeeman splitting, orbital quantization, B-sweep fan diagram, analytical validation against E_n = E_C + hw_c(n+1/2). 58/58 tests pass.
 
 **Plan:** `docs/plans/archive/2026-05-02-magnetic-field-landau-design.md` (archived)
+**Implementation plan:** `docs/plans/archive/2026-05-04-landau-bulk-phase5.md` (archived)
 **Commits:** 82 commits from `70c817b` to `8bd2387`, plus sign fix and CI wiring.
 
 **Code review fixes applied:**
