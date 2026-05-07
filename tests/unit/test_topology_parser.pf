@@ -84,6 +84,98 @@ contains
   end subroutine
 
   @test
+  subroutine test_parse_topology_phase6_name_aware_fields()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    open(unit=99, file='input.cfg', status='replace', action='write')
+    write(99, '(A)') 'waveVector k0'
+    write(99, '(A)') 'waveVectorMax 0.0'
+    write(99, '(A)') 'waveVectorStep 1'
+    write(99, '(A)') 'confinement 0'
+    write(99, '(A)') 'FDstep 1'
+    write(99, '(A)') 'FDorder 2'
+    write(99, '(A)') 'numLayers 1'
+    write(99, '(A)') 'material1 InAs'
+    write(99, '(A)') 'numcb 1'
+    write(99, '(A)') 'numvb 2'
+    write(99, '(A)') 'SC 0'
+    write(99, '(A)') 'topology: T'
+    write(99, '(A)') 'topology_mode conductance'
+    write(99, '(A)') 'topology_compute_chern F'
+    write(99, '(A)') 'topology_compute_hall F'
+    write(99, '(A)') 'topology_qwz_u -0.8'
+    write(99, '(A)') 'topology_compute_z2 F'
+    write(99, '(A)') 'topology_extract_edge_states F'
+    write(99, '(A)') 'topology_edge_E_window 0.01'
+    write(99, '(A)') 'topology_compute_ldos F'
+    write(99, '(A)') 'topology_ldos_eta 0.001'
+    write(99, '(A)') 'topology_ldos_E_range: -0.1'
+    write(99, '(A)') 'topology_ldos_E_range: 0.1'
+    write(99, '(A)') 'topology_ldos_num_E 10'
+    write(99, '(A)') 'compute_spectral: T'
+    write(99, '(A)') 'spectral_E_grid: -0.2 0.2 21 0.004'
+    write(99, '(A)') 'conductance_method: landauer'
+    write(99, '(A)') 'spectral_k_grid: -0.02 0.02 5'
+    write(99, '(A)') 'compute_conductance: T'
+    write(99, '(A)') 'berry_nk: 9'
+    write(99, '(A)') 'landauer_energy: 0.03'
+    write(99, '(A)') 'compute_gap_sweep: T'
+    write(99, '(A)') 'gap_sweep_mu: 0.0 0.002 2'
+    write(99, '(A)') 'sweep_model: bhz_analytic'
+    write(99, '(A)') 'gap_sweep_B: -0.01 0.01 3'
+    close(99)
+
+    call read_and_setup(cfg, profile, kpterms)
+
+    @assertTrue(cfg%topo%compute_spectral)
+    @assertEqual(5, cfg%topo%spectral_nk)
+    @assertEqual(21, cfg%topo%spectral_nE)
+    @assertEqual(0.004_dp, cfg%topo%spectral_eta, tolerance=1.0e-12_dp)
+    @assertTrue(cfg%topo%compute_conductance)
+    @assertEqual('landauer', trim(cfg%topo%conductance_method))
+    @assertEqual(9, cfg%topo%berry_nk)
+    @assertEqual(0.03_dp, cfg%topo%landauer_energy, tolerance=1.0e-12_dp)
+    @assertTrue(cfg%topo%compute_gap_sweep)
+    @assertEqual(3, cfg%topo%gap_sweep_nB)
+    @assertEqual(2, cfg%topo%gap_sweep_nMu)
+    @assertEqual('bhz_analytic', trim(cfg%topo%sweep_model))
+
+    close(unit=99, status='delete')
+  end subroutine test_parse_topology_phase6_name_aware_fields
+
+  @test
+  subroutine test_parse_topology_old_qhe_block()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    open(unit=99, file='input.cfg', status='replace', action='write')
+    write(99, '(A)') 'waveVector k0'
+    write(99, '(A)') 'waveVectorMax 0.0'
+    write(99, '(A)') 'waveVectorStep 1'
+    write(99, '(A)') 'confinement 0'
+    write(99, '(A)') 'FDstep 1'
+    write(99, '(A)') 'FDorder 2'
+    write(99, '(A)') 'numLayers 1'
+    write(99, '(A)') 'material1 InAs'
+    write(99, '(A)') 'numcb 1'
+    write(99, '(A)') 'numvb 2'
+    write(99, '(A)') 'SC 0'
+    write(99, '(A)') 'topology: T'
+    write(99, '(A)') 'mode: qhe'
+    write(99, '(A)') 'compute_chern: T'
+    close(99)
+
+    call read_and_setup(cfg, profile, kpterms)
+
+    @assertTrue(cfg%topo%enabled)
+    @assertEqual('qhe', trim(cfg%topo%mode))
+    @assertTrue(cfg%topo%compute_chern)
+
+    close(unit=99, status='delete')
+  end subroutine test_parse_topology_old_qhe_block
+
+  @test
   subroutine test_parse_topology_sweep_model()
     type(simulation_config) :: cfg
     real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)

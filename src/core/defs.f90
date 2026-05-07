@@ -349,6 +349,8 @@ module definitions
     real(kind=dp)    :: min_gap = 0.0_dp
     real(kind=dp)    :: edge_xi_min = 0.0_dp      ! min edge localization length
     real(kind=dp)    :: edge_xi = 0.0_dp           ! average edge localization length
+    integer          :: n_majorana = 0
+    integer          :: n_majorana_fit_failed = 0
     real(kind=dp), allocatable :: edge_energies(:)
     real(kind=dp), allocatable :: phase_boundary(:,:)  ! (B, mu) pairs
     real(kind=dp), allocatable :: berry_curvature(:,:) ! Omega(kx, ky) if computed

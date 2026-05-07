@@ -193,7 +193,7 @@ Optional. Triggered by `topology: T`. All topology parameters use their defaults
 | Name | Type | Default | Valid range | Modes | Description |
 |---|---|---|---|---|---|
 | `topology` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | all | Enable topological analysis. When enabled, the remaining topology parameters are read. |
-| `topology_mode` | string(20) | `qhe` | `qhe`, `qshe`, `bdg` | all | Topological mode: QHE (Chern number), QSHE (Z2 invariant), or BdG (Majorana modes). |
+| `topology_mode` / `mode` | string(20) | `qhe` | `qhe`, `qshe`, `bdg`, `spectral`, `conductance`, `sweep` | all | Topological mode: QHE (Chern number), QSHE (Z2 invariant), BdG (Majorana modes), spectral function, conductance, or phase sweep. |
 | `compute_chern` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | all | Compute Chern number via Berry curvature integration. |
 | `compute_z2` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | all | Compute Z2 invariant (Fu-Kane for QW, gap criterion for wire). |
 | `qwz_u` | float | `0.0` | any (eV) | QHE | QWZ model mass parameter for Chern number computation. |
@@ -203,6 +203,17 @@ Optional. Triggered by `topology: T`. All topology parameters use their defaults
 | `ldos_eta` | float | `0.001` | > 0 (eV) | W | Lorentzian broadening for LDOS. |
 | `ldos_E_range` | 2 floats | `-0.1 0.1` | any (eV) | W | Energy range for LDOS computation. |
 | `ldos_num_E` | integer | `200` | >= 1 | W | Number of energy points for LDOS. |
+| `compute_conductance` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | B/Q/W | Compute conductance in `conductance` mode. |
+| `conductance_method` | string(20) | `kubo_chern` | `kubo_chern`, `kubo_berry`, `landauer` | B/Q/W | Conductance method. Values are in units of `e^2/h`; `landauer` uses a single effective 1D channel. |
+| `berry_nk` | integer | `21` | >= 2 | B/Q | Kubo Berry grid size for QWZ Berry integration. |
+| `landauer_energy` | float | `0.0` | any (eV) | W | Energy for the effective-chain Landauer helper. |
+| `compute_spectral` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | B/Q/W | Compute spectral function in `spectral` mode. |
+| `spectral_k_grid` | 3 values | `-0.1 0.1 100` | `k_min k_max nk`, `nk >= 1` | B/Q/W | Wave-vector grid for `spectral_function.dat` in `1/AA`. |
+| `spectral_E_grid` | 4 values | `-0.05 0.05 200 0.001` | `E_min E_max nE eta`, `nE >= 1`, `eta > 0` | B/Q/W | Energy grid and Lorentzian width in eV. |
+| `compute_gap_sweep` | logical | `.false.` | `T`/`.true.`, `F`/`.false.` | B/Q/W | Compute a Z2/gap phase diagram in `sweep` mode. |
+| `gap_sweep_B` | 3 values | `0.0 1.0 20` | `B_min B_max nB`, `nB >= 1` | W/Q | Magnetic-field sweep grid in tesla. |
+| `gap_sweep_mu` | 3 values | `0.0 0.01 20` | `mu_min mu_max nMu`, `nMu >= 1` | W/Q | Chemical-potential sweep grid in eV. |
+| `sweep_model` | string(20) | `bhz_analytic` | `bhz_analytic`, `wire_bdg`, `qw_fukane` | B/Q/W | Gap sweep evaluator. `qw_fukane` requires a symmetric QW profile; `wire_bdg` requires wire confinement and BdG parameters. |
 
 ### Output files
 
@@ -210,7 +221,10 @@ The topology module produces the following output files in `output/`:
 
 | File | Condition | Columns | Description |
 |---|---|---|---|
-| `topology_result.dat` | `topology: T` | header + data | Topological invariants: Chern number, Z2, Hall conductance, edge localization length |
+| `topology_result.dat` | `topology: T` | header + data | Topological invariants, conductance, min gap, Majorana count, Majorana fit failures, and edge localization lengths. |
+| `spectral_function.dat` | `mode: spectral` | `k(1/AA) E(eV) A(k,E)` | Spectral function heatmap for bulk, QW, or wire. |
+| `z2_phase_diagram.dat` | `mode: sweep` | `B(T) mu(eV) z2 gap(eV)` | Z2/gap sweep results. |
+| `z2_transitions.dat` | `mode: sweep` | `B(T) mu(eV)` | Detected transition midpoints. |
 
 ---
 
@@ -329,12 +343,21 @@ strain: <T|F>              ! strain (optional)
   strain_solver: <str>      } strain parameters (only if strain=T)
   strain_piezo: <T|F>       }
 topology: <T|F>              ! topological analysis (optional)
-  topology_mode: <qhe|qshe|bdg>
+  mode: <qhe|qshe|bdg|spectral|conductance|sweep>
   compute_chern: <T|F>       }
-  compute_z2: <T|F>          } topology parameters (only if topology=T)
+  compute_z2: <T|F>          }
   qwz_u: <float>             }
-  extract_edge_states: <T|F> }
+  extract_edge_states: <T|F> } topology parameters (only if topology=T)
   edge_E_window: <float>     }
+  compute_conductance: <T|F> }
+  conductance_method: <kubo_chern|kubo_berry|landauer>
+  compute_spectral: <T|F>    }
+  spectral_k_grid: <k_min> <k_max> <nk>
+  spectral_E_grid: <E_min> <E_max> <nE> <eta>
+  compute_gap_sweep: <T|F>   }
+  gap_sweep_B: <B_min> <B_max> <nB>
+  gap_sweep_mu: <mu_min> <mu_max> <nMu>
+  sweep_model: <bhz_analytic|wire_bdg|qw_fukane>
 bdg: <T|F>                   ! BdG / Majorana (optional, use with topology_mode=bdg)
   mu: <float>                }
   delta_0: <float>           } BdG parameters (only if bdg=T)

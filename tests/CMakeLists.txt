@@ -642,6 +642,30 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# Topological sweep mode regressions
+add_test(
+    NAME regression_topology_sweep_bhz
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_sweep.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_sweep_bhz.cfg
+        bhz_analytic
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_topology_sweep_qw
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_sweep.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_sweep_qw.cfg
+        qw_fukane
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_sweep_bhz regression_topology_sweep_qw
+    PROPERTIES LABELS "regression"
+)
+
 # Rashba wire phase boundary regression (mu=0.5 meV, Delta=0.3 meV)
 add_test(
     NAME regression_topology_rashba_phase

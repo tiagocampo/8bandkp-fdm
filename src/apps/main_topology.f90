@@ -241,6 +241,8 @@ program topologicalAnalysis
   write(iounit, '(A,F12.6)') '# Hall conductance (e^2/h): ', topo_result%hall_conductance
   write(iounit, '(A,F12.6)') '# Conductance xy (e^2/h): ', topo_result%conductance_xy
   write(iounit, '(A,F12.6)') '# Conductance zz: ', topo_result%conductance_zz
+  write(iounit, '(A,I0)') '# Majorana count: ', topo_result%n_majorana
+  write(iounit, '(A,I0)') '# Majorana fit failures: ', topo_result%n_majorana_fit_failed
   write(iounit, '(A,F12.6)') '# Min gap (eV): ', topo_result%min_gap
   write(iounit, '(A,F12.6)') '# Edge localization length min (AA): ', topo_result%edge_xi_min
   write(iounit, '(A,F12.6)') '# Edge localization length avg (AA): ', topo_result%edge_xi
@@ -557,6 +559,7 @@ contains
 
         print *, '  Eigenvalues found: ', eigen_res_local%nev_found
         print *, '  Near-zero modes (|E| < 0.001*delta): ', n_zero
+        result%n_majorana = n_zero
 
         if (n_zero > 0) then
           print *, '  Majorana modes detected!'
@@ -591,6 +594,7 @@ contains
           if (n_fit_failed > 0) then
             print *, '  Majorana localization fits failed: ', n_fit_failed
           end if
+          result%n_majorana_fit_failed = n_fit_failed
 
           allocate(result%edge_energies(n_zero))
           j = 0
@@ -683,6 +687,7 @@ contains
 
     print *, '  Eigenvalues found: ', Nbdg_local
     print *, '  Near-zero modes (|E| < tol): ', n_zero
+    result%n_majorana = n_zero
 
     qw_grid = cfg_in%grid
     qw_grid%ndim = 1
@@ -731,6 +736,7 @@ contains
         print *, '  Majorana localization length: unavailable'
       end if
       if (n_fit_failed > 0) print *, '  Majorana localization fits failed: ', n_fit_failed
+      result%n_majorana_fit_failed = n_fit_failed
 
       allocate(result%edge_energies(n_zero))
       j = 0
@@ -1149,7 +1155,7 @@ contains
     type(eigensolver_config) :: eigen_cfg_local
     type(eigensolver_result) :: eigen_res_local
     real(kind=dp), allocatable :: eigvals_bdg(:)
-    integer :: Ngrid_local, Ntot_local, nev_local, i
+    integer :: Ngrid_local, Ntot_local, Nbdg_local, nev_local, i
 
     cfg = cfg_in
     cfg%bdg%enabled = .true.
@@ -1161,6 +1167,7 @@ contains
 
     Ngrid_local = grid_ngrid(cfg%grid)
     Ntot_local = 8 * Ngrid_local
+    Nbdg_local = 2 * Ntot_local
     call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d_local, kpterms_2d_local, &
       & 0.0_dp, cfg%bdg%mu, cfg%bdg%delta_0, wire_ws_local, &
       & cfg%bdg%B_vec, cfg%bdg%g_factor)
@@ -1170,23 +1177,28 @@ contains
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
-    eigen_cfg_local%feast_m0 = max(8 * nev_local, 200)
+    eigen_cfg_local%feast_m0 = min(max(8 * nev_local, 200), Nbdg_local)
     eigen_cfg_local%emin = -5.0_dp * cfg%bdg%delta_0
     eigen_cfg_local%emax =  5.0_dp * cfg%bdg%delta_0
 
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
     call eigen_solver_local%solve(H_bdg_csr, eigen_cfg_local, eigen_res_local)
 
-    if (eigen_res_local%nev_found > 0) then
-      allocate(eigvals_bdg(eigen_res_local%nev_found))
-      eigvals_bdg = eigen_res_local%eigenvalues
-      gap = 2.0_dp * minval(abs(eigvals_bdg))
-      z2 = compute_z2_gap(Ntot_local, eigvals_bdg, gap_threshold)
-      deallocate(eigvals_bdg)
-    else
-      gap = huge(1.0_dp)
-      z2 = 0
+    if (.not. eigen_res_local%converged .or. eigen_res_local%nev_found < 1) then
+      print *, 'ERROR: wire BdG sweep eigensolver failed or found no states'
+      stop 1
     end if
+    if (eigen_res_local%nev_found >= eigen_cfg_local%feast_m0 .and. &
+        eigen_cfg_local%feast_m0 < Nbdg_local) then
+      print *, 'ERROR: wire BdG sweep likely truncated FEAST subspace'
+      print *, '  nev_found=', eigen_res_local%nev_found, ' feast_m0=', eigen_cfg_local%feast_m0
+      stop 1
+    end if
+    allocate(eigvals_bdg(eigen_res_local%nev_found))
+    eigvals_bdg = eigen_res_local%eigenvalues
+    gap = 2.0_dp * minval(abs(eigvals_bdg))
+    z2 = compute_z2_gap(Ntot_local, eigvals_bdg, gap_threshold)
+    deallocate(eigvals_bdg)
 
     call csr_free(H_bdg_csr)
     call eigensolver_result_free(eigen_res_local)
