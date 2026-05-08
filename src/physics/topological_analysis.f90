@@ -652,7 +652,10 @@ contains
 
     peak_idx = maxloc(rho, dim=1)
 
-    if (allocated(grid%z)) then
+    if (grid%ndim == 2 .and. allocated(grid%coords)) then
+      allocate(xx(nspatial))
+      xx(1:nspatial) = grid%coords(2, 1:nspatial)
+    else if (allocated(grid%z)) then
       xx = grid%z
     else
       allocate(xx(nspatial))
@@ -681,8 +684,7 @@ contains
 
     if (i_start == 0 .or. i_start >= nspatial) then
       xi = -1.0_dp
-      deallocate(rho)
-      if (.not. allocated(grid%z)) deallocate(xx)
+      deallocate(rho, xx)
       return
     end if
 
@@ -714,8 +716,7 @@ contains
       end if
     end if
 
-    deallocate(rho)
-    if (.not. allocated(grid%z)) deallocate(xx)
+    deallocate(rho, xx)
 
   end function compute_majorana_profile
 

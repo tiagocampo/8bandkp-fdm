@@ -415,4 +415,63 @@ contains
     call csr_free(H_csr)
   end subroutine test_bhz_wire_hamiltonian_is_hermitian
 
+  @test
+  subroutine test_majorana_coords_2d_wire()
+    ! Verify compute_majorana_profile uses grid%coords(2,:) for 2D wires
+    ! instead of grid%z (which has only ny entries, not nx*ny).
+    !
+    ! We build a 2D wire with dy=5 A and place an exponential decay along
+    ! the y-axis with known xi_true. The fitted xi must match xi_true
+    ! (within tolerance), which only happens if the code uses physical
+    ! coordinates from grid%coords(2,:), not integer indices.
+    type(spatial_grid) :: grid
+    complex(kind=dp), allocatable :: evec(:)
+    real(kind=dp), allocatable :: profile(:)
+    real(kind=dp) :: xi, xi_expected, dy, y_pos
+    integer :: i, ib, nspatial, half_n, ny_cols
+
+    ! 2D wire: 1 column x 20 rows = 20 spatial points
+    ! Single column so coords(2,:) is just y(1), y(2), ..., y(20)
+    ny_cols = 20
+    grid%ndim = 2
+    grid%nx = 1
+    grid%ny = ny_cols
+    dy = 5.0_dp
+    grid%dx = 1.0_dp
+    grid%dy = dy
+    nspatial = ny_cols
+    half_n = 8 * nspatial
+    allocate(grid%coords(2, nspatial))
+    do i = 1, nspatial
+      grid%coords(1, i) = 0.0_dp
+      grid%coords(2, i) = real(i - 1, kind=dp) * dy
+    end do
+
+    ! Build exponential decay along y with xi_expected = 15 A
+    ! Peak at site 1, tail decaying for sites 2..20
+    xi_expected = 15.0_dp
+    allocate(evec(2 * half_n))
+    evec = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, nspatial
+      y_pos = grid%coords(2, i)
+      ! Peak at y=0 (site 1), exponential decay: |psi|^2 ~ exp(-2*y/xi)
+      do ib = 1, 8
+        evec((ib - 1) * nspatial + i) = cmplx(exp(-y_pos / xi_expected), 0.0_dp, kind=dp)
+        evec(half_n + (ib - 1) * nspatial + i) = cmplx(exp(-y_pos / xi_expected), 0.0_dp, kind=dp)
+      end do
+    end do
+
+    allocate(profile(nspatial))
+
+    xi = compute_majorana_profile(evec, grid, 0.1_dp, half_n, profile)
+
+    ! With physical coords (dy=5), xi should be near xi_expected/2 = 7.5 A
+    ! because rho ~ |psi|^2 ~ exp(-2*y/xi_expected), so the fitted xi = xi_expected/2.
+    ! With buggy integer indices (step=1), xi would be near 1.5 (= 7.5/5).
+    @assertTrue(xi > 0.0_dp, message="xi must be positive for exponential tail")
+    @assertTrue(abs(xi - xi_expected * 0.5_dp) < 3.0_dp, message="xi must use physical coords from grid%coords, not integer indices")
+
+    deallocate(grid%coords, evec, profile)
+  end subroutine test_majorana_coords_2d_wire
+
 end module test_edge_states
