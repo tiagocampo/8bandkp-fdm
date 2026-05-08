@@ -56,6 +56,7 @@ Review date: 2026-05-06
 | 51 | 2026-05-05-phase6-completion-repair | plan | COMPLETE | Archived; 66/66 tests passed; pushed through commit 20c3f19 |
 | 50 | 2026-05-03-physics-figures-extended | plan | COMPLETE | All 5 phases done: bulk E(k), QW subbands, wavefunctions, wire geometry, Zeeman fan |
 | 52 | 2026-05-07-topological-magnetic-bugfixes | spec + plan | COMPLETE | Archived; 5 Codex review findings fixed: Peierls y-axis, BHZ hopping, Majorana coords, Fu-Kane sweep, BdG gap |
+| 53 | 2026-05-08-review-findings-fixes | plan | COMPLETE | Archived; 5 ce-code-review findings fixed: BdG gap convention, contiguous attrs, Peierls fixture+fallback test, Majorana multi-column test, backward B+D hopping test |
 
 ---
 
@@ -206,3 +207,25 @@ All 5 phases delivered in Phase 4 (commit 79688ab):
 - Phase 3: Wire material map + radial potential cut
 - Phase 4: Analytical Zeeman fan diagram (spin splitting vs B)
 - Phase 5: Figures integrated into `generate_all_figures.py` (not separate script)
+
+### 53. 2026-05-08-review-findings-fixes
+
+**Status: COMPLETE**
+
+**Archive:** `docs/plans/archive/2026-05-08-001-fix-review-findings-plan.md`
+
+Multi-agent ce-code-review of Phase 7 bug-fix commits found 8 actionable findings (P0-P2). 5 fixed, 3 deferred (QW Fu-Kane unit test needs mock infrastructure, advisory P3s noted).
+
+**Fixed:**
+
+| ID | Finding | Fix |
+|----|---------|-----|
+| U1 | BdG gap used half-gap in wire single-point path | Unified to full gap `2*min|E|` across all 3 paths |
+| U2 | Missing `contiguous` on COO arrays in `magnetic_field.f90` | Added to `add_zeeman_coo` and `add_peierls_coo` |
+| U3 | Peierls test fixture had wrong coordinate mapping + no fallback test | Fixed column-major coords, added `test_peierls_fallback_y_index` |
+| U4 | Majorana test used nx=1 (wouldn't catch OOB bug) | Changed to nx=3, ny=7 multi-column grid |
+| U5 | No backward B+D hopping structural test | Added `test_bhz_backward_hopping_connects_neighbors` |
+
+**Commits:** `d8fcbbd` on `feature/bdg-topological-superconductivity`.
+
+**Verification:** 66/66 tests pass. All 5 Codex review comments on PR #13 replied to with fix details.

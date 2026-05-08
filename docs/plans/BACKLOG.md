@@ -109,13 +109,14 @@ Full topological suite completion repair delivered and pushed.
 
 ## Phase 7: COMPLETED (2026-05-08)
 
-Topological and magnetic bug fixes from Codex review findings.
+Topological and magnetic bug fixes from Codex review findings, plus ce-code-review follow-up.
 
 **Spec:** `docs/superpowers/specs/archive/2026-05-07-topological-magnetic-bugfixes-design.md` (archived)
-**Plan:** `docs/superpowers/plans/2026-05-07-topological-magnetic-bugfixes.md`
-**Commits:** `46be100` through `f875ab1`.
+**Plan:** `docs/superpowers/plans/archive/2026-05-07-topological-magnetic-bugfixes.md` (archived)
+**Review findings plan:** `docs/plans/archive/2026-05-08-001-fix-review-findings-plan.md` (archived)
+**Commits:** `46be100` through `d8fcbbd`.
 
-**Fixed 5 findings:**
+**Fixed 5 Codex findings (Phase 7a):**
 
 | ID | Bug | Files | Test |
 |----|-----|-------|------|
@@ -123,16 +124,26 @@ Topological and magnetic bug fixes from Codex review findings.
 | F2 | BHZ forward hopping connected same-site orbitals | `topological_analysis.f90` | `test_bhz_forward_hopping_connects_neighbors` + `test_bhz_wire_hamiltonian_is_hermitian` |
 | F3 | Majorana profile crashed on 2D grids (no grid%z) | `topological_analysis.f90` | `test_majorana_coords_2d_wire` |
 | F4 | QW Fu-Kane sweep evaluated once, filled all points | `main_topology.f90` | regression_topology_sweep_qw |
-| F5 | BdG gap used min adjacent spacing instead of min|E| | `topological_analysis.f90`, `main_topology.f90` | `test_bdg_gap_uses_min_abs_energy` |
+| F5 | BdG gap used min adjacent spacing instead of min|E| | `topological_analysis.f90`, `main_topology.f90` | `test_bdg_gap_full_convention` |
 
 **Additional fixes discovered during review:**
 - BHZ backward A-term fixed to match forward for Hermiticity
 - Peierls y-index fallback uses integer division by nx (not mod by ny)
 - QW Fu-Kane sweep config copy hoisted out of inner loop
 
+**Fixed 5 ce-code-review findings (Phase 7b, commit `d8fcbbd`):**
+
+| ID | Finding | Fix |
+|----|---------|-----|
+| U1 | BdG wire gap used half-gap convention | Unified to full gap `2*min|E|` across all paths |
+| U2 | Missing `contiguous` on COO arrays | Added to `add_zeeman_coo` and `add_peierls_coo` in `magnetic_field.f90` |
+| U3 | Peierls test fixture + no fallback coverage | Fixed column-major coords, added `test_peierls_fallback_y_index` |
+| U4 | Majorana test used nx=1 (no OOB exercise) | Changed to nx=3, ny=7 multi-column grid |
+| U5 | No backward B+D hopping test | Added `test_bhz_backward_hopping_connects_neighbors` |
+
 **Verification:** fresh configure/build passed; full suite `66/66` passed.
 
-**Result:** Group #52 -> COMPLETE.
+**Result:** Groups #52, #53 -> COMPLETE.
 
 ---
 
@@ -143,7 +154,7 @@ Only non-Phase-6 items remain from the review:
 | Source | What | Effort |
 |--------|------|--------|
 | #4 | 5 gfactor regression tests (bulk CB/VB GaAs, GaAsW, InAsW, QW VB) | Low |
-| #37 | `validate_simulation_config` + close `contiguous` gaps (3 known sites) | Medium |
+| #37 | `validate_simulation_config` + close `contiguous` gaps (2 remaining sites: ZB8bandQW, utils.f90) | Medium |
 | #8 | 3 integration tests (wire hexagon, wire strain, SC wire) + 2 regression datasets | Medium |
 | #26 | Docs physics revamp remaining tasks 3-12 | Medium-High |
 
@@ -159,4 +170,5 @@ Only non-Phase-6 items remain from the review:
 | 4. Figures | 3 | Complete documentation | DONE |
 | 5. Peierls/Landau | 2 | Magnetic field for all modes | DONE |
 | 6. Topological | 3 | Full topo suite | DONE |
-| **Remaining** | **5 groups** | Non-Phase-6 backlog above | TBD |
+| 7. Bug fixes + review | 2 | Codex + ce-code-review findings closed | DONE |
+| **Remaining** | **4 groups** | Non-Phase-6 backlog above | TBD |
