@@ -312,4 +312,69 @@ contains
     deallocate(grid%z, edge_info)
   end subroutine test_trivial_no_edge_decay
 
+  @test
+  subroutine test_bhz_forward_hopping_connects_neighbors()
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    integer :: j
+    logical :: found
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 10
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    ! Site 1, band 1: row index = (1-1)*4 + 1 = 1
+    ! Forward A-term for row=1: col = i*4 + 5 - row = 1*4 + 5 - 1 = 8
+    ! (connects site 1 band 1 to site 2 band 4)
+    ! Old bug gave col = (i-1)*4 + 5 - row = 0 + 4 = 4 (same-site band 4)
+    found = .false.
+    do j = H_csr%rowptr(1), H_csr%rowptr(2) - 1
+      if (H_csr%colind(j) == 8) then
+        found = .true.
+        exit
+      end if
+    end do
+    @assertTrue(found, message="Forward A-term from site 1 band 1 should connect to site 2 band 4 (col=8)")
+
+    ! Verify H(1, 4) is zero — old bug connected here (same-site)
+    found = .false.
+    do j = H_csr%rowptr(1), H_csr%rowptr(2) - 1
+      if (H_csr%colind(j) == 4) then
+        found = .true.
+        exit
+      end if
+    end do
+    @assertFalse(found, message="Forward A-term should NOT connect site 1 band 1 to same-site band 4 (col=4)")
+
+    ! Also verify B+D forward: for row=1, col = i*4 + mod(1,4) + 1 = 4 + 1 + 1 = 6
+    ! (connects site 1 band 1 to site 2 band 2)
+    ! Old bug gave col = (i-1)*4 + mod(1,4) + 1 = 0 + 2 = 2 (same-site band 2)
+    found = .false.
+    do j = H_csr%rowptr(1), H_csr%rowptr(2) - 1
+      if (H_csr%colind(j) == 6) then
+        found = .true.
+        exit
+      end if
+    end do
+    @assertTrue(found, message="Forward B+D from site 1 band 1 should connect to site 2 band 2 (col=6)")
+
+    ! Verify H(1, 2) is zero for off-diagonal B+D — old bug connected here
+    found = .false.
+    do j = H_csr%rowptr(1), H_csr%rowptr(2) - 1
+      if (H_csr%colind(j) == 2) then
+        found = .true.
+        exit
+      end if
+    end do
+    @assertFalse(found, message="Forward B+D should NOT connect site 1 band 1 to same-site band 2 (col=2)")
+
+    call csr_free(H_csr)
+  end subroutine test_bhz_forward_hopping_connects_neighbors
+
 end module test_edge_states
