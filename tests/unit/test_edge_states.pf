@@ -377,4 +377,42 @@ contains
     call csr_free(H_csr)
   end subroutine test_bhz_forward_hopping_connects_neighbors
 
+  @test
+  subroutine test_bhz_wire_hamiltonian_is_hermitian()
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    complex(kind=dp), allocatable :: Hd(:,:)
+    real(kind=dp) :: herr
+    integer :: i, j
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 5
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    allocate(Hd(H_csr%nrows, H_csr%ncols))
+    Hd = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, H_csr%nrows
+      do j = H_csr%rowptr(i), H_csr%rowptr(i + 1) - 1
+        Hd(i, H_csr%colind(j)) = H_csr%values(j)
+      end do
+    end do
+
+    herr = 0.0_dp
+    do j = 1, H_csr%ncols
+      do i = 1, H_csr%nrows
+        herr = max(herr, abs(Hd(i, j) - conjg(Hd(j, i))))
+      end do
+    end do
+    @assertTrue(herr < 1.0e-12_dp, message="BHZ wire Hamiltonian must be Hermitian")
+
+    deallocate(Hd)
+    call csr_free(H_csr)
+  end subroutine test_bhz_wire_hamiltonian_is_hermitian
+
 end module test_edge_states

@@ -778,11 +778,11 @@ contains
         if (i > 1) then
           nnz_offset = nnz_offset + 1
           coo_row(nnz_offset) = (i-1)*4 + row
-          coo_col(nnz_offset) = (i-2)*4 + row
+          coo_col(nnz_offset) = (i-2)*4 + 5 - row
           if (row == 1 .or. row == 4) then
-            coo_vals(nnz_offset) = cmplx(-A_over_2dz, 0.0_dp, kind=dp)
-          else
             coo_vals(nnz_offset) = cmplx(A_over_2dz, 0.0_dp, kind=dp)
+          else
+            coo_vals(nnz_offset) = cmplx(-A_over_2dz, 0.0_dp, kind=dp)
           end if
         end if
 
