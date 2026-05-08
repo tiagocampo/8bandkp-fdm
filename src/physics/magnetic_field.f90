@@ -18,8 +18,8 @@ contains
                              grid, B_vec, g_factor, coo_capacity)
     ! Adds g*mu_B * B . sigma to the 8-band diagonal at each grid point.
     ! Each grid point contributes 8 diagonal COO entries (one per band).
-    real(kind=dp), intent(inout) :: coo_vals(:)
-    integer, intent(inout) :: coo_row(:), coo_col(:)
+    real(kind=dp), intent(inout), contiguous :: coo_vals(:)
+    integer, intent(inout), contiguous :: coo_row(:), coo_col(:)
     integer, intent(inout) :: nnz_offset
     type(spatial_grid), intent(in) :: grid
     real(kind=dp), intent(in) :: B_vec(3), g_factor
@@ -58,8 +58,8 @@ contains
     ! Operates on the main complex COO array so that full complex phase
     ! factors are preserved (unlike the old version which discarded the
     ! imaginary part by storing into a real array).
-    complex(kind=dp), intent(inout) :: coo_vals(:)
-    integer, intent(in) :: coo_row(:), coo_col(:)
+    complex(kind=dp), intent(inout), contiguous :: coo_vals(:)
+    integer, intent(in), contiguous :: coo_row(:), coo_col(:)
     integer, intent(in) :: nnz_offset
     type(spatial_grid), intent(in) :: grid
     real(kind=dp), intent(in) :: B_vec(3)

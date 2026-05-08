@@ -530,8 +530,8 @@ contains
       allocate(eigvals_bdg(eigen_res_local%nev_found))
       eigvals_bdg = eigen_res_local%eigenvalues
 
-      ! Find minimum gap: distance from zero energy (superconducting gap)
-      result%min_gap = bdg_zero_energy_gap(eigvals_bdg)
+      ! Find minimum gap: full superconducting gap = 2 × min|E|
+      result%min_gap = 2.0_dp * bdg_zero_energy_gap(eigvals_bdg)
 
       ! Check for zero-energy Majorana modes
       block

@@ -378,6 +378,58 @@ contains
   end subroutine test_bhz_forward_hopping_connects_neighbors
 
   @test
+  subroutine test_bhz_backward_hopping_connects_neighbors()
+    ! Backward A-term: col = (i-2)*4 + 5 - row
+    ! Backward B+D:    col = (i-2)*4 + mod(row+2,4) + 1
+    ! For site i=2, these connect to site 1.
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    integer :: j, row_idx
+    logical :: found
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 10
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    ! Site 2, band 1: row = (2-1)*4 + 1 = 5
+    ! Backward B+D for row=1: col = (2-2)*4 + mod(1+2,4) + 1 = 0 + 3 + 1 = 4
+    ! Connects site 2 band 1 -> site 1 band 4
+    row_idx = 5
+    found = .false.
+    do j = H_csr%rowptr(row_idx), H_csr%rowptr(row_idx + 1) - 1
+      if (H_csr%colind(j) == 4) found = .true.
+    end do
+    @assertTrue(found, message="Backward B+D from site 2 band 1 should connect to site 1 band 4 (col=4)")
+
+    ! Site 2, band 2: row = (2-1)*4 + 2 = 6
+    ! Backward B+D for row=2: col = (2-2)*4 + mod(2+2,4) + 1 = 0 + 0 + 1 = 1
+    ! Connects site 2 band 2 -> site 1 band 1
+    row_idx = 6
+    found = .false.
+    do j = H_csr%rowptr(row_idx), H_csr%rowptr(row_idx + 1) - 1
+      if (H_csr%colind(j) == 1) found = .true.
+    end do
+    @assertTrue(found, message="Backward B+D from site 2 band 2 should connect to site 1 band 1 (col=1)")
+
+    ! Verify no same-site backward B+D: site 2 row 1 should NOT connect to col 5
+    ! (which would be (2-1)*4+1 = same-site band 1)
+    row_idx = 5
+    found = .false.
+    do j = H_csr%rowptr(row_idx), H_csr%rowptr(row_idx + 1) - 1
+      if (H_csr%colind(j) == 5 .and. H_csr%values(j) == cmplx((params%B + params%D) * 0.0001_dp / (params%dz**2), 0.0_dp, kind=dp)) found = .true.
+    end do
+    @assertFalse(found, message="Backward B+D should NOT connect site 2 band 1 to same-site (col=5) with B+D value")
+
+    call csr_free(H_csr)
+  end subroutine test_bhz_backward_hopping_connects_neighbors
+
+  @test
   subroutine test_bhz_wire_hamiltonian_is_hermitian()
     type(bhz_wire_params) :: params
     type(csr_matrix) :: H_csr
@@ -420,41 +472,43 @@ contains
     ! Verify compute_majorana_profile uses grid%coords(2,:) for 2D wires
     ! instead of grid%z (which has only ny entries, not nx*ny).
     !
-    ! We build a 2D wire with dy=5 A and place an exponential decay along
-    ! the y-axis with known xi_true. The fitted xi must match xi_true
-    ! (within tolerance), which only happens if the code uses physical
-    ! coordinates from grid%coords(2,:), not integer indices.
+    ! Multi-column grid (nx=3, ny=7) ensures nspatial=21 > ny=7, so using
+    ! grid%z as y-coords would be out-of-bounds or give wrong results.
     type(spatial_grid) :: grid
     complex(kind=dp), allocatable :: evec(:)
     real(kind=dp), allocatable :: profile(:)
     real(kind=dp) :: xi, xi_expected, dy, y_pos
-    integer :: i, ib, nspatial, half_n, ny_cols
+    integer :: i, ib, nspatial, half_n, ix, iy, flat
 
-    ! 2D wire: 1 column x 20 rows = 20 spatial points
-    ! Single column so coords(2,:) is just y(1), y(2), ..., y(20)
-    ny_cols = 20
+    ! 2D wire: 3 columns x 7 rows = 21 spatial points
     grid%ndim = 2
-    grid%nx = 1
-    grid%ny = ny_cols
+    grid%nx = 3
+    grid%ny = 7
     dy = 5.0_dp
-    grid%dx = 1.0_dp
+    grid%dx = 2.0_dp
     grid%dy = dy
-    nspatial = ny_cols
+    nspatial = grid%nx * grid%ny  ! 21
     half_n = 8 * nspatial
+
+    allocate(grid%z(7))
+    grid%z = [(real(i - 1, kind=dp) * dy, i=1, 7)]
     allocate(grid%coords(2, nspatial))
-    do i = 1, nspatial
-      grid%coords(1, i) = 0.0_dp
-      grid%coords(2, i) = real(i - 1, kind=dp) * dy
+    ! Column-major: flat = (iy-1)*nx + ix
+    do iy = 1, 7
+      do ix = 1, 3
+        flat = (iy - 1) * 3 + ix
+        grid%coords(1, flat) = real(ix - 1, kind=dp) * grid%dx
+        grid%coords(2, flat) = grid%z(iy)
+      end do
     end do
 
-    ! Build exponential decay along y with xi_expected = 15 A
-    ! Peak at site 1, tail decaying for sites 2..20
+    ! Exponential decay along y with xi_expected = 15 A
+    ! rho ~ |psi|^2 ~ exp(-2*y/xi), so fitted xi = xi_expected/2
     xi_expected = 15.0_dp
     allocate(evec(2 * half_n))
     evec = cmplx(0.0_dp, 0.0_dp, kind=dp)
     do i = 1, nspatial
       y_pos = grid%coords(2, i)
-      ! Peak at y=0 (site 1), exponential decay: |psi|^2 ~ exp(-2*y/xi)
       do ib = 1, 8
         evec((ib - 1) * nspatial + i) = cmplx(exp(-y_pos / xi_expected), 0.0_dp, kind=dp)
         evec(half_n + (ib - 1) * nspatial + i) = cmplx(exp(-y_pos / xi_expected), 0.0_dp, kind=dp)
@@ -465,13 +519,12 @@ contains
 
     xi = compute_majorana_profile(evec, grid, 0.1_dp, half_n, profile)
 
-    ! With physical coords (dy=5), xi should be near xi_expected/2 = 7.5 A
-    ! because rho ~ |psi|^2 ~ exp(-2*y/xi_expected), so the fitted xi = xi_expected/2.
-    ! With buggy integer indices (step=1), xi would be near 1.5 (= 7.5/5).
+    ! With physical coords (dy=5): fitted xi ~ xi_expected/2 = 7.5 A
+    ! With buggy grid%z (length 7 for 21 sites): OOB or garbage coordinates
     @assertTrue(xi > 0.0_dp, message="xi must be positive for exponential tail")
-    @assertTrue(abs(xi - xi_expected * 0.5_dp) < 3.0_dp, message="xi must use physical coords from grid%coords, not integer indices")
+    @assertTrue(abs(xi - xi_expected * 0.5_dp) < 2.0_dp, message="xi must use physical coords from grid%coords, not grid%z")
 
-    deallocate(grid%coords, evec, profile)
+    deallocate(grid%z, grid%coords, evec, profile)
   end subroutine test_majorana_coords_2d_wire
 
 end module test_edge_states

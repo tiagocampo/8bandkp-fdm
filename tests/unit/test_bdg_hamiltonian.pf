@@ -694,19 +694,28 @@ contains
   end subroutine test_bdg_qw_optional_zeeman_not_double_counted
 
   @test
-  subroutine test_bdg_gap_uses_min_abs_energy()
-    ! Simulate BdG eigenvalues: [-0.8, -0.3, 0.001, 0.3, 0.8] (meV)
-    ! min adjacent spacing = 0.299 (between 0.001 and 0.3)
-    ! min |E| = 0.001 (true superconducting gap)
-    ! The gap should be 0.001, not 0.299
+  subroutine test_bdg_gap_full_convention()
+    ! Full SC gap = 2 * min|E|.  For evals = [-0.8, -0.3, 0.001, 0.3, 0.8]:
+    !   min|E| = 0.001, full gap = 0.002
     real(kind=dp) :: evals(5)
-    real(kind=dp) :: gap_min
+    real(kind=dp) :: gap_full
 
     evals = [-0.8_dp, -0.3_dp, 0.001_dp, 0.3_dp, 0.8_dp]
+    gap_full = 2.0_dp * bdg_zero_energy_gap(evals)
 
-    gap_min = bdg_zero_energy_gap(evals)
+    @assertEqual(0.002_dp, gap_full, tolerance=1.0e-6_dp, message="Full SC gap should be 2*min|E|")
+  end subroutine test_bdg_gap_full_convention
 
-    @assertEqual(0.001_dp, gap_min, tolerance=1.0e-6_dp, message="BdG gap should be min|E|")
-  end subroutine test_bdg_gap_uses_min_abs_energy
+  @test
+  subroutine test_bdg_gap_exact_zero()
+    ! Gap closing: eigenvalue at exactly zero
+    real(kind=dp) :: evals(3)
+    real(kind=dp) :: gap_full
+
+    evals = [-0.3_dp, 0.0_dp, 0.3_dp]
+    gap_full = 2.0_dp * bdg_zero_energy_gap(evals)
+
+    @assertEqual(0.0_dp, gap_full, tolerance=1.0e-12_dp, message="Gap at exact zero should be 0")
+  end subroutine test_bdg_gap_exact_zero
 
 end module

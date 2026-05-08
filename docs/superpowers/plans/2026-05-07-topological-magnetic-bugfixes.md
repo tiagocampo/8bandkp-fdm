@@ -80,7 +80,7 @@ Expected: The new test may crash with out-of-bounds access on `grid%z(8)` (since
 
 - [ ] **Step 3: Fix the Peierls y-axis indexing**
 
-In `src/physics/magnetic_field.f90`, replace lines 86-91. Change the y-coordinate extraction to use `grid%coords` for 2D grids and derive `iy` from the flat site index for `grid%z`:
+In `src/physics/magnetic_field.f90`, replace lines 86-91. Change the y-coordinate extraction to use `grid%coords` for 2D grids when available, and otherwise derive the y-axis index from the flat spatial site before indexing `grid%z`. This implements the spec's `iy = mod(flat_site - 1, ny) + 1` fallback and avoids indexing `grid%z` with a flat `nx*ny` site.
 
 Replace the entire Peierls phase application block (lines 85-103) with:
 
@@ -88,16 +88,25 @@ Replace the entire Peierls phase application block (lines 85-103) with:
     ! Apply Peierls phase to all off-diagonal entries
     do idx = 1, nnz_offset
       if (coo_row(idx) /= coo_col(idx)) then
-        ! Extract y-coordinate for each site
-        if (grid%ndim == 2 .and. allocated(grid%coords)) then
-          ! 2D wire: coords(2,:) has y at each spatial point
-          y_i = grid%coords(2, mod(coo_row(idx) - 1, ngrid) + 1) * 1.0e-10_dp
-          y_j = grid%coords(2, mod(coo_col(idx) - 1, ngrid) + 1) * 1.0e-10_dp
-        else
-          ! 1D wire: grid%z has y-coordinates, length ny
-          y_i = grid%z(mod(coo_row(idx) - 1, ngrid) + 1) * 1.0e-10_dp
-          y_j = grid%z(mod(coo_col(idx) - 1, ngrid) + 1) * 1.0e-10_dp
-        end if
+        block
+          integer :: flat_i, flat_j, iy_i, iy_j
+
+          flat_i = mod(coo_row(idx) - 1, ngrid) + 1
+          flat_j = mod(coo_col(idx) - 1, ngrid) + 1
+
+          ! Extract y-coordinate for each site. In 2D wire mode, coords(2,:)
+          ! contains the y-coordinate for every flat spatial site. If coords
+          ! is unavailable, grid%z has length ny, so convert flat site -> iy.
+          if (grid%ndim == 2 .and. allocated(grid%coords)) then
+            y_i = grid%coords(2, flat_i) * 1.0e-10_dp
+            y_j = grid%coords(2, flat_j) * 1.0e-10_dp
+          else
+            iy_i = mod(flat_i - 1, grid%ny) + 1
+            iy_j = mod(flat_j - 1, grid%ny) + 1
+            y_i = grid%z(iy_i) * 1.0e-10_dp
+            y_j = grid%z(iy_j) * 1.0e-10_dp
+          end if
+        end block
 
         ! Peierls phase: phi = e * Bx * (y_i - y_j) * dz / hbar
         phase = e * Bx * (y_i - y_j) * dy_m / hbar_J
@@ -334,7 +343,7 @@ The current `compute_qw_fukane_gap_sweep` calls `compute_z2_fukane_qw_result` on
 
 - [ ] **Step 2: Write the fix**
 
-Replace `compute_qw_fukane_gap_sweep` (lines 1067-1105) with a per-point evaluation that follows the wire BdG sweep pattern. The Fu-Kane Z2 invariant depends on the QW Hamiltonian which in turn depends on Zeeman (B-field) and chemical potential (mu). Create a local config copy per point:
+Replace `compute_qw_fukane_gap_sweep` (lines 1067-1105) with a per-point evaluation that follows the wire BdG sweep pattern. The Fu-Kane Z2 invariant depends on the QW Hamiltonian which in turn depends on Zeeman (B-field) and chemical potential (mu). Create a local config copy per point, set `cfg_local%bdg%enabled = .true.` so the Hamiltonian consumes the swept B-field, and set the swept chemical potential on `cfg_local%bdg%mu`.
 
 ```fortran
   subroutine compute_qw_fukane_gap_sweep(cfg_in, profile_in, kpterms_in, gap_threshold, &
@@ -371,6 +380,7 @@ Replace `compute_qw_fukane_gap_sweep` (lines 1067-1105) with a per-point evaluat
         mu_val = cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * dmu
 
         cfg_local = cfg_in
+        cfg_local%bdg%enabled = .true.
         cfg_local%bdg%B_vec = [0.0_dp, 0.0_dp, B_val]
         cfg_local%bdg%mu = mu_val
 
@@ -404,12 +414,39 @@ Expected: Successful build.
 Run: `OMP_NUM_THREADS=12 ctest --test-dir build -j4 -R "regression_topology" --output-on-failure`
 Expected: All topology regression tests pass. The Fu-Kane sweep test may produce different (correct) results — verify physical reasonableness.
 
-- [ ] **Step 5: Run full suite**
+- [ ] **Step 5: Manually verify the QW Fu-Kane sweep is no longer constant**
+
+Run a QW Fu-Kane sweep config and inspect the output grid:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+Path("input.cfg").write_text(Path("tests/regression/configs/topology_qw_fukane.cfg").read_text())
+PY
+OMP_NUM_THREADS=4 ./build/src/topologicalAnalysis
+python3 - <<'PY'
+from pathlib import Path
+rows = []
+for line in Path("output/z2_gap_sweep.dat").read_text().splitlines():
+    if line.startswith("#") or not line.strip():
+        continue
+    b, mu, z2, gap = line.split()
+    rows.append((float(b), float(mu), int(z2), float(gap)))
+gaps = {round(r[3], 14) for r in rows}
+z2s = {r[2] for r in rows}
+print("points", len(rows), "unique_z2", sorted(z2s), "unique_gaps", len(gaps))
+raise SystemExit(0 if len(gaps) > 1 or len(z2s) > 1 else 1)
+PY
+```
+
+Expected: The script exits 0 and prints either more than one unique gap or more than one unique Z2 value. If the script exits 1, the sweep is still constant and the worker must trace whether `cfg_local%bdg%mu` is actually used by `compute_z2_fukane_qw_result`; do not commit a constant sweep.
+
+- [ ] **Step 6: Run full suite**
 
 Run: `OMP_NUM_THREADS=12 ctest --test-dir build -j4 --output-on-failure`
 Expected: 66/66 pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/apps/main_topology.f90
@@ -421,12 +458,13 @@ git commit -m "fix: evaluate QW Fu-Kane Z2 per sweep point instead of once"
 ## Task 5: Fix BdG wire gap to use min |E| instead of min adjacent spacing (F5, P2)
 
 **Files:**
+- Modify: `src/physics/topological_analysis.f90`
 - Modify: `src/apps/main_topology.f90:534-544`
-- Test: `tests/unit/test_bdg_hamiltonian.pf` (or add to existing)
+- Test: `tests/unit/test_bdg_hamiltonian.pf`
 
 - [ ] **Step 1: Write the failing test**
 
-Add a test that constructs eigenvalues where the minimum adjacent spacing gives the wrong gap but min |E| gives the correct one:
+Add a test that calls a production helper on eigenvalues where the minimum adjacent spacing gives the wrong gap but min |E| gives the correct one. This test must fail before the helper exists or before it is wired to the closest-to-zero definition; do not use a test-local implementation of the formula.
 
 ```fortran
 @test
@@ -437,55 +475,67 @@ subroutine test_bdg_gap_uses_min_abs_energy()
   ! The gap should be 0.001, not 0.299
   real(kind=dp) :: evals(5)
   real(kind=dp) :: gap_min
-  integer :: i
 
   evals = [-0.8_dp, -0.3_dp, 0.001_dp, 0.3_dp, 0.8_dp]
 
-  ! min |E| computation (what the fix should produce)
-  gap_min = huge(1.0_dp)
-  do i = 1, 5
-    gap_min = min(gap_min, abs(evals(i)))
-  end do
+  gap_min = bdg_zero_energy_gap(evals)
 
   @assertEqual(0.001_dp, gap_min, tolerance=1.0e-6_dp, &
     message="BdG gap should be min|E|, not min adjacent spacing")
 end subroutine test_bdg_gap_uses_min_abs_energy
 ```
 
-- [ ] **Step 2: Run test to verify it passes (unit-level logic test)**
+- [ ] **Step 2: Run test to verify it fails**
 
 Run: `cmake --build build && OMP_NUM_THREADS=4 ctest --test-dir build -j4 -R test_bdg --output-on-failure`
-Expected: Pass (this tests the correct logic; the actual fix is in `main_topology.f90`).
+Expected: Fails to compile because `bdg_zero_energy_gap` is not exported yet, or fails behaviorally if the helper exists with the old adjacent-spacing definition.
 
-- [ ] **Step 3: Fix the BdG wire gap computation**
+- [ ] **Step 3: Add the production gap helper**
+
+In `src/physics/topological_analysis.f90`, add `bdg_zero_energy_gap` to the module's public exports near the other gap helpers:
+
+```fortran
+  public :: bdg_zero_energy_gap
+```
+
+Then implement it in the module `contains` section:
+
+```fortran
+  pure function bdg_zero_energy_gap(eigenvalues) result(gap)
+    real(kind=dp), intent(in), contiguous :: eigenvalues(:)
+    real(kind=dp) :: gap
+
+    if (size(eigenvalues) < 1) then
+      gap = 0.0_dp
+    else
+      gap = minval(abs(eigenvalues))
+    end if
+  end function bdg_zero_energy_gap
+```
+
+- [ ] **Step 4: Use the helper in the BdG wire gap computation**
 
 In `src/apps/main_topology.f90`, replace lines 533-544. Change from min adjacent spacing to min |E|:
 
 ```fortran
       ! Find minimum gap around zero energy
-      block
-        integer :: i
-        result%min_gap = huge(1.0_dp)
-        do i = 1, eigen_res_local%nev_found
-          result%min_gap = min(result%min_gap, abs(eigvals_bdg(i)))
-        end do
-      end block
+      result%min_gap = bdg_zero_energy_gap(eigvals_bdg)
 ```
 
-- [ ] **Step 4: Build and run tests**
+- [ ] **Step 5: Build and run tests**
 
 Run: `cmake --build build && OMP_NUM_THREADS=4 ctest --test-dir build -j4 -R test_bdg --output-on-failure`
 Expected: All BdG tests pass.
 
-- [ ] **Step 5: Run full suite**
+- [ ] **Step 6: Run full suite**
 
 Run: `OMP_NUM_THREADS=12 ctest --test-dir build -j4 --output-on-failure`
 Expected: 66/66 pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/apps/main_topology.f90 tests/unit/test_bdg_hamiltonian.pf
+git add src/physics/topological_analysis.f90 src/apps/main_topology.f90 tests/unit/test_bdg_hamiltonian.pf
 git commit -m "fix: BdG wire gap uses min|E| (zero-energy distance) not min adjacent spacing"
 ```
 
@@ -516,9 +566,19 @@ Change group #38 status to reflect the Codex fixes. Mark the 5 open Codex findin
 
 Add a new phase entry documenting the topological bug fixes.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Archive the design spec**
+
+Move the completed design spec out of active specs and into the archive:
 
 ```bash
-git add docs/plans/REVIEW.md docs/plans/BACKLOG.md
+mkdir -p docs/superpowers/specs/archive
+git mv docs/superpowers/specs/2026-05-07-topological-magnetic-bugfixes-design.md \
+  docs/superpowers/specs/archive/2026-05-07-topological-magnetic-bugfixes-design.md
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/plans/REVIEW.md docs/plans/BACKLOG.md docs/superpowers/specs/archive/2026-05-07-topological-magnetic-bugfixes-design.md
 git commit -m "docs: archive topological bug fixes, update review status"
 ```

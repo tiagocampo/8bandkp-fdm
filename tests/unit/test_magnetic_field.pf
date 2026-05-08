@@ -299,7 +299,7 @@ contains
     ! Column-major: ij = (iy-1)*nx + ix
     do i = 1, 15
       grid%coords(1, i) = grid%dx * real(mod(i-1, 3), kind=dp)
-      grid%coords(2, i) = grid%z(mod(i-1, 5) + 1)
+      grid%coords(2, i) = grid%z((i-1) / 3 + 1)
     end do
 
     ! One off-diagonal entry: site 1 (ix=2, iy=1, y=1.0) to site 8 (ix=2, iy=3, y=3.0)
@@ -330,5 +330,53 @@ contains
 
     deallocate(grid%z, grid%coords, coo_vals, coo_row, coo_col)
   end subroutine test_peierls_y_axis_2d_wire
+
+  @test
+  subroutine test_peierls_fallback_y_index()
+    ! When ndim /= 2 (or grid%coords not allocated), add_peierls_coo falls
+    ! back to integer-division y-indexing: iy = (flat-1)/nx + 1, using grid%z.
+    ! This test verifies that fallback produces the same Peierls phase as the
+    ! coords path for equivalent site pairs.
+    type(spatial_grid) :: grid
+    complex(kind=dp), allocatable :: coo_vals(:)
+    integer, allocatable :: coo_row(:), coo_col(:)
+    real(kind=dp) :: B_vec(3)
+    integer :: nnz
+    real(kind=dp) :: y_i_m, y_j_m, phase_expected
+    complex(kind=dp) :: exp_expected
+
+    ! 1D-style grid: ndim=1, no grid%coords allocated
+    grid%ndim = 1
+    grid%nx = 3
+    grid%ny = 5
+    grid%dx = 2.0_dp
+    grid%dy = 2.0_dp
+    allocate(grid%z(5))
+    grid%z = [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp]
+
+    ! Off-diagonal entry: flat site 1 -> flat site 7
+    ! Column-major: site 1 = (ix=1, iy=1) -> z(1)=1.0
+    !               site 7 = (ix=1, iy=3) -> z(3)=3.0
+    ! Fallback: iy_i = (1-1)/3 + 1 = 1, iy_j = (7-1)/3 + 1 = 3
+    nnz = 1
+    allocate(coo_vals(1), coo_row(1), coo_col(1))
+    coo_row(1) = 1
+    coo_col(1) = 7
+    coo_vals(1) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+
+    B_vec = [2.0_dp, 0.0_dp, 0.0_dp]
+
+    call add_peierls_coo(coo_vals, coo_row, coo_col, nnz, grid, B_vec)
+
+    y_i_m = grid%z(1) * 1.0e-10_dp
+    y_j_m = grid%z(3) * 1.0e-10_dp
+    phase_expected = e * 2.0_dp * (y_i_m - y_j_m) * (grid%dy * 1.0e-10_dp) / (hbar * e)
+    exp_expected = cmplx(cos(phase_expected), -sin(phase_expected), kind=dp)
+
+    @assertEqual(real(exp_expected), real(coo_vals(1)), tolerance=1.0e-12_dp)
+    @assertEqual(aimag(exp_expected), aimag(coo_vals(1)), tolerance=1.0e-12_dp)
+
+    deallocate(grid%z, coo_vals, coo_row, coo_col)
+  end subroutine test_peierls_fallback_y_index
 
 end module
