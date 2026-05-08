@@ -96,6 +96,7 @@ tests/
 cmake/        FindFFTW3.cmake
 build/        .o, .mod, executables (created by cmake)
 scripts/      gnuplot plotting scripts
+docs/solutions/  documented solutions to past problems (bugs, best practices, patterns), organized by category with YAML frontmatter (module, tags, problem_type)
 ```
 
 ### Three executables
