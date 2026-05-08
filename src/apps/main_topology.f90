@@ -1074,7 +1074,8 @@ contains
     real(kind=dp), allocatable, intent(out) :: gap_map(:,:), transitions(:,:)
 
     integer :: iB, iMu, nB, nMu, z2_status, z2_val, n_occ
-    real(kind=dp) :: min_gap
+    real(kind=dp) :: min_gap, B_val, mu_val, dB, dmu
+    type(simulation_config) :: cfg_local
 
     nB = cfg_in%topo%gap_sweep_nB
     nMu = cfg_in%topo%gap_sweep_nMu
@@ -1084,16 +1085,32 @@ contains
     end if
 
     n_occ = 6 * size(profile_in, 1)
-    call compute_z2_fukane_qw_result(cfg_in, profile_in, kpterms_in, n_occ, &
-      & z2_val, min_gap, z2_status)
-    if (z2_status /= 0) then
-      print *, 'ERROR: QW Fu-Kane gap sweep failed with status ', z2_status
-      stop 1
-    end if
-
     allocate(z2_map(nMu, nB), gap_map(nMu, nB))
+
+    dB = 0.0_dp
+    if (nB > 1) dB = (cfg_in%topo%gap_sweep_B_max - cfg_in%topo%gap_sweep_B_min) / real(nB - 1, kind=dp)
+    dmu = 0.0_dp
+    if (nMu > 1) dmu = (cfg_in%topo%gap_sweep_mu_max - cfg_in%topo%gap_sweep_mu_min) / real(nMu - 1, kind=dp)
+
     do iB = 1, nB
+      B_val = cfg_in%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * dB
       do iMu = 1, nMu
+        mu_val = cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * dmu
+
+        cfg_local = cfg_in
+        cfg_local%bdg%enabled = .true.
+        cfg_local%bdg%B_vec = [0.0_dp, 0.0_dp, B_val]
+        cfg_local%bdg%mu = mu_val
+
+        call compute_z2_fukane_qw_result(cfg_local, profile_in, kpterms_in, n_occ, &
+          & z2_val, min_gap, z2_status)
+        if (z2_status /= 0) then
+          print *, 'WARNING: QW Fu-Kane sweep failed at B=', B_val, ' mu=', mu_val, &
+            & ' status=', z2_status
+          z2_val = 0
+          min_gap = huge(1.0_dp)
+        end if
+
         z2_map(iMu, iB) = z2_val
         gap_map(iMu, iB) = min_gap
       end do
