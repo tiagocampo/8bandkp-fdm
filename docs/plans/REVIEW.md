@@ -55,6 +55,7 @@ Review date: 2026-05-06
 | 49 | 2026-05-02-topological-suite-verification | spec + plan | COMPLETE | Archived; Phase 6 completion repair delivered Fu-Kane QW, gap sweep, conductance/spectral regressions; Berry/phase figures already present |
 | 51 | 2026-05-05-phase6-completion-repair | plan | COMPLETE | Archived; 66/66 tests passed; pushed through commit 20c3f19 |
 | 50 | 2026-05-03-physics-figures-extended | plan | COMPLETE | All 5 phases done: bulk E(k), QW subbands, wavefunctions, wire geometry, Zeeman fan |
+| 52 | 2026-05-07-topological-magnetic-bugfixes | spec + plan | COMPLETE | Archived; 5 Codex review findings fixed: Peierls y-axis, BHZ hopping, Majorana coords, Fu-Kane sweep, BdG gap |
 
 ---
 

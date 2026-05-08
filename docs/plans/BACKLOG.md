@@ -107,6 +107,35 @@ Full topological suite completion repair delivered and pushed.
 
 ---
 
+## Phase 7: COMPLETED (2026-05-08)
+
+Topological and magnetic bug fixes from Codex review findings.
+
+**Spec:** `docs/superpowers/specs/archive/2026-05-07-topological-magnetic-bugfixes-design.md` (archived)
+**Plan:** `docs/superpowers/plans/2026-05-07-topological-magnetic-bugfixes.md`
+**Commits:** `46be100` through `f875ab1`.
+
+**Fixed 5 findings:**
+
+| ID | Bug | Files | Test |
+|----|-----|-------|------|
+| F1 | Peierls y-axis OOB for multi-column wires | `magnetic_field.f90` | `test_peierls_y_axis_2d_wire` |
+| F2 | BHZ forward hopping connected same-site orbitals | `topological_analysis.f90` | `test_bhz_forward_hopping_connects_neighbors` + `test_bhz_wire_hamiltonian_is_hermitian` |
+| F3 | Majorana profile crashed on 2D grids (no grid%z) | `topological_analysis.f90` | `test_majorana_coords_2d_wire` |
+| F4 | QW Fu-Kane sweep evaluated once, filled all points | `main_topology.f90` | regression_topology_sweep_qw |
+| F5 | BdG gap used min adjacent spacing instead of min|E| | `topological_analysis.f90`, `main_topology.f90` | `test_bdg_gap_uses_min_abs_energy` |
+
+**Additional fixes discovered during review:**
+- BHZ backward A-term fixed to match forward for Hermiticity
+- Peierls y-index fallback uses integer division by nx (not mod by ny)
+- QW Fu-Kane sweep config copy hoisted out of inner loop
+
+**Verification:** fresh configure/build passed; full suite `66/66` passed.
+
+**Result:** Group #52 -> COMPLETE.
+
+---
+
 ## Remaining Backlog
 
 Only non-Phase-6 items remain from the review:
