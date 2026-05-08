@@ -85,10 +85,26 @@ contains
     ! Apply Peierls phase to all off-diagonal entries
     do idx = 1, nnz_offset
       if (coo_row(idx) /= coo_col(idx)) then
-        ! Get y-coordinates of the two sites (z array holds y for wire mode)
-        ! Band-major basis: grid_pt = mod(row-1, ngrid) + 1
-        y_i = grid%z(mod(coo_row(idx) - 1, ngrid) + 1) * 1.0e-10_dp  ! meters
-        y_j = grid%z(mod(coo_col(idx) - 1, ngrid) + 1) * 1.0e-10_dp  ! meters
+        block
+          integer :: flat_i, flat_j, iy_i, iy_j
+
+          ! Band-major basis: grid_pt = mod(row-1, ngrid) + 1
+          flat_i = mod(coo_row(idx) - 1, ngrid) + 1
+          flat_j = mod(coo_col(idx) - 1, ngrid) + 1
+
+          ! Extract y-coordinate for each site. In 2D wire mode, coords(2,:)
+          ! contains the y-coordinate for every flat spatial site. If coords
+          ! is unavailable, grid%z has length ny, so convert flat site -> iy.
+          if (grid%ndim == 2 .and. allocated(grid%coords)) then
+            y_i = grid%coords(2, flat_i) * 1.0e-10_dp
+            y_j = grid%coords(2, flat_j) * 1.0e-10_dp
+          else
+            iy_i = mod(flat_i - 1, grid%ny) + 1
+            iy_j = mod(flat_j - 1, grid%ny) + 1
+            y_i = grid%z(iy_i) * 1.0e-10_dp
+            y_j = grid%z(iy_j) * 1.0e-10_dp
+          end if
+        end block
 
         ! Peierls phase: phi = e * Bx * (y_i - y_j) * dz / hbar
         ! Using SI units: e in C, B in T, y and dz in m, hbar in J*s
