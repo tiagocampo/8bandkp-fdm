@@ -509,14 +509,17 @@ contains
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
-    ! Use moderate feast_m0 for BdG: enough to capture eigenvalues but not full N
-    ! FEAST M0 should be between nev and N. Use 8*nev for better coverage.
-    eigen_cfg_local%feast_m0 = max(8 * nev_local, 200)
+    ! FEAST M0 must be >= nev and <= N (matrix dimension).
+    eigen_cfg_local%feast_m0 = min(max(8 * nev_local, 200), 16 * Ngrid_local)
 
-    ! Search near zero energy for Majorana modes
-    ! Use ±5*delta to focus on the superconducting gap region
-    eigen_cfg_local%emin = -5.0_dp * cfg%bdg%delta_0
-    eigen_cfg_local%emax =  5.0_dp * cfg%bdg%delta_0
+    ! Search near zero energy for Majorana modes.
+    ! Window must capture BdG eigenvalues near the Fermi level.
+    ! ±5*delta is too narrow for wire geometries where confinement pushes
+    ! subbands away from mu by meV-to-eV scale. Use ±50*delta as a safer default.
+    emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
+    emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
+    eigen_cfg_local%emin = emin_local
+    eigen_cfg_local%emax = emax_local
 
     print *, '  FEAST energy window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
 

@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 """Sweep B field for Rashba wire + s-wave pairing to find Majorana transition.
 
-Note: BdG parser requires 'bdg T' (no colon) format to correctly set enabled flag.
-This is due to a label-aware parsing quirk in input_parser.f90.
-
 Analytical B_crit = sqrt(mu^2 + Delta^2) / (g * mu_B)
 where mu_B = 0.05788 meV/T
 """
@@ -25,7 +22,8 @@ def run_bdg(B, workdir):
     output = workdir / "output"
     output.mkdir(exist_ok=True)
 
-    # Config format matches the working regression config topology_rashba_phase.cfg
+    # Field order must match input_parser.f90 topology_block sequential reads.
+    # See topology_rashba_phase.cfg for the canonical order.
     config_text = f"""\
 waveVector: kz
 waveVectorMax: 0.1
@@ -53,12 +51,16 @@ SC: 0
 topology: T
 mode:  bdg
 compute_chern: F
+compute_hall: F
+qwz_u: 0.0
 compute_z2: F
 extract_edge_states: F
 edge_E_window: 0.01
 compute_ldos: F
-compute_hall: F
-qwz_u: 0.0
+ldos_eta: 0.001
+ldos_E_range: -0.1
+ldos_E_range: 0.1
+ldos_num_E: 200
 bdg: T
 mu: 0.0005
 delta_0: 0.0003

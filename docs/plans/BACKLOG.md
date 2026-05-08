@@ -157,6 +157,19 @@ Only non-Phase-6 items remain from the review:
 | #37 | `validate_simulation_config` + close `contiguous` gaps (2 remaining sites: ZB8bandQW, utils.f90) | Medium |
 | #8 | 3 integration tests (wire hexagon, wire strain, SC wire) + 2 regression datasets | Medium |
 | #26 | Docs physics revamp remaining tasks 3-12 | Medium-High |
+| Rashba | Rashba BdG sweep script physics tuning (see below) | Medium |
+
+### Rashba BdG Sweep Script Tuning
+
+`scripts/sweep_rashba_bdg.py` has two fixes applied (config field order, FEAST window), but the script still cannot demonstrate the Majorana phase transition because the physics parameters need calibration:
+
+1. **`mu` must match a subband energy.** The 8-band model uses absolute energies (GaAs VB max = -0.8 eV, CB min = 0.719 eV). The current `mu=0.0005 eV` is in the band gap — no electronic states exist there. `mu` must be set to an actual subband energy (e.g., the first CB subband at ~0.72 eV for a wide wire, or wherever the Fermi level crosses a subband). Requires running the band structure first to find subband positions.
+
+2. **FEAST window may need further widening.** The updated default (`max(±50*delta, ±10 meV)`) helps, but for wire geometries with large confinement energies (small grids or narrow wires), the eigenvalue spacing can be much larger. The BdG matrix diagonal spans ±37.9 eV for a 3 Å grid spacing. The window should be calibrated to the actual subband spacing around the chosen `mu`.
+
+3. **Grid spacing affects energy scale.** `wire_dx`/`wire_dy` in the config are the physical grid spacings (Å), not derived from `wire_width`/`wire_nx`. For realistic confinement, use `wire_dx ≈ wire_width / (wire_nx - 1)`.
+
+4. **Regression test is a false positive.** `regression_topology_rashba_phase` passes only because the test threshold (`gap < 0.5 meV`) is trivially satisfied when FEAST finds no eigenvalues (gap=0). The test should be updated to verify that FEAST actually finds eigenvalues when BdG is enabled.
 
 ---
 
