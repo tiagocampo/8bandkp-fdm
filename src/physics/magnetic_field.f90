@@ -99,8 +99,8 @@ contains
             y_i = grid%coords(2, flat_i) * 1.0e-10_dp
             y_j = grid%coords(2, flat_j) * 1.0e-10_dp
           else
-            iy_i = mod(flat_i - 1, grid%ny) + 1
-            iy_j = mod(flat_j - 1, grid%ny) + 1
+            iy_i = (flat_i - 1) / grid%nx + 1
+            iy_j = (flat_j - 1) / grid%nx + 1
             y_i = grid%z(iy_i) * 1.0e-10_dp
             y_j = grid%z(iy_j) * 1.0e-10_dp
           end if
