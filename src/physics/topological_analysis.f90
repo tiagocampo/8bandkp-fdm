@@ -31,6 +31,7 @@ module topological_analysis
   public :: compute_z2_gap_sweep
   public :: detect_z2_transitions
   public :: gap_closing_detect
+  public :: bdg_zero_energy_gap
 
   integer, parameter :: topo_status_ok = 0
   integer, parameter :: topo_status_invalid = 1
@@ -810,6 +811,22 @@ contains
     deallocate(coo_vals, coo_row, coo_col)
 
   end subroutine build_bhz_wire_hamiltonian
+
+  ! ==============================================================================
+  ! BdG zero-energy gap: minimum distance of eigenvalues from zero energy.
+  ! For a superconductor with particle-hole symmetry, eigenvalues come in +/- E
+  ! pairs.  The superconducting gap is min|E|, NOT the minimum adjacent spacing.
+  ! ==============================================================================
+  pure function bdg_zero_energy_gap(eigenvalues) result(gap)
+    real(kind=dp), intent(in), contiguous :: eigenvalues(:)
+    real(kind=dp) :: gap
+
+    if (size(eigenvalues) < 1) then
+      gap = 0.0_dp
+    else
+      gap = minval(abs(eigenvalues))
+    end if
+  end function bdg_zero_energy_gap
 
   ! ==============================================================================
   ! Gap closing detection at a single (B, mu) point.

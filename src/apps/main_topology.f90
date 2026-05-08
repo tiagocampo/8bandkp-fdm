@@ -530,18 +530,8 @@ contains
       allocate(eigvals_bdg(eigen_res_local%nev_found))
       eigvals_bdg = eigen_res_local%eigenvalues
 
-      ! Find minimum gap around zero energy
-      block
-        real(kind=dp) :: gap_min_val
-        integer :: i
-        gap_min_val = huge(1.0_dp)
-        ! Look at ALL consecutive eigenvalue pairs, find the minimum spacing
-        ! This will show gap closure at B_crit as min gap -> 0
-        do i = 1, eigen_res_local%nev_found - 1
-          gap_min_val = min(gap_min_val, abs(eigvals_bdg(i+1) - eigvals_bdg(i)))
-        end do
-        result%min_gap = gap_min_val
-      end block
+      ! Find minimum gap: distance from zero energy (superconducting gap)
+      result%min_gap = bdg_zero_energy_gap(eigvals_bdg)
 
       ! Check for zero-energy Majorana modes
       block
