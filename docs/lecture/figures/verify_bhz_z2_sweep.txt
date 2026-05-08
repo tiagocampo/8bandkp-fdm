@@ -21,19 +21,19 @@ Width (A)  Z2  Phase
    64      0   trivial
    66      0   trivial
    68      0   trivial
-   70      0   trivial
-   72      0   trivial
-   74      0   trivial
-   76      0   trivial
-   78      0   trivial
-   80      0   trivial
-   82      0   trivial
-   84      0   trivial
-   86      0   trivial
-   88      0   trivial
-   90      0   trivial
-   92      0   trivial
-   94      0   trivial
-   96      0   trivial
-   98      0   trivial
-  100      0   trivial
+   70      1   topological
+   72      1   topological
+   74      1   topological
+   76      1   topological
+   78      1   topological
+   80      1   topological
+   82      1   topological
+   84      1   topological
+   86      1   topological
+   88      1   topological
+   90      1   topological
+   92      1   topological
+   94      1   topological
+   96      1   topological
+   98      1   topological
+  100      1   topological

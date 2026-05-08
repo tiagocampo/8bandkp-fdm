@@ -25,10 +25,7 @@ def run_bdg(B, workdir):
     output = workdir / "output"
     output.mkdir(exist_ok=True)
 
-    # Note: 'bdg: T' format does NOT work - use 'bdg T' (space, no colon)
-    # The parser reads label/value pairs sequentially, so 'bdg T' reads
-    # label='bdg' then value=T (works). 'bdg: T' fails because ':' is consumed
-    # as the value for label 'bdg', leaving nothing for enabled.
+    # Config format matches the working regression config topology_rashba_phase.cfg
     config_text = f"""\
 waveVector: kz
 waveVectorMax: 0.1
@@ -48,7 +45,7 @@ numRegions: 1
 region: GaAs  0.0  100.0
 numcb: 4
 numvb: 4
-ExternalField: {int(B)} EF
+ExternalField: 0  EF
 EFParams: 0.0005
 whichBand: 0
 bandIdx: 1
@@ -60,11 +57,14 @@ compute_z2: F
 extract_edge_states: F
 edge_E_window: 0.01
 compute_ldos: F
+compute_hall: F
+qwz_u: 0.0
 bdg: T
 mu: 0.0005
 delta_0: 0.0003
 g_factor: 2.0
-b_field: {int(B)} 0 0
+B_vec: 0.0 0.0 {B:.1f}
+gauge: landau
 """
 
     cfg.write_text(config_text)
