@@ -1092,14 +1092,14 @@ contains
     dmu = 0.0_dp
     if (nMu > 1) dmu = (cfg_in%topo%gap_sweep_mu_max - cfg_in%topo%gap_sweep_mu_min) / real(nMu - 1, kind=dp)
 
+    cfg_local = cfg_in
+    cfg_local%bdg%enabled = .true.
+
     do iB = 1, nB
       B_val = cfg_in%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * dB
+      cfg_local%bdg%B_vec = [0.0_dp, 0.0_dp, B_val]
       do iMu = 1, nMu
         mu_val = cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * dmu
-
-        cfg_local = cfg_in
-        cfg_local%bdg%enabled = .true.
-        cfg_local%bdg%B_vec = [0.0_dp, 0.0_dp, B_val]
         cfg_local%bdg%mu = mu_val
 
         call compute_z2_fukane_qw_result(cfg_local, profile_in, kpterms_in, n_occ, &
