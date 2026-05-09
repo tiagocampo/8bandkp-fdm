@@ -2,6 +2,7 @@ module test_csr_spmv
   use funit
   use definitions
   use sparse_matrices
+  use csr_test_helpers
   implicit none
 
 contains
@@ -22,6 +23,7 @@ contains
     cols = [1, 2, 3]
     vals = [cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp)]
     call csr_build_from_coo(A, n, n, 3, rows, cols, vals)
+    call assert_csr_structural_invariants(A, .true.)
 
     x = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
     y = cmplx(0.0_dp, 0.0_dp, kind=dp)
@@ -69,6 +71,7 @@ contains
 
     ! Build CSR from COO
     call csr_build_from_coo(A, n, n, n * n, rows_coo, cols_coo, vals_coo)
+    call assert_csr_structural_invariants(A, .true.)
 
     ! Input vector
     do i = 1, n
@@ -111,6 +114,7 @@ contains
     cols = [1, 2, 3]
     vals = [cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp)]
     call csr_build_from_coo(A, n, n, 3, rows, cols, vals)
+    call assert_csr_structural_invariants(A, .true.)
 
     x = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
     ! Pre-fill y with old values
@@ -142,6 +146,7 @@ contains
     cols = [3, 2]
     vals = [cmplx(2.0_dp, 0, dp), cmplx(5.0_dp, 0, dp)]
     call csr_build_from_coo(A, n, n, 2, rows, cols, vals)
+    call assert_csr_structural_invariants(A)
 
     x = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), &
          cmplx(3.0_dp, 0, dp), cmplx(4.0_dp, 0, dp)]
@@ -176,6 +181,7 @@ contains
     cols = [1, 2, 1]
     vals = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
     call csr_build_from_coo(A, n, n, 3, rows, cols, vals)
+    call assert_csr_structural_invariants(A)
 
     x = [cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp)]
     y = cmplx(0.0_dp, 0.0_dp, kind=dp)
@@ -222,6 +228,7 @@ contains
 
     ! Build with cache
     call csr_build_from_coo_cached(A_cached, n, n, nnz, rows, cols, vals1, coo_to_csr)
+    call assert_csr_structural_invariants(A_cached, .true.)
 
     ! Verify mapping is valid (all positions in range)
     do i = 1, nnz
@@ -230,6 +237,7 @@ contains
 
     ! Build fresh matrix with same pattern for comparison
     call csr_build_from_coo(A_fresh, n, n, nnz, rows, cols, vals1)
+    call assert_csr_structural_invariants(A_fresh, .true.)
 
     ! Check 1: Same sparsity pattern
     @assertEqual(A_fresh%nnz, A_cached%nnz, message="Same nnz")
@@ -258,6 +266,7 @@ contains
     ! Rebuild fresh with same new values
     call csr_free(A_fresh)
     call csr_build_from_coo(A_fresh, n, n, nnz, rows, cols, vals2)
+    call assert_csr_structural_invariants(A_fresh, .true.)
 
     ! Check 3: Sparsity preserved (rowptr and colind unchanged)
     do i = 1, n + 1

@@ -10,7 +10,8 @@ module test_hamiltonian_2d
   use hamiltonian_wire
   use linalg, only: zheevx, ilaenv, dlamch
   use csr_test_helpers, only: csr_to_dense, csr_hermitian_error, &
-    csr_interior_symmetric_error, csr_interior_hermitian_error
+    csr_interior_symmetric_error, csr_interior_hermitian_error, &
+    assert_csr_structural_invariants
   implicit none
 
 contains
@@ -33,6 +34,7 @@ contains
     end do
 
     call kron_dense_dense(eye, n, n, eye, n, n, C)
+    call assert_csr_structural_invariants(C, .true.)
 
     @assertEqual(n * n, C%nrows)
     @assertEqual(n * n, C%ncols)
@@ -71,7 +73,9 @@ contains
 
     ! Laplacian = Iy x D2x + D2y x Ix  (column-major)
     call kron_eye_dense(ny, cD2x, nx, nx, kron_Iy_D2x)
+    call assert_csr_structural_invariants(kron_Iy_D2x)
     call kron_dense_dense(cD2y, ny, ny, cIx, nx, nx, kron_D2y_Ix)
+    call assert_csr_structural_invariants(kron_D2y_Ix)
     call csr_add(kron_Iy_D2x, kron_D2y_Ix, lap)
 
     @assertEqual(ngrid, lap%nrows)
@@ -108,6 +112,7 @@ contains
     allocate(cD1y(ny,ny)); cD1y = cmplx(D1y, 0.0_dp, kind=dp)
 
     call kron_dense_dense(cD1y, ny, ny, cD1x, nx, nx, kron_D1y_D1x)  ! cross-derivative: D1y x D1x (column-major)
+    call assert_csr_structural_invariants(kron_D1y_D1x)
 
     @assertEqual(nx * ny, kron_D1y_D1x%nrows)
     @assertEqual(nx * ny, kron_D1y_D1x%ncols)
@@ -362,6 +367,7 @@ contains
     call csr_build_from_coo(A, n, n, 7, rows, cols, vals)
     profile = [10.0_dp, 20.0_dp, 30.0_dp]
     call csr_apply_variable_coeff(A, profile, result_mat)
+    call assert_csr_structural_invariants(result_mat)
 
     allocate(dense(n, n))
     call csr_to_dense(result_mat, dense)
@@ -434,6 +440,7 @@ contains
 
     call csr_apply_variable_coeff(A, profile, result_mat, &
       face_frac_x=ffx, face_frac_y=ffy, grid_nx=nx)
+    call assert_csr_structural_invariants(result_mat)
 
     allocate(dense(ngrid, ngrid))
     dense = cmplx(0.0_dp, 0.0_dp, kind=dp)
