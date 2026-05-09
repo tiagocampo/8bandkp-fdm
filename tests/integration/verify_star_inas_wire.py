@@ -43,12 +43,12 @@ from star_helpers import (
     compare_value,
     format_benchmark_row,
     print_benchmark_header,
+    HBAR2_OVER_2M0, roth_gfactor,
 )
 
 # ---------------------------------------------------------------------------
 # Physical constants
 # ---------------------------------------------------------------------------
-HBAR2_OVER_2M0 = 3.80998  # eV * Angstrom^2 (hbar^2 / (2*m0))
 
 # ---------------------------------------------------------------------------
 # Material parameters: InAs (non-W, Vurgaftman 2001)
@@ -59,9 +59,7 @@ INAS_DELTA_SO = 0.39   # eV, spin-orbit splitting (Vurgaftman 2001, Table I)
 
 # Roth g-factor formula (Winkler 2003, Eq. 6.42):
 #   g_roth = 2 - 2*EP*DeltaSO / (3*Eg*(Eg + DeltaSO))
-G_ROTH = 2.0 - 2.0 * INAS_EP * INAS_DELTA_SO / (
-    3.0 * INAS_EG * (INAS_EG + INAS_DELTA_SO)
-)
+G_ROTH = roth_gfactor(INAS_EP, INAS_EG, INAS_DELTA_SO)
 
 # ---------------------------------------------------------------------------
 # Config paths (relative to tests/regression/configs/)
@@ -73,7 +71,12 @@ CONFIG_GFACTOR = "wire_inas_gfactor.cfg"
 # Tolerances
 # ---------------------------------------------------------------------------
 TOL_GFACTOR_RANGE = 0.50   # Wire g* within [0.5*|g_roth|, 2.0*|g_roth|]
+TOL_GFACTOR_REGRESSION = 0.10  # 10%: regression tolerance vs 8-band wire reference
 TOL_EIGENVALUE = 0.05      # 5%: regression tolerance vs 8-band wire reference
+
+# TODO: Add G_WIRE_REF regression reference once gfactorCalculation has been
+# run with wire config to establish the value. Then replace the Roth bulk range
+# check with compare_value(g_computed, G_WIRE_REF, TOL_GFACTOR_REGRESSION).
 
 # ---------------------------------------------------------------------------
 # Regression reference values (8-band wire)

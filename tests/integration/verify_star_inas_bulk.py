@@ -35,12 +35,12 @@ from star_helpers import (
     compare_value,
     format_benchmark_row,
     print_benchmark_header,
+    HBAR2_OVER_2M0, roth_gfactor,
 )
 
 # ---------------------------------------------------------------------------
 # Physical constants
 # ---------------------------------------------------------------------------
-HBAR2_OVER_2M0 = 3.80998  # eV * Angstrom^2 (hbar^2 / (2*m0))
 
 # ---------------------------------------------------------------------------
 # Material parameters
@@ -62,9 +62,7 @@ M_STAR_KANE = INAS_EG / (INAS_EP + INAS_EG)  # 0.0190 m0
 
 # Roth g-factor (Winkler 2003, Eq. 6.42):
 #   g = 2 - 2*EP*DeltaSO / (3*Eg*(Eg + DeltaSO))
-G_ROTH = 2.0 - 2.0 * INASW_EP * INASW_DELTA_SO / (
-    3.0 * INASW_EG * (INASW_EG + INASW_DELTA_SO)
-)
+G_ROTH = roth_gfactor(INASW_EP, INASW_EG, INASW_DELTA_SO)
 
 # ---------------------------------------------------------------------------
 # Config paths (relative to tests/regression/configs/)

@@ -11,6 +11,10 @@ Material variant note: Uses InAsW/GaSbW (Winkler 2003 parameter set with
 explicitly defined EV/EC). InAsW: EP=22.2, Eg=0.418 eV, DeltaSO=0.380 eV,
 EV=-0.59 eV, EC=-0.172 eV. GaSbW: EV=-0.03 eV, EC=0.782 eV.
 
+Structure note: The g-factor config (gfactor_qw_cb.cfg) is a 3-layer
+AlSbW(500A)/GaSbW(270A)/InAsW(70A) structure with numcb=32, numvb=32.
+The overlap config uses qw_inasw_gasbw_broken_gap.cfg.
+
 Band overlap discussion:
   The code's parameter-derived overlap EC(InAsW) - EV(GaSbW) = -0.172 - (-0.03)
   = -142 meV. This is a self-consistency check (covered by verification ladder
@@ -42,7 +46,7 @@ import tempfile
 from star_helpers import (
     run_executable, parse_eigenvalues, parse_gfactor,
     parse_topology_result, compare_value, format_benchmark_row,
-    print_benchmark_header,
+    print_benchmark_header, roth_gfactor,
 )
 
 # ---------------------------------------------------------------------------
@@ -66,9 +70,7 @@ GASBW_EC = 0.782         # eV, conduction band edge
 # Roth g-factor (Winkler 2003, Eq. 6.42):
 #   g = 2 - 2*EP*DeltaSO / (3*Eg*(Eg + DeltaSO))
 # For InAsW: g ~ -14.86
-G_ROTH = 2.0 - 2.0 * INASW_EP * INASW_DELTA_SO / (
-    3.0 * INASW_EG * (INASW_EG + INASW_DELTA_SO)
-)
+G_ROTH = roth_gfactor(INASW_EP, INASW_EG, INASW_DELTA_SO)
 
 # Band overlap: EC(InAsW) - EV(GaSbW)
 # Code parameter value: -0.172 - (-0.03) = -0.142 eV = -142 meV
@@ -101,8 +103,8 @@ TOL_OVERLAP = 0.10      # 10% parameter-based (band alignment varies across sour
 G_REF = -13.3616        # gz, 8-band QW (Roth bulk: -14.86)
 
 # CB eigenvalue index for the broken-gap QW config:
-# numcb=32, numvb=32 => 64 eigenvalues, CB starts at index 32 (0-based)
-# For the gfactor config: numcb=4, numvb=8 => 12 eigenvalues, CB at index 4
+# Overlap config: numcb=4, numvb=8 => CB starts at index 8 (0-based)
+# Gfactor config: numcb=32, numvb=32 => 64 eigenvalues, CB at index 32
 
 
 def run_bandstructure(build_dir, config_path, work_dir):
@@ -120,15 +122,6 @@ def run_gfactor(build_dir, config_path, work_dir):
     if not os.path.isfile(exe):
         print(f"FAIL: gfactorCalculation not found at {exe}")
         sys.exit(1)
-    return run_executable(exe, config_path, work_dir)
-
-
-def run_topology(build_dir, config_path, work_dir):
-    """Run topologicalAnalysis and return (returncode, output_dir)."""
-    exe = os.path.join(build_dir, "src", "topologicalAnalysis")
-    if not os.path.isfile(exe):
-        print(f"  SKIP: topologicalAnalysis not found at {exe}")
-        return -1, None
     return run_executable(exe, config_path, work_dir)
 
 
@@ -271,27 +264,72 @@ def check_band_overlap(build_dir, configs_dir):
           f"|literature| = {lit_abs:.1f} meV")
     print(f"  Deviation: {dev_pct:.2f}% [{status}]")
 
-    # Also run the eigenvalue calculation for diagnostic output
+    # Eigenvalue-based overlap: compare QW eigenvalue gap against literature.
+    # The broken-gap alignment means CB_ground < VB_top (negative overlap).
+    # QW confinement shifts eigenvalues from bulk edges, so 10% tolerance.
     tmpdir = tempfile.mkdtemp(prefix="star_inas_gasb_overlap_")
     try:
         rc, output_dir = run_bandstructure(build_dir, config_path, tmpdir)
-        if rc == 0:
+        if rc != 0:
+            print(f"  FAIL: bandStructure returned exit code {rc}")
+            rows.append({
+                "material": "InAsW/GaSbW QW",
+                "observable": "Band overlap (eigenvalue)",
+                "computed": float("nan"),
+                "expected": OVERLAP_LITERATURE,
+                "reference": "Liu et al. PRL 2008",
+                "tolerance": f"Eigenvalue ({TOL_OVERLAP*100:.0f}%)",
+                "delta": float("nan"),
+                "status": "FAIL",
+            })
+        else:
             eig_path = os.path.join(output_dir, "eigenvalues.dat")
             data = parse_eigenvalues(eig_path)
-            if data:
+            if not data:
+                print("  FAIL: no eigenvalue data parsed")
+                rows.append({
+                    "material": "InAsW/GaSbW QW",
+                    "observable": "Band overlap (eigenvalue)",
+                    "computed": float("nan"),
+                    "expected": OVERLAP_LITERATURE,
+                    "reference": "Liu et al. PRL 2008",
+                    "tolerance": f"Eigenvalue ({TOL_OVERLAP*100:.0f}%)",
+                    "delta": float("nan"),
+                    "status": "FAIL",
+                })
+            else:
                 k0, evals = data[0]
                 n_evals = len(evals)
                 print(f"  k=0 eigenvalues ({n_evals} total):")
                 for i, e in enumerate(evals):
                     print(f"    [{i:2d}] {e:.6f} eV")
 
-                cb_start = 4
+                cb_start = 8
                 vb_top_idx = cb_start - 1
                 cb_ground = evals[cb_start]
                 vb_top = evals[vb_top_idx]
                 ev_overlap = (cb_ground - vb_top) * 1000.0
                 print(f"  Eigenvalue gap: CB_ground - VB_top = {ev_overlap:.1f} meV")
-                print(f"  (Differs from bulk overlap due to QW confinement)")
+
+                passed, delta, _ = compare_value(
+                    abs(ev_overlap), abs(OVERLAP_LITERATURE),
+                    TOL_OVERLAP, "Band overlap (eigenvalue)", "meV"
+                )
+                status = "PASS" if passed else "FAIL"
+                dev_pct = delta * 100
+                rows.append({
+                    "material": "InAsW/GaSbW QW",
+                    "observable": "Band overlap (eigenvalue)",
+                    "computed": ev_overlap,
+                    "expected": OVERLAP_LITERATURE,
+                    "reference": "Liu et al. PRL 2008",
+                    "tolerance": f"Eigenvalue ({TOL_OVERLAP*100:.0f}%)",
+                    "delta": delta,
+                    "status": status,
+                })
+                print(f"  |eigenvalue| = {abs(ev_overlap):.1f} meV vs "
+                      f"|literature| = {abs(OVERLAP_LITERATURE):.1f} meV")
+                print(f"  Deviation: {dev_pct:.2f}% [{status}]")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -299,59 +337,16 @@ def check_band_overlap(build_dir, configs_dir):
 
 
 def check_z2(build_dir, configs_dir):
-    """Check Z2 topological invariant for InAs/GaSb broken-gap QW.
+    """Z2 topological invariant -- capability-gated, deferred (KD5).
 
-    Capability-gated: the topologicalAnalysis executable's QSHE Fu-Kane mode
-    must work with real 8-band materials. If it fails or produces invalid
-    output, this test is skipped with a NOTE (not a FAIL).
-
-    The existing topology_qw_fukane.cfg uses a single-material GaAs QW,
-    which is NOT a topological insulator (Z2 = 0). For the InAs/GaSb
-    broken-gap system, we expect Z2 = 1 (inverted regime).
-
-    Since no topology config exists for the InAsW/GaSbW broken-gap system,
-    this test is skipped with a NOTE documenting the capability gap.
-
-    Returns list of benchmark row dicts.
+    No topology config exists for InAsW/GaSbW broken-gap QW.
+    TODO: Create topology config and enable this test when topologicalAnalysis
+    supports real 8-band materials in Fu-Kane mode.
     """
-    rows = []
-
     print(f"\n{'-' * 40}")
-    print("Observable 3: Z2 topological invariant (capability-gated)")
+    print("Observable 3: Z2 topological invariant (SKIPPED -- capability-gated, KD5)")
     print(f"{'-' * 40}")
-
-    # Check if topologicalAnalysis executable exists
-    exe = os.path.join(build_dir, "src", "topologicalAnalysis")
-    if not os.path.isfile(exe):
-        print(f"  NOTE: topologicalAnalysis not found at {exe}")
-        print(f"  SKIP: Z2 benchmark requires topologicalAnalysis executable")
-        rows.append({
-            "material": "InAsW/GaSbW QW",
-            "observable": "Z2 invariant",
-            "computed": "N/A",
-            "expected": 1,
-            "reference": "Fu-Kane method",
-            "tolerance": "Exact",
-            "delta": float("nan"),
-            "status": "SKIP",
-        })
-        return rows
-
-    # The existing topology config uses GaAs (not InAs/GaSb broken-gap).
-    # A proper Z2 test requires a topology config for the InAsW/GaSbW system.
-    # Check if such a config exists.
-    topo_config = os.path.join(configs_dir, CONFIG_TOPOLOGY)
-
-    # The existing topology_qw_fukane.cfg uses GaAs single-layer, which is
-    # NOT the broken-gap system. We cannot derive Z2=1 from it.
-    # For now, document the capability gap.
-    print(f"  NOTE: No topology config exists for InAsW/GaSbW broken-gap QW.")
-    print(f"  The existing {CONFIG_TOPOLOGY} uses GaAs single-layer (Z2=0,")
-    print(f"  not inverted). A proper Z2=1 test requires a broken-gap config")
-    print(f"  with topology: mode=qshe and InAsW/GaSbW/AlSbW layers.")
-    print(f"  This is deferred to follow-up work (KD5).")
-
-    rows.append({
+    return [{
         "material": "InAsW/GaSbW QW",
         "observable": "Z2 invariant",
         "computed": "N/A (no config)",
@@ -360,9 +355,7 @@ def check_z2(build_dir, configs_dir):
         "tolerance": "Exact",
         "delta": float("nan"),
         "status": "SKIP",
-    })
-
-    return rows
+    }]
 
 
 def main():

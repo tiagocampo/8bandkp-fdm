@@ -43,7 +43,7 @@ except ImportError:
 from star_helpers import (
     run_executable, parse_eigenvalues, parse_absorption,
     compare_value, format_benchmark_row, print_benchmark_header,
-    TOL_NUMERICAL,
+    TOL_NUMERICAL, trapz_fn,
 )
 
 # ---------------------------------------------------------------------------
@@ -70,7 +70,7 @@ CB1_SUBBAND_EDGE = 1.021        # eV
 # Config paths
 # ---------------------------------------------------------------------------
 # Structure A: subband spacing (2-layer barrier/well)
-CONFIG_SUBBAND = os.path.join("docs", "benchmarks", "qw_gaas_algaas.cfg")
+CONFIG_SUBBAND = os.path.join("tests", "regression", "configs", "qw_gaas_algaas.cfg")
 
 # Structure B: QCSE with electric field
 CONFIG_QCSE_EF = os.path.join("tests", "regression", "configs",
@@ -191,7 +191,7 @@ def compute_integrated_absorption(spectrum):
         return 0.0
     energies = np.array([e for e, _ in spectrum])
     alphas = np.array([a for _, a in spectrum])
-    return float(np.trapezoid(alphas, energies))
+    return float(trapz_fn(alphas, energies))
 
 
 # ---------------------------------------------------------------------------
@@ -355,34 +355,38 @@ def check_absorption(build_dir, source_dir):
         # The absorption onset corresponds to the interband transition
         # energy E_CV = CB1 - VB_top. For the QW, this is the lowest
         # photon energy at which absorption occurs.
-        # We validate that the onset is in a physically reasonable range:
-        # above the GaAs band gap (1.519 eV) and below the AlGaAs gap.
+        # Sanity bounds: above GaAs gap (1.519 eV), below Al30Ga70As gap (1.977 eV).
         E_GAAS_GAP = 1.519     # eV, GaAs band gap
         E_ALGAAS30_GAP = 1.977  # eV, Al30Ga70As band gap
-        onset_min = E_GAAS_GAP  # onset can't be below GaAs gap
-        onset_max = E_ALGAAS30_GAP  # onset can't be above barrier gap
+        onset_min = E_GAAS_GAP
+        onset_max = E_ALGAAS30_GAP
 
         print(f"  TE absorption onset: {onset_energy:.4f} eV")
-        print(f"  Expected range: [{onset_min:.3f}, {onset_max:.3f}] eV")
+        print(f"  Sanity range: [{onset_min:.3f}, {onset_max:.3f}] eV")
         print(f"    GaAs gap: {E_GAAS_GAP:.3f} eV, Al30Ga70As gap: {E_ALGAAS30_GAP:.3f} eV")
 
+        # TODO: Replace range check with regression reference once
+        # opticalProperties has been run to establish ONSET_REF.
+        # Target: compare_value(onset_energy, ONSET_REF, TOL_ABS_ONSET, ...)
         onset_in_range = (onset_energy >= onset_min and
                           onset_energy <= onset_max)
+        status_onset = 'PASS' if onset_in_range else 'FAIL'
+        if not onset_in_range:
+            all_pass = False
 
         row_onset = {
             'computed': onset_energy,
             'expected': (onset_min + onset_max) / 2,
-            'tolerance': 0.0,
+            'tolerance': TOL_ABS_ONSET,
             'delta': 0.0 if onset_in_range else 1.0,
             'name': 'TE absorption onset',
             'unit': 'eV',
-            'status': 'PASS' if onset_in_range else 'FAIL',
+            'status': status_onset,
             'material': 'GaAs/AlGaAs QW',
-            'reference': 'benchmarks.md Sec.2; interband gap',
-            'tol_str': 'Numerical (range)',
+            'reference': 'Range: GaAs gap to AlGaAs gap',
+            'tol_str': f'Sanity ({TOL_ABS_ONSET*100:.0f}%)',
         }
         rows.append(row_onset)
-        status_onset = 'PASS' if onset_in_range else 'FAIL'
         print(f"  {status_onset}: onset in [{onset_min:.3f}, {onset_max:.3f}] eV")
 
         # --- TE > TM polarization check ---
@@ -400,7 +404,7 @@ def check_absorption(build_dir, source_dir):
                     'computed': te_integral,
                     'expected': tm_integral,
                     'tolerance': 0.0,
-                    'delta': 0.0 if te_gt_tm else 1.0,
+                    'delta': abs(te_integral - tm_integral) / max(abs(tm_integral), 1e-14),
                     'name': 'TE > TM polarization',
                     'unit': 'arb.',
                     'status': 'PASS' if te_gt_tm else 'FAIL',

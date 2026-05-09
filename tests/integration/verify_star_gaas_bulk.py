@@ -26,6 +26,7 @@ from star_helpers import (
     run_executable, parse_eigenvalues, parse_gfactor,
     parse_absorption, compare_value, format_benchmark_row, print_benchmark_header,
     TOL_EXACT, TOL_ANALYTICAL, TOL_NUMERICAL,
+    HBAR2_OVER_2M0, roth_gfactor,
 )
 
 # ---------------------------------------------------------------------------
@@ -35,7 +36,6 @@ from star_helpers import (
 # Used to compute analytical reference values (Kane mass, Roth g-factor).
 # These are NOT read from parameters.f90 -- they are independent literature
 # values used for cross-validation.
-HBAR2_OVER_2M0 = 3.80998  # eV * Angstrom^2 (hbar^2 / (2*m0))
 
 EG_GAAS = 1.519       # eV, Vurgaftman 2001 Table I
 DELTASO_GAAS = 0.341   # eV, Vurgaftman 2001 Table I
@@ -46,9 +46,7 @@ M_STAR_KANE = EG_GAAS / (EP_GAAS + EG_GAAS)  # ~ 0.0501 m0
 
 # Roth g-factor formula (Winkler 2003, Eq. 6.42):
 #   g = 2 - 2*EP*DeltaSO / (3*Eg*(Eg + DeltaSO))
-G_ROTH = 2.0 - 2.0 * EP_GAAS * DELTASO_GAAS / (
-    3.0 * EG_GAAS * (EG_GAAS + DELTASO_GAAS)
-)  # ~ -0.317
+G_ROTH = roth_gfactor(EP_GAAS, EG_GAAS, DELTASO_GAAS)  # ~ -0.317
 
 # Tolerances for each observable
 TOL_EG = TOL_EXACT              # machine precision
@@ -97,13 +95,13 @@ def check_eg_deltaso(build_dir, source_dir):
         eg_computed = evals[CB_INDEX]
         deltaso_computed = -evals[0]  # first eigenvalue is -DeltaSO
 
-        # Eg check
+        # Eg check (self-consistency: eigenvalue == parameter value at k=0)
         passed, delta, row = compare_value(
             eg_computed, EG_GAAS, TOL_EG, "Eg", "eV"
         )
         rows.append({
             "material": "GaAs",
-            "observable": "Eg",
+            "observable": "Eg (k=0 self-check)",
             "computed": eg_computed,
             "expected": EG_GAAS,
             "reference": "Vurgaftman 2001, Table I",
@@ -115,13 +113,13 @@ def check_eg_deltaso(build_dir, source_dir):
               f"(expected {EG_GAAS}, delta={delta:.2e}) "
               f"{'PASS' if passed else 'FAIL'}")
 
-        # DeltaSO check
+        # DeltaSO check (self-consistency: eigenvalue == parameter value at k=0)
         passed, delta, row = compare_value(
             deltaso_computed, DELTASO_GAAS, TOL_DELTASO, "DeltaSO", "eV"
         )
         rows.append({
             "material": "GaAs",
-            "observable": "DeltaSO",
+            "observable": "DeltaSO (k=0 self-check)",
             "computed": deltaso_computed,
             "expected": DELTASO_GAAS,
             "reference": "Vurgaftman 2001, Table I",
@@ -292,6 +290,16 @@ def check_absorption_edge(build_dir, source_dir):
         rc, output_dir = run_executable(exe_path, config_path, tmpdir)
         if rc != 0:
             print(f"  FAIL: opticalProperties returned {rc}")
+            rows.append({
+                "material": "GaAs",
+                "observable": "Absorption edge",
+                "computed": float("nan"),
+                "expected": EG_GAAS,
+                "reference": "Vurgaftman 2001",
+                "tolerance": "Numerical (2%)",
+                "delta": float("nan"),
+                "status": "FAIL",
+            })
             return rows
 
         abs_path = os.path.join(output_dir, "absorption_TE.dat")

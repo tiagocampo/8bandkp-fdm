@@ -19,7 +19,10 @@ import tempfile
 try:
     import numpy as np
 except ImportError:
-    np = None  # parse_absorption will raise if numpy is unavailable
+    raise ImportError(
+        "numpy is required for standard-star benchmarks. "
+        "Install with: pip install numpy"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -28,6 +31,12 @@ except ImportError:
 TOL_EXACT = 1e-12
 TOL_ANALYTICAL = 0.01   # 1% default for analytical comparisons
 TOL_NUMERICAL = 0.05    # 5% default for numerical comparisons
+
+# numpy 2.0 compatibility: np.trapezoid was introduced in 2.0, replacing np.trapz
+# np.trapz was removed in numpy 2.0
+trapz_fn = getattr(np, 'trapezoid', None) or getattr(np, 'trapz', None)
+if trapz_fn is None:
+    raise ImportError("numpy integration function not found (need numpy >= 1.6)")
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +71,48 @@ def run_executable(exe_path, config_path, work_dir, timeout=300):
     )
 
     return result.returncode, output_dir
+
+
+def run_exe(build_dir, name, config_path, work_dir, timeout=300):
+    """Resolve and run a Fortran executable by name.
+
+    Resolves <build_dir>/src/<name>, checks it exists, then calls
+    run_executable. Winkler 2003 Eq. 6.42 for Roth g-factor is in
+    roth_gfactor() below.
+
+    Args:
+        build_dir: path to build/ directory
+        name: executable name (e.g. 'bandStructure')
+        config_path: path to config file
+        work_dir: temporary working directory
+        timeout: execution timeout in seconds
+
+    Returns:
+        (returncode, output_dir)
+
+    Raises:
+        FileNotFoundError: if executable not found
+    """
+    exe_path = os.path.join(build_dir, "src", name)
+    if not os.path.isfile(exe_path):
+        raise FileNotFoundError(f"Executable not found: {exe_path}")
+    return run_executable(exe_path, config_path, work_dir, timeout)
+
+
+def roth_gfactor(ep, eg, delta_so):
+    """Roth g-factor formula (Winkler 2003, Eq. 6.42).
+
+    g = 2 - 2*EP*DeltaSO / (3*Eg*(Eg + DeltaSO))
+
+    Args:
+        ep: Kane interband matrix element EP in eV
+        eg: band gap in eV
+        delta_so: spin-orbit splitting in eV
+
+    Returns:
+        g-factor (dimensionless)
+    """
+    return 2.0 - 2.0 * ep * delta_so / (3.0 * eg * (eg + delta_so))
 
 
 # ---------------------------------------------------------------------------
@@ -118,8 +169,6 @@ def parse_absorption(filepath):
     Returns:
         list of (energy, absorption) tuples
     """
-    if np is None:
-        raise ImportError("numpy required for parse_absorption")
     data = np.loadtxt(filepath, comments='#')
     if data.ndim == 1:
         data = data.reshape(1, -1)
@@ -170,9 +219,6 @@ def extract_effective_mass(eig_path, cb_index=-1, r2_threshold=0.9999):
     Returns:
         (m_star, E0, r2, k_max) or None on failure
     """
-    if np is None:
-        raise ImportError("numpy required for extract_effective_mass")
-
     data = parse_eigenvalues(eig_path)
     if len(data) < 3:
         return None
@@ -224,6 +270,9 @@ def extract_effective_mass(eig_path, cb_index=-1, r2_threshold=0.9999):
 
 def compare_value(actual, expected, tolerance, name, unit=""):
     """Compare actual vs expected value within tolerance.
+
+    Uses relative tolerance when |expected| > 1e-14 eV (typical energy scale),
+    absolute tolerance otherwise (for near-zero values).
 
     Args:
         actual: computed value
@@ -290,41 +339,3 @@ def print_benchmark_header():
           "| Tolerance | Delta | Status |")
     print("|----------|-----------|----------|----------|----------"
           "|-----------|-------|--------|")
-
-
-# ---------------------------------------------------------------------------
-# Helper: run full standard-star workflow for one material
-# ---------------------------------------------------------------------------
-
-def run_star_test(exe_name, build_dir, source_dir, config_path, label=""):
-    """Run a single executable with a config in a temp directory.
-
-    Args:
-        exe_name: executable name (e.g. 'bandStructure', 'gfactorCalculation')
-        build_dir: path to build/ directory
-        source_dir: path to repo root
-        config_path: absolute path to config file
-        label: descriptive label for output
-
-    Returns:
-        (returncode, output_dir, tmpdir) — caller should use output_dir
-        for parsing, then tmpdir gets cleaned up by the context manager.
-    """
-    exe_path = os.path.join(build_dir, "src", exe_name)
-    if not os.path.isfile(exe_path):
-        raise FileNotFoundError(f"Executable not found: {exe_path}")
-
-    tmpdir = tempfile.mkdtemp(prefix=f"star_{label}_")
-    try:
-        rc, output_dir = run_executable(exe_path, config_path, tmpdir)
-    except Exception:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        raise
-
-    return rc, output_dir, tmpdir
-
-
-def cleanup_tmpdir(tmpdir):
-    """Remove temporary directory."""
-    if tmpdir and os.path.isdir(tmpdir):
-        shutil.rmtree(tmpdir, ignore_errors=True)

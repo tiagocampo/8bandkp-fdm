@@ -334,7 +334,7 @@ def main():
         evals_gaas = copy_config_and_run(
             build_dir,
             repo_dir,
-            "docs/benchmarks/qw_gaas_algaas.cfg",
+            "tests/regression/configs/qw_gaas_algaas.cfg",
             "gaas_qw",
         )
         fail = check_r10(evals_gaas)

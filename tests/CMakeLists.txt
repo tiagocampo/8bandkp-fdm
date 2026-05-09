@@ -807,5 +807,6 @@ set_tests_properties(
     star_s1_gaas_bulk star_s2_inas_bulk star_s3_insb_bulk
     star_s4_gaas_algaas_qw star_s5_inas_gasb_qw
     star_s6_inas_gaas_strained_qw star_s7_inas_wire
-    PROPERTIES LABELS "verification"
+    PROPERTIES LABELS "standard-star;verification"
+              TIMEOUT 600
 )

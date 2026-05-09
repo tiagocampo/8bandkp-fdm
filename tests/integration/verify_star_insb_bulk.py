@@ -34,15 +34,15 @@ except ImportError:
     sys.exit(1)
 
 from star_helpers import (
-    run_executable, parse_eigenvalues, parse_gfactor,
+    run_executable, run_exe, parse_eigenvalues, parse_gfactor,
     compare_value, format_benchmark_row, print_benchmark_header,
-    extract_effective_mass as extract_effective_mass_shared,
+    HBAR2_OVER_2M0, roth_gfactor, TOL_EXACT,
+    extract_effective_mass,
 )
 
 # ---------------------------------------------------------------------------
 # Physical constants
 # ---------------------------------------------------------------------------
-HBAR2_OVER_2M0 = 3.80998  # eV * Angstrom^2 (hbar^2 / (2*m0))
 
 # ---------------------------------------------------------------------------
 # InSb material parameters
@@ -57,12 +57,11 @@ M_STAR_KANE = EG_INSB / (EP_INSB + EG_INSB)  # ~0.00997 m0
 
 # Roth g-factor formula (Winkler 2003, Eq. 6.42):
 #   g_roth = 2 - 2*EP*DeltaSO / (3*Eg*(Eg + DeltaSO))
-G_ROTH = 2.0 - 2.0 * EP_INSB * DELTA_SO / (3.0 * EG_INSB * (EG_INSB + DELTA_SO))
+G_ROTH = roth_gfactor(EP_INSB, EG_INSB, DELTA_SO)
 
 # ---------------------------------------------------------------------------
 # Tolerances (KD6)
 # ---------------------------------------------------------------------------
-TOL_EXACT = 1e-12      # Machine precision: Eg, DeltaSO at k=0
 TOL_MASS = 0.15        # 15%: InSb extreme non-parabolicity (8-band deviates ~11% from 2-band Kane)
 TOL_GFACTOR = 0.01     # 1%: Roth g-factor vs 8-band
 
@@ -115,15 +114,9 @@ def check_eigenvalues_at_k0(evals):
     return results
 
 
-def extract_effective_mass(eig_path):
-    """Extract CB effective mass via adaptive parabolic fit near k=0.
-
-    Uses the shared star_helpers adaptive fit which progressively narrows
-    the k-range for accurate parabolic-limit mass in non-parabolic bands.
-
-    Returns m_star (in m0 units) or None on failure.
-    """
-    result = extract_effective_mass_shared(eig_path, cb_index=CB_INDEX)
+def _extract_mass(eig_path):
+    """Extract CB effective mass via shared adaptive parabolic fit."""
+    result = extract_effective_mass(eig_path, cb_index=CB_INDEX)
     if result is None:
         return None
     return result[0]  # m_star
@@ -202,7 +195,7 @@ def main():
             all_pass = False
         else:
             eig_path = os.path.join(output_dir, "eigenvalues.dat")
-            m_star = extract_effective_mass(eig_path)
+            m_star = _extract_mass(eig_path)
             if m_star is None:
                 print("FAIL: could not extract effective mass")
                 all_pass = False

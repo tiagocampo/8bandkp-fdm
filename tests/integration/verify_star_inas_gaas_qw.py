@@ -38,12 +38,12 @@ import shutil
 from star_helpers import (
     run_executable, parse_eigenvalues, parse_gfactor,
     compare_value, format_benchmark_row, print_benchmark_header,
+    HBAR2_OVER_2M0, roth_gfactor,
 )
 
 # ---------------------------------------------------------------------------
 # Physical constants
 # ---------------------------------------------------------------------------
-HBAR2_OVER_2M0 = 3.80998  # eV * Angstrom^2 (hbar^2 / (2*m0))
 
 # ---------------------------------------------------------------------------
 # Material parameters (InAs, non-W variant -- Vurgaftman 2001)
@@ -66,28 +66,26 @@ A_INAS = 6.0583        # InAs lattice constant (Vurgaftman 2001, Table XIV)
 #   eps_biaxial = (a_substrate - a_well) / a_well
 EPS_BIAXIAL = (A_GAAS - A_INAS) / A_INAS  # ~ -0.0669
 
-# Bir-Pikus HH-LH splitting (bulk):
-#   delta_EHH - delta_ELH = 2 * b * eps_biaxial
+# Bir-Pikus HH-LH splitting (bulk) with Poisson correction:
+#   eps_zz = -2 * (C12/C11) * eps_biaxial
+#   delta = 2 * Q_eps = b * (eps_zz - eps_xx)
 # With compressive strain (eps < 0) and b < 0: splitting > 0 (HH above LH)
-# NOTE: This is the BULK prediction. The QW result is reduced by confinement
-# mixing of HH/LH character. We use it as a sanity check (code must produce
-# a splitting in the right direction and of similar order of magnitude).
-HH_LH_SPLITTING_BULK = 2.0 * INAS_B * EPS_BIAXIAL  # ~ 0.241 eV
+# Full biaxial formula including Poisson correction (Chuang 2003, Ch. 4).
+INAS_C11 = 832.9   # GPa, elastic constant (Vurgaftman 2001, Table XIV)
+INAS_C12 = 452.6   # GPa, elastic constant (Vurgaftman 2001, Table XIV)
+EPS_ZZ = -2.0 * (INAS_C12 / INAS_C11) * EPS_BIAXIAL
+HH_LH_SPLITTING_BULK = abs(INAS_B * (EPS_ZZ - EPS_BIAXIAL))  # ~ 0.251 eV
 
 # Roth g-factor formula (Winkler 2003, Eq. 6.42) — bulk InAs:
 #   g = 2 - 2*EP*DeltaSO / (3*Eg*(Eg + DeltaSO))
 # NOTE: The QW g-factor differs dramatically from bulk because confinement
 # increases the effective gap seen by the electron. Reported for reference.
-G_ROTH_BULK = 2.0 - 2.0 * INAS_EP * INAS_DELTA_SO / (
-    3.0 * INAS_EG * (INAS_EG + INAS_DELTA_SO)
-)  # ~ -14.6
+G_ROTH_BULK = roth_gfactor(INAS_EP, INAS_EG, INAS_DELTA_SO)  # ~ -14.6
 
-# CB subband spacing: the 20A InAs well has a very small CB effective mass (~0.023 m0)
-# leading to large confinement energy. The Bastard finite-barrier model gives an
-# estimate, but 8-band coupling and strain make it less reliable. The 8-band result
-# for E2-E1 is ~409 meV for this narrow well.
-CB_SPACING_MIN_EV = 0.001   # 1 meV lower bound
-CB_SPACING_MAX_EV = 0.600   # 600 meV upper bound (narrow well, light mass)
+# CB subband spacing: 8-band regression reference for the 20A InAs/GaAs strained QW.
+# The narrow well + light mass (~0.023 m0) gives large CB confinement spacing.
+CB_SPACING_REF = 0.409      # eV (8-band QW regression; Bastard model: rough estimate)
+TOL_CB_SPACING = 0.05       # 5% regression tolerance
 
 # ---------------------------------------------------------------------------
 # QW structure parameters
@@ -99,6 +97,7 @@ CB_SPACING_MAX_EV = 0.600   # 600 meV upper bound (narrow well, light mass)
 WELL_WIDTH_A = 20.0    # Angstrom
 NUM_CB = 4             # Number of CB eigenvalues solved (2 distinct levels)
 NUM_VB = 8             # Number of VB eigenvalues solved (4 distinct levels)
+CB_INDEX = NUM_VB      # 0-based: CB starts at index 8 (= num_vb)
 
 # ---------------------------------------------------------------------------
 # Config paths (relative to tests/regression/configs/)
@@ -223,13 +222,10 @@ def main():
     print()
 
     # -----------------------------------------------------------------------
-    # Observable 1: HH-LH splitting (regression vs 8-band QW)
+    # Observable 1 & 2: Run bandStructure once, parse both HH-LH and CB
     # -----------------------------------------------------------------------
-    print(f"--- HH-LH splitting (strain + QW confinement) ---")
-    print(f"  Reference: 8-band k.p QW regression value")
-    print(f"  Regression ref: {HHLH_REF:.6f} eV")
-    print(f"  Bir-Pikus bulk: {HH_LH_SPLITTING_BULK:.4f} eV (reduced by QW mixing)")
-
+    print(f"--- Running bandStructure for {CONFIG_QW} ---")
+    k0_evals = None
     tmpdir = tempfile.mkdtemp(prefix="star_inas_gaas_qw_")
     try:
         rc, output_dir = run_bandstructure(build_dir, config_qw, tmpdir)
@@ -243,89 +239,79 @@ def main():
                 print("FAIL: no eigenvalue data parsed")
                 all_pass = False
             else:
-                k0, evals = data[0]
-                print(f"  k=0, {len(evals)} eigenvalues total "
-                      f"({NUM_VB} VB + {NUM_CB} CB)")
-
-                splitting, vb_evals = check_hh_lh_splitting(evals, NUM_VB)
-                if splitting is None:
-                    print("FAIL: could not extract HH-LH splitting")
-                    all_pass = False
-                else:
-                    print(f"  Top VB eigenvalues (eV):")
-                    for i in range(max(0, NUM_VB - 4), NUM_VB):
-                        print(f"    VB[{i}] = {vb_evals[i]:.6f}")
-                    print(f"  HH-LH splitting = {splitting:.6f} eV")
-
-                    passed, delta, row = compare_value(
-                        splitting, HHLH_REF, TOL_HHLH,
-                        "HH-LH splitting", "eV"
-                    )
-                    status = "PASS" if passed else "FAIL"
-                    if not passed:
-                        all_pass = False
-                    dev_pct = delta * 100
-                    print(f"  Expected: {HHLH_REF:.6f} eV (regression), "
-                          f"bulk Bir-Pikus: {HH_LH_SPLITTING_BULK:.4f} eV")
-                    print(f"  Deviation: {dev_pct:.2f}% [{status}]")
-                    rows.append(row)
+                k0_evals = data[0][1]
+                print(f"  k=0: {len(k0_evals)} eigenvalues ({NUM_VB} VB + {NUM_CB} CB)")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
     # -----------------------------------------------------------------------
-    # Observable 2: CB subband spacing (sanity range check)
+    # Observable 1: HH-LH splitting (regression vs 8-band QW)
     # -----------------------------------------------------------------------
-    print(f"\n--- CB subband spacing (range check) ---")
-    print(f"  Reference: Bastard 1981 finite-barrier model")
-    print(f"  Checking: {CB_SPACING_MIN_EV*1000:.0f} meV < spacing < "
-          f"{CB_SPACING_MAX_EV*1000:.0f} meV")
+    print(f"\n--- HH-LH splitting (strain + QW confinement) ---")
+    print(f"  Reference: 8-band k.p QW regression value")
+    print(f"  Regression ref: {HHLH_REF:.6f} eV")
+    print(f"  Bir-Pikus bulk: {HH_LH_SPLITTING_BULK:.4f} eV (reduced by QW mixing)")
 
-    tmpdir = tempfile.mkdtemp(prefix="star_inas_gaas_qw2_")
-    try:
-        rc, output_dir = run_bandstructure(build_dir, config_qw, tmpdir)
-        if rc != 0:
-            print(f"FAIL: bandStructure exited with code {rc}")
+    if k0_evals is None:
+        print("FAIL: no eigenvalue data from bandStructure run")
+        all_pass = False
+    else:
+        splitting, vb_evals = check_hh_lh_splitting(k0_evals, NUM_VB)
+        if splitting is None:
+            print("FAIL: could not extract HH-LH splitting")
             all_pass = False
         else:
-            eig_path = os.path.join(output_dir, "eigenvalues.dat")
-            data = parse_eigenvalues(eig_path)
-            if not data:
-                print("FAIL: no eigenvalue data parsed")
+            print(f"  Top VB eigenvalues (eV):")
+            for i in range(max(0, NUM_VB - 4), NUM_VB):
+                print(f"    VB[{i}] = {vb_evals[i]:.6f}")
+            print(f"  HH-LH splitting = {splitting:.6f} eV")
+
+            passed, delta, row = compare_value(
+                splitting, HHLH_REF, TOL_HHLH,
+                "HH-LH splitting", "eV"
+            )
+            status = "PASS" if passed else "FAIL"
+            if not passed:
                 all_pass = False
-            else:
-                k0, evals = data[0]
+            dev_pct = delta * 100
+            print(f"  Expected: {HHLH_REF:.6f} eV (regression), "
+                  f"bulk Bir-Pikus: {HH_LH_SPLITTING_BULK:.4f} eV")
+            print(f"  Deviation: {dev_pct:.2f}% [{status}]")
+            rows.append(row)
 
-                spacing, cb_evals = check_cb_spacing(evals, NUM_VB, NUM_CB)
-                if spacing is None:
-                    print("FAIL: could not extract CB subband spacing")
-                    all_pass = False
-                else:
-                    print(f"  CB eigenvalues (eV):")
-                    for i, e in enumerate(cb_evals):
-                        print(f"    CB[{i+1}] = {e:.6f}")
-                    print(f"  CB2 - CB1 = {spacing:.6f} eV = "
-                          f"{spacing*1000:.2f} meV")
+    # -----------------------------------------------------------------------
+    # Observable 2: CB subband spacing (regression vs 8-band QW)
+    # -----------------------------------------------------------------------
+    print(f"\n--- CB subband spacing (regression) ---")
+    print(f"  Reference: 8-band QW regression value")
+    print(f"  Regression ref: {CB_SPACING_REF*1000:.1f} meV")
 
-                    in_range = (spacing >= CB_SPACING_MIN_EV and
-                                spacing <= CB_SPACING_MAX_EV)
-                    status = "PASS" if in_range else "FAIL"
-                    if not in_range:
-                        all_pass = False
+    if k0_evals is None:
+        print("FAIL: no eigenvalue data from bandStructure run")
+        all_pass = False
+    else:
+        spacing, cb_evals = check_cb_spacing(k0_evals, NUM_VB, NUM_CB)
+        if spacing is None:
+            print("FAIL: could not extract CB subband spacing")
+            all_pass = False
+        else:
+            print(f"  CB eigenvalues (eV):")
+            for i, e in enumerate(cb_evals):
+                print(f"    CB[{i+1}] = {e:.6f}")
+            print(f"  CB2 - CB1 = {spacing:.6f} eV = "
+                  f"{spacing*1000:.2f} meV")
 
-                    row = {
-                        'computed': spacing,
-                        'expected': (CB_SPACING_MIN_EV + CB_SPACING_MAX_EV) / 2,
-                        'tolerance': TOL_HHLH,
-                        'delta': 0.0 if in_range else 1.0,
-                        'name': 'CB spacing (range)',
-                        'unit': 'eV',
-                        'status': status,
-                    }
-                    rows.append(row)
-                    print(f"  Range: [{CB_SPACING_MIN_EV*1000:.0f}, "
-                          f"{CB_SPACING_MAX_EV*1000:.0f}] meV [{status}]")
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+            passed, delta, row = compare_value(
+                spacing, CB_SPACING_REF, TOL_CB_SPACING,
+                "CB spacing", "eV"
+            )
+            status = "PASS" if passed else "FAIL"
+            if not passed:
+                all_pass = False
+            dev_pct = delta * 100
+            print(f"  Expected: {CB_SPACING_REF*1000:.1f} meV (regression)")
+            print(f"  Deviation: {dev_pct:.2f}% [{status}]")
+            rows.append(row)
 
     # -----------------------------------------------------------------------
     # Observable 3: g-factor (regression vs 8-band QW)
@@ -381,9 +367,9 @@ def main():
         if name == "HH-LH splitting":
             ref = "8-band QW regression"
             tol_str = f"Regression ({TOL_HHLH*100:.0f}%)"
-        elif name == "CB spacing (range)":
-            ref = "Bastard 1981 (range check)"
-            tol_str = "Numerical (range)"
+        elif name == "CB spacing":
+            ref = "8-band QW regression"
+            tol_str = f"Regression ({TOL_CB_SPACING*100:.0f}%)"
         elif name == "g*":
             ref = "8-band QW regression"
             tol_str = f"Regression ({TOL_GFACTOR*100:.0f}%)"
