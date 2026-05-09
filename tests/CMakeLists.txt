@@ -91,6 +91,12 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    add_pfunit_ctest(test_csr_structural
+        TEST_SOURCES unit/test_csr_structural.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_optical
         TEST_SOURCES unit/test_optical.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
