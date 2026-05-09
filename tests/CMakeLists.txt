@@ -679,3 +679,46 @@ set_tests_properties(
     regression_topology_rashba_phase
     PROPERTIES LABELS "regression"
 )
+
+# --- 8-Band Verification Ladder (4 rungs) ---
+# Rung 1: Bulk k=0 structural validation (R1-R5)
+add_test(
+    NAME verification_rung1_bulk_k0
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_8band_rung1_bulk_k0.py
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Rung 2: Bulk dispersion effective mass validation (R6-R9)
+add_test(
+    NAME verification_rung2_dispersion
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_8band_rung2_dispersion.py
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Rung 3: QW subband energy validation (R10, R12, R13)
+add_test(
+    NAME verification_rung3_qw
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_8band_rung3_qw.py
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Rung 4: Wire internal consistency validation (R14-R16)
+add_test(
+    NAME verification_rung4_wire
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_8band_rung4_wire.py
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_rung1_bulk_k0 verification_rung2_dispersion
+    verification_rung3_qw verification_rung4_wire
+    PROPERTIES LABELS "verification"
+)
