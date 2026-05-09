@@ -35,7 +35,7 @@ contains
     @assertEqual(3, AH%ncols)
 
     ! Structural invariants
-    call assert_csr_structural_invariants(AH, .true.)
+    @assertTrue(assert_csr_structural_invariants(AH, .true.), message="AH structural invariants")
 
     ! Check A^H values via dense comparison
     allocate(dense(AH%nrows, AH%ncols))
@@ -89,7 +89,7 @@ contains
     call csr_conjugate_transpose_to_preallocated(A, AH_fast)
 
     ! Structural invariants
-    call assert_csr_structural_invariants(AH_fast, .true.)
+    @assertTrue(assert_csr_structural_invariants(AH_fast, .true.), message="AH_fast structural invariants")
 
     ! Compare values
     @assertEqual(AH_slow%nnz, AH_fast%nnz, message="nnz match")
@@ -206,7 +206,7 @@ contains
       @assertEqual(cmplx(0.0_dp, 0.0_dp, dp), B%values(k), tolerance=1.0e-15_dp)
     end do
 
-    call assert_csr_structural_invariants(B, .true.)
+    @assertTrue(assert_csr_structural_invariants(B, .true.), message="clone structural invariants")
 
     call A%free()
     call B%free()
@@ -237,7 +237,7 @@ contains
 
     call csr_add(A, B, C)
 
-    call assert_csr_structural_invariants(C, .true.)
+    @assertTrue(assert_csr_structural_invariants(C, .true.), message="csr_add overlapping structural invariants")
 
     ! C = A + B = diag(5, 7, 9)
     allocate(dense(3, 3))
@@ -255,6 +255,50 @@ contains
     call B%free()
     call C%free()
   end subroutine test_csr_add_overlapping
+
+  ! ==================================================================
+  ! csr_add with disjoint patterns: union of non-overlapping sparsity
+  ! ==================================================================
+  @test
+  subroutine test_csr_add_disjoint()
+    type(csr_matrix) :: A, B, C
+    integer :: rows_a(2), cols_a(2), rows_b(2), cols_b(2)
+    complex(kind=dp) :: vals_a(2), vals_b(2)
+    complex(kind=dp), allocatable :: dense(:,:)
+    real(kind=dp) :: max_err
+
+    ! A has entries at (1,1) and (2,2)
+    rows_a = [1, 2]
+    cols_a = [1, 2]
+    vals_a = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp)]
+    call csr_build_from_coo(A, 2, 2, 2, rows_a, cols_a, vals_a)
+
+    ! B has entries at (1,2) and (2,1) — completely disjoint from A
+    rows_b = [1, 2]
+    cols_b = [2, 1]
+    vals_b = [cmplx(3.0_dp, 0, dp), cmplx(4.0_dp, 0, dp)]
+    call csr_build_from_coo(B, 2, 2, 2, rows_b, cols_b, vals_b)
+
+    call csr_add(A, B, C)
+
+    @assertEqual(4, C%nnz, message="disjoint union has 4 nonzeros")
+    @assertTrue(assert_csr_structural_invariants(C), message="disjoint add structural invariants")
+
+    ! C = [[1, 3], [4, 2]]
+    allocate(dense(2, 2))
+    call csr_to_dense(C, dense)
+    max_err = 0.0_dp
+    max_err = max(max_err, abs(dense(1,1) - cmplx(1.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(1,2) - cmplx(3.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(2,1) - cmplx(4.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(2,2) - cmplx(2.0_dp, 0, dp)))
+    @assertTrue(max_err < 1.0e-14_dp, message="disjoint csr_add values correct")
+
+    deallocate(dense)
+    call A%free()
+    call B%free()
+    call C%free()
+  end subroutine test_csr_add_disjoint
 
   ! ==================================================================
   ! kron_dense_eye: known 2x2 dense x I_2
@@ -276,7 +320,7 @@ contains
     @assertEqual(4, C%nrows)
     @assertEqual(4, C%ncols)
 
-    call assert_csr_structural_invariants(C, .true.)
+    @assertTrue(assert_csr_structural_invariants(C, .true.), message="kron_dense_eye structural invariants")
 
     ! Expected: [[1 0 2 0], [0 1 0 2], [3 0 4 0], [0 3 0 4]]
     allocate(dense(4, 4))
@@ -320,7 +364,7 @@ contains
     @assertEqual(3, C%nrows)
     @assertEqual(2, C%ncols)
 
-    call assert_csr_structural_invariants(C)
+    @assertTrue(assert_csr_structural_invariants(C), message="kron_1d structural invariants")
 
     ! Expected: outer product [[4, 5], [8, 10], [12, 15]]
     allocate(dense(3, 2))
@@ -362,7 +406,7 @@ contains
     @assertEqual(A%ncols, B%ncols, message="ncols preserved")
     @assertEqual(A%nnz, B%nnz, message="nnz preserved")
 
-    call assert_csr_structural_invariants(B, .true.)
+    @assertTrue(assert_csr_structural_invariants(B, .true.), message="csr_scale structural invariants")
 
     ! Same colind
     do k = 1, A%nnz

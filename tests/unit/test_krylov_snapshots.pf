@@ -7,7 +7,6 @@ module test_krylov_snapshots
   use parameters, only: paramDatabase
   use geometry, only: grid_init_rect, grid_free
   use confinement_init, only: confinementInitialization_2d
-  use hamiltonianConstructor, only: ZB8bandQW
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, ZB8bandGeneralized
   use topological_analysis, only: bhz_wire_params, build_bhz_wire_hamiltonian
   use bdg_hamiltonian, only: build_bdg_hamiltonian_1d

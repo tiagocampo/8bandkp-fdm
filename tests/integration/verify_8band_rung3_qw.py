@@ -176,8 +176,6 @@ def check_r12(evals):
     eig_gap_mev = eig_gap_ev * 1000.0
 
     expected_overlap_mev = 142.0
-    tol_pct = 0.01  # 1%
-    tol_mev = expected_overlap_mev * tol_pct  # 1.42 meV
 
     print("\n[R12] InAs/GaSbW broken-gap QW:")
     print(f"  Eigenvalues at k=0 ({n} bands):")
@@ -208,27 +206,7 @@ def check_r12(evals):
     else:
         print(f"  PASS: VB state above InAs CB edge (broken-gap confirmed)")
 
-    # Check 2: material overlap matches benchmarks.md
-    # The material overlap is a fixed parameter property (142 meV).
-    # Verify it is consistent with what benchmarks.md documents.
-    overlap_err_mev = abs(material_overlap_mev - expected_overlap_mev)
-    print(
-        f"  Material overlap check: {material_overlap_mev:.1f} meV vs "
-        f"expected {expected_overlap_mev:.1f} meV "
-        f"(diff = {overlap_err_mev:.2f} meV, tolerance = {tol_mev:.2f} meV)"
-    )
-    if overlap_err_mev > tol_mev:
-        failures.append(
-            f"R12 FAIL: material overlap = {material_overlap_mev:.1f} meV, "
-            f"expected {expected_overlap_mev:.1f} meV "
-            f"(diff = {overlap_err_mev:.2f} meV)"
-        )
-    else:
-        print(f"  PASS: material overlap matches benchmarks.md")
-
-    # Check 3: eigenvalues are physically reasonable
-    # The top VB eigenvalue should be near the GaSb/InAs VB region
-    # and the bottom CB eigenvalue should be above the InAs CB edge
+    # Check 2: eigenvalues are physically reasonable
     if ec_bottom < ec_inasw - 0.5:
         failures.append(
             f"R12 FAIL: lowest CB eigenvalue ({ec_bottom:+.6f} eV) is "

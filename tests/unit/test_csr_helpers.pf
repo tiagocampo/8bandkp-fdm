@@ -23,7 +23,7 @@ contains
     call csr_build_from_coo(A, n, n, 3, rows, cols, vals)
 
     ! Should not stop
-    call assert_csr_structural_invariants(A, .true.)
+    @assertTrue(assert_csr_structural_invariants(A, .true.), message="valid CSR invariants")
 
     @assertTrue(check_rowptr_monotonic(A))
     @assertTrue(check_colind_sorted(A))
@@ -51,7 +51,7 @@ contains
             cmplx(5.0_dp, 0, dp)]
     call csr_build_from_coo(A, 3, 3, 5, rows, cols, vals)
 
-    call assert_csr_structural_invariants(A, .true.)
+    @assertTrue(assert_csr_structural_invariants(A, .true.), message="valid CSR with diagonal")
 
     call A%free()
   end subroutine test_valid_csr_diagonal_required
@@ -71,7 +71,7 @@ contains
     @assertTrue(check_nnz_consistency(A))
     @assertFalse(check_diagonal_present(A))
 
-    call assert_csr_structural_invariants(A, .false.)
+    @assertTrue(assert_csr_structural_invariants(A, .false.), message="empty CSR invariants")
 
     call A%free()
   end subroutine test_empty_csr_passes_invariants
@@ -90,7 +90,7 @@ contains
     vals = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp)]
     call csr_build_from_coo(A, 2, 3, 2, rows, cols, vals)
 
-    call assert_csr_structural_invariants(A)
+    @assertTrue(assert_csr_structural_invariants(A), message="rectangular CSR invariants")
 
     call A%free()
   end subroutine test_rectangular_csr_passes

@@ -49,6 +49,9 @@ gmon.out
 # Dependencies
 *.d
 
+# Compound Engineering local config
+.compound-engineering/*.local.yaml
+
 # System specific files
 .DS_Store
 Thumbs.db

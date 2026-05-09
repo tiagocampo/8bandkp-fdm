@@ -29,21 +29,23 @@ contains
   !   4. nnz = rowptr(nrows+1) - 1
   !   5. (optional) diagonal entry present in every row
   ! ------------------------------------------------------------------
-  subroutine assert_csr_structural_invariants(mat, require_diagonal)
+  function assert_csr_structural_invariants(mat, require_diagonal) result(ok)
     type(csr_matrix), intent(in) :: mat
     logical, intent(in), optional :: require_diagonal
+    logical :: ok
 
-    if (.not. check_rowptr_monotonic(mat)) stop 1
-    if (.not. check_colind_sorted(mat))    stop 1
-    if (.not. check_colind_bounds(mat))    stop 1
-    if (.not. check_nnz_consistency(mat))  stop 1
+    ok = .true.
+    if (.not. check_rowptr_monotonic(mat)) then; ok = .false.; return; end if
+    if (.not. check_colind_sorted(mat))    then; ok = .false.; return; end if
+    if (.not. check_colind_bounds(mat))    then; ok = .false.; return; end if
+    if (.not. check_nnz_consistency(mat))  then; ok = .false.; return; end if
 
     if (present(require_diagonal)) then
       if (require_diagonal) then
-        if (.not. check_diagonal_present(mat)) stop 1
+        if (.not. check_diagonal_present(mat)) then; ok = .false.; return; end if
       end if
     end if
-  end subroutine assert_csr_structural_invariants
+  end function assert_csr_structural_invariants
 
   ! ------------------------------------------------------------------
   ! Check rowptr is monotonically non-decreasing and 1-based.
@@ -185,8 +187,8 @@ contains
     call csr_to_dense(mat, dense)
     max_err = 0.0_dp
 
-    do j = 1, mat%ncols
-      do i = 1, mat%nrows
+    do j = 1, min(mat%nrows, mat%ncols)
+      do i = 1, min(mat%nrows, mat%ncols)
         max_err = max(max_err, abs(dense(i,j) - conjg(dense(j,i))))
       end do
     end do

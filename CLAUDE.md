@@ -40,7 +40,7 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all tests (26 unit + 40 regression/verification)
+ctest --test-dir build                    # all tests (30 unit + 40 regression/verification)
 ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
@@ -91,7 +91,8 @@ src/
   physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90, magnetic_field.f90, topological_analysis.f90, bdg_hamiltonian.f90, green_functions.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90
 tests/
-  unit/       pFUnit .pf test files (26 tests covering defs, FD, utils, parameters, Hamiltonian, CSR, eigensolver, Poisson, charge density, SC loop, geometry, optical, topology, magnetic field, BdG, Landau, Z2)
+  unit/       pFUnit .pf test files (30 tests covering defs, FD, utils, parameters, Hamiltonian, CSR, eigensolver, Poisson, charge density, SC loop, geometry, optical, topology, magnetic field, BdG, Landau, Z2)
+  support/    shared test-support library (CSR helpers, Krylov infrastructure, reference data)
   integration/  shell scripts + Python verification scripts for full-executable tests
   regression/   configs/, data/, compare_output.py
 cmake/        FindFFTW3.cmake

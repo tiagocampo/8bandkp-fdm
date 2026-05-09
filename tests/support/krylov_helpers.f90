@@ -58,6 +58,14 @@ contains
 
     n = size(vectors, 1)
     k = size(vectors, 2)
+
+    if (size(reference, 1) /= n .or. size(reference, 2) /= k) then
+      pass = .false.
+      if (present(failing_iteration)) failing_iteration = 0
+      if (present(max_divergence)) max_divergence = huge(1.0_dp)
+      return
+    end if
+
     pass = .true.
     max_err = 0.0_dp
 

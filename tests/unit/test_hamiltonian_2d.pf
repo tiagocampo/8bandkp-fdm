@@ -34,7 +34,7 @@ contains
     end do
 
     call kron_dense_dense(eye, n, n, eye, n, n, C)
-    call assert_csr_structural_invariants(C, .true.)
+    @assertTrue(assert_csr_structural_invariants(C, .true.), message="structural invariants")
 
     @assertEqual(n * n, C%nrows)
     @assertEqual(n * n, C%ncols)
@@ -73,9 +73,9 @@ contains
 
     ! Laplacian = Iy x D2x + D2y x Ix  (column-major)
     call kron_eye_dense(ny, cD2x, nx, nx, kron_Iy_D2x)
-    call assert_csr_structural_invariants(kron_Iy_D2x)
+    @assertTrue(assert_csr_structural_invariants(kron_Iy_D2x), message="kron_Iy_D2x structural invariants")
     call kron_dense_dense(cD2y, ny, ny, cIx, nx, nx, kron_D2y_Ix)
-    call assert_csr_structural_invariants(kron_D2y_Ix)
+    @assertTrue(assert_csr_structural_invariants(kron_D2y_Ix), message="kron_D2y_Ix structural invariants")
     call csr_add(kron_Iy_D2x, kron_D2y_Ix, lap)
 
     @assertEqual(ngrid, lap%nrows)
@@ -112,7 +112,7 @@ contains
     allocate(cD1y(ny,ny)); cD1y = cmplx(D1y, 0.0_dp, kind=dp)
 
     call kron_dense_dense(cD1y, ny, ny, cD1x, nx, nx, kron_D1y_D1x)  ! cross-derivative: D1y x D1x (column-major)
-    call assert_csr_structural_invariants(kron_D1y_D1x)
+    @assertTrue(assert_csr_structural_invariants(kron_D1y_D1x), message="kron_D1y_D1x structural invariants")
 
     @assertEqual(nx * ny, kron_D1y_D1x%nrows)
     @assertEqual(nx * ny, kron_D1y_D1x%ncols)
@@ -197,7 +197,7 @@ contains
     @assertTrue(profile_2d(1, 3) /= 0.0_dp, message="EC non-zero")
 
     ! Cleanup
-    do ij = 1, 15
+    do ij = 1, size(kpterms_2d)
       call csr_free(kpterms_2d(ij))
     end do
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
@@ -247,7 +247,7 @@ contains
     ! Term 8: (gamma1+2gamma2) * Laplacian
     @assertTrue(csr_interior_hermitian_error(kpterms_2d(8), nnx, nny) < 1.0e-10_dp, message="Term 8 (T*Laplacian) interior Hermitian")
 
-    do ij = 1, 15
+    do ij = 1, size(kpterms_2d)
       call csr_free(kpterms_2d(ij))
     end do
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
@@ -299,7 +299,7 @@ contains
       @assertEqual(expected_EC, profile_2d(ij, 3), tolerance=1.0e-14_dp)
     end do
 
-    do ij = 1, 15
+    do ij = 1, size(kpterms_2d)
       call csr_free(kpterms_2d(ij))
     end do
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
@@ -367,7 +367,7 @@ contains
     call csr_build_from_coo(A, n, n, 7, rows, cols, vals)
     profile = [10.0_dp, 20.0_dp, 30.0_dp]
     call csr_apply_variable_coeff(A, profile, result_mat)
-    call assert_csr_structural_invariants(result_mat)
+    @assertTrue(assert_csr_structural_invariants(result_mat), message="result_mat structural invariants")
 
     allocate(dense(n, n))
     call csr_to_dense(result_mat, dense)
@@ -440,7 +440,7 @@ contains
 
     call csr_apply_variable_coeff(A, profile, result_mat, &
       face_frac_x=ffx, face_frac_y=ffy, grid_nx=nx)
-    call assert_csr_structural_invariants(result_mat)
+    @assertTrue(assert_csr_structural_invariants(result_mat), message="result_mat structural invariants")
 
     allocate(dense(ngrid, ngrid))
     dense = cmplx(0.0_dp, 0.0_dp, kind=dp)
@@ -524,7 +524,7 @@ contains
     @assertTrue(diag_val > 0.0_dp, message="Term 5 interior diagonal is positive")
     @assertEqual(expected_diag, diag_val, tolerance=0.01_dp * expected_diag)
 
-    do ij = 1, 15
+    do ij = 1, size(kpterms_2d)
       call csr_free(kpterms_2d(ij))
     end do
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)

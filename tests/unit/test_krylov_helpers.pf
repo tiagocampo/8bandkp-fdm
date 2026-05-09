@@ -51,7 +51,7 @@ contains
     integer :: i
     logical :: pass
 
-    vectors = reshape([(cmplx(dble(i), 0.0_dp, dp), i=1, n*(k+1))], [n, k+1])
+    vectors = reshape([(cmplx(real(i, dp), 0.0_dp, dp), i=1, n*(k+1))], [n, k+1])
     reference = vectors
 
     pass = krylov_compare(vectors, reference, 1.0e-12_dp)

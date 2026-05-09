@@ -15,5 +15,13 @@ if [ ! -x "$GENERATOR" ]; then
 fi
 
 echo "Regenerating Krylov reference data..."
-"$GENERATOR" 2>/dev/null | sed -n '/^module krylov/,$p' > "$OUTPUT"
+ERRFILE=$(mktemp)
+"$GENERATOR" 2>"$ERRFILE" | sed -n '/^module krylov/,$p' > "$OUTPUT"
+if [ $? -ne 0 ]; then
+    echo "Error: generator failed. stderr:" >&2
+    cat "$ERRFILE" >&2
+    rm -f "$ERRFILE"
+    exit 1
+fi
+rm -f "$ERRFILE"
 echo "Done: $(wc -l < "$OUTPUT") lines written to $OUTPUT"
