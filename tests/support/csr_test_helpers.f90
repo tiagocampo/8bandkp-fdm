@@ -12,9 +12,9 @@ module csr_test_helpers
   public :: check_nnz_consistency
   public :: check_diagonal_present
   public :: csr_to_dense
-  public :: assert_csr_hermitian
-  public :: assert_csr_interior_symmetric
-  public :: assert_csr_interior_hermitian
+  public :: csr_hermitian_error
+  public :: csr_interior_symmetric_error
+  public :: csr_interior_hermitian_error
 
 contains
 
@@ -173,13 +173,12 @@ contains
   end subroutine csr_to_dense
 
   ! ------------------------------------------------------------------
-  ! Assert CSR matrix is Hermitian: dense(i,j) = conjg(dense(j,i)).
+  ! Compute max Hermiticity error: max |dense(i,j) - conjg(dense(j,i))|.
   ! ------------------------------------------------------------------
-  subroutine assert_csr_hermitian(mat, label)
+  function csr_hermitian_error(mat) result(max_err)
     type(csr_matrix), intent(in) :: mat
-    character(len=*), intent(in) :: label
-    complex(kind=dp), allocatable :: dense(:,:)
     real(kind=dp) :: max_err
+    complex(kind=dp), allocatable :: dense(:,:)
     integer :: i, j
 
     allocate(dense(mat%nrows, mat%ncols))
@@ -193,21 +192,16 @@ contains
     end do
 
     deallocate(dense)
-    if (max_err > 1.0e-10_dp) then
-      print *, 'FAIL: ', trim(label), ' Hermitian error = ', max_err
-      stop 1
-    end if
-  end subroutine assert_csr_hermitian
+  end function csr_hermitian_error
 
   ! ------------------------------------------------------------------
-  ! Check symmetry for interior-interior pairs only.
+  ! Compute max symmetry error for interior-interior pairs.
   ! ------------------------------------------------------------------
-  subroutine assert_csr_interior_symmetric(mat, nx, ny, label)
+  function csr_interior_symmetric_error(mat, nx, ny) result(max_err)
     type(csr_matrix), intent(in) :: mat
     integer, intent(in) :: nx, ny
-    character(len=*), intent(in) :: label
-    complex(kind=dp), allocatable :: dense(:,:)
     real(kind=dp) :: max_err
+    complex(kind=dp), allocatable :: dense(:,:)
     integer :: j, ix, iy, ij, jx, jy
 
     allocate(dense(mat%nrows, mat%ncols))
@@ -227,21 +221,16 @@ contains
     end do
 
     deallocate(dense)
-    if (max_err > 1.0e-10_dp) then
-      print *, 'FAIL: ', trim(label), ' interior symmetric error = ', max_err
-      stop 1
-    end if
-  end subroutine assert_csr_interior_symmetric
+  end function csr_interior_symmetric_error
 
   ! ------------------------------------------------------------------
-  ! Check Hermiticity for interior-interior pairs only.
+  ! Compute max Hermiticity error for interior-interior pairs.
   ! ------------------------------------------------------------------
-  subroutine assert_csr_interior_hermitian(mat, nx, ny, label)
+  function csr_interior_hermitian_error(mat, nx, ny) result(max_err)
     type(csr_matrix), intent(in) :: mat
     integer, intent(in) :: nx, ny
-    character(len=*), intent(in) :: label
-    complex(kind=dp), allocatable :: dense(:,:)
     real(kind=dp) :: max_err
+    complex(kind=dp), allocatable :: dense(:,:)
     integer :: j, ix, iy, ij, jx, jy
 
     allocate(dense(mat%nrows, mat%ncols))
@@ -261,10 +250,6 @@ contains
     end do
 
     deallocate(dense)
-    if (max_err > 1.0e-10_dp) then
-      print *, 'FAIL: ', trim(label), ' interior Hermitian error = ', max_err
-      stop 1
-    end if
-  end subroutine assert_csr_interior_hermitian
+  end function csr_interior_hermitian_error
 
 end module csr_test_helpers

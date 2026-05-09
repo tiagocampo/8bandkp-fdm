@@ -9,6 +9,8 @@ module test_hamiltonian_2d
   use confinement_init, only: confinementInitialization_2d
   use hamiltonian_wire
   use linalg, only: zheevx, ilaenv, dlamch
+  use csr_test_helpers, only: csr_to_dense, csr_hermitian_error, &
+    csr_interior_symmetric_error, csr_interior_hermitian_error
   implicit none
 
 contains
@@ -78,7 +80,7 @@ contains
     @assertTrue(lap%nnz <= 2 * 3 * ngrid, message="Laplacian sparsity bounded")
 
     ! Interior rows of 2D Laplacian should be symmetric
-    call assert_csr_interior_symmetric(lap, nx, ny, "2D Laplacian interior")
+    @assertTrue(csr_interior_symmetric_error(lap, nx, ny) < 1.0e-10_dp, message="2D Laplacian interior symmetric")
 
     call csr_free(kron_Iy_D2x)
     call csr_free(kron_D2y_Ix)
@@ -232,13 +234,13 @@ contains
 
     ! Term 5: A * Laplacian -- should be Hermitian for uniform profile
     ! (interior rows only; boundary rows use one-sided stencils)
-    call assert_csr_interior_hermitian(kpterms_2d(5), nnx, nny, "Term 5 (A*Laplacian)")
+    @assertTrue(csr_interior_hermitian_error(kpterms_2d(5), nnx, nny) < 1.0e-10_dp, message="Term 5 (A*Laplacian) interior Hermitian")
 
     ! Term 7: (gamma1-2gamma2) * Laplacian
-    call assert_csr_interior_hermitian(kpterms_2d(7), nnx, nny, "Term 7 (Q*Laplacian)")
+    @assertTrue(csr_interior_hermitian_error(kpterms_2d(7), nnx, nny) < 1.0e-10_dp, message="Term 7 (Q*Laplacian) interior Hermitian")
 
     ! Term 8: (gamma1+2gamma2) * Laplacian
-    call assert_csr_interior_hermitian(kpterms_2d(8), nnx, nny, "Term 8 (T*Laplacian)")
+    @assertTrue(csr_interior_hermitian_error(kpterms_2d(8), nnx, nny) < 1.0e-10_dp, message="Term 8 (T*Laplacian) interior Hermitian")
 
     do ij = 1, 15
       call csr_free(kpterms_2d(ij))
@@ -727,7 +729,7 @@ contains
     cfg%confinement = 2
     call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
 
-    call assert_csr_hermitian(HT_csr, "Heterostructure wire Hamiltonian")
+    @assertTrue(csr_hermitian_error(HT_csr) < 1.0e-10_dp, message="Heterostructure wire Hamiltonian Hermitian")
 
     call csr_free(HT_csr)
     do ij = 1, size(kpterms_2d)
@@ -736,111 +738,6 @@ contains
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
     call grid_free(grid)
   end subroutine test_heterostructure_wire_hamiltonian_is_hermitian
-
-  ! ==================================================================
-  ! Helper subroutines
-  ! ==================================================================
-
-  subroutine csr_to_dense(mat, dense)
-    type(csr_matrix), intent(in) :: mat
-    complex(kind=dp), intent(out) :: dense(:,:)
-    integer :: row, k
-
-    dense = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    do row = 1, mat%nrows
-      do k = mat%rowptr(row), mat%rowptr(row + 1) - 1
-        dense(row, mat%colind(k)) = mat%values(k)
-      end do
-    end do
-  end subroutine csr_to_dense
-
-  ! ------------------------------------------------------------------
-  ! Check symmetry for interior-interior pairs only.
-  ! Interior rows/cols are those whose (ix,iy) indices are at least
-  ! half_bw+1 away from boundaries.  Only pairs where BOTH ij and j
-  ! are interior are checked, because boundary stencils break symmetry
-  ! even when the interior row connects to a boundary column.
-  ! ------------------------------------------------------------------
-  subroutine assert_csr_interior_symmetric(mat, nx, ny, label)
-    type(csr_matrix), intent(in) :: mat
-    integer, intent(in) :: nx, ny
-    character(len=*), intent(in) :: label
-    complex(kind=dp), allocatable :: dense(:,:)
-    real(kind=dp) :: max_err
-    integer :: j, ix, iy, ij, jx, jy
-
-    allocate(dense(mat%nrows, mat%ncols))
-    call csr_to_dense(mat, dense)
-    max_err = 0.0_dp
-
-    do iy = 2, ny - 1
-      do ix = 2, nx - 1
-        ij = (iy - 1) * nx + ix
-        do jy = 2, ny - 1
-          do jx = 2, nx - 1
-            j = (jy - 1) * nx + jx
-            max_err = max(max_err, abs(dense(ij, j) - dense(j, ij)))
-          end do
-        end do
-      end do
-    end do
-
-    deallocate(dense)
-    @assertTrue(max_err < 1.0e-10_dp, message=trim(label) // " interior symmetric")
-  end subroutine assert_csr_interior_symmetric
-
-  ! ------------------------------------------------------------------
-  ! Check Hermiticity for interior-interior pairs only.
-  ! ------------------------------------------------------------------
-  subroutine assert_csr_interior_hermitian(mat, nx, ny, label)
-    type(csr_matrix), intent(in) :: mat
-    integer, intent(in) :: nx, ny
-    character(len=*), intent(in) :: label
-    complex(kind=dp), allocatable :: dense(:,:)
-    real(kind=dp) :: max_err
-    integer :: j, ix, iy, ij, jx, jy
-
-    allocate(dense(mat%nrows, mat%ncols))
-    call csr_to_dense(mat, dense)
-    max_err = 0.0_dp
-
-    do iy = 2, ny - 1
-      do ix = 2, nx - 1
-        ij = (iy - 1) * nx + ix
-        do jy = 2, ny - 1
-          do jx = 2, nx - 1
-            j = (jy - 1) * nx + jx
-            max_err = max(max_err, abs(dense(ij, j) - conjg(dense(j, ij))))
-          end do
-        end do
-      end do
-    end do
-
-    deallocate(dense)
-    @assertTrue(max_err < 1.0e-10_dp, message=trim(label) // " interior Hermitian")
-  end subroutine assert_csr_interior_hermitian
-
-  ! ------------------------------------------------------------------
-  subroutine assert_csr_hermitian(mat, label)
-    type(csr_matrix), intent(in) :: mat
-    character(len=*), intent(in) :: label
-    complex(kind=dp), allocatable :: dense(:,:)
-    real(kind=dp) :: max_err
-    integer :: i, j
-
-    allocate(dense(mat%nrows, mat%ncols))
-    call csr_to_dense(mat, dense)
-    max_err = 0.0_dp
-
-    do j = 1, mat%ncols
-      do i = 1, mat%nrows
-        max_err = max(max_err, abs(dense(i,j) - conjg(dense(j,i))))
-      end do
-    end do
-
-    deallocate(dense)
-    @assertTrue(max_err < 1.0e-10_dp, message=trim(label) // " Hermitian")
-  end subroutine assert_csr_hermitian
 
   ! ==================================================================
   ! Non-square grid full Hamiltonian test (P1-D)

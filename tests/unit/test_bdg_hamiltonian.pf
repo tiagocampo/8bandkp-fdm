@@ -11,6 +11,7 @@ module test_bdg_hamiltonian
   use hamiltonianConstructor, only: ZB8bandQW
   use linalg, only: zheev, zheevx
   use magnetic_field, only: compute_zeeman_vz
+  use csr_test_helpers, only: csr_to_dense
   implicit none
 
 contains
@@ -288,7 +289,7 @@ contains
 
     ! --- Check 2: Hermiticity H = H^dagger ---
     allocate(Hd(H_bdg%nrows, H_bdg%ncols))
-    call csr_to_dense_local(H_bdg, Hd)
+    call csr_to_dense(H_bdg, Hd)
     herr = 0.0_dp
     do j = 1, H_bdg%ncols
       do i = 1, H_bdg%nrows
@@ -342,20 +343,9 @@ contains
   end subroutine test_bdg_csr_assembly
 
   ! ------------------------------------------------------------------
-  ! Local helper: convert CSR to dense matrix
   ! ------------------------------------------------------------------
-  subroutine csr_to_dense_local(mat, dense)
-    type(csr_matrix), intent(in) :: mat
-    complex(kind=dp), intent(out) :: dense(:,:)
-    integer :: row, k
-
-    dense = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    do row = 1, mat%nrows
-      do k = mat%rowptr(row), mat%rowptr(row + 1) - 1
-        dense(row, mat%colind(k)) = mat%values(k)
-      end do
-    end do
-  end subroutine csr_to_dense_local
+  ! Helper subroutines
+  ! ------------------------------------------------------------------
 
   subroutine setup_minimal_qw_bdg_fixture(cfg, profile, kpterms)
     type(simulation_config), intent(out) :: cfg
@@ -430,8 +420,8 @@ contains
 
     allocate(dense_noB(H_noB%nrows, H_noB%ncols))
     allocate(dense_withB(H_withB%nrows, H_withB%ncols))
-    call csr_to_dense_local(H_noB, dense_noB)
-    call csr_to_dense_local(H_withB, dense_withB)
+    call csr_to_dense(H_noB, dense_noB)
+    call csr_to_dense(H_withB, dense_withB)
 
     max_diag_delta = 0.0_dp
     do i = 1, H_noB%nrows
@@ -492,7 +482,7 @@ contains
 
     n8 = H_bdg%nrows / 2
     allocate(dense(H_bdg%nrows, H_bdg%ncols))
-    call csr_to_dense_local(H_bdg, dense)
+    call csr_to_dense(H_bdg, dense)
 
     ph_err = 0.0_dp
     max_imag_electron = 0.0_dp
