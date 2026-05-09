@@ -45,7 +45,7 @@ import tempfile
 
 from star_helpers import (
     run_executable, parse_eigenvalues, parse_gfactor,
-    parse_topology_result, compare_value, format_benchmark_row,
+    compare_value, format_benchmark_row,
     print_benchmark_header, roth_gfactor,
 )
 
@@ -85,7 +85,6 @@ OVERLAP_LITERATURE = -150.0                      # meV, published value
 # ---------------------------------------------------------------------------
 CONFIG_OVERLAP = "qw_inasw_gasbw_broken_gap.cfg"
 CONFIG_GFACTOR = "gfactor_qw_cb.cfg"
-CONFIG_TOPOLOGY = "topology_qw_fukane.cfg"
 
 # ---------------------------------------------------------------------------
 # Tolerances (KD6)

@@ -30,7 +30,7 @@ SCRIPTS = [
 
 
 def run_benchmark(script_path, build_dir, source_dir):
-    """Run a benchmark script and return (star_id, stdout, returncode)."""
+    """Run a benchmark script and return (stdout, returncode)."""
     result = subprocess.run(
         [sys.executable, script_path, build_dir, source_dir],
         capture_output=True, text=True, timeout=600,
@@ -105,11 +105,11 @@ def main():
             n_fail += 1
 
     print("# Standard-Star Benchmark Results\n")
-    print("| Star | Benchmark Table |")
-    print("|------|----------------|")
     for star_id, rows in all_rows:
+        print(f"## {star_id}\n")
         for row in rows:
-            print(f"| {star_id} | {row} |")
+            print(row)
+        print()
 
     print(f"\nSummary: {n_pass} PASS, {n_fail} FAIL, {n_skip} SKIP",
           file=sys.stderr)

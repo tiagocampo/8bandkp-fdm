@@ -38,7 +38,7 @@ import shutil
 from star_helpers import (
     run_executable, parse_eigenvalues, parse_gfactor,
     compare_value, format_benchmark_row, print_benchmark_header,
-    HBAR2_OVER_2M0, roth_gfactor,
+    roth_gfactor,
 )
 
 # ---------------------------------------------------------------------------

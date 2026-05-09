@@ -50,11 +50,10 @@ def run_executable(exe_path, config_path, work_dir, timeout=300):
     returns the output directory path.
 
     Returns:
-        (returncode, output_dir)
+        (returncode, output_dir) — returncode is -1 on timeout.
 
     Raises:
         FileNotFoundError: if exe_path does not exist
-        subprocess.TimeoutExpired: if execution exceeds timeout
     """
     dst_cfg = os.path.join(work_dir, "input.cfg")
     shutil.copy2(config_path, dst_cfg)
@@ -62,23 +61,24 @@ def run_executable(exe_path, config_path, work_dir, timeout=300):
     output_dir = os.path.join(work_dir, "output")
     os.makedirs(output_dir, exist_ok=True)
 
-    result = subprocess.run(
-        [exe_path],
-        cwd=work_dir,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-
-    return result.returncode, output_dir
+    try:
+        result = subprocess.run(
+            [exe_path],
+            cwd=work_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return result.returncode, output_dir
+    except subprocess.TimeoutExpired:
+        return -1, output_dir
 
 
 def run_exe(build_dir, name, config_path, work_dir, timeout=300):
     """Resolve and run a Fortran executable by name.
 
     Resolves <build_dir>/src/<name>, checks it exists, then calls
-    run_executable. Winkler 2003 Eq. 6.42 for Roth g-factor is in
-    roth_gfactor() below.
+    run_executable.
 
     Args:
         build_dir: path to build/ directory

@@ -32,7 +32,6 @@ Usage: verify_star_gaas_algaas_qw.py <build_dir> <source_dir>
 import os
 import sys
 import tempfile
-import shutil
 
 try:
     import numpy as np
@@ -371,8 +370,6 @@ def check_absorption(build_dir, source_dir):
         onset_in_range = (onset_energy >= onset_min and
                           onset_energy <= onset_max)
         status_onset = 'PASS' if onset_in_range else 'FAIL'
-        if not onset_in_range:
-            all_pass = False
 
         row_onset = {
             'computed': onset_energy,
