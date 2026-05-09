@@ -54,7 +54,7 @@ contains
     logical :: pass
 
     integer :: i, n, k
-    real(kind=dp) :: err, max_err
+    real(kind=dp) :: err, max_err, scale
 
     n = size(vectors, 1)
     k = size(vectors, 2)
@@ -63,11 +63,12 @@ contains
 
     do i = 1, k
       err = maxval(abs(vectors(:, i) - reference(:, i)))
-      max_err = max(max_err, err)
-      if (err > tolerance) then
+      scale = max(maxval(abs(reference(:, i))), 1.0_dp)
+      max_err = max(max_err, err / scale)
+      if (err / scale > tolerance) then
         pass = .false.
         if (present(failing_iteration)) failing_iteration = i
-        if (present(max_divergence)) max_divergence = err
+        if (present(max_divergence)) max_divergence = err / scale
         return
       end if
     end do

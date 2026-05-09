@@ -1,0 +1,235 @@
+module test_krylov_snapshots
+  use funit
+  use definitions
+  use sparse_matrices
+  use krylov_helpers
+  use krylov_reference_data
+  use parameters, only: paramDatabase
+  use geometry, only: grid_init_rect, grid_free
+  use confinement_init, only: confinementInitialization_2d
+  use hamiltonianConstructor, only: ZB8bandQW
+  use hamiltonian_wire, only: wire_workspace, wire_workspace_free, ZB8bandGeneralized
+  use topological_analysis, only: bhz_wire_params, build_bhz_wire_hamiltonian
+  use bdg_hamiltonian, only: build_bdg_hamiltonian_1d
+  implicit none
+
+  integer, parameter :: K_CHAIN = 5
+  real(kind=dp), parameter :: TOL = 1.0e-12_dp
+
+contains
+
+  ! ==================================================================
+  ! Wire GaAs: ZB8bandGeneralized on 3x3 grid
+  ! ==================================================================
+  @test
+  subroutine test_snapshot_wire_gaas()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ntot, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: seed(:), vectors(:,:)
+    logical :: pass
+
+    call init_wire_ref_n72_k6()
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
+
+    allocate(seed(ntot))
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+    call krylov_chain(H_csr, seed, K_CHAIN, vectors)
+
+    pass = krylov_compare(vectors, wire_ref_n72_k6, TOL)
+    @assertTrue(pass, message="wire GaAs Krylov snapshot matches reference")
+
+    deallocate(seed, vectors)
+    call csr_free(H_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_snapshot_wire_gaas
+
+  ! ==================================================================
+  ! Wire + Peierls phase: BdG with B_vec = [1,0,0]
+  ! ==================================================================
+  @test
+  subroutine test_snapshot_wire_peierls()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ntot, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: seed(:), vectors(:,:)
+    logical :: pass
+
+    call init_wire_peierls_ref_n144_k6()
+
+    ngrid = nx * ny
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    cfg%bdg%enabled = .false.
+
+    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
+      kz=0.0_dp, mu=0.0_dp, delta_0=0.001_dp, ws=ws, &
+      B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
+    ntot = H_bdg%nrows
+
+    allocate(seed(ntot))
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+    call krylov_chain(H_bdg, seed, K_CHAIN, vectors)
+
+    pass = krylov_compare(vectors, wire_peierls_ref_n144_k6, TOL)
+    @assertTrue(pass, message="wire Peierls Krylov snapshot matches reference")
+
+    deallocate(seed, vectors)
+    call csr_free(H_bdg)
+    call wire_workspace_free(ws)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_snapshot_wire_peierls
+
+  ! ==================================================================
+  ! BHZ wire: topological phase (N=10)
+  ! ==================================================================
+  @test
+  subroutine test_snapshot_bhz()
+    type(csr_matrix) :: H_csr
+    type(bhz_wire_params) :: bhz_params
+    complex(kind=dp), allocatable :: seed(:), vectors(:,:)
+    integer :: ntot
+    logical :: pass
+
+    call init_bhz_ref_n40_k6()
+
+    bhz_params%N = 10
+    bhz_params%dz = 5.8_dp
+    bhz_params%A = 364.5_dp
+    bhz_params%B = -686.0_dp
+    bhz_params%D = -512.0_dp
+    bhz_params%M = 10.0_dp
+
+    call build_bhz_wire_hamiltonian(H_csr, bhz_params)
+    ntot = H_csr%nrows
+
+    allocate(seed(ntot))
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+    call krylov_chain(H_csr, seed, K_CHAIN, vectors)
+
+    pass = krylov_compare(vectors, bhz_ref_n40_k6, TOL)
+    @assertTrue(pass, message="BHZ wire Krylov snapshot matches reference")
+
+    deallocate(seed, vectors)
+    call csr_free(H_csr)
+  end subroutine test_snapshot_bhz
+
+  ! ==================================================================
+  ! BdG wire: s-wave pairing (3x3 GaAs, mu=0.5)
+  ! ==================================================================
+  @test
+  subroutine test_snapshot_bdg()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ntot, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: seed(:), vectors(:,:)
+    logical :: pass
+
+    call init_bdg_ref_n144_k6()
+
+    ngrid = nx * ny
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    cfg%bdg%enabled = .false.
+
+    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
+      kz=0.0_dp, mu=0.5_dp, delta_0=0.001_dp, ws=ws)
+    ntot = H_bdg%nrows
+
+    allocate(seed(ntot))
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+    call krylov_chain(H_bdg, seed, K_CHAIN, vectors)
+
+    pass = krylov_compare(vectors, bdg_ref_n144_k6, TOL)
+    @assertTrue(pass, message="BdG wire Krylov snapshot matches reference")
+
+    deallocate(seed, vectors)
+    call csr_free(H_bdg)
+    call wire_workspace_free(ws)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_snapshot_bdg
+
+end module test_krylov_snapshots

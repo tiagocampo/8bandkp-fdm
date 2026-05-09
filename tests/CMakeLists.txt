@@ -103,6 +103,12 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    add_pfunit_ctest(test_krylov_snapshots
+        TEST_SOURCES unit/test_krylov_snapshots.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_optical
         TEST_SOURCES unit/test_optical.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
