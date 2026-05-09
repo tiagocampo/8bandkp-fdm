@@ -748,3 +748,64 @@ set_tests_properties(
     verification_rung3_qw verification_rung4_wire
     PROPERTIES LABELS "verification"
 )
+
+# --- Standard-Star Benchmarks (S1-S7) ---
+# Physics validation against published literature observables.
+# Each test runs the Fortran executables and compares against analytical
+# predictions or regression reference values.
+
+add_test(
+    NAME star_s1_gaas_bulk
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_gaas_bulk.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s2_inas_bulk
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_inas_bulk.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s3_insb_bulk
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_insb_bulk.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s4_gaas_algaas_qw
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_gaas_algaas_qw.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s5_inas_gasb_qw
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_inas_gasb_qw.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s6_inas_gaas_strained_qw
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_inas_gaas_qw.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s7_inas_wire
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_inas_wire.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    star_s1_gaas_bulk star_s2_inas_bulk star_s3_insb_bulk
+    star_s4_gaas_algaas_qw star_s5_inas_gasb_qw
+    star_s6_inas_gaas_strained_qw star_s7_inas_wire
+    PROPERTIES LABELS "verification"
+)
