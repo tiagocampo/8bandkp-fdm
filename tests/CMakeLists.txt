@@ -1,5 +1,7 @@
 # tests/CMakeLists.txt — pFUnit unit tests + regression tests
 
+add_subdirectory(support)
+
 # pFUnit installs as PFUNIT (uppercase) — use CMAKE_PREFIX_PATH or -DPFUNIT_DIR
 find_package(PFUNIT QUIET)
 
@@ -7,157 +9,163 @@ if(PFUNIT_FOUND)
     # --- pFUnit unit tests ---
     add_pfunit_ctest(test_defs
         TEST_SOURCES unit/test_defs.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_finitedifferences
         TEST_SOURCES unit/test_finitedifferences.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_utils
         TEST_SOURCES unit/test_utils.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_parameters
         TEST_SOURCES unit/test_parameters.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_hamiltonian
         TEST_SOURCES unit/test_hamiltonian.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_poisson
         TEST_SOURCES unit/test_poisson.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_charge_density
         TEST_SOURCES unit/test_charge_density.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_sc_loop
         TEST_SOURCES unit/test_sc_loop.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_geometry
         TEST_SOURCES unit/test_geometry.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_hamiltonian_2d
         TEST_SOURCES unit/test_hamiltonian_2d.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_eigensolver
         TEST_SOURCES unit/test_eigensolver.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_strain_solver
         TEST_SOURCES unit/test_strain_solver.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_csr_spmv
         TEST_SOURCES unit/test_csr_spmv.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_csr_helpers
+        TEST_SOURCES unit/test_csr_helpers.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_optical
         TEST_SOURCES unit/test_optical.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_optical_qw
         TEST_SOURCES unit/test_optical_qw.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_topology_types
         TEST_SOURCES unit/test_topology_types.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_topology_parser
         TEST_SOURCES unit/test_topology_parser.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_magnetic_field
         TEST_SOURCES unit/test_magnetic_field.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_chern_number
         TEST_SOURCES unit/test_chern_number.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_bdg_hamiltonian
         TEST_SOURCES unit/test_bdg_hamiltonian.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_bdg_config
         TEST_SOURCES unit/test_bdg_config.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_phase_diagram
         TEST_SOURCES unit/test_phase_diagram.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_green_functions
         TEST_SOURCES unit/test_green_functions.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_edge_states
         TEST_SOURCES unit/test_edge_states.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_landau
         TEST_SOURCES unit/test_landau.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_z2_invariant
         TEST_SOURCES unit/test_z2_invariant.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 else()
