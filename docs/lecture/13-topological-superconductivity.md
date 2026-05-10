@@ -477,7 +477,7 @@ to apply Peierls phase factors to the bulk Hamiltonian for Landau level quantiza
 | Chern 0 | QWZ u=2.5 | PASS | Fixed by nk=50 grid resolution |
 | BHZ Z2 trivial | BHZ d=58Å M=+10meV | PASS | Z2=0 correctly detected |
 | BHZ Z2 topological | BHZ d=70Å M=-10meV | PASS | Z2=1 correctly detected with feast_m0=280 |
-| Majorana phase diagram | Rashba wire | PASS | Non-zero min_gap found with feast_m0=200 |
+| Majorana phase diagram | InAs Rashba wire | PASS | FEAST auto-window fallback; B_crit≈1.22 T |
 | Landau levels | InAs B=5T | PENDING | Peierls substitution integration incomplete |
 
 ---
@@ -493,7 +493,7 @@ make lecture-13
 or directly:
 
 ```bash
-python3 scripts/lecture_13_topological_superconductivity.py
+python3 scripts/lecture_13_topological.py
 ```
 
 ### Code-Output Anchors
@@ -501,9 +501,15 @@ python3 scripts/lecture_13_topological_superconductivity.py
 Running `topology_qwz.cfg` produces:
 - **QWZ Chern**: C=+1 (u=-0.8), C=-1 (u=0.5), C=0 (u=2.5)
 - **BHZ Z2**: 0 (trivial) and 1 (topological)
-- **BdG gap at B=0**: 1553 meV
+- **BdG Majorana**: InAs Rashba wire, B_crit ≈ 1.22 T (mu=0.1 meV, Delta=0.1 meV)
 
-![Overlay plot](figures/lecture_13_topological_superconductivity.png)
+![Berry curvature](figures/lecture_13_chern.png)
+
+![Z2 phase diagram](figures/lecture_13_z2.png)
+
+![Majorana phase transition](figures/lecture_13_majorana.png)
+
+![Landau levels](figures/lecture_13_landau.png)
 
 ---
 

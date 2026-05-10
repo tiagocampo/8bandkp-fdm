@@ -758,7 +758,7 @@ python3 scripts/lecture_08_quantum_wire.py
 ### Code-Output Anchors
 
 Running `wire_gaas_rectangle.cfg` produces:
-- **Wire subbands**: computed for 31x31 grid; dense-sparse eigenvalue agreement
+- **Wire subbands**: computed for 21x21 grid; dense-sparse eigenvalue agreement
 - **Fundamental gap**: CB1 - VB1 = 1.522 eV (within 3 meV of bulk Eg)
 
 ![Overlay plot](figures/lecture_08_quantum_wire.png)
