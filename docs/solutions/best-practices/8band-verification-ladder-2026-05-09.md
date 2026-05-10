@@ -37,6 +37,14 @@ Build validation from simplest to most complex physics:
    Tests off-diagonal k-coupling blocks. Self-consistency via Kane model.
 3. **QW subbands** (confinement) — subband energies and degeneracies. Tests FD
    stencils, confinement initialization, band offsets.
+
+   **Watch for overlapping material layers.** `confinement_init.f90` uses
+   last-layer-wins assignment — a layer covering the full domain after a
+   narrower well layer silently overwrites the well. Use the 2-layer pattern
+   (barrier covers full domain, well overwrites central region) and avoid
+   redundant full-domain barrier layers. See
+   `docs/solutions/logic-errors/standard-star-benchmark-suite-logic-errors-2026-05-09.md`
+   for a documented instance.
 4. **Wire** (2D + sparse) — convergence and dense-sparse agreement. Tests CSR
    assembly, wire geometry, eigensolver paths.
 
@@ -132,5 +140,6 @@ python3 tests/integration/verify_8band_rung4_wire.py build .
 ## Related
 
 - `docs/reference/benchmarks.md` Section 7 — verification ladder results
-- `docs/plans/2026-05-08-feat-8band-verification-ladder-plan.md` — implementation plan
+- `docs/plans/archive/2026-05-08-feat-8band-verification-ladder-plan.md` — implementation plan
 - `docs/brainstorms/2026-05-08-8band-verification-ladder-requirements.md` — R1-R19 requirements
+- `docs/solutions/logic-errors/standard-star-benchmark-suite-logic-errors-2026-05-09.md` — standard-star benchmark bugs including layer-overlap pitfall
