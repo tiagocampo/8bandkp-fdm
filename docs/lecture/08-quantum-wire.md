@@ -738,3 +738,27 @@ where $a_v$ is the hydrostatic valence deformation potential and $b$ is the shea
 | Matrix size | $3528 \times 3528$ | $7200 \times 7200$ |
 
 The InAs/GaAs wire has a smaller selected near-edge split (~0.775 eV vs.\ ~2.035 eV for the hard-wall GaAs wire in Section 3), consistent with its narrow-gap InAs core and finite GaAs barriers. The next step is a dedicated nextnano-style circular or core-shell benchmark with grid convergence and branch tracking that remains reliable at every $k_z$ point.
+
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-08
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_08_quantum_wire.py
+```
+
+### Code-Output Anchors
+
+Running `wire_gaas_rectangle.cfg` produces:
+- **Wire subbands**: computed for 31x31 grid; dense-sparse eigenvalue agreement
+- **Fundamental gap**: CB1 - VB1 = 1.522 eV (within 3 meV of bulk Eg)
+
+![Overlay plot](figures/lecture_08_quantum_wire.png)

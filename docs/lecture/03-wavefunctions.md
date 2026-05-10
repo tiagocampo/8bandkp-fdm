@@ -694,3 +694,27 @@ The eigenvectors of the 8-band k.p Hamiltonian encode the full multi-component w
 The AlSbW/GaSbW/InAsW example demonstrates that in broken-gap structures, the CB1 electron retains about 18% valence band character (HH, LH, and SO combined), far from the simple single-band picture. The HH--LH mixing in the VB states themselves is also pronounced, with no purely HH or LH states at the zone center. This mixing has direct consequences for optical transitions (Chapter 6), g-factors (Chapter 5), and the accuracy of effective-mass approximations.
 
 These quantities are computed directly by the code's `writeEigenfunctions` subroutine using the flat-index mapping $\text{flat\_idx} = (b-1) \times N + i$, and are written to per-eigenstate data files and the aggregated `parts.dat` file. Understanding and visualizing these outputs is essential for interpreting the physics of quantum well and quantum wire structures simulated by the code.
+
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-03
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_03_wavefunctions.py
+```
+
+### Code-Output Anchors
+
+Running `qw_alsbw_gasbw_inasw.cfg` produces:
+- **CB ground state**: 98.55% CB character (broken-gap admixture verified)
+- **HH ground state**: 100% HH character; **Normalization**: 1.0
+
+![Overlay plot](figures/lecture_03_wavefunctions.png)

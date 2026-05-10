@@ -647,6 +647,30 @@ representation that minimizes computational cost for the problem at hand.
 
 ---
 
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-09
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_09_numerical_methods.py
+```
+
+### Code-Output Anchors
+
+Running `bulk_gaas_fd_order.cfg` produces:
+- **k=0 eigenvalues**: identical across FD orders 2-8 (bulk is grid-independent)
+- **QW convergence rate**: matches theoretical FD order (slope on log-log plot)
+
+![Overlay plot](figures/lecture_09_numerical_methods.png)
+
+---
+
 ## 9.12 References
 
 1. Y. Cho and A. Belyanin, "Real-space Hamiltonian method for the

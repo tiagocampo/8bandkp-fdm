@@ -896,3 +896,27 @@ shifts, with three key effects:
    band mixing and optical properties.
 
 The code handles both geometries transparently through `compute_strain`, with the same Bir--Pikus formulas evaluated via `compute_bp_scalar` locally at each grid point regardless of how the strain tensor was obtained.
+
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-04
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_04_strain.py
+```
+
+### Code-Output Anchors
+
+Running `bulk_gaas_strained.cfg` produces:
+- **Bir-Pikus HH-LH splitting**: matches analytical formula within 1%
+- **Strained QW**: VB splitting confirmed; CB shift = -294 meV (GaAs on InP)
+
+![Overlay plot](figures/lecture_04_strain.png)

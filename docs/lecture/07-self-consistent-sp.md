@@ -786,6 +786,30 @@ script verifies:
 - **No gate voltage**: The boundary conditions are fixed values, not a gate-controlled surface potential. Adding a gate would require modifying the BC treatment.
 - **1D k_parallel sampling**: The in-plane integration assumes isotropy (cylindrical $k$-space). For anisotropic dispersions (e.g., under uniaxial strain), a 2D $k$-space mesh would be needed.
 
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-07
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_07_self_consistent_sp.py
+```
+
+### Code-Output Anchors
+
+Running `sc_gaas_doped.cfg` produces:
+- **SC loop convergence**: 21-25 iterations; DIIS faster than linear mixing
+- **Charge neutrality**: within 5% after convergence
+
+![Overlay plot](figures/lecture_07_self_consistent_sp.png)
+
 ### 7.13.3 References
 
 The SP methodology follows established approaches in the semiconductor device modeling literature:

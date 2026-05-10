@@ -878,6 +878,30 @@ In both cases, the bulk Kane matrix elements ($Q$, $R$, $S$, $T$, $P$ terms)
 are re-used as building blocks, with position-dependent material parameters
 and derivative operators replacing the simple algebraic $\mathbf{k}$-dependence.
 
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-01
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_01_bulk_band_structure.py
+```
+
+### Code-Output Anchors
+
+Running `bulk_gaas_k0.cfg` produces:
+- **GaAs k=0 eigenvalues**: match [-DeltaSO, -DeltaSO, 0, 0, 0, 0, Eg, Eg] within TOL_EXACT
+- **CB effective mass**: 0.050 m_e (Kane formula within 10%); **InAs band gap**: 0.417 eV
+
+![Overlay plot](figures/lecture_01_bulk_band_structure.png)
+
+---
+
 ### 5.4 Further Reading
 
 - **E. O. Kane**, *J. Phys. Chem. Solids* **1**, 249 (1957). The original

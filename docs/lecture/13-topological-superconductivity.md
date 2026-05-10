@@ -480,6 +480,33 @@ to apply Peierls phase factors to the bulk Hamiltonian for Landau level quantiza
 | Majorana phase diagram | Rashba wire | PASS | Non-zero min_gap found with feast_m0=200 |
 | Landau levels | InAs B=5T | PENDING | Peierls substitution integration incomplete |
 
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-13
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_13_topological_superconductivity.py
+```
+
+### Code-Output Anchors
+
+Running `topology_qwz.cfg` produces:
+- **QWZ Chern**: C=+1 (u=-0.8), C=-1 (u=0.5), C=0 (u=2.5)
+- **BHZ Z2**: 0 (trivial) and 1 (topological)
+- **BdG gap at B=0**: 1553 meV
+
+![Overlay plot](figures/lecture_13_topological_superconductivity.png)
+
+---
+
 ## 13.13 References
 
 - Fukui & Hatsugai, J. Phys. Soc. Jpn. 76, 053710 (2007) — FHS method

@@ -1083,3 +1083,27 @@ Hamiltonian (Chapter 01). The key differences are:
 | External field | not applicable | electric field tilt |
 | Eigenvalue solver | all 8 eigenvalues | `zheevx` partial spectrum |
 | Computation time per k-point | microseconds | milliseconds to seconds |
+
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-02
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_02_quantum_well.py
+```
+
+### Code-Output Anchors
+
+Running `qw_gaas_algaas_kpar.cfg` produces:
+- **GaAs/AlGaAs QW**: 2 CB subbands at k=0 (CB1 at +0.761 eV, CB2 at +0.875 eV)
+- **Double QW**: anticrossing splitting = 41.6 meV (symmetric-antisymmetric gap)
+
+![Overlay plot](figures/lecture_02_quantum_well.png)
