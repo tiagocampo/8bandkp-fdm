@@ -658,7 +658,7 @@ make lecture-09
 or directly:
 
 ```bash
-python3 scripts/lecture_09_numerical_methods.py
+python3 scripts/lecture_09_numerical.py
 ```
 
 ### Code-Output Anchors
@@ -667,7 +667,7 @@ Running `bulk_gaas_fd_order.cfg` produces:
 - **k=0 eigenvalues**: identical across FD orders 2-8 (bulk is grid-independent)
 - **QW convergence rate**: matches theoretical FD order (slope on log-log plot)
 
-![Overlay plot](figures/lecture_09_numerical_methods.png)
+![Overlay plot](figures/lecture_09_convergence.png)
 
 ---
 

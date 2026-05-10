@@ -919,4 +919,4 @@ Running `bulk_gaas_strained.cfg` produces:
 - **Bir-Pikus HH-LH splitting**: matches analytical formula within 1%
 - **Strained QW**: VB splitting confirmed; CB shift = -294 meV (GaAs on InP)
 
-![Overlay plot](figures/lecture_04_strain.png)
+![Overlay plot](figures/lecture_04_strain_shifts.png)

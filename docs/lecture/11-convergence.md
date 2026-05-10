@@ -467,7 +467,7 @@ Running `convergence_qw_gaas.cfg` produces:
 - **QW grid convergence rate**: 1.66 (within 0.5 of theoretical order 2)
 - **Richardson extrapolation**: agrees with FD-8 result
 
-![Overlay plot](figures/lecture_11_convergence.png)
+![Overlay plot](figures/lecture_11_grid_convergence.png)
 
 ---
 

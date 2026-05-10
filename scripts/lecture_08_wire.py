@@ -54,12 +54,12 @@ def test_gaas_21x21_wire():
     # FEAST with feast_m0=-1 auto-detects; expect >= numcb + numvb
     min_expected_nev = expected_numcb + expected_numvb  # 24
 
-    work = tempfile.mkdtemp(prefix="lecture08_gaas31_")
+    work = tempfile.mkdtemp(prefix="lecture08_gaas21_")
     try:
         rc, outdir = run_exe(str(BUILD_DIR), "bandStructure",
                              str(cfg), work, timeout=WIRE_TIMEOUT)
         if rc != 0:
-            sys.exit(f"ERROR: bandStructure returned {rc} for GaAs 31x31 wire")
+            sys.exit(f"ERROR: bandStructure returned {rc} for GaAs 21x21 wire")
 
         eig_path = os.path.join(outdir, "eigenvalues.dat")
         if not os.path.isfile(eig_path):
@@ -70,7 +70,7 @@ def test_gaas_21x21_wire():
         shutil.rmtree(work, ignore_errors=True)
 
     if not data:
-        sys.exit("ERROR: no eigenvalue data parsed from GaAs 31x31 wire")
+        sys.exit("ERROR: no eigenvalue data parsed from GaAs 21x21 wire")
 
     n_kz = len(data)
     n_evals_first = len(data[0][1])

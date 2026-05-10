@@ -1097,7 +1097,7 @@ make lecture-02
 or directly:
 
 ```bash
-python3 scripts/lecture_02_quantum_well.py
+python3 scripts/lecture_02_qw.py
 ```
 
 ### Code-Output Anchors
@@ -1106,4 +1106,4 @@ Running `qw_gaas_algaas_kpar.cfg` produces:
 - **GaAs/AlGaAs QW**: 2 CB subbands at k=0 (CB1 at +0.761 eV, CB2 at +0.875 eV)
 - **Double QW**: anticrossing splitting = 41.6 meV (symmetric-antisymmetric gap)
 
-![Overlay plot](figures/lecture_02_quantum_well.png)
+![Overlay plot](figures/lecture_02_qw_subbands.png)

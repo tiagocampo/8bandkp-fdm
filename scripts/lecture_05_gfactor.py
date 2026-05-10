@@ -8,7 +8,7 @@ Sections:
   1. GaAs CB g-factor vs Roth formula
   2. InSb CB g-factor (extreme narrow-gap regime)
   3. GaAsW CB g-factor (Winkler parameter set)
-  4. InAs Landau levels at B=5T
+  4. GaAs Landau levels at B=5T
   5. Overlay bar chart: code g-factors vs Roth formula
 """
 import os
@@ -371,7 +371,7 @@ def main():
     s3_pass, gaasw_g_code, gaasw_g_roth = test_gaasw_gfactor()
     gfactor_results.append(('GaAsW', gaasw_g_code, gaasw_g_roth))
 
-    # Section 4: InAs Landau levels
+    # Section 4: GaAs Landau levels
     s4_pass, _, _ = test_landau_levels()
 
     # Section 5: Overlay plot

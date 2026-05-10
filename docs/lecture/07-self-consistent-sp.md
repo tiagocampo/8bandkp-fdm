@@ -799,7 +799,7 @@ make lecture-07
 or directly:
 
 ```bash
-python3 scripts/lecture_07_self_consistent_sp.py
+python3 scripts/lecture_07_scsp.py
 ```
 
 ### Code-Output Anchors
@@ -808,7 +808,7 @@ Running `sc_gaas_doped.cfg` produces:
 - **SC loop convergence**: 21-25 iterations; DIIS faster than linear mixing
 - **Charge neutrality**: within 5% after convergence
 
-![Overlay plot](figures/lecture_07_self_consistent_sp.png)
+![Overlay plot](figures/lecture_07_convergence.png)
 
 ### 7.13.3 References
 

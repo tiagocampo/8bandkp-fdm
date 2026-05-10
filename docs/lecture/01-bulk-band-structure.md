@@ -889,7 +889,7 @@ make lecture-01
 or directly:
 
 ```bash
-python3 scripts/lecture_01_bulk_band_structure.py
+python3 scripts/lecture_01_bulk.py
 ```
 
 ### Code-Output Anchors
@@ -898,7 +898,7 @@ Running `bulk_gaas_k0.cfg` produces:
 - **GaAs k=0 eigenvalues**: match [-DeltaSO, -DeltaSO, 0, 0, 0, 0, Eg, Eg] within TOL_EXACT
 - **CB effective mass**: 0.050 m_e (Kane formula within 10%); **InAs band gap**: 0.417 eV
 
-![Overlay plot](figures/lecture_01_bulk_band_structure.png)
+![Overlay plot](figures/lecture_01_bulk_dispersion.png)
 
 ---
 

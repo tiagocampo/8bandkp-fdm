@@ -561,7 +561,7 @@ Running `qcse_gaas_algaas.cfg` produces:
 - **Stark shift**: QCSE red shift confirmed; CB1 shift = +1050 meV, transition shift = -1744 meV
 - **Wavefunction asymmetry**: visible distortion under applied field
 
-![Overlay plot](figures/lecture_10_qcse.png)
+![Overlay plot](figures/lecture_10_stark_shift.png)
 
 ### 10.5.5 References
 

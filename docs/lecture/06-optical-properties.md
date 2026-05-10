@@ -1135,7 +1135,7 @@ make lecture-06
 or directly:
 
 ```bash
-python3 scripts/lecture_06_optical_properties.py
+python3 scripts/lecture_06_optical.py
 ```
 
 ### Code-Output Anchors
@@ -1144,4 +1144,4 @@ Running `optics_bulk_gaas.cfg` produces:
 - **Bulk absorption onset**: 1.509 eV (within 1% of Eg); **TE/TM ratio** > 1 for interband
 - **ISBT peak**: at 0.11 eV (conduction intersubband transition)
 
-![Overlay plot](figures/lecture_06_optical_properties.png)
+![Overlay plot](figures/lecture_06_absorption.png)

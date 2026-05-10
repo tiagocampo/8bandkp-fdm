@@ -393,7 +393,7 @@ make lecture-12
 or directly:
 
 ```bash
-python3 scripts/lecture_12_extending_the_code.py
+python3 scripts/lecture_12_extending.py
 ```
 
 ### Code-Output Anchors
@@ -402,4 +402,4 @@ Running the architecture walkthrough:
 - **Architecture walkthrough**: no assertions (code tour only)
 - **Eigenvalues match expected parameter values**: verified via standard configs
 
-![Overlay plot](figures/lecture_12_extending_the_code.png)
+![Overlay plot](figures/lecture_12_example.png)

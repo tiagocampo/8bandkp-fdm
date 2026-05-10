@@ -621,4 +621,4 @@ Running `gfactor_bulk_gaas_cb.cfg` produces:
 - **GaAs CB g**: -0.317 (Roth formula within 1%); **InSb |g|** > 40
 - **GaAs Landau levels**: spacing 10.90 meV vs Kane-mass hbar*omega_c=11.55 meV (6% error)
 
-![Overlay plot](figures/lecture_05_gfactor.png)
+![Overlay plot](figures/lecture_05_gfactor_comparison.png)
