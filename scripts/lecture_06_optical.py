@@ -262,13 +262,24 @@ def test_isbt_peak():
     # The ISBT config uses a GaAs/Al30Ga70As QW with FDstep=201, FDorder=4.
     # Subband spacing depends on well width and confinement. For a 100 A GaAs
     # well, the e1-e2 ISBT transition is approximately 0.08-0.15 eV.
-    # We validate that the peak falls within the configured energy range
-    # and is clearly above zero.
-    if peak_alpha > 0:
-        print(f"  ISBT peak is non-zero ({peak_alpha:.4e} cm^-1).")
+    # Validate that (1) the peak is in the expected ISBT energy range and
+    # (2) the peak absorption is well above numerical noise (> 1 cm^-1).
+    isbt_e_min, isbt_e_max = 0.03, 0.30  # eV, generous ISBT range
+    min_alpha = 1.0  # cm^-1, above numerical noise floor
+    in_range = isbt_e_min <= peak_energy <= isbt_e_max
+    above_noise = peak_alpha > min_alpha
+
+    if in_range and above_noise:
+        print(f"  ISBT peak validated: E={peak_energy:.4f} eV in [{isbt_e_min}, {isbt_e_max}], "
+              f"alpha={peak_alpha:.4e} cm^-1 > {min_alpha} cm^-1")
         passed = True
+    elif not in_range:
+        print(f"  FAIL: ISBT peak at {peak_energy:.4f} eV outside expected "
+              f"range [{isbt_e_min}, {isbt_e_max}] eV")
+        passed = False
     else:
-        print("  FAIL: ISBT peak absorption is zero.")
+        print(f"  FAIL: ISBT peak alpha={peak_alpha:.4e} cm^-1 below "
+              f"noise threshold {min_alpha} cm^-1")
         passed = False
 
     status = "PASS" if passed else "FAIL"

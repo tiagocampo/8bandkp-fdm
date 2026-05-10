@@ -22,7 +22,11 @@ echo "Test: InAs Rashba wire at mu=0.1 meV, Delta=0.1 meV, B=2.0 T"
 /bin/cp "$CONFIG" "$WORKDIR/input.cfg"
 cd "$WORKDIR"
 RC=0
-"$EXE" > test_output.log 2>&1 || RC=$?
+timeout 300 "$EXE" > test_output.log 2>&1 || RC=$?
+if [ $RC -eq 124 ]; then
+    echo "FAIL: topologicalAnalysis timed out after 300s"
+    exit 1
+fi
 if [ $RC -ne 0 ]; then
     echo "FAIL: topologicalAnalysis returned exit code $RC"
     cat test_output.log

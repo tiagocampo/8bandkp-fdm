@@ -32,6 +32,14 @@ TOL_EXACT = 1e-12
 TOL_ANALYTICAL = 0.01   # 1% default for analytical comparisons
 TOL_NUMERICAL = 0.05    # 5% default for numerical comparisons
 
+# ---------------------------------------------------------------------------
+# Physical constants (CODATA 2018)
+# ---------------------------------------------------------------------------
+HBAR_EV_S = 6.582119569e-16   # hbar in eV*s
+HBAR_J_S  = 1.054571817e-34   # hbar in J*s
+E_CHARGE  = 1.602176634e-19   # elementary charge in C
+M0_KG     = 9.1093837015e-31  # free electron mass in kg
+
 # numpy 2.0 compatibility: np.trapezoid was introduced in 2.0, replacing np.trapz
 # np.trapz was removed in numpy 2.0
 trapz_fn = getattr(np, 'trapezoid', None) or getattr(np, 'trapz', None)

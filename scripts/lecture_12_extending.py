@@ -31,7 +31,8 @@ FIGURES_DIR = REPO / "docs" / "lecture" / "figures"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 sys.path.insert(0, str(REPO / "tests" / "integration"))
-from star_helpers import run_exe, parse_eigenvalues, compare_value, TOL_EXACT
+from star_helpers import (run_exe, parse_eigenvalues, compare_value, TOL_EXACT,
+                          HBAR2_OVER_2M0)
 
 # ---------------------------------------------------------------------------
 # 8-band zinc-blende basis ordering (bands 1-8)
@@ -55,9 +56,6 @@ GAAS_MEFF = 0.067      # m0, conduction-band effective mass
 GAAS_GAMMA1 = 6.98     # Luttinger parameter
 GAAS_GAMMA2 = 2.06     # Luttinger parameter
 GAAS_GAMMA3 = 2.93     # Luttinger parameter
-
-# hbar^2 / (2 m_0) = 3.80998 eV*A^2 (used in P = sqrt(EP * hbar^2/2m0))
-HBAR2_OVER_2M0 = 3.80998
 
 
 # =========================================================================

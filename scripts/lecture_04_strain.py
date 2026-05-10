@@ -253,7 +253,7 @@ def test_unstrained_reference():
     if all_pass:
         print("  --> All unstrained eigenvalues match analytical band edges.")
     print()
-    return evals
+    return all_pass, evals
 
 
 # =========================================================================
@@ -411,7 +411,7 @@ def test_strained_bir_pikus():
         print("\n  --> FAIL: some shifts outside tolerance.")
     print()
 
-    return evals_unref, evals_strained, bp
+    return all_pass, evals_unref, evals_strained, bp
 
 
 # =========================================================================
@@ -483,7 +483,7 @@ def test_strained_qw():
     else:
         print("\n  --> FAIL: no significant strain effects detected.")
     print()
-    return data, data_unref
+    return has_strain_effect, data, data_unref
 
 
 # =========================================================================
@@ -633,13 +633,13 @@ def main():
     print("=" * 60 + "\n")
 
     # Section 1: Unstrained reference
-    evals_unref = test_unstrained_reference()
+    s1_pass, evals_unref = test_unstrained_reference()
 
     # Section 2: Bir-Pikus validation
-    evals_unref_2, evals_strained, bp = test_strained_bir_pikus()
+    s2_pass, evals_unref_2, evals_strained, bp = test_strained_bir_pikus()
 
     # Section 3: Strained QW
-    qw_strained, qw_unref = test_strained_qw()
+    s3_pass, qw_strained, qw_unref = test_strained_qw()
 
     # Section 4: Overlay plot
     plot_strain_shifts(evals_unref_2, evals_strained, bp)
@@ -648,13 +648,28 @@ def main():
     print("=" * 60)
     print("  SUMMARY")
     print("=" * 60)
-    print("  [PASS] Section 1: Unstrained GaAs k=0 reference")
-    print("  [PASS] Section 2: Bir-Pikus analytical validation")
-    print("  [PASS] Section 3: Strained InAs/GaAs QW")
-    print("  [PASS] Section 4: Overlay plot")
+    results = [
+        ("Section 1: Unstrained GaAs k=0 reference", s1_pass),
+        ("Section 2: Bir-Pikus analytical validation", s2_pass),
+        ("Section 3: Strained InAs/GaAs QW", s3_pass),
+        ("Section 4: Overlay plot", True),
+    ]
+    all_pass = True
+    for label, passed in results:
+        status = "PASS" if passed else "FAIL"
+        print(f"  [{status}] {label}")
+        all_pass = all_pass and passed
     print()
-    print("  All validations passed.")
-    print("=" * 60)
+
+    if all_pass:
+        print("  All validations passed.")
+    else:
+        print("  Some validations FAILED.")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":

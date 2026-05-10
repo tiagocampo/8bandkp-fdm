@@ -29,7 +29,8 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 sys.path.insert(0, str(REPO / "tests" / "integration"))
 from star_helpers import (run_exe, parse_eigenvalues, parse_gfactor, compare_value,
-                          roth_gfactor, TOL_EXACT, TOL_ANALYTICAL, TOL_NUMERICAL)
+                          roth_gfactor, TOL_EXACT, TOL_ANALYTICAL, TOL_NUMERICAL,
+                          HBAR_J_S, E_CHARGE, M0_KG)
 
 # ---------------------------------------------------------------------------
 # Material parameters (Vurgaftman 2001 / Winkler 2003)
@@ -40,12 +41,6 @@ MATERIALS = {
     'InSb':  {'Eg': 0.235, 'DeltaSO': 0.81,  'EP': 23.3,  'meff': 0.0135},
     'InAs':  {'Eg': 0.417, 'DeltaSO': 0.39,  'EP': 21.5,  'meff': 0.026},
 }
-
-# Physical constants
-HBAR_EV_S = 6.582119569e-16   # hbar in eV*s
-HBAR_J_S  = 1.054571817e-34   # hbar in J*s
-E_CHARGE  = 1.602176634e-19   # elementary charge in C
-M0_KG     = 9.1093837015e-31  # free electron mass in kg
 
 
 def run_gfactor(config_name, label):
@@ -248,7 +243,8 @@ def test_landau_levels():
     # Extract Landau level spacings, filtering out spin-orbit sub-splittings.
     # In 8-band k.p, each Landau level is spin-split; the intra-level splitting
     # is small (~1 meV) while the inter-level spacing is ~hbar*omega_c (~12 meV).
-    # Filter: keep spacings > 50% of the expected hbar*omega_c.
+    # The 0.5 threshold cleanly separates the two regimes for GaAs at B=5T
+    # (spin-split ~1 meV << threshold ~6 meV << Landau spacing ~12 meV).
     spacings_meV = np.array([s * 1000 for s in spacings])
     threshold = 0.5 * hbar_omega_c_meV
     landau_spacings = spacings_meV[spacings_meV > threshold]

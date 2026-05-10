@@ -33,6 +33,7 @@ sys.path.insert(0, str(REPO / "tests" / "integration"))
 from star_helpers import (
     run_exe, parse_eigenvalues, compare_value,
     extract_effective_mass, TOL_EXACT, TOL_ANALYTICAL, TOL_NUMERICAL,
+    HBAR2_OVER_2M0,
 )
 
 # ---------------------------------------------------------------------------
@@ -48,9 +49,6 @@ INAS_EG = 0.417        # eV, band gap
 
 # 2-band Kane effective mass: m*/m_e = E_g / (E_P + E_g)
 GAAS_MSTAR_KANE = GAAS_EG / (GAAS_EP + GAAS_EG)
-
-# hbar^2 / (2 m_0) in eV * Angstrom^2 (must match star_helpers)
-HBAR2_OVER_2M0 = 3.80998
 
 
 # =========================================================================
