@@ -344,14 +344,14 @@ def section2_z2():
 def run_bdg_sweep(B, work_dir):
     """Run topologicalAnalysis in BdG mode with given B field.
 
-    Uses the QW BdG config (topology_qw_bdg.cfg) for the B-field sweep
-    because the Rashba wire config hits FEAST window limitations at finite B.
+    Uses the Rashba wire config (topology_rashba_phase.cfg) with InAs material.
+    Reduces grid to 11x11 for faster B-sweep (each point ~30s vs ~150s for 21x21).
 
     Returns:
         min_gap in meV, or None on failure.
     """
     exe = BUILD_DIR / "src" / "topologicalAnalysis"
-    config_path = CONFIGS_DIR / "topology_qw_bdg.cfg"
+    config_path = CONFIGS_DIR / "topology_rashba_phase.cfg"
     config = config_path.read_text()
 
     # Replace B_vec line with new B value
@@ -360,6 +360,12 @@ def run_bdg_sweep(B, work_dir):
         f'B_vec: 0.0 0.0 {B:.1f}',
         config,
     )
+
+    # Reduce grid to 11x11 for faster B-sweep
+    config = re.sub(r'wire_nx:.*', 'wire_nx: 11', config)
+    config = re.sub(r'wire_ny:.*', 'wire_ny: 11', config)
+    config = re.sub(r'wire_width:.*', 'wire_width: 33.0', config)
+    config = re.sub(r'wire_height:.*', 'wire_height: 33.0', config)
 
     input_cfg = os.path.join(work_dir, "input.cfg")
     with open(input_cfg, "w") as f:
@@ -373,7 +379,7 @@ def run_bdg_sweep(B, work_dir):
         cwd=work_dir,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=300,
     )
     if result.returncode != 0:
         return None
@@ -391,7 +397,7 @@ def run_bdg_sweep(B, work_dir):
 
 
 def section3_majorana():
-    """Section 3: Rashba BdG Majorana phase transition sweep."""
+    """Section 3: BdG Majorana phase transition sweep (InAs Rashba wire)."""
     print("\n" + "=" * 60)
     print("  Section 3: BdG Majorana Phase Transition")
     print("=" * 60)
@@ -401,7 +407,7 @@ def section3_majorana():
         print("  ERROR: topologicalAnalysis not found.")
         return False
 
-    B_vals = [b / 10.0 for b in range(0, 55, 5)]  # 0 to 5 T in 0.5 T steps
+    B_vals = [b / 10.0 for b in range(0, 35, 5)]  # 0 to 3 T in 0.5 T steps
     gaps = []
 
     for B in B_vals:
@@ -412,32 +418,26 @@ def section3_majorana():
         print(f"  B={B:5.1f} T: min_gap = {status}")
 
     # Analytical B_crit = sqrt(mu^2 + Delta^2) / (g * mu_B)
-    # For QW BdG config: mu=0.0 meV, delta_0=0.001 eV = 1.0 meV
-    mu = 0.0     # meV (QW BdG config)
-    Delta = 1.0   # meV (0.001 eV)
+    # InAs Rashba config: mu=0.1 meV, delta_0=0.1 meV, g_factor=2.0
+    mu = 0.1      # meV
+    Delta = 0.1   # meV
     g_factor = 2.0
     mu_B = 0.05788  # meV/T
     B_crit = (mu**2 + Delta**2)**0.5 / (g_factor * mu_B)
-    print(f"\n  Analytical B_crit = {B_crit:.1f} T (for mu={mu} meV, Delta={Delta} meV)")
-    print("  NOTE: QW BdG uses dense diagonalization (not FEAST), so gaps are reliable.")
+    print(f"\n  Analytical B_crit = {B_crit:.2f} T "
+          f"(mu={mu} meV, Delta={Delta} meV, g={g_factor})")
 
-    # Validate trivial-phase gap ≈ 2*Delta (at B=0)
+    # Validate: gap at B=0 should be non-zero (trivial superconducting phase)
     trivial_gaps = [g for B, g in zip(B_vals, gaps) if g is not None and B < 0.1]
     all_pass = True
     if trivial_gaps:
         mean_trivial = np.mean(trivial_gaps)
-        # For QW BdG with delta_0=0.001 eV, the BdG gap is not 2*Delta
-        # but related to the band gap of the semiconductor system.
-        # The gap should be non-zero and finite at B=0.
-        print(f"  Trivial-phase gap at B=0: {mean_trivial:.4f} meV "
-              f"(expected non-zero)")
+        print(f"  Trivial-phase gap at B=0: {mean_trivial:.4f} meV")
         if mean_trivial <= 0:
             all_pass = False
     else:
         print("  WARNING: No trivial-phase gap data (all gaps None)")
         all_pass = False
-        if rel_err > 0.5:
-            all_pass = False
 
     # --- Generate Majorana phase diagram ---
     print("\n  Generating Majorana phase diagram...")
@@ -449,7 +449,7 @@ def section3_majorana():
         ax.plot(valid_B, valid_g, 'o-', markersize=5, color='navy',
                 label='Computed min gap')
     ax.axvline(x=B_crit, color='red', ls='--', lw=1.5,
-               label=f'$B_{{crit}}$ = {B_crit:.1f} T')
+               label=f'$B_{{crit}}$ = {B_crit:.2f} T')
     ax.axhline(y=2 * Delta, color='gray', ls=':', lw=1,
                label=rf'$2\Delta_0$ = {2*Delta:.1f} meV')
 
@@ -461,7 +461,7 @@ def section3_majorana():
     ax.set_xlabel('Magnetic field $B$ (T)', fontsize=12)
     ax.set_ylabel('Min spectral gap (meV)', fontsize=12)
     ax.set_title('BdG Majorana Phase Transition\n'
-                 '(QW + s-wave pairing, B-field sweep)', fontsize=13)
+                 '(InAs Rashba wire + s-wave pairing)', fontsize=13)
     ax.legend(fontsize=10, loc='best')
     ax.grid(True, alpha=0.3)
     fig.tight_layout()

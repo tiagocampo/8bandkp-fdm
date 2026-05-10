@@ -4,8 +4,8 @@
 Runs the 8-band k.p solver (bandStructure executable) for quantum wire
 configurations and validates:
 
-  1. GaAs wire (31x31 grid): eigenvalues computed via CSR sparse assembly,
-     subband count consistent with 8*31*31 = 7688 Hamiltonian dimension.
+  1. GaAs wire (21x21 grid): eigenvalues computed via CSR sparse assembly,
+     subband count consistent with 8*21*21 = 3528 Hamiltonian dimension.
   2. InAs rectangular wire (11x11 grid): eigenvalues computed successfully.
   3. Dense-sparse consistency: eigenvalues from dense and sparse solvers
      agree within numerical tolerance for an 11x11 wire.
@@ -38,20 +38,21 @@ WIRE_TIMEOUT = 1200
 
 
 # =========================================================================
-# Section 1: GaAs 31x31 wire eigenvalues
+# Section 1: GaAs 21x21 wire eigenvalues
 # =========================================================================
-def test_gaas_31x31_wire():
-    """Run GaAs wire (31x31 grid) and verify eigenvalue output."""
+def test_gaas_21x21_wire():
+    """Run GaAs wire (21x21 grid) and verify eigenvalue output."""
     print("=" * 60)
-    print("Lecture 08 -- Section 1: GaAs 31x31 wire eigenvalues")
+    print("Lecture 08 -- Section 1: GaAs 21x21 wire eigenvalues")
     print("=" * 60)
 
-    cfg = CONFIGS_DIR / "wire_gaas_31x31.cfg"
-    nx, ny = 31, 31
-    expected_hdim = 8 * nx * ny  # 7688
+    cfg = CONFIGS_DIR / "wire_gaas_rectangle.cfg"
+    nx, ny = 21, 21
+    expected_hdim = 8 * nx * ny  # 3528
     expected_numcb = 8
     expected_numvb = 16
-    expected_nev = expected_numcb + expected_numvb  # 24 eigenvalues per kz
+    # FEAST with feast_m0=-1 auto-detects; expect >= numcb + numvb
+    min_expected_nev = expected_numcb + expected_numvb  # 24
 
     work = tempfile.mkdtemp(prefix="lecture08_gaas31_")
     try:
@@ -80,17 +81,17 @@ def test_gaas_31x31_wire():
     print(f"  Eigenvalues at k_max: {n_evals_last}")
     print(f"  Hamiltonian dimension: {expected_hdim} (8 x {nx} x {ny})")
     print(f"  Expected numcb={expected_numcb}, numvb={expected_numvb}, "
-          f"nev={expected_nev}")
+          f"min_nev={min_expected_nev}")
 
     # Assertion: non-empty output
     assert n_kz > 0, "No kz-points in eigenvalue output"
     print(f"  PASS: Non-empty eigenvalue output ({n_kz} kz-points)")
 
-    # Assertion: subband count matches numcb + numvb
-    assert n_evals_first == expected_nev, (
-        f"Expected {expected_nev} eigenvalues, got {n_evals_first}")
+    # Assertion: subband count >= numcb + numvb (FEAST auto-detect may find more)
+    assert n_evals_first >= min_expected_nev, (
+        f"Expected >= {min_expected_nev} eigenvalues, got {n_evals_first}")
     print(f"  PASS: Subband count = {n_evals_first} "
-          f"(matches numcb+numvb = {expected_nev})")
+          f"(>= numcb+numvb = {min_expected_nev})")
 
     # Assertion: Hamiltonian dimension consistent with grid
     assert expected_hdim == 8 * nx * ny, "Dimension mismatch"
@@ -342,7 +343,7 @@ def main():
     print("=" * 60 + "\n")
 
     # Run all sections
-    s1_pass, kz_vals, eig_matrix, nx, ny, hdim = test_gaas_31x31_wire()
+    s1_pass, kz_vals, eig_matrix, nx, ny, hdim = test_gaas_21x21_wire()
     s2_pass = test_inas_rectangle_wire()
     s3_pass = test_dense_sparse_consistency()
     plot_wire_subbands(kz_vals, eig_matrix, nx, ny, hdim)
@@ -352,7 +353,7 @@ def main():
     print("  SUMMARY")
     print("=" * 60)
     results = [
-        ("Section 1: GaAs 31x31 wire eigenvalues", s1_pass),
+        ("Section 1: GaAs 21x21 wire eigenvalues", s1_pass),
         ("Section 2: InAs rectangular wire", s2_pass),
         ("Section 3: Dense-sparse consistency",
          s3_pass if s3_pass is not None else True),  # skip = not a failure

@@ -528,6 +528,14 @@ contains
 
     if (eigen_res_local%nev_found == 0) then
       print *, 'Warning: FEAST found no eigenvalues in the search window'
+      print *, '  Retrying with auto-computed energy window...'
+      call auto_compute_energy_window(H_bdg_csr, eigen_cfg_local%emin, eigen_cfg_local%emax)
+      print *, '  Auto window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
+      call eigen_solver_local%solve(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+    end if
+
+    if (eigen_res_local%nev_found == 0) then
+      print *, 'Warning: auto-window retry also found no eigenvalues'
       result%min_gap = 0.0_dp
     else
       allocate(eigvals_bdg(eigen_res_local%nev_found))
