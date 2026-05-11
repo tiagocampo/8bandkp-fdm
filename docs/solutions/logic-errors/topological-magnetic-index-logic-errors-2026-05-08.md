@@ -126,7 +126,7 @@ do iB = 1, nB
     call compute_z2_fukane_qw_result(cfg_local, ...)
 ```
 
-### Bug 5: BdG gap convention (`main_topology.f90:534`)
+### Bug 5: BdG gap convention (`main_topology.f90:545`)
 
 **Before** (half-gap):
 ```fortran
