@@ -10,6 +10,7 @@ module finitedifferences
   public :: FDforwardCoeffs2nd, FDbackwardCoeffs2nd
   public :: FDforwardCoeffs1st, FDbackwardCoeffs1st
   public :: vandermonde_2nd_deriv, vandermonde_1st_deriv
+  public :: vandermonde_interp
   public :: buildStaggeredD1Inner, buildStaggeredD1Outer
   public :: interpolateToHalfPoints
 
@@ -378,14 +379,14 @@ module finitedifferences
         coeffs(hf+4) = -1.0_dp/280.0_dp
       case(10)
         coeffs(hf-5) = -1.0_dp/1260.0_dp
-        coeffs(hf-4) = 5.0_dp/1008.0_dp
-        coeffs(hf-3) = -5.0_dp/126.0_dp
+        coeffs(hf-4) = 5.0_dp/504.0_dp
+        coeffs(hf-3) = -5.0_dp/84.0_dp
         coeffs(hf-2) = 5.0_dp/21.0_dp
-        coeffs(hf-1) = -5.0_dp/3.0_dp
-        coeffs(hf+1) = 5.0_dp/3.0_dp
+        coeffs(hf-1) = -5.0_dp/6.0_dp
+        coeffs(hf+1) = 5.0_dp/6.0_dp
         coeffs(hf+2) = -5.0_dp/21.0_dp
-        coeffs(hf+3) = 5.0_dp/126.0_dp
-        coeffs(hf+4) = -5.0_dp/1008.0_dp
+        coeffs(hf+3) = 5.0_dp/84.0_dp
+        coeffs(hf+4) = -5.0_dp/504.0_dp
         coeffs(hf+5) = 1.0_dp/1260.0_dp
       case default
         print *, 'Error: unsupported FDorder:', FDorder
@@ -571,6 +572,67 @@ module finitedifferences
       end do
 
     end subroutine vandermonde_1st_deriv
+
+    !---------------------------------------------------------------------------
+    !> Solve Vandermonde system for interpolation coefficients at an offset point.
+    !> Given n offsets from the evaluation point, computes coefficients c such
+    !> that sum_j c_j * f(x + p_j * dz) = f(x + half_offset * dz).
+    !> Uses Gaussian elimination with partial pivoting (n <= 11).
+    !---------------------------------------------------------------------------
+    subroutine vandermonde_interp(half_offset, offsets, n, coeffs)
+      real(kind=dp), intent(in) :: half_offset
+      integer, intent(in) :: n
+      real(kind=dp), intent(in) :: offsets(n)
+      real(kind=dp), intent(out) :: coeffs(n)
+
+      real(kind=dp) :: V(11, 11), rhs(11), factor, shifted(11)
+      integer :: i, j, k, pivot_row
+
+      ! Shift offsets relative to the interpolation point
+      do j = 1, n
+        shifted(j) = offsets(j) - half_offset
+      end do
+
+      ! Build Vandermonde matrix with shifted offsets
+      do j = 1, n
+        do i = 1, n
+          V(i, j) = shifted(j) ** (i - 1)
+        end do
+      end do
+      rhs(1:n) = 0.0_dp
+      rhs(1) = 1.0_dp  ! function value interpolation
+
+      ! Gaussian elimination with partial pivoting
+      do k = 1, n
+        pivot_row = k
+        do i = k + 1, n
+          if (abs(V(i, k)) > abs(V(pivot_row, k))) pivot_row = i
+        end do
+        if (pivot_row /= k) then
+          do j = k, n
+            factor = V(k, j); V(k, j) = V(pivot_row, j); V(pivot_row, j) = factor
+          end do
+          factor = rhs(k); rhs(k) = rhs(pivot_row); rhs(pivot_row) = factor
+        end if
+        do i = k + 1, n
+          factor = V(i, k) / V(k, k)
+          do j = k + 1, n
+            V(i, j) = V(i, j) - factor * V(k, j)
+          end do
+          rhs(i) = rhs(i) - factor * rhs(k)
+        end do
+      end do
+
+      ! Back-substitution
+      do i = n, 1, -1
+        coeffs(i) = rhs(i)
+        do j = i + 1, n
+          coeffs(i) = coeffs(i) - V(i, j) * coeffs(j)
+        end do
+        coeffs(i) = coeffs(i) / V(i, i)
+      end do
+
+    end subroutine vandermonde_interp
 
     !---------------------------------------------------------------------------
     !> Forward (one-sided) 1st-derivative stencil coefficients.
@@ -834,16 +896,73 @@ module finitedifferences
         return
       end if
 
-      ! FDorder >= 4: use 4th-order interior formula, 2nd-order at boundaries
-      ! Boundary half-points (j=1, j=N-1): use 2-point average
-      g_half(1) = 0.5_dp * (profile_vec(1) + profile_vec(2))
-      g_half(N-1) = 0.5_dp * (profile_vec(N-1) + profile_vec(N))
+      ! FDorder == 4: use 4th-order interior formula, 2nd-order at boundaries
+      if (FDorder == 4) then
+        g_half(1) = 0.5_dp * (profile_vec(1) + profile_vec(2))
+        g_half(N-1) = 0.5_dp * (profile_vec(N-1) + profile_vec(N))
+        do j = 2, N - 2
+          g_half(j) = (-profile_vec(j-1) + 9.0_dp*profile_vec(j) &
+            &       + 9.0_dp*profile_vec(j+1) - profile_vec(j+2)) / 16.0_dp
+        end do
+        return
+      end if
 
-      ! Interior half-points: 4th-order formula
-      do j = 2, N - 2
-        g_half(j) = (-profile_vec(j-1) + 9.0_dp*profile_vec(j) &
-          &       + 9.0_dp*profile_vec(j+1) - profile_vec(j+2)) / 16.0_dp
-      end do
+      ! FDorder >= 6: use Vandermonde-derived interpolation
+      block
+        integer :: half_bw, npts, i, col
+        real(kind=dp) :: offsets_w(11), coeffs_w(11)
+
+        half_bw = FDorder / 2
+
+        ! Boundary half-points: 2-point average
+        g_half(1) = 0.5_dp * (profile_vec(1) + profile_vec(2))
+        g_half(N-1) = 0.5_dp * (profile_vec(N-1) + profile_vec(N))
+
+        ! Interior half-points
+        do j = 2, N - 2
+          if (j >= half_bw + 1 .and. j <= N - half_bw - 1) then
+            ! Full stencil: symmetric around half-point j+0.5
+            npts = FDorder + 1
+            do i = 1, npts
+              offsets_w(i) = real(i - half_bw - 1, kind=dp)
+            end do
+            call vandermonde_interp(0.5_dp, offsets_w(1:npts), npts, coeffs_w(1:npts))
+
+            do i = 1, npts
+              col = j + (i - half_bw - 1)
+              if (col >= 1 .and. col <= N) then
+                g_half(j) = g_half(j) + coeffs_w(i) * profile_vec(col)
+              end if
+            end do
+          else
+            ! Near-boundary: use available points with Vandermonde
+            npts = min(FDorder + 1, N)
+            if (j <= half_bw) then
+              ! Left side: use points 1..npts
+              do i = 1, npts
+                offsets_w(i) = real(i, kind=dp) - real(j, kind=dp)
+              end do
+            else
+              ! Right side: use points N-npts+1..N
+              do i = 1, npts
+                offsets_w(i) = real(N - npts + i, kind=dp) - real(j, kind=dp)
+              end do
+            end if
+            call vandermonde_interp(0.5_dp, offsets_w(1:npts), npts, coeffs_w(1:npts))
+
+            do i = 1, npts
+              if (j <= half_bw) then
+                col = i
+              else
+                col = N - npts + i
+              end if
+              if (col >= 1 .and. col <= N) then
+                g_half(j) = g_half(j) + coeffs_w(i) * profile_vec(col)
+              end if
+            end do
+          end if
+        end do
+      end block
 
     end subroutine interpolateToHalfPoints
 

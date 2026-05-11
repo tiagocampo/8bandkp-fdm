@@ -1,0 +1,515 @@
+module test_fd_convergence
+  use funit
+  use definitions
+  use finitedifferences
+  implicit none
+
+  real(kind=dp), parameter :: PI = 3.14159265358979323846_dp
+
+contains
+
+  subroutine compute_interior_error(N, dz, FDorder, deriv_order, max_err)
+    integer, intent(in) :: N, FDorder, deriv_order
+    real(kind=dp), intent(in) :: dz
+    real(kind=dp), intent(out) :: max_err
+
+    real(kind=dp), allocatable :: z(:), f(:), exact(:), numerical(:), D(:,:)
+    integer :: i, half_bw
+
+    allocate(z(N), f(N), exact(N), numerical(N))
+
+    do i = 1, N
+      z(i) = real(i - 1, kind=dp) * dz
+      f(i) = sin(2.0_dp * PI * z(i))
+    end do
+
+    if (deriv_order == 2) then
+      call buildFD2ndDerivMatrix(N, dz, FDorder, D)
+      do i = 1, N
+        exact(i) = -(2.0_dp * PI)**2 * sin(2.0_dp * PI * z(i))
+      end do
+    else
+      call buildFD1stDerivMatrix(N, dz, FDorder, D)
+      do i = 1, N
+        exact(i) = 2.0_dp * PI * cos(2.0_dp * PI * z(i))
+      end do
+    end if
+
+    numerical = matmul(D, f)
+
+    half_bw = FDorder / 2
+    max_err = 0.0_dp
+    do i = half_bw + 1, N - half_bw
+      if (abs(numerical(i) - exact(i)) > max_err) then
+        max_err = abs(numerical(i) - exact(i))
+      end if
+    end do
+
+    deallocate(z, f, exact, numerical, D)
+  end subroutine compute_interior_error
+
+  subroutine compute_convergence_rate(FDorder, deriv_order, obs_rate)
+    integer, intent(in) :: FDorder, deriv_order
+    real(kind=dp), intent(out) :: obs_rate
+
+    integer, parameter :: nlevels = 6
+    integer :: N_vals(nlevels)
+    real(kind=dp) :: errors(nlevels), dz
+    integer :: lev
+
+    N_vals = [21, 41, 81, 161, 321, 641]
+
+    do lev = 1, nlevels
+      dz = 1.0_dp / real(N_vals(lev) - 1, kind=dp)
+      call compute_interior_error(N_vals(lev), dz, FDorder, deriv_order, errors(lev))
+    end do
+
+    block
+      real(kind=dp) :: rate, best_rate
+      integer :: nvalid
+      nvalid = 0
+      best_rate = 0.0_dp
+      do lev = 1, nlevels - 1
+        ! Only use pairs where error actually decreases
+        if (errors(lev) > errors(lev + 1)) then
+          rate = log(errors(lev) / errors(lev + 1)) / log(2.0_dp)
+          nvalid = nvalid + 1
+          ! Use the maximum observed rate (asymptotic regime)
+          if (rate > best_rate) best_rate = rate
+        end if
+      end do
+
+      if (nvalid > 0) then
+        obs_rate = best_rate
+      else
+        obs_rate = -1.0_dp
+      end if
+    end block
+  end subroutine compute_convergence_rate
+
+  function rate_tolerance(order) result(tol)
+    integer, intent(in) :: order
+    real(kind=dp) :: tol
+    select case(order)
+    case(2:4)
+      tol = 0.05_dp
+    case(6:8)
+      tol = 0.2_dp
+    case(10)
+      tol = 0.5_dp
+    case default
+      tol = 0.5_dp
+    end select
+  end function rate_tolerance
+
+  ! --- Legacy API helpers ---
+
+  subroutine compute_legacy_interior_error(N, dz, deriv_order, stencil_order, max_err)
+    ! Apply legacy FDstencil/FDmatrixDense to sin(2*pi*z) and compute max-norm error
+    integer, intent(in) :: N, deriv_order, stencil_order
+    real(kind=dp), intent(in) :: dz
+    real(kind=dp), intent(out) :: max_err
+
+    real(kind=dp), allocatable :: v(:), mat(:,:), z(:), f(:), exact(:), numerical(:)
+    integer :: i, half_bw
+
+    allocate(v(2*stencil_order + 1))
+    v = 0.0_dp
+    call FDstencil(deriv_order, stencil_order, dz, v)
+    call FDmatrixDense(N, dz, deriv_order, stencil_order, 0, mat)
+
+    allocate(z(N), f(N), exact(N), numerical(N))
+    do i = 1, N
+      z(i) = real(i - 1, kind=dp) * dz
+      f(i) = sin(2.0_dp * PI * z(i))
+    end do
+
+    if (deriv_order == 2) then
+      do i = 1, N
+        exact(i) = -(2.0_dp * PI)**2 * sin(2.0_dp * PI * z(i))
+      end do
+    else
+      do i = 1, N
+        exact(i) = 2.0_dp * PI * cos(2.0_dp * PI * z(i))
+      end do
+    end if
+
+    numerical = matmul(mat, f)
+
+    ! Legacy Toeplitz D1 gives -f'(x) due to antisymmetric stencil
+    if (deriv_order == 1) numerical = -numerical
+
+    half_bw = stencil_order / 2
+    max_err = 0.0_dp
+    do i = half_bw + 1, N - half_bw
+      if (abs(numerical(i) - exact(i)) > max_err) then
+        max_err = abs(numerical(i) - exact(i))
+      end if
+    end do
+
+    deallocate(v, mat, z, f, exact, numerical)
+  end subroutine compute_legacy_interior_error
+
+  subroutine compute_legacy_convergence_rate(deriv_order, stencil_order, obs_rate)
+    integer, intent(in) :: deriv_order, stencil_order
+    real(kind=dp), intent(out) :: obs_rate
+
+    integer, parameter :: nlevels = 6
+    integer :: N_vals(nlevels)
+    real(kind=dp) :: errors(nlevels), dz
+    integer :: lev
+
+    N_vals = [21, 41, 81, 161, 321, 641]
+
+    do lev = 1, nlevels
+      dz = 1.0_dp / real(N_vals(lev) - 1, kind=dp)
+      call compute_legacy_interior_error(N_vals(lev), dz, deriv_order, stencil_order, errors(lev))
+    end do
+
+    block
+      real(kind=dp) :: rate, best_rate
+      integer :: nvalid
+      nvalid = 0
+      best_rate = 0.0_dp
+      do lev = 1, nlevels - 1
+        if (errors(lev) > errors(lev + 1)) then
+          rate = log(errors(lev) / errors(lev + 1)) / log(2.0_dp)
+          nvalid = nvalid + 1
+          if (rate > best_rate) best_rate = rate
+        end if
+      end do
+      if (nvalid > 0) then
+        obs_rate = best_rate
+      else
+        obs_rate = -1.0_dp
+      end if
+    end block
+  end subroutine compute_legacy_convergence_rate
+
+  ! --- Variable-coefficient helpers ---
+
+  subroutine compute_varcoeff_d2_error(N, dz, FDorder, max_err)
+    ! Test d/dz[a(z) du/dz] via product rule: a*d2u/dz2 + a'*du/dz
+    ! where a(z) = 1 + 0.5*sin(2*pi*z), u = sin(2*pi*z)
+    integer, intent(in) :: N, FDorder
+    real(kind=dp), intent(in) :: dz
+    real(kind=dp), intent(out) :: max_err
+
+    real(kind=dp), allocatable :: z(:), u(:), a(:), exact(:), result(:)
+    real(kind=dp), allocatable :: D1(:,:), D2(:,:)
+    integer :: i, half_bw
+
+    allocate(z(N), u(N), a(N), exact(N), result(N))
+
+    do i = 1, N
+      z(i) = real(i - 1, kind=dp) * dz
+      u(i) = sin(2.0_dp * PI * z(i))
+      a(i) = 1.0_dp + 0.5_dp * sin(2.0_dp * PI * z(i))
+    end do
+
+    call buildFD2ndDerivMatrix(N, dz, FDorder, D2)
+    call buildFD1stDerivMatrix(N, dz, FDorder, D1)
+
+    ! d/dz[a(z)*du/dz] = a(z)*d2u/dz2 + a'(z)*du/dz
+    result = a * matmul(D2, u) + matmul(D1, a) * matmul(D1, u)
+
+    do i = 1, N
+      exact(i) = (1.0_dp + 0.5_dp * sin(2.0_dp * PI * z(i))) &
+        &     * (-(2.0_dp * PI)**2 * sin(2.0_dp * PI * z(i))) &
+        &     + (2.0_dp * PI * 0.5_dp * cos(2.0_dp * PI * z(i))) &
+        &     * (2.0_dp * PI * cos(2.0_dp * PI * z(i)))
+    end do
+
+    half_bw = FDorder / 2
+    max_err = 0.0_dp
+    do i = half_bw + 1, N - half_bw
+      if (abs(result(i) - exact(i)) > max_err) then
+        max_err = abs(result(i) - exact(i))
+      end if
+    end do
+
+    deallocate(z, u, a, exact, result, D2, D1)
+  end subroutine compute_varcoeff_d2_error
+
+  subroutine compute_varcoeff_convergence_rate(FDorder, obs_rate)
+    integer, intent(in) :: FDorder
+    real(kind=dp), intent(out) :: obs_rate
+
+    integer, parameter :: nlevels = 6
+    integer :: N_vals(nlevels)
+    real(kind=dp) :: errors(nlevels), dz
+    integer :: lev
+
+    N_vals = [21, 41, 81, 161, 321, 641]
+
+    do lev = 1, nlevels
+      dz = 1.0_dp / real(N_vals(lev) - 1, kind=dp)
+      call compute_varcoeff_d2_error(N_vals(lev), dz, FDorder, errors(lev))
+    end do
+
+    block
+      real(kind=dp) :: rate, best_rate
+      integer :: nvalid
+      nvalid = 0
+      best_rate = 0.0_dp
+      do lev = 1, nlevels - 1
+        if (errors(lev) > errors(lev + 1)) then
+          rate = log(errors(lev) / errors(lev + 1)) / log(2.0_dp)
+          nvalid = nvalid + 1
+          if (rate > best_rate) best_rate = rate
+        end if
+      end do
+      if (nvalid > 0) then
+        obs_rate = best_rate
+      else
+        obs_rate = -1.0_dp
+      end if
+    end block
+  end subroutine compute_varcoeff_convergence_rate
+
+  subroutine compute_interp_convergence_rate(FDorder, obs_rate)
+    ! Test half-point interpolation convergence
+    integer, intent(in) :: FDorder
+    real(kind=dp), intent(out) :: obs_rate
+
+    integer, parameter :: nlevels = 6
+    integer :: N_vals(nlevels), lev, N, i, half_bw
+    real(kind=dp) :: errors(nlevels), dz, max_err
+    real(kind=dp), allocatable :: z(:), f(:), f_half(:), exact_half(:)
+
+    N_vals = [21, 41, 81, 161, 321, 641]
+
+    do lev = 1, nlevels
+      N = N_vals(lev)
+      dz = 1.0_dp / real(N - 1, kind=dp)
+      allocate(z(N), f(N), f_half(N-1), exact_half(N-1))
+      do i = 1, N
+        z(i) = real(i - 1, kind=dp) * dz
+        f(i) = sin(2.0_dp * PI * z(i))
+      end do
+      call interpolateToHalfPoints(f, N, FDorder, f_half)
+      do i = 1, N - 1
+        exact_half(i) = sin(2.0_dp * PI * (z(i) + 0.5_dp * dz))
+      end do
+
+      max_err = 0.0_dp
+      half_bw = FDorder / 2
+      do i = half_bw + 1, N - half_bw - 1
+        if (abs(f_half(i) - exact_half(i)) > max_err) then
+          max_err = abs(f_half(i) - exact_half(i))
+        end if
+      end do
+      errors(lev) = max_err
+      deallocate(z, f, f_half, exact_half)
+    end do
+
+    block
+      real(kind=dp) :: rate, best_rate
+      integer :: nvalid
+      nvalid = 0
+      best_rate = 0.0_dp
+      do lev = 1, nlevels - 1
+        if (errors(lev) > errors(lev + 1)) then
+          rate = log(errors(lev) / errors(lev + 1)) / log(2.0_dp)
+          nvalid = nvalid + 1
+          if (rate > best_rate) best_rate = rate
+        end if
+      end do
+      if (nvalid > 0) then
+        obs_rate = best_rate
+      else
+        obs_rate = -1.0_dp
+      end if
+    end block
+  end subroutine compute_interp_convergence_rate
+
+  ! --- Constant-coefficient 2nd derivative tests ---
+
+  @test
+  subroutine test_d2_order2_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_convergence_rate(2, 2, obs_rate)
+    @assertTrue(abs(obs_rate - 2.0_dp) < rate_tolerance(2))
+  end subroutine test_d2_order2_convergence
+
+  @test
+  subroutine test_d2_order4_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_convergence_rate(4, 2, obs_rate)
+    @assertTrue(abs(obs_rate - 4.0_dp) < rate_tolerance(4))
+  end subroutine test_d2_order4_convergence
+
+  @test
+  subroutine test_d2_order6_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_convergence_rate(6, 2, obs_rate)
+    @assertTrue(abs(obs_rate - 6.0_dp) < rate_tolerance(6))
+  end subroutine test_d2_order6_convergence
+
+  @test
+  subroutine test_d2_order8_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_convergence_rate(8, 2, obs_rate)
+    @assertTrue(abs(obs_rate - 8.0_dp) < rate_tolerance(8))
+  end subroutine test_d2_order8_convergence
+
+  @test
+  subroutine test_d2_order10_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_convergence_rate(10, 2, obs_rate)
+    @assertTrue(abs(obs_rate - 10.0_dp) < rate_tolerance(10))
+  end subroutine test_d2_order10_convergence
+
+  ! --- Constant-coefficient 1st derivative tests ---
+
+  @test
+  subroutine test_d1_order2_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_convergence_rate(2, 1, obs_rate)
+    @assertTrue(abs(obs_rate - 2.0_dp) < rate_tolerance(2))
+  end subroutine test_d1_order2_convergence
+
+  @test
+  subroutine test_d1_order4_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_convergence_rate(4, 1, obs_rate)
+    @assertTrue(abs(obs_rate - 4.0_dp) < rate_tolerance(4))
+  end subroutine test_d1_order4_convergence
+
+  @test
+  subroutine test_d1_order6_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_convergence_rate(6, 1, obs_rate)
+    @assertTrue(abs(obs_rate - 6.0_dp) < rate_tolerance(6))
+  end subroutine test_d1_order6_convergence
+
+  @test
+  subroutine test_d1_order8_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_convergence_rate(8, 1, obs_rate)
+    @assertTrue(abs(obs_rate - 8.0_dp) < rate_tolerance(8))
+  end subroutine test_d1_order8_convergence
+
+  @test
+  subroutine test_d1_order10_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_convergence_rate(10, 1, obs_rate)
+    @assertTrue(abs(obs_rate - 10.0_dp) < rate_tolerance(10))
+  end subroutine test_d1_order10_convergence
+
+  ! --- Interpolation convergence tests ---
+
+  @test
+  subroutine test_interp_order6_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_interp_convergence_rate(6, obs_rate)
+    @assertTrue(abs(obs_rate - 7.0_dp) < rate_tolerance(6))
+  end subroutine test_interp_order6_convergence
+
+  @test
+  subroutine test_interp_order8_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_interp_convergence_rate(8, obs_rate)
+    @assertTrue(abs(obs_rate - 9.0_dp) < rate_tolerance(8))
+  end subroutine test_interp_order8_convergence
+
+  @test
+  subroutine test_interp_order10_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_interp_convergence_rate(10, obs_rate)
+    @assertTrue(abs(obs_rate - 11.0_dp) < rate_tolerance(10))
+  end subroutine test_interp_order10_convergence
+
+  ! --- Variable-coefficient 2nd derivative tests ---
+
+  @test
+  subroutine test_varcoeff_d2_order2_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_varcoeff_convergence_rate(2, obs_rate)
+    @assertTrue(abs(obs_rate - 2.0_dp) < rate_tolerance(2))
+  end subroutine test_varcoeff_d2_order2_convergence
+
+  @test
+  subroutine test_varcoeff_d2_order4_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_varcoeff_convergence_rate(4, obs_rate)
+    @assertTrue(abs(obs_rate - 4.0_dp) < rate_tolerance(4))
+  end subroutine test_varcoeff_d2_order4_convergence
+
+  @test
+  subroutine test_varcoeff_d2_order6_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_varcoeff_convergence_rate(6, obs_rate)
+    @assertTrue(abs(obs_rate - 6.0_dp) < rate_tolerance(6))
+  end subroutine test_varcoeff_d2_order6_convergence
+
+  @test
+  subroutine test_varcoeff_d2_order8_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_varcoeff_convergence_rate(8, obs_rate)
+    @assertTrue(abs(obs_rate - 8.0_dp) < rate_tolerance(8))
+  end subroutine test_varcoeff_d2_order8_convergence
+
+  @test
+  subroutine test_varcoeff_d2_order10_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_varcoeff_convergence_rate(10, obs_rate)
+    @assertTrue(abs(obs_rate - 10.0_dp) < rate_tolerance(10))
+  end subroutine test_varcoeff_d2_order10_convergence
+
+  ! --- Legacy API 2nd-derivative tests ---
+
+  @test
+  subroutine test_legacy_d2_order2_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_legacy_convergence_rate(2, 2, obs_rate)
+    @assertTrue(abs(obs_rate - 2.0_dp) < rate_tolerance(2))
+  end subroutine test_legacy_d2_order2_convergence
+
+  @test
+  subroutine test_legacy_d2_order4_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_legacy_convergence_rate(2, 4, obs_rate)
+    @assertTrue(abs(obs_rate - 4.0_dp) < rate_tolerance(4))
+  end subroutine test_legacy_d2_order4_convergence
+
+  @test
+  subroutine test_legacy_d2_order6_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_legacy_convergence_rate(2, 6, obs_rate)
+    @assertTrue(abs(obs_rate - 6.0_dp) < rate_tolerance(6))
+  end subroutine test_legacy_d2_order6_convergence
+
+  @test
+  subroutine test_legacy_d2_order8_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_legacy_convergence_rate(2, 8, obs_rate)
+    @assertTrue(abs(obs_rate - 8.0_dp) < rate_tolerance(8))
+  end subroutine test_legacy_d2_order8_convergence
+
+  @test
+  subroutine test_legacy_d2_order10_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_legacy_convergence_rate(2, 10, obs_rate)
+    @assertTrue(abs(obs_rate - 10.0_dp) < rate_tolerance(10))
+  end subroutine test_legacy_d2_order10_convergence
+
+  ! --- Legacy API 1st-derivative tests ---
+  ! Legacy FDstencil only implements 1st-derivative at orders 2 and 8.
+  ! Orders 4, 6, 10 silently return zero vector — known gap, not tested.
+
+  @test
+  subroutine test_legacy_d1_order2_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_legacy_convergence_rate(1, 2, obs_rate)
+    @assertTrue(abs(obs_rate - 2.0_dp) < rate_tolerance(2))
+  end subroutine test_legacy_d1_order2_convergence
+
+  @test
+  subroutine test_legacy_d1_order8_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_legacy_convergence_rate(1, 8, obs_rate)
+    @assertTrue(abs(obs_rate - 8.0_dp) < rate_tolerance(8))
+  end subroutine test_legacy_d1_order8_convergence
+
+end module test_fd_convergence
