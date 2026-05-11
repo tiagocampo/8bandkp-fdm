@@ -841,7 +841,7 @@ contains
 
     ! Cleanup
     call csr_free(H_csr)
-    do ij = 1, 17
+    do ij = 1, size(kpterms_2d)
       call csr_free(kpterms_2d(ij))
     end do
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
