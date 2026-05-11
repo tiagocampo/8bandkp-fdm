@@ -129,7 +129,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
   <- parameters.f90           (material parameter database for 25+ semiconductors)
   <- mkl_spblas.f90           (vendor: Intel MKL sparse BLAS interface)
        <- utils.f90           (dense-to-sparse conversion, Simpson integration)
-            <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices)
+            <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices, Vandermonde derivative and interpolation solvers)
                  <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian, commutator velocity matrices)
                       <- hamiltonian_wire.f90     (2D wire Hamiltonian, CSR assembly, wire geometry)
                       <- gfactor_functions.f90  (Lowdin partitioning, spin/momentum matrix elements)
@@ -202,6 +202,10 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - k-vectors and wavevector sweeps use `real(dp)` throughout
 - File/function length guidelines: 300 lines/file, 50 lines/function
 - Prioritize: Correctness > Maintainability > Readability > Type-Exactness > Performance > Minimal
+
+## Knowledge Store
+
+`docs/solutions/` contains documented solutions to past problems, organized by category (`logic-errors/`, `best-practices/`, `workflow/`, `patterns/`). Each doc has YAML frontmatter with `module`, `tags`, `problem_type`, and `component` fields for searchability. Search this directory before implementing features, debugging issues, or modifying FD operators — learnings cover bugs, convergence testing methodology, and workflow patterns.
 
 ## Git Workflow
 
