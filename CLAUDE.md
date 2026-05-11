@@ -184,6 +184,10 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - File/function length guidelines from `.clinerules`: 300 lines/file, 50 lines/function
 - Prioritize: Correctness > Maintainability > Readability > Type-Exactness > Performance > Minimal
 
+## Knowledge Store
+
+`docs/solutions/` contains documented solutions to past problems, organized by category (`logic-errors/`, `best-practices/`, `workflow/`, `patterns/`). Each doc has YAML frontmatter with `module`, `tags`, `problem_type`, and `component` fields for searchability. Search this directory before implementing features, debugging issues, or modifying FD operators — learnings cover bugs, convergence testing methodology, and workflow patterns.
+
 ## Git Workflow
 
 - **Branch naming:** `feature/<description>`, `fix/<description>`
