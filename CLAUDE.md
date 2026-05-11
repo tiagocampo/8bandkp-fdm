@@ -40,11 +40,12 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all tests (30 unit + 40 regression/verification)
+ctest --test-dir build                    # all tests (~82: 30 unit + 39 regression + 11 verification + 2 coverage)
 ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
 ctest --test-dir build -L verification    # 8-band verification ladder (4 rungs)
+ctest --test-dir build -L standard-star   # standard-star physics benchmarks (S1-S7)
 ctest --test-dir build -V                 # verbose output
 
 # With OpenMP threading for QW k-point sweeps:
@@ -53,7 +54,7 @@ OMP_NUM_THREADS=12 ctest --test-dir build -j4 --output-on-failure
 
 pFUnit installs as **uppercase `PFUNIT`** — use `-DPFUNIT_DIR=.../PFUNIT-<ver>/cmake`. Built from source: `git clone https://github.com/Goddard-Fortran-Ecosystem/pFUnit`.
 
-Regression tests use shell scripts + Python (`tests/regression/compare_output.py`) comparing numerical output against reference data. No extra dependencies beyond Python 3.
+Regression tests use shell scripts + Python (`tests/regression/compare_output.py`) comparing numerical output against reference data. Python dependencies: PyYAML for coverage matrix tool; numpy for standard-star/verification scripts.
 
 ## Running
 
@@ -79,6 +80,17 @@ OMP_NUM_THREADS=12 ctest --test-dir build --output-on-failure
 
 Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed examples in the canonical order documented in `docs/reference/input-reference.md`; optional block entry labels are name-aware (`optics:`, `exciton:`, `scattering:`, `feast_emin:`, `strain:`), but parameters inside each block still follow the documented sequence.
 
+**Lecture-test pair scripts:** 14 Python scripts in `scripts/` (`lecture_00_quickstart.py` through `lecture_13_topological.py`) serve dual roles as pedagogical companions and integration tests. Each runs a Fortran executable, validates physics results, generates overlay plots, and prints PASS/FAIL per section. Run individually: `python3 scripts/lecture_01_bulk.py`. Shared infrastructure: `tests/integration/star_helpers.py` (physical constants, `run_exe`, parse helpers).
+
+**Validation Coverage Matrix:** The `coverage` ctest label runs a cross-reference between declared physics observables and test annotations. Run with `ctest --test-dir build -L coverage`. The universe file `tests/integration/validation_universe.yml` declares cells with `(observable, geometry, material, tier)`. Test files carry annotations in the format:
+
+```
+# COVERAGE: observable=Eg geometry=bulk material=GaAs ref=Vurgaftman2001
+# COVERAGE: observable=m*_e geometry=bulk material=InAs
+```
+
+Convention: new tests should include `# COVERAGE:` annotations so the matrix can track physics coverage. Shell scripts delegating to `verify_*.py` scripts should place annotations in the verifier, not the wrapper. Test dependency: PyYAML (`pip install pyyaml`) is required for the coverage matrix tool.
+
 ## Architecture
 
 ### Directory structure
@@ -97,11 +109,11 @@ tests/
   regression/   configs/, data/, compare_output.py
 cmake/        FindFFTW3.cmake
 build/        .o, .mod, executables (created by cmake)
-scripts/      gnuplot plotting scripts
+scripts/      lecture_*.py executable lecture-companion scripts (L00-L13) + generate_all_figures.py
 docs/solutions/  documented solutions to past problems (bugs, best practices, patterns), organized by category with YAML frontmatter (module, tags, problem_type)
 ```
 
-### Three executables
+### Four executables
 
 | Executable | Entry Point | Purpose |
 |---|---|---|
@@ -126,7 +138,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
                  <- poisson.f90           (box-integration Poisson solver, Thomas algorithm)
                  <- charge_density.f90    (n(z), p(z) from k.p eigenstates + k_∥ sampling)
                       <- sc_loop.f90           (self-consistent SP loop, linear + DIIS mixing)
-  <- scattering_solver       (phonon scattering rates, used by main.f90)
+  <- scattering.f90          (phonon scattering rates, used by main.f90)
   <- outputFunctions.f90      (eigenvalue/eigenfunction file I/O)
   <- input_parser.f90         (shared input.cfg parser → simulation_config type)
 ```
@@ -137,14 +149,15 @@ defs.f90                      (kinds, constants, derived types — no deps)
 - **Dual mode**: `confinement=0` → bulk (8x8), `confinement=1` → quantum well (8N x 8N, N = FDstep)
 - **QW Hamiltonian**: 8x8 block matrix, each block NxN. Blocks: k.p terms (Q, R, S, T, P) + band offsets
 - **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it
-- **`confinementInitialization`** precomputes material parameters at each z-point into `kpterms(fdStep, fdStep, 10)`
+- **`confinementInitialization`** precomputes material parameters at each z-point into `kpterms(ny, ny, 10)`
+- **Last-layer-wins** in `confinement_init.f90`: later material layers overwrite earlier ones. Use 2-layer pattern (barrier covers full domain, well overwrites center). Avoid full-domain layers after a narrow well layer — they silently destroy the QW.
 - **Sparse vs dense**: g-factor uses MKL SpBLAS for large QW; band structure uses dense LAPACK (`zheevx`)
 - **Wire g-factor velocity operator**: commutator-based `build_velocity_matrices` computes $v_\alpha = -i [r_\alpha, H]$ element-wise on CSR. Generic interface dispatches to `_2d` (wire, 4 scalar CSR args) or `_1d` (QW, 3-element CSR array). For QW: z-velocity from commutator, in-plane from `ZB8bandQW(g='g')`. g='g3' still used for z-direction in wire. Old g='g1'/'g2' modes are dead code.
 - **Optical properties**: standalone `opticalProperties` executable computes absorption, gain, spontaneous emission, and ISBT spectra for bulk (8x8, spherical 3D k-integration), QW (dense, 2D cylindrical), and wire (CSR/FEAST, 1D kz-sweep). All use commutator-based velocity matrices via CSR SpMV + zdotc pattern. Unified accumulation framework in `optical_spectra.f90` shares velocity matrices across all quantities; only the occupation factor differs. Spin-resolved spectra via Clebsch-Gordan projection in `spin_projection.f90`.
 - **Foreman renormalization**: disabled by default (`renormalization = .False.` in defs.f90)
-- **Topological analysis**: standalone `topologicalAnalysis` executable supports QHE (Chern number via QWZ model), QSHE (Z2 invariant via BHZ wire or Fu-Kane), and BdG (Majorana modes in superconducting wire). Uses `topology:` and `bdg:` input blocks. Chern number via Fukui-Hatsugai-Suzuki algorithm; Z2 via gap criterion in 1D or parity method in 2D. BdG builds 16N x 16N Nambu-space Hamiltonian with s-wave pairing and Zeeman splitting. LDOS computed via complex PARDISO. Design doc: `docs/plans/2026-04-27-bdg-topological-superconductivity-design.md`
+- **Topological analysis**: standalone `topologicalAnalysis` executable supports QHE (Chern number via QWZ model), QSHE (Z2 invariant via BHZ wire or Fu-Kane), and BdG (Majorana modes in superconducting wire). Uses `topology:` and `bdg:` input blocks. Chern number via Fukui-Hatsugai-Suzuki algorithm; Z2 via gap criterion in 1D or parity method in 2D. BdG builds 16N x 16N Nambu-space Hamiltonian with s-wave pairing and Zeeman splitting. LDOS computed via complex PARDISO. Design doc: `docs/plans/archive/2026-04-27-bdg-topological-superconductivity-design.md`
 - **W-variant materials** (GaAsW, InAsW, etc.): use Winkler's parameter set with InSb as EV reference. Non-W materials use Vurgaftman parameters. EC = EV + Eg convention for all materials with EV defined
-- **Self-consistent SP**: iterative Schrödinger-Poisson loop wraps the eigenvalue solve. Modifies `profile` array before Hamiltonian construction (same interface as `externalFieldSetup_electricField`). Linear mixing warm-up + DIIS/Pulay acceleration. Works for bulk (Fermi level finder) and QW (full SP). Per-layer doping (`doping_spec`), charge neutrality or fixed Fermi level, box-integration Poisson with variable dielectric. Design doc: `docs/plans/2026-03-29-self-consistent-sp-design.md`
+- **Self-consistent SP**: iterative Schrödinger-Poisson loop wraps the eigenvalue solve. Modifies `profile` array before Hamiltonian construction (same interface as `externalFieldSetup_electricField`). Linear mixing warm-up + DIIS/Pulay acceleration. Works for bulk (Fermi level finder) and QW (full SP). Per-layer doping (`doping_spec`), charge neutrality or fixed Fermi level, box-integration Poisson with variable dielectric. Design doc: `docs/plans/archive/2026-03-29-self-consistent-sp-design.md`
 
 ### Input file (`input.cfg`)
 
@@ -187,7 +200,7 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - Scalar `pure` functions upgraded to `elemental pure`: `kronij`, `fermi_dirac`, `flat_idx`, `wire_flat_idx`, `compute_bp_scalar`, `segment_circle_fraction`.
 - Precision kinds in `defs.f90`: `sp` (real32), `dp` (real64), `qp` (real128), `iknd` (int32) — aliased from `iso_fortran_env`
 - k-vectors and wavevector sweeps use `real(dp)` throughout
-- File/function length guidelines from `.clinerules`: 300 lines/file, 50 lines/function
+- File/function length guidelines: 300 lines/file, 50 lines/function
 - Prioritize: Correctness > Maintainability > Readability > Type-Exactness > Performance > Minimal
 
 ## Git Workflow
