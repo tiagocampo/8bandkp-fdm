@@ -40,7 +40,7 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all tests (15 unit + 24 regression)
+ctest --test-dir build                    # all tests (16 unit + 24 regression)
 ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
@@ -89,7 +89,7 @@ src/
   physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90
 tests/
-  unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_hamiltonian_2d, test_csr_spmv, test_eigensolver, test_poisson, test_charge_density, test_sc_loop, test_geometry, test_optical, test_optical_qw, test_strain_solver)
+  unit/       pFUnit .pf test files (test_defs, test_finitedifferences, test_utils, test_parameters, test_hamiltonian, test_hamiltonian_2d, test_csr_spmv, test_eigensolver, test_poisson, test_charge_density, test_sc_loop, test_geometry, test_optical, test_optical_qw, test_strain_solver, test_fd_convergence)
   integration/  shell scripts for full-executable tests
   regression/   configs/, data/, compare_output.py
 cmake/        FindFFTW3.cmake
@@ -112,7 +112,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
   <- parameters.f90           (material parameter database for 25+ semiconductors)
   <- mkl_spblas.f90           (vendor: Intel MKL sparse BLAS interface)
        <- utils.f90           (dense-to-sparse conversion, Simpson integration)
-            <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices)
+            <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices, Vandermonde derivative and interpolation solvers)
                  <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian, commutator velocity matrices)
                       <- hamiltonian_wire.f90     (2D wire Hamiltonian, CSR assembly, wire geometry)
                       <- gfactor_functions.f90  (Lowdin partitioning, spin/momentum matrix elements)

@@ -48,9 +48,10 @@ contains
     deallocate(z, f, exact, numerical, D)
   end subroutine compute_interior_error
 
-  subroutine compute_convergence_rate(FDorder, deriv_order, obs_rate)
+  subroutine compute_convergence_rate(FDorder, deriv_order, obs_rate, finest_rate)
     integer, intent(in) :: FDorder, deriv_order
     real(kind=dp), intent(out) :: obs_rate
+    real(kind=dp), intent(out), optional :: finest_rate
 
     integer, parameter :: nlevels = 6
     integer :: N_vals(nlevels)
@@ -83,6 +84,14 @@ contains
         obs_rate = best_rate
       else
         obs_rate = -1.0_dp
+      end if
+
+      if (present(finest_rate)) then
+        if (errors(nlevels - 1) > errors(nlevels)) then
+          finest_rate = log(errors(nlevels - 1) / errors(nlevels)) / log(2.0_dp)
+        else
+          finest_rate = -1.0_dp
+        end if
       end if
     end block
   end subroutine compute_convergence_rate
@@ -327,16 +336,18 @@ contains
 
   @test
   subroutine test_d2_order2_convergence()
-    real(kind=dp) :: obs_rate
-    call compute_convergence_rate(2, 2, obs_rate)
+    real(kind=dp) :: obs_rate, finest
+    call compute_convergence_rate(2, 2, obs_rate, finest_rate=finest)
     @assertTrue(abs(obs_rate - 2.0_dp) < rate_tolerance(2))
+    @assertTrue(finest > 1.5_dp)
   end subroutine test_d2_order2_convergence
 
   @test
   subroutine test_d2_order4_convergence()
-    real(kind=dp) :: obs_rate
-    call compute_convergence_rate(4, 2, obs_rate)
+    real(kind=dp) :: obs_rate, finest
+    call compute_convergence_rate(4, 2, obs_rate, finest_rate=finest)
     @assertTrue(abs(obs_rate - 4.0_dp) < rate_tolerance(4))
+    @assertTrue(finest > 3.5_dp)
   end subroutine test_d2_order4_convergence
 
   @test
@@ -364,16 +375,18 @@ contains
 
   @test
   subroutine test_d1_order2_convergence()
-    real(kind=dp) :: obs_rate
-    call compute_convergence_rate(2, 1, obs_rate)
+    real(kind=dp) :: obs_rate, finest
+    call compute_convergence_rate(2, 1, obs_rate, finest_rate=finest)
     @assertTrue(abs(obs_rate - 2.0_dp) < rate_tolerance(2))
+    @assertTrue(finest > 1.5_dp)
   end subroutine test_d1_order2_convergence
 
   @test
   subroutine test_d1_order4_convergence()
-    real(kind=dp) :: obs_rate
-    call compute_convergence_rate(4, 1, obs_rate)
+    real(kind=dp) :: obs_rate, finest
+    call compute_convergence_rate(4, 1, obs_rate, finest_rate=finest)
     @assertTrue(abs(obs_rate - 4.0_dp) < rate_tolerance(4))
+    @assertTrue(finest > 3.5_dp)
   end subroutine test_d1_order4_convergence
 
   @test
@@ -398,6 +411,20 @@ contains
   end subroutine test_d1_order10_convergence
 
   ! --- Interpolation convergence tests ---
+
+  @test
+  subroutine test_interp_order2_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_interp_convergence_rate(2, obs_rate)
+    @assertTrue(abs(obs_rate - 2.0_dp) < rate_tolerance(2))
+  end subroutine test_interp_order2_convergence
+
+  @test
+  subroutine test_interp_order4_convergence()
+    real(kind=dp) :: obs_rate
+    call compute_interp_convergence_rate(4, obs_rate)
+    @assertTrue(abs(obs_rate - 4.0_dp) < rate_tolerance(4))
+  end subroutine test_interp_order4_convergence
 
   @test
   subroutine test_interp_order6_convergence()

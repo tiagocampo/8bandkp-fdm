@@ -877,7 +877,10 @@ module finitedifferences
     !> For FDorder=2:  g_half(j) = (g_j + g_{j+1}) / 2  (2nd-order)
     !> For FDorder=4:  interior uses 4th-order Lagrange interpolation at x=1/2:
     !>   g_half(j) = (-g_{j-1} + 9*g_j + 9*g_{j+1} - g_{j+2}) / 16
-    !> For boundary half-points: falls back to 2nd-order averaging.
+    !> For FDorder>=6: interior uses Vandermonde-derived interpolation with
+    !>   FDorder+1 stencil points, achieving O(h^{FDorder+1}) accuracy.
+    !> Near-boundary points use one-sided Vandermonde stencils.
+    !> Boundary half-points (j=1, j=N-1): fall back to 2nd-order averaging.
     !---------------------------------------------------------------------------
     subroutine interpolateToHalfPoints(profile_vec, N, FDorder, g_half)
       integer, intent(in) :: N, FDorder
