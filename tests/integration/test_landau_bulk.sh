@@ -1,4 +1,6 @@
 #!/bin/bash
+# COVERAGE: observable=landau_levels geometry=bulk material=GaAs
+# COVERAGE: observable=landau_levels geometry=bulk material=InAs
 # Integration test: Landau mode (confinement=3) bulk band structure regression
 # Args: <bandStructure_exe> <config_file> <ref_data_dir> <compare_script>
 set -euo pipefail

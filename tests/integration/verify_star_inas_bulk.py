@@ -17,6 +17,9 @@ Usage: verify_star_inas_bulk.py <build_dir> <source_dir>
   source_dir -- path to repo root (contains tests/regression/configs/)
 """
 
+# COVERAGE: observable=Eg geometry=bulk material=InAs ref=Vurgaftman2001
+# COVERAGE: observable=m*_e geometry=bulk material=InAs ref=Kane
+# COVERAGE: observable=g*_cb geometry=bulk material=InAsW ref=Winkler2003
 import os
 import shutil
 import sys

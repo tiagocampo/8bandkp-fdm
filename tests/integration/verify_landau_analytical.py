@@ -7,6 +7,8 @@ Runs bandStructure with the given config, parses eigenvalues at k=0,
 and checks that the lowest CB Landau levels match the analytical
 cyclotron energy spacing. Also validates ky degeneracy.
 """
+# COVERAGE: observable=landau_levels geometry=bulk material=GaAs
+# COVERAGE: observable=landau_levels geometry=bulk material=InAs
 import subprocess
 import sys
 import os

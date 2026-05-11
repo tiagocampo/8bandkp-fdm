@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# COVERAGE: observable=ISBT geometry=QW material=GaAs/AlGaAs
 from __future__ import annotations
 
 import sys

@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=CB_ground_state geometry=wire material=GaAs
 # Integration test: wire band structure regression
 # Args: <bandStructure_exe> <config_file> <ref_data_dir> <compare_script>
 set -euo pipefail

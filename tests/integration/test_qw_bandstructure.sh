@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=E_sub geometry=QW material=AlSbW/GaSbW/InAsW
 # Integration test: quantum well band structure regression
 # Args: <bandStructure_exe> <config_file> <ref_data_dir> <compare_script>
 set -euo pipefail

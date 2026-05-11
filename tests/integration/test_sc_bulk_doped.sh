@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=fermi_level geometry=bulk material=GaAs
 # Integration test: Self-consistent bulk doped GaAs benchmark
 # Tests SC convergence for uniformly n-doped GaAs (no barriers = bulk-like).
 # Validates that the Fermi level converges and eigenvalues match reference.

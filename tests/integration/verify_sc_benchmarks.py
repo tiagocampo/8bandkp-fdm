@@ -8,6 +8,7 @@ Checks that the SC loop converges and produces physically reasonable results:
 
 Usage: verify_sc_benchmarks.py <test_output.log> <eigenvalues.dat> <config_file>
 """
+# COVERAGE: observable=SC_convergence geometry=QW material=GaAs/AlGaAs
 import sys
 import math
 

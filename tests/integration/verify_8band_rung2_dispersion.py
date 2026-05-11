@@ -17,6 +17,10 @@ Usage: verify_8band_rung2_dispersion.py <build_dir> <test_dir>
 
 Requirements covered: R6, R7, R8, R9 (revised v2).
 """
+# COVERAGE: observable=m*_e geometry=bulk material=GaAs ref=Kane
+# COVERAGE: observable=m*_e geometry=bulk material=InAs ref=Kane
+# COVERAGE: observable=m*_e geometry=bulk material=InSb ref=Kane
+# COVERAGE: observable=m*_e geometry=bulk material=GaSb ref=Kane
 import sys
 import os
 import tempfile

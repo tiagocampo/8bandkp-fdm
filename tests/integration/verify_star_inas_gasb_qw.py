@@ -38,6 +38,8 @@ Usage: verify_star_inas_gasb_qw.py <build_dir> <source_dir>
   source_dir -- path to repo root (contains tests/regression/configs/)
 """
 
+# COVERAGE: observable=g*_cb geometry=QW material=InAsW/GaSbW ref=Winkler2003
+# COVERAGE: observable=band_overlap geometry=QW material=InAsW/GaSbW
 import os
 import shutil
 import sys

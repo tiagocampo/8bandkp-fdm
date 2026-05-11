@@ -13,6 +13,8 @@ Usage: verify_8band_rung4_wire.py <build_dir> <test_dir>
   build_dir  -- path to build/ directory containing src/bandStructure executable
   test_dir   -- path to tests/ directory containing regression/configs/
 """
+# COVERAGE: observable=CB_ground_state geometry=wire material=GaAs
+# COVERAGE: observable=dense_sparse_agreement geometry=wire material=GaAs
 import sys
 import os
 import subprocess

@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=z2_invariant geometry=QW
 # Integration test: QW Fu-Kane Z2 invariant path
 # Args: <topologicalAnalysis_exe> <config_file>
 set -euo pipefail

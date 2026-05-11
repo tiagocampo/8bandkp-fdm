@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=SC_convergence geometry=QW material=GaAs/AlGaAs
 # Integration test: self-consistent QW band structure regression
 # Args: <bandStructure_exe> <config_file> <ref_data_dir> <compare_script>
 set -euo pipefail

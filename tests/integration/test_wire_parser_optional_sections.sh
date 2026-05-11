@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=CB_ground_state geometry=wire material=GaAs
 # Integration test: optional optics/exciton/scattering sections must not
 # consume subsequent FEAST or strain settings in wire configs.
 #

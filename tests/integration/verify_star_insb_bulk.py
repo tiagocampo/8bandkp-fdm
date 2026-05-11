@@ -22,6 +22,10 @@ Usage: verify_star_insb_bulk.py <build_dir> <source_dir>
   source_dir -- path to repo root (contains tests/regression/configs/)
 """
 
+# COVERAGE: observable=Eg geometry=bulk material=InSb ref=Vurgaftman2001
+# COVERAGE: observable=Delta_SO geometry=bulk material=InSb ref=Vurgaftman2001
+# COVERAGE: observable=m*_e geometry=bulk material=InSb ref=Kane
+# COVERAGE: observable=g*_cb geometry=bulk material=InSb ref=Winkler2003
 import os
 import sys
 import tempfile

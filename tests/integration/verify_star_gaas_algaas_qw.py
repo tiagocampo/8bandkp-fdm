@@ -29,6 +29,9 @@ Usage: verify_star_gaas_algaas_qw.py <build_dir> <source_dir>
                 docs/benchmarks/)
 """
 
+# COVERAGE: observable=subband_spacing geometry=QW material=GaAs/AlGaAs
+# COVERAGE: observable=stark_shift geometry=QW material=GaAs/AlGaAs
+# COVERAGE: observable=absorption_polarization geometry=QW material=GaAs/AlGaAs
 import os
 import sys
 import tempfile

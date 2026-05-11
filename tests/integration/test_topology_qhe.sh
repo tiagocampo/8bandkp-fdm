@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=chern_number geometry=QW
 # Integration test: topological analysis QHE mode (Chern number)
 # Args: <topologicalAnalysis_exe> <config_file>
 set -euo pipefail

@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=rashba_phase geometry=QW
 # Integration test: Rashba wire phase boundary regression
 # Tests the BdG Hamiltonian for Majorana mode existence at the topological transition
 # Parameters: InAs wire, mu=0.1 meV, Delta=0.1 meV, B=2.0 T

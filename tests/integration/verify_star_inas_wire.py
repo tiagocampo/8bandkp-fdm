@@ -25,6 +25,8 @@ Usage: verify_star_inas_wire.py <build_dir> <source_dir>
   source_dir -- path to repo root (contains tests/regression/configs/)
 """
 
+# COVERAGE: observable=g*_cb geometry=wire material=InAs ref=Winkler2003
+# COVERAGE: observable=CB_ground_state geometry=wire material=InAs
 import os
 import shutil
 import sys

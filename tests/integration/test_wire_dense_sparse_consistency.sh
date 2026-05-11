@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=dense_sparse_agreement geometry=wire material=GaAs
 # Integration test: reduced wire repro should produce identical eigenvalue
 # ordering for dense fallback and FEAST once branch tracking is deterministic.
 # Args: <bandStructure_exe> <dense_config> <sparse_config>

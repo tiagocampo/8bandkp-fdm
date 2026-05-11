@@ -810,3 +810,13 @@ set_tests_properties(
     PROPERTIES LABELS "standard-star;verification"
               TIMEOUT 600
 )
+
+# Validation coverage matrix — cross-checks universe file vs test annotations
+add_test(
+    NAME coverage_matrix
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/coverage_matrix.py
+        --source-dir ${CMAKE_SOURCE_DIR}
+        --output ${CMAKE_BINARY_DIR}/coverage_report.md
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(coverage_matrix PROPERTIES LABELS "coverage" TIMEOUT 120)

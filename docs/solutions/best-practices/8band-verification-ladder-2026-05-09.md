@@ -17,7 +17,7 @@ tags: [verification, effective-mass, kane-model, non-parabolicity, bulk, qw, wir
 
 ## Context
 
-The 8-band zinc-blende k.p code had 24 regression tests comparing output against
+The 8-band zinc-blende k.p code had ~25 regression tests comparing output against
 golden files, but coverage was uneven and undocumented. When a test failed, the
 developer had to manually trace whether the error was in parameters, Hamiltonian
 construction, FD stencils, confinement, or sparse assembly. The verification
@@ -83,8 +83,8 @@ Use numerical differentiation at the first nonzero k-point, not a polynomial
 fit over many points:
 
 ```python
-d2E_dk2 = 2.0 * (E(k1) - E(0)) / k1**2
-m_star = hbar2_over_2m0 / d2E_dk2   # hbar2_over_2m0 = 3.81 eV*A^2
+c2 = (E(k1) - E(0)) / k1**2         # k^2 coefficient of E(k)
+m_star = hbar2_over_2m0 / c2        # hbar2_over_2m0 = 3.80998 eV*A^2
 ```
 
 This gives the true k->0 parabolic limit without contamination from

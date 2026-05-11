@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=z2_invariant geometry=QW
 # Integration test: topological sweep mode.
 # Args: <topologicalAnalysis_exe> <config_file> <expected_model>
 set -euo pipefail

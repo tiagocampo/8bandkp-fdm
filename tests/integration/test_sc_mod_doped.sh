@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=SC_convergence geometry=QW material=GaAs/AlGaAs
 # Integration test: Modulation-doped AlAs/GaAs/AlAs QW self-consistent calculation
 # Tests SC convergence with charge neutrality (fermi_mode=0) and spatial doping
 set -euo pipefail

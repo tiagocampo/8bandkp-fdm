@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=chern_number geometry=QW
 # Integration test: QWZ Chern number regression
 # Tests the QWZ model at three values of the mass parameter u:
 #   u=-0.8 -> C=+1 (topological, for u < -2)

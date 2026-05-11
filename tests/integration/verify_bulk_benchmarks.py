@@ -17,6 +17,12 @@ Supported materials:
 Tolerance: 1% (8-band k.p with Vurgaftman params reproduces these exactly
 at k=0 because the Hamiltonian diagonal contains the parameterized gaps).
 """
+# COVERAGE: observable=Eg geometry=bulk material=GaAs ref=Vurgaftman2001
+# COVERAGE: observable=Delta_SO geometry=bulk material=GaAs ref=Vurgaftman2001
+# COVERAGE: observable=m*_e geometry=bulk material=GaAs ref=Kane
+# COVERAGE: observable=Eg geometry=bulk material=InAs ref=Vurgaftman2001
+# COVERAGE: observable=Delta_SO geometry=bulk material=InAs ref=Vurgaftman2001
+# COVERAGE: observable=m*_e geometry=bulk material=InAs ref=Kane
 import sys
 import math
 

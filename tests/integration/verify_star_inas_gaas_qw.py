@@ -30,6 +30,9 @@ Usage: verify_star_inas_gaas_qw.py <build_dir> <source_dir>
   source_dir -- path to repo root (contains tests/regression/configs/)
 """
 
+# COVERAGE: observable=HH_LH_splitting geometry=QW material=InAs/GaAs ref=Vurgaftman2001
+# COVERAGE: observable=subband_spacing geometry=QW material=InAs/GaAs
+# COVERAGE: observable=g*_cb geometry=QW material=InAs/GaAs ref=Winkler2003
 import os
 import sys
 import tempfile

@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=z2_invariant geometry=QW
 # Integration test: BHZ Z2 invariant regression
 # Tests the BHZ wire model for trivial (Z2=0) and topological (Z2=1) phases
 #

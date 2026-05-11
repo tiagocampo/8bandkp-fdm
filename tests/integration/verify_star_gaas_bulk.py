@@ -17,6 +17,11 @@ Cross-reference with verification ladder:
 Usage: verify_star_gaas_bulk.py <build_dir> <source_dir>
 """
 
+# COVERAGE: observable=Eg geometry=bulk material=GaAs ref=Vurgaftman2001
+# COVERAGE: observable=Delta_SO geometry=bulk material=GaAs ref=Vurgaftman2001
+# COVERAGE: observable=m*_e geometry=bulk material=GaAs ref=Kane
+# COVERAGE: observable=g*_cb geometry=bulk material=GaAs ref=Winkler2003
+# COVERAGE: observable=absorption_edge geometry=bulk material=GaAs ref=Vurgaftman2001
 import os
 import sys
 import tempfile

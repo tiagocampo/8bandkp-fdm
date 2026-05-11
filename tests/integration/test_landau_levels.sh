@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=landau_levels geometry=bulk material=InAs
 # Integration test: Zeeman splitting for InAs at B=5T
 # Verifies conduction band eigenvalues show correct Zeeman splitting
 # Delta_E = 2 * g_factor * mu_B * B where mu_B = 5.788e-5 eV/T

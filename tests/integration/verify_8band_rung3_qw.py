@@ -12,6 +12,8 @@ Requirements tested:
   R13: Subband ordering and Kramers degeneracy at k=0
 """
 
+# COVERAGE: observable=subband_spacing geometry=QW material=GaAs/AlGaAs
+# COVERAGE: observable=band_overlap geometry=QW material=InAsW/GaSbW
 import os
 import sys
 import shutil

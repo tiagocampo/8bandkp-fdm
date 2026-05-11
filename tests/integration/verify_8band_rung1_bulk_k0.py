@@ -18,6 +18,16 @@ The script discovers configs named bulk_<material>_k0.cfg in
 in a temporary directory.
 """
 
+# COVERAGE: observable=Eg geometry=bulk material=GaAs ref=Vurgaftman2001
+# COVERAGE: observable=Delta_SO geometry=bulk material=GaAs ref=Vurgaftman2001
+# COVERAGE: observable=Eg geometry=bulk material=InAs ref=Vurgaftman2001
+# COVERAGE: observable=Delta_SO geometry=bulk material=InAs ref=Vurgaftman2001
+# COVERAGE: observable=Eg geometry=bulk material=InSb ref=Vurgaftman2001
+# COVERAGE: observable=Delta_SO geometry=bulk material=InSb ref=Vurgaftman2001
+# COVERAGE: observable=Eg geometry=bulk material=GaSb ref=Vurgaftman2001
+# COVERAGE: observable=Delta_SO geometry=bulk material=GaSb ref=Vurgaftman2001
+# COVERAGE: observable=Eg geometry=bulk material=GaSbW ref=Winkler2003
+# COVERAGE: observable=Delta_SO geometry=bulk material=GaSbW ref=Winkler2003
 import os
 import sys
 import tempfile

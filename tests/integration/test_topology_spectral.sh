@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=ldos geometry=QW
 # Integration test: topological spectral mode
 # Args: <topologicalAnalysis_exe> <config_file> <require_nonzero>
 set -euo pipefail

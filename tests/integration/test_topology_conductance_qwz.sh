@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=conductance geometry=QW
 # Integration test: QWZ conductance mode
 # Args: <topologicalAnalysis_exe> <config_file>
 set -euo pipefail
