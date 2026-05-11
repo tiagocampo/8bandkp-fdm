@@ -536,7 +536,7 @@ contains
 
     if (eigen_res_local%nev_found == 0) then
       print *, 'Warning: auto-window retry also found no eigenvalues'
-      result%min_gap = 0.0_dp
+      result%min_gap = -1.0_dp
     else
       allocate(eigvals_bdg(eigen_res_local%nev_found))
       eigvals_bdg = eigen_res_local%eigenvalues

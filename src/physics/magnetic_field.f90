@@ -55,6 +55,12 @@ contains
     !   kz -> kz - e*Bx*y/hbar  (phase factor e^(ieA.z/hbar))
     ! Only affects off-diagonal entries (hopping terms between sites).
     !
+    ! NOTE: For multi-column wires (nx > 1) with Bx != 0, this applies
+    ! phases to transverse y-direction hops which have zero z-displacement
+    ! in this gauge. The correct approach is a position-dependent kz shift
+    ! in Hamiltonian assembly. Single-column wires (nx = 1) are unaffected
+    ! since y_i = y_j for all entries.
+    !
     ! Operates on the main complex COO array so that full complex phase
     ! factors are preserved (unlike the old version which discarded the
     ! imaginary part by storing into a real array).
