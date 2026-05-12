@@ -320,6 +320,31 @@ cells:
     material: InAs
     tier: required
 
+  # ── Strain validation ──────────────────────────────────────────
+  - observable: strain_shift
+    geometry: bulk
+    material: InAs/GaAs
+    tier: required
+    reference: Vurgaftman2001
+
+  - observable: HH_LH_splitting
+    geometry: bulk
+    material: InAs/GaAs
+    tier: required
+    reference: Vurgaftman2001
+
+  - observable: strain_shift
+    geometry: QW
+    material: InAs/GaAs
+    tier: required
+    reference: Bastard1981
+
+  - observable: strain_shift
+    geometry: wire
+    material: InAs/GaAs-core-shell
+    tier: required
+    reference: biaxial_analytical
+
   # ── Aspirational cells (known gaps) ─────────────────────────
   - observable: m*_hh
     geometry: bulk

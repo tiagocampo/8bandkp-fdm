@@ -755,6 +755,39 @@ set_tests_properties(
     PROPERTIES LABELS "verification"
 )
 
+# --- Strain Verification (Rungs 5-6) ---
+add_test(
+    NAME verification_rung5_strain_bulk
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_strain_rung5_bulk.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME verification_rung6_strain_qw
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_strain_rung6_qw.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_rung5_strain_bulk verification_rung6_strain_qw
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
+# --- Wire Strain Validation ---
+add_test(
+    NAME strain_validation_wire
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_strain_wire_profile.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    strain_validation_wire
+    PROPERTIES LABELS "strain-validation" TIMEOUT 600
+)
+
 # --- Standard-Star Benchmarks (S1-S7) ---
 # Physics validation against published literature observables.
 # Each test runs the Fortran executables and compares against analytical
