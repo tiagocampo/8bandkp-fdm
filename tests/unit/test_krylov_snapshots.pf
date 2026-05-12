@@ -231,4 +231,176 @@ contains
     call grid_free(grid)
   end subroutine test_snapshot_bdg
 
+  ! ==================================================================
+  ! SC loop wire: ZB8bandGeneralized with SC enabled (3x3 GaAs)
+  ! ==================================================================
+  @test
+  subroutine test_snapshot_sc_loop()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ntot, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: seed(:), vectors(:,:)
+    logical :: pass
+
+    call init_sc_loop_ref_n72_k6()
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    cfg%sc%enabled = 1
+
+    call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
+
+    allocate(seed(ntot))
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+    call krylov_chain(H_csr, seed, K_CHAIN, vectors)
+
+    pass = krylov_compare(vectors, sc_loop_ref_n72_k6, TOL)
+    @assertTrue(pass, message="SC loop wire Krylov snapshot matches reference")
+
+    deallocate(seed, vectors)
+    call csr_free(H_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_snapshot_sc_loop
+
+  ! ==================================================================
+  ! Optics wire: ZB8bandGeneralized (3x3 GaAs)
+  ! ==================================================================
+  @test
+  subroutine test_snapshot_optics_wire()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ntot, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: seed(:), vectors(:,:)
+    logical :: pass
+
+    call init_optics_wire_ref_n72_k6()
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
+
+    allocate(seed(ntot))
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+    call krylov_chain(H_csr, seed, K_CHAIN, vectors)
+
+    pass = krylov_compare(vectors, optics_wire_ref_n72_k6, TOL)
+    @assertTrue(pass, message="optics wire Krylov snapshot matches reference")
+
+    deallocate(seed, vectors)
+    call csr_free(H_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_snapshot_optics_wire
+
+  ! ==================================================================
+  ! Gfactor wire: ZB8bandGeneralized (3x3 GaAs)
+  ! ==================================================================
+  @test
+  subroutine test_snapshot_gfactor_wire()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ntot, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: seed(:), vectors(:,:)
+    logical :: pass
+
+    call init_gfactor_wire_ref_n72_k6()
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
+
+    allocate(seed(ntot))
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+    call krylov_chain(H_csr, seed, K_CHAIN, vectors)
+
+    pass = krylov_compare(vectors, gfactor_wire_ref_n72_k6, TOL)
+    @assertTrue(pass, message="gfactor wire Krylov snapshot matches reference")
+
+    deallocate(seed, vectors)
+    call csr_free(H_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_snapshot_gfactor_wire
+
 end module test_krylov_snapshots

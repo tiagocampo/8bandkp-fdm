@@ -19,13 +19,17 @@ program generate_krylov_reference
 
   integer, parameter :: K_CHAIN = 5
   complex(kind=dp), allocatable :: wire_vecs(:,:), peierls_vecs(:,:), &
-    bhz_vecs(:,:), bdg_vecs(:,:)
+    bhz_vecs(:,:), bdg_vecs(:,:), sc_loop_vecs(:,:), optics_wire_vecs(:,:), &
+    gfactor_wire_vecs(:,:)
 
   ! Compute all reference vectors
   call compute_wire(wire_vecs)
   call compute_wire_peierls(peierls_vecs)
   call compute_bhz(bhz_vecs)
   call compute_bdg(bdg_vecs)
+  call compute_sc_loop(sc_loop_vecs)
+  call compute_optics_wire(optics_wire_vecs)
+  call compute_gfactor_wire(gfactor_wire_vecs)
 
   ! Output declarations
   print '(a)', 'module krylov_reference_data'
@@ -43,6 +47,9 @@ program generate_krylov_reference
   call write_declaration('wire_peierls_ref', peierls_vecs)
   call write_declaration('bhz_ref', bhz_vecs)
   call write_declaration('bdg_ref', bdg_vecs)
+  call write_declaration('sc_loop_ref', sc_loop_vecs)
+  call write_declaration('optics_wire_ref', optics_wire_vecs)
+  call write_declaration('gfactor_wire_ref', gfactor_wire_vecs)
 
   print '(a)', ''
   print '(a)', 'contains'
@@ -55,10 +62,17 @@ program generate_krylov_reference
   call write_init_routine('bhz_ref', bhz_vecs)
   print '(a)', ''
   call write_init_routine('bdg_ref', bdg_vecs)
+  print '(a)', ''
+  call write_init_routine('sc_loop_ref', sc_loop_vecs)
+  print '(a)', ''
+  call write_init_routine('optics_wire_ref', optics_wire_vecs)
+  print '(a)', ''
+  call write_init_routine('gfactor_wire_ref', gfactor_wire_vecs)
 
   print '(a)', 'end module krylov_reference_data'
 
-  deallocate(wire_vecs, peierls_vecs, bhz_vecs, bdg_vecs)
+  deallocate(wire_vecs, peierls_vecs, bhz_vecs, bdg_vecs, &
+    sc_loop_vecs, optics_wire_vecs, gfactor_wire_vecs)
 
 contains
 
@@ -290,5 +304,154 @@ contains
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
     call grid_free(grid)
   end subroutine compute_bdg
+
+  subroutine compute_sc_loop(vecs)
+    ! SC loop path: wire Hamiltonian with SC enabled (snapshot BEFORE iteration).
+    ! Same CSR assembly as wire, but cfg%SC = .true. to exercise SC path.
+    complex(kind=dp), allocatable, intent(out) :: vecs(:,:)
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ntot, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: seed(:)
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    cfg%sc%enabled = 1
+
+    call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
+
+    allocate(seed(ntot))
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+    call krylov_chain(H_csr, seed, K_CHAIN, vecs)
+
+    deallocate(seed)
+    call csr_free(H_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine compute_sc_loop
+
+  subroutine compute_optics_wire(vecs)
+    ! Optics wire path: wire Hamiltonian used by optical spectra code.
+    complex(kind=dp), allocatable, intent(out) :: vecs(:,:)
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ntot, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: seed(:)
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
+
+    allocate(seed(ntot))
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+    call krylov_chain(H_csr, seed, K_CHAIN, vecs)
+
+    deallocate(seed)
+    call csr_free(H_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine compute_optics_wire
+
+  subroutine compute_gfactor_wire(vecs)
+    ! Gfactor wire path: wire Hamiltonian used by g-factor code.
+    complex(kind=dp), allocatable, intent(out) :: vecs(:,:)
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, ntot, ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: seed(:)
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+
+    call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
+
+    allocate(seed(ntot))
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+    call krylov_chain(H_csr, seed, K_CHAIN, vecs)
+
+    deallocate(seed)
+    call csr_free(H_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine compute_gfactor_wire
 
 end program generate_krylov_reference
