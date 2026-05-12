@@ -46,6 +46,7 @@ ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
 ctest --test-dir build -L verification    # 8-band verification ladder (4 rungs)
 ctest --test-dir build -L standard-star   # standard-star physics benchmarks (S1-S7)
+ctest --test-dir build -L strain-validation  # strain validation (bulk/QW/wire InAs/GaAs)
 ctest --test-dir build -V                 # verbose output
 
 # With OpenMP threading for QW k-point sweeps:

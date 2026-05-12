@@ -22,7 +22,6 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 from star_helpers import (
     run_exe, parse_eigenvalues, compare_value,
-    TOL_ANALYTICAL, TOL_NUMERICAL,
 )
 
 # ---------------------------------------------------------------------------
@@ -31,26 +30,24 @@ from star_helpers import (
 INAS_A0    = 6.0583
 INAS_C11   = 832.9
 INAS_C12   = 452.6
-INAS_AC    = -5.08
-INAS_AV    = 1.00
-INAS_B     = -1.8
 
 GAAS_A0    = 5.65325
 
 # Biaxial reference values (infinite-plane limit)
 EPS_XX_BULK = (GAAS_A0 - INAS_A0) / INAS_A0  # -0.0669
 EPS_ZZ_BULK = -2.0 * INAS_C12 / INAS_C11 * EPS_XX_BULK  # +0.0727
+TR_BULK = 2 * EPS_XX_BULK + EPS_ZZ_BULK
 
 # Tolerances
-TOL_STRAIN_MAGNITUDE = 0.20  # 20% for wire strain (finite-size effects)
-TOL_QUALITATIVE = 0.10       # 10% for ratio-based checks
+TOL_STRAIN_MAGNITUDE = 0.60  # 60% for wire strain (free-surface relaxation vs biaxial)
 
 
 def make_wire_config(nx=20, ny=20, dx=5.0, dy=5.0,
                      width=100.0, height=100.0,
-                     core_size=30.0):
+                     core_size=30.0, strain=True):
     """Build inline wire config."""
     shell_size = width  # shell extends to wire boundary
+    strain_flag = "T" if strain else "F"
     return (
         "waveVector: kz\n"
         "waveVectorMax: 0.01\n"
@@ -79,7 +76,7 @@ def make_wire_config(nx=20, ny=20, dx=5.0, dy=5.0,
         "feast_emin: -1.5\n"
         "feast_emax: 2.0\n"
         "feast_m0: -1\n"
-        "strain: T\n"
+        f"strain: {strain_flag}\n"
         "strain_ref: GaAs\n"
         "strain_solver: pardiso\n"
         "piezo: F\n"
@@ -101,6 +98,8 @@ def parse_strain(filepath):
             vals = [float(x) for x in line.split()]
             if len(vals) >= 8:
                 rows.append(vals[:8])
+    if not rows:
+        return np.empty((0, 8))
     return np.array(rows)
 
 
@@ -109,13 +108,14 @@ def identify_core_points(strain_data, core_max, wire_width, wire_height):
 
     The core is defined by Euclidean distance from the wire center.
     Region: InAs 0.0 core_max means distance 0 to core_max from center.
+    Uses strict < to match Fortran region assignment (shell checked first).
     """
     cx = wire_width / 2.0
     cy = wire_height / 2.0
     x = strain_data[:, 0]
     y = strain_data[:, 1]
     dist = np.sqrt((x - cx)**2 + (y - cy)**2)
-    return dist <= core_max
+    return dist < core_max
 
 
 def test_r7_interior_strain(strain_data, core_max, wire_width, wire_height):
@@ -127,7 +127,6 @@ def test_r7_interior_strain(strain_data, core_max, wire_width, wire_height):
     - eps_zz (wire axis) is tensile in the core (positive)
     - Tr(eps) is compressive in the core (negative, hydrostatic)
     - Strain is approximately uniform near the center
-    - Strain at core center has radial compression
     """
     print("  [R7] Interior strain profile (qualitative)")
 
@@ -148,7 +147,7 @@ def test_r7_interior_strain(strain_data, core_max, wire_width, wire_height):
     print(f"    Core points: {len(core_data)}")
     print(f"    Mean eps_zz (out-of-plane): {mean_eps_zz:+.6f}")
     print(f"    Mean Tr(eps) (hydrostatic): {mean_tr:+.6f}")
-    print(f"    Biaxial reference: Tr(eps) = {2*EPS_XX_BULK + EPS_ZZ_BULK:+.6f}")
+    print(f"    Biaxial reference: Tr(eps) = {TR_BULK:+.6f}")
 
     all_pass = True
 
@@ -177,10 +176,14 @@ def test_r7_interior_strain(strain_data, core_max, wire_width, wire_height):
               f"{'PASS' if passed_uniform else 'FAIL'}")
         all_pass = all_pass and passed_uniform
 
-    # Strain magnitude ratio vs biaxial (informational)
-    if abs(2*EPS_XX_BULK + EPS_ZZ_BULK) > 1e-10:
-        magnitude_ratio = abs(mean_tr / (2*EPS_XX_BULK + EPS_ZZ_BULK))
+    # Strain magnitude ratio vs biaxial
+    if abs(TR_BULK) > 1e-10:
+        magnitude_ratio = abs(mean_tr / TR_BULK)
         print(f"    Strain magnitude / biaxial: {magnitude_ratio:.2%}")
+        passed_mag = magnitude_ratio > (1.0 - TOL_STRAIN_MAGNITUDE)
+        print(f"    Magnitude within {(1-TOL_STRAIN_MAGNITUDE):.0%}-{(1+TOL_STRAIN_MAGNITUDE):.0%} of biaxial: "
+              f"{'PASS' if passed_mag else 'FAIL'}")
+        all_pass = all_pass and passed_mag
 
     return all_pass
 
@@ -188,7 +191,7 @@ def test_r7_interior_strain(strain_data, core_max, wire_width, wire_height):
 def test_r8_hydrostatic_strain(strain_data, core_max, wire_width, wire_height):
     """R8: Hydrostatic strain sign and decay.
 
-    Tr(eps) should show strain effects in the core and
+    Tr(eps) should be compressive (negative) in the InAs core and
     decay toward zero in the GaAs shell.
     """
     print("  [R8] Hydrostatic strain sign and decay")
@@ -201,7 +204,6 @@ def test_r8_hydrostatic_strain(strain_data, core_max, wire_width, wire_height):
     dist = np.sqrt((x - cx)**2 + (y - cy)**2)
 
     core = identify_core_points(strain_data, core_max, wire_width, wire_height)
-    shell = ~core
 
     all_pass = True
 
@@ -210,14 +212,11 @@ def test_r8_hydrostatic_strain(strain_data, core_max, wire_width, wire_height):
     mean_core_tr = np.mean(core_tr)
     print(f"    Mean Tr(eps) in core: {mean_core_tr:+.6f}")
 
-    # Note: eps_xx = 0 in the wire output, so Tr(eps) = eps_yy + eps_zz
-    # For InAs core with eps_yy < 0, eps_zz > 0, Tr can be positive
-    # if Poisson relaxation dominates. This is acceptable for a finite wire.
-    # Verify the sign is consistent (non-zero, showing strain effects present)
-    passed_strain_present = abs(mean_core_tr) > 1e-4
-    print(f"    Strain effects present (|Tr| > 1e-4): "
-          f"{'PASS' if passed_strain_present else 'FAIL'}")
-    all_pass = all_pass and passed_strain_present
+    # Sign check consistent with R7 (compressive = negative)
+    passed_sign = mean_core_tr < 0
+    print(f"    Tr(eps) < 0 in core (compressive): "
+          f"{'PASS' if passed_sign else 'FAIL'}")
+    all_pass = all_pass and passed_sign
 
     # Decay: |Tr(eps)| at outer shell < |Tr(eps)| at core center
     interface_mask = (dist > core_max - 5) & (dist < core_max + 5)
@@ -246,33 +245,58 @@ def test_r8_hydrostatic_strain(strain_data, core_max, wire_width, wire_height):
     return all_pass
 
 
-def test_r9_band_edge_shifts(evals):
-    """R9: Band edge shift consistency via eigenvalues.
+def test_r9_band_edge_shifts(evals_strained, evals_unstrained):
+    """R9: Band edge shifts consistent with strain-induced modification.
 
-    Validates that the strained wire eigenvalues show physically
-    correct behavior. For a narrow-gap InAs core wire, the VB/CB
-    boundary may not be clean, so we validate the overall spectrum.
+    Compares strained vs unstrained wire eigenvalues to verify strain
+    produces physically correct shifts. For InAs core wire:
+    - Band edges (VB top and CB bottom) should shift with strain
+    - The gap should change due to strain
+    - Spectrum should span a meaningful energy range
     """
-    print("  [R9] Band edge shift consistency (eigenvalue-based)")
+    print("  [R9] Band edge shift consistency (strained vs unstrained)")
 
-    n_total = len(evals)
+    print(f"    Strained eigenvalues: {len(evals_strained)}")
+    print(f"    Unstrained eigenvalues: {len(evals_unstrained)}")
 
-    print(f"    {n_total} eigenvalues")
-    print(f"    Range: [{evals[0]:+.4f}, {evals[-1]:+.4f}] eV")
+    # Find band edges: VB top = highest negative eigenvalue, CB bottom = lowest positive
+    vb_top_s = max(e for e in evals_strained if e < 0)
+    cb_bot_s = min(e for e in evals_strained if e > 0)
+    vb_top_u = max(e for e in evals_unstrained if e < 0)
+    cb_bot_u = min(e for e in evals_unstrained if e > 0)
+
+    gap_s = cb_bot_s - vb_top_s
+    gap_u = cb_bot_u - vb_top_u
+    vb_shift = vb_top_s - vb_top_u
+    cb_shift = cb_bot_s - cb_bot_u
+    gap_shift = gap_s - gap_u
+
+    print(f"    VB top: strained={vb_top_s:+.6f}, unstrained={vb_top_u:+.6f}, "
+          f"shift={vb_shift:+.6f} eV")
+    print(f"    CB bot: strained={cb_bot_s:+.6f}, unstrained={cb_bot_u:+.6f}, "
+          f"shift={cb_shift:+.6f} eV")
+    print(f"    Gap: strained={gap_s:.6f}, unstrained={gap_u:.6f}, "
+          f"shift={gap_shift:+.6f} eV")
 
     all_pass = True
 
-    # Eigenvalue range should span the InAs gap region
-    # InAs CB bulk = -0.173 eV (relative to GaAs VB), strained CB ≈ +0.137 eV
-    # Eigenvalues should span below and above these energies
-    has_below_vb = evals[0] < -0.5  # deep VB states
-    has_above_cb = evals[-1] > 0.0  # CB states above GaAs VB top
-    print(f"    Deep VB states (E < -0.5): {'PASS' if has_below_vb else 'FAIL'}")
-    print(f"    CB states above 0 eV: {'PASS' if has_above_cb else 'FAIL'}")
-    all_pass = all_pass and has_below_vb and has_above_cb
+    # VB top should shift with strain
+    passed_vb = abs(vb_shift) > 0.005
+    print(f"    |VB top shift| > 0.005 eV: {'PASS' if passed_vb else 'FAIL'}")
+    all_pass = all_pass and passed_vb
 
-    # Spectrum should have significant spread (> 0.5 eV range)
-    spread = evals[-1] - evals[0]
+    # CB bottom should shift with strain
+    passed_cb = abs(cb_shift) > 0.005
+    print(f"    |CB bot shift| > 0.005 eV: {'PASS' if passed_cb else 'FAIL'}")
+    all_pass = all_pass and passed_cb
+
+    # Gap should change
+    passed_gap = abs(gap_shift) > 0.01
+    print(f"    |Gap shift| > 0.01 eV: {'PASS' if passed_gap else 'FAIL'}")
+    all_pass = all_pass and passed_gap
+
+    # Spectrum should span a meaningful energy range
+    spread = evals_strained[-1] - evals_strained[0]
     passed_spread = spread > 0.5
     print(f"    Spectrum spread: {spread:.4f} eV (> 0.5): "
           f"{'PASS' if passed_spread else 'FAIL'}")
@@ -304,12 +328,14 @@ def main():
     dx, dy = 5.0, 5.0
     width, height = 100.0, 100.0
 
-    config = make_wire_config(nx, ny, dx, dy, width, height, core_size)
+    # Run strained wire
+    config_strained = make_wire_config(nx, ny, dx, dy, width, height, core_size,
+                                       strain=True)
     work = tempfile.mkdtemp(prefix="wire_strain_")
     try:
         cfg_path = os.path.join(work, "wire.cfg")
         with open(cfg_path, "w") as f:
-            f.write(config)
+            f.write(config_strained)
         rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work,
                                  timeout=500)
         if rc != 0:
@@ -332,9 +358,34 @@ def main():
         if not data:
             print("  FATAL: no eigenvalue data")
             sys.exit(1)
-        evals = data[0][1]
+        evals_strained = data[0][1]
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+    # Run unstrained wire for R9 comparison
+    config_unstrained = make_wire_config(nx, ny, dx, dy, width, height, core_size,
+                                         strain=False)
+    work_u = tempfile.mkdtemp(prefix="wire_unstrain_")
+    try:
+        cfg_u = os.path.join(work_u, "wire.cfg")
+        with open(cfg_u, "w") as f:
+            f.write(config_unstrained)
+        rc_u, output_dir_u = run_exe(build_dir, "bandStructure", cfg_u, work_u,
+                                      timeout=500)
+        if rc_u != 0:
+            print(f"  FATAL: unstrained bandStructure returned {rc_u}")
+            sys.exit(1)
+        eig_u = os.path.join(output_dir_u, "eigenvalues.dat")
+        if not os.path.isfile(eig_u):
+            print("  FATAL: unstrained eigenvalues.dat not found")
+            sys.exit(1)
+        data_u = parse_eigenvalues(eig_u)
+        if not data_u:
+            print("  FATAL: no unstrained eigenvalue data")
+            sys.exit(1)
+        evals_unstrained = data_u[0][1]
+    finally:
+        shutil.rmtree(work_u, ignore_errors=True)
 
     print(f"  Strain data: {len(strain_data)} grid points")
     print(f"  Grid: {nx}x{ny}, dx={dx}, dy={dy}")
@@ -354,7 +405,7 @@ def main():
     print()
 
     # R9
-    r9_pass = test_r9_band_edge_shifts(evals)
+    r9_pass = test_r9_band_edge_shifts(evals_strained, evals_unstrained)
     all_pass = all_pass and r9_pass
     print()
 

@@ -18,12 +18,10 @@ import shutil
 import sys
 import tempfile
 
-import numpy as np
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 from star_helpers import (
     run_exe, parse_eigenvalues, compare_value,
-    TOL_EXACT, TOL_ANALYTICAL, TOL_NUMERICAL,
+    bir_pikus_biaxial_001,
 )
 
 # ---------------------------------------------------------------------------
@@ -35,7 +33,6 @@ INAS_C12   = 452.6     # kbar
 INAS_AC    = -5.08     # eV
 INAS_AV    = 1.00      # eV
 INAS_B     = -1.8      # eV  (b_dp)
-INAS_D     = -3.6      # eV  (d_dp)
 INAS_EG    = 0.417     # eV
 INAS_DELTA = 0.390     # eV  (Delta_SO)
 
@@ -45,64 +42,6 @@ GAAS_A0_SUB = 5.65325  # Angstrom
 # Tolerances
 TOL_STRAIN = 0.01      # 1% for analytical Bir-Pikus comparison
 TOL_ADDITIVE = 1e-5    # eigenvalue solver precision for additive check (CB, HH)
-
-
-def bir_pikus_bulk_inas(a0, a_sub, C11, C12, ac, av, b_dp, delta_so, Eg):
-    """Compute Bir-Pikus band-edge shifts for biaxial [001] strain.
-
-    Returns dict with all band-edge shifts in eV, including the LH-SO
-    coupled eigenvalues from the off-diagonal QT2 coupling.
-
-    Sign convention matches compute_bp_scalar in strain_solver.f90.
-    """
-    eps_xx = (a_sub - a0) / a0
-    eps_yy = eps_xx
-    eps_zz = -2.0 * C12 / C11 * eps_xx
-
-    Tr_eps = eps_xx + eps_yy + eps_zz
-    P_eps = -av * Tr_eps
-    Q_eps = b_dp / 2.0 * (eps_zz - 0.5 * (eps_xx + eps_yy))
-
-    delta_Ec  = ac * Tr_eps
-    delta_EHH = -P_eps + Q_eps
-    delta_ELH = -P_eps - Q_eps
-    delta_ESO = -P_eps
-
-    # LH-SO off-diagonal coupling
-    QT2 = 2.0 * Q_eps
-    coupling = QT2 / np.sqrt(2.0)
-
-    # Strained band edges (diagonal only, before LH-SO mixing)
-    E_SO_unstrained = -delta_so
-    E_HH_unstrained = 0.0
-    E_LH_unstrained = 0.0
-    E_CB_unstrained = Eg
-
-    E_HH_strained = E_HH_unstrained + delta_EHH
-    E_CB_strained = E_CB_unstrained + delta_Ec
-
-    # LH-SO coupled 2x2 system
-    a = E_LH_unstrained + delta_ELH
-    b = E_SO_unstrained + delta_ESO
-    c = abs(coupling)
-    mid = (a + b) / 2.0
-    half_diff = (a - b) / 2.0
-    root = np.sqrt(half_diff**2 + c**2)
-    E_LHSO_low  = mid - root
-    E_LHSO_high = mid + root
-
-    HH_LH_splitting = E_HH_strained - E_LHSO_high
-
-    return {
-        "eps_xx": eps_xx, "eps_yy": eps_yy, "eps_zz": eps_zz,
-        "Tr_eps": Tr_eps, "P_eps": P_eps, "Q_eps": Q_eps,
-        "delta_Ec": delta_Ec, "delta_EHH": delta_EHH,
-        "delta_ELH": delta_ELH, "delta_ESO": delta_ESO,
-        "E_CB": E_CB_strained, "E_HH": E_HH_strained,
-        "E_LHSO_low": E_LHSO_low, "E_LHSO_high": E_LHSO_high,
-        "HH_LH_splitting": HH_LH_splitting,
-        "QT2": QT2, "coupling": coupling,
-    }
 
 
 # Inline configs for InAs bulk
@@ -142,7 +81,6 @@ def run_with_config(build_dir, config_str, label):
     """Run bandStructure with an inline config string. Returns eigenvalues."""
     work = tempfile.mkdtemp(prefix=f"rung5_{label}_")
     try:
-        # Write to a staging name; run_exe copies src -> work_dir/input.cfg
         cfg_path = os.path.join(work, "strain.cfg")
         with open(cfg_path, "w") as f:
             f.write(config_str)
@@ -217,9 +155,6 @@ def test_r3_additive_modification(build_dir, bp):
 
     all_pass = True
 
-    # Unstrained (ascending): SO(0,1)=-Delta, HH/LH(2-5)=0.0, CB(6,7)=Eg
-    # Strained (ascending):   LHSO_low(0,1), HH(2,3), LHSO_high(4,5), CB(6,7)
-
     # CB: no LH-SO mixing, shift should be exact (both at index 6)
     cb_shift = evals_strained[6] - evals_unref[6]
     expected_cb = bp["delta_Ec"]
@@ -280,8 +215,10 @@ def main():
     print()
 
     # Compute analytical reference values
-    bp = bir_pikus_bulk_inas(INAS_A0, GAAS_A0_SUB, INAS_C11, INAS_C12,
-                              INAS_AC, INAS_AV, INAS_B, INAS_DELTA, INAS_EG)
+    bp = bir_pikus_biaxial_001(
+        INAS_A0, GAAS_A0_SUB, INAS_C11, INAS_C12,
+        INAS_AC, INAS_AV, INAS_B, INAS_DELTA, INAS_EG,
+    )
 
     print(f"  InAs a0 = {INAS_A0} A, GaAs substrate a_sub = {GAAS_A0_SUB} A")
     print(f"  eps_xx = eps_yy = {bp['eps_xx']:.6f}")

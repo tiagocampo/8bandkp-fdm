@@ -11,51 +11,34 @@ Usage:
 """
 
 # COVERAGE: observable=strain_shift geometry=QW material=InAs/GaAs ref=Bastard1981
-# COVERAGE: observable=HH_LH_splitting geometry=QW material=InAs/GaAs ref=Vurgaftman2001
+# COVERAGE: observable=HH_LH_splitting geometry=QW material=InAs/GaAs ref=qualitative
 
 import os
 import shutil
 import sys
 import tempfile
 
-import numpy as np
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 from star_helpers import (
     run_exe, parse_eigenvalues, compare_value,
-    TOL_ANALYTICAL, TOL_NUMERICAL,
 )
 
 # ---------------------------------------------------------------------------
 # InAs/GaAs parameters (Vurgaftman 2001, parameters.f90)
 # ---------------------------------------------------------------------------
-# InAs
-INAS_A0      = 6.0583
-INAS_C11     = 832.9
-INAS_C12     = 452.6
-INAS_AC      = -5.08
-INAS_AV      = 1.00
-INAS_B       = -1.8
-INAS_EG      = 0.417
-INAS_DELTA   = 0.390
-INAS_EV      = -0.59     # InAs VB top relative to GaAs VB top
-INAS_EC      = -0.173    # InAs CB edge relative to GaAs VB top
-INAS_EP      = 21.5
-INAS_GAMMA1  = 20.0
-INAS_GAMMA2  = 8.5
+INAS_A0    = 6.0583
+INAS_C11   = 832.9
+INAS_C12   = 452.6
+INAS_AC    = -5.08
+INAS_AV    = 1.00
+INAS_B     = -1.8
+INAS_EV    = -0.59     # InAs VB top relative to GaAs VB top
+INAS_EC    = -0.173    # InAs CB edge relative to GaAs VB top
 
-# GaAs
-GAAS_A0      = 5.65325
-GAAS_EG      = 1.519
-
-# Physical constants
-HBAR2_OVER_2M0 = 3.80998  # eV * Angstrom^2
-
-# QW parameters
-QW_WIDTH     = 20.0      # Angstrom
+GAAS_A0    = 5.65325
+GAAS_EG    = 1.519
 
 # Tolerances
-TOL_BASTARD = 0.05    # 5% for Bastard comparison
 TOL_GRID    = 0.01    # 1% for grid convergence
 
 
@@ -115,17 +98,20 @@ def compute_strained_band_edges():
     eps_zz = -2.0 * INAS_C12 / INAS_C11 * eps_xx
     Tr_eps = 2 * eps_xx + eps_zz
 
-    delta_Ec  = INAS_AC * Tr_eps
-    delta_EHH = -(-INAS_AV * Tr_eps) + (INAS_B / 2.0) * (eps_zz - eps_xx)
-    delta_ELH = -(-INAS_AV * Tr_eps) - (INAS_B / 2.0) * (eps_zz - eps_xx)
+    P_eps = -INAS_AV * Tr_eps
+    Q_eps = INAS_B / 2.0 * (eps_zz - eps_xx)
 
-    # Band edges relative to GaAs VB top (= 0)
+    delta_Ec  = INAS_AC * Tr_eps
+    delta_EHH = -P_eps + Q_eps
+    delta_ELH = -P_eps - Q_eps
+
     E_CB_strained  = INAS_EC + delta_Ec
     E_HH_strained  = INAS_EV + delta_EHH
     E_LH_strained  = INAS_EV + delta_ELH
 
     return {
         "eps_xx": eps_xx, "eps_zz": eps_zz, "Tr_eps": Tr_eps,
+        "P_eps": P_eps, "Q_eps": Q_eps,
         "delta_Ec": delta_Ec, "delta_EHH": delta_EHH, "delta_ELH": delta_ELH,
         "E_CB": E_CB_strained, "E_HH": E_HH_strained, "E_LH": E_LH_strained,
     }
@@ -147,11 +133,9 @@ def test_r4a_subband_energies(evals, edges):
     # Identify subbands (VB: bands 0-7 ascending, CB: bands 8-11 ascending)
     e_e1  = evals[8]    # CB ground state (lowest CB)
     e_hh1 = evals[7]    # HH ground state (highest VB)
-    e_lh1 = evals[5]    # LH ground state (below HH1 in QW)
 
     E_CB  = edges["E_CB"]   # strained InAs CB edge
     E_HH  = edges["E_HH"]   # strained InAs HH edge
-    E_LH  = edges["E_LH"]   # strained InAs LH edge
     E_gap = E_CB - E_HH     # strained InAs gap
 
     cb_confinement = e_e1 - E_CB
@@ -203,11 +187,6 @@ def test_r5_hh_lh_splitting(evals, edges):
     """
     print("  [R5] HH-LH splitting in strained QW")
 
-    # VB eigenvalue structure (ascending, doubly degenerate):
-    #   bands 0-1: LHSO_low (deepest VB)
-    #   bands 2-3: LHSO_high
-    #   bands 4-5: LH1
-    #   bands 6-7: HH1 (top VB)
     e_hh1 = evals[7]   # HH ground state
     e_lh1 = evals[5]   # LH ground state
 

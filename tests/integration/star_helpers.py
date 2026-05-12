@@ -273,6 +273,87 @@ def extract_effective_mass(eig_path, cb_index=-1, r2_threshold=0.9999):
 
 
 # ---------------------------------------------------------------------------
+# Bir-Pikus strain formulas (biaxial [001])
+# ---------------------------------------------------------------------------
+
+def bir_pikus_biaxial_001(a0, a_sub, C11, C12, ac, av, b_dp,
+                          delta_so=0.341, Eg=1.519):
+    """Bir-Pikus band-edge shifts for biaxial [001] strain with LH-SO coupling.
+
+    Sign convention matches compute_bp_scalar in strain_solver.f90:
+      P_eps = -av * Tr(eps)
+      Q_eps = b_dp/2 * (eps_zz - 0.5*(eps_xx + eps_yy))
+      delta_Ec  = ac * Tr(eps)
+      delta_EHH = -P_eps + Q_eps
+      delta_ELH = -P_eps - Q_eps
+      delta_ESO = -P_eps
+
+    The LH-SO off-diagonal coupling QT2/sqrt(2) produces a 2x2 eigenvalue
+    problem. Under compressive strain (InAs on GaAs): LHSO_low < HH < LHSO_high < CB.
+    Under tensile strain (GaAs on larger substrate): LHSO_low < LHSO_high < HH < CB.
+
+    Args:
+        a0: film lattice constant (Angstrom)
+        a_sub: substrate lattice constant (Angstrom)
+        C11, C12: elastic constants (kbar)
+        ac: CB hydrostatic deformation potential (eV)
+        av: VB hydrostatic deformation potential (eV)
+        b_dp: shear deformation potential (eV)
+        delta_so: spin-orbit splitting (eV), default GaAs
+        Eg: band gap (eV), default GaAs
+
+    Returns:
+        dict with strain tensor, Bir-Pikus shifts, LH-SO coupled eigenvalues,
+        and strained band edges (all in eV unless noted).
+    """
+    eps_xx = (a_sub - a0) / a0
+    eps_yy = eps_xx
+    eps_zz = -2.0 * C12 / C11 * eps_xx
+
+    Tr_eps = eps_xx + eps_yy + eps_zz
+    P_eps = -av * Tr_eps
+    Q_eps = b_dp / 2.0 * (eps_zz - 0.5 * (eps_xx + eps_yy))
+
+    delta_Ec  = ac * Tr_eps
+    delta_EHH = -P_eps + Q_eps
+    delta_ELH = -P_eps - Q_eps
+    delta_ESO = -P_eps
+
+    # LH-SO off-diagonal coupling
+    QT2 = 2.0 * Q_eps
+    coupling = QT2 / np.sqrt(2.0)
+
+    E_SO_unstrained = -delta_so
+    E_CB_unstrained = Eg
+
+    E_HH_strained = delta_EHH
+    E_CB_strained = E_CB_unstrained + delta_Ec
+
+    # LH-SO coupled 2x2 system
+    a = delta_ELH           # E_LH unstrained (= 0) + shift
+    b = E_SO_unstrained + delta_ESO
+    c = abs(coupling)
+    mid = (a + b) / 2.0
+    half_diff = (a - b) / 2.0
+    root = np.sqrt(half_diff**2 + c**2)
+    E_LHSO_low  = mid - root
+    E_LHSO_high = mid + root
+
+    HH_LH_splitting = E_HH_strained - E_LHSO_high
+
+    return {
+        "eps_xx": eps_xx, "eps_yy": eps_yy, "eps_zz": eps_zz,
+        "Tr_eps": Tr_eps, "P_eps": P_eps, "Q_eps": Q_eps,
+        "delta_Ec": delta_Ec, "delta_EHH": delta_EHH,
+        "delta_ELH": delta_ELH, "delta_ESO": delta_ESO,
+        "E_CB": E_CB_strained, "E_HH": E_HH_strained,
+        "E_LHSO_low": E_LHSO_low, "E_LHSO_high": E_LHSO_high,
+        "HH_LH_splitting": HH_LH_splitting,
+        "QT2": QT2, "coupling": coupling,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Value comparison and benchmark formatting
 # ---------------------------------------------------------------------------
 

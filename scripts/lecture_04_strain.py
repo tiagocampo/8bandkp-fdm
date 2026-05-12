@@ -47,6 +47,7 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(REPO / "tests" / "integration"))
 from star_helpers import (
     run_exe, parse_eigenvalues, compare_value,
+    bir_pikus_biaxial_001,
     TOL_EXACT, TOL_ANALYTICAL, TOL_NUMERICAL,
 )
 
@@ -80,96 +81,7 @@ GAAS_DELTA_SO = 0.341   # eV, spin-orbit splitting
 A_SUBSTRATE = 5.869     # Angstrom
 
 
-# =========================================================================
-# Bir-Pikus analytical formulas
-# =========================================================================
-def bir_pikus_bulk(a0, a_sub, C11, C12, ac, av, b_dp, delta_so=0.341):
-    """Compute Bir-Pikus band-edge shifts for biaxial [001] strain.
-
-    For a film with lattice constant a0 grown on substrate a_sub:
-      eps_xx = eps_yy = (a_sub - a0) / a0    (in-plane biaxial)
-      eps_zz = -2 * C12/C11 * eps_xx          (Poisson relaxation along z)
-
-    Returns dict with all band-edge shifts in eV, including the LH-SO
-    coupled eigenvalues from the off-diagonal QT2 coupling.
-
-    Sign convention matches compute_bp_scalar in strain_solver.f90:
-      P_eps = -av * Tr(eps)
-      Q_eps = b_dp/2 * (eps_zz - 0.5*(eps_xx + eps_yy))
-      delta_Ec  = ac * Tr(eps)
-      delta_EHH = -P_eps + Q_eps
-      delta_ELH = -P_eps - Q_eps
-      delta_ESO = -P_eps
-
-    The LH and SO bands are coupled by QT2 = 2*Q_eps with coupling
-    constant QT2/sqrt(2) in the 8-band basis (apply_bp_strain_inline
-    in hamiltonianConstructor.f90). This produces a 2x2 eigenvalue
-    problem whose eigenvalues differ from the diagonal-only shifts.
-    """
-    eps_xx = (a_sub - a0) / a0
-    eps_yy = eps_xx
-    eps_zz = -2.0 * C12 / C11 * eps_xx
-
-    Tr_eps = eps_xx + eps_yy + eps_zz
-    P_eps = -av * Tr_eps
-    Q_eps = b_dp / 2.0 * (eps_zz - 0.5 * (eps_xx + eps_yy))
-
-    # Diagonal Bir-Pikus shifts
-    delta_Ec  = ac * Tr_eps
-    delta_EHH = -P_eps + Q_eps
-    delta_ELH = -P_eps - Q_eps
-    delta_ESO = -P_eps
-
-    # LH-SO off-diagonal coupling: QT2_eps = 2*Q_eps
-    # In the 8-band basis, the coupling constant is QT2/sqrt(2)
-    QT2 = 2.0 * Q_eps
-    coupling = QT2 / np.sqrt(2.0)
-
-    # Unstrained band edges (GaAs)
-    E_SO_unstrained = -delta_so
-    E_HH_unstrained = 0.0
-    E_LH_unstrained = 0.0
-    E_CB_unstrained = GAAS_EG
-
-    # Strained band edges (diagonal only, before LH-SO mixing)
-    E_HH_strained = E_HH_unstrained + delta_EHH
-    E_CB_strained = E_CB_unstrained + delta_Ec
-
-    # LH-SO coupled 2x2 system for each spin block:
-    #   | E_LH + dELH,    i*coupling  |
-    #   | -i*coupling,     E_SO + dESO |
-    a = E_LH_unstrained + delta_ELH
-    b = E_SO_unstrained + delta_ESO
-    c = abs(coupling)
-    mid = (a + b) / 2.0
-    half_diff = (a - b) / 2.0
-    root = np.sqrt(half_diff**2 + c**2)
-    E_LHSO_low  = mid - root   # lower LH-SO mixed state
-    E_LHSO_high = mid + root   # upper LH-SO mixed state
-
-    # HH-LH splitting using the upper LH-SO mixed state
-    # (HH is at the top of the VB, LH-SO_high is the next state)
-    HH_LH_splitting = E_HH_strained - E_LHSO_high
-
-    return {
-        "eps_xx": eps_xx,
-        "eps_yy": eps_yy,
-        "eps_zz": eps_zz,
-        "Tr_eps": Tr_eps,
-        "P_eps": P_eps,
-        "Q_eps": Q_eps,
-        "delta_Ec": delta_Ec,
-        "delta_EHH": delta_EHH,
-        "delta_ELH": delta_ELH,
-        "delta_ESO": delta_ESO,
-        "QT2": QT2,
-        "coupling": coupling,
-        "E_CB": E_CB_strained,
-        "E_HH": E_HH_strained,
-        "E_LHSO_low": E_LHSO_low,
-        "E_LHSO_high": E_LHSO_high,
-        "HH_LH_splitting": HH_LH_splitting,
-    }
+# Bir-Pikus analytical formulas are in star_helpers.bir_pikus_biaxial_001()
 
 
 def run_bandstructure(config_name, work_dir, config_overrides=None):
@@ -272,8 +184,9 @@ def test_strained_bir_pikus():
     print("=" * 60)
 
     # Compute analytical Bir-Pikus shifts
-    bp = bir_pikus_bulk(GAAS_A0, A_SUBSTRATE, GAAS_C11, GAAS_C12,
-                        GAAS_AC, GAAS_AV, GAAS_B)
+    bp = bir_pikus_biaxial_001(GAAS_A0, A_SUBSTRATE, GAAS_C11, GAAS_C12,
+                               GAAS_AC, GAAS_AV, GAAS_B,
+                               delta_so=GAAS_DELTA_SO, Eg=GAAS_EG)
 
     print(f"  Substrate lattice constant: {A_SUBSTRATE} A")
     print(f"  GaAs lattice constant:      {GAAS_A0} A")
