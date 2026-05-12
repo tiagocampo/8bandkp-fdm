@@ -1,17 +1,17 @@
 # Plans Review — Implementation Status
 
-Review date: 2026-05-12 (updated from 2026-05-06)
+Review date: 2026-05-13 (updated from 2026-05-12)
 
 | # | Group | Files | Status | Notes |
 |---|-------|-------|--------|-------|
 | 1 | 2026-03-28-codebase-improvement | design | COMPLETE | Archived |
 | 2 | 2026-03-29-cmake-testing | design | COMPLETE | Archived |
 | 3 | 2026-03-29-gfactor-improvements | design | COMPLETE | Archived |
-| 4 | 2026-03-29-gfactor-validation | standalone | INCOMPLETE | Missing regression tests for 3/5 configs (2 partially covered by standard-stars). See details below. |
+| 4 | 2026-03-29-gfactor-validation | standalone | COMPLETE | All 5 configs covered: 2 by standard-star benchmarks, 3 by golden-data regression tests (Phase 14). See details below. |
 | 5 | 2026-03-29-pr-review-fixes | design | COMPLETE | Archived |
 | 6 | 2026-03-29-self-consistent-sp | design | COMPLETE | Archived |
 | 7 | 2026-03-30-sc-validation-report | standalone | COMPLETE | Archived |
-| 8 | 2026-04-02-quantum-wire | design | COMPLETE | Archived |
+| 8 | 2026-04-02-quantum-wire | design | COMPLETE | Archived. Integration tests added in Phase 16 (wire hexagon, SC wire). |
 | 9 | 2026-04-03-linalg-backend | design | COMPLETE | Archived |
 | 10 | 2026-04-04-documentation-overhaul | design | COMPLETE | Archived |
 | 11 | 2026-04-04-pr-review-fixes | design | COMPLETE | Archived |
@@ -29,7 +29,7 @@ Review date: 2026-05-12 (updated from 2026-05-06)
 | 23 | 2026-04-20-remaining-work | design + plan | COMPLETE | Archived |
 | 24 | 2026-04-20-strain-sign-and-buffer-fix | standalone | COMPLETE | Archived |
 | 25 | 2026-04-21-benchmark-matrix | standalone | COMPLETE | Archived |
-| 26 | 2026-04-21-docs-physics-revamp | design + plan | COMPLETE | All 12 tasks DONE or superseded. See details below. |
+| 26 | 2026-04-21-docs-physics-revamp | design + plan | COMPLETE | All 12 tasks DONE or superseded by lecture-test pairs (Phase 15 re-scope confirmed). See details below. |
 | 27 | 2026-04-21-failure-ledger | standalone | COMPLETE | Archived |
 | 28 | 2026-04-21-figure-provenance | standalone | COMPLETE | Archived |
 | 29 | 2026-04-21-nextnano-bulk-qw-comparison | standalone | COMPLETE | Archived |
@@ -40,8 +40,8 @@ Review date: 2026-05-12 (updated from 2026-05-06)
 | 34 | 2026-04-25-optical-properties | redesign + implementation | COMPLETE | Archived |
 | 35 | 2026-04-25-wire-gfactor-commutator | design | COMPLETE | Archived |
 | 36 | 2026-04-26-hamiltonian-performance-refactor | design + plan | COMPLETE | Archived |
-| 37 | 2026-04-26-modern-fortran-migration | design + plan | MOSTLY COMPLETE | `validate_simulation_config` DONE (as `simulation_config_validate`). Contiguous gaps reduced: ZB8bandQW closed, `utils.f90` + `spin_projection.f90` remain. |
-| 38 | 2026-04-27-bdg-topological-sc | design + impl plan | COMPLETE | Archived |
+| 37 | 2026-04-26-modern-fortran-migration | design + plan | COMPLETE | `validate_simulation_config` DONE (as `simulation_config_validate`). All contiguous gaps closed in Phase 14 (utils.f90, spin_projection.f90, hamiltonianConstructor.f90). |
+| 38 | 2026-04-27-bdg-topological-sc | design + impl plan | COMPLETE | Archived. Rashba BdG calibrated in Phase 16 (mu at CB subband, FEAST window, B sweep). |
 | 39 | 2026-04-27-pr11-review-fixes | design + plan | COMPLETE | Archived |
 | 40 | 2026-04-27-wire-fastpath-followup | doc + plan | COMPLETE | Archived |
 | 41 | 2026-04-28-modern-fortran-phase2 | plan | COMPLETE | Archived |
@@ -58,11 +58,11 @@ Review date: 2026-05-12 (updated from 2026-05-06)
 | 52 | 2026-05-07-topological-magnetic-bugfixes | spec + plan | COMPLETE | Archived |
 | 53 | 2026-05-08-review-findings-fixes | plan | COMPLETE | Archived |
 | 54 | 2026-05-08-8band-verification-ladder | brainstorm + plan | COMPLETE | Archived. 4 rungs (R1-R19), 14 configs, benchmarks.md Section 7 |
-| 55 | 2026-05-09-csr-structure-testing | brainstorm + plan | PARTIAL | Archived. U1-U5 complete. U6: 4/7 Krylov paths done (missing: SC loop, optics wire, gfactor wire) |
-| 56 | 2026-05-09-standard-star-benchmarks | brainstorm + 2 plans | PARTIAL | 7 scripts S1-S7, 24 review findings addressed. Remaining: S4 onset, S7 gfactor tightening, wrapper centralization |
+| 55 | 2026-05-09-csr-structure-testing | brainstorm + plan | COMPLETE | Archived. U1-U5 complete. U6: 7/7 Krylov paths done (SC loop, optics wire, gfactor wire added in Phase 15). |
+| 56 | 2026-05-09-standard-star-benchmarks | brainstorm + 2 plans | COMPLETE | 7 scripts S1-S7, 24 review findings addressed. S4 onset tightened, S7 g-factor tightened, wrappers centralized, Roth formula fixed (Phase 15). |
 | 57 | 2026-05-10-executable-lecture-test-pairs | brainstorm + plan | COMPLETE | Archived. 14 scripts, 18 plots, Makefile targets |
 | 58 | 2026-05-10-validation-coverage-matrix | brainstorm + plan | COMPLETE | Archived. 59 cells, 92 annotations, ctest `coverage` label |
-| 59 | 2026-05-11-strain-validation | brainstorm + plan | PARTIAL | Bulk/QW/wire scripts done, CTest registered. Tolerances relaxed from plan (justified). Docs uncommitted. |
+| 59 | 2026-05-11-strain-validation | brainstorm + plan | COMPLETE | Bulk/QW/wire scripts done, CTest registered. Code-review pass applied. Docs committed. Tolerances have documented justification. |
 
 ---
 
@@ -70,19 +70,19 @@ Review date: 2026-05-12 (updated from 2026-05-06)
 
 ### 4. 2026-03-29-gfactor-validation
 
-**Status: INCOMPLETE**
+**Status: COMPLETE**
 
-All code-level implementation is done. Missing automated tests for 3 of 5 configs:
+All code-level implementation is done. All 5 configs now have automated test coverage:
 
 | Config | Golden data | CTest | Standard-star coverage |
 |--------|-------------|-------|----------------------|
 | `gfactor_bulk_gaas_cb.cfg` | No | No | Yes — `verify_star_gaas_bulk.py` (Roth analytical) |
-| `gfactor_bulk_gaasw_cb.cfg` | No | No | No |
+| `gfactor_bulk_gaasw_cb.cfg` | Yes | Yes | Yes — golden-data regression (Phase 14) |
 | `gfactor_bulk_inasw_cb.cfg` | No | No | Yes — `verify_star_inas_bulk.py` (Roth analytical) |
-| `gfactor_bulk_gaas_vb.cfg` | No | No | No |
-| `gfactor_qw_vb.cfg` | No | No | No |
+| `gfactor_bulk_gaas_vb.cfg` | Yes | Yes | Yes — golden-data regression (Phase 14) |
+| `gfactor_qw_vb.cfg` | Yes | Yes | Yes — golden-data regression (Phase 14) |
 
-Only `gfactor_qw_cb.cfg` has full regression coverage. Document values are stale.
+Pre-existing `gfactor_qw_cb.cfg` retains full regression coverage.
 
 ### 26. 2026-04-21-docs-physics-revamp
 
@@ -98,14 +98,15 @@ Design doc archived (defines scope only). Plan had 12 tasks; all completed or su
 
 ### 37. 2026-04-26-modern-fortran-migration
 
-**Status: MOSTLY COMPLETE**
+**Status: COMPLETE**
 
-`validate_simulation_config` is DONE — implemented as `simulation_config_validate` in `defs.f90:518-586` (not `input_parser.f90` as originally planned, but functionally equivalent as a type-bound method). `config_validation_result` helper type still missing (low priority).
+`validate_simulation_config` is DONE — implemented as `simulation_config_validate` in `defs.f90:518-586` (not `input_parser.f90` as originally planned, but functionally equivalent as a type-bound method). `config_validation_result` helper type still missing (low priority — functional need covered).
 
-Contiguous attribute gaps:
-- ~~ZB8bandQW profile/kpterms~~: CLOSED (already has `contiguous`)
-- `utils.f90 dns(:,:)`: Still open
-- `spin_projection.f90 psi(:)`: Still open
+Contiguous attribute gaps — all closed in Phase 14:
+- ~~ZB8bandQW profile/kpterms~~: CLOSED (already had `contiguous`)
+- ~~`utils.f90 dns(:,:)`~~: CLOSED (Phase 14)
+- ~~`spin_projection.f90 psi(:)`~~: CLOSED (Phase 14)
+- ~~`hamiltonianConstructor.f90` velocity arrays~~: CLOSED (Phase 14)
 
 ### 54. 2026-05-08-8band-verification-ladder
 
@@ -115,28 +116,27 @@ Contiguous attribute gaps:
 
 ### 55. 2026-05-09-csr-structure-testing
 
-**Status: PARTIAL**
+**Status: COMPLETE**
 
-U1-U5 complete (invariant fixture, 10 CSR operation tests, 4 Krylov snapshot tests, refactored existing tests, regeneration infrastructure). U6 partial: 4 of 7 Krylov paths done. Missing:
-- SC loop snapshot (test initial Hamiltonian before SC iteration)
+U1-U5 complete (invariant fixture, 10 CSR operation tests, 4 Krylov snapshot tests, refactored existing tests, regeneration infrastructure). U6 complete: all 7 of 7 Krylov paths done. Remaining 3 paths added in Phase 15:
+- SC loop snapshot
 - Optics wire mode snapshot
 - G-factor wire mode snapshot
 
 ### 56. 2026-05-09-standard-star-benchmarks
 
-**Status: PARTIAL**
+**Status: COMPLETE**
 
-All 7 scripts implemented and registered under ctest labels `standard-star;verification`. 24 code-review findings addressed (P0 ctest label fix, P1 S5 overlap check). Remaining:
-- S4 absorption onset uses range check instead of regression reference
-- S7 wire g-factor uses loose tolerance (50% range) instead of `G_WIRE_REF`
-- Run wrapper centralization incomplete for S3/S4/S5/S6
-- `benchmarks.md` Roth formula documentation error (KD2)
+All 7 scripts implemented and registered under ctest labels `standard-star;verification`. 24 code-review findings addressed (P0 ctest label fix, P1 S5 overlap check). Phase 15 tightening:
+- S4 absorption onset: now uses regression reference value
+- S7 wire g-factor: tightened with reference value
+- Run wrappers centralized in S3/S5/S6 via `star_helpers.run_exe`
+- `benchmarks.md` Roth formula documentation error corrected
 
 ### 59. 2026-05-11-strain-validation
 
-**Status: PARTIAL**
+**Status: COMPLETE**
 
-All 3 verification scripts implemented and CTest registered. Shared infrastructure extracted. Code-review fix pass applied. Remaining:
+All 3 verification scripts implemented and CTest registered. Shared infrastructure extracted. Code-review fix pass applied. Planning docs committed in Phase 14. Remaining items have documented justification:
 - QW tests use qualitative checks instead of Bastard analytical (justified for narrow 20A well)
 - Wire R7 tolerance relaxed from 5-10% to 60% (justified by free-surface relaxation)
-- Brainstorm and plan docs are untracked in git
