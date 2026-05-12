@@ -602,6 +602,38 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# Wire hexagonal geometry
+add_test(
+    NAME regression_wire_gaas_hexagon
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_hexagon.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_gaas_hexagon.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/wire_gaas_hexagon
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_wire_gaas_hexagon
+    PROPERTIES LABELS "regression"
+)
+
+# SC wire convergence
+add_test(
+    NAME regression_sc_wire_gaas
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_sc_wire.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/sc_wire_gaas.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_wire_gaas
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_sc_wire_gaas
+    PROPERTIES LABELS "regression"
+)
+
 # Topological analysis QHE (Chern number via QWZ model)
 add_test(
     NAME regression_topology_qhe

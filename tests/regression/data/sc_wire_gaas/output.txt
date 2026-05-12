@@ -1,0 +1,80 @@
+Note: The following floating-point exceptions are signalling: IEEE_DIVIDE_BY_ZERO IEEE_OVERFLOW_FLAG IEEE_UNDERFLOW_FLAG IEEE_DENORMAL
+ waveVector:kz  
+ waveVectorMax:   1.0000000000000000E-002
+ waveVectorStep:           2
+ confinement:           2
+ FDstep:           1
+ FDorder:           2
+ numLayers:           1
+ wire_nx:          11
+ wire_ny:          11
+ wire_dx:   5.0000000000000000     
+ wire_dy:   5.0000000000000000     
+ wire_shape:rectangle
+ wire_width:   50.000000000000000     
+ wire_height:   50.000000000000000     
+ numRegions:           1
+ region:GaAs   0.0000000000000000        50.000000000000000     
+ numcb:           4
+ numvb:           8
+ ExternalField:           0 EF
+ EFParams:   0.0000000000000000     
+ whichBand           0
+ bandIdx           1
+ SC           1
+ SC_max_iter:          20
+ SC_tolerance:   1.0000000000000000E-003
+ SC_mixing:  0.29999999999999999     
+  
+ Material: GaAs
+ Parameters
+ EP :   28.800000000000001     
+ P  :   10.475088634541221     
+ A  :   14.925373134328357     
+ gamma1 :   6.9800000000000004     
+ gamma2 :   2.0600000000000001     
+ gamma3 :   2.9300000000000002     
+  
+ SC_fermi_mode:   0.0000000000000000     
+ 
+ === Wire mode (2D confinement) ===
+   Grid: nx=          11  ny=          11  Ngrid=         121
+   Matrix size:          968 x         968
+   Requesting           12  eigenvalues per k-point
+   kz sweep:            2  points, kz_max=   1.0000000000000000E-002
+ 
+ 
+ === Running wire self-consistent Schrodinger-Poisson loop ===
+ === Wire Self-Consistent Loop Start ===
+   max_iterations:          20
+   tolerance:   1.0000000000000000E-003
+   mixing_alpha:  0.29999999999999999     
+   diis_history:           7
+   num_kx:         201
+   kx_max:   1.0000000000000000E-002
+   temperature:   300.00000000000000     
+   grid: nx=          11  ny=          11  Ngrid=         121
+ 
+  iter:   1  |dPhi|:  7.5867E-04  mu:   -0.8436  max|rho|:  7.2451E-22
+ === Wire SC loop converged at iteration           1 ===
+   Wire SC loop complete. profile_2d updated.
+ 
+   SC band edge profile written to output/sc_potential_profile.dat
+   SC electrostatic potential written to output/sc_phi.dat
+   SC charge density written to output/sc_charge.dat
+   Wire band edge profile written to output/potential_profile.dat
+ k-point 1/           2  kz=   0.0000000000000000     
+   Auto energy window: [  -26.146712951338873      ,   28.610101348847046      ]
+   WARNING: FEAST subspace too small (info=3). Missing eigenvalues.
+   Increase feast_m0 or narrow the energy window.
+   WARNING: FEAST subspace issue at k-point 1, but found enough eigenvalues
+   Found           24  eigenvalues (requested           12 ) iterations=           1
+   Wrote           24  2D wavefunctions to output/eigenfunctions_k_00001_ev_*.dat
+ Wire kz-sweep: k=2..2 (serial branch tracking)
+ k-point            2 /           2  kz=   1.0000000000000000E-002
+   WARNING: FEAST subspace too small (info=3). Missing eigenvalues.
+   Increase feast_m0 or narrow the energy window.
+   WARNING: eigensolver subspace issue at k-point           2  but found enough eigenvalues
+   Wrote           24  2D wavefunctions to output/eigenfunctions_k_           2 _ev_*.dat
+ 
+ Wire band structure written to output/eigenvalues.dat
