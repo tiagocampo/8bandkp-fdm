@@ -44,11 +44,11 @@ module hamiltonianConstructor
       implicit none
 
       !input/output
-      complex(kind=dp), intent(inout), dimension(:,:) :: HT
+      complex(kind=dp), intent(inout), contiguous :: HT(:,:)
       type(csr_matrix), intent(inout), optional :: HT_csr
       type(wavevector), intent(in) :: wv
-      real(kind = dp), intent(in), dimension(:,:) :: profile
-      real(kind = dp), intent(in), dimension(:,:,:) :: kpterms
+      real(kind = dp), intent(in), contiguous :: profile(:,:)
+      real(kind = dp), intent(in), contiguous :: kpterms(:,:,:)
       type(simulation_config), intent(in), optional :: cfg
       logical, intent(in), optional:: sparse
       character(len=1), intent(in), optional :: g

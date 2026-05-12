@@ -187,7 +187,7 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 - `do concurrent` used on proven-independent loops: velocity matrix construction, optics finalization, kpterms diagonal init.
 - `csr_matrix` has type-bound `free()` and `clone_structure()` but components remain public for hot-path access.
 - `contiguous` attribute on all assumed-shape hot-path array arguments (not on optional or allocatable).
-  - **Known gaps** (will be fixed when touching those routines): `ZB8bandQW` profile/kpterms (`hamiltonianConstructor.f90:42-43`), `dns(:,:)` in `utils.f90:19`, `psi(:)` in `spin_projection.f90:14`
+  - **Known gaps** (will be fixed when touching those routines): `dns(:,:)` in `utils.f90:19`, `psi(:)` in `spin_projection.f90:14`
 - `spatial_grid%npoints()` accessor preferred over raw `grid%nx * grid%ny` for total grid size.
 - `iso_c_binding` used for all MKL C APIs: PARDISO as `pardiso_c`, FEAST wrappers, `mkl_set_num_threads_local`. PARDISO/FEAST scalars passed by reference (MKL C API passes pointers). `mkl_set_num_threads_local` uses `value` since the C function takes `int` by value.
 - PARDISO has two `iso_c_binding` interfaces: `pardiso_c` (complex, used by ARPACK eigensolver) and `pardiso_real` (real-valued, used by Poisson solver). Both use `c_intptr_t` for the `pt` handle array.
