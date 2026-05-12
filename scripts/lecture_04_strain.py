@@ -20,6 +20,12 @@ analytical formulas for biaxial [001] strain:
      quantum well eigenvalue spectrum (splitting of confined hole states).
   4. Overlay plot: strained vs unstrained bulk GaAs band edges with annotated
      Bir-Pikus shifts.
+
+Audit (R10, 2026-05-11): bir_pikus_bulk() formulas match U1's
+bir_pikus_bulk_inas() exactly (same P_eps, Q_eps, LH-SO coupling via QT2/sqrt(2)).
+GaAs tensile ordering (LHSO_low < LHSO_high < HH < CB) is correct for Q_eps > 0.
+Section 3 QW check is qualitative (VB spread > 0.01 eV); quantitative validation
+is in verify_strain_rung6_qw.py (U2).
 """
 import os
 import shutil
@@ -447,8 +453,8 @@ def test_strained_qw():
     # We verify that the topmost valence states are non-degenerate,
     # indicating strain-induced splitting.
     n_vb = 8
-    if nbands < 2 * n_vb:
-        print(f"  WARN: expected at least {2*n_vb} bands, got {nbands}")
+    if nbands < n_vb:
+        print(f"  WARN: expected at least {n_vb} bands, got {nbands}")
 
     # Get the highest valence-band states (first 8 are valence in ascending order)
     vb_states = evals_k0[:n_vb] if nbands >= n_vb else evals_k0
