@@ -16,7 +16,7 @@ contains
     type(csr_matrix), intent(out) :: csr
     integer, intent(inout) :: nzmax
     integer, intent(in) :: N
-    complex(kind=dp), intent(in), dimension(:,:) :: dns
+    complex(kind=dp), intent(in), contiguous, dimension(:,:) :: dns
 
     integer :: next, i, j, nnz_count
     complex(kind=dp), allocatable, dimension(:) :: Aa_a, A_a

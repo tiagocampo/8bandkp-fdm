@@ -11,7 +11,7 @@ contains
   ! Basis ordering: HH_UP(1), LH_UP(2), LH_DW(3), HH_DW(4),
   !                 SO_UP(5), SO_DW(6), EL_UP(7), EL_DW(8)
   subroutine spin_weights(psi, Ngrid, w_up, w_dw)
-    complex(kind=dp), intent(in) :: psi(:)  ! (8*Ngrid)
+    complex(kind=dp), intent(in), contiguous :: psi(:)  ! (8*Ngrid)
     integer, intent(in) :: Ngrid
     real(kind=dp), intent(out) :: w_up, w_dw
 
