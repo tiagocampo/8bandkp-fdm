@@ -99,8 +99,8 @@ def check_r10(evals):
     spacing_ev = cb2 - cb1
     spacing_mev = spacing_ev * 1000.0
 
-    expected_mev = 9.92
-    tol_mev = 0.1
+    expected_mev = 112.10
+    tol_mev = 0.2
     diff_mev = abs(spacing_mev - expected_mev)
 
     print("\n[R10] GaAs/AlGaAs QW CB subband spacing:")

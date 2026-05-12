@@ -83,14 +83,14 @@ Type-I GaAs quantum well in Al0.3Ga0.7As barriers.
 
 | State | Eigenvalue (eV) | Energy from well edge (meV) |
 |-------|----------------|----------------------------|
-| HH1 | -0.96143 | 161 (below GaAs VB) |
-| LH1 | -0.96037 | 160 (below GaAs VB) |
-| SO1 | -0.95961 | 160 (below GaAs VB) |
-| VB4 | -0.95915 | 159 (below GaAs VB) |
-| CB1 | +1.02133 | 302 (above GaAs CB) |
-| CB2 | +1.03125 | 312 (above GaAs CB) |
+| HH1 | -0.82580 | 42 (above GaAs VB edge -0.868) |
+| LH1 | -0.82044 | 47 (above GaAs VB edge) |
+| SO1 | -0.80911 | 59 (above GaAs VB edge) |
+| VB4 | -0.80228 | 66 (GaAs VB max) |
+| CB1 | +0.76062 | 42 (above GaAs CB edge +0.719) |
+| CB2 | +0.87272 | 154 (above GaAs CB edge) |
 
-CB subband spacing: E(CB2) - E(CB1) = **9.92 meV**
+CB subband spacing: E(CB2) - E(CB1) = **112.10 meV**
 
 ### Comparison with analytical estimates
 
@@ -100,13 +100,12 @@ For a 10nm GaAs well with CB offset V0 = 299 meV and m* = 0.067:
 |--------|----------------------|------|
 | Infinite well | 56.2 | hbar^2 pi^2 / (2m*L^2) |
 | Finite well (eff. mass) | ~50 | Transcendental equation |
-| **This code (8-band k.p)** | **302** | Includes non-parabolicity + VB-CB coupling |
+| **This code (8-band k.p)** | **42** | Includes non-parabolicity + VB-CB coupling |
 
-The 8-band result is significantly higher because the coupling to valence bands
-reduces the effective confinement, pushing CB states toward the barrier edge.
-This is a well-known effect of the multi-band treatment — the single-band
-effective mass approximation underestimates confinement energies for narrow-gap
-or strongly coupled systems.
+The 8-band result is slightly lower than the single-band effective mass estimate
+because VB-CB coupling effectively increases the carrier mass in the well,
+reducing confinement energy. This is the well-known non-parabolicity correction
+in the multi-band k.p treatment.
 
 **Config:** `docs/benchmarks/qw_gaas_algaas.cfg`
 
