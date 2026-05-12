@@ -1,231 +1,142 @@
 # Plans Review — Implementation Status
 
-Review date: 2026-05-06
+Review date: 2026-05-12 (updated from 2026-05-06)
 
 | # | Group | Files | Status | Notes |
 |---|-------|-------|--------|-------|
 | 1 | 2026-03-28-codebase-improvement | design | COMPLETE | Archived |
 | 2 | 2026-03-29-cmake-testing | design | COMPLETE | Archived |
 | 3 | 2026-03-29-gfactor-improvements | design | COMPLETE | Archived |
-| 4 | 2026-03-29-gfactor-validation | standalone | INCOMPLETE | Missing regression tests for 5/6 configs |
-| 5 | 2026-03-29-pr-review-fixes | design | COMPLETE | Archived (Makefile target + z(1) guard added) |
-| 6 | 2026-03-29-self-consistent-sp | design | COMPLETE | Archived (bulk EF shift, delta-doping, gfactor SC wired; bulk SC uses QW path with confDir=z) |
+| 4 | 2026-03-29-gfactor-validation | standalone | INCOMPLETE | Missing regression tests for 3/5 configs (2 partially covered by standard-stars). See details below. |
+| 5 | 2026-03-29-pr-review-fixes | design | COMPLETE | Archived |
+| 6 | 2026-03-29-self-consistent-sp | design | COMPLETE | Archived |
 | 7 | 2026-03-30-sc-validation-report | standalone | COMPLETE | Archived |
-| 8 | 2026-04-02-quantum-wire | design | COMPLETE | Archived (piezoelectric excluded: ZB [001]=zero by symmetry; FFTW Poisson not needed, PARDISO used) |
+| 8 | 2026-04-02-quantum-wire | design | COMPLETE | Archived |
 | 9 | 2026-04-03-linalg-backend | design | COMPLETE | Archived |
-| 10 | 2026-04-04-documentation-overhaul | design | COMPLETE | Archived (wire_optical_spectrum figure added; 7 renamed figures have better names) |
+| 10 | 2026-04-04-documentation-overhaul | design | COMPLETE | Archived |
 | 11 | 2026-04-04-pr-review-fixes | design | COMPLETE | Archived |
 | 12 | 2026-04-06-bulk-chapter-overhaul | design | COMPLETE | Archived |
 | 13 | 2026-04-06-documentation-deep-rewrite | standalone | COMPLETE | Archived |
 | 14 | 2026-04-06-quickstart-fixes | design | COMPLETE | Archived |
 | 15 | 2026-04-07-strain-unification | design + plan | COMPLETE | Archived |
-| 16 | 2026-04-12-qw-documentation-overhaul | design + 2 plans | COMPLETE | Archived (anticrossing prose updated with 34 meV gap from realistic InAsW(8nm)/GaSbW(8nm) config) |
-| 17 | 2026-04-17-fd-variable-coeff-fix | design + plan | COMPLETE | Archived (staggered-grid deviation justified) |
+| 16 | 2026-04-12-qw-documentation-overhaul | design + 2 plans | COMPLETE | Archived |
+| 17 | 2026-04-17-fd-variable-coeff-fix | design + plan | COMPLETE | Archived |
 | 18 | 2026-04-18-ch01-03-review-fix | design + plan | COMPLETE | Archived |
 | 19 | 2026-04-18-ch04-06-review-fix | plan | COMPLETE | Archived |
 | 20 | 2026-04-18-ch04-strain-figures | design + plan | COMPLETE | Archived |
 | 21 | 2026-04-19-ch03-ch04-figures | plan | COMPLETE | Archived |
 | 22 | 2026-04-19-qw-tutorials | design | COMPLETE | All optics figure functions + 5 new Group #50 figures. ISBT cross-validated |
-| 23 | 2026-04-20-remaining-work | design + plan | COMPLETE | Archived; core-shell benchmark is registered as `regression_wire_inas_gaas_core_shell` using `wire_inas_gaas_strain.cfg` |
+| 23 | 2026-04-20-remaining-work | design + plan | COMPLETE | Archived |
 | 24 | 2026-04-20-strain-sign-and-buffer-fix | standalone | COMPLETE | Archived |
-| 25 | 2026-04-21-benchmark-matrix | standalone | COMPLETE | Archived (reference doc) |
-| 26 | 2026-04-21-docs-physics-revamp | design + plan | INCOMPLETE | 10/12 tasks missing, design archived |
-| 27 | 2026-04-21-failure-ledger | standalone | COMPLETE | Archived (reference doc) |
-| 28 | 2026-04-21-figure-provenance | standalone | COMPLETE | Archived (reference doc) |
-| 29 | 2026-04-21-nextnano-bulk-qw-comparison | standalone | COMPLETE | Archived (reference doc) |
-| 30 | 2026-04-21-nextnano-qcse-optics-comparison | standalone | COMPLETE | Archived (reference doc) |
-| 31 | 2026-04-21-nextnano-wire-comparison | standalone | COMPLETE | Archived (reference doc, 5 follow-ups pending) |
-| 32 | 2026-04-21-validation-summary | standalone | COMPLETE | Archived (reference doc) |
-| 33 | 2026-04-21-wire-validation-summary | standalone | COMPLETE | Archived (reference doc) |
+| 25 | 2026-04-21-benchmark-matrix | standalone | COMPLETE | Archived |
+| 26 | 2026-04-21-docs-physics-revamp | design + plan | COMPLETE | All 12 tasks DONE or superseded. See details below. |
+| 27 | 2026-04-21-failure-ledger | standalone | COMPLETE | Archived |
+| 28 | 2026-04-21-figure-provenance | standalone | COMPLETE | Archived |
+| 29 | 2026-04-21-nextnano-bulk-qw-comparison | standalone | COMPLETE | Archived |
+| 30 | 2026-04-21-nextnano-qcse-optics-comparison | standalone | COMPLETE | Archived |
+| 31 | 2026-04-21-nextnano-wire-comparison | standalone | COMPLETE | Archived |
+| 32 | 2026-04-21-validation-summary | standalone | COMPLETE | Archived |
+| 33 | 2026-04-21-wire-validation-summary | standalone | COMPLETE | Archived |
 | 34 | 2026-04-25-optical-properties | redesign + implementation | COMPLETE | Archived |
 | 35 | 2026-04-25-wire-gfactor-commutator | design | COMPLETE | Archived |
 | 36 | 2026-04-26-hamiltonian-performance-refactor | design + plan | COMPLETE | Archived |
-| 37 | 2026-04-26-modern-fortran-migration | design + plan | MOSTLY COMPLETE | validate_simulation_config missing |
-| 38 | 2026-04-27-bdg-topological-sc | design + impl plan | COMPLETE | Archived; Phase 6 completion repair delivered QW BdG, Fu-Kane QW, conductance, spectral, LDOS, and sweep paths |
+| 37 | 2026-04-26-modern-fortran-migration | design + plan | MOSTLY COMPLETE | `validate_simulation_config` DONE (as `simulation_config_validate`). Contiguous gaps reduced: ZB8bandQW closed, `utils.f90` + `spin_projection.f90` remain. |
+| 38 | 2026-04-27-bdg-topological-sc | design + impl plan | COMPLETE | Archived |
 | 39 | 2026-04-27-pr11-review-fixes | design + plan | COMPLETE | Archived |
 | 40 | 2026-04-27-wire-fastpath-followup | doc + plan | COMPLETE | Archived |
 | 41 | 2026-04-28-modern-fortran-phase2 | plan | COMPLETE | Archived |
 | 42 | 2026-04-28-pr11-cache-safety-fixes | plan | COMPLETE | Archived |
 | 43 | 2026-04-29-modern-fortran-remaining | plan | COMPLETE | Archived |
 | 44 | 2026-04-29-phase4-exploratory | standalone | COMPLETE | Archived |
-| 45 | 2026-04-29-pr12-fixes | plan | COMPLETE | Archived (zdotc decision documented in CLAUDE.md) |
+| 45 | 2026-04-29-pr12-fixes | plan | COMPLETE | Archived |
 | 46 | 2026-05-01-bhz-remaining-work | plan | COMPLETE | Archived |
-| 47 | 2026-05-02-magnetic-field-landau | design + impl plan | COMPLETE | Archived; confinement=3 Landau mode, gauge shifts, fan diagram, analytical validation |
-| 48 | 2026-05-02-physics-figures-implementation | plan | COMPLETE | Landau verification, input-reference updated, CI wired |
-| 49 | 2026-05-02-topological-suite-verification | spec + plan | COMPLETE | Archived; Phase 6 completion repair delivered Fu-Kane QW, gap sweep, conductance/spectral regressions; Berry/phase figures already present |
-| 51 | 2026-05-05-phase6-completion-repair | plan | COMPLETE | Archived; 66/66 tests passed; pushed through commit 20c3f19 |
-| 50 | 2026-05-03-physics-figures-extended | plan | COMPLETE | All 5 phases done: bulk E(k), QW subbands, wavefunctions, wire geometry, Zeeman fan |
-| 52 | 2026-05-07-topological-magnetic-bugfixes | spec + plan | COMPLETE | Archived; 5 Codex review findings fixed: Peierls y-axis, BHZ hopping, Majorana coords, Fu-Kane sweep, BdG gap |
-| 53 | 2026-05-08-review-findings-fixes | plan | COMPLETE | Archived; 5 ce-code-review findings fixed: BdG gap convention, contiguous attrs, Peierls fixture+fallback test, Majorana multi-column test, backward B+D hopping test |
+| 47 | 2026-05-02-magnetic-field-landau | design + impl plan | COMPLETE | Archived |
+| 48 | 2026-05-02-physics-figures-implementation | plan | COMPLETE | Archived |
+| 49 | 2026-05-02-topological-suite-verification | spec + plan | COMPLETE | Archived |
+| 50 | 2026-05-03-physics-figures-extended | plan | COMPLETE | Archived |
+| 51 | 2026-05-05-phase6-completion-repair | plan | COMPLETE | Archived |
+| 52 | 2026-05-07-topological-magnetic-bugfixes | spec + plan | COMPLETE | Archived |
+| 53 | 2026-05-08-review-findings-fixes | plan | COMPLETE | Archived |
+| 54 | 2026-05-08-8band-verification-ladder | brainstorm + plan | COMPLETE | Archived. 4 rungs (R1-R19), 14 configs, benchmarks.md Section 7 |
+| 55 | 2026-05-09-csr-structure-testing | brainstorm + plan | PARTIAL | Archived. U1-U5 complete. U6: 4/7 Krylov paths done (missing: SC loop, optics wire, gfactor wire) |
+| 56 | 2026-05-09-standard-star-benchmarks | brainstorm + 2 plans | PARTIAL | 7 scripts S1-S7, 24 review findings addressed. Remaining: S4 onset, S7 gfactor tightening, wrapper centralization |
+| 57 | 2026-05-10-executable-lecture-test-pairs | brainstorm + plan | COMPLETE | Archived. 14 scripts, 18 plots, Makefile targets |
+| 58 | 2026-05-10-validation-coverage-matrix | brainstorm + plan | COMPLETE | Archived. 59 cells, 92 annotations, ctest `coverage` label |
+| 59 | 2026-05-11-strain-validation | brainstorm + plan | PARTIAL | Bulk/QW/wire scripts done, CTest registered. Tolerances relaxed from plan (justified). Docs uncommitted. |
 
 ---
 
 ## Detailed Findings
 
-(Filled in as each group is reviewed)
-
 ### 4. 2026-03-29-gfactor-validation
 
 **Status: INCOMPLETE**
 
-All code-level implementation is done (g-factor functions, sigma matrices, self-term exclusion, near-zero guards). Missing:
+All code-level implementation is done. Missing automated tests for 3 of 5 configs:
 
-- **5/6 test configs lack reference data and automated regression tests:**
-  - `gfactor_bulk_gaas_cb.cfg` — no reference data, no CMake test
-  - `gfactor_bulk_gaasw_cb.cfg` — no reference data, no CMake test
-  - `gfactor_bulk_inasw_cb.cfg` — no reference data, no CMake test
-  - `gfactor_bulk_gaas_vb.cfg` — no reference data, no CMake test
-  - `gfactor_qw_vb.cfg` — no reference data, no CMake test
-- Only `gfactor_qw_cb.cfg` has full regression coverage
-- Document values are stale (QW CB g-factor values differ from current reference data)
+| Config | Golden data | CTest | Standard-star coverage |
+|--------|-------------|-------|----------------------|
+| `gfactor_bulk_gaas_cb.cfg` | No | No | Yes — `verify_star_gaas_bulk.py` (Roth analytical) |
+| `gfactor_bulk_gaasw_cb.cfg` | No | No | No |
+| `gfactor_bulk_inasw_cb.cfg` | No | No | Yes — `verify_star_inas_bulk.py` (Roth analytical) |
+| `gfactor_bulk_gaas_vb.cfg` | No | No | No |
+| `gfactor_qw_vb.cfg` | No | No | No |
 
-### 6. 2026-03-29-self-consistent-sp
-
-**Status: COMPLETE**
-
-All items resolved in PR #13 (Phase 2 physics wiring):
-- **Bulk EF shift**: Uniform diagonal shift added to `ZB8bandBulk` via `cfg%Evalue` and `cfg%sc_potential_shift` (TDD test: `test_bulk_ef_shift`)
-- **Delta-doping**: Extended `doping_spec` with Gaussian profile (`delta<N>: NS FWHM POS` syntax), implemented in `build_doping_charge` (TDD test: `test_delta_doping_gaussian`)
-- **gfactor SC**: `self_consistent_loop` (QW) and `self_consistent_loop_wire` (wire) wired into `main_gfactor.f90`
-- **Bulk SC**: Uses QW path (`confDir='z'`, single material + doping) — no separate bulk SC routine needed. Warning printed if user tries `confDir='n'` with SC enabled.
-- **b_field parsing**: Bulk Landau level magnetic field support with peek/backspace pattern
-
-### 22. 2026-04-19-qw-tutorials
-
-**Status: COMPLETE**
-
-Fortran code fully done. All 15 optics figure functions implemented in generate_all_figures.py. All PNG files generated and verified in docs/figures/. Verified on 2026-05-04: absorption edge positions, ISBT peak energies, gain blue-shift behavior all physically correct.
-
-ISBT cross-validation: z-dipole vs commutator velocity consistency confirmed (see test_isbt_dipole_velocity_consistency in test_optical_qw.pf, rel_diff = 0.007%).
+Only `gfactor_qw_cb.cfg` has full regression coverage. Document values are stale.
 
 ### 26. 2026-04-21-docs-physics-revamp
 
-**Status: INCOMPLETE**
-
-Design doc archived (defines scope only). Plan has 12 tasks; Tasks 1-2 (control docs, provenance) DONE. Missing Tasks 3-12:
-
-- **Tasks 3-5**: Figure fixes (broken refs, missing optics/gain/ISBT figures, PNG generation)
-- **Tasks 6-7**: Solver repair (ISBT dipole sign, gain quasi-Fermi integration)
-- **Tasks 8-9**: Wire hardening (FEAST convergence, branch tracking edge cases)
-- **Tasks 10-11**: Chapter rebuilds (Ch06 optics, Ch08 wire with real data)
-- **Task 12**: Final verification sweep
-
-### 23. 2026-04-20-remaining-work
-
 **Status: COMPLETE**
 
-**Archive:** `docs/plans/archive/2026-04-20-remaining-work-design.md`, `docs/plans/archive/2026-04-20-remaining-work-plan.md`
+Design doc archived (defines scope only). Plan had 12 tasks; all completed or superseded by lecture-test pairs, verification ladder, and standard-star benchmarks:
 
-All tracked tasks are complete. The Stier & Bimberg core-shell benchmark is registered as `regression_wire_inas_gaas_core_shell` and uses `tests/regression/configs/wire_inas_gaas_strain.cfg` with golden data in `tests/regression/data/wire_inas_gaas_core_shell/`. The historical plan name `wire_inas_gaas_core_shell.cfg` was not kept as the final config filename.
+- **Tasks 1-2 (benchmark matrix, figure provenance):** DONE. Archived as #25, #27, #28.
+- **Tasks 3-5 (figure fixes):** Lecture 05 validates g-factors vs Roth formula + Landau levels + Zeeman fan. Lecture 10 validates Stark shift with overlay plot. Lecture 03 validates wavefunction band character + normalization. All figure references corrected (`7b80237`).
+- **Tasks 6-7 (solver repair):** ISBT dipole sign addressed: commutator-based velocity with cross-validation (`88840ce`, rel_diff=0.007%). Gain quasi-Fermi fully implemented with bisection solver, separate mu_e/mu_h, gain_reset(). Bulk/QW/strain benchmarks covered by verification ladder rungs 1-3, 5-6 and standard-stars S1-S3.
+- **Tasks 8-9 (wire hardening):** FEAST window fix (`f9a3f6f`). Dense-sparse consistency verified in lecture 08 and verification rung 4 (R14-R16). CSR structural testing (Phase 8). Wire strain validated (Phase 13).
+- **Tasks 10-12 (chapter rebuilds, verification):** All 14 chapters have Verification sections (`49ff0d3`). All 74+ figures validated (`79688ab`). Validation summaries created as #32, #33.
 
 ### 37. 2026-04-26-modern-fortran-migration
 
 **Status: MOSTLY COMPLETE**
 
-Phases 1-2 done (forall→do concurrent, goto→named blocks, dsqrt→sqrt, external→interfaces, elemental pure, private default, do concurrent in hot paths, finalizers, type-bound methods). Missing:
+`validate_simulation_config` is DONE — implemented as `simulation_config_validate` in `defs.f90:518-586` (not `input_parser.f90` as originally planned, but functionally equivalent as a type-bound method). `config_validation_result` helper type still missing (low priority).
 
-- **`validate_simulation_config` subroutine** (Plan Task 10): Post-parse validation routine not implemented in input_parser.f90
-- **`config_validation_result` helper type**: Not present in defs.f90
-- **Known `contiguous` gaps** documented in CLAUDE.md: ZB8bandQW profile/kpterms, utils.f90 dns(:,:), spin_projection.f90 psi(:)
+Contiguous attribute gaps:
+- ~~ZB8bandQW profile/kpterms~~: CLOSED (already has `contiguous`)
+- `utils.f90 dns(:,:)`: Still open
+- `spin_projection.f90 psi(:)`: Still open
 
-### 38. 2026-04-27-bdg-topological-sc
-
-**Status: COMPLETE**
-
-**Archive:** `docs/plans/archive/2026-04-27-bdg-topological-superconductivity-design.md`, `docs/plans/archive/2026-04-29-bdg-topological-sc-implementation-plan.md`
-
-Core physics and Phase 6 repair items are complete:
-
-- Dense QW BdG assembly and QW app path implemented.
-- QW Fu-Kane parity invariant implemented with band-major inversion operator and pair-subspace parity sign.
-- Berry/Kubo conductance and Landauer helper implemented.
-- QW, bulk, and wire spectral functions implemented; LDOS shifted-matrix bug fixed.
-- Gap sweep now uses real evaluators: module-level BHZ analytic, app-level QW Fu-Kane, and app-level wire BdG.
-- Unit and regression coverage added for BdG, Z2/Fu-Kane, Berry/Kubo, Green/LDOS/Landauer, parser, spectral, conductance, and sweep paths.
-
-Verification on 2026-05-06: fresh configure/build passed; full suite `66/66` passed; manual topologicalAnalysis smoke configs passed.
-
-### 47. 2026-05-02-magnetic-field-landau
+### 54. 2026-05-08-8band-verification-ladder
 
 **Status: COMPLETE**
 
-**Archive:** `docs/plans/archive/2026-05-02-magnetic-field-landau-design.md`, `docs/plans/archive/2026-05-02-magnetic-field-landau-implementation-plan.md`, `docs/plans/archive/2026-05-04-landau-bulk-phase5.md`
+4 verification scripts (rung1-rung4), 14 config files, benchmarks.md Section 7, solutions doc. CTest label `verification`. All 19 requirements implemented (some revised with documented justification: R7/R9 tolerance relaxation, R11 dropped, R10 uses self-consistency instead of Bastard).
 
-All phases done. New confinement=3 (Landau) mode replaces the original "Peierls in ZB8bandBulk" approach with a proper x-discretized 8NxN Hamiltonian. Landau gauge A=(0,Bz*x,-By*x) via `compute_gauge_shifts`. B-sweep fan diagram, analytical validation (E_n = E_C + hw_c(n+1/2)), ky-degeneracy check. `b_field` config workaround used for ExternalField (float parsing deferred — no user impact). Fu-Kane Z2 deferred to Phase 6.
+### 55. 2026-05-09-csr-structure-testing
 
-**Commits:** 82 commits on feature/bdg-topological-superconductivity.
+**Status: PARTIAL**
 
-### 48. 2026-05-02-physics-figures-implementation
+U1-U5 complete (invariant fixture, 10 CSR operation tests, 4 Krylov snapshot tests, refactored existing tests, regeneration infrastructure). U6 partial: 4 of 7 Krylov paths done. Missing:
+- SC loop snapshot (test initial Hamiltonian before SC iteration)
+- Optics wire mode snapshot
+- G-factor wire mode snapshot
 
-**Status: COMPLETE**
+### 56. 2026-05-09-standard-star-benchmarks
 
-All tasks done. Landau level verification via analytical formula and B-sweep fan diagram. input-reference.md updated for confinement=3. Landau configs registered as regression tests.
+**Status: PARTIAL**
 
-### 49. 2026-05-02-topological-suite-verification
+All 7 scripts implemented and registered under ctest labels `standard-star;verification`. 24 code-review findings addressed (P0 ctest label fix, P1 S5 overlap check). Remaining:
+- S4 absorption onset uses range check instead of regression reference
+- S7 wire g-factor uses loose tolerance (50% range) instead of `G_WIRE_REF`
+- Run wrapper centralization incomplete for S3/S4/S5/S6
+- `benchmarks.md` Roth formula documentation error (KD2)
 
-**Status: COMPLETE**
+### 59. 2026-05-11-strain-validation
 
-**Archive:** `docs/plans/archive/2026-05-02-topological-suite-verification-spec.md`, `docs/plans/archive/2026-05-02-topological-suite-verification-plan.md`
+**Status: PARTIAL**
 
-Phase 6 completion repair closed the remaining verification gaps:
-
-- Fu-Kane Z2 for QW implemented and regression-tested (`regression_topology_qw_fukane_z2`).
-- Gap sweep implemented with BHZ analytic, QW Fu-Kane, and wire BdG executable paths; sweep regressions registered.
-- Conductance and spectral modes registered as regressions.
-- Berry curvature / phase-diagram / edge / spectral figure support was delivered earlier in the branch.
-
-Verification on 2026-05-06: `ctest --test-dir build -j4 --output-on-failure` passed `66/66`.
-
-### 51. 2026-05-05-phase6-completion-repair
-
-**Status: COMPLETE**
-
-**Archive:** `docs/plans/archive/2026-05-05-phase6-topological-suite.md`, `docs/plans/archive/2026-05-05-phase6-completion-repair.md`
-
-Executed task-by-task with review gates. Final branch state pushed to `origin/feature/bdg-topological-superconductivity` through:
-
-- `c56fbd4 docs(topo): design phase 6 completion repair`
-- `ad63187 fix(topo): repair phase 6 foundation defects`
-- `bd3b98f feat(topo): complete Phase 6 topological suite wiring`
-- `b35a979 feat(topo): add Phase 6 parser fields and regression configs`
-- `889109d test(topo): add Phase 6 integration test scripts`
-- `20c3f19 fix(topo): resolve phase 6 verification issues`
-
-Final verification:
-
-- Fresh configure/build passed.
-- Full suite passed: `66/66`.
-- Manual smoke passed for conductance QWZ, QW Fu-Kane, QW BdG, spectral QW/wire/bulk, sweep BHZ, and sweep QW.
-
-### 50. 2026-05-03-physics-figures-extended
-
-**Status: COMPLETE**
-
-All 5 phases delivered in Phase 4 (commit 79688ab):
-- Phase 1: Bulk E(k) for GaAs, InAs, InSb (3-panel figure)
-- Phase 2: QW wavefunctions with band edge profile
-- Phase 3: Wire material map + radial potential cut
-- Phase 4: Analytical Zeeman fan diagram (spin splitting vs B)
-- Phase 5: Figures integrated into `generate_all_figures.py` (not separate script)
-
-### 53. 2026-05-08-review-findings-fixes
-
-**Status: COMPLETE**
-
-**Archive:** `docs/plans/archive/2026-05-08-001-fix-review-findings-plan.md`
-
-Multi-agent ce-code-review of Phase 7 bug-fix commits found 8 actionable findings (P0-P2). 5 fixed, 3 deferred (QW Fu-Kane unit test needs mock infrastructure, advisory P3s noted).
-
-**Fixed:**
-
-| ID | Finding | Fix |
-|----|---------|-----|
-| U1 | BdG gap used half-gap in wire single-point path | Unified to full gap `2*min|E|` across all 3 paths |
-| U2 | Missing `contiguous` on COO arrays in `magnetic_field.f90` | Added to `add_zeeman_coo` and `add_peierls_coo` |
-| U3 | Peierls test fixture had wrong coordinate mapping + no fallback test | Fixed column-major coords, added `test_peierls_fallback_y_index` |
-| U4 | Majorana test used nx=1 (wouldn't catch OOB bug) | Changed to nx=3, ny=7 multi-column grid |
-| U5 | No backward B+D hopping structural test | Added `test_bhz_backward_hopping_connects_neighbors` |
-
-**Commits:** `d8fcbbd` on `feature/bdg-topological-superconductivity`.
-
-**Verification:** 66/66 tests pass. All 5 Codex review comments on PR #13 replied to with fix details.
+All 3 verification scripts implemented and CTest registered. Shared infrastructure extracted. Code-review fix pass applied. Remaining:
+- QW tests use qualitative checks instead of Bastard analytical (justified for narrow 20A well)
+- Wire R7 tolerance relaxed from 5-10% to 60% (justified by free-surface relaxation)
+- Brainstorm and plan docs are untracked in git
