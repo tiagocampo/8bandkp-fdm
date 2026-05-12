@@ -202,7 +202,7 @@ The 8-band Lowdin partitioning gives g* = -0.315, which is ~28% smaller in
 magnitude than the experimental value of -0.44. This discrepancy is well
 understood:
 
-1. **Roth formula**: g* = g0 - (2Ep/3)(1/Eg + 1/(Eg+Delta)) gives -0.44 using
+1. **Roth formula**: g* = 2 - 2*Ep*DeltaSO / (3*Eg*(Eg + DeltaSO)) gives -0.44 using
    EP=28.8, Eg=1.519, Delta=0.341. This includes remote-band contributions
    implicitly through the effective Kane energy.
 

@@ -46,7 +46,7 @@ import sys
 import tempfile
 
 from star_helpers import (
-    run_executable, parse_eigenvalues, parse_gfactor,
+    run_exe, parse_eigenvalues, parse_gfactor,
     compare_value, format_benchmark_row,
     print_benchmark_header, roth_gfactor,
 )
@@ -108,24 +108,6 @@ G_REF = -13.3616        # gz, 8-band QW (Roth bulk: -14.86)
 # Gfactor config: numcb=32, numvb=32 => 64 eigenvalues, CB at index 32
 
 
-def run_bandstructure(build_dir, config_path, work_dir):
-    """Run bandStructure and return (returncode, output_dir)."""
-    exe = os.path.join(build_dir, "src", "bandStructure")
-    if not os.path.isfile(exe):
-        print(f"FAIL: bandStructure not found at {exe}")
-        sys.exit(1)
-    return run_executable(exe, config_path, work_dir)
-
-
-def run_gfactor(build_dir, config_path, work_dir):
-    """Run gfactorCalculation and return (returncode, output_dir)."""
-    exe = os.path.join(build_dir, "src", "gfactorCalculation")
-    if not os.path.isfile(exe):
-        print(f"FAIL: gfactorCalculation not found at {exe}")
-        sys.exit(1)
-    return run_executable(exe, config_path, work_dir)
-
-
 def check_gfactor(build_dir, configs_dir):
     """Check InAsW/GaSbW broken-gap QW g-factor (regression reference).
 
@@ -147,7 +129,7 @@ def check_gfactor(build_dir, configs_dir):
 
     tmpdir = tempfile.mkdtemp(prefix="star_inas_gasb_gf_")
     try:
-        rc, output_dir = run_gfactor(build_dir, config_path, tmpdir)
+        rc, output_dir = run_exe(build_dir, 'gfactorCalculation', config_path, tmpdir)
         if rc != 0:
             print(f"  FAIL: gfactorCalculation returned exit code {rc}")
             rows.append({
@@ -271,7 +253,7 @@ def check_band_overlap(build_dir, configs_dir):
     # band-edge literature value of ~150 meV. Print for diagnostics.
     tmpdir = tempfile.mkdtemp(prefix="star_inas_gasb_overlap_")
     try:
-        rc, output_dir = run_bandstructure(build_dir, config_path, tmpdir)
+        rc, output_dir = run_exe(build_dir, 'bandStructure', config_path, tmpdir)
         if rc != 0:
             print(f"  WARN: bandStructure returned exit code {rc} "
                   f"(eigenvalue diagnostic skipped)")

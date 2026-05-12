@@ -39,7 +39,7 @@ import tempfile
 import shutil
 
 from star_helpers import (
-    run_executable, parse_eigenvalues, parse_gfactor,
+    run_exe, parse_eigenvalues, parse_gfactor,
     compare_value, format_benchmark_row, print_benchmark_header,
     roth_gfactor,
 )
@@ -125,24 +125,6 @@ TOL_GFACTOR = 0.05     # 5% regression tolerance vs 8-band QW reference
 # the QW results differ due to confinement and band-mixing effects.
 HHLH_REF = 0.082710    # eV (8-band QW; bulk Bir-Pikus: 0.241 eV)
 G_REF = -2.358147      # gz (8-band QW; bulk Roth: -14.6)
-
-
-def run_bandstructure(build_dir, config_path, work_dir):
-    """Run bandStructure and return (returncode, output_dir)."""
-    exe = os.path.join(build_dir, "src", "bandStructure")
-    if not os.path.isfile(exe):
-        print(f"FAIL: bandStructure not found at {exe}")
-        sys.exit(1)
-    return run_executable(exe, config_path, work_dir)
-
-
-def run_gfactor(build_dir, config_path, work_dir):
-    """Run gfactorCalculation and return (returncode, output_dir)."""
-    exe = os.path.join(build_dir, "src", "gfactorCalculation")
-    if not os.path.isfile(exe):
-        print(f"FAIL: gfactorCalculation not found at {exe}")
-        sys.exit(1)
-    return run_executable(exe, config_path, work_dir)
 
 
 def check_hh_lh_splitting(evals, num_vb):
@@ -231,7 +213,7 @@ def main():
     k0_evals = None
     tmpdir = tempfile.mkdtemp(prefix="star_inas_gaas_qw_")
     try:
-        rc, output_dir = run_bandstructure(build_dir, config_qw, tmpdir)
+        rc, output_dir = run_exe(build_dir, 'bandStructure', config_qw, tmpdir)
         if rc != 0:
             print(f"FAIL: bandStructure exited with code {rc}")
             all_pass = False
@@ -327,7 +309,7 @@ def main():
 
     tmpdir = tempfile.mkdtemp(prefix="star_inas_gaas_gf_")
     try:
-        rc, output_dir = run_gfactor(build_dir, config_gf, tmpdir)
+        rc, output_dir = run_exe(build_dir, 'gfactorCalculation', config_gf, tmpdir)
         if rc != 0:
             print(f"FAIL: gfactorCalculation exited with code {rc}")
             all_pass = False

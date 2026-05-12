@@ -68,6 +68,11 @@ STARK_RAW_SHIFT_REF = CB1_EF_REF - CB1_NO_FIELD_REF  # ~1.049770 eV
 # CB1 = EC(GaAs) + E1(8-band) ~ 1.021 eV.
 CB1_SUBBAND_EDGE = 0.761        # eV
 
+# TE absorption onset energy for Al30Ga70As(200A)/GaAs(100A)/Al30Ga70As(200A) QW.
+# Regression reference from opticalProperties output.
+# Onset defined as first energy exceeding 10% of peak absorption.
+ONSET_REF = 1.538796            # eV (8-band QW regression)
+
 # ---------------------------------------------------------------------------
 # Config paths
 # ---------------------------------------------------------------------------
@@ -354,40 +359,19 @@ def check_absorption(build_dir, source_dir):
             print("  FAIL: could not detect TE absorption onset")
             return rows
 
-        # The absorption onset corresponds to the interband transition
-        # energy E_CV = CB1 - VB_top. For the QW, this is the lowest
-        # photon energy at which absorption occurs.
-        # Sanity bounds: above GaAs gap (1.519 eV), below Al30Ga70As gap (1.977 eV).
-        E_GAAS_GAP = 1.519     # eV, GaAs band gap
-        E_ALGAAS30_GAP = 1.977  # eV, Al30Ga70As band gap
-        onset_min = E_GAAS_GAP
-        onset_max = E_ALGAAS30_GAP
+        print(f"  TE absorption onset: {onset_energy:.6f} eV")
+        print(f"  Regression ref: {ONSET_REF:.6f} eV")
 
-        print(f"  TE absorption onset: {onset_energy:.4f} eV")
-        print(f"  Sanity range: [{onset_min:.3f}, {onset_max:.3f}] eV")
-        print(f"    GaAs gap: {E_GAAS_GAP:.3f} eV, Al30Ga70As gap: {E_ALGAAS30_GAP:.3f} eV")
-
-        # TODO: Replace range check with regression reference once
-        # opticalProperties has been run to establish ONSET_REF.
-        # Target: compare_value(onset_energy, ONSET_REF, TOL_ABS_ONSET, ...)
-        onset_in_range = (onset_energy >= onset_min and
-                          onset_energy <= onset_max)
-        status_onset = 'PASS' if onset_in_range else 'FAIL'
-
-        row_onset = {
-            'computed': onset_energy,
-            'expected': (onset_min + onset_max) / 2,
-            'tolerance': TOL_ABS_ONSET,
-            'delta': 0.0 if onset_in_range else 1.0,
-            'name': 'TE absorption onset',
-            'unit': 'eV',
-            'status': status_onset,
-            'material': 'GaAs/AlGaAs QW',
-            'reference': 'Range: GaAs gap to AlGaAs gap',
-            'tol_str': f'Sanity ({TOL_ABS_ONSET*100:.0f}%)',
-        }
+        passed_onset, delta_onset, row_onset = compare_value(
+            onset_energy, ONSET_REF, TOL_ABS_ONSET,
+            "TE absorption onset", "eV"
+        )
+        row_onset['material'] = 'GaAs/AlGaAs QW'
+        row_onset['reference'] = '8-band QW regression'
+        row_onset['tol_str'] = f'Regression ({TOL_ABS_ONSET*100:.0f}%)'
         rows.append(row_onset)
-        print(f"  {status_onset}: onset in [{onset_min:.3f}, {onset_max:.3f}] eV")
+        status_onset = 'PASS' if passed_onset else 'FAIL'
+        print(f"  {status_onset}: delta = {delta_onset:.6f} ({delta_onset*100:.2f}%)")
 
         # --- TE > TM polarization check ---
         if os.path.isfile(tm_path):
@@ -495,8 +479,8 @@ def main():
     print("-" * 40)
     print("Observable 3: TE absorption onset + polarization")
     print("-" * 40)
-    print(f"  Reference: benchmarks.md Section 2; interband gap")
-    print(f"  Tolerance: Numerical (range check)")
+    print(f"  Reference: 8-band QW regression")
+    print(f"  Tolerance: Regression ({TOL_ABS_ONSET*100:.0f}%)")
     rows = check_absorption(build_dir, source_dir)
     all_rows.extend(rows)
     if any(r['status'] == 'FAIL' for r in rows):

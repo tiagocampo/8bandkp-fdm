@@ -38,7 +38,7 @@ except ImportError:
     sys.exit(1)
 
 from star_helpers import (
-    run_executable, parse_eigenvalues, parse_gfactor,
+    run_exe, parse_eigenvalues, parse_gfactor,
     compare_value, format_benchmark_row, print_benchmark_header,
     HBAR2_OVER_2M0, roth_gfactor, TOL_EXACT,
     extract_effective_mass,
@@ -71,24 +71,6 @@ TOL_GFACTOR = 0.01     # 1%: Roth g-factor vs 8-band
 
 # CB eigenvalue index (0-based): bands 1-4 valence, 5-6 SO, 7-8 CB
 CB_INDEX = 6
-
-
-def run_bandstructure(build_dir, config_path, work_dir):
-    """Run bandStructure and return (returncode, output_dir)."""
-    exe = os.path.join(build_dir, "src", "bandStructure")
-    if not os.path.isfile(exe):
-        print(f"FAIL: bandStructure not found at {exe}")
-        sys.exit(1)
-    return run_executable(exe, config_path, work_dir)
-
-
-def run_gfactor(build_dir, config_path, work_dir):
-    """Run gfactorCalculation and return (returncode, output_dir)."""
-    exe = os.path.join(build_dir, "src", "gfactorCalculation")
-    if not os.path.isfile(exe):
-        print(f"FAIL: gfactorCalculation not found at {exe}")
-        sys.exit(1)
-    return run_executable(exe, config_path, work_dir)
 
 
 def check_eigenvalues_at_k0(evals):
@@ -160,7 +142,7 @@ def main():
     print(f"\n--- Eg and DeltaSO (k=0) ---")
     tmpdir = tempfile.mkdtemp(prefix="star_insb_k0_")
     try:
-        rc, output_dir = run_bandstructure(build_dir, config_k0, tmpdir)
+        rc, output_dir = run_exe(build_dir, 'bandStructure', config_k0, tmpdir)
         if rc != 0:
             print(f"FAIL: bandStructure exited with code {rc}")
             all_pass = False
@@ -193,7 +175,7 @@ def main():
     print(f"\n--- Effective mass (Kane) ---")
     tmpdir = tempfile.mkdtemp(prefix="star_insb_disp_")
     try:
-        rc, output_dir = run_bandstructure(build_dir, config_disp, tmpdir)
+        rc, output_dir = run_exe(build_dir, 'bandStructure', config_disp, tmpdir)
         if rc != 0:
             print(f"FAIL: bandStructure exited with code {rc}")
             all_pass = False
@@ -230,7 +212,7 @@ def main():
 
     tmpdir = tempfile.mkdtemp(prefix="star_insb_gf_")
     try:
-        rc, output_dir = run_gfactor(build_dir, config_gf, tmpdir)
+        rc, output_dir = run_exe(build_dir, 'gfactorCalculation', config_gf, tmpdir)
         if rc != 0:
             print(f"FAIL: gfactorCalculation exited with code {rc}")
             all_pass = False

@@ -76,16 +76,13 @@ TOL_GFACTOR_RANGE = 0.50   # Wire g* within [0.5*|g_roth|, 2.0*|g_roth|]
 TOL_GFACTOR_REGRESSION = 0.10  # 10%: regression tolerance vs 8-band wire reference
 TOL_EIGENVALUE = 0.05      # 5%: regression tolerance vs 8-band wire reference
 
-# TODO: Add G_WIRE_REF regression reference once gfactorCalculation has been
-# run with wire config to establish the value. Then replace the Roth bulk range
-# check with compare_value(g_computed, G_WIRE_REF, TOL_GFACTOR_REGRESSION).
-
 # ---------------------------------------------------------------------------
 # Regression reference values (8-band wire)
 # ---------------------------------------------------------------------------
 # The 55x55 nm InAs wire has significant confinement (m* ~0.023 m0), pushing
 # the CB ground state well above bulk Eg. Use code output as regression ref.
 CB_GROUND_REF = 0.864320   # eV, 8-band wire CB ground state
+G_WIRE_REF = -14.174593    # gz, 8-band wire g-factor (regression reference)
 
 
 # ---------------------------------------------------------------------------
@@ -107,55 +104,6 @@ def find_cb_ground_state(evals):
             max_gap = gap
             max_gap_idx = i
     return sorted_evals[max_gap_idx + 1]
-
-
-def check_wire_gfactor(g_computed, g_roth, tolerance_frac):
-    """Check wire g-factor against Roth bulk limit.
-
-    For a large wire, the g-factor should:
-      1. Have the same sign as the bulk Roth value
-      2. Have magnitude within [tolerance_frac * |g_roth|, (1/tolerance_frac) * |g_roth|]
-
-    This is a range check rather than a point comparison because wire
-    confinement modifies the g-factor from the bulk value, but for a large
-    wire (55x55 nm) it should be within a factor of 2.
-
-    Args:
-        g_computed: computed wire g-factor
-        g_roth: bulk Roth g-factor prediction
-        tolerance_frac: fractional bounds (0.5 means within [0.5, 2.0] of |g_roth|)
-
-    Returns:
-        (passed, row_dict) where row_dict has standard benchmark fields.
-    """
-    abs_roth = abs(g_roth)
-    abs_computed = abs(g_computed)
-
-    # Sign check
-    sign_match = (g_computed * g_roth) > 0
-
-    # Magnitude range check: |g| in [frac * |g_roth|, |g_roth| / frac]
-    lower_bound = tolerance_frac * abs_roth
-    upper_bound = abs_roth / tolerance_frac
-    in_range = lower_bound <= abs_computed <= upper_bound
-
-    passed = sign_match and in_range
-
-    # Compute a "delta" for the benchmark table: relative deviation from
-    # the Roth value (may be > 100% if outside the tolerance range).
-    delta = abs(abs_computed - abs_roth) / abs_roth
-
-    row = {
-        'computed': g_computed,
-        'expected': g_roth,
-        'tolerance': tolerance_frac,
-        'delta': delta,
-        'name': 'g* wire',
-        'unit': '',
-        'status': 'PASS' if passed else 'FAIL',
-    }
-
-    return passed, delta, row
 
 
 def main():
@@ -198,19 +146,16 @@ def main():
           f"/ (3*{INAS_EG}*({INAS_EG}+{INAS_DELTA_SO}))")
 
     # ------------------------------------------------------------------
-    # Observable 1: Wire g-factor vs Roth bulk limit
-    # Reference: Winkler 2003, Eq. (6.42)
+    # Observable 1: Wire g-factor (regression reference)
     # The wire g-factor is computed via commutator-based velocity matrices
     # [r_alpha, H] on the CSR Hamiltonian.
     # ------------------------------------------------------------------
     print(f"\n{'─' * 72}")
-    print("Observable 1: g* CB wire (Roth bulk limit)")
+    print("Observable 1: g* CB wire (regression)")
     print(f"{'─' * 72}")
-    print(f"  Roth prediction (bulk): g = {G_ROTH:.4f}")
-    print(f"  Wire g* expected: same sign, magnitude within "
-          f"[{TOL_GFACTOR_RANGE}*|g_roth|, |g_roth|/{TOL_GFACTOR_RANGE}]")
-    print(f"  i.e. |g*| in [{TOL_GFACTOR_RANGE * abs(G_ROTH):.2f}, "
-          f"{abs(G_ROTH) / TOL_GFACTOR_RANGE:.2f}]")
+    print(f"  Regression ref: gz = {G_WIRE_REF:.6f}")
+    print(f"  Bulk Roth (InAs): g = {G_ROTH:.4f} (for reference only)")
+    print(f"  Wire confinement modifies g* from the bulk value.")
 
     tmpdir = tempfile.mkdtemp(prefix="star_inas_wire_gf_")
     try:
@@ -227,30 +172,28 @@ def main():
             else:
                 gx, gy, gz = parse_gfactor(gf_path)
 
-                print(f"  Computed g*: gx={gx:.4f}, gy={gy:.4f}, gz={gz:.4f}")
+                print(f"  Computed g*: gx={gx:.4f}, gy={gy:.4f}, gz={gz:.6f}")
 
-                # For wire with B along z, gz is the longitudinal g-factor
-                passed, delta, row = check_wire_gfactor(
-                    gz, G_ROTH, TOL_GFACTOR_RANGE
+                passed, delta, _ = compare_value(
+                    gz, G_WIRE_REF, TOL_GFACTOR_REGRESSION,
+                    "g* wire", ""
                 )
 
                 bench_row = format_benchmark_row(
-                    "InAs wire", "g* CB (wire)", gz, G_ROTH,
-                    "Winkler 2003, Eq. (6.42)",
-                    f"Analytical ({TOL_GFACTOR_RANGE*100:.0f}%-range)",
+                    "InAs wire", "g* CB (wire)", gz, G_WIRE_REF,
+                    "8-band wire regression",
+                    f"Regression ({TOL_GFACTOR_REGRESSION*100:.0f}%)",
                     delta,
                     "PASS" if passed else "FAIL"
                 )
                 rows.append(bench_row)
 
                 if passed:
-                    print(f"  PASS: |g*| = {abs(gz):.4f} within "
-                          f"[{TOL_GFACTOR_RANGE * abs(G_ROTH):.2f}, "
-                          f"{abs(G_ROTH) / TOL_GFACTOR_RANGE:.2f}]")
+                    print(f"  PASS: delta = {delta:.4f} ({delta*100:.1f}%) "
+                          f"<= {TOL_GFACTOR_REGRESSION*100:.0f}%")
                 else:
-                    print(f"  FAIL: |g*| = {abs(gz):.4f} outside "
-                          f"[{TOL_GFACTOR_RANGE * abs(G_ROTH):.2f}, "
-                          f"{abs(G_ROTH) / TOL_GFACTOR_RANGE:.2f}]")
+                    print(f"  FAIL: delta = {delta:.4f} ({delta*100:.1f}%) "
+                          f"> {TOL_GFACTOR_REGRESSION*100:.0f}%")
                     all_pass = False
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
