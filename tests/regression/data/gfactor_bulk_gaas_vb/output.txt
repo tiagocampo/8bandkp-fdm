@@ -1,0 +1,62 @@
+ waveVector:k0
+ waveVectorMax:  0.10000000000000001
+ waveVectorStep:           0
+ confinement:           0
+ FDstep:           1
+ FDorder:           2
+ numLayers:           1
+ material1:GaAs
+ numcb:           2
+ numvb:           6
+ ExternalField:           0 EF
+ EFParams:   5.0000000000000001E-004
+ whichBand           1
+ bandIdx           1
+ bandIdx           0
+
+ Material: GaAs
+ Parameters
+ EP :   28.800000000000001
+ P  :   10.475088634541221
+ A  :   14.925373134328357
+ gamma1 :   6.9800000000000004
+ gamma2 :   2.0600000000000001
+ gamma3 :   2.9300000000000002
+
+ adjusting numcb and numvb to get all states
+ gfactor for valence band
+ sigma
+   0.0000    0.0000   0.0000    0.5774
+   0.0000   -0.5774   0.0000    0.0000
+
+   0.0000    0.0000   0.5774    0.0000
+   0.5774    0.0000   0.0000    0.0000
+
+   0.3333    0.0000   0.0000    0.0000
+   0.0000    0.0000   1.0000    0.0000
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=   0.0000000000000000
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           3 denom=   0.0000000000000000
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           4 denom=   0.0000000000000000
+ WARNING: near-zero energy denominator, n=           1 m=           2 l=           3 denom=   0.0000000000000000
+ WARNING: near-zero energy denominator, n=           1 m=           2 l=           4 denom=   0.0000000000000000
+ Total skipped contributions:          10
+ Total skipped contributions:          20
+ Total skipped contributions:          30
+ tensor
+   0.0000   -0.0000   0.0000    4.8952
+   0.0000   -4.8952   0.0000   -0.0000
+
+   0.0000   -0.0000   4.8952   -0.0000
+   4.8952   -0.0000   0.0000   -0.0000
+
+   2.8263   -0.0000   0.0000   -0.0000
+   0.0000   -0.0000   8.4788   -0.0000
+ gx
+   0.0000000000000000
+  -16.957531011194629
+ gy
+   0.0000000000000000
+  -16.957531011194629
+ gz
+   0.0000000000000000
+  -16.957531011194622

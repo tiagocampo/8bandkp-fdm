@@ -276,6 +276,39 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
+# g-factor Bulk GaAs VB
+add_test(
+    NAME regression_gfactor_bulk_gaas_vb
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_gfactor.sh
+        $<TARGET_FILE:gfactorCalculation>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/gfactor_bulk_gaas_vb.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/gfactor_bulk_gaas_vb
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# g-factor Bulk GaAsW CB
+add_test(
+    NAME regression_gfactor_bulk_gaasw_cb
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_gfactor.sh
+        $<TARGET_FILE:gfactorCalculation>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/gfactor_bulk_gaasw_cb.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/gfactor_bulk_gaasw_cb
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# g-factor QW VB (AlSbW/GaSbW/InAsW)
+add_test(
+    NAME regression_gfactor_qw_vb
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_gfactor.sh
+        $<TARGET_FILE:gfactorCalculation>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/gfactor_qw_vb.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/gfactor_qw_vb
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
 # Bulk InAs band structure
 add_test(
     NAME regression_bulk_inas
@@ -342,7 +375,9 @@ set_tests_properties(
     regression_qw_character_and_output_dir regression_qw_absorption_polarization
     regression_qw_absorption_strained_polarization
     regression_scattering_transition_sanity regression_gfactor_cb
-    regression_gfactor_no_optics regression_bulk_inas
+    regression_gfactor_no_optics regression_gfactor_bulk_gaas_vb
+    regression_gfactor_bulk_gaasw_cb regression_gfactor_qw_vb
+    regression_bulk_inas
     regression_landau_inas regression_landau_bulk_gaas regression_landau_bulk_inas
     regression_landau_bulk_inas_bsweep regression_landau_analytical
     PROPERTIES LABELS "regression"
