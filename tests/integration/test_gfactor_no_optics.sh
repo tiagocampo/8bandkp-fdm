@@ -1,5 +1,5 @@
 #!/bin/bash
-# COVERAGE: observable=gfactor geometry=QW material=GaAs/AlGaAs
+# COVERAGE: observable=g*_cb geometry=QW material=GaAs/AlGaAs
 # Integration test: g-factor run with optics disabled must not emit optical transitions.
 # Args: <gfactorCalculation_exe> <config_file>
 set -euo pipefail
