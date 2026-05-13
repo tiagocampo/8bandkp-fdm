@@ -476,6 +476,7 @@ contains
     logical, intent(out) :: converged
 
     integer :: peak_idx, tail_start, i
+    logical :: forward_tail
     real(kind=dp) :: rho_peak, x_start, domain_extent
     real(kind=dp) :: sum_y_log, sum_x, sum_x2, sum_xy, denom, slope
 
@@ -493,6 +494,7 @@ contains
 
     ! Search forward from peak for tail start
     tail_start = 0
+    forward_tail = .true.
     do i = peak_idx + 1, n_points
       if (density(i) < threshold * rho_peak) then
         tail_start = i
@@ -502,6 +504,7 @@ contains
 
     ! Search backward if no forward tail found
     if (tail_start == 0) then
+      forward_tail = .false.
       do i = peak_idx - 1, 1, -1
         if (density(i) < threshold * rho_peak) then
           tail_start = i
@@ -510,7 +513,9 @@ contains
       end do
     end if
 
-    if (tail_start == 0 .or. tail_start >= n_points) return
+    if (tail_start == 0) return
+    if (forward_tail .and. tail_start >= n_points) return
+    if (.not. forward_tail .and. tail_start <= 1) return
 
     x_start = positions(tail_start)
 
@@ -521,15 +526,56 @@ contains
     sum_xy = 0.0_dp
     n_fit_actual = 0
 
-    do i = tail_start, n_points
-      if (density(i) > 1.0e-14_dp) then
-        n_fit_actual = n_fit_actual + 1
-        sum_y_log = sum_y_log + log(density(i))
-        sum_x = sum_x + (positions(i) - x_start)
-        sum_x2 = sum_x2 + (positions(i) - x_start)**2
-        sum_xy = sum_xy + (positions(i) - x_start) * log(density(i))
-      end if
-    end do
+    if (forward_tail) then
+      ! Tail is to the right of peak: iterate forward
+      do i = tail_start, n_points
+        if (density(i) > 1.0e-14_dp) then
+          n_fit_actual = n_fit_actual + 1
+          sum_y_log = sum_y_log + log(density(i))
+          sum_x = sum_x + (positions(i) - x_start)
+          sum_x2 = sum_x2 + (positions(i) - x_start)**2
+          sum_xy = sum_xy + (positions(i) - x_start) * log(density(i))
+        end if
+      end do
+    else
+      ! Tail is to the left of peak: iterate backward toward index 1
+      do i = tail_start, 1, -1
+        if (density(i) > 1.0e-14_dp) then
+          n_fit_actual = n_fit_actual + 1
+          sum_y_log = sum_y_log + log(density(i))
+          sum_x = sum_x + (x_start - positions(i))
+          sum_x2 = sum_x2 + (x_start - positions(i))**2
+          sum_xy = sum_xy + (x_start - positions(i)) * log(density(i))
+        end if
+      end do
+    end if
+
+    ! Fallback: if forward tail found no data, try backward direction
+    if (n_fit_actual < 3 .and. forward_tail) then
+      forward_tail = .false.
+      do i = peak_idx - 1, 1, -1
+        if (density(i) < threshold * rho_peak) then
+          tail_start = i
+          exit
+        end if
+      end do
+      if (tail_start == 0 .or. tail_start <= 1) return
+      x_start = positions(tail_start)
+      sum_y_log = 0.0_dp
+      sum_x = 0.0_dp
+      sum_x2 = 0.0_dp
+      sum_xy = 0.0_dp
+      n_fit_actual = 0
+      do i = tail_start, 1, -1
+        if (density(i) > 1.0e-14_dp) then
+          n_fit_actual = n_fit_actual + 1
+          sum_y_log = sum_y_log + log(density(i))
+          sum_x = sum_x + (x_start - positions(i))
+          sum_x2 = sum_x2 + (x_start - positions(i))**2
+          sum_xy = sum_xy + (x_start - positions(i)) * log(density(i))
+        end if
+      end do
+    end if
 
     if (n_fit_actual < 3) return
 
@@ -542,7 +588,11 @@ contains
     xi = abs(-1.0_dp / slope)
 
     ! R11: Check near-transition regime — xi comparable to domain extent
-    domain_extent = abs(positions(n_points) - positions(tail_start))
+    if (forward_tail) then
+      domain_extent = abs(positions(n_points) - positions(tail_start))
+    else
+      domain_extent = abs(positions(tail_start) - positions(1))
+    end if
     if (domain_extent > 0.0_dp .and. xi < domain_extent) then
       converged = .true.
     else if (domain_extent > 0.0_dp) then
@@ -1029,7 +1079,7 @@ contains
     real(kind=dp), intent(out) :: min_gap
 
     integer :: N, dim_H, i_trim, istate, isite, ncol
-    integer :: info, lwork, n_pairs, ipair, j_best
+    integer :: info, lwork, n_pairs, ipair, j_best, jstate
     real(kind=dp), parameter :: parity_sign_tol = 1.0e-8_dp
     real(kind=dp) :: pair_sign, a_lat, dE_best, dE_try
     real(kind=dp) :: delta_trim(4)
@@ -1132,14 +1182,14 @@ contains
         if (paired(istate)) cycle
         j_best = 0
         dE_best = huge(1.0_dp)
-        do isite = istate + 1, n_occ
-          if (paired(isite)) cycle
+        do jstate = istate + 1, n_occ
+          if (paired(jstate)) cycle
           ! Kramers partners at TRIM have the same parity sign
-          if (band_parity(istate) * band_parity(isite) <= 0.0_dp) cycle
-          dE_try = abs(evals(istate) - evals(isite))
+          if (band_parity(istate) * band_parity(jstate) <= 0.0_dp) cycle
+          dE_try = abs(evals(istate) - evals(jstate))
           if (dE_try < dE_best) then
             dE_best = dE_try
-            j_best = isite
+            j_best = jstate
           end if
         end do
         if (j_best == 0) then
@@ -1320,8 +1370,7 @@ contains
 
     do iMu = 1, nMu
       do iB = 1, nB - 1
-        if (is_z2_transition(z2_map(iMu, iB), z2_map(iMu, iB + 1), &
-            gap_map(iMu, iB), gap_map(iMu, iB + 1), gap_threshold)) then
+        if (is_z2_transition(z2_map(iMu, iB), z2_map(iMu, iB + 1))) then
           n_trans = n_trans + 1
           trans_raw(n_trans, 1) = B_min + (real(iB - 1, kind=dp) + 0.5_dp) * dB
           trans_raw(n_trans, 2) = mu_min + real(iMu - 1, kind=dp) * dmu
@@ -1331,8 +1380,7 @@ contains
 
     do iMu = 1, nMu - 1
       do iB = 1, nB
-        if (is_z2_transition(z2_map(iMu, iB), z2_map(iMu + 1, iB), &
-            gap_map(iMu, iB), gap_map(iMu + 1, iB), gap_threshold)) then
+        if (is_z2_transition(z2_map(iMu, iB), z2_map(iMu + 1, iB))) then
           n_trans = n_trans + 1
           trans_raw(n_trans, 1) = B_min + real(iB - 1, kind=dp) * dB
           trans_raw(n_trans, 2) = mu_min + (real(iMu - 1, kind=dp) + 0.5_dp) * dmu
@@ -1347,10 +1395,9 @@ contains
 
   end subroutine detect_z2_transitions
 
-  elemental logical function is_z2_transition(z2_a, z2_b, gap_a, gap_b, gap_threshold) result(is_transition)
+  elemental logical function is_z2_transition(z2_a, z2_b) result(is_transition)
     implicit none
     integer, intent(in) :: z2_a, z2_b
-    real(kind=dp), intent(in) :: gap_a, gap_b, gap_threshold
 
     is_transition = (z2_a /= z2_b)
   end function is_z2_transition
