@@ -562,4 +562,36 @@ contains
     deallocate(grid%z, grid%coords, evec, profile)
   end subroutine test_majorana_coords_2d_wire
 
+  @test
+  subroutine test_fit_exponential_decay_right_edge()
+    ! Right-edge density: peak near end, tail to the left.
+    ! Old bug: backward search finds tail_start, but regression runs forward
+    ! over increasing density, producing meaningless xi.
+    real(kind=dp), parameter :: xi_true = 5.0_dp
+    real(kind=dp), parameter :: dz = 1.0_dp
+    real(kind=dp) :: density(100), xvals(100)
+    real(kind=dp) :: xi
+    logical :: success
+    integer :: i
+
+    do i = 1, 100
+      xvals(i) = real(i - 1, kind=dp) * dz
+    end do
+
+    ! Peak at index 80, exponential tail to the LEFT
+    density = 0.0_dp
+    density(80) = 1.0_dp
+    do i = 79, 21, -1
+      density(i) = exp(-2.0_dp * real(80 - i, kind=dp) / xi_true)
+    end do
+    ! density(1:20) stays 0.0 (before the tail)
+
+    call fit_exponential_decay(density, xvals, xi, success)
+
+    @assertTrue(success, message="fit_exponential_decay should succeed for right-edge profile")
+    @assertTrue(xi > 0.0_dp, message="xi should be positive for right-edge profile")
+    ! Recovered xi should be within 25% of xi_true/2 (exp uses -2*x/xi)
+    @assertTrue(abs(xi - xi_true * 0.5_dp) < 1.0_dp, message="right-edge xi should match left-edge xi (within 25%)")
+  end subroutine test_fit_exponential_decay_right_edge
+
 end module test_edge_states
