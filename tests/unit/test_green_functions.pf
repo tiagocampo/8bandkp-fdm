@@ -254,7 +254,7 @@ contains
     real(kind=dp) :: T, G
 
     T = compute_landauer_transmission_1d(E=0.0_dp, onsite=0.0_dp, hopping=-1.0_dp, eta=1.0e-6_dp)
-    G = compute_conductance_landauer_from_transmission(T)
+    G = T  ! conductance = transmission (identity in single-channel Landauer)
 
     @assertEqual(1.0_dp, T, tolerance=1.0e-5_dp)
     @assertEqual(1.0_dp, G, tolerance=1.0e-5_dp)

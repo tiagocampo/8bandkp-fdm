@@ -708,4 +708,221 @@ contains
     @assertEqual(0.0_dp, gap_full, tolerance=1.0e-12_dp, message="Gap at exact zero should be 0")
   end subroutine test_bdg_gap_exact_zero
 
+  ! ==================================================================
+  ! U7 (R1/R25): BdG Hermiticity verification with Peierls phases.
+  !
+  ! R1 was confirmed as a false positive: the BdG hole block
+  ! construction -H0^T is mathematically correct. These tests verify
+  ! Hermiticity is preserved when Peierls phases are applied.
+  ! ==================================================================
+
+  @test
+  subroutine test_bdg_hermiticity_multicolumn_with_bx()
+    ! Multi-column wire BdG with nonzero Bx: Peierls phases must not
+    ! break Hermiticity.  Frobenius norm ||H - H^dagger||_F < 1e-12.
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ij, i, j
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: Hd(:,:)
+    real(kind=dp) :: frob_norm
+
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    cfg%bdg%enabled = .false.
+
+    ! Build BdG with Bx = 0.5 T (triggers Peierls phases on multi-column wire)
+    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
+                                   kz=0.0_dp, mu=0.0_dp, delta_0=0.001_dp, ws=ws, &
+                                   B_vec=[0.5_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
+
+    ! Convert to dense and compute Frobenius norm of H - H^dagger
+    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
+    call csr_to_dense(H_bdg, Hd)
+
+    frob_norm = 0.0_dp
+    do j = 1, H_bdg%ncols
+      do i = 1, H_bdg%nrows
+        frob_norm = frob_norm + abs(Hd(i,j) - conjg(Hd(j,i)))**2
+      end do
+    end do
+    frob_norm = sqrt(frob_norm)
+
+    @assertLessThan(frob_norm, 1.0e-12_dp, message="BdG with Peierls phase must be Hermitian (Frobenius)")
+
+    deallocate(Hd)
+    call csr_free(H_bdg)
+    call wire_workspace_free(ws)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_bdg_hermiticity_multicolumn_with_bx
+
+  @test
+  subroutine test_bdg_hermiticity_multicolumn_zero_field()
+    ! Baseline: multi-column wire BdG with zero magnetic field.
+    ! Hermiticity must hold trivially (no Peierls phase).
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ij, i, j
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: Hd(:,:)
+    real(kind=dp) :: frob_norm
+
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    cfg%bdg%enabled = .false.
+
+    ! Build BdG with no magnetic field
+    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
+                                   kz=0.0_dp, mu=0.0_dp, delta_0=0.001_dp, ws=ws)
+
+    ! Convert to dense and compute Frobenius norm of H - H^dagger
+    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
+    call csr_to_dense(H_bdg, Hd)
+
+    frob_norm = 0.0_dp
+    do j = 1, H_bdg%ncols
+      do i = 1, H_bdg%nrows
+        frob_norm = frob_norm + abs(Hd(i,j) - conjg(Hd(j,i)))**2
+      end do
+    end do
+    frob_norm = sqrt(frob_norm)
+
+    @assertLessThan(frob_norm, 1.0e-12_dp, message="BdG baseline (no B) must be Hermitian")
+
+    deallocate(Hd)
+    call csr_free(H_bdg)
+    call wire_workspace_free(ws)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_bdg_hermiticity_multicolumn_zero_field
+
+  @test
+  subroutine test_bdg_hermiticity_no_peierls_bz_only()
+    ! Multi-column wire with Bz only: Peierls phase is driven by Bx in the
+    ! Landau gauge A = (0, 0, Bx*y), so Bz produces no Peierls phases.
+    ! Verify by comparing BdG with B_vec=[0,0,Bz] to B_vec=[0,0,0] (both
+    ! with g_factor=0 so Zeeman vanishes): the matrices must be identical.
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ij, i, j
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_zero, H_bz
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws_zero, ws_bz
+    integer :: mat2d(nx, ny)
+    complex(kind=dp), allocatable :: Hd_zero(:,:), Hd_bz(:,:)
+    real(kind=dp) :: max_diff
+
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 2
+    cfg%bdg%enabled = .false.
+
+    ! Build with no B field
+    call build_bdg_hamiltonian_1d(H_zero, cfg, profile_2d, kpterms_2d, &
+                                   kz=0.0_dp, mu=0.0_dp, delta_0=0.001_dp, ws=ws_zero)
+
+    ! Build with Bz = 0.5 T, g_factor=0 (no Zeeman, no Peierls from Bz)
+    call build_bdg_hamiltonian_1d(H_bz, cfg, profile_2d, kpterms_2d, &
+                                   kz=0.0_dp, mu=0.0_dp, delta_0=0.001_dp, ws=ws_bz, &
+                                   B_vec=[0.0_dp, 0.0_dp, 0.5_dp], g_factor=0.0_dp)
+
+    ! Convert both to dense
+    allocate(Hd_zero(H_zero%nrows, H_zero%ncols))
+    allocate(Hd_bz(H_bz%nrows, H_bz%ncols))
+    call csr_to_dense(H_zero, Hd_zero)
+    call csr_to_dense(H_bz, Hd_bz)
+
+    ! Matrices must be identical: Bz produces no Peierls phase (Bx only)
+    max_diff = 0.0_dp
+    do j = 1, H_zero%ncols
+      do i = 1, H_zero%nrows
+        max_diff = max(max_diff, abs(Hd_zero(i,j) - Hd_bz(i,j)))
+      end do
+    end do
+    @assertLessThan(max_diff, 1.0e-14_dp, message="Bz-only must produce identical BdG to zero field")
+
+    deallocate(Hd_zero, Hd_bz)
+    call csr_free(H_zero)
+    call csr_free(H_bz)
+    call wire_workspace_free(ws_zero)
+    call wire_workspace_free(ws_bz)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_bdg_hermiticity_no_peierls_bz_only
+
 end module

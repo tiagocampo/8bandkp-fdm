@@ -32,7 +32,6 @@ module green_functions
   public :: compute_spectral_function_qw
   public :: compute_spectral_function_wire
   public :: compute_landauer_transmission_1d
-  public :: compute_conductance_landauer_from_transmission
 
 #ifdef USE_ARPACK
   public :: compute_ldos_csr
@@ -94,12 +93,6 @@ contains
     G = 1.0_dp / (z - sigma_l - sigma_r)
     T = min(1.0_dp, max(0.0_dp, gamma_l * gamma_r * abs(G)**2))
   end function compute_landauer_transmission_1d
-
-  elemental real(kind=dp) function compute_conductance_landauer_from_transmission(T) result(G)
-    real(kind=dp), intent(in) :: T
-
-    G = T
-  end function compute_conductance_landauer_from_transmission
 
   ! ==============================================================================
   ! Compute spectral function A(k, E) for a QW system.

@@ -179,8 +179,7 @@ def run_and_show_eigenvalues():
     print("  Settings: confinement=0 (bulk), single k-point at k=0")
     print()
 
-    work = tempfile.mkdtemp()
-    try:
+    with tempfile.TemporaryDirectory() as work:
         rc, outdir = run_exe(str(BUILD_DIR), "bandStructure",
                              str(cfg), work)
         if rc != 0:
@@ -189,8 +188,6 @@ def run_and_show_eigenvalues():
 
         eig_path = os.path.join(outdir, "eigenvalues.dat")
         data = parse_eigenvalues(eig_path)
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
 
     if not data:
         print("  ERROR: no eigenvalue data parsed.")

@@ -242,8 +242,7 @@ def main():
     # Step 1: Run QW without field (reference)
     # ------------------------------------------------------------------
     print("\n[1/5] Running GaAs/AlGaAs QW without electric field...")
-    work_0 = tempfile.mkdtemp(prefix="lecture10_nofield_")
-    try:
+    with tempfile.TemporaryDirectory(prefix="lecture10_nofield_") as work_0:
         rc_0, eig_0 = run_bandstructure("sc_qcse_gaas_algaas.cfg", work_0)
         if rc_0 != 0 or eig_0 is None:
             print(f"  FAIL: bandStructure returned {rc_0} (no field)")
@@ -257,16 +256,13 @@ def main():
         print(f"  VB1 (HH1): {vb1_0:.6f} eV")
         print(f"  CB1:       {cb1_0:.6f} eV")
         print(f"  Gap (CB1-VB1): {(cb1_0 - vb1_0) * 1000:.2f} meV")
-    finally:
-        shutil.rmtree(work_0, ignore_errors=True)
 
     # ------------------------------------------------------------------
     # Step 2: Run QW with electric field
     # ------------------------------------------------------------------
     print(f"\n[2/5] Running GaAs/AlGaAs QW with electric field "
           f"({EFIELD_KV_PER_CM:.0f} kV/cm)...")
-    work_f = tempfile.mkdtemp(prefix="lecture10_field_")
-    try:
+    with tempfile.TemporaryDirectory(prefix="lecture10_field_") as work_f:
         rc_f, eig_f = run_bandstructure("sc_qcse_gaas_algaas_ef.cfg", work_f)
         if rc_f != 0 or eig_f is None:
             print(f"  FAIL: bandStructure returned {rc_f} (with field)")
@@ -279,8 +275,6 @@ def main():
         print(f"  VB1 (HH1): {vb1_f:.6f} eV")
         print(f"  CB1:       {cb1_f:.6f} eV")
         print(f"  Gap (CB1-VB1): {(cb1_f - vb1_f) * 1000:.2f} meV")
-    finally:
-        shutil.rmtree(work_f, ignore_errors=True)
 
     # ------------------------------------------------------------------
     # Step 3: Compute shifts

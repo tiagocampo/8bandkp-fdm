@@ -8,20 +8,17 @@ module topological_analysis
   private
 
   public :: compute_chern_qwz
-  public :: compute_berry_curvature
   public :: compute_berry_curvature_lattice
   public :: compute_hall_conductance
-  public :: compute_hall_conductance_from_chern
   public :: compute_conductance_kubo
-  public :: compute_conductance_kubo_chern
   public :: compute_z2_gap
+  public :: compute_z2_gap_edge
   public :: compute_z2_fukane
   public :: compute_z2_fukane_qw
   public :: compute_z2_fukane_qw_result
   public :: qw_inversion_expectation
   public :: qw_pair_inversion_sign
   public :: z2_from_trim_parities
-  public :: extract_edge_states
   public :: compute_majorana_profile
   public :: build_bhz_wire_hamiltonian
   public :: bhz_wire_params
@@ -30,6 +27,7 @@ module topological_analysis
   public :: compute_phase_diagram
   public :: compute_z2_gap_sweep
   public :: detect_z2_transitions
+  public :: is_z2_transition
   public :: gap_closing_detect
   public :: bdg_zero_energy_gap
 
@@ -120,51 +118,10 @@ contains
     deallocate(evecs)
   end function compute_chern_qwz
 
-  subroutine diag_2x2(H, eval, eigvec)
-    implicit none
-    real(kind=dp), intent(in) :: H(2,2)
-    real(kind=dp), intent(out) :: eval(2), eigvec(2,2)
-    real(kind=dp) :: tr, det, sqrt_term
-
-    tr = H(1,1) + H(2,2)
-    det = H(1,1)*H(2,2) - H(1,2)*H(2,1)
-    sqrt_term = sqrt(max(0.0_dp, tr*tr/4.0_dp - det))
-    eval(1) = tr/2.0_dp + sqrt_term; eval(2) = tr/2.0_dp - sqrt_term
-
-    if (abs(H(1,2)) > 1e-12_dp) then
-      eigvec(1,1) = H(1,2); eigvec(2,1) = eval(1) - H(1,1)
-      eigvec(1,2) = H(1,2); eigvec(2,2) = eval(2) - H(1,1)
-    else
-      eigvec(1,1) = 1.0_dp; eigvec(2,1) = 0.0_dp
-      eigvec(1,2) = 0.0_dp; eigvec(2,2) = 1.0_dp
-    end if
-    if (sum(eigvec(:,1)**2) > 1.0e-30_dp) then
-      eigvec(:,1) = eigvec(:,1) / sqrt(sum(eigvec(:,1)**2))
-    else
-      eigvec(1,1) = 1.0_dp; eigvec(2,1) = 0.0_dp
-    end if
-    if (sum(eigvec(:,2)**2) > 1.0e-30_dp) then
-      eigvec(:,2) = eigvec(:,2) / sqrt(sum(eigvec(:,2)**2))
-    else
-      eigvec(1,2) = 0.0_dp; eigvec(2,2) = 1.0_dp
-    end if
-  end subroutine diag_2x2
-
-  function compute_berry_curvature(evecs_k, kx_arr, ky_arr, n_occ) result(Omega)
-    implicit none
-    complex(kind=dp), intent(in) :: evecs_k(:,:,:,:)
-    real(kind=dp), intent(in) :: kx_arr(:), ky_arr(:)
-    integer, intent(in) :: n_occ
-    real(kind=dp), allocatable :: Omega(:,:)
-
-    ! Delegate to lattice method
-    Omega = compute_berry_curvature_lattice(evecs_k, kx_arr, ky_arr, n_occ)
-  end function compute_berry_curvature
-
   function compute_berry_curvature_lattice(evecs_k, kx_arr, ky_arr, n_occ) result(Omega)
     implicit none
-    complex(kind=dp), intent(in) :: evecs_k(:,:,:,:)  ! (basis, n_occ, nkx, nky)
-    real(kind=dp), intent(in) :: kx_arr(:), ky_arr(:)
+    complex(kind=dp), contiguous, intent(in) :: evecs_k(:,:,:,:)  ! (basis, n_occ, nkx, nky)
+    real(kind=dp), contiguous, intent(in) :: kx_arr(:), ky_arr(:)
     integer, intent(in) :: n_occ
     real(kind=dp), allocatable :: Omega(:,:)
 
@@ -243,7 +200,7 @@ contains
 
   function det_small(A, n) result(d)
     implicit none
-    complex(kind=dp), intent(in) :: A(:,:)
+    complex(kind=dp), contiguous, intent(in) :: A(:,:)
     integer, intent(in) :: n
     complex(kind=dp) :: d
 
@@ -277,22 +234,6 @@ contains
     sigma_xy = real(C, kind=dp)
   end function compute_hall_conductance
 
-  elemental function compute_hall_conductance_from_chern(C) result(sigma_xy)
-    implicit none
-    integer, intent(in) :: C
-    real(kind=dp) :: sigma_xy
-
-    sigma_xy = real(C, kind=dp)
-  end function compute_hall_conductance_from_chern
-
-  elemental function compute_conductance_kubo_chern(C) result(sigma_xy)
-    implicit none
-    integer, intent(in) :: C
-    real(kind=dp) :: sigma_xy
-
-    sigma_xy = compute_hall_conductance_from_chern(C)
-  end function compute_conductance_kubo_chern
-
   function compute_conductance_kubo(berry_curvature, kx_arr, ky_arr) result(sigma_xy)
     implicit none
     real(kind=dp), contiguous, intent(in) :: berry_curvature(:,:)
@@ -313,10 +254,9 @@ contains
     sigma_xy = sum(berry_curvature) * dkx * dky / (2.0_dp * pi_dp)
   end function compute_conductance_kubo
 
-  function compute_z2_gap(N, eigenvalues, gap_threshold) result(z2)
+  function compute_z2_gap(eigenvalues, gap_threshold) result(z2)
     implicit none
-    integer, intent(in) :: N
-    real(kind=dp), intent(in) :: eigenvalues(:)
+    real(kind=dp), contiguous, intent(in) :: eigenvalues(:)
     real(kind=dp), intent(in) :: gap_threshold
 
     integer :: z2
@@ -343,6 +283,88 @@ contains
 
   end function compute_z2_gap
 
+  ! ==============================================================================
+  ! Z2 from gap + spatial localization (R9).
+  !
+  ! Like compute_z2_gap, but additionally checks that near-zero eigenvalues have
+  ! eigenvectors spatially localized at the wire edges.  This distinguishes
+  ! topological edge states from numerical noise.
+  !
+  ! The wire is assumed to have a 4-band basis per site (BHZ model).
+  ! N_sites = size(eigenvectors, 1) / 4.
+  !
+  ! Edge localization check: compute the fraction of |psi|^2 in the first and
+  ! last 10% of sites.  If this fraction exceeds edge_fraction_threshold
+  ! (default 0.5), the state is edge-localized.
+  ! ==============================================================================
+  function compute_z2_gap_edge(eigenvalues, eigenvectors, gap_threshold, &
+                                edge_fraction_threshold) result(z2)
+    implicit none
+    real(kind=dp), contiguous, intent(in) :: eigenvalues(:)
+    complex(kind=dp), contiguous, intent(in) :: eigenvectors(:,:)
+    real(kind=dp), intent(in) :: gap_threshold
+    real(kind=dp), intent(in) :: edge_fraction_threshold
+
+    integer :: z2
+    real(kind=dp) :: gap_min, gap_max
+    integer :: n_edge_states, i, j, k, N_sites, n_bands
+    real(kind=dp) :: total_weight, edge_weight
+    integer :: n_edge_sites
+
+    z2 = 0
+
+    if (size(eigenvalues) < 2) return
+    if (size(eigenvectors, 2) < size(eigenvalues)) return
+
+    ! Determine basis size per site
+    n_bands = 4  ! BHZ 4-band model
+    N_sites = size(eigenvectors, 1) / n_bands
+    if (N_sites < 2) return
+
+    gap_min = -gap_threshold
+    gap_max = gap_threshold
+
+    ! Number of sites in each edge region (~10% of wire)
+    n_edge_sites = max(1, N_sites / 10)
+
+    n_edge_states = 0
+    do i = 1, size(eigenvalues)
+      if (eigenvalues(i) <= gap_min .or. eigenvalues(i) >= gap_max) cycle
+
+      ! Check spatial localization at wire edges
+      total_weight = 0.0_dp
+      edge_weight = 0.0_dp
+      do j = 1, N_sites
+        do k = 1, n_bands
+          total_weight = total_weight + abs(eigenvectors((j-1)*n_bands + k, i))**2
+        end do
+      end do
+
+      if (total_weight < 1.0e-30_dp) cycle
+
+      ! Sum weight in first and last n_edge_sites
+      do j = 1, n_edge_sites
+        do k = 1, n_bands
+          edge_weight = edge_weight + abs(eigenvectors((j-1)*n_bands + k, i))**2
+        end do
+      end do
+      do j = N_sites - n_edge_sites + 1, N_sites
+        do k = 1, n_bands
+          edge_weight = edge_weight + abs(eigenvectors((j-1)*n_bands + k, i))**2
+        end do
+      end do
+
+      ! State is edge-localized if edge weight fraction exceeds threshold
+      if (edge_weight / total_weight > edge_fraction_threshold) then
+        n_edge_states = n_edge_states + 1
+      end if
+    end do
+
+    ! Z2 in 1D: topological phase has at least 2 edge states (one per end)
+    if (n_edge_states >= 2) z2 = 1
+
+  end function compute_z2_gap_edge
+
   function compute_z2_fukane(cfg, profile, kpterms, n_occ) result(z2)
     implicit none
     type(simulation_config), intent(in) :: cfg
@@ -355,25 +377,10 @@ contains
 
   end function compute_z2_fukane
 
-  function extract_edge_states(eigenvalues, eigenvectors, grid, window) result(edge_xi)
-    implicit none
-    real(kind=dp), intent(in) :: eigenvalues(:)
-    complex(kind=dp), intent(in) :: eigenvectors(:,:)
-    type(spatial_grid), intent(in) :: grid
-    real(kind=dp), intent(in) :: window
-    real(kind=dp) :: edge_xi
-
-    real(kind=dp), allocatable :: edge_info(:)
-
-    edge_info = extract_edge_states_wire(eigenvalues, eigenvectors, grid, window)
-    edge_xi = edge_info(1)
-
-  end function extract_edge_states
-
   function extract_edge_states_wire(eigenvalues, eigenvectors, grid, window) result(edge_info)
     implicit none
-    real(kind=dp), intent(in) :: eigenvalues(:)
-    complex(kind=dp), intent(in) :: eigenvectors(:,:)
+    real(kind=dp), contiguous, intent(in) :: eigenvalues(:)
+    complex(kind=dp), contiguous, intent(in) :: eigenvectors(:,:)
     type(spatial_grid), intent(in) :: grid
     real(kind=dp), intent(in) :: window
     real(kind=dp), allocatable :: edge_info(:)
@@ -445,18 +452,118 @@ contains
 
   end function extract_edge_states_wire
 
+  ! ==============================================================================
+  ! Private helper: tail-search + log-linear regression for exponential decay.
+  !
+  ! Finds the tail start (where density drops below threshold * peak), then
+  ! performs linear regression on (position, log(density)) for nonzero points.
+  !
+  ! R10 fix: n_fit_actual tracks only points that contribute to the regression
+  ! sums (nonzero density after log transform), not all tail positions.
+  !
+  ! R11: Returns converged=.false. when xi is comparable to or larger than
+  ! the domain extent, with the raw xi value preserved for caller inspection.
+  ! ==============================================================================
+  subroutine fit_tail_exponential(positions, density, n_points, threshold, &
+                                   xi, n_fit_actual, converged)
+    implicit none
+    real(kind=dp), contiguous, intent(in) :: positions(:)
+    real(kind=dp), contiguous, intent(in) :: density(:)
+    integer, intent(in) :: n_points
+    real(kind=dp), intent(in) :: threshold
+    real(kind=dp), intent(out) :: xi
+    integer, intent(out) :: n_fit_actual
+    logical, intent(out) :: converged
+
+    integer :: peak_idx, tail_start, i
+    real(kind=dp) :: rho_peak, x_start, domain_extent
+    real(kind=dp) :: sum_y_log, sum_x, sum_x2, sum_xy, denom, slope
+
+    xi = 0.0_dp
+    n_fit_actual = 0
+    converged = .false.
+
+    if (n_points < 3) return
+    if (size(positions) < n_points .or. size(density) < n_points) return
+
+    peak_idx = maxloc(density(1:n_points), dim=1)
+    rho_peak = density(peak_idx)
+
+    if (rho_peak <= 0.0_dp) return
+
+    ! Search forward from peak for tail start
+    tail_start = 0
+    do i = peak_idx + 1, n_points
+      if (density(i) < threshold * rho_peak) then
+        tail_start = i
+        exit
+      end if
+    end do
+
+    ! Search backward if no forward tail found
+    if (tail_start == 0) then
+      do i = peak_idx - 1, 1, -1
+        if (density(i) < threshold * rho_peak) then
+          tail_start = i
+          exit
+        end if
+      end do
+    end if
+
+    if (tail_start == 0 .or. tail_start >= n_points) return
+
+    x_start = positions(tail_start)
+
+    ! Accumulate regression sums — only count nonzero-density points (R10)
+    sum_y_log = 0.0_dp
+    sum_x = 0.0_dp
+    sum_x2 = 0.0_dp
+    sum_xy = 0.0_dp
+    n_fit_actual = 0
+
+    do i = tail_start, n_points
+      if (density(i) > 1.0e-14_dp) then
+        n_fit_actual = n_fit_actual + 1
+        sum_y_log = sum_y_log + log(density(i))
+        sum_x = sum_x + (positions(i) - x_start)
+        sum_x2 = sum_x2 + (positions(i) - x_start)**2
+        sum_xy = sum_xy + (positions(i) - x_start) * log(density(i))
+      end if
+    end do
+
+    if (n_fit_actual < 3) return
+
+    denom = sum_x2 - sum_x**2 / real(n_fit_actual, kind=dp)
+    if (abs(denom) < 1.0e-14_dp) return
+
+    slope = (sum_xy - sum_x * sum_y_log / real(n_fit_actual, kind=dp)) / denom
+    if (abs(slope) < tiny(1.0_dp)) return
+
+    xi = abs(-1.0_dp / slope)
+
+    ! R11: Check near-transition regime — xi comparable to domain extent
+    domain_extent = abs(positions(n_points) - positions(tail_start))
+    if (domain_extent > 0.0_dp .and. xi < domain_extent) then
+      converged = .true.
+    else if (domain_extent > 0.0_dp) then
+      ! xi >= domain_extent: near-transition, return raw value unconverged
+      converged = .false.
+    else
+      converged = .true.
+    end if
+
+  end subroutine fit_tail_exponential
+
   subroutine fit_exponential_decay(density, x, xi, success)
     implicit none
-    real(kind=dp), intent(in) :: density(:)
-    real(kind=dp), intent(in) :: x(:)
+    real(kind=dp), contiguous, intent(in) :: density(:)
+    real(kind=dp), contiguous, intent(in) :: x(:)
     real(kind=dp), intent(out) :: xi
     logical, intent(out) :: success
 
-    integer :: n, peak_idx, tail_start, i
-    real(kind=dp) :: rho_peak, tol
-    real(kind=dp) :: sum_y_log, sum_x, sum_x2, sum_xy, denom, slope
-    integer :: n_fit
-    real(kind=dp) :: x_start
+    integer :: n, n_fit_actual
+    real(kind=dp), parameter :: tail_threshold = 0.1_dp
+    logical :: converged
 
     n = size(density)
     success = .false.
@@ -464,56 +571,10 @@ contains
 
     if (n < 3 .or. size(x) /= n) return
 
-    peak_idx = maxloc(density, dim=1)
+    call fit_tail_exponential(x, density, n, tail_threshold, &
+                               xi, n_fit_actual, converged)
 
-    rho_peak = density(peak_idx)
-    tol = 0.1_dp
-    tail_start = 0
-
-    do i = peak_idx + 1, n
-      if (density(i) < tol * rho_peak) then
-        tail_start = i
-        exit
-      end if
-    end do
-
-    if (tail_start == 0) then
-      do i = peak_idx - 1, 1, -1
-        if (density(i) < tol * rho_peak) then
-          tail_start = i
-          exit
-        end if
-      end do
-    end if
-
-    if (tail_start == 0 .or. tail_start >= n) return
-
-    x_start = x(tail_start)
-    n_fit = n - tail_start + 1
-
-    sum_y_log = 0.0_dp
-    sum_x = 0.0_dp
-    sum_x2 = 0.0_dp
-    sum_xy = 0.0_dp
-
-    do i = tail_start, n
-      if (density(i) > 1.0e-14_dp) then
-        sum_y_log = sum_y_log + log(density(i))
-        sum_x = sum_x + (x(i) - x_start)
-        sum_x2 = sum_x2 + (x(i) - x_start)**2
-        sum_xy = sum_xy + (x(i) - x_start) * log(density(i))
-      end if
-    end do
-
-    denom = sum_x2 - sum_x**2 / real(n_fit, kind=dp)
-    if (abs(denom) < 1.0e-14_dp .or. n_fit < 3) return
-
-    slope = (sum_xy - sum_x * sum_y_log / real(n_fit, kind=dp)) / denom
-    if (abs(slope) < tiny(1.0_dp)) return
-    xi = abs(-1.0_dp / slope)
-    if (xi > 0.0_dp) then
-      success = .true.
-    end if
+    success = (xi > 0.0_dp .and. n_fit_actual >= 3)
 
   end subroutine fit_exponential_decay
 
@@ -536,7 +597,7 @@ contains
 
   function qw_inversion_expectation(psi, nsite) result(parity)
     implicit none
-    complex(kind=dp), intent(in) :: psi(:)
+    complex(kind=dp), contiguous, intent(in) :: psi(:)
     integer, intent(in) :: nsite
     real(kind=dp) :: parity
     integer :: ib, isite, imirror, irow, jrow
@@ -556,7 +617,7 @@ contains
 
   function qw_inversion_matrix_element(psi_left, psi_right, nsite) result(element)
     implicit none
-    complex(kind=dp), intent(in) :: psi_left(:), psi_right(:)
+    complex(kind=dp), contiguous, intent(in) :: psi_left(:), psi_right(:)
     integer, intent(in) :: nsite
     complex(kind=dp) :: element
     integer :: ib, isite, imirror, irow, jrow
@@ -577,7 +638,7 @@ contains
 
   function qw_pair_inversion_sign(psi_a, psi_b, nsite) result(pair_sign)
     implicit none
-    complex(kind=dp), intent(in) :: psi_a(:), psi_b(:)
+    complex(kind=dp), contiguous, intent(in) :: psi_a(:), psi_b(:)
     integer, intent(in) :: nsite
     real(kind=dp) :: pair_sign
     complex(kind=dp) :: p11, p22
@@ -602,7 +663,7 @@ contains
 
   function compute_majorana_profile(evec_bdg, grid, energy_tol, half_n_in, profile) result(xi)
     implicit none
-    complex(kind=dp), intent(in) :: evec_bdg(:)
+    complex(kind=dp), contiguous, intent(in) :: evec_bdg(:)
     type(spatial_grid), intent(in) :: grid
     real(kind=dp), intent(in) :: energy_tol
     integer, intent(in) :: half_n_in
@@ -612,11 +673,10 @@ contains
     integer :: ngrid, half_n, nspatial
     real(kind=dp), allocatable :: rho(:)
     real(kind=dp), allocatable :: xx(:)
-    integer :: i, ib, peak_idx, i_start
-    real(kind=dp) :: xi_est, norm_factor
-    real(kind=dp) :: sum_y_log, sum_x, sum_x2, sum_xy, denom, slope
-    integer :: n_fit
-    real(kind=dp) :: tol_norm
+    integer :: i, ib, n_fit_actual
+    real(kind=dp) :: norm_factor
+    real(kind=dp), parameter :: tail_threshold = 0.1_dp
+    logical :: converged
 
     ngrid = grid%npoints()
     half_n = half_n_in
@@ -651,12 +711,12 @@ contains
       end if
     end if
 
-    peak_idx = maxloc(rho, dim=1)
-
+    ! Build position array based on grid type
     if (grid%ndim == 2 .and. allocated(grid%coords)) then
       allocate(xx(nspatial))
       xx(1:nspatial) = grid%coords(2, 1:nspatial)
     else if (allocated(grid%z)) then
+      allocate(xx(nspatial))
       xx = grid%z
     else
       allocate(xx(nspatial))
@@ -665,56 +725,14 @@ contains
       end do
     end if
 
-    tol_norm = 0.1_dp
-    i_start = 0
-    do i = peak_idx + 1, nspatial
-      if (rho(i) < tol_norm * rho(peak_idx)) then
-        i_start = i
-        exit
-      end if
-    end do
+    ! Delegate tail search + regression to shared helper (R10, R11, R17)
+    call fit_tail_exponential(xx, rho, nspatial, tail_threshold, &
+                               xi, n_fit_actual, converged)
 
-    if (i_start == 0) then
-      do i = peak_idx - 1, 1, -1
-        if (rho(i) < tol_norm * rho(peak_idx)) then
-          i_start = i
-          exit
-        end if
-      end do
-    end if
-
-    if (i_start == 0 .or. i_start >= nspatial) then
+    ! R11: near-transition regime returns raw xi with converged=.false.
+    ! Return -1 only for complete failure (no fit at all)
+    if (xi <= 0.0_dp .and. .not. converged) then
       xi = -1.0_dp
-      deallocate(rho, xx)
-      return
-    end if
-
-    n_fit = nspatial - i_start + 1
-    sum_y_log = 0.0_dp
-    sum_x = 0.0_dp
-    sum_x2 = 0.0_dp
-    sum_xy = 0.0_dp
-
-    do i = i_start, nspatial
-      if (rho(i) > 1.0e-14_dp) then
-        sum_y_log = sum_y_log + log(rho(i))
-        sum_x = sum_x + (xx(i) - xx(i_start))
-        sum_x2 = sum_x2 + (xx(i) - xx(i_start))**2
-        sum_xy = sum_xy + (xx(i) - xx(i_start)) * log(rho(i))
-      end if
-    end do
-
-    denom = sum_x2 - sum_x**2 / real(n_fit, kind=dp)
-    if (abs(denom) < 1.0e-14_dp .or. n_fit < 3) then
-      xi = -1.0_dp
-    else
-      slope = (sum_xy - sum_x * sum_y_log / real(n_fit, kind=dp)) / denom
-      if (abs(slope) < tiny(1.0_dp)) then
-        xi = -1.0_dp
-      else
-        xi_est = -1.0_dp / slope
-        xi = abs(xi_est)
-      end if
     end if
 
     deallocate(rho, xx)
@@ -834,7 +852,7 @@ contains
   ! ==============================================================================
   function gap_closing_detect(eigenvalues, mu, gap_threshold) result(is_gap_closing)
     implicit none
-    real(kind=dp), intent(in) :: eigenvalues(:)
+    real(kind=dp), contiguous, intent(in) :: eigenvalues(:)
     real(kind=dp), intent(in) :: mu
     real(kind=dp), intent(in) :: gap_threshold
     logical :: is_gap_closing
@@ -895,6 +913,7 @@ contains
     real(kind=dp), allocatable :: eigenvalues(:)
     real(kind=dp) :: gap_min
     integer :: iB, iMu, i, j
+    integer :: z2_cumulative
     logical :: is_gap_closing
     real(kind=dp), allocatable :: gap_line_raw(:)
     integer :: n_raw
@@ -913,11 +932,18 @@ contains
     gap_array = 0.0_dp
     z2_array = 0
 
-    ! Sweep over B and mu
-    do iB = 1, nB
-      B_val = B_min + real(iB - 1, kind=dp) * dB
-      do iMu = 1, nMu
-        mu_val = mu_min + real(iMu - 1, kind=dp) * dmu
+    ! Sweep over mu (outer) then B (inner) for cumulative Z2 tracking.
+    ! Z2 starts trivial (0) at B=B_min and flips each time the gap closes.
+    ! This gives physically correct phase diagram: Z2 accumulates transitions
+    ! along the B-sweep rather than marking individual gap-closing points.
+    do iMu = 1, nMu
+      mu_val = mu_min + real(iMu - 1, kind=dp) * dmu
+
+      ! Cumulative Z2 starts at 0 (trivial at B=B_min)
+      z2_cumulative = 0
+
+      do iB = 1, nB
+        B_val = B_min + real(iB - 1, kind=dp) * dB
 
         eigenvalues = eigenvalues_func(B_val, mu_val)
 
@@ -932,7 +958,12 @@ contains
 
         gap_array(iB, iMu) = gap_min
         is_gap_closing = (gap_min < gap_threshold)
-        if (is_gap_closing) z2_array(iB, iMu) = 1
+
+        ! Cumulative Z2 tracking: flip when gap closes
+        if (is_gap_closing) then
+          z2_cumulative = 1 - z2_cumulative
+        end if
+        z2_array(iB, iMu) = z2_cumulative
 
         deallocate(eigenvalues)
       end do
@@ -998,9 +1029,9 @@ contains
     real(kind=dp), intent(out) :: min_gap
 
     integer :: N, dim_H, i_trim, istate, isite, ncol
-    integer :: info, lwork
+    integer :: info, lwork, n_pairs, ipair, j_best
     real(kind=dp), parameter :: parity_sign_tol = 1.0e-8_dp
-    real(kind=dp) :: parity_sign, a_lat
+    real(kind=dp) :: pair_sign, a_lat, dE_best, dE_try
     real(kind=dp) :: delta_trim(4)
     real(kind=dp) :: kx_trim(4), ky_trim(4)
     type(wavevector) :: wv
@@ -1008,6 +1039,11 @@ contains
     complex(kind=dp), allocatable :: HT(:,:)
     real(kind=dp), allocatable :: evals(:), rwork(:)
     complex(kind=dp), allocatable :: work(:)
+
+    ! Per-band parity eigenvalues and pairing workspace
+    real(kind=dp), allocatable :: band_parity(:)
+    integer, allocatable :: partner(:)
+    logical, allocatable :: paired(:)
 
     z2 = 0
     min_gap = huge(1.0_dp)
@@ -1053,6 +1089,10 @@ contains
     deallocate(work)
     allocate(work(lwork))
 
+    allocate(band_parity(n_occ))
+    allocate(partner(n_occ))
+    allocate(paired(n_occ))
+
     do i_trim = 1, 4
       ! Set up wavevector at this TRIM point
       wv%kx = kx_trim(i_trim)
@@ -1068,23 +1108,73 @@ contains
       if (info /= 0) then
         status = topo_status_lapack
         z2 = 0
-        deallocate(HT, evals, rwork, work)
+        deallocate(HT, evals, rwork, work, band_parity, partner, paired)
         return
       end if
 
       min_gap = min(min_gap, evals(n_occ + 1) - evals(n_occ))
 
-      do istate = 1, n_occ, 2
-        parity_sign = qw_pair_inversion_sign(HT(:, istate), HT(:, istate + 1), N)
-        if (abs(parity_sign) <= parity_sign_tol) then
+      ! Step 1: Compute individual parity eigenvalue for each occupied band
+      do istate = 1, n_occ
+        band_parity(istate) = qw_inversion_expectation(HT(:, istate), N)
+      end do
+
+      ! Step 2: Greedy nearest-energy pairing of Kramers partners.
+      ! At TRIM, Kramers partners share the same parity eigenvalue.
+      ! For each unpaired band, find the closest-energy unpaired band with
+      ! the same parity sign.  This is robust to zheev reordering within
+      ! near-degenerate subspaces.
+      paired = .false.
+      partner = 0
+      n_pairs = 0
+
+      do istate = 1, n_occ
+        if (paired(istate)) cycle
+        j_best = 0
+        dE_best = huge(1.0_dp)
+        do isite = istate + 1, n_occ
+          if (paired(isite)) cycle
+          ! Kramers partners at TRIM have the same parity sign
+          if (band_parity(istate) * band_parity(isite) <= 0.0_dp) cycle
+          dE_try = abs(evals(istate) - evals(isite))
+          if (dE_try < dE_best) then
+            dE_best = dE_try
+            j_best = isite
+          end if
+        end do
+        if (j_best == 0) then
+          ! No valid partner found — degeneracy structure broken
           status = topo_status_invalid
           z2 = 0
-          deallocate(HT, evals, rwork, work)
+          deallocate(HT, evals, rwork, work, band_parity, partner, paired)
           return
         end if
-        if (parity_sign > 0.0_dp) then
-          delta_trim(i_trim) = delta_trim(i_trim) * 1.0_dp
-        else
+        paired(istate) = .true.
+        paired(j_best) = .true.
+        partner(istate) = j_best
+        partner(j_best) = istate
+        n_pairs = n_pairs + 1
+      end do
+
+      if (n_pairs /= n_occ / 2) then
+        status = topo_status_invalid
+        z2 = 0
+        deallocate(HT, evals, rwork, work, band_parity, partner, paired)
+        return
+      end if
+
+      ! Step 3: Compute parity product over Kramers pairs
+      do ipair = 1, n_occ
+        ! Only process the first member of each pair to avoid double-counting
+        if (partner(ipair) <= ipair) cycle
+        pair_sign = qw_pair_inversion_sign(HT(:, ipair), HT(:, partner(ipair)), N)
+        if (abs(pair_sign) <= parity_sign_tol) then
+          status = topo_status_invalid
+          z2 = 0
+          deallocate(HT, evals, rwork, work, band_parity, partner, paired)
+          return
+        end if
+        if (pair_sign < 0.0_dp) then
           delta_trim(i_trim) = delta_trim(i_trim) * (-1.0_dp)
         end if
       end do
@@ -1093,7 +1183,7 @@ contains
     z2 = z2_from_trim_parities(delta_trim)
     status = topo_status_ok
 
-    deallocate(HT, evals, rwork, work)
+    deallocate(HT, evals, rwork, work, band_parity, partner, paired)
 
   end subroutine compute_z2_fukane_qw_result
 
@@ -1203,8 +1293,8 @@ contains
   subroutine detect_z2_transitions(z2_map, gap_map, B_min, B_max, mu_min, mu_max, &
                                    gap_threshold, transitions)
     implicit none
-    integer, intent(in) :: z2_map(:,:)
-    real(kind=dp), intent(in) :: gap_map(:,:)
+    integer, contiguous, intent(in) :: z2_map(:,:)
+    real(kind=dp), contiguous, intent(in) :: gap_map(:,:)
     real(kind=dp), intent(in) :: B_min, B_max, mu_min, mu_max, gap_threshold
     real(kind=dp), allocatable, intent(out) :: transitions(:,:)
 
@@ -1262,7 +1352,7 @@ contains
     integer, intent(in) :: z2_a, z2_b
     real(kind=dp), intent(in) :: gap_a, gap_b, gap_threshold
 
-    is_transition = (z2_a /= z2_b) .or. (gap_a <= gap_threshold) .or. (gap_b <= gap_threshold)
+    is_transition = (z2_a /= z2_b)
   end function is_z2_transition
 
   subroutine eval_bhz_analytic(B_val, mu_val, cfg, z2, gap, status)

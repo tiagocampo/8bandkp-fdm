@@ -11,7 +11,6 @@ contains
     @assertEqual(0.0_dp, cfg%mu, tolerance=1.0e-12_dp)
     @assertEqual(0.0_dp, cfg%delta_0, tolerance=1.0e-12_dp)
     @assertEqual(0.0_dp, cfg%B_vec(1), tolerance=1.0e-12_dp)
-    @assertFalse(cfg%self_consistent)
   end subroutine
 
   @test

@@ -35,7 +35,7 @@ contains
 
     call solve_sparse_evp(H_csr, cfg, result)
 
-    z2 = compute_z2_gap(params%N, result%eigenvalues, 1.0_dp)
+    z2 = compute_z2_gap(result%eigenvalues, 1.0_dp)
 
     @assertEqual(0, z2, message="BHZ trivial phase (M=+10) should have Z2=0")
 
@@ -68,7 +68,7 @@ contains
 
     call solve_sparse_evp(H_csr, cfg, result)
 
-    z2 = compute_z2_gap(params%N, result%eigenvalues, 40.0_dp)
+    z2 = compute_z2_gap(result%eigenvalues, 40.0_dp)
 
     @assertEqual(1, z2, message="BHZ topological phase (M=-10) should have Z2=1")
 
@@ -175,6 +175,42 @@ contains
   end subroutine test_qw_pair_parity_sign_rotated_odd_conduction_pair
 
   @test
+  subroutine test_is_z2_transition_false_when_z2_unchanged()
+    ! R28: Two adjacent points with same Z2 but small gap must NOT be a transition
+    logical :: result
+
+    ! Z2=0, Z2=0 with gap_a < threshold (false-positive case from old code)
+    result = is_z2_transition(0, 0, 0.001_dp, 1.0_dp, 0.01_dp)
+    @assertFalse(result, message="Same Z2=0 with small gap must not be a transition")
+
+    ! Z2=1, Z2=1 with gap_a < threshold
+    result = is_z2_transition(1, 1, 0.001_dp, 1.0_dp, 0.01_dp)
+    @assertFalse(result, message="Same Z2=1 with small gap must not be a transition")
+
+    ! Z2=0, Z2=0 with both gaps below threshold
+    result = is_z2_transition(0, 0, 0.0001_dp, 0.0001_dp, 0.01_dp)
+    @assertFalse(result, message="Same Z2 with both gaps below threshold must not be a transition")
+  end subroutine test_is_z2_transition_false_when_z2_unchanged
+
+  @test
+  subroutine test_is_z2_transition_true_when_z2_changes()
+    ! Transition IS the change in Z2, regardless of gap size
+    logical :: result
+
+    ! Z2=0 -> Z2=1 with large gaps
+    result = is_z2_transition(0, 1, 10.0_dp, 10.0_dp, 0.01_dp)
+    @assertTrue(result, message="Z2 0->1 must be a transition")
+
+    ! Z2=1 -> Z2=0 with large gaps
+    result = is_z2_transition(1, 0, 10.0_dp, 10.0_dp, 0.01_dp)
+    @assertTrue(result, message="Z2 1->0 must be a transition")
+
+    ! Z2=0 -> Z2=1 with zero gaps (at gap closing point)
+    result = is_z2_transition(0, 1, 0.0_dp, 0.0_dp, 0.01_dp)
+    @assertTrue(result, message="Z2 change at gap closing must be a transition")
+  end subroutine test_is_z2_transition_true_when_z2_changes
+
+  @test
   subroutine test_z2_gap_closing_edge_case()
     ! When gap exactly closes, Z2 should change
     type(bhz_wire_params) :: params
@@ -205,5 +241,114 @@ contains
 
     call csr_free(H_csr)
   end subroutine test_z2_gap_closing_edge_case
+
+  @test
+  subroutine test_z2_robust_pairing_trivial()
+    ! R27: Verify Z2=0 (trivial) with robust pairing near phase boundary.
+    ! Use a BHZ wire with M=+5 (well inside trivial phase) and check Z2 value.
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    integer :: z2
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 5.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 80
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    z2 = compute_z2_gap(result%eigenvalues, 1.0_dp)
+    @assertEqual(0, z2, message="BHZ near boundary (M=+5) must be trivial: Z2=0")
+
+    call csr_free(H_csr)
+  end subroutine test_z2_robust_pairing_trivial
+
+  @test
+  subroutine test_z2_robust_pairing_topological()
+    ! R27: Verify Z2=1 (topological) with robust pairing near phase boundary.
+    ! Use a BHZ wire with M=-5 (well inside topological phase) and check Z2 value.
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    integer :: z2
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = -5.0_dp
+    params%d_wire = 70.0_dp
+    params%N = 80
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    z2 = compute_z2_gap(result%eigenvalues, 40.0_dp)
+    @assertEqual(1, z2, message="BHZ near boundary (M=-5) must be topological: Z2=1")
+
+    call csr_free(H_csr)
+  end subroutine test_z2_robust_pairing_topological
+
+  @test
+  subroutine test_z2_phase_boundary_flip()
+    ! R27: Sweep M from positive to negative, verify Z2 flips from 0 to 1.
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    integer :: z2_trivial, z2_topo
+
+    ! Trivial side (M > 0)
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 3.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 60
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+    call solve_sparse_evp(H_csr, cfg, result)
+    z2_trivial = compute_z2_gap(result%eigenvalues, 1.0_dp)
+    call csr_free(H_csr)
+
+    ! Topological side (M < 0) — same wire, different M
+    params%M = -3.0_dp
+    params%d_wire = 70.0_dp
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+    cfg%nev = 4 * params%N
+    call solve_sparse_evp(H_csr, cfg, result)
+    z2_topo = compute_z2_gap(result%eigenvalues, 40.0_dp)
+    call csr_free(H_csr)
+
+    @assertEqual(0, z2_trivial, message="M=+3 must be trivial")
+    @assertEqual(1, z2_topo, message="M=-3 must be topological")
+    @assertTrue(z2_trivial /= z2_topo, message="Z2 must flip across M=0 boundary")
+  end subroutine test_z2_phase_boundary_flip
 
 end module test_z2_invariant

@@ -9,7 +9,9 @@ solver for a GaAs/AlGaAs quantum well at k=0:
   3. Normalization: Euclidean sum |v_i|^2 = 1 (LAPACK convention)
   4. Wavefunction plot with per-band decomposition
 """
+import glob
 import os
+import shutil
 import sys
 import tempfile
 
@@ -363,14 +365,12 @@ def main():
     print("=" * 60 + "\n")
 
     # Run bandStructure once in a temporary directory
-    work_dir = tempfile.mkdtemp()
-    try:
+    with tempfile.TemporaryDirectory() as work_dir:
         output_dir = run_bandstructure("qw_gaas_algaas.cfg", work_dir)
 
         # Verify key output files exist
         eigf_dir = output_dir
         eigf_pattern = os.path.join(eigf_dir, "eigenfunctions_k_00001_ev_*.dat")
-        import glob
         eigf_files = sorted(glob.glob(eigf_pattern))
         if not eigf_files:
             sys.exit(f"ERROR: no eigenfunction files found in {eigf_dir}")
@@ -381,11 +381,6 @@ def main():
         s1_pass, _, _, _ = test_cb_ground_state(output_dir)
         s2_pass, _, _, _ = test_hh_ground_state(output_dir)
         plot_wavefunctions(output_dir)
-
-    finally:
-        # Clean up temporary directory
-        import shutil
-        shutil.rmtree(work_dir, ignore_errors=True)
 
     # Summary
     print("=" * 60)

@@ -139,15 +139,15 @@ contains
     real(kind=dp) :: sigma_xy
 
     ! C=+1 => sigma_xy = e^2/h
-    sigma_xy = compute_conductance_kubo_chern(1)
+    sigma_xy = compute_hall_conductance(1)
     @assertEqual(1.0_dp, sigma_xy, tolerance=1.0e-10_dp)
 
     ! C=0 => sigma_xy = 0
-    sigma_xy = compute_conductance_kubo_chern(0)
+    sigma_xy = compute_hall_conductance(0)
     @assertEqual(0.0_dp, sigma_xy, tolerance=1.0e-10_dp)
 
     ! C=-1 => sigma_xy = -e^2/h
-    sigma_xy = compute_conductance_kubo_chern(-1)
+    sigma_xy = compute_hall_conductance(-1)
     @assertEqual(-1.0_dp, sigma_xy, tolerance=1.0e-10_dp)
   end subroutine test_conductance_kubo_quantized
 

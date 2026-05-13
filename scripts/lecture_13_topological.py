@@ -250,16 +250,26 @@ def run_bhz_z2(exe, width_angstrom, work_dir):
         print(f"    TIMEOUT after 120s for width={width_angstrom}A")
         return None
     if result.returncode != 0:
+        print(f"    ERROR: topologicalAnalysis returned {result.returncode} "
+              f"for width={width_angstrom}A")
+        if result.stderr:
+            print(f"    stderr: {result.stderr[:500]}")
+        if result.stdout:
+            print(f"    stdout: {result.stdout[:500]}")
         return None
 
     topo_file = os.path.join(output_dir, "topology_result.dat")
     if not os.path.isfile(topo_file):
+        print(f"    ERROR: topology_result.dat not found for width={width_angstrom}A")
+        if result.stdout:
+            print(f"    stdout: {result.stdout[:500]}")
         return None
 
     content = Path(topo_file).read_text()
     match = re.search(r'Z2 invariant:\s*(\d+)', content)
     if match:
         return int(match.group(1))
+    print(f"    WARNING: Z2 invariant not found in topology_result.dat for width={width_angstrom}A")
     return None
 
 
@@ -394,10 +404,19 @@ def run_bdg_sweep(B, work_dir):
         print(f"    TIMEOUT after 300s for B={B:.1f}T")
         return None
     if result.returncode != 0:
+        print(f"    ERROR: topologicalAnalysis returned {result.returncode} "
+              f"for B={B:.1f}T")
+        if result.stderr:
+            print(f"    stderr: {result.stderr[:500]}")
+        if result.stdout:
+            print(f"    stdout: {result.stdout[:500]}")
         return None
 
     topo_file = os.path.join(output_dir, "topology_result.dat")
     if not os.path.isfile(topo_file):
+        print(f"    ERROR: topology_result.dat not found for B={B:.1f}T")
+        if result.stdout:
+            print(f"    stdout: {result.stdout[:500]}")
         return None
 
     content = Path(topo_file).read_text()
@@ -405,6 +424,7 @@ def run_bdg_sweep(B, work_dir):
     if match:
         min_gap_eV = float(match.group(1))
         return min_gap_eV * 1000.0  # convert to meV
+    print(f"    WARNING: Min gap not found in topology_result.dat for B={B:.1f}T")
     return None
 
 

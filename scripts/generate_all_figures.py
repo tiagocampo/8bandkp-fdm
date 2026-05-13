@@ -10,6 +10,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_DIR = os.path.dirname(SCRIPT_DIR)
+
 SCRIPTS = [
     'verify_qwz_chern.py',
     'verify_bhz_z2.py',
@@ -18,7 +21,11 @@ SCRIPTS = [
 ]
 
 
-def plot_berry_curvature_qwz(output_dir='output', figures_dir='docs/figures'):
+def plot_berry_curvature_qwz(output_dir=None, figures_dir=None):
+    if output_dir is None:
+        output_dir = os.path.join(REPO_DIR, 'output')
+    if figures_dir is None:
+        figures_dir = os.path.join(REPO_DIR, 'docs', 'figures')
     """Plot Berry curvature heatmap for QWZ model."""
     nk = 100
     kx = np.linspace(-np.pi, np.pi, nk)
@@ -122,7 +129,8 @@ def plot_spectral_function(output_dir='output', figures_dir='docs/figures'):
 def main():
     results = []
     for script in SCRIPTS:
-        result = subprocess.run([sys.executable, f'scripts/{script}'], capture_output=True)
+        script_path = os.path.join(SCRIPT_DIR, script)
+        result = subprocess.run([sys.executable, script_path], capture_output=True)
         status = 'PASS' if result.returncode == 0 else 'FAIL'
         results.append((script, status))
         print(f'{script}: {status}')
@@ -132,8 +140,8 @@ def main():
     print(f'\nPassed: {passed}/{len(results)}')
 
     # Generate topological figures
-    output_dir = 'output'
-    figures_dir = 'docs/figures'
+    output_dir = os.path.join(REPO_DIR, 'output')
+    figures_dir = os.path.join(REPO_DIR, 'docs', 'figures')
     os.makedirs(figures_dir, exist_ok=True)
 
     plot_berry_curvature_qwz(output_dir, figures_dir)

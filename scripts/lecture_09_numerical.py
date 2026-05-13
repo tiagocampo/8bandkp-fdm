@@ -102,8 +102,7 @@ def run_with_config(config_content):
 
     Returns list of (k, [eigenvalues]) from parse_eigenvalues.
     """
-    work = tempfile.mkdtemp()
-    try:
+    with tempfile.TemporaryDirectory() as work:
         cfg_path = os.path.join(work, "test.cfg")
         with open(cfg_path, "w") as f:
             f.write(config_content)
@@ -112,8 +111,6 @@ def run_with_config(config_content):
             sys.exit(f"ERROR: bandStructure returned {rc}")
         eig_path = os.path.join(outdir, "eigenvalues.dat")
         return parse_eigenvalues(eig_path)
-    finally:
-        shutil.rmtree(work)
 
 
 # =========================================================================

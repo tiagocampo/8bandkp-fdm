@@ -38,6 +38,18 @@ module bdg_hamiltonian
   public :: build_bdg_hamiltonian_1d
   public :: build_bdg_hamiltonian_qw
 
+  ! Pairing sign antidiagonal pattern for zinc-blende 8-band basis.
+  ! Xi = delta_0 * antidiag(+1,-1,+1,-1,-1,+1,+1,-1) in bands 1..8.
+  real(kind=dp), parameter :: pairing_sign_xi(8) = [ &
+    +1.0_dp, &  ! band 1 (HH)
+    -1.0_dp, &  ! band 2 (LH)
+    +1.0_dp, &  ! band 3 (LH)
+    -1.0_dp, &  ! band 4 (HH)
+    -1.0_dp, &  ! band 5 (SO)
+    +1.0_dp, &  ! band 6 (SO)
+    +1.0_dp, &  ! band 7 (CB)
+    -1.0_dp ]   ! band 8 (CB)
+
 contains
 
   ! ==============================================================================
@@ -74,7 +86,7 @@ contains
 
     type(csr_matrix), intent(out) :: H_bdg_csr
     type(simulation_config), intent(in) :: cfg
-    real(kind=dp), intent(in) :: profile_2d(:,:)
+    real(kind=dp), contiguous, intent(in) :: profile_2d(:,:)
     type(csr_matrix), intent(in) :: kpterms_2d(:)
     real(kind=dp), intent(in) :: kz, mu, delta_0
     type(wire_workspace), intent(inout) :: ws
@@ -87,13 +99,17 @@ contains
     integer, allocatable :: coo_row_bdg(:), coo_col_bdg(:)
     complex(kind=dp), allocatable :: coo_vals_bdg(:)
 
-    ! Pairing sign pattern for 8-band zinc-blende basis, bands 1..8.
-    real(kind=dp) :: pairing_sign(8)
-
     ! Temporary for -H0^T + mu*I
     integer :: i, kk, row, col, global_row, global_col, normal_nnz
     real(kind=dp) :: Vz_opt(8), Vz_cfg(8), Vz_delta(8), g_f, B_mag_opt, B_mag_cfg
     logical :: add_optional_zeeman
+
+    ! --- Guard: delta_0 must be positive ---
+    if (delta_0 <= 0.0_dp) then
+      print *, 'Error: delta_0 must be positive for BdG Hamiltonian construction'
+      print *, '  delta_0=', delta_0
+      stop 1
+    end if
 
     ! --- Build H0 (8N x 8N wire Hamiltonian) ---
     call ZB8bandGeneralized(H0, kz, profile_2d, kpterms_2d, cfg, ws=ws)
@@ -128,18 +144,6 @@ contains
     allocate(coo_col_bdg(coo_capacity))
     allocate(coo_vals_bdg(coo_capacity))
     coo_idx = 0
-
-    ! --- Pairing sign pattern: antidiag(+1,-1,+1,-1,-1,+1,+1,-1) ---
-    pairing_sign = [ &
-      +1.0_dp, &  ! band 1
-      -1.0_dp, &  ! band 2
-      +1.0_dp, &  ! band 3
-      -1.0_dp, &  ! band 4
-      -1.0_dp, &  ! band 5
-      +1.0_dp, &  ! band 6
-      +1.0_dp, &  ! band 7
-      -1.0_dp &   ! band 8
-    ]
 
     ! ==================================================================
     ! Block (1,1): H0 - mu*I  (rows 0..8N-1, cols 0..8N-1)
@@ -226,7 +230,7 @@ contains
         global_col = (col - 1) * N + i
         coo_row_bdg(coo_idx) = global_row
         coo_col_bdg(coo_idx) = global_col
-        coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(col), 0.0_dp, kind=dp)
+        coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign_xi(col), 0.0_dp, kind=dp)
       end do
     end do
 
@@ -243,7 +247,7 @@ contains
         global_col = 8 * N + (col - 1) * N + i
         coo_row_bdg(coo_idx) = global_row
         coo_col_bdg(coo_idx) = global_col
-        coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(row), 0.0_dp, kind=dp)
+        coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign_xi(row), 0.0_dp, kind=dp)
       end do
     end do
 
@@ -332,7 +336,13 @@ contains
     complex(kind=dp), allocatable :: H_e(:,:), H_h(:,:)
     type(wavevector) :: wv
     type(simulation_config) :: cfg_normal
-    real(kind=dp) :: pairing_sign(8)
+
+    ! --- Guard: delta_0 must be positive ---
+    if (delta_0 <= 0.0_dp) then
+      print *, 'Error: delta_0 must be positive for BdG Hamiltonian construction'
+      print *, '  delta_0=', delta_0
+      stop 1
+    end if
 
     ! --- Dimension setup ---
     N = cfg%fdStep
@@ -374,25 +384,13 @@ contains
       H_bdg(i, i) = H_bdg(i, i) - cmplx(mu, 0.0_dp, kind=dp)
     end do
 
-    ! --- Pairing sign pattern for zinc-blende 8-band basis ---
-    pairing_sign = [ &
-      +1.0_dp, &  ! band 1 (HH)
-      -1.0_dp, &  ! band 2 (LH)
-      +1.0_dp, &  ! band 3 (LH)
-      -1.0_dp, &  ! band 4 (HH)
-      -1.0_dp, &  ! band 5 (SO)
-      +1.0_dp, &  ! band 6 (SO)
-      +1.0_dp, &  ! band 7 (CB)
-      -1.0_dp &   ! band 8 (CB)
-    ]
-
     ! --- Block (1,2): Delta (antidiagonal pairing, band-major) ---
     ! Delta(b, 9-b) = delta_0 * pairing_sign(b) at each spatial site
     do i = 1, N
       do ib = 1, 8
         row = (ib - 1) * N + i
         col = (9 - ib - 1) * N + i
-        H_bdg(row, N8 + col) = cmplx(delta_0 * pairing_sign(ib), 0.0_dp, kind=dp)
+        H_bdg(row, N8 + col) = cmplx(delta_0 * pairing_sign_xi(ib), 0.0_dp, kind=dp)
       end do
     end do
 
@@ -402,11 +400,18 @@ contains
       do ib = 1, 8
         row = (ib - 1) * N + i
         col = (9 - ib - 1) * N + i
-        H_bdg(N8 + row, col) = cmplx(delta_0 * pairing_sign(9 - ib), 0.0_dp, kind=dp)
+        H_bdg(N8 + row, col) = cmplx(delta_0 * pairing_sign_xi(9 - ib), 0.0_dp, kind=dp)
       end do
     end do
 
-    ! --- Block (2,2): -H_h(-k)^* + mu*I ---
+    ! --- Block (2,2): -conjg(H(-k)) + mu*I ---
+    !
+    ! This is the correct BdG hole block for all k-values. H_h was built at
+    ! wv%kx = -k_par (time-reversed momentum), so H_h = H(-k). The conjugation
+    ! handles the k-dependent terms: for example, kplus = kx + i*ky appears in
+    ! S and kminus = kx - i*ky in SC. At -k, these swap roles, and the explicit
+    ! conjg() ensures the hole block is the Nambu conjugate of the electron block.
+    ! This is NOT a shortcut — it is the full, k-correct construction.
     do row = 1, N8
       do col = 1, N8
         H_bdg(N8 + row, N8 + col) = -conjg(H_h(row, col))

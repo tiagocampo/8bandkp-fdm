@@ -36,10 +36,7 @@ FIGURES_DIR = REPO / "docs" / "lecture" / "figures"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
 sys.path.insert(0, str(REPO / "tests" / "integration"))
-from star_helpers import run_exe, parse_eigenvalues, compare_value, TOL_NUMERICAL
-
-# numpy 2.0 compatibility
-_trapz = getattr(np, 'trapezoid', None) or getattr(np, 'trapz', None)
+from star_helpers import run_exe, parse_eigenvalues, compare_value, TOL_NUMERICAL, trapz_fn
 
 
 def run_with_stdout(build_dir, name, config_path, work_dir, timeout=300):
@@ -154,9 +151,9 @@ def compute_charge_neutrality(z, n_e, n_h, doping_net):
         float: relative charge imbalance
                |integral(n_e - n_h) - integral(doping_net)| / |integral(doping_net)|
     """
-    total_ne = _trapz(n_e, z)
-    total_nh = _trapz(n_h, z)
-    total_doping = _trapz(np.array(doping_net), z)
+    total_ne = trapz_fn(n_e, z)
+    total_nh = trapz_fn(n_h, z)
+    total_doping = trapz_fn(np.array(doping_net), z)
     net_free = total_ne - total_nh
     imbalance = abs(net_free - total_doping)
     ref = max(abs(total_doping), 1e-30)
@@ -242,8 +239,7 @@ def main():
     # ------------------------------------------------------------------
     print("\n[1/4] Running bulk doped GaAs with SC loop...")
     bulk_cfg = CONFIGS_DIR / "sc_bulk_gaas_doped.cfg"
-    bulk_work = tempfile.mkdtemp(prefix="lecture07_bulk_")
-    try:
+    with tempfile.TemporaryDirectory(prefix="lecture07_bulk_") as bulk_work:
         rc, bulk_outdir, bulk_stdout = run_with_stdout(
             str(BUILD_DIR), "bandStructure", str(bulk_cfg), bulk_work,
             timeout=300,
@@ -293,9 +289,6 @@ def main():
         else:
             print(f"  WARN: sc_charge.dat not found (bulk may not write it)")
 
-    finally:
-        shutil.rmtree(bulk_work, ignore_errors=True)
-
     # ------------------------------------------------------------------
     # Test 2: GaAs/AlAs QW SC convergence with DIIS
     # ------------------------------------------------------------------
@@ -304,8 +297,7 @@ def main():
     # fewer grid points and k-points to keep runtime manageable while still
     # exercising the DIIS convergence path.
     print("\n[2/4] Running GaAs/AlAs QW with SC loop (DIIS)...")
-    qw_work = tempfile.mkdtemp(prefix="lecture07_qw_")
-    try:
+    with tempfile.TemporaryDirectory(prefix="lecture07_qw_") as qw_work:
         qw_cfg = os.path.join(qw_work, "qw_sc_light.cfg")
         with open(qw_cfg, 'w') as f:
             f.write(
@@ -393,9 +385,6 @@ def main():
         else:
             print(f"  FAIL: sc_charge.dat not found")
             all_passed = False
-
-    finally:
-        shutil.rmtree(qw_work, ignore_errors=True)
 
     # ------------------------------------------------------------------
     # Test 3: DIIS converges faster than linear mixing

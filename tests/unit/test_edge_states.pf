@@ -38,7 +38,7 @@ contains
     @assertTrue(result%converged)
     @assertTrue(allocated(result%eigenvalues))
 
-    z2 = compute_z2_gap(params%N, result%eigenvalues, gap_threshold)
+    z2 = compute_z2_gap(result%eigenvalues, gap_threshold)
 
     @assertEqual(0, z2)
 
@@ -74,7 +74,7 @@ contains
     @assertTrue(result%converged)
     @assertTrue(allocated(result%eigenvalues))
 
-    z2 = compute_z2_gap(params%N, result%eigenvalues, gap_threshold)
+    z2 = compute_z2_gap(result%eigenvalues, gap_threshold)
 
     @assertEqual(1, z2, message="BHZ topological phase (M=-10 meV, d=70A) should have Z2=1")
 
@@ -105,6 +105,41 @@ contains
     @assertTrue(success, message="fit_exponential_decay should succeed")
     @assertTrue(xi > 0.0_dp, message="xi should be positive")
   end subroutine test_fit_exponential_decay
+
+  ! R29: Verify fit accuracy on known exponential with zero-valued tail entries
+  @test
+  subroutine test_fit_exponential_decay_accuracy()
+    real(kind=dp), parameter :: xi_true = 5.0_dp
+    real(kind=dp), parameter :: dz = 1.0_dp
+    real(kind=dp) :: density(100), xvals(100)
+    real(kind=dp) :: xi
+    logical :: success
+    integer :: i
+
+    ! Construct pure exponential: rho(i) = exp(-(x - x_peak) / xi_true)
+    ! Peak at index 20, tail from 21 onward, with zero-valued entries at end
+    do i = 1, 100
+      xvals(i) = real(i - 1, kind=dp) * dz
+    end do
+
+    ! Rising part before peak
+    density(1:19) = 0.0_dp
+    ! Peak
+    density(20) = 1.0_dp
+    ! Exponential tail after peak
+    do i = 21, 80
+      density(i) = exp(-2.0_dp * real(i - 20, kind=dp) / xi_true)
+    end do
+    ! Zero-valued tail entries (R10: these should not bias regression)
+    density(81:100) = 0.0_dp
+
+    call fit_exponential_decay(density, xvals, xi, success)
+
+    @assertTrue(success, message="fit_exponential_decay should succeed with zero tail entries")
+    @assertTrue(xi > 0.0_dp, message="xi should be positive")
+    ! Verify recovered xi is within 10% of true value (2.5 for exp(-2*x/xi_true))
+    @assertTrue(abs(xi - xi_true * 0.5_dp) < 0.5_dp, message="recovered xi should be within 10% of xi_true/2")
+  end subroutine test_fit_exponential_decay_accuracy
 
   @test
   subroutine test_bhz_wire_params_defaults()

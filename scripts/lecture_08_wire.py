@@ -54,8 +54,7 @@ def test_gaas_21x21_wire():
     # FEAST with feast_m0=-1 auto-detects; expect >= numcb + numvb
     min_expected_nev = expected_numcb + expected_numvb  # 24
 
-    work = tempfile.mkdtemp(prefix="lecture08_gaas21_")
-    try:
+    with tempfile.TemporaryDirectory(prefix="lecture08_gaas21_") as work:
         rc, outdir = run_exe(str(BUILD_DIR), "bandStructure",
                              str(cfg), work, timeout=WIRE_TIMEOUT)
         if rc != 0:
@@ -66,8 +65,6 @@ def test_gaas_21x21_wire():
             sys.exit(f"ERROR: eigenvalues.dat not found at {eig_path}")
 
         data = parse_eigenvalues(eig_path)
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
 
     if not data:
         sys.exit("ERROR: no eigenvalue data parsed from GaAs 21x21 wire")
@@ -117,8 +114,7 @@ def test_inas_rectangle_wire():
 
     cfg = CONFIGS_DIR / "wire_inas_rectangle.cfg"
 
-    work = tempfile.mkdtemp(prefix="lecture08_inas_")
-    try:
+    with tempfile.TemporaryDirectory(prefix="lecture08_inas_") as work:
         rc, outdir = run_exe(str(BUILD_DIR), "bandStructure",
                              str(cfg), work, timeout=WIRE_TIMEOUT)
         if rc != 0:
@@ -129,8 +125,6 @@ def test_inas_rectangle_wire():
             sys.exit(f"ERROR: eigenvalues.dat not found at {eig_path}")
 
         data = parse_eigenvalues(eig_path)
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
 
     if not data:
         sys.exit("ERROR: no eigenvalue data parsed from InAs rectangle wire")
@@ -177,8 +171,7 @@ def test_dense_sparse_consistency():
         return None  # skipped, not a failure
 
     # Run dense solver
-    work_dense = tempfile.mkdtemp(prefix="lecture08_dense_")
-    try:
+    with tempfile.TemporaryDirectory(prefix="lecture08_dense_") as work_dense:
         rc_dense, outdir_dense = run_exe(str(BUILD_DIR), "bandStructure",
                                           str(dense_cfg), work_dense,
                                           timeout=WIRE_TIMEOUT)
@@ -192,12 +185,9 @@ def test_dense_sparse_consistency():
             return None
 
         data_dense = parse_eigenvalues(eig_dense_path)
-    finally:
-        shutil.rmtree(work_dense, ignore_errors=True)
 
     # Run sparse solver
-    work_sparse = tempfile.mkdtemp(prefix="lecture08_sparse_")
-    try:
+    with tempfile.TemporaryDirectory(prefix="lecture08_sparse_") as work_sparse:
         rc_sparse, outdir_sparse = run_exe(str(BUILD_DIR), "bandStructure",
                                             str(sparse_cfg), work_sparse,
                                             timeout=WIRE_TIMEOUT)
@@ -211,8 +201,6 @@ def test_dense_sparse_consistency():
             return None
 
         data_sparse = parse_eigenvalues(eig_sparse_path)
-    finally:
-        shutil.rmtree(work_sparse, ignore_errors=True)
 
     if not data_dense or not data_sparse:
         print("  WARN: empty eigenvalue data, skipping comparison")

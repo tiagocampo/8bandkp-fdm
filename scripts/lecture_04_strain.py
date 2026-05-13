@@ -132,11 +132,8 @@ def test_unstrained_reference():
     print("Lecture 04 -- Section 1: Unstrained bulk GaAs at k=0")
     print("=" * 60)
 
-    work = tempfile.mkdtemp()
-    try:
+    with tempfile.TemporaryDirectory() as work:
         data, _ = run_bandstructure("bulk_gaas_k0.cfg", work)
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
 
     if not data:
         sys.exit("ERROR: no eigenvalue data for unstrained GaAs k=0")
@@ -234,8 +231,7 @@ def test_strained_bir_pikus():
         f"EFParams: 0.0\n"
         f"strainSubstrate: {A_SUBSTRATE}\n"
     )
-    work_strained = tempfile.mkdtemp()
-    try:
+    with tempfile.TemporaryDirectory() as work_strained:
         # Write config directly and run executable
         cfg_path = os.path.join(work_strained, "strained.cfg")
         with open(cfg_path, "w") as f:
@@ -250,8 +246,6 @@ def test_strained_bir_pikus():
         if not os.path.isfile(eig_path):
             sys.exit(f"ERROR: eigenvalues.dat not found at {eig_path}")
         data = parse_eigenvalues(eig_path)
-    finally:
-        shutil.rmtree(work_strained, ignore_errors=True)
 
     if not data:
         sys.exit("ERROR: no eigenvalue data for strained GaAs k=0")
@@ -262,11 +256,8 @@ def test_strained_bir_pikus():
         print(f"    Band {i+1} ({BAND_LABELS[i]:>2s}): {ev:+.6f}")
 
     # Run unstrained reference in the same context
-    work_unref = tempfile.mkdtemp()
-    try:
+    with tempfile.TemporaryDirectory() as work_unref:
         data_ref, _ = run_bandstructure("bulk_gaas_k0.cfg", work_unref)
-    finally:
-        shutil.rmtree(work_unref, ignore_errors=True)
     _, evals_unref = data_ref[0]
 
     # Expected strained energies (eigenvalues sorted ascending):
@@ -342,11 +333,8 @@ def test_strained_qw():
     print("Lecture 04 -- Section 3: Strained InAs/GaAs QW")
     print("=" * 60)
 
-    work_s = tempfile.mkdtemp()
-    try:
+    with tempfile.TemporaryDirectory() as work_s:
         data, _ = run_bandstructure("qw_inas_gaas_strained.cfg", work_s)
-    finally:
-        shutil.rmtree(work_s, ignore_errors=True)
 
     if not data:
         sys.exit("ERROR: no eigenvalue data for strained InAs/GaAs QW")
@@ -383,12 +371,9 @@ def test_strained_qw():
 
     # Also run unstrained QW for comparison (disable strain)
     overrides_qw = {"strain: T": "strain: F"}
-    work_u = tempfile.mkdtemp()
-    try:
+    with tempfile.TemporaryDirectory() as work_u:
         data_unref, _ = run_bandstructure("qw_inas_gaas_strained.cfg", work_u,
                                           config_overrides=overrides_qw)
-    finally:
-        shutil.rmtree(work_u, ignore_errors=True)
 
     _, evals_unref = data_unref[0]
     vb_unref = evals_unref[:n_vb] if len(evals_unref) >= n_vb else evals_unref
