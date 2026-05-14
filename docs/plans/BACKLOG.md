@@ -86,6 +86,8 @@ CSR structure testing — reusable invariant fixture, unit tests for 8 untested 
 **Brainstorm:** `docs/brainstorms/archive/2026-05-09-csr-structure-testing-requirements.md` (archived)
 **Plan:** `docs/plans/archive/2026-05-09-001-feat-csr-structure-testing-plan.md` (archived)
 
+*Note: Both brainstorm and plan are in their respective `archive/` directories.*
+
 **Delivered:**
 - `tests/support/csr_test_helpers.f90` — structural invariant fixture (5 invariants + helpers)
 - `tests/support/krylov_helpers.f90` — Krylov chain + comparison with failure diagnostics
@@ -228,6 +230,46 @@ All remaining backlog items resolved. 91/91 tests pass.
 
 ---
 
+## Phase 17: COMPLETED (2026-05-14)
+
+Post-completion bug fixes and polish from code review.
+
+**Commits:** `c97c86d` (29 code review findings), `a2ea66a` (failing test), `30c6895` (fit-tail fix), `6223273` (NaN guard + test cleanup).
+
+### 17a: Code Review Findings (29 fixes)
+
+**Plan:** `docs/plans/archive/2026-05-12-001-fix-code-review-findings-plan.md` (archived)
+**Brainstorm:** `docs/brainstorms/archive/2026-05-12-code-review-fixes-requirements.md` (archived)
+
+**Delivered:**
+- BdG correctness: `pairing_sign_xi` constant, `delta_0 <= 0` guard, Hermiticity tests with Peierls
+- Topological: `is_z2_transition` simplified to Z2-change-only, Fu-Kane parity pairing, cumulative Z2 tracking, spectral detection replacing width threshold
+- Numerical: `n_fit_actual` regression bias fix, `converged` flag for near-transition, shared `fit_tail_exponential` helper
+- Dead code: removed `diag_2x2`, duplicate conductance wrappers, `bdg_config%self_consistent`
+- `contiguous` attributes: 30+ hot-path arguments in bdg/topological/magnetic modules
+- Python: all `mkdtemp` → `TemporaryDirectory`, `trapz_fn` compat shim, `__file__`-relative paths
+- Tests: BdG Hermiticity with Peierls (3 tests), Z2 transition/value tests, `fit_exponential_decay` accuracy
+
+### 17b: Right-Edge Majorana xi Regression Fix
+
+**Plan:** `docs/superpowers/plans/archive/2026-05-13-fix-fit-tail-regression-direction.md` (archived)
+**Brainstorm:** `docs/brainstorms/archive/2026-05-13-fit-tail-regression-direction-bug.md` (archived)
+
+**Delivered:**
+- Added `forward_tail` boolean to track search direction in `fit_tail_exponential`
+- Split regression loop into forward/backward branches with correct distance calculation
+- Added fallback for forward tails with zero-density data
+- Fixed early-return guard and `domain_extent` for backward tails
+- New test: `test_fit_exponential_decay_right_edge` in `test_edge_states.pf`
+
+### 17c: NaN Guard and Test Polish
+
+**Delivered:**
+- BdG `delta_0` guard now also rejects NaN (`delta_0 /= delta_0`)
+- `is_z2_transition` tests simplified to use 2-argument signature
+
+---
+
 ## Remaining Backlog — ALL CLOSED
 
 | Source | What | Status | Resolution |
@@ -243,6 +285,9 @@ All remaining backlog items resolved. 91/91 tests pass.
 | #56 | Standard-star tightening | COMPLETE | S4 onset reference, S7 g-factor reference, wrapper centralization, Roth formula fix (Phase 15) |
 | #38 | Rashba BdG calibration | COMPLETE | mu at CB subband (0.638 eV), FEAST window fixed, B sweep demonstrates phase transition in lecture_13 (Phase 16) |
 | #59 | Strain validation | COMPLETE | Bulk/QW/wire scripts, CTest registered, code-review pass applied (Phase 13) |
+| #60 | Code review findings (29 fixes) | COMPLETE | BdG/topological/numerical/dead-code/contiguous/Python/test fixes (Phase 17a) |
+| #61 | Right-edge Majorana xi regression | COMPLETE | `forward_tail` direction fix + fallback + test (Phase 17b) |
+| #62 | NaN guard + test polish | COMPLETE | BdG delta_0 NaN rejection, is_z2_transition test cleanup (Phase 17c) |
 
 ---
 
@@ -276,5 +321,6 @@ Items that were explicitly deferred or relaxed with documented justification:
 | 14. Quick wins | — | Contiguous, coverage orphans, gfactor golden data | DONE |
 | 15. Validation tightening | — | Krylov 7/7, standard-star tightening, docs revamp re-scope | DONE |
 | 16. Integration + Rashba | — | Wire hexagon, SC wire, Rashba BdG calibrated | DONE |
+| 17. Post-completion fixes | — | 29 code review findings, fit-tail regression fix, NaN guard | DONE |
 
 **All phases complete.** 91/91 tests pass. No remaining backlog.

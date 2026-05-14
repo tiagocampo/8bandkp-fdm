@@ -63,6 +63,9 @@ Review date: 2026-05-13 (updated from 2026-05-12)
 | 57 | 2026-05-10-executable-lecture-test-pairs | brainstorm + plan | COMPLETE | Archived. 14 scripts, 18 plots, Makefile targets |
 | 58 | 2026-05-10-validation-coverage-matrix | brainstorm + plan | COMPLETE | Archived. 59 cells, 92 annotations, ctest `coverage` label |
 | 59 | 2026-05-11-strain-validation | brainstorm + plan | COMPLETE | Bulk/QW/wire scripts done, CTest registered. Code-review pass applied. Docs committed. Tolerances have documented justification. |
+| 60 | 2026-05-12-code-review-fixes | brainstorm + plan | COMPLETE | 29 findings resolved: BdG correctness (pairing_sign_xi, delta_0 guard, Hermiticity), topological (Z2-only transition, Fu-Kane parity, cumulative Z2), numerical (n_fit_actual, converged flag), dead code removal, contiguous attributes, Python cleanup. Commit `c97c86d`. |
+| 61 | 2026-05-13-fit-tail-regression | brainstorm + superpowers plan | COMPLETE | Right-edge Majorana xi regression fix: `forward_tail` direction tracking, split regression loop, fallback for zero-density forward tails, backward domain_extent. Commits `a2ea66a` (test) + `30c6895` (fix). |
+| 62 | 2026-05-14-nan-guard-polish | — | COMPLETE | BdG delta_0 NaN guard, is_z2_transition test cleanup for 2-arg signature. Commit `6223273`. |
 
 ---
 
