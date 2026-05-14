@@ -176,38 +176,30 @@ contains
 
   @test
   subroutine test_is_z2_transition_false_when_z2_unchanged()
-    ! R28: Two adjacent points with same Z2 but small gap must NOT be a transition
+    ! R28: Two adjacent points with same Z2 must NOT be a transition
     logical :: result
 
-    ! Z2=0, Z2=0 with gap_a < threshold (false-positive case from old code)
-    result = is_z2_transition(0, 0, 0.001_dp, 1.0_dp, 0.01_dp)
-    @assertFalse(result, message="Same Z2=0 with small gap must not be a transition")
+    ! Z2=0, Z2=0
+    result = is_z2_transition(0, 0)
+    @assertFalse(result, message="Same Z2=0 must not be a transition")
 
-    ! Z2=1, Z2=1 with gap_a < threshold
-    result = is_z2_transition(1, 1, 0.001_dp, 1.0_dp, 0.01_dp)
-    @assertFalse(result, message="Same Z2=1 with small gap must not be a transition")
-
-    ! Z2=0, Z2=0 with both gaps below threshold
-    result = is_z2_transition(0, 0, 0.0001_dp, 0.0001_dp, 0.01_dp)
-    @assertFalse(result, message="Same Z2 with both gaps below threshold must not be a transition")
+    ! Z2=1, Z2=1
+    result = is_z2_transition(1, 1)
+    @assertFalse(result, message="Same Z2=1 must not be a transition")
   end subroutine test_is_z2_transition_false_when_z2_unchanged
 
   @test
   subroutine test_is_z2_transition_true_when_z2_changes()
-    ! Transition IS the change in Z2, regardless of gap size
+    ! Transition IS the change in Z2
     logical :: result
 
-    ! Z2=0 -> Z2=1 with large gaps
-    result = is_z2_transition(0, 1, 10.0_dp, 10.0_dp, 0.01_dp)
+    ! Z2=0 -> Z2=1
+    result = is_z2_transition(0, 1)
     @assertTrue(result, message="Z2 0->1 must be a transition")
 
-    ! Z2=1 -> Z2=0 with large gaps
-    result = is_z2_transition(1, 0, 10.0_dp, 10.0_dp, 0.01_dp)
+    ! Z2=1 -> Z2=0
+    result = is_z2_transition(1, 0)
     @assertTrue(result, message="Z2 1->0 must be a transition")
-
-    ! Z2=0 -> Z2=1 with zero gaps (at gap closing point)
-    result = is_z2_transition(0, 1, 0.0_dp, 0.0_dp, 0.01_dp)
-    @assertTrue(result, message="Z2 change at gap closing must be a transition")
   end subroutine test_is_z2_transition_true_when_z2_changes
 
   @test

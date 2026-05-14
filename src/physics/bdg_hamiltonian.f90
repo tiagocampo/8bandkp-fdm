@@ -104,8 +104,8 @@ contains
     real(kind=dp) :: Vz_opt(8), Vz_cfg(8), Vz_delta(8), g_f, B_mag_opt, B_mag_cfg
     logical :: add_optional_zeeman
 
-    ! --- Guard: delta_0 must be positive ---
-    if (delta_0 <= 0.0_dp) then
+    ! --- Guard: delta_0 must be positive and finite ---
+    if (delta_0 <= 0.0_dp .or. delta_0 /= delta_0) then
       print *, 'Error: delta_0 must be positive for BdG Hamiltonian construction'
       print *, '  delta_0=', delta_0
       stop 1
@@ -337,8 +337,8 @@ contains
     type(wavevector) :: wv
     type(simulation_config) :: cfg_normal
 
-    ! --- Guard: delta_0 must be positive ---
-    if (delta_0 <= 0.0_dp) then
+    ! --- Guard: delta_0 must be positive and finite ---
+    if (delta_0 <= 0.0_dp .or. delta_0 /= delta_0) then
       print *, 'Error: delta_0 must be positive for BdG Hamiltonian construction'
       print *, '  delta_0=', delta_0
       stop 1
