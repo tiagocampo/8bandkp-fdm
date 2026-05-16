@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=g*_cb geometry=wire material=InSbW ref=Winkler2003
 # Integration test: InSb wire g-factor calculation regression
 # Args: <gfactorCalculation_exe> <config_file> <ref_data_dir> <compare_script_unused>
 set -euo pipefail

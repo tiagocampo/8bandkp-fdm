@@ -447,6 +447,30 @@ uncertainties are smaller than the physical effects being studied.
 
 ---
 
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-11
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_11_convergence.py
+```
+
+### Code-Output Anchors
+
+Running `convergence_qw_gaas.cfg` produces:
+- **QW grid convergence rate**: 1.66 (within 0.5 of theoretical order 2)
+- **Richardson extrapolation**: agrees with FD-8 result
+
+![Overlay plot](figures/lecture_11_grid_convergence.png)
+
+---
+
 ## 11.7 References
 
 1. R. W. Hamming, *Numerical Methods for Scientists and Engineers*, 2nd ed.

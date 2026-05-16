@@ -379,3 +379,27 @@ Before submitting any change, run through this checklist:
 3. Check for stale `.mod` files in the project root: `rm -f *.mod` if you see type mismatch errors.
 4. Verify that `input.cfg` is not committed with personal test configs (use `tests/regression/configs/` instead).
 5. If you changed `defs.f90` derived types or `hamiltonianConstructor.f90` Hamiltonian construction, flag for review per project policy.
+
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-12
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_12_extending.py
+```
+
+### Code-Output Anchors
+
+Running the architecture walkthrough:
+- **Architecture walkthrough**: no assertions (code tour only)
+- **Eigenvalues match expected parameter values**: verified via standard configs
+
+![Overlay plot](figures/lecture_12_example.png)

@@ -961,13 +961,25 @@ contains
     type(simulation_config), intent(in) :: cfg
     integer :: iz, ilayer
     integer, allocatable :: layer_index(:)
+    real(kind=dp) :: sigma, amplitude
+
     rho_doping = 0.0_dp
     if (.not. allocated(cfg%doping)) return
     call map_layer_to_grid(layer_index, cfg, nz)
     do iz = 1, nz
       ilayer = layer_index(iz)
       if (ilayer > 0) then
-        rho_doping(iz) = cfg%doping(ilayer)%ND - cfg%doping(ilayer)%NA
+        if (cfg%doping(ilayer)%dtype == 'delta') then
+          ! Gaussian delta-doping profile
+          sigma = cfg%doping(ilayer)%delta_fwhm / (2.0_dp * sqrt(2.0_dp * log(2.0_dp)))
+          amplitude = cfg%doping(ilayer)%NS * 1.0e11_dp / &
+            & (sigma * 1.0e-8_dp * sqrt(2.0_dp * pi_dp))
+          rho_doping(iz) = amplitude * exp(-0.5_dp * &
+            & ((cfg%z(iz) - cfg%doping(ilayer)%delta_pos) / sigma)**2)
+        else
+          ! Uniform doping (existing behavior)
+          rho_doping(iz) = cfg%doping(ilayer)%ND - cfg%doping(ilayer)%NA
+        end if
       end if
     end do
     deallocate(layer_index)
@@ -1039,17 +1051,24 @@ contains
     type(doping_spec), intent(in)  :: doping(:)
 
     integer :: nx, ny, ix, iy, ij, mid
+    logical :: warned
 
     nx = grid%nx
     ny = grid%ny
     allocate(rho_doping(nx, ny))
     rho_doping = 0.0_dp
+    warned = .false.
 
     do iy = 1, ny
       do ix = 1, nx
         ij = (iy - 1) * nx + ix
         mid = grid%material_id(ij)
         if (mid > 0 .and. mid <= size(doping)) then
+          if (doping(mid)%dtype == 'delta' .and. .not. warned) then
+            print *, 'Warning: delta-doping ignored in 2D wire cross-section.'
+            print *, '  Delta-doping is a z-profile; wire SC uses cross-section doping only.'
+            warned = .true.
+          end if
           rho_doping(ix, iy) = doping(mid)%ND - doping(mid)%NA
         end if
       end do

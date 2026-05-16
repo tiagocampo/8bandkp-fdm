@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=CB_ground_state geometry=QW material=AlSbW/GaSbW/InAsW
 # Integration test: QW run should create output/ automatically and preserve the
 # expected valence/conduction state ordering around the configured numvb offset.
 set -euo pipefail

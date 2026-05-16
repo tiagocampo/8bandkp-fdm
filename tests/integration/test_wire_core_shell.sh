@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=CB_ground_state geometry=wire material=InAs/GaAs-core-shell
 # Integration test: InAs/GaAs core-shell wire with strain (Stier & Bimberg benchmark)
 # Args: <bandStructure_exe> <config_file> <ref_data_dir> <compare_script>
 set -euo pipefail

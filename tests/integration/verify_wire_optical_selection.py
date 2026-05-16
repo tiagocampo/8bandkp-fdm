@@ -5,6 +5,7 @@ Usage:
     verify_wire_optical_selection.py <stdout_log> <optical_transitions.dat>
 """
 
+# COVERAGE: observable=optical_selection geometry=wire material=GaAs
 import re
 import sys
 

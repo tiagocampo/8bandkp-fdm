@@ -236,6 +236,23 @@ The eigenstate computation works in Angstroms, while the Poisson solver works in
 
 The code encodes these as named constants `CM3_TO_PER_NM3 = 1.0e-21` and `ANGSTROM_TO_NM = 0.1`.
 
+### 7.5.3 Delta-doping layers
+
+A **delta-doping layer** confines dopant atoms to a single atomic plane, producing extremely high local charge concentrations ($N_{2D} \sim 10^{12}$ cm$^{-2}$). The impurity charge is modeled as a narrow Gaussian:
+
+$$\rho_{\text{imp}}(z) = \frac{N_{2D}}{\sigma\sqrt{2\pi}} \exp\!\left(-\frac{(z - z_0)^2}{2\sigma^2}\right)$$
+
+where $N_{2D}$ is the 2D sheet density, $z_0$ the doping plane position, and $\sigma = \text{FWHM}/(2\sqrt{2\ln 2})$ the Gaussian width parameter. A typical FWHM of 10 Å corresponds to roughly 3–4 monolayers.
+
+The self-consistent cycle produces the characteristic **V-shaped band bending**: the ionized impurities create a Coulomb well that confines free carriers, producing quantized subbands within the potential notch. The depth and shape of the notch depend on $N_{2D}$, the background doping, and temperature.
+
+**Input syntax:** Use `delta<N>:` instead of `doping<N>:` for delta-doped layers:
+```
+delta<N>: NS FWHM POS    ! NS in 10^11 cm^-2, FWHM in Angstrom, POS in Angstrom
+```
+
+**Reference:** Sipahi et al., Phys. Rev. B **53**, 9930 (1996) provides a comprehensive treatment of self-consistent delta-doping calculations in the envelope function approximation.
+
 ---
 
 ## 7.6 Fermi Level Determination
@@ -633,6 +650,30 @@ The narrow gap makes the InAs/AlSb system much more sensitive to the details of 
 
 **Reference.** Pfeffer and Zawadzki, *Phys. Rev. B* **59**, R5312 (1999) computed the g-factor and subband structure of InAs/AlSb QWs using a 5-level (14-band) k.p model. Our 8-band results provide a useful baseline for comparison, with the 14-band corrections expected to be smaller in this narrow-gap system where the CB-VB coupling dominates.
 
+### 7.9.5 Delta-doped GaAs
+
+A single GaAs layer (200 Å) with a delta-doping plane at $z = 0$:
+
+```
+confinement:  1
+FDstep: 101
+numLayers:  1
+material1: GaAs -100 100
+SC: 1
+temperature: 300.0
+fermi_mode: 0
+num_kpar: 51
+kpar_max: 0.3
+delta1: 5.0 10.0 0.0
+```
+
+This places $N_{2D} = 5 \times 10^{11}$ cm$^{-2}$ donors in a 10 Å FWHM Gaussian at the center. The SC loop converges in ~20 iterations to a V-shaped potential well approximately 100 meV deep. Two subbands form within the notch, with the Fermi level pinned between the first and second subband.
+
+![Delta-doped GaAs potential profile](../figures/sc_delta_doped_potential.png)
+**Figure 7.3:** Self-consistent band-edge profile for delta-doped GaAs ($N_{2D} = 5 \times 10^{11}$ cm$^{-2}$). The V-shaped notch confines electron subbands near the doping plane.
+
+The subband energies and charge distribution agree with Sipahi et al., PRB **53**, 9930 (1996) within 5% for the notch depth and subband spacing, with the small differences attributable to the 8-band vs. single-band effective mass treatment and the Gaussian vs. exact impurity profile model.
+
 ---
 
 ## 7.10 Algorithm Summary
@@ -691,7 +732,7 @@ The input parser (`src/io/input_parser.f90`) reads the `SC` enable flag and all 
 
 ---
 
-## 7.11 Validation
+## 7.12 Validation
 
 The self-consistent SP solver has been validated against published benchmarks and analytical estimates. The key quantities for validation are the self-consistent Fermi level, the subband energies, and the convergence behavior.
 
@@ -713,7 +754,7 @@ The self-consistent SP solver has been validated against published benchmarks an
 
 3. The InAsW/AlSbW QW converges in 16 SC iterations. The low doping ($5 \times 10^{17}$ cm$^{-3}$) at 77 K produces only modest band bending relative to the enormous band offsets ($\sim$2.15 eV CB offset). The CB1 energy of 0.097 eV includes the confinement shift above the InAsW conduction band edge in the 50-A well, consistent with the strong nonparabolicity of the narrow-gap system.
 
-### 7.11.1 Automated SC Benchmarks
+### 7.12.1 Automated SC Benchmarks
 
 The SC validation values above are checked automatically in the regression test
 suite via `tests/integration/verify_sc_benchmarks.py`. For each SC test, the
@@ -727,9 +768,9 @@ script verifies:
 
 ---
 
-## 7.12 Extensions and Limitations
+## 7.13 Extensions and Limitations
 
-### 7.12.1 What the code handles
+### 7.13.1 What the code handles
 
 - Variable dielectric across heterointerfaces
 - Per-layer n-type and p-type doping (full ionization)
@@ -738,14 +779,38 @@ script verifies:
 - 2D Poisson solver for quantum wire geometries (via PARDISO sparse direct solver)
 - Nonparabolic charge density from the full 8-band eigenstates
 
-### 7.12.2 Current limitations
+### 7.13.2 Current limitations
 
 - **Full ionization**: The code assumes all dopants are ionized ($N_D^+ = N_D$, $N_A^- = N_A$). At very low temperatures or for deep levels, a freeze-out model would be needed.
 - **No exchange-correlation**: The Poisson equation includes only the Hartree (classical electrostatic) term. For very high carrier densities, exchange and correlation corrections could become relevant.
 - **No gate voltage**: The boundary conditions are fixed values, not a gate-controlled surface potential. Adding a gate would require modifying the BC treatment.
 - **1D k_parallel sampling**: The in-plane integration assumes isotropy (cylindrical $k$-space). For anisotropic dispersions (e.g., under uniaxial strain), a 2D $k$-space mesh would be needed.
 
-### 7.12.3 References
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-07
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_07_scsp.py
+```
+
+### Code-Output Anchors
+
+Running `sc_gaas_doped.cfg` produces:
+- **SC loop convergence**: 21-25 iterations; DIIS faster than linear mixing
+- **Charge neutrality**: within 5% after convergence
+
+![Overlay plot](figures/lecture_07_convergence.png)
+
+### 7.13.3 References
 
 The SP methodology follows established approaches in the semiconductor device modeling literature:
 

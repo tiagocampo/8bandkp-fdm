@@ -598,3 +598,31 @@ The computed g-factors have been cross-checked against analytical Roth formula p
 2. The QW result uses the broken-gap InAs/GaSb system (Section 5.3.2). The trace-projection extraction correctly normalizes by $\mathrm{Tr}(\Sigma^\dagger\Sigma)$, which differs from unity in a QW doublet with mixed CB/VB character (~0.924 in-plane, ~0.849 along $z$). The published Pfeffer–Zawadzki values are from a similar but not identical structure; the computed values are consistent in trend and magnitude.
 
 3. The InSb wire g-factor uses the commutator-based velocity operator $v_\alpha = -i [r_\alpha, H]$, which correctly captures all inter-band and intra-band couplings. For a 55-Å wire, the transverse g-factor ($g_x = g_y = 0.928$) reflects strong confinement; for a 105-Å wire it drops to $g_x = g_y = -1.61$, converging toward the bulk value ($g^* \approx -51$). The $g_z$ component (free axis, $\approx 1.94$) is nearly independent of cross-section size.
+
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-05
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_05_gfactor.py
+```
+
+### Code-Output Anchors
+
+Running `gfactor_bulk_gaas_cb.cfg` produces:
+- **GaAs CB g**: -0.317 (Roth formula within 1%); **InSb |g|** > 40
+- **GaAs Landau levels**: spacing 10.90 meV vs Kane-mass hbar*omega_c=11.55 meV (6% error)
+
+![Overlay plot](figures/lecture_05_gfactor_comparison.png)
+
+![QW g-factor](figures/lecture_05_qw_gfactor.png)
+
+![Wire g-factor anisotropy](figures/lecture_05_wire_gfactor.png)

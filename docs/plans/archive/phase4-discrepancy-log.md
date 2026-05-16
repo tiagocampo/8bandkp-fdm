@@ -1,0 +1,35 @@
+# Phase 4 Figure Discrepancy Log
+
+Run date: 2026-05-04
+Script: `scripts/plotting/generate_all_figures.py --skip-build`
+Result: **74 succeeded, 1 failed out of 75 registered figures**
+
+Archived on 2026-05-06. The remaining timeout item was addressed in code by using
+the 600s timeout listed below as the fix for `fig_timing_dense_vs_sparse`.
+
+Total PNG files generated: 77 in `docs/figures/` + 9 in `docs/lecture/figures/` = 86 PNG files
+(some figure functions produce multiple PNG files, e.g. auxiliary panels)
+
+3 stale benchmark files from 2026-04-25 not in current ALL_FIGURES dict: `benchmark_bulk_gaas.png`, `benchmark_gaas_algaas_qw.png`, `benchmark_gfactor_comparison.png`
+
+| Figure | Issue | Root Cause | Fix | Status |
+|--------|-------|------------|-----|--------|
+| `qw_strained_bands` | Fixed. Was: SIGSEGV in strained QW run (rc=-11). | gfortran -O3 created temporary array copies when passing allocatable derived-type components to `add_bp_strain_dense`, corrupting memory under OpenMP. Also: `compute_majorana_profile` left profile array partially uninitialized. | Inlined strain application with scalar extracts in `ZB8bandQW`; added scalar `apply_bp_strain_inline` for bulk; zero-initialized profile output in `compute_majorana_profile`. | Fixed |
+| `timing_dense_vs_sparse` | Fixed. Was: wire (sparse) run exceeds 300s timeout. | `wire_gaas_rectangle.cfg` with full kz-sweep takes >300s on this hardware. The `run_executable` default timeout was 300s. | `fig_timing_dense_vs_sparse` now passes `timeout=600` to `run_executable`. | Fixed |
+
+## Physics Sanity Checks (all pass)
+
+| Check | Expected | Computed | Status |
+|-------|----------|----------|--------|
+| GaAs E_g at Gamma | ~1.42 eV | 1.519 eV | OK (8-band parameter set) |
+| GaAs SO splitting | ~0.34 eV | 0.341 eV | OK |
+| InAs E_g at Gamma | ~0.354 eV | 0.417 eV | OK (8-band parameter set) |
+| InAs SO splitting | ~0.38 eV | 0.390 eV | OK |
+| InGaAs QW HH-LH split | ~50 meV | 54.0 meV | OK |
+| InAs/GaAs wire gap | ~0.8 eV | 0.7749 eV | OK |
+| QW g-factor (InAsW, 50A) | large negative | gx=gy=-14.9, gz=-10.3 | OK |
+| Wire g-factor (GaAs, 100A) | moderate negative | gx=gy=-3.4, gz=2.1 | OK |
+
+## All generated figures (77 PNG files in docs/figures/)
+
+All files >10KB, no suspiciously small or zero-byte files detected.

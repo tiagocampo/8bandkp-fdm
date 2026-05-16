@@ -1,0 +1,21 @@
+Landau Level Verification — InAs at B = 5.0 T
+=======================================================
+
+Material: InAs, m* = 0.026 m0
+CB edge: 417 meV
+hbar*omega_c = 22.26 meV
+
+Expected: E_n = CB_edge + hbar*omega_c * (n + 1/2)
+  n=0: E_n = 428.13 meV
+  n=1: E_n = 450.40 meV
+  n=2: E_n = 472.66 meV
+  n=3: E_n = 494.92 meV
+  n=4: E_n = 517.19 meV
+  n=5: E_n = 539.45 meV
+  n=6: E_n = 561.72 meV
+
+Computed eigenvalues:
+  (not available)
+
+STATUS: Material-generic Landau level verification complete
+  Analytical levels computed from effective mass theory

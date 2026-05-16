@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=subband_spacing geometry=QW material=GaAs/AlGaAs
 # Integration test: QCSE GaAs/AlGaAs QW without electric field
 # Harrison benchmark: E1 should be ~53 meV above GaAs CB edge
 set -euo pipefail

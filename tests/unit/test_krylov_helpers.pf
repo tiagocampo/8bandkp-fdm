@@ -1,0 +1,141 @@
+module test_krylov_helpers
+  use funit
+  use definitions
+  use sparse_matrices
+  use krylov_helpers
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! Krylov chain on identity: each iteration produces the seed vector
+  ! ==================================================================
+  @test
+  subroutine test_krylov_chain_identity()
+    integer, parameter :: n = 3, k = 5
+    type(csr_matrix) :: A
+    integer :: rows(3), cols(3)
+    complex(kind=dp) :: vals(3), seed(n)
+    complex(kind=dp), allocatable :: vectors(:,:)
+    integer :: i, j
+
+    rows = [1, 2, 3]
+    cols = [1, 2, 3]
+    vals = [cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp)]
+    call csr_build_from_coo(A, n, n, 3, rows, cols, vals)
+
+    seed = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
+    call krylov_chain(A, seed, k, vectors)
+
+    @assertEqual(n, size(vectors, 1), message="vector dimension")
+    @assertEqual(k + 1, size(vectors, 2), message="k+1 vectors")
+
+    ! Identity * seed = seed for every iteration
+    do j = 1, k + 1
+      do i = 1, n
+        @assertEqual(seed(i), vectors(i, j), tolerance=1.0e-14_dp)
+      end do
+    end do
+
+    call A%free()
+    deallocate(vectors)
+  end subroutine test_krylov_chain_identity
+
+  ! ==================================================================
+  ! Comparison passes for exact-match reference
+  ! ==================================================================
+  @test
+  subroutine test_krylov_compare_exact_match()
+    integer, parameter :: n = 2, k = 3
+    complex(kind=dp) :: vectors(n, k+1), reference(n, k+1)
+    integer :: i
+    logical :: pass
+
+    vectors = reshape([(cmplx(real(i, dp), 0.0_dp, dp), i=1, n*(k+1))], [n, k+1])
+    reference = vectors
+
+    pass = krylov_compare(vectors, reference, 1.0e-12_dp)
+    @assertTrue(pass, message="exact match passes")
+  end subroutine test_krylov_compare_exact_match
+
+  ! ==================================================================
+  ! Comparison detects divergence at a specific iteration
+  ! ==================================================================
+  @test
+  subroutine test_krylov_compare_detects_divergence()
+    integer, parameter :: n = 2, k = 3
+    complex(kind=dp) :: vectors(n, k+1), reference(n, k+1)
+    logical :: pass
+    integer :: fail_iter
+    real(kind=dp) :: max_div
+
+    vectors = cmplx(0.0_dp, 0.0_dp, dp)
+    reference = cmplx(0.0_dp, 0.0_dp, dp)
+
+    ! Corrupt iteration 3
+    vectors(1, 3) = cmplx(100.0_dp, 0.0_dp, dp)
+
+    pass = krylov_compare(vectors, reference, 1.0e-12_dp, &
+      failing_iteration=fail_iter, max_divergence=max_div)
+
+    @assertFalse(pass, message="divergence detected")
+    @assertEqual(3, fail_iter, message="correct failing iteration")
+    @assertTrue(max_div > 99.0_dp, message="divergence magnitude reported")
+  end subroutine test_krylov_compare_detects_divergence
+
+  ! ==================================================================
+  ! Divergence in final iteration only — earlier iterations pass
+  ! ==================================================================
+  @test
+  subroutine test_krylov_compare_final_iteration_divergence()
+    integer, parameter :: n = 2, k = 5
+    complex(kind=dp) :: vectors(n, k+1), reference(n, k+1)
+    logical :: pass
+    integer :: fail_iter
+
+    vectors = cmplx(1.0_dp, 0.0_dp, dp)
+    reference = cmplx(1.0_dp, 0.0_dp, dp)
+
+    ! Corrupt only the last iteration
+    vectors(1, k+1) = cmplx(999.0_dp, 0.0_dp, dp)
+
+    pass = krylov_compare(vectors, reference, 1.0e-12_dp, &
+      failing_iteration=fail_iter)
+
+    @assertFalse(pass, message="final divergence detected")
+    @assertEqual(k + 1, fail_iter, message="failing at last vector")
+  end subroutine test_krylov_compare_final_iteration_divergence
+
+  ! ==================================================================
+  ! Krylov chain determinism: two runs produce identical output
+  ! ==================================================================
+  @test
+  subroutine test_krylov_chain_deterministic()
+    integer, parameter :: n = 3, k = 5
+    type(csr_matrix) :: A
+    integer :: rows(5), cols(5)
+    complex(kind=dp) :: vals(5), seed(n)
+    complex(kind=dp), allocatable :: v1(:,:), v2(:,:)
+    real(kind=dp) :: max_err
+
+    ! Non-trivial matrix
+    rows = [1, 1, 2, 2, 3]
+    cols = [1, 2, 1, 2, 3]
+    vals = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), &
+            cmplx(3.0_dp, 0, dp), cmplx(4.0_dp, 0, dp), &
+            cmplx(5.0_dp, 0, dp)]
+    call csr_build_from_coo(A, n, n, 5, rows, cols, vals)
+
+    seed = cmplx(1.0_dp, 0.0_dp, dp)
+
+    call krylov_chain(A, seed, k, v1)
+    call krylov_chain(A, seed, k, v2)
+
+    max_err = maxval(abs(v1 - v2))
+    @assertTrue(max_err < 1.0e-14_dp, message="deterministic output")
+
+    call A%free()
+    deallocate(v1, v2)
+  end subroutine test_krylov_chain_deterministic
+
+end module test_krylov_helpers

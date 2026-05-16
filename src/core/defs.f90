@@ -11,7 +11,7 @@ module definitions
   ! Physical constants
   public :: pi_sp, pi_dp, pi_qp
   public :: a0, hbar, const, c, m0, e, e0
-  public :: kB_eV, tolerance, renormalization, hbar2O2m0
+  public :: kB_eV, mu_B, tolerance, renormalization, hbar2O2m0
   public :: NUM_CB_STATES, NUM_VB_STATES, g_free
   public :: SQR3, SQR2, SQR2o3, SQR3o2, RQS3, RQS2
   public :: IU, ZERO, UM
@@ -22,7 +22,7 @@ module definitions
   public :: doping_spec, sc_config, wire_geometry, region_spec
   public :: spatial_grid, strain_config
   public :: optical_transition, optics_config
-  public :: exciton_config, scattering_config
+  public :: exciton_config, scattering_config, bdg_config, topology_config, topological_result
   public :: simulation_config, group
 
   ! Functions and subroutines
@@ -46,6 +46,7 @@ module definitions
   real(kind=dp), parameter :: hbar2O2m0 = (hbar)**2 / (2.*m0) !eV AA**2
   real(kind=dp), parameter :: e0 = 8.854187817_dp*1E-12*(1E-9) ! C V-1 nm-1
   real(kind=dp), parameter :: kB_eV = 8.617333262e-5_dp        ! Boltzmann constant (eV/K)
+  real(kind=dp), parameter :: mu_B = 5.7883818012e-5_dp       ! Bohr magneton (eV/T)
   real(kind=dp), parameter :: tolerance=1e-7
   logical, parameter :: renormalization = .False.
 
@@ -79,6 +80,11 @@ module definitions
 
   ! Per-grid-point Bir-Pikus strain Hamiltonian components.
   ! Arrays have length ngrid; unallocated when unstrained.
+  ! No FINAL binding: gfortran creates temporaries for intent(in) derived-type
+  ! arguments (copy-in/copy-out), and the finalizer would deallocate the
+  ! allocatable components of the temporary, corrupting the original via
+  ! shared allocation handles. Cleanup is done explicitly via
+  ! bir_pikus_blocks_free() and in simulation_config_finalize.
   type :: bir_pikus_blocks
     real(kind=dp), allocatable :: delta_Ec(:)    ! CB bands 7,8
     real(kind=dp), allocatable :: delta_EHH(:)   ! HH bands 1,4
@@ -87,8 +93,6 @@ module definitions
     complex(kind=dp), allocatable :: R_eps(:)    ! VB-VB coupling
     complex(kind=dp), allocatable :: S_eps(:)    ! VB-VB coupling
     real(kind=dp), allocatable :: QT2_eps(:)     ! VB-SO coupling (2*Q_eps)
-  contains
-    final :: bir_pikus_blocks_finalize
   end type bir_pikus_blocks
 
   type wavevector
@@ -120,6 +124,10 @@ module definitions
   type doping_spec
     real(kind=dp) :: ND = 0.0_dp    ! donor concentration (cm^-3)
     real(kind=dp) :: NA = 0.0_dp    ! acceptor concentration (cm^-3)
+    character(len=7) :: dtype = 'uniform'  ! 'uniform' or 'delta'
+    real(kind=dp) :: NS = 0.0_dp         ! delta: 2D sheet density (10^11 cm^-2)
+    real(kind=dp) :: delta_pos = 0.0_dp   ! delta: position along z (Angstrom)
+    real(kind=dp) :: delta_fwhm = 10.0_dp ! delta: Gaussian FWHM (Angstrom)
   end type doping_spec
 
   type sc_config
@@ -268,6 +276,93 @@ module definitions
     real(kind=dp)    :: eps_0 = 12.9_dp            ! static dielectric
   end type scattering_config
 
+  ! ------------------------------------------------------------------
+  ! BdG / topological superconductivity parameters.
+  ! ------------------------------------------------------------------
+  type :: bdg_config
+    logical          :: enabled = .false.
+    real(kind=dp)   :: mu = 0.0_dp       ! chemical potential (eV)
+    real(kind=dp)   :: delta_0 = 0.0_dp  ! s-wave pairing gap (eV)
+    real(kind=dp)   :: B_vec(3) = 0.0_dp ! magnetic field Bx, By, Bz (Tesla)
+    real(kind=dp)   :: g_factor = 2.0_dp  ! Lande g-factor for Zeeman splitting
+    character(len=20) :: gauge = 'landau_x'  ! gauge choice
+    real(kind=dp)   :: B_sweep(3) = 0.0_dp ! B sweep: min, max, step
+    real(kind=dp)   :: kz = 0.0_dp        ! along-wire momentum (1/A) for BdG dispersion
+  end type
+
+  ! ------------------------------------------------------------------
+  ! Unified topological analysis parameters (QHE / QSHE / BdG modes).
+  ! ------------------------------------------------------------------
+  type :: topology_config
+    logical          :: enabled = .false.
+    character(len=20) :: mode = 'qhe'     ! qhe | qshe | bdg
+    ! Chern / Berry curvature
+    logical          :: compute_chern = .false.
+    logical          :: compute_hall = .false.   ! output sigma_xy = C*e^2/h
+    real(kind=dp)    :: qwz_u = 0.0_dp           ! QWZ mass parameter u
+    ! Z2 invariant
+    logical          :: compute_z2 = .false.
+    character(len=20) :: z2_method = 'auto'  ! auto | gap | fukane
+    ! BHZ wire parameters for QSHE mode
+    real(kind=dp)    :: bhz_M = 10.0_dp      ! BHZ mass parameter (meV)
+    real(kind=dp)    :: bhz_d = 58.0_dp      ! wire width (AA)
+    ! Edge states
+    logical          :: extract_edge_states = .false.
+    real(kind=dp)    :: edge_E_window = 0.01_dp  ! energy window for detection
+    ! LDOS
+    logical          :: compute_ldos = .false.
+    real(kind=dp)    :: ldos_eta = 0.001_dp  ! Lorentzian broadening
+    real(kind=dp)    :: ldos_E_range(2) = [-0.1_dp, 0.1_dp]
+    integer          :: ldos_num_E = 200
+    ! Gap sweep / phase diagram
+    logical          :: compute_gap_sweep = .false.
+    real(kind=dp)    :: gap_sweep_B_min = 0.0_dp
+    real(kind=dp)    :: gap_sweep_B_max = 1.0_dp
+    integer          :: gap_sweep_nB = 20
+    real(kind=dp)    :: gap_sweep_mu_min = 0.0_dp
+    real(kind=dp)    :: gap_sweep_mu_max = 0.01_dp
+    integer          :: gap_sweep_nMu = 20
+    character(len=20) :: sweep_model = 'bhz_analytic'  ! bhz_analytic | wire_bdg | qw_fukane
+    ! Conductance
+    logical          :: compute_conductance = .false.
+    character(len=20) :: conductance_method = 'kubo_chern'  ! kubo_chern | kubo_berry | landauer
+    integer          :: berry_nk = 50
+    real(kind=dp)    :: landauer_energy = 0.0_dp
+    ! Spectral function
+    logical          :: compute_spectral = .false.
+    real(kind=dp)    :: spectral_k_min = -0.1_dp
+    real(kind=dp)    :: spectral_k_max = 0.1_dp
+    integer          :: spectral_nk = 100
+    real(kind=dp)    :: spectral_E_min = -0.05_dp
+    real(kind=dp)    :: spectral_E_max = 0.05_dp
+    integer          :: spectral_nE = 200
+    real(kind=dp)    :: spectral_eta = 0.001_dp
+  end type
+
+  ! ------------------------------------------------------------------
+  ! Results from topological analysis.
+  ! ------------------------------------------------------------------
+  type :: topological_result
+    integer          :: chern_number = 0
+    integer          :: z2_invariant = 0
+    real(kind=dp)    :: hall_conductance = 0.0_dp   ! in units of e^2/h
+    real(kind=dp)    :: min_gap = 0.0_dp
+    real(kind=dp)    :: edge_xi_min = 0.0_dp      ! min edge localization length
+    real(kind=dp)    :: edge_xi = 0.0_dp           ! average edge localization length
+    integer          :: n_majorana = 0
+    integer          :: n_majorana_fit_failed = 0
+    real(kind=dp), allocatable :: edge_energies(:)
+    real(kind=dp), allocatable :: phase_boundary(:,:)  ! (B, mu) pairs
+    real(kind=dp), allocatable :: berry_curvature(:,:) ! Omega(kx, ky) if computed
+    real(kind=dp)              :: conductance_xy = 0.0_dp  ! Hall conductance (e^2/h)
+    real(kind=dp)              :: conductance_zz = 0.0_dp  ! longitudinal (2e^2/h)
+    real(kind=dp), allocatable :: spectral_function(:,:)   ! A(k, E) heatmap
+    real(kind=dp), allocatable :: z2_map(:,:)              ! Z2 phase diagram (nMu x nB)
+    real(kind=dp), allocatable :: gap_map(:,:)             ! gap phase diagram (nMu x nB)
+  contains
+    final :: topological_result_finalize
+  end type
+
   type simulation_config
     integer :: confinement = 0
     integer :: fdStep = 1
@@ -283,6 +378,10 @@ module definitions
     character(len=2) :: EFtype = '  '
     real(kind=dp) :: waveVectorMax = 0.0_dp
     real(kind=dp) :: Evalue = 0.0_dp
+    real(kind=dp) :: sc_potential_shift = 0.0_dp  ! converged SC potential for bulk
+    ! b_field: bulk Landau level magnetic field Bx, By, Bz (Tesla)
+    ! Copied to cfg%bdg%B_vec when cfg%bdg%enabled would be set
+    real(kind=dp) :: b_field(3) = 0.0_dp
     real(kind=dp) :: totalSize = 0.0_dp
     real(kind=dp) :: delta = 0.0_dp
     real(kind=dp) :: dz = 0.0_dp
@@ -309,6 +408,11 @@ module definitions
     integer            :: numRegions = 0         ! number of material regions
     type(region_spec), allocatable :: regions(:) ! region specifications
 
+    ! ---- Landau level fields (confinement=3) ----
+    integer            :: landau_nx = 100          ! grid points in x-direction
+    real(kind=dp)      :: landau_width = 2000.0_dp ! domain width in Angstrom
+    character(len=4)   :: landau_sweep = 'ky'      ! sweep mode: ky, kz, or B
+
     ! ---- FEAST eigensolver tuning ----
     real(kind=dp)      :: feast_emin = 0.0_dp   ! manual energy window (0=auto)
     real(kind=dp)      :: feast_emax = 0.0_dp   ! manual energy window (0=auto)
@@ -320,6 +424,8 @@ module definitions
     type(optics_config)      :: optics       ! optical spectra parameters
     type(exciton_config)     :: exciton      ! exciton solver parameters
     type(scattering_config)  :: scattering   ! phonon scattering parameters
+    type(bdg_config)        :: bdg          ! BdG / topological SC parameters
+    type(topology_config)    :: topo         ! topological analysis parameters
   contains
     final :: simulation_config_finalize
     procedure :: validate => simulation_config_validate
@@ -334,20 +440,6 @@ module definitions
   contains
 
   ! ==================================================================
-  ! Finalizer: automatically called when a bir_pikus_blocks goes out of scope.
-  ! Deallocates all allocatable components.
-  ! ==================================================================
-  subroutine bir_pikus_blocks_finalize(bp)
-    type(bir_pikus_blocks), intent(inout) :: bp
-
-    if (allocated(bp%delta_Ec))  deallocate(bp%delta_Ec)
-    if (allocated(bp%delta_EHH)) deallocate(bp%delta_EHH)
-    if (allocated(bp%delta_ELH)) deallocate(bp%delta_ELH)
-    if (allocated(bp%delta_ESO)) deallocate(bp%delta_ESO)
-    if (allocated(bp%R_eps))     deallocate(bp%R_eps)
-    if (allocated(bp%S_eps))     deallocate(bp%S_eps)
-    if (allocated(bp%QT2_eps))   deallocate(bp%QT2_eps)
-  end subroutine bir_pikus_blocks_finalize
 
   ! ==================================================================
   ! Finalizer: automatically called when a wire_geometry goes out of scope.
@@ -394,7 +486,29 @@ module definitions
     if (allocated(cfg%params))      deallocate(cfg%params)
     if (allocated(cfg%doping))      deallocate(cfg%doping)
     if (allocated(cfg%regions))     deallocate(cfg%regions)
+    if (allocated(cfg%strain_blocks%delta_Ec))  deallocate(cfg%strain_blocks%delta_Ec)
+    if (allocated(cfg%strain_blocks%delta_EHH)) deallocate(cfg%strain_blocks%delta_EHH)
+    if (allocated(cfg%strain_blocks%delta_ELH)) deallocate(cfg%strain_blocks%delta_ELH)
+    if (allocated(cfg%strain_blocks%delta_ESO)) deallocate(cfg%strain_blocks%delta_ESO)
+    if (allocated(cfg%strain_blocks%R_eps))     deallocate(cfg%strain_blocks%R_eps)
+    if (allocated(cfg%strain_blocks%S_eps))     deallocate(cfg%strain_blocks%S_eps)
+    if (allocated(cfg%strain_blocks%QT2_eps))   deallocate(cfg%strain_blocks%QT2_eps)
   end subroutine simulation_config_finalize
+
+  ! ==================================================================
+  ! Finalizer: automatically called when a topological_result goes
+  ! out of scope.  Deallocates all allocatable components.
+  ! ==================================================================
+  subroutine topological_result_finalize(res)
+    type(topological_result), intent(inout) :: res
+
+    if (allocated(res%edge_energies))    deallocate(res%edge_energies)
+    if (allocated(res%phase_boundary))   deallocate(res%phase_boundary)
+    if (allocated(res%berry_curvature))  deallocate(res%berry_curvature)
+    if (allocated(res%spectral_function)) deallocate(res%spectral_function)
+    if (allocated(res%z2_map)) deallocate(res%z2_map)
+    if (allocated(res%gap_map)) deallocate(res%gap_map)
+  end subroutine topological_result_finalize
 
   ! ==================================================================
   ! Type-bound validation for simulation_config.
@@ -405,8 +519,8 @@ module definitions
     class(simulation_config), intent(in) :: self
 
     associate(cfg => self)
-      ! confDir: set internally ('n'=bulk, 'z'=QW/wire)
-      if (cfg%confDir /= 'z' .and. cfg%confDir /= 'n') then
+      ! confDir: set internally ('n'=bulk, 'z'=QW/wire, 'x'=Landau)
+      if (cfg%confDir /= 'z' .and. cfg%confDir /= 'n' .and. cfg%confDir /= 'x') then
         error stop 'validate_simulation_config: invalid confDir'
       end if
 
@@ -433,9 +547,17 @@ module definitions
         error stop 'validate_simulation_config: numLayers must be >= 1'
       end if
 
-      ! confinement: must be 0, 1, or 2
-      if (cfg%confinement < 0 .or. cfg%confinement > 2) then
-        error stop 'validate_simulation_config: confinement must be 0, 1, or 2'
+      ! confinement: must be 0, 1, 2, or 3
+      if (cfg%confinement < 0 .or. cfg%confinement > 3) then
+        error stop 'validate_simulation_config: confinement must be 0, 1, 2, or 3'
+      end if
+      if (cfg%confinement == 3) then
+        if (cfg%landau_nx < 3) then
+          error stop 'validate_simulation_config: landau_nx must be >= 3'
+        end if
+        if (cfg%landau_width <= 0.0_dp) then
+          error stop 'validate_simulation_config: landau_width must be > 0'
+        end if
       end if
 
       ! FDorder: must be one of the supported values
@@ -551,6 +673,24 @@ module definitions
       cfg%grid%ny   = cfg%wire_ny
       cfg%grid%dx   = cfg%wire_dx
       cfg%grid%dy   = cfg%wire_dy
+
+    case (3)
+      ! Landau: 1D x-discretization for orbital Landau quantization
+      ! Grid centered at x=0 so that ky=0 places the oscillator at the
+      ! center of the domain, maximising flatness of Landau levels vs ky.
+      cfg%grid%ndim = 1
+      cfg%grid%nx   = cfg%landau_nx
+      cfg%grid%ny   = 1
+      cfg%grid%dx   = cfg%landau_width / real(cfg%landau_nx - 1, kind=dp)
+      cfg%grid%dy   = 0.0_dp
+
+      ! Build x-coordinate array centered at origin [-W/2, +W/2]
+      if (.not. allocated(cfg%grid%x)) then
+        allocate(cfg%grid%x(cfg%landau_nx))
+        do i = 1, cfg%landau_nx
+          cfg%grid%x(i) = (i - 1) * cfg%grid%dx - 0.5_dp * cfg%landau_width
+        end do
+      end if
 
     end select
 

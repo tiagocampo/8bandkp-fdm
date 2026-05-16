@@ -1,0 +1,171 @@
+module test_chern_number
+  use funit
+  use definitions
+  use topological_analysis
+  implicit none
+contains
+
+  @test
+  subroutine test_qwz_chern_trivial()
+    integer :: C
+    C = compute_chern_qwz(u=2.5_dp, nk=50)
+    @assertEqual(0, C)
+  end subroutine test_qwz_chern_trivial
+
+  @test
+  subroutine test_qwz_chern_plus_one()
+    integer :: C
+    C = compute_chern_qwz(u=-0.8_dp, nk=50)
+    @assertEqual(1, C)
+  end subroutine test_qwz_chern_plus_one
+
+  @test
+  subroutine test_qwz_chern_minus_one()
+    integer :: C
+    C = compute_chern_qwz(u=0.5_dp, nk=50)
+    @assertEqual(-1, C)
+  end subroutine test_qwz_chern_minus_one
+
+  @test
+  subroutine test_berry_curvature_integrates_to_chern()
+    integer :: C_direct, C_from_curvature
+    real(kind=dp), allocatable :: Omega(:,:), kx_arr(:), ky_arr(:)
+    complex(kind=dp), allocatable :: evecs(:,:,:)
+    real(kind=dp) :: dk, total_flux, kx, ky, mz_val, E_plus, nrm
+    complex(kind=dp) :: ev_tmp(2), off_diag
+    integer :: nk, i, j
+
+    nk = 50
+    dk = 2.0_dp * acos(-1.0_dp) / real(nk, kind=dp)
+
+    allocate(evecs(nk, nk, 2))
+    allocate(kx_arr(nk), ky_arr(nk))
+    allocate(Omega(nk, nk))
+
+    do i = 1, nk
+      kx_arr(i) = -acos(-1.0_dp) + real(i - 1, kind=dp) * dk
+    end do
+    do j = 1, nk
+      ky_arr(j) = -acos(-1.0_dp) + real(j - 1, kind=dp) * dk
+    end do
+
+    ! Build QWZ upper-band eigenvectors at u=-0.8 (known C=+1)
+    do j = 1, nk
+      ky = ky_arr(j)
+      do i = 1, nk
+        kx = kx_arr(i)
+        mz_val = -0.8_dp + cos(kx) + cos(ky)
+        off_diag = cmplx(sin(kx), -sin(ky), kind=dp)
+        E_plus = sqrt(mz_val**2 + sin(kx)**2 + sin(ky)**2)
+        ev_tmp(1) = off_diag
+        ev_tmp(2) = cmplx(E_plus - mz_val, 0.0_dp, kind=dp)
+        nrm = sqrt(real(conjg(ev_tmp(1))*ev_tmp(1) + conjg(ev_tmp(2))*ev_tmp(2), kind=dp))
+        if (nrm > 1.0e-30_dp) then
+          evecs(i,j,1) = ev_tmp(1) / nrm
+          evecs(i,j,2) = ev_tmp(2) / nrm
+        else
+          evecs(i,j,1) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+          evecs(i,j,2) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+        end if
+      end do
+    end do
+
+    ! Reshape for compute_berry_curvature_lattice: (basis, n_occ, nkx, nky)
+    block
+      complex(kind=dp), allocatable :: evecs_4d(:,:,:,:)
+      allocate(evecs_4d(2, 1, nk, nk))
+      do j = 1, nk
+        do i = 1, nk
+          evecs_4d(1, 1, i, j) = evecs(i, j, 1)
+          evecs_4d(2, 1, i, j) = evecs(i, j, 2)
+        end do
+      end do
+      Omega = compute_berry_curvature_lattice(evecs_4d, kx_arr, ky_arr, 1)
+      deallocate(evecs_4d)
+    end block
+
+    ! Curvature should integrate to 2*pi*C
+    total_flux = sum(Omega) * dk * dk
+    C_from_curvature = nint(total_flux / (2.0_dp * acos(-1.0_dp)))
+
+    C_direct = compute_chern_qwz(u=-0.8_dp, nk=50)
+
+    @assertEqual(C_direct, C_from_curvature, message="Berry curvature integral must match Chern number")
+
+    deallocate(evecs, kx_arr, ky_arr, Omega)
+  end subroutine test_berry_curvature_integrates_to_chern
+
+  @test
+  subroutine test_berry_curvature_rejects_degenerate_grid()
+    complex(kind=dp), allocatable :: evecs(:,:,:,:)
+    real(kind=dp), allocatable :: kx(:), ky(:), Omega(:,:)
+
+    allocate(evecs(2, 1, 1, 2))
+    allocate(kx(1), ky(2))
+    evecs = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    evecs(1,1,:,:) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    kx = [0.0_dp]
+    ky = [0.0_dp, 1.0_dp]
+
+    Omega = compute_berry_curvature_lattice(evecs, kx, ky, 1)
+    @assertEqual(0, size(Omega, 1), message="degenerate kx grid must return empty curvature")
+
+    deallocate(evecs, kx, ky)
+    if (allocated(Omega)) deallocate(Omega)
+  end subroutine test_berry_curvature_rejects_degenerate_grid
+
+  @test
+  subroutine test_berry_curvature_rejects_duplicate_k_points()
+    complex(kind=dp), allocatable :: evecs(:,:,:,:)
+    real(kind=dp), allocatable :: kx(:), ky(:), Omega(:,:)
+
+    allocate(evecs(2, 1, 2, 2))
+    allocate(kx(2), ky(2))
+    evecs = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    evecs(1,1,:,:) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    kx = [0.0_dp, 0.0_dp]
+    ky = [0.0_dp, 1.0_dp]
+
+    Omega = compute_berry_curvature_lattice(evecs, kx, ky, 1)
+    @assertEqual(0, size(Omega, 1), message="duplicate kx points must return empty curvature")
+
+    deallocate(evecs, kx, ky)
+    if (allocated(Omega)) deallocate(Omega)
+  end subroutine test_berry_curvature_rejects_duplicate_k_points
+
+  @test
+  subroutine test_conductance_kubo_quantized()
+    ! Hall conductance = C * e^2/h for known Chern numbers
+    real(kind=dp) :: sigma_xy
+
+    ! C=+1 => sigma_xy = e^2/h
+    sigma_xy = compute_hall_conductance(1)
+    @assertEqual(1.0_dp, sigma_xy, tolerance=1.0e-10_dp)
+
+    ! C=0 => sigma_xy = 0
+    sigma_xy = compute_hall_conductance(0)
+    @assertEqual(0.0_dp, sigma_xy, tolerance=1.0e-10_dp)
+
+    ! C=-1 => sigma_xy = -e^2/h
+    sigma_xy = compute_hall_conductance(-1)
+    @assertEqual(-1.0_dp, sigma_xy, tolerance=1.0e-10_dp)
+  end subroutine test_conductance_kubo_quantized
+
+  @test
+  subroutine test_conductance_kubo_integrates_curvature()
+    real(kind=dp), allocatable :: Omega(:,:), kx(:), ky(:)
+    real(kind=dp) :: sigma
+
+    allocate(Omega(2,2), kx(2), ky(2))
+    kx = [0.0_dp, pi_dp]
+    ky = [0.0_dp, pi_dp]
+    Omega(:,1) = [1.0_dp, 2.0_dp]
+    Omega(:,2) = [3.0_dp, 4.0_dp]
+
+    sigma = compute_conductance_kubo(Omega, kx, ky)
+    @assertEqual(5.0_dp * pi_dp, sigma, tolerance=1.0e-12_dp)
+
+    deallocate(Omega, kx, ky)
+  end subroutine test_conductance_kubo_integrates_curvature
+
+end module test_chern_number

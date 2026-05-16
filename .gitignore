@@ -49,6 +49,9 @@ gmon.out
 # Dependencies
 *.d
 
+# Compound Engineering local config
+.compound-engineering/*.local.yaml
+
 # System specific files
 .DS_Store
 Thumbs.db
@@ -73,4 +76,5 @@ test_staggered
 # CMake generated files
 Makefile
 *.cmake
-Testing/
+Testing/.worktrees/
+.worktrees/

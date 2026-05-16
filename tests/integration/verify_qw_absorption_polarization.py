@@ -5,6 +5,8 @@ Usage:
     verify_qw_absorption_polarization.py <absorption_TE.dat> <absorption_TM.dat>
 """
 
+# COVERAGE: observable=absorption_polarization geometry=QW material=GaAs/AlGaAs
+# COVERAGE: observable=absorption_polarization geometry=QW material=InGaAs/AlGaAs
 import sys
 
 import numpy as np

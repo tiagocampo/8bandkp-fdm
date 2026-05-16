@@ -7,10 +7,52 @@ module test_optical_qw
   use finitedifferences
   use gfactorFunctions
   use utils
+  use linalg
+  use sparse_matrices
+  use hamiltonian_wire, only: build_velocity_matrices
 
   implicit none
 
 contains
+
+  ! Shared QW setup: builds 3-layer Al30Ga70As/GaAs/Al30Ga70As QW grid and confinement.
+  subroutine setup_algaas_qw(ngrid, dz_val, z, profile, kpterms, matSize, params)
+    integer, intent(in) :: ngrid
+    real(kind=dp), intent(in) :: dz_val
+    real(kind=dp), intent(out) :: z(ngrid)
+    real(kind=dp), allocatable, intent(out) :: profile(:,:), kpterms(:,:,:)
+    integer, intent(out) :: matSize
+    type(paramStruct), intent(out), optional :: params(:)
+
+    integer, parameter :: nlayers = 3
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: local_params(nlayers)
+    integer :: intStartPos(nlayers), intEndPos(nlayers)
+    integer :: it
+
+    do it = 1, ngrid
+      z(it) = -50.0_dp + real(it - 1, kind=dp) * dz_val
+    end do
+
+    intStartPos(1) = 1;   intEndPos(1) = 15
+    intStartPos(2) = 16;  intEndPos(2) = 36
+    intStartPos(3) = 37;  intEndPos(3) = 51
+
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    material(3) = "Al30Ga70As"
+
+    call paramDatabase(material, nlayers, local_params)
+
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+      & nlayers, local_params, 'z', profile, kpterms, FDorder=2)
+
+    if (present(params)) params = local_params
+
+    matSize = ngrid * 8
+  end subroutine setup_algaas_qw
 
   ! ==================================================================
   ! QW optical matrix element test.
@@ -28,68 +70,33 @@ contains
 
   @test
   subroutine test_optical_matrix_qw_basic()
-    integer, parameter :: ngrid = 51
-    real(kind=dp), parameter :: dz_val = 2.0_dp  ! Angstrom
+    integer, parameter :: ngrid = 51, nlayers = 3
+    real(kind=dp), parameter :: dz_val = 2.0_dp
     integer :: matSize, numcb, numvb, info, lwork, lrwork, liwork
-    integer :: cb_lo, cb_hi, vb_lo, vb_hi
+    integer :: cb_lo, cb_hi, vb_lo, vb_hi, it
 
-    ! Grid
     real(kind=dp) :: z(ngrid)
     real(kind=dp) :: startz_coord, endz_coord
-
-    ! Materials
-    integer, parameter :: nlayers = 3
-    character(len=255) :: material(nlayers)
-    type(paramStruct) :: params(nlayers)
-    integer :: intStartPos(nlayers), intEndPos(nlayers)
-
-    ! Confinement
     real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    type(paramStruct) :: params(nlayers)
 
-    ! Hamiltonian and eigenvalues
     complex(kind=dp), allocatable :: HT(:,:), work(:)
     real(kind=dp), allocatable :: eig(:,:), rwork(:)
     integer, allocatable :: iwork(:)
 
-    ! CB/VB states
     real(kind=dp), allocatable :: cb_value(:), vb_value(:)
     complex(kind=dp), allocatable :: cb_state(:,:), vb_state(:,:)
 
-    ! Optical transitions
     type(optical_transition), allocatable :: transitions(:)
-    integer :: num_trans, it
+    integer :: num_trans
     logical :: all_positive_energy, all_nonneg_melem
 
-    ! ---- Setup grid ----
-    do it = 1, ngrid
-      z(it) = -50.0_dp + dble(it - 1) * dz_val
-    end do
+    call setup_algaas_qw(ngrid, dz_val, z, profile, kpterms, matSize, params)
     startz_coord = z(1)
     endz_coord = z(ngrid)
 
-    ! ---- 3-layer QW: Al30Ga70As / GaAs / Al30Ga70As ----
-    ! Barrier (points 1-15), well (16-36), barrier (37-51)
-    intStartPos(1) = 1;   intEndPos(1) = 15
-    intStartPos(2) = 16;  intEndPos(2) = 36
-    intStartPos(3) = 37;  intEndPos(3) = 51
-
-    material(1) = "Al30Ga70As"
-    material(2) = "GaAs"
-    material(3) = "Al30Ga70As"
-
-    call paramDatabase(material, nlayers, params)
-
-    ! ---- Build profile and kpterms ----
-    allocate(kpterms(ngrid, ngrid, 10))
-    kpterms = 0.0_dp
-
-    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
-      & nlayers, params, 'z', profile, kpterms, FDorder=2)
-
-    ! ---- Matrix size ----
-    numcb = 2 * ngrid   ! NUM_CB_STATES=2, fdStep=ngrid
-    numvb = 4 * ngrid   ! only 4 VB states (not full 6) to keep test fast
-    matSize = ngrid * 8
+    numcb = 2 * ngrid
+    numvb = 4 * ngrid
 
     ! ---- Build QW Hamiltonian at k=0 ----
     allocate(HT(matSize, matSize))
@@ -185,5 +192,205 @@ contains
     deallocate(profile, kpterms)
 
   end subroutine test_optical_matrix_qw_basic
+
+  ! ==================================================================
+  ! ISBT dipole-velocity consistency test.
+  !
+  ! Cross-validates z-dipole (z_ij = sum conjg(psi_i) * z * psi_j)
+  ! against commutator velocity (v_z = -i[z, H]) via the relationship
+  ! |v_z_ij|^2 = E_ij^2 * |z_ij|^2. Tolerance: 5%.
+  ! ==================================================================
+
+  @test
+  subroutine test_isbt_dipole_velocity_consistency()
+    integer, parameter :: ngrid = 51
+    real(kind=dp), parameter :: dz_val = 2.0_dp
+    integer :: matSize, numcb_val, info, lwork, lrwork, liwork
+    integer :: state_i, state_j, dim, iband, igrid
+    integer :: flat_idx
+
+    real(kind=dp) :: z(ngrid)
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    complex(kind=dp), allocatable :: HT(:,:), HT_vel(:,:), work(:)
+    real(kind=dp), allocatable :: eig(:,:), rwork(:)
+    integer, allocatable :: iwork(:)
+
+    complex(kind=dp), allocatable :: Ytmp(:)
+    complex(kind=dp) :: z_ij, vz_ij
+    real(kind=dp) :: E_ij, z_abs2, vz_abs2, rel_diff
+    integer :: irow, jcol, sp_irow, sp_jcol
+
+    call setup_algaas_qw(ngrid, dz_val, z, profile, kpterms, matSize)
+
+    numcb_val = 2 * ngrid
+
+    ! ---- Build and diagonalize QW Hamiltonian at k=0 ----
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+
+    ! Save H before diagonalization (zheevd overwrites with eigenvectors)
+    allocate(HT_vel(matSize, matSize))
+    HT_vel = HT
+
+    allocate(eig(matSize, 1))
+    eig = 0.0_dp
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('V', 'U', matSize, HT, matSize, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('V', 'U', matSize, HT, matSize, eig(:,1), work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+    @assertTrue(info == 0, message="zheevd succeeded")
+
+    ! ---- Build z-velocity matrix via commutator: v_z(i,j) = -i*(z_i - z_j)*H(i,j) ----
+    ! This is the dense equivalent of build_velocity_matrices_1d (CSR version)
+    do irow = 1, matSize
+      sp_irow = mod(irow - 1, ngrid) + 1
+      do jcol = 1, matSize
+        sp_jcol = mod(jcol - 1, ngrid) + 1
+        HT_vel(irow, jcol) = cmplx(0.0_dp, -(z(sp_irow) - z(sp_jcol)), kind=dp) * HT_vel(irow, jcol)
+      end do
+    end do
+
+    ! ---- Compute z-dipole and velocity for CB1->CB2 transition ----
+    ! At k=0, Kramer's degeneracy means every CB state has a degenerate partner.
+    ! The 8-band basis has 2 CB bands (7,8) x N grid = 2N CB states, but spin
+    ! degeneracy gives N distinct subbands with 2 states each.
+    ! CB1 = first distinct subband = state matSize-2N+1 and its partner matSize-2N+2
+    ! CB2 = second distinct subband = state matSize-2N+3 and its partner matSize-2N+4
+    state_i = matSize - numcb_val + 1   ! CB1 (lowest CB subband, spin 1)
+    state_j = matSize - numcb_val + 3   ! CB2 (second CB subband, spin 1)
+    E_ij = eig(state_j, 1) - eig(state_i, 1)
+    @assertTrue(E_ij > 0.0_dp, message="CB1->CB2 transition energy is positive")
+
+    ! z-dipole: z_ij = sum_n sum_b conjg(psi(n,b,i)) * z(n) * psi(n,b,j)
+    ! No dz weight: the algebraic identity |v_z|^2 = E^2*|z|^2 holds in the
+    ! matrix eigenbasis without quadrature weights.
+    z_ij = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    dim = matSize
+    do igrid = 1, ngrid
+      do iband = 1, 8
+        flat_idx = (iband - 1) * ngrid + igrid
+        z_ij = z_ij + conjg(HT(flat_idx, state_i)) * z(igrid) * HT(flat_idx, state_j)
+      end do
+    end do
+
+    ! v_z via matrix-vector product: v_z_ij = <psi_i | H_vel | psi_j>
+    allocate(Ytmp(dim))
+    Ytmp = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call zgemv('N', dim, dim, cmplx(1.0_dp, 0.0_dp, kind=dp), HT_vel, dim, &
+      & HT(1, state_j), 1, cmplx(0.0_dp, 0.0_dp, kind=dp), Ytmp, 1)
+    vz_ij = zdotc(dim, HT(1, state_i), 1, Ytmp, 1)
+
+    ! ---- Cross-validate: |v_z_ij|^2 = E_ij^2 * |z_ij|^2 ----
+    z_abs2 = real(z_ij * conjg(z_ij), kind=dp)
+    vz_abs2 = real(vz_ij * conjg(vz_ij), kind=dp)
+
+    ! v_z = -i * E * z  =>  |v_z|^2 = E^2 * |z|^2
+    if (vz_abs2 > 1.0e-30_dp) then
+      rel_diff = abs(vz_abs2 - E_ij**2 * z_abs2) / vz_abs2
+      @assertTrue(rel_diff < 0.05_dp, message="ISBT dipole-velocity consistency: |v|^2 ~ E^2*|z|^2")
+    else
+      ! Both near zero: z_ij should also be near zero
+      @assertTrue(z_abs2 < 1.0e-20_dp, message="ISBT: both z-dipole and velocity near zero (allowed)")
+    end if
+
+    deallocate(Ytmp, HT_vel, HT, eig, work, rwork, iwork)
+    deallocate(profile, kpterms)
+
+  end subroutine test_isbt_dipole_velocity_consistency
+
+  ! ==================================================================
+  ! CSR velocity matrix vs dense commutator consistency test.
+  !
+  ! Builds the same 3-layer Al30Ga70As/GaAs/Al30Ga70As QW (51 grid pts),
+  ! converts the dense Hamiltonian to CSR, then calls the production
+  ! build_velocity_matrices_1d to obtain the z-velocity CSR matrix.
+  ! Compares element-by-element against the dense formula:
+  !   v_z(i,j) = -i * (z_i - z_j) * H(i,j)
+  ! Asserts agreement within 1e-10 tolerance.
+  ! ==================================================================
+
+  @test
+  subroutine test_csr_velocity_vs_dense_commutator()
+    integer, parameter :: ngrid = 51
+    real(kind=dp), parameter :: dz_val = 2.0_dp
+    integer :: matSize, igrid, nzmax
+
+    real(kind=dp) :: z(ngrid)
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:), HT_vel_dense(:,:)
+
+    type(csr_matrix) :: H_csr, vel(3)
+    type(spatial_grid) :: grid
+
+    integer :: irow, k, col_csr, sp_row, sp_col
+    real(kind=dp) :: z_diff, max_err
+    complex(kind=dp) :: csr_val, dense_val
+
+    call setup_algaas_qw(ngrid, dz_val, z, profile, kpterms, matSize)
+
+    ! ---- Build dense QW Hamiltonian at k=0 ----
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+
+    ! ---- Compute dense velocity: v_z(i,j) = -i*(z_i - z_j)*H(i,j) ----
+    allocate(HT_vel_dense(matSize, matSize))
+    do irow = 1, matSize
+      sp_row = mod(irow - 1, ngrid) + 1
+      do igrid = 1, matSize
+        sp_col = mod(igrid - 1, ngrid) + 1
+        z_diff = z(sp_row) - z(sp_col)
+        HT_vel_dense(irow, igrid) = cmplx(0.0_dp, -z_diff, kind=dp) * HT(irow, igrid)
+      end do
+    end do
+
+    ! ---- Convert dense Hamiltonian to CSR ----
+    nzmax = matSize * matSize
+    call dnscsr_z_mkl(nzmax, matSize, HT, H_csr)
+
+    ! ---- Setup spatial_grid for the 1D QW ----
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = ngrid
+    grid%dx = 0.0_dp
+    grid%dy = dz_val
+    allocate(grid%z(ngrid))
+    grid%z = z
+
+    ! ---- Call production velocity builder (dispatches to _1d) ----
+    call build_velocity_matrices(H_csr, grid, vel)
+
+    ! ---- Compare CSR vel(3) against dense HT_vel_dense element-by-element ----
+    max_err = 0.0_dp
+    do irow = 1, H_csr%nrows
+      do k = H_csr%rowptr(irow), H_csr%rowptr(irow + 1) - 1
+        col_csr = H_csr%colind(k)
+        csr_val = vel(3)%values(k)
+        dense_val = HT_vel_dense(irow, col_csr)
+
+        ! Only compare if dense value is non-negligible (avoid threshold artifacts)
+        if (abs(dense_val) > 1.0e-12_dp) then
+          max_err = max(max_err, abs(csr_val - dense_val) / abs(dense_val))
+        end if
+      end do
+    end do
+
+    @assertTrue(max_err < 1.0e-10_dp, message="CSR velocity matches dense commutator within 1e-10")
+
+    ! ---- Cleanup ----
+    deallocate(HT, HT_vel_dense)
+    deallocate(profile, kpterms)
+    call csr_free(H_csr)
+    do igrid = 1, 3
+      call csr_free(vel(igrid))
+    end do
+    if (allocated(grid%z)) deallocate(grid%z)
+
+  end subroutine test_csr_velocity_vs_dense_commutator
 
 end module test_optical_qw

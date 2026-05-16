@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=stark_shift geometry=QW material=GaAs/AlGaAs
 # Integration test: QCSE GaAs/AlGaAs QW with electric field from config EFParams
 # Validates both regression output equality and config-derived Stark shift semantics
 set -euo pipefail

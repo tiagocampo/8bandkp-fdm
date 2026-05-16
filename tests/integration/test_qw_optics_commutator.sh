@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=absorption_polarization geometry=QW material=GaAs/AlGaAs
 # Integration test: QW optical properties regression (commutator-based velocity)
 # Compares absorption_TE.dat and absorption_TM.dat against golden reference.
 # Args: <opticalProperties_exe> <config_file> <ref_data_dir> <compare_script>

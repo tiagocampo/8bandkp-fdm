@@ -11,13 +11,17 @@ module linalg
   private
 
   ! Standard LAPACK
+  public :: zheev
   public :: zheevx
+  public :: zheevd
   public :: dgesv
+  public :: zgetrf
   public :: ilaenv
   public :: dlamch
 
   ! BLAS
   public :: zdotc
+  public :: zgemv
 
   ! MKL-specific
   public :: mkl_set_num_threads_local
@@ -43,6 +47,20 @@ module linalg
   ! ================================================================
   ! Interface blocks
   ! ================================================================
+
+  ! zheev - LAPACK Hermitian eigensolver (all eigenvalues/vectors)
+  interface
+    subroutine zheev(jobz, uplo, n, a, lda, w, work, lwork, rwork, info)
+      use definitions, only: dp
+      character(len=1), intent(in) :: jobz, uplo
+      integer, intent(in) :: n, lda, lwork
+      complex(kind=dp), intent(inout) :: a(lda, *)
+      real(kind=dp), intent(out) :: w(*)
+      complex(kind=dp), intent(inout) :: work(*)
+      real(kind=dp), intent(out) :: rwork(*)
+      integer, intent(out) :: info
+    end subroutine
+  end interface
 
   ! zheevx - LAPACK Hermitian eigensolver (selected eigenvalues/vectors)
   interface
@@ -70,6 +88,17 @@ module linalg
       use definitions, only: dp
       integer, intent(in) :: n, nrhs, lda, ldb
       real(kind=dp), intent(inout) :: a(lda, *), b(ldb, *)
+      integer, intent(out) :: ipiv(*)
+      integer, intent(out) :: info
+    end subroutine
+  end interface
+
+  ! zgetrf - LAPACK complex LU factorization (partial pivoting)
+  interface
+    subroutine zgetrf(m, n, a, lda, ipiv, info)
+      use definitions, only: dp
+      integer, intent(in) :: m, n, lda
+      complex(kind=dp), intent(inout) :: a(lda, *)
       integer, intent(out) :: ipiv(*)
       integer, intent(out) :: info
     end subroutine
@@ -110,6 +139,34 @@ module linalg
       complex(kind=dp), intent(in) :: zx(*), zy(*)
       complex(kind=dp) :: res
     end function zdotc
+  end interface
+
+  ! zgemv - BLAS complex matrix-vector product
+  interface
+    subroutine zgemv(trans, m, n, alpha, a, lda, x, incx, beta, y, incy)
+      import :: dp
+      character(len=1), intent(in) :: trans
+      integer, intent(in) :: m, n, lda, incx, incy
+      complex(kind=dp), intent(in) :: alpha, beta
+      complex(kind=dp), intent(in) :: a(lda, *), x(*)
+      complex(kind=dp), intent(inout) :: y(*)
+    end subroutine
+  end interface
+
+  ! zheevd - LAPACK Hermitian eigensolver (divide-and-conquer, all eigenvalues/vectors)
+  interface
+    subroutine zheevd(jobz, uplo, n, a, lda, w, work, lwork, rwork, lrwork, &
+                      iwork, liwork, info)
+      use definitions, only: dp
+      character(len=1), intent(in) :: jobz, uplo
+      integer, intent(in) :: n, lda, lwork, lrwork, liwork
+      complex(kind=dp), intent(inout) :: a(lda, *)
+      real(kind=dp), intent(out) :: w(*)
+      complex(kind=dp), intent(inout) :: work(*)
+      real(kind=dp), intent(inout) :: rwork(*)
+      integer, intent(inout) :: iwork(*)
+      integer, intent(out) :: info
+    end subroutine
   end interface
 
 #ifdef USE_ARPACK

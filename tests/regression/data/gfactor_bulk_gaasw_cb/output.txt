@@ -1,0 +1,62 @@
+waveVector:k0
+ waveVectorMax:  0.10000000000000001
+ waveVectorStep:           0
+ confinement:           0
+ FDstep:           1
+ FDorder:           2
+ numLayers:           1
+ material1:GaAsW
+ numcb:           2
+ numvb:           6
+ ExternalField:           0 EF
+ EFParams:   5.0000000000000001E-004
+ whichBand           0
+ bandIdx           1
+ bandIdx           0
+
+ Material: GaAsW
+ Parameters
+ EP :   28.890000000000001
+ P  :   10.491443193499968
+ A  :   15.037593984962406
+ gamma1 :   6.8499999999999996
+ gamma2 :   2.1000000000000001
+ gamma3 :   2.8999999999999999
+
+ adjusting numcb and numvb to get all states
+ gfactor for conduction band
+ sigma
+   0.0000    0.0000   1.0000    0.0000
+   1.0000    0.0000   0.0000    0.0000
+
+   0.0000    0.0000   0.0000    1.0000
+   0.0000   -1.0000   0.0000    0.0000
+
+   1.0000    0.0000   0.0000    0.0000
+   0.0000    0.0000  -1.0000    0.0000
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=   0.0000000000000000
+ WARNING: near-zero energy denominator, n=           2 m=           2 l=           1 denom=   0.0000000000000000
+ Total skipped contributions:           2
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=   0.0000000000000000
+ WARNING: near-zero energy denominator, n=           2 m=           2 l=           1 denom=   0.0000000000000000
+ Total skipped contributions:           4
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=   0.0000000000000000
+ Total skipped contributions:           6
+ tensor
+   0.0000   -0.0000   0.1611   -0.0000
+   0.1611   -0.0000   0.0000   -0.0000
+
+   0.0000   -0.0000   0.0000    0.1611
+   0.0000   -0.1611   0.0000   -0.0000
+
+   0.1611   -0.0000   0.0000   -0.0000
+   0.0000    0.0000  -0.1611   -0.0000
+ gx
+   0.0000000000000000
+ -0.32224550731000834
+ gy
+   0.0000000000000000
+ -0.32224550731000834
+ gz
+   0.0000000000000000
+ -0.32224550731000257

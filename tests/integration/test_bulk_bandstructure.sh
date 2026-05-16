@@ -1,4 +1,7 @@
 #!/bin/bash
+# COVERAGE: observable=Eg geometry=bulk material=GaAs ref=Vurgaftman2001
+# COVERAGE: observable=Delta_SO geometry=bulk material=GaAs ref=Vurgaftman2001
+# COVERAGE: observable=m*_e geometry=bulk material=GaAs ref=Kane
 # Integration test: bulk band structure regression
 # Args: <bandStructure_exe> <config_file> <ref_data_dir> <compare_script>
 set -euo pipefail

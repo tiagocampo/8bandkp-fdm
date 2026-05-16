@@ -1,0 +1,41 @@
+module test_topology_types
+  use funit
+  use definitions
+  implicit none
+contains
+
+  @test
+  subroutine test_bdg_config_defaults()
+    type(bdg_config) :: cfg
+    @assertFalse(cfg%enabled)
+    @assertEqual(0.0_dp, cfg%mu, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, cfg%delta_0, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, cfg%B_vec(1), tolerance=1.0e-12_dp)
+  end subroutine
+
+  @test
+  subroutine test_topology_config_defaults()
+    type(topology_config) :: cfg
+    @assertFalse(cfg%enabled)
+    @assertEqual('qhe', trim(cfg%mode))
+    @assertFalse(cfg%compute_chern)
+    @assertFalse(cfg%compute_z2)
+    @assertFalse(cfg%extract_edge_states)
+    @assertFalse(cfg%compute_ldos)
+    @assertEqual(0.01_dp, cfg%edge_E_window, tolerance=1.0e-12_dp)
+    @assertEqual(0.001_dp, cfg%ldos_eta, tolerance=1.0e-12_dp)
+    @assertEqual(200, cfg%ldos_num_E)
+  end subroutine
+
+  @test
+  subroutine test_topological_result_defaults()
+    type(topological_result) :: res
+    @assertEqual(0, res%chern_number)
+    @assertEqual(0, res%z2_invariant)
+    @assertEqual(0.0_dp, res%hall_conductance, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, res%min_gap, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, res%edge_xi_min, tolerance=1.0e-12_dp)
+    @assertEqual(0.0_dp, res%edge_xi, tolerance=1.0e-12_dp)
+  end subroutine
+
+end module

@@ -7,13 +7,14 @@ module hamiltonianConstructor
   use strain_solver, only: compute_bp_scalar, bir_pikus_blocks_free
   use confinement_init
   use hamiltonian_wire
+  use magnetic_field, only: compute_zeeman_vz, compute_gauge_shifts
 
   implicit none
 
   private
 
   public :: externalFieldSetup_electricField
-  public :: ZB8bandQW, ZB8bandBulk
+  public :: ZB8bandQW, ZB8bandBulk, ZB8bandLandau
   public :: add_bp_strain_dense
 
   contains
@@ -26,6 +27,13 @@ module hamiltonianConstructor
 
       integer :: i
 
+      if (size(z) > 0 .and. abs(z(1)) < tolerance) then
+        print *, "ERROR: externalFieldSetup_electricField called with z(1)=0"
+        print *, "  This causes division by zero in the linear potential."
+        print *, "  Ensure z-coordinates start at a non-zero value."
+        stop 1
+      end if
+
       do i = 1, ubound(z, dim=1), 1
           profile(i,:) = profile(i,:) - (Evalue*totalSize) * (z(i)+z(1))/(2.0_dp*z(1))
       end do
@@ -36,11 +44,11 @@ module hamiltonianConstructor
       implicit none
 
       !input/output
-      complex(kind=dp), intent(inout), dimension(:,:) :: HT
+      complex(kind=dp), intent(inout), contiguous :: HT(:,:)
       type(csr_matrix), intent(inout), optional :: HT_csr
       type(wavevector), intent(in) :: wv
-      real(kind = dp), intent(in), dimension(:,:) :: profile
-      real(kind = dp), intent(in), dimension(:,:,:) :: kpterms
+      real(kind = dp), intent(in), contiguous :: profile(:,:)
+      real(kind = dp), intent(in), contiguous :: kpterms(:,:,:)
       type(simulation_config), intent(in), optional :: cfg
       logical, intent(in), optional:: sparse
       character(len=1), intent(in), optional :: g
@@ -214,11 +222,92 @@ module hamiltonianConstructor
       end do
 
       ! Full Bir-Pikus strain (k-independent, not in g-mode)
+      ! Inlined from add_bp_strain_dense to avoid compiler temporaries
+      ! that cause stack corruption with -O3 + OpenMP.
       if (present(cfg)) then
         if (.not. present(g) .and. allocated(cfg%strain_blocks%delta_Ec)) then
           do ii = 1, N
-            call add_bp_strain_dense(HT, ii, N, cfg%strain_blocks)
+            block
+              real(kind=dp) :: dEc, dEHH, dELH, dESO, dQT2
+              complex(kind=dp) :: dR, dS, dR_c, dS_c
+              dEc  = cfg%strain_blocks%delta_Ec(ii)
+              dEHH = cfg%strain_blocks%delta_EHH(ii)
+              dELH = cfg%strain_blocks%delta_ELH(ii)
+              dESO = cfg%strain_blocks%delta_ESO(ii)
+              dR   = cfg%strain_blocks%R_eps(ii)
+              dS   = cfg%strain_blocks%S_eps(ii)
+              dQT2 = cfg%strain_blocks%QT2_eps(ii)
+              dR_c = conjg(dR)
+              dS_c = conjg(dS)
+
+              HT(      ii,      ii) = HT(      ii,      ii) + dEHH
+              HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + dELH
+              HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + dELH
+              HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + dEHH
+              HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + dESO
+              HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + dESO
+              HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + dEc
+              HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + dEc
+
+              HT(      ii,  N + ii) = HT(      ii,  N + ii) + dS_c
+              HT(  N + ii,      ii) = HT(  N + ii,      ii) + dS
+              HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - dS_c
+              HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - dS
+
+              HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + dR_c
+              HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + dR
+              HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + dR_c
+              HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + dR
+
+              HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU*RQS2*dS_c
+              HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU*RQS2*dS
+              HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU*SQR2*dR_c
+              HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU*SQR2*dR
+
+              HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU*RQS2*dQT2
+              HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU*RQS2*dQT2
+              HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU*SQR3o2*dS_c
+              HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU*SQR3o2*dS
+
+              HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU*SQR3o2*dS
+              HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU*SQR3o2*dS_c
+              HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU*RQS2*dQT2
+              HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU*RQS2*dQT2
+
+              HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU*SQR2*dR
+              HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU*SQR2*dR_c
+              HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU*RQS2*dS
+              HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU*RQS2*dS_c
+            end block
           end do
+        end if
+      end if
+
+      ! ---------------------------------------------------------------
+      ! Zeeman splitting: g*mu_B * |B| * sigma
+      ! Applied after profile and strain so all terms are present.
+      ! Uses full B-field magnitude (not just B_z). This is physically
+      ! correct: spin splitting depends on total |B|, regardless of
+      ! direction. Orbital effects (Landau levels) from B_perp are
+      ! handled separately via Peierls substitution in wire mode.
+      ! ---------------------------------------------------------------
+      if (present(cfg)) then
+        if (.not. present(g) .and. cfg%bdg%enabled) then
+          block
+            real(kind=dp) :: B_mag, Vz(8)
+            B_mag = sqrt(sum(cfg%bdg%B_vec**2))
+            call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag, Vz)
+            do ii = 1, N
+              HT(      ii,      ii) = HT(      ii,      ii) + Vz(1)
+              HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + Vz(2)
+              HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + Vz(3)
+              HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + Vz(4)
+              HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + Vz(5)
+              HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + Vz(6)
+              HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + Vz(7)
+              HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + Vz(8)
+            end do
+          end block
         end if
       end if
 
@@ -246,7 +335,262 @@ module hamiltonianConstructor
 
 
     end subroutine ZB8bandQW
-    subroutine ZB8bandBulk(HT,wv,params,g)
+
+    subroutine ZB8bandLandau(HT, wv, profile, kpterms, x_grid, cfg)
+      ! Build the 8N x 8N Landau Hamiltonian on a 1D x-grid.
+      !
+      ! Landau gauge: A = (0, Bz*x, -By*x)
+      !   Pi_y(i) = ky + Bz * x(i) * 1e-20 / hbar   [1/AA]
+      !   Pi_z(i) = kz - By * x(i) * 1e-20 / hbar   [1/AA]
+      !
+      ! B_x contributes only Zeeman splitting (parallel to discretized direction).
+      ! The block structure is identical to ZB8bandQW.
+      implicit none
+
+      complex(kind=dp), intent(inout), contiguous :: HT(:,:)
+      type(wavevector), intent(in) :: wv
+      real(kind=dp), intent(in), contiguous :: profile(:,:)
+      real(kind=dp), intent(in), contiguous :: kpterms(:,:,:)
+      real(kind=dp), intent(in), contiguous :: x_grid(:)
+      type(simulation_config), intent(in), optional :: cfg
+
+      integer :: N, ii, jj
+      real(kind=dp) :: By, Bz, B_mag
+      real(kind=dp), allocatable :: Pi_y(:), Pi_z(:)
+      real(kind=dp), allocatable :: kx2_arr(:), ky2_arr(:), k2_arr(:), kxky_arr(:)
+      complex(kind=dp), allocatable :: kplus_arr(:), kminus_arr(:)
+
+      complex(kind=dp), allocatable :: Q(:,:), R(:,:), RC(:,:), S(:,:), SC(:,:)
+      complex(kind=dp), allocatable :: T(:,:), PZ(:,:), PP(:,:), PM(:,:), Amat(:,:)
+      real(kind=dp) :: Vz(8)
+
+      N = size(HT, dim=1) / 8
+
+      ! Default B-field values
+      By = 0.0_dp
+      Bz = 0.0_dp
+      B_mag = 0.0_dp
+      if (present(cfg)) then
+        By = cfg%bdg%B_vec(2)
+        Bz = cfg%bdg%B_vec(3)
+        B_mag = sqrt(sum(cfg%bdg%B_vec**2))
+      end if
+
+      ! Compute position-dependent gauge-shifted k-values
+      allocate(Pi_y(N), Pi_z(N))
+      call compute_gauge_shifts(x_grid, [0.0_dp, By, Bz], wv%ky, wv%kz, Pi_y, Pi_z)
+
+      ! Compute position-dependent k-values
+      allocate(kx2_arr(N), ky2_arr(N), k2_arr(N), kxky_arr(N))
+      allocate(kplus_arr(N), kminus_arr(N))
+
+      do ii = 1, N
+        kx2_arr(ii) = Pi_y(ii)**2
+        ky2_arr(ii) = Pi_z(ii)**2
+        k2_arr(ii) = kx2_arr(ii) + ky2_arr(ii)
+        kxky_arr(ii) = Pi_y(ii) * Pi_z(ii)
+        kplus_arr(ii) = Pi_y(ii) + IU * Pi_z(ii)
+        kminus_arr(ii) = Pi_y(ii) - IU * Pi_z(ii)
+      end do
+
+      ! Compute midpoint values for off-diagonal FD hopping
+      ! (used conceptually: S/SC hermiticity guaranteed via SC = conjg(S^T))
+
+      ! Allocate kp matrices
+      allocate(Q(N,N), T(N,N), S(N,N), SC(N,N))
+      allocate(R(N,N), RC(N,N), PP(N,N), PM(N,N), PZ(N,N), Amat(N,N))
+      Q = ZERO; T = ZERO; S = ZERO; SC = ZERO
+      R = ZERO; RC = ZERO; PP = ZERO; PM = ZERO; PZ = ZERO; Amat = ZERO
+
+      ! Build Q, T, A matrices using kpterms FD stencils
+      ! Q = -(kpterms1 + kpterms2)*k2 + kpterms7) with position-dependent k2
+      ! But kpterms already encodes the FD stencil for the x-direction kinetic
+      ! energy. Here k2 = kx2 + ky2 is the in-plane (Pi_y, Pi_z) contribution.
+      ! We need to add kpterms (x-derivative part) + in-plane k2 terms.
+      !
+      ! In ZB8bandQW: Q = -(kpterms(1)+kpterms(2))*k2 + kpterms(7))
+      !   kpterms(1) = gamma1 (diagonal), kpterms(2) = gamma2 (diagonal)
+      !   kpterms(7) = FD stencil for (gamma1 - 2*gamma2)*d2/dx2
+      ! Here we separate: kpterms(7) is the x-FD part, and we add position-dependent
+      ! in-plane k2 contribution to the diagonal.
+      !
+      ! Actually, looking at confinementInitialization_landau:
+      !   kpterms(ii,ii,1) = gamma1  (diagonal material param)
+      !   kpterms(ii,ii,2) = gamma2  (diagonal material param)
+      !   kpterms(ii,ii,3) = gamma3  (diagonal material param)
+      !   kpterms(ii,ii,4) = P       (diagonal material param)
+      !   kpterms(:,:,5)   = A * FD stencil (x-kinetic energy for CB)
+      !   kpterms(:,:,6)   = P * FD stencil (x-momentum)
+      !   kpterms(:,:,7)   = (gamma1-2gamma2) * FD stencil (x-Q term)
+      !   kpterms(:,:,8)   = (gamma1+2gamma2) * FD stencil (x-T term)
+      !   kpterms(:,:,9)   = gamma3 * FD stencil (x-S term)
+      !   kpterms(ii,ii,10)= A       (diagonal material param)
+      !
+      ! In ZB8bandQW (with uniform k):
+      !   Q(ii,jj) = -((kpterms1+kpterms2)*k2 + kpterms7)
+      ! Since kpterms1,2 are diagonal, and kpterms7 has FD off-diagonal,
+      ! this is: Q = -(gamma1+gamma2)*k2 * I - FD_x_term
+      !
+      ! For Landau, k2 is position-dependent, so we need per-point scaling.
+
+      ! Diagonal elements: use position-dependent k2 at each grid point
+      do jj = 1, N
+        do ii = 1, N
+          ! Q = -(kpterms1 + kpterms2) * k2(ii) + kpterms7
+          ! For diagonal terms, kpterms1,2 are nonzero only on diagonal
+          Q(ii,jj) = -((kpterms(ii,jj,1) + kpterms(ii,jj,2)) * k2_arr(jj) &
+            & + kpterms(ii,jj,7))
+          ! T = -(kpterms1 - kpterms2) * k2(ii) + kpterms8
+          T(ii,jj) = -((kpterms(ii,jj,1) - kpterms(ii,jj,2)) * k2_arr(jj) &
+            & + kpterms(ii,jj,8))
+          ! A = kpterms5 + kpterms10 * k2(ii)
+          Amat(ii,jj) = kpterms(ii,jj,5) + kpterms(ii,jj,10) * k2_arr(jj)
+          ! PZ = kpterms6 * (-IU)  [P * d/dx FD stencil]
+          PZ(ii,jj) = kpterms(ii,jj,6) * (-IU)
+        end do
+      end do
+
+      ! S and SC: position-dependent kminus/kplus with FD stencil
+      ! S = 2 * sqrt(3) * kminus(i) * kpterms(i,j,9)
+      ! In QW (uniform k): SC(j,i) = 2*SQR3 * kplus * kpterms(i,j,9) = conjg(S(i,j))
+      ! For Landau: use per-element kminus for S, then SC = conjg(transpose(S))
+      ! to guarantee hermiticity by construction.
+      do jj = 1, N
+        do ii = 1, N
+          if (abs(kpterms(ii,jj,9)) > 0.0_dp) then
+            S(ii,jj) = 2.0_dp * SQR3 * kminus_arr(ii) * kpterms(ii,jj,9)
+          end if
+        end do
+      end do
+      ! SC = S^H (guarantees hermiticity)
+      do jj = 1, N
+        do ii = 1, N
+          SC(ii,jj) = conjg(S(jj,ii))
+        end do
+      end do
+
+      ! R and RC: purely diagonal (like ZB8bandQW)
+      ! R = -sqrt(3) * (gamma2*(kx2-ky2) - 2*i*gamma3*kxky)
+      ! With position-dependent k-values:
+      do ii = 1, N
+        R(ii,ii) = -SQR3 * (kpterms(ii,ii,2) * (kx2_arr(ii) - ky2_arr(ii)) &
+          & - 2.0_dp * IU * kpterms(ii,ii,3) * kxky_arr(ii))
+        RC(ii,ii) = -SQR3 * (kpterms(ii,ii,2) * (kx2_arr(ii) - ky2_arr(ii)) &
+          & + 2.0_dp * IU * kpterms(ii,ii,3) * kxky_arr(ii))
+        ! PP and PM: position-dependent
+        PP(ii,ii) = kpterms(ii,ii,4) * kplus_arr(ii) * RQS2
+        PM(ii,ii) = kpterms(ii,ii,4) * kminus_arr(ii) * RQS2
+      end do
+
+      ! Initialize HT
+      HT = ZERO
+
+      ! Assemble 8Nx8N Hamiltonian (identical block structure to ZB8bandQW)
+      ! col 1
+      HT(1 + 0*N : 1*N, 1 + 0*N : 1*N) =  Q
+      HT(1 + 0*N : 1*N, 1 + 1*N : 2*N) =  SC
+      HT(1 + 0*N : 1*N, 1 + 2*N : 3*N) =  RC
+      HT(1 + 0*N : 1*N, 1 + 4*N : 5*N) = -IU * RQS2 * SC
+      HT(1 + 0*N : 1*N, 1 + 5*N : 6*N) =  IU * SQR2 * RC
+      HT(1 + 0*N : 1*N, 1 + 6*N : 7*N) =  IU * PP
+
+      ! col 2
+      HT(1 + 1*N : 2*N, 1 + 0*N : 1*N) =  S
+      HT(1 + 1*N : 2*N, 1 + 1*N : 2*N) =  T
+      HT(1 + 1*N : 2*N, 1 + 3*N : 4*N) =  RC
+      HT(1 + 1*N : 2*N, 1 + 4*N : 5*N) =  IU * RQS2 * (Q - T)
+      HT(1 + 1*N : 2*N, 1 + 5*N : 6*N) = -IU * SQR3 * RQS2 * SC
+      HT(1 + 1*N : 2*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PZ
+      HT(1 + 1*N : 2*N, 1 + 7*N : 8*N) = -RQS3 * PP
+
+      ! col 3
+      HT(1 + 2*N : 3*N, 1 + 0*N : 1*N) =  R
+      HT(1 + 2*N : 3*N, 1 + 2*N : 3*N) =  T
+      HT(1 + 2*N : 3*N, 1 + 3*N : 4*N) = -SC
+      HT(1 + 2*N : 3*N, 1 + 4*N : 5*N) =  IU * SQR3 * RQS2 * S
+      HT(1 + 2*N : 3*N, 1 + 5*N : 6*N) =  IU * RQS2 * (Q - T)
+      HT(1 + 2*N : 3*N, 1 + 6*N : 7*N) =  IU * RQS3 * PM
+      HT(1 + 2*N : 3*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PZ
+
+      ! col 4
+      HT(1 + 3*N : 4*N, 1 + 1*N : 2*N) =  R
+      HT(1 + 3*N : 4*N, 1 + 2*N : 3*N) = -S
+      HT(1 + 3*N : 4*N, 1 + 3*N : 4*N) =  Q
+      HT(1 + 3*N : 4*N, 1 + 4*N : 5*N) =  IU * SQR2 * R
+      HT(1 + 3*N : 4*N, 1 + 5*N : 6*N) =  IU * RQS2 * S
+      HT(1 + 3*N : 4*N, 1 + 7*N : 8*N) = -PM
+
+      ! col 5
+      HT(1 + 4*N : 5*N, 1 + 0*N : 1*N) =  IU * RQS2 * S
+      HT(1 + 4*N : 5*N, 1 + 1*N : 2*N) = -IU * RQS2 * (Q - T)
+      HT(1 + 4*N : 5*N, 1 + 2*N : 3*N) = -IU * SQR3 * RQS2 * SC
+      HT(1 + 4*N : 5*N, 1 + 3*N : 4*N) = -IU * SQR2 * RC
+      HT(1 + 4*N : 5*N, 1 + 4*N : 5*N) =  0.5_dp * (Q + T)
+      HT(1 + 4*N : 5*N, 1 + 6*N : 7*N) =  IU * RQS3 * PZ
+      HT(1 + 4*N : 5*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PP
+
+      ! col 6
+      HT(1 + 5*N : 6*N, 1 + 0*N : 1*N) = -IU * SQR2 * R
+      HT(1 + 5*N : 6*N, 1 + 1*N : 2*N) =  IU * SQR3 * RQS2 * S
+      HT(1 + 5*N : 6*N, 1 + 2*N : 3*N) = -IU * RQS2 * (Q - T)
+      HT(1 + 5*N : 6*N, 1 + 3*N : 4*N) = -IU * RQS2 * SC
+      HT(1 + 5*N : 6*N, 1 + 5*N : 6*N) =  0.5_dp * (Q + T)
+      HT(1 + 5*N : 6*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PM
+      HT(1 + 5*N : 6*N, 1 + 7*N : 8*N) = -RQS3 * PZ
+
+      ! col 7
+      HT(1 + 6*N : 7*N, 1 + 0*N : 1*N) = -IU * PM
+      HT(1 + 6*N : 7*N, 1 + 1*N : 2*N) =  SQR2 * RQS3 * PZ
+      HT(1 + 6*N : 7*N, 1 + 2*N : 3*N) = -IU * RQS3 * PP
+      HT(1 + 6*N : 7*N, 1 + 4*N : 5*N) = -IU * RQS3 * PZ
+      HT(1 + 6*N : 7*N, 1 + 5*N : 6*N) =  SQR2 * RQS3 * PP
+      HT(1 + 6*N : 7*N, 1 + 6*N : 7*N) =  Amat
+
+      ! col 8
+      HT(1 + 7*N : 8*N, 1 + 1*N : 2*N) = -RQS3 * PM
+      HT(1 + 7*N : 8*N, 1 + 2*N : 3*N) = -IU * SQR2 * RQS3 * PZ
+      HT(1 + 7*N : 8*N, 1 + 3*N : 4*N) = -PP
+      HT(1 + 7*N : 8*N, 1 + 4*N : 5*N) = -IU * SQR2 * RQS3 * PM
+      HT(1 + 7*N : 8*N, 1 + 5*N : 6*N) = -RQS3 * PZ
+      HT(1 + 7*N : 8*N, 1 + 7*N : 8*N) =  Amat
+
+      ! Add profile (band edges)
+      do ii = 1, N
+        HT(      ii,      ii) = HT(      ii,      ii) + profile(ii,1)
+        HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + profile(ii,1)
+        HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + profile(ii,1)
+        HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + profile(ii,1)
+        HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + profile(ii,2)
+        HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + profile(ii,2)
+        HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + profile(ii,3)
+        HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + profile(ii,3)
+      end do
+
+      ! Zeeman splitting (full |B| magnitude)
+      if (present(cfg)) then
+        if (B_mag > 1.0e-12_dp) then
+          call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag, Vz)
+          do ii = 1, N
+            HT(      ii,      ii) = HT(      ii,      ii) + Vz(1)
+            HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + Vz(2)
+            HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + Vz(3)
+            HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + Vz(4)
+            HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + Vz(5)
+            HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + Vz(6)
+            HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + Vz(7)
+            HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + Vz(8)
+          end do
+        end if
+      end if
+
+      ! Clean up
+      deallocate(Q, T, S, SC, R, RC, PP, PM, PZ, Amat)
+      deallocate(Pi_y, Pi_z, kx2_arr, ky2_arr, k2_arr, kxky_arr)
+      deallocate(kplus_arr, kminus_arr)
+
+    end subroutine ZB8bandLandau
+
+    subroutine ZB8bandBulk(HT,wv,params,cfg,g)
 
       implicit none
 
@@ -254,6 +598,7 @@ module hamiltonianConstructor
       complex(kind=dp), intent(inout), dimension(:,:) :: HT
       type(wavevector), intent(in) :: wv
       type(paramStruct), intent(in) :: params(1)
+      type(simulation_config), intent(in), optional :: cfg
       character(len=1), intent(in), optional :: g
 
       ! wave vector related
@@ -268,7 +613,6 @@ module hamiltonianConstructor
       ! constants
 
       integer :: i, j
-
 
       !constants
 
@@ -401,6 +745,47 @@ module hamiltonianConstructor
       HT(7,7) = HT(7,7) + params(1)%Eg
       HT(8,8) = HT(8,8) + params(1)%Eg
 
+      ! External potential shifts (EF + SC)
+      if (present(cfg)) then
+        if (cfg%ExternalField == 1 .and. cfg%EFtype == 'EF') then
+          do i = 1, 8
+            HT(i,i) = HT(i,i) + cmplx(cfg%Evalue, 0.0_dp, kind=dp)
+          end do
+        end if
+        if (cfg%sc_potential_shift /= 0.0_dp) then
+          do i = 1, 8
+            HT(i,i) = HT(i,i) + cmplx(cfg%sc_potential_shift, 0.0_dp, kind=dp)
+          end do
+        end if
+      end if
+
+      ! ---------------------------------------------------------------
+      ! Zeeman splitting: g*mu_B * B . sigma
+      ! Applied after SOC and band-edge shifts so all terms are present.
+      ! Note: This is SPIN Zeeman only. Orbital Landau level quantization
+      ! requires Peierls substitution (kz -> kz - eBx*y/hbar) which needs
+      ! spatial y-discretization. Bulk 8x8 at k=0 has no y information
+      ! so only Zeeman (spin) is possible here. For orbital physics, use
+      ! wire mode (confinement=2) which has 2D grid and can do Peierls.
+      ! ---------------------------------------------------------------
+      if (present(cfg)) then
+        if (cfg%bdg%enabled) then
+          block
+            real(kind=dp) :: B_mag, Vz(8)
+            B_mag = sqrt(sum(cfg%bdg%B_vec**2))
+            call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag, Vz)
+            HT(1,1) = HT(1,1) + Vz(1)
+            HT(2,2) = HT(2,2) + Vz(2)
+            HT(3,3) = HT(3,3) + Vz(3)
+            HT(4,4) = HT(4,4) + Vz(4)
+            HT(5,5) = HT(5,5) + Vz(5)
+            HT(6,6) = HT(6,6) + Vz(6)
+            HT(7,7) = HT(7,7) + Vz(7)
+            HT(8,8) = HT(8,8) + Vz(8)
+          end block
+        end if
+      end if
+
       ! ---------------------------------------------------------------
       ! Full Bir-Pikus strain Hamiltonian for bulk.
       !
@@ -455,7 +840,9 @@ module hamiltonianConstructor
               bp_bulk%QT2_eps(1)   = s%QT2_eps
             end associate
 
-            call add_bp_strain_dense(HT, 1, 1, bp_bulk)
+            call apply_bp_strain_inline(HT, 1, 1, &
+              bp_bulk%delta_Ec(1), bp_bulk%delta_EHH(1), bp_bulk%delta_ELH(1), &
+              bp_bulk%delta_ESO(1), bp_bulk%R_eps(1), bp_bulk%S_eps(1), bp_bulk%QT2_eps(1))
             call bir_pikus_blocks_free(bp_bulk)
           end if
         end block
@@ -463,58 +850,112 @@ module hamiltonianConstructor
 
 
     end subroutine ZB8bandBulk
-    subroutine add_bp_strain_dense(HT, ii, N, bp)
+    subroutine add_bp_strain_dense(HT, ii, N, delta_Ec, delta_EHH, delta_ELH, &
+        delta_ESO, R_eps, S_eps, QT2_eps)
       complex(kind=dp), intent(inout), contiguous :: HT(:,:)
       integer, intent(in) :: ii, N
-      type(bir_pikus_blocks), intent(in) :: bp
+      real(kind=dp), intent(in), contiguous :: delta_Ec(:), delta_EHH(:), delta_ELH(:)
+      real(kind=dp), intent(in), contiguous :: delta_ESO(:), QT2_eps(:)
+      complex(kind=dp), intent(in), contiguous :: R_eps(:), S_eps(:)
 
       complex(kind=dp) :: R_eps_c, S_eps_c
 
-      R_eps_c = conjg(bp%R_eps(ii))
-      S_eps_c = conjg(bp%S_eps(ii))
+      R_eps_c = conjg(R_eps(ii))
+      S_eps_c = conjg(S_eps(ii))
 
       ! === Diagonal per-band ===
-      HT(      ii,      ii) = HT(      ii,      ii) + bp%delta_EHH(ii)
-      HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + bp%delta_ELH(ii)
-      HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + bp%delta_ELH(ii)
-      HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + bp%delta_EHH(ii)
-      HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + bp%delta_ESO(ii)
-      HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + bp%delta_ESO(ii)
-      HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + bp%delta_Ec(ii)
-      HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + bp%delta_Ec(ii)
+      HT(      ii,      ii) = HT(      ii,      ii) + delta_EHH(ii)
+      HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + delta_ELH(ii)
+      HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + delta_ELH(ii)
+      HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + delta_EHH(ii)
+      HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + delta_ESO(ii)
+      HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + delta_ESO(ii)
+      HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + delta_Ec(ii)
+      HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + delta_Ec(ii)
 
       ! === Off-diagonal: S_eps (HH-LH) ===
       HT(      ii,  N + ii) = HT(      ii,  N + ii) + S_eps_c
-      HT(  N + ii,      ii) = HT(  N + ii,      ii) + bp%S_eps(ii)
+      HT(  N + ii,      ii) = HT(  N + ii,      ii) + S_eps(ii)
       HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - S_eps_c
-      HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - bp%S_eps(ii)
+      HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - S_eps(ii)
 
       ! === Off-diagonal: R_eps (HH-LH) ===
       HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + R_eps_c
-      HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + bp%R_eps(ii)
+      HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + R_eps(ii)
       HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + R_eps_c
-      HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + bp%R_eps(ii)
+      HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + R_eps(ii)
 
       ! === Off-diagonal: VB-SO coupling ===
       HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU * RQS2 * S_eps_c
-      HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU * RQS2 * bp%S_eps(ii)
+      HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU * RQS2 * S_eps(ii)
       HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU * SQR2 * R_eps_c
-      HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU * SQR2 * bp%R_eps(ii)
+      HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU * SQR2 * R_eps(ii)
 
-      HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU * RQS2 * bp%QT2_eps(ii)
-      HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU * RQS2 * bp%QT2_eps(ii)
+      HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU * RQS2 * QT2_eps(ii)
+      HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU * RQS2 * QT2_eps(ii)
       HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU * SQR3o2 * S_eps_c
-      HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU * SQR3o2 * bp%S_eps(ii)
+      HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU * SQR3o2 * S_eps(ii)
 
-      HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU * SQR3o2 * bp%S_eps(ii)
+      HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU * SQR3o2 * S_eps(ii)
       HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU * SQR3o2 * S_eps_c
-      HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU * RQS2 * bp%QT2_eps(ii)
-      HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU * RQS2 * bp%QT2_eps(ii)
+      HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU * RQS2 * QT2_eps(ii)
+      HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU * RQS2 * QT2_eps(ii)
 
-      HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU * SQR2 * bp%R_eps(ii)
+      HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU * SQR2 * R_eps(ii)
       HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU * SQR2 * R_eps_c
-      HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU * RQS2 * bp%S_eps(ii)
+      HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU * RQS2 * S_eps(ii)
       HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU * RQS2 * S_eps_c
     end subroutine add_bp_strain_dense
+
+    ! Scalar variant for bulk (single-element arrays) — avoids array temporaries.
+    subroutine apply_bp_strain_inline(HT, ii, N, dEc, dEHH, dELH, dESO, dR, dS, dQT2)
+      complex(kind=dp), intent(inout), contiguous :: HT(:,:)
+      integer, intent(in) :: ii, N
+      real(kind=dp), intent(in) :: dEc, dEHH, dELH, dESO, dQT2
+      complex(kind=dp), intent(in) :: dR, dS
+      complex(kind=dp) :: dR_c, dS_c
+
+      dR_c = conjg(dR)
+      dS_c = conjg(dS)
+
+      HT(      ii,      ii) = HT(      ii,      ii) + dEHH
+      HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + dELH
+      HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + dELH
+      HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + dEHH
+      HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + dESO
+      HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + dESO
+      HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + dEc
+      HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + dEc
+
+      HT(      ii,  N + ii) = HT(      ii,  N + ii) + dS_c
+      HT(  N + ii,      ii) = HT(  N + ii,      ii) + dS
+      HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - dS_c
+      HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - dS
+
+      HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + dR_c
+      HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + dR
+      HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + dR_c
+      HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + dR
+
+      HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU*RQS2*dS_c
+      HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU*RQS2*dS
+      HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU*SQR2*dR_c
+      HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU*SQR2*dR
+
+      HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU*RQS2*dQT2
+      HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU*RQS2*dQT2
+      HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU*SQR3o2*dS_c
+      HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU*SQR3o2*dS
+
+      HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU*SQR3o2*dS
+      HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU*SQR3o2*dS_c
+      HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU*RQS2*dQT2
+      HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU*RQS2*dQT2
+
+      HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU*SQR2*dR
+      HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU*SQR2*dR_c
+      HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU*RQS2*dS
+      HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU*RQS2*dS_c
+    end subroutine apply_bp_strain_inline
 
 end module hamiltonianConstructor

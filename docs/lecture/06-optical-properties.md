@@ -1121,3 +1121,33 @@ from what still needs a benchmark closure.
 | g-factor optical matrix (legacy) | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_wire` |
 | Exciton binding energy | `src/physics/exciton.f90` | `compute_exciton_binding` |
 | LO-phonon scattering rates | `src/physics/scattering.f90` | `compute_phonon_scattering` |
+
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-06
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_06_optical.py
+```
+
+### Code-Output Anchors
+
+Running `optics_bulk_gaas.cfg` produces:
+- **Bulk absorption onset**: 1.509 eV (within 1% of Eg); **TE/TM ratio** > 1 for interband
+- **ISBT peak**: at 0.11 eV (conduction intersubband transition)
+
+![Overlay plot](figures/lecture_06_absorption.png)
+
+![Gain spectra](figures/lecture_06_gain.png)
+
+![Spontaneous emission](figures/lecture_06_spontaneous.png)
+
+![Spin-resolved absorption](figures/lecture_06_spin_resolved.png)

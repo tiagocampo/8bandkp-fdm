@@ -51,33 +51,53 @@ contains
 
     integer :: status
     character(len=512) :: line
-    character(len=255) :: label_read
-    logical :: value_read
+    character(len=255) :: label_part, value_str
+    integer :: colon_pos
 
     found = .false.
     call read_next_data_line(data_unit, line, status)
     if (status /= 0) return
 
-    read(line, *, iostat=status) label_read
-    if (status /= 0) then
+    ! Extract label (before colon) and value (after colon)
+    colon_pos = index(line, ':')
+    if (colon_pos <= 0) then
       backspace(data_unit)
       return
     end if
 
-    if (trim(to_lower_ascii(label_read)) /= trim(to_lower_ascii(expected_label))) then
+    label_part = adjustl(line(:colon_pos-1))
+    if (trim(to_lower_ascii(label_part)) /= trim(to_lower_ascii(expected_label))) then
       backspace(data_unit)
       return
     end if
 
-    read(line, *, iostat=status) label_read, value_read
-    if (status /= 0) then
+    ! Extract value after colon
+    value_str = adjustl(line(colon_pos+1:))
+
+    ! Check .true. or .false. first (with dots)
+    if (index(value_str, '.true.') > 0 .or. index(value_str, '.TRUE.') > 0 .or. &
+        index(value_str, '.True.') > 0) then
+      value = .true.
+      found = .true.
+      label = trim(label_part) // ':'
+    else if (index(value_str, '.false.') > 0 .or. index(value_str, '.FALSE.') > 0 .or. &
+             index(value_str, '.False.') > 0) then
+      value = .false.
+      found = .true.
+      label = trim(label_part) // ':'
+    ! Single letter T/F without dots (check length to avoid empty string)
+    else if (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't')) then
+      value = .true.
+      found = .true.
+      label = trim(label_part) // ':'
+    else if (len_trim(value_str) > 0 .and. (value_str(1:1) == 'F' .or. value_str(1:1) == 'f')) then
+      value = .false.
+      found = .true.
+      label = trim(label_part) // ':'
+    else
       backspace(data_unit)
       return
     end if
-
-    label = label_read
-    value = value_read
-    found = .true.
   end subroutine read_optional_logical_flag
 
   subroutine read_optional_real_flag(data_unit, expected_label, value, found, label)
@@ -127,6 +147,9 @@ contains
     integer(kind=4) :: data_unit
     integer :: status
     character(len=255) :: data_filename, label
+    character(len=512) :: line
+    character(len=255) :: label_part, value_str
+    integer :: colon_pos
     logical :: found_optional
 
     ! Local iteration
@@ -185,8 +208,8 @@ contains
     print *, trim(label), cfg%numLayers
 
     ! Validate confinement value
-    if (cfg%confinement < 0 .or. cfg%confinement > 2) then
-      print *, 'Error: confinement must be 0, 1, or 2, got:', cfg%confinement
+    if (cfg%confinement < 0 .or. cfg%confinement > 3) then
+      print *, 'Error: confinement must be 0, 1, 2, or 3, got:', cfg%confinement
       stop 1
     end if
 
@@ -448,6 +471,91 @@ contains
       cfg%startPos(1) = 0.0_dp
       cfg%endPos(1) = real(cfg%wire_ny - 1, kind=dp) * cfg%wire_dy
 
+    else if (cfg%confinement == 3) then
+      ! ---- Landau mode (1D x-discretization for orbital quantization) ----
+      cfg%confDir = 'x'
+
+      ! Single material (like bulk)
+      read(data_unit, *, iostat=status) label, cfg%materialN(1)
+      if (status /= 0) then
+        print *, 'Error: Failed to read material name from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%materialN(1)
+      cfg%materialN(1) = trim(cfg%materialN(1))
+
+      ! Grid parameters
+      read(data_unit, *, iostat=status) label, cfg%landau_nx
+      if (status /= 0) then
+        print *, 'Error: Failed to read landau_nx from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%landau_nx
+
+      read(data_unit, *, iostat=status) label, cfg%landau_width
+      if (status /= 0) then
+        print *, 'Error: Failed to read landau_width from input.cfg'
+        stop 1
+      end if
+      print *, trim(label), cfg%landau_width
+
+      ! Optional: landau_sweep (ky, kz, or B)
+      call read_next_data_line(data_unit, line, status)
+      if (status == 0) then
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          label_part = adjustl(line(:colon_pos-1))
+          if (trim(to_lower_ascii(label_part)) == 'landau_sweep') then
+            read(line(colon_pos+1:), *, iostat=status) cfg%landau_sweep
+            if (status == 0) then
+              print *, trim(label_part) // ':', trim(cfg%landau_sweep)
+            else
+              cfg%landau_sweep = 'ky'
+              status = 0
+            end if
+          else
+            ! Not landau_sweep — put line back for next reader
+            backspace(data_unit)
+          end if
+        else
+          ! No colon — put back
+          backspace(data_unit)
+        end if
+      end if
+
+      ! Validate Landau grid parameters
+      if (cfg%landau_nx < 3) then
+        print *, 'Error: landau_nx must be >= 3, got:', cfg%landau_nx
+        stop 1
+      end if
+      if (cfg%landau_width <= 0.0_dp) then
+        print *, 'Error: landau_width must be > 0, got:', cfg%landau_width
+        stop 1
+      end if
+      if (cfg%landau_nx < cfg%FDorder + 1) then
+        print *, 'Error: landau_nx must be >= FDorder + 1'
+        print *, '  landau_nx=', cfg%landau_nx, ' FDorder=', cfg%FDorder
+        stop 1
+      end if
+
+      ! Set grid compatibility fields
+      cfg%fdStep = cfg%landau_nx
+      cfg%dz = cfg%landau_width / real(cfg%landau_nx - 1, kind=dp)
+      cfg%totalSize = cfg%landau_width
+      cfg%z = [ ((i - 1) * cfg%dz - 0.5_dp * cfg%landau_width, i=1, cfg%landau_nx) ]
+
+      ! Allocate intStartPos/intEndPos for single material
+      allocate(cfg%intStartPos(1))
+      allocate(cfg%intEndPos(1))
+      cfg%intStartPos(1) = 1
+      cfg%intEndPos(1) = cfg%landau_nx
+
+      ! Allocate dummy startPos/endPos for routines that expect them
+      allocate(cfg%startPos(1))
+      allocate(cfg%endPos(1))
+      cfg%startPos(1) = 0.0_dp
+      cfg%endPos(1) = cfg%landau_width
+
     end if
 
     ! --- Common fields: numcb, numvb, external field, gfactor, SC ---
@@ -479,26 +587,189 @@ contains
         stop 1
       end if
       print *, trim(label), cfg%Evalue
+      ! Check if the "label" we read is actually the b_field line
+      ! (happens when b_field follows EFParams with no newline between)
+      if (trim(label) == 'b_field:') then
+        cfg%b_field(1) = cfg%Evalue
+        cfg%Evalue = 0.0_dp
+        read(data_unit, *, iostat=status) cfg%b_field(2), cfg%b_field(3)
+        if (status == 0 .or. status == -1) then
+          cfg%bdg%B_vec = cfg%b_field
+          if (cfg%confinement /= 3) cfg%bdg%enabled = .true.
+        else
+          cfg%b_field = 0.0_dp
+          cfg%bdg%B_vec = 0.0_dp
+          cfg%bdg%enabled = .false.
+          status = 0
+        end if
+        label = ''
+      end if
     else
       stop "Type of external field not implemented"
     end if
 
-      ! Try reading gfactor params; use defaults if missing (backward compatible)
-      read(data_unit, *, iostat=status) label, cfg%whichBand
+    ! --- Bulk Landau level magnetic field (b_field: Bx By Bz in Tesla) ---
+    ! For bulk (confinement=0) with B field, sets cfg%bdg%B_vec and enables Zeeman.
+    ! Skip if already parsed via Evalue path above (when label=='')
+    if (cfg%bdg%enabled .and. label == '') then
+      ! b_field was already parsed via Evalue path - skip redundant parsing
+    elseif (.not. cfg%bdg%enabled) then
+      ! b_field not yet parsed - peek at next line
+      call read_next_data_line(data_unit, line, status)
       if (status == 0) then
-        print *, trim(label), cfg%whichBand
-        read(data_unit, *, iostat=status) label, cfg%bandIdx
-        if (status == 0) print *, trim(label), cfg%bandIdx
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          label = adjustl(line(:colon_pos-1))
+          if (trim(to_lower_ascii(label)) == 'b_field') then
+            read(line(colon_pos+1:), *, iostat=status) &
+                cfg%b_field(1), cfg%b_field(2), cfg%b_field(3)
+            if (status == 0) then
+              cfg%bdg%B_vec = cfg%b_field
+              if (cfg%confinement /= 3) cfg%bdg%enabled = .true.
+            else
+              cfg%b_field = 0.0_dp
+              status = 0
+            end if
+          else
+            ! Not b_field — put line back for gfactor parsing
+            backspace(data_unit)
+          end if
+        else
+          ! No colon — not a labeled parameter, put back
+          backspace(data_unit)
+        end if
+      end if
+    end if
+
+      ! Optional: g_factor for Landau mode Zeeman splitting
+      call read_next_data_line(data_unit, line, status)
+      if (status == 0) then
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          label_part = adjustl(line(:colon_pos-1))
+          if (trim(to_lower_ascii(label_part)) == 'g_factor') then
+            read(line(colon_pos+1:), *, iostat=status) cfg%bdg%g_factor
+            if (status == 0) then
+              print *, trim(label_part) // ':', cfg%bdg%g_factor
+            else
+              cfg%bdg%g_factor = 2.0_dp
+              status = 0
+            end if
+          else
+            ! Not g_factor — put line back for next reader
+            backspace(data_unit)
+          end if
+        else
+          ! No colon — put back
+          backspace(data_unit)
+        end if
+      end if
+
+      ! Optional: b_sweep for Landau B-sweep fan diagrams
+      call read_next_data_line(data_unit, line, status)
+      if (status == 0) then
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          label_part = adjustl(line(:colon_pos-1))
+          if (trim(to_lower_ascii(label_part)) == 'b_sweep') then
+            read(line(colon_pos+1:), *, iostat=status) &
+              cfg%bdg%B_sweep(1), cfg%bdg%B_sweep(2), cfg%bdg%B_sweep(3)
+            if (status == 0) then
+              print *, trim(label_part) // ':', cfg%bdg%B_sweep
+            else
+              cfg%bdg%B_sweep = 0.0_dp
+              status = 0
+            end if
+          else
+            ! Not b_sweep — put line back for next reader
+            backspace(data_unit)
+          end if
+        else
+          ! No colon — put back
+          backspace(data_unit)
+        end if
+      end if
+
+      ! Try reading gfactor params; use defaults if missing (backward compatible)
+      ! Peek at the next line to check if it's a whichBand line
+      call read_next_data_line(data_unit, line, status)
+      if (status == 0) then
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          label_part = adjustl(line(:colon_pos-1))
+          if (trim(to_lower_ascii(label_part)) == 'whichband') then
+            ! It's a whichBand line - read it and the bandIdx line
+            read(line(colon_pos+1:), *, iostat=status) cfg%whichBand
+            if (status == 0) then
+              print *, trim(label_part), cfg%whichBand
+              ! Read bandIdx on next line
+              call read_next_data_line(data_unit, line, status)
+              if (status == 0) then
+                colon_pos = index(line, ':')
+                if (colon_pos > 0) then
+                  label_part = adjustl(line(:colon_pos-1))
+                  read(line(colon_pos+1:), *, iostat=status) cfg%bandIdx
+                  if (status == 0) print *, trim(label_part), cfg%bandIdx
+                end if
+              end if
+              if (status /= 0) then
+                cfg%bandIdx = 1
+                status = 0
+              end if
+            else
+              status = 0
+              cfg%whichBand = 0
+              cfg%bandIdx = 1
+              backspace(data_unit)
+            end if
+          else
+            ! Not a whichBand line - back up and let next read handle it
+            backspace(data_unit)
+            cfg%whichBand = 0
+            cfg%bandIdx = 1
+          end if
+        else
+          ! No colon - back up
+          backspace(data_unit)
+          cfg%whichBand = 0
+          cfg%bandIdx = 1
+        end if
       else
         cfg%whichBand = 0
-        cfg%bandIdx= 1
+        cfg%bandIdx = 1
       end if
 
     ! --- SC parameters (backward compatible: uses defaults if missing) ---
-    read(data_unit, *, iostat=status) label, cfg%sc%enabled
+    ! Peek at the next line to check if it's an SC line
+    call read_next_data_line(data_unit, line, status)
+    if (status == 0) then
+      colon_pos = index(line, ':')
+      if (colon_pos > 0) then
+        label_part = adjustl(line(:colon_pos-1))
+        if (trim(to_lower_ascii(label_part)) == 'sc') then
+          ! It's an SC line - read the enabled flag
+          read(line(colon_pos+1:), *, iostat=status) cfg%sc%enabled
+          if (status /= 0) then
+            cfg%sc%enabled = 0
+            status = 0
+          end if
+        else
+          ! Not an SC line - back up
+          backspace(data_unit)
+          cfg%sc%enabled = 0
+        end if
+      else
+        ! No colon - back up
+        backspace(data_unit)
+        cfg%sc%enabled = 0
+      end if
+    else
+      cfg%sc%enabled = 0
+    end if
+
     sc_block: do
-      if (status == 0 .and. cfg%sc%enabled == 1) then
-        print *, trim(label), cfg%sc%enabled
+      if (cfg%sc%enabled == 1) then
+        print *, trim(label_part), cfg%sc%enabled
 
         read(data_unit, *, iostat=status) label, cfg%sc%max_iterations
         if (status /= 0) then; status = 0; exit sc_block; end if
@@ -548,31 +819,350 @@ contains
         if (status /= 0) then; status = 0; exit sc_block; end if
         print *, trim(label), cfg%sc%bc_right
 
-        ! Read doping per layer (ND NA for each layer)
+        ! Read doping per layer: uniform (ND NA) or delta (NS FWHM POS)
         allocate(cfg%doping(cfg%numLayers))
         do i = 1, cfg%numLayers
-          read(data_unit, *, iostat=status) label, cfg%doping(i)%ND, cfg%doping(i)%NA
+          read(data_unit, '(A)', iostat=status) label
           if (status /= 0) then
             cfg%doping(i)%ND = 0.0_dp
             cfg%doping(i)%NA = 0.0_dp
             status = 0
             exit
           end if
-          print *, trim(label), cfg%doping(i)%ND, cfg%doping(i)%NA
+          label = adjustl(label)
+          if (label(1:5) == 'delta') then
+            ! delta<N>: NS FWHM POS
+            cfg%doping(i)%dtype = 'delta'
+            backspace(data_unit)
+            read(data_unit, *, iostat=status) label, cfg%doping(i)%NS, &
+              & cfg%doping(i)%delta_fwhm, cfg%doping(i)%delta_pos
+            if (status /= 0) then
+              status = 0
+              cfg%doping(i)%NS = 0.0_dp
+              exit
+            end if
+            print *, trim(label), cfg%doping(i)%NS, cfg%doping(i)%delta_fwhm, cfg%doping(i)%delta_pos
+          else
+            ! doping<N>: ND NA (existing uniform format)
+            backspace(data_unit)
+            read(data_unit, *, iostat=status) label, cfg%doping(i)%ND, cfg%doping(i)%NA
+            if (status /= 0) then
+              cfg%doping(i)%ND = 0.0_dp
+              cfg%doping(i)%NA = 0.0_dp
+              status = 0
+              exit
+            end if
+            print *, trim(label), cfg%doping(i)%ND, cfg%doping(i)%NA
+          end if
         end do
 
-      else if (status == 0) then
-        ! SC=0, skip remaining SC lines
-        print *, trim(label), cfg%sc%enabled
       else
-        ! Could not read SC flag -- use defaults (SC off)
-        status = 0
+        ! SC disabled or not found - skip remaining SC lines
+        print *, trim(label_part), cfg%sc%enabled
       end if
       exit sc_block
     end do sc_block
 
+    ! --- Topology analysis parameters (backward compatible: uses defaults if missing) ---
+    call read_optional_logical_flag(data_unit, 'topology', cfg%topo%enabled, found_optional, label)
+    topology_block: do
+      if (found_optional .and. cfg%topo%enabled) then
+        print *, trim(label), cfg%topo%enabled
+
+        read(data_unit, *, iostat=status) label, cfg%topo%mode
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), trim(cfg%topo%mode)
+
+        read(data_unit, '(A)', iostat=status) line
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          value_str = adjustl(line(colon_pos+1:))
+          cfg%topo%compute_chern = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
+          label = adjustl(line(:colon_pos-1)) // ':'
+        else
+          print *, 'Warning: topology block line has no colon: ', trim(line)
+          exit topology_block
+        end if
+        print *, trim(label), cfg%topo%compute_chern
+
+        read(data_unit, '(A)', iostat=status) line
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          value_str = adjustl(line(colon_pos+1:))
+          cfg%topo%compute_hall = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
+          label = adjustl(line(:colon_pos-1)) // ':'
+        else
+          print *, 'Warning: topology block line has no colon: ', trim(line)
+          exit topology_block
+        end if
+        print *, trim(label), cfg%topo%compute_hall
+
+        read(data_unit, *, iostat=status) label, cfg%topo%qwz_u
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%qwz_u
+
+        read(data_unit, '(A)', iostat=status) line
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          value_str = adjustl(line(colon_pos+1:))
+          cfg%topo%compute_z2 = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
+          label = adjustl(line(:colon_pos-1)) // ':'
+        else
+          print *, 'Warning: topology block line has no colon: ', trim(line)
+          exit topology_block
+        end if
+        print *, trim(label), cfg%topo%compute_z2
+
+        read(data_unit, '(A)', iostat=status) line
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          value_str = adjustl(line(colon_pos+1:))
+          cfg%topo%extract_edge_states = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
+          label = adjustl(line(:colon_pos-1)) // ':'
+        else
+          print *, 'Warning: topology block line has no colon: ', trim(line)
+          exit topology_block
+        end if
+        print *, trim(label), cfg%topo%extract_edge_states
+
+        read(data_unit, *, iostat=status) label, cfg%topo%edge_E_window
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%edge_E_window
+
+        read(data_unit, '(A)', iostat=status) line
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        colon_pos = index(line, ':')
+        if (colon_pos > 0) then
+          value_str = adjustl(line(colon_pos+1:))
+          cfg%topo%compute_ldos = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
+          label = adjustl(line(:colon_pos-1)) // ':'
+        else
+          print *, 'Warning: topology block line has no colon: ', trim(line)
+          exit topology_block
+        end if
+        print *, trim(label), cfg%topo%compute_ldos
+
+        read(data_unit, *, iostat=status) label, cfg%topo%ldos_eta
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%ldos_eta
+
+        read(data_unit, *, iostat=status) label, cfg%topo%ldos_E_range(1)
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%ldos_E_range(1)
+
+        read(data_unit, *, iostat=status) label, cfg%topo%ldos_E_range(2)
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%ldos_E_range(2)
+
+        read(data_unit, *, iostat=status) label, cfg%topo%ldos_num_E
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        print *, trim(label), cfg%topo%ldos_num_E
+
+        ! --- Optional new fields (backward compatible) ---
+        ! Peek at next line; if it's not the expected label, backspace and skip.
+        ! This allows configs without these fields to still reach the bdg: block.
+
+        ! Gap sweep / phase diagram
+        read(data_unit, '(A)', iostat=status) line
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        if (index(to_lower_ascii(adjustl(line)), 'compute_gap_sweep') > 0) then
+          read(line, *, iostat=status) label, cfg%topo%compute_gap_sweep
+          if (status /= 0) then; status = 0; exit topology_block; end if
+          print *, trim(label), cfg%topo%compute_gap_sweep
+          if (cfg%topo%compute_gap_sweep) then
+            read(data_unit, *, iostat=status) label, cfg%topo%gap_sweep_B_min, &
+              cfg%topo%gap_sweep_B_max, cfg%topo%gap_sweep_nB
+            if (status /= 0) then; status = 0; exit topology_block; end if
+            print *, trim(label), cfg%topo%gap_sweep_B_min, &
+              cfg%topo%gap_sweep_B_max, cfg%topo%gap_sweep_nB
+
+            read(data_unit, *, iostat=status) label, cfg%topo%gap_sweep_mu_min, &
+              cfg%topo%gap_sweep_mu_max, cfg%topo%gap_sweep_nMu
+            if (status /= 0) then; status = 0; exit topology_block; end if
+            print *, trim(label), cfg%topo%gap_sweep_mu_min, &
+              cfg%topo%gap_sweep_mu_max, cfg%topo%gap_sweep_nMu
+
+            read(data_unit, '(A)', iostat=status) line
+            if (status == 0) then
+              if (index(to_lower_ascii(adjustl(line)), 'sweep_model') > 0) then
+                read(line, *, iostat=status) label, cfg%topo%sweep_model
+                if (status /= 0) then; status = 0; exit topology_block; end if
+                print *, trim(label), trim(cfg%topo%sweep_model)
+              else
+                backspace(data_unit)
+              end if
+            else
+              status = 0
+            end if
+          end if
+        else
+          backspace(data_unit)
+        end if
+
+        ! Conductance
+        read(data_unit, '(A)', iostat=status) line
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        if (index(to_lower_ascii(adjustl(line)), 'compute_conductance') > 0) then
+          read(line, *, iostat=status) label, cfg%topo%compute_conductance
+          if (status /= 0) then; status = 0; exit topology_block; end if
+          print *, trim(label), cfg%topo%compute_conductance
+          if (cfg%topo%compute_conductance) then
+            read(data_unit, '(A)', iostat=status) line
+            if (status /= 0) then; status = 0; exit topology_block; end if
+            colon_pos = index(line, ':')
+            if (colon_pos > 0) then
+              label_part = adjustl(line(:colon_pos-1))
+              if (trim(to_lower_ascii(label_part)) == 'conductance_method') then
+                read(line(colon_pos+1:), '(A)', iostat=status) cfg%topo%conductance_method
+                label = trim(label_part) // ':'
+                if (status /= 0) then; status = 0; exit topology_block; end if
+                print *, trim(label), trim(cfg%topo%conductance_method)
+              else
+                backspace(data_unit)
+              end if
+            else
+              backspace(data_unit)
+            end if
+
+            read(data_unit, '(A)', iostat=status) line
+            if (status /= 0) then; status = 0; exit topology_block; end if
+            if (index(to_lower_ascii(adjustl(line)), 'berry_nk') > 0) then
+              read(line, *, iostat=status) label, cfg%topo%berry_nk
+              if (status /= 0) then; status = 0; exit topology_block; end if
+              print *, trim(label), cfg%topo%berry_nk
+            else
+              backspace(data_unit)
+            end if
+
+            read(data_unit, '(A)', iostat=status) line
+            if (status /= 0) then; status = 0; exit topology_block; end if
+            if (index(to_lower_ascii(adjustl(line)), 'landauer_energy') > 0) then
+              read(line, *, iostat=status) label, cfg%topo%landauer_energy
+              if (status /= 0) then; status = 0; exit topology_block; end if
+              print *, trim(label), cfg%topo%landauer_energy
+            else
+              backspace(data_unit)
+            end if
+          end if
+        else
+          backspace(data_unit)
+        end if
+
+        ! Spectral function
+        read(data_unit, '(A)', iostat=status) line
+        if (status /= 0) then; status = 0; exit topology_block; end if
+        if (index(to_lower_ascii(adjustl(line)), 'compute_spectral') > 0) then
+          read(line, *, iostat=status) label, cfg%topo%compute_spectral
+          if (status /= 0) then; status = 0; exit topology_block; end if
+          print *, trim(label), cfg%topo%compute_spectral
+          if (cfg%topo%compute_spectral) then
+            read(data_unit, *, iostat=status) label, cfg%topo%spectral_k_min, &
+              cfg%topo%spectral_k_max, cfg%topo%spectral_nk
+            if (status /= 0) then; status = 0; exit topology_block; end if
+            print *, trim(label), cfg%topo%spectral_k_min, &
+              cfg%topo%spectral_k_max, cfg%topo%spectral_nk
+
+            read(data_unit, *, iostat=status) label, cfg%topo%spectral_E_min, &
+              cfg%topo%spectral_E_max, cfg%topo%spectral_nE, cfg%topo%spectral_eta
+            if (status /= 0) then; status = 0; exit topology_block; end if
+            print *, trim(label), cfg%topo%spectral_E_min, &
+              cfg%topo%spectral_E_max, cfg%topo%spectral_nE, cfg%topo%spectral_eta
+          end if
+        else
+          backspace(data_unit)
+        end if
+
+      else if (found_optional) then
+        ! topology=F, skip remaining topology lines
+        print *, trim(label), cfg%topo%enabled
+      end if
+      exit topology_block
+    end do topology_block
+
+    ! --- BdG parameters (backward compatible: uses defaults if missing) ---
+    ! IMPORTANT: After topology_block, the file position may be corrupted due to
+    ! backspace unreliability after failed list-directed reads. The file position
+    ! may be at edge_E_window or later. We need to skip lines until we find bdg.
+    bdg_search: do
+      call read_next_data_line(data_unit, line, status)
+      if (status /= 0) then
+        found_optional = .false.
+        exit bdg_search
+      end if
+      colon_pos = index(line, ':')
+      if (colon_pos > 0) then
+        label_part = adjustl(line(:colon_pos-1))
+        select case(trim(to_lower_ascii(label_part)))
+        case('bdg')
+          ! Found bdg line - extract enabled flag
+          block
+            character(len=255) :: bdg_value_str
+            bdg_value_str = adjustl(line(colon_pos+1:))
+            if (len_trim(bdg_value_str) > 0 .and. (bdg_value_str(1:1) == 'T' .or. bdg_value_str(1:1) == 't')) then
+              cfg%bdg%enabled = .true.
+            else if (len_trim(bdg_value_str) > 0 .and. (bdg_value_str(1:1) == 'F' .or. bdg_value_str(1:1) == 'f')) then
+              cfg%bdg%enabled = .false.
+            else
+              cfg%bdg%enabled = .false.
+            end if
+            found_optional = .true.
+            label = trim(label_part) // ':'
+          end block
+          exit bdg_search
+        case('b_field')
+          ! b_field was already parsed above - skip it
+          cycle bdg_search
+        case default
+          ! Known optional block or unknown label - stop and push back
+          backspace(data_unit)
+          found_optional = .false.
+          exit bdg_search
+        end select
+      end if
+      ! No colon - skip this line
+    end do bdg_search
+    bdg_block: do
+      if (found_optional .and. cfg%bdg%enabled) then
+        print *, trim(label), cfg%bdg%enabled
+
+        read(data_unit, *, iostat=status) label, cfg%bdg%mu
+        if (status /= 0) then; status = 0; exit bdg_block; end if
+        print *, trim(label), cfg%bdg%mu
+
+        read(data_unit, *, iostat=status) label, cfg%bdg%delta_0
+        if (status /= 0) then; status = 0; exit bdg_block; end if
+        print *, trim(label), cfg%bdg%delta_0
+
+        read(data_unit, *, iostat=status) label, cfg%bdg%g_factor
+        if (status /= 0) then; status = 0; exit bdg_block; end if
+        print *, trim(label), cfg%bdg%g_factor
+
+        ! Read B_vec before gauge to avoid gauge read consuming b_field: label
+        read(data_unit, *, iostat=status) label, cfg%bdg%B_vec(1), cfg%bdg%B_vec(2), cfg%bdg%B_vec(3)
+        if (status /= 0) then; status = 0; end if
+        print *, trim(label), cfg%bdg%B_vec
+
+        read(data_unit, *, iostat=status) label, cfg%bdg%gauge
+        if (status /= 0) then; status = 0; exit bdg_block; end if
+        print *, trim(label), trim(cfg%bdg%gauge)
+
+        read(data_unit, *, iostat=status) label, cfg%bdg%kz
+        if (status /= 0) then; cfg%bdg%kz = 0.0_dp; status = 0; exit bdg_block; end if
+        print *, trim(label), cfg%bdg%kz
+
+      else if (found_optional) then
+        ! bdg=F, skip remaining bdg lines
+        print *, trim(label), cfg%bdg%enabled
+      end if
+      exit bdg_block
+    end do bdg_block
+
     ! --- Optical spectra parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'optics:', cfg%optics%enabled, found_optional, label)
+    call read_optional_logical_flag(data_unit, 'optics', cfg%optics%enabled, found_optional, label)
     optics_block: do
       if (found_optional .and. cfg%optics%enabled) then
         print *, trim(label), cfg%optics%enabled
@@ -657,7 +1247,7 @@ contains
     end do optics_block
 
     ! --- Exciton parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'exciton:', cfg%exciton%enabled, found_optional, label)
+    call read_optional_logical_flag(data_unit, 'exciton', cfg%exciton%enabled, found_optional, label)
     exciton_block: do
       if (found_optional .and. cfg%exciton%enabled) then
         print *, trim(label), cfg%exciton%enabled
@@ -673,7 +1263,7 @@ contains
     end do exciton_block
 
     ! --- Scattering parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'scattering:', cfg%scattering%enabled, found_optional, label)
+    call read_optional_logical_flag(data_unit, 'scattering', cfg%scattering%enabled, found_optional, label)
     scattering_block: do
       if (found_optional .and. cfg%scattering%enabled) then
         print *, trim(label), cfg%scattering%enabled
@@ -723,7 +1313,7 @@ contains
     end if
 
     ! --- Strain parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'strain:', cfg%strain%enabled, found_optional, label)
+    call read_optional_logical_flag(data_unit, 'strain', cfg%strain%enabled, found_optional, label)
     strain_block: do
       if (found_optional .and. cfg%strain%enabled) then
         print *, trim(label), cfg%strain%enabled

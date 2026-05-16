@@ -539,6 +539,30 @@ nonlinear band bending that modifies the QCSE. The combination of external
 field and self-consistent effects can be explored by enabling both `ExternalField`
 and `SC` in the input file.
 
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-10
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_10_qcse.py
+```
+
+### Code-Output Anchors
+
+Running `qcse_gaas_algaas.cfg` produces:
+- **Stark shift**: QCSE red shift confirmed; CB1 shift = +1050 meV, transition shift = -1744 meV
+- **Wavefunction asymmetry**: visible distortion under applied field
+
+![Overlay plot](figures/lecture_10_stark_shift.png)
+
 ### 10.5.5 References
 
 - **D. A. B. Miller, D. S. Chemla, T. C. Damen, A. C. Gossard, W. Wiegmann,

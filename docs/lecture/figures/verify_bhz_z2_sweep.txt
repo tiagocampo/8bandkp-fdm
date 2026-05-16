@@ -1,0 +1,39 @@
+BHZ Z2 Verification Sweep Results
+========================================
+
+Wire width sweep: 40 to 100 A, step 2
+Expected transition at 70A (M changes from +10 to -10 meV)
+
+Width (A)  Z2  Phase
+-------------------------
+   40      0   trivial
+   42      0   trivial
+   44      0   trivial
+   46      0   trivial
+   48      0   trivial
+   50      0   trivial
+   52      0   trivial
+   54      0   trivial
+   56      0   trivial
+   58      0   trivial
+   60      0   trivial
+   62      0   trivial
+   64      0   trivial
+   66      0   trivial
+   68      0   trivial
+   70      1   topological
+   72      1   topological
+   74      1   topological
+   76      1   topological
+   78      1   topological
+   80      1   topological
+   82      1   topological
+   84      1   topological
+   86      1   topological
+   88      1   topological
+   90      1   topological
+   92      1   topological
+   94      1   topological
+   96      1   topological
+   98      1   topological
+  100      1   topological

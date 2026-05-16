@@ -8,6 +8,7 @@ Usage: verify_qw_benchmarks.py <eigenvalues.dat> <config_file>
 The config file is read to determine well width and barrier material so that
 expected confinement energies can be computed.
 """
+# COVERAGE: observable=subband_spacing geometry=QW material=GaAs/AlGaAs
 import sys
 import math
 

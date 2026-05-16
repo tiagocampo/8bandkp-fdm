@@ -54,6 +54,7 @@ EXE_GFACTOR = BUILD_DIR / "src" / "gfactorCalculation"
 EXE_OPTICS = BUILD_DIR / "src" / "opticalProperties"
 CONFIG_DIR = REPO_ROOT / "tests" / "regression" / "configs"
 FIGURE_DIR = REPO_ROOT / "docs" / "figures"
+LECTURE_FIG_DIR = REPO_ROOT / "docs" / "lecture" / "figures"
 INPUT_CFG = REPO_ROOT / "input.cfg"
 
 # Derived-figure constants
@@ -62,6 +63,8 @@ BOHR_MAGNETON_MEV_PER_T = 5.7883818060e-2
 # ---------------------------------------------------------------------------
 # Band names and colours (basis ordering: 1-4 valence, 5-6 SO, 7-8 CB)
 # ---------------------------------------------------------------------------
+
+
 BAND_NAMES = [
     "HH (+3/2)",
     "LH (+1/2)",
@@ -116,6 +119,7 @@ def setup_style() -> None:
 
 def ensure_dirs() -> None:
     FIGURE_DIR.mkdir(parents=True, exist_ok=True)
+    LECTURE_FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def build_fortran() -> None:
@@ -157,6 +161,7 @@ def run_executable(
         cwd=str(cwd),
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=timeout,
     )
     elapsed = time.time() - t0
@@ -432,6 +437,15 @@ def _wire_boundary_mesh(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.nd
     yc = 0.5 * (float(np.min(y)) + float(np.max(y)))
     R = np.sqrt((X - xc) ** 2 + (Y - yc) ** 2)
     return X, Y, R
+
+
+def _band_legend_handles():
+    from matplotlib.lines import Line2D
+    return (
+        Line2D([0], [0], color="#17becf", linewidth=1.5, label="Conduction band"),
+        Line2D([0], [0], color="#d62728", linewidth=1.5, label="Valence band"),
+        Line2D([0], [0], color="#ff7f0e", linewidth=1.5, label="Split-off"),
+    )
 
 
 def parse_parts_all_k(output_dir: Path) -> Tuple[np.ndarray, List[float]]:
@@ -2405,7 +2419,7 @@ def fig_timing_dense_vs_sparse(output_dir: Path) -> None:
     cfg_wire = CONFIG_DIR / "wire_gaas_rectangle.cfg"
     if cfg_wire.exists():
         t0 = time.time()
-        r = run_executable(EXE_BAND, cfg_wire, REPO_ROOT, label="Wire (sparse)")
+        r = run_executable(EXE_BAND, cfg_wire, REPO_ROOT, label="Wire (sparse)", timeout=600)
         t_sparse = time.time() - t0
         if r.returncode == 0:
             results["Wire (sparse)"] = t_sparse
@@ -2969,9 +2983,8 @@ def fig_qw_dispersion_broken_gap(output_dir: Path) -> None:
     cfg = CONFIG_DIR / "qw_inas_gasb_broken_gap_kpar.cfg"
     result = run_executable(EXE_BAND, cfg, REPO_ROOT,
                            label="qw_inas_gasb_broken_gap_kpar", timeout=600)
-    if result.returncode != 0:
-        print("  WARNING: broken-gap kpar run failed, skipping.")
-        return
+    # run_executable may fail with UTF-8 decode errors from Fortran stdout;
+    # the simulation itself may still succeed — check eigenvalues.dat directly.
     try:
         k_vals, eig = parse_eigenvalues(output_dir)
     except FileNotFoundError:
@@ -2988,50 +3001,40 @@ def fig_qw_dispersion_broken_gap(output_dir: Path) -> None:
 
     for i in range(n_bands):
         energy_mid = np.mean(eig[i])
-        if energy_mid > 0.1:
+        if energy_mid > 0.05:
             color = "#17becf"  # CB-like - cyan
         else:
             color = "#d62728"  # VB-like - red
         ax.plot(k_vals, eig[i], color=color, linewidth=0.9, alpha=0.85)
 
     # Focus on the broken-gap region
-    ax.set_ylim(-0.40, 0.85)
+    ax.set_ylim(-0.25, 0.60)
 
-    # Find anticrossing: look for the minimum gap between the highest VB-like
-    # and lowest CB-like states (not just any minimum gap)
-    n_k = len(k_vals)
-    vb_ceiling = np.full(n_k, -np.inf)
-    cb_floor = np.full(n_k, np.inf)
-    for ki in range(n_k):
-        for i in range(n_bands):
-            e = eig[i, ki]
-            if e < 0:
-                vb_ceiling[ki] = max(vb_ceiling[ki], e)
-            else:
-                cb_floor[ki] = min(cb_floor[ki], e)
+    # Find hybridization gap at k=0 for broken-gap systems.
+    # In the broken-gap regime, e1 (InAs-derived) and lh1 (GaSb-derived) are
+    # both near zero at k=0, separated by the hybridization gap.  We identify
+    # them by finding the two highest-energy negative eigenvalues that belong
+    # to different Kramers pairs.
+    e_at_0 = sorted([eig[i, 0] for i in range(n_bands) if eig[i, 0] < 0],
+                    reverse=True)
+    if len(e_at_0) >= 4:
+        # e1 Kramers pair: two highest negative eigenvalues
+        e1_energy = e_at_0[0]
+        # lh1 Kramers pair: next two (skip Kramers-degenerate partner)
+        lh1_energy = e_at_0[2]
+        hyb_gap = e1_energy - lh1_energy
+        anticrossing_k = 0.0
+        min_gap = hyb_gap
+    else:
+        min_gap = None
 
-    min_gap = np.inf
-    anticrossing_k = k_vals[0]
-    anticrossing_e_vb = 0.0
-    anticrossing_e_cb = 0.0
-    for ki in range(n_k):
-        if vb_ceiling[ki] > -np.inf and cb_floor[ki] < np.inf:
-            gap = cb_floor[ki] - vb_ceiling[ki]
-            if gap < min_gap:
-                min_gap = gap
-                anticrossing_k = k_vals[ki]
-                anticrossing_e_vb = vb_ceiling[ki]
-                anticrossing_e_cb = cb_floor[ki]
-
-    # Annotate anticrossing
-    ax.axvline(anticrossing_k, color="grey", linewidth=0.8, linestyle="--", alpha=0.6)
-    anticrossing_e_mid = (anticrossing_e_vb + anticrossing_e_cb) / 2
-    ax.annotate(f"Anticrossing\nk = {anticrossing_k:.3f} A$^{{-1}}$\n"
-                f"gap = {min_gap*1000:.1f} meV",
-                xy=(anticrossing_k, anticrossing_e_mid),
-                xytext=(anticrossing_k + 0.025, anticrossing_e_mid + 0.15),
-                fontsize=8, color="#555555",
-                arrowprops=dict(arrowstyle="->", color="#999999", lw=0.8))
+    # Annotate hybridization gap
+    if min_gap is not None:
+        ax.annotate("", xy=(0, e1_energy), xytext=(0, lh1_energy),
+                    arrowprops=dict(arrowstyle="<->", color="black", lw=1.2))
+        ax.text(0.008, (e1_energy + lh1_energy) / 2,
+                f"Hybridization gap\n= {min_gap*1000:.0f} meV",
+                fontsize=8, color="black", va="center")
 
     # Band edge reference lines
     ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
@@ -6006,6 +6009,614 @@ def fig_qw_gfactor_vs_width(output_dir: Path) -> None:
     print("  -> docs/figures/qw_gfactor_vs_width.png")
 
 
+def fig_wire_optical_spectrum(output_dir: Path) -> None:
+    """wire_optical_spectrum.png: TE and TM absorption for a GaAs rectangular wire.
+
+    Runs opticalProperties with the wire_gaas_optical_window config and plots
+    the absorption spectrum, demonstrating wire optical selection rules.
+    """
+    print("[figure] wire_optical_spectrum")
+
+    cfg = CONFIG_DIR / "wire_gaas_optical_window.cfg"
+    if not cfg.exists():
+        print("  WARNING: wire_gaas_optical_window.cfg not found, skipping.")
+        return
+
+    result = run_executable(EXE_OPTICS, cfg, REPO_ROOT,
+                           label="wire_optical_spectrum", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: opticalProperties run failed, skipping.")
+        return
+
+    te_file = output_dir / "absorption_TE.dat"
+    tm_file = output_dir / "absorption_TM.dat"
+
+    if not te_file.exists() or not tm_file.exists():
+        print("  WARNING: wire absorption files not found, skipping.")
+        return
+
+    E_te, alpha_te = _read_absorption(output_dir, "TE")
+    E_tm, alpha_tm = _read_absorption(output_dir, "TM")
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(E_te, alpha_te, color="#1f77b4", linewidth=1.5, label="TE (x, y)")
+    ax.plot(E_tm, alpha_tm, color="#d62728", linewidth=1.5, label="TM (z)")
+    ax.set_xlabel("Photon Energy (eV)")
+    ax.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
+    ax.set_title("GaAs Rectangular Wire Absorption Spectrum", fontsize=12)
+    ax.legend(loc="best", fontsize=9, framealpha=0.9)
+    ax.grid(True, alpha=0.3, linewidth=0.5)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "wire_optical_spectrum.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/wire_optical_spectrum.png")
+
+
+def fig_delta_doping_potential(output_dir: Path) -> None:
+    """Delta-doped GaAs: V-shaped band bending from self-consistent calculation.
+    Compares against Sipahi et al., PRB 53, 9930 (1996).
+    Output: docs/figures/sc_delta_doped_potential.png
+    """
+    print("[figure] delta_doping_potential")
+    cfg = CONFIG_DIR / "sc_delta_doped_gaas.cfg"
+    if not cfg.exists():
+        print("  WARNING: config sc_delta_doped_gaas.cfg not found, skipping.")
+        return
+
+    # Clean stale output
+    for f in ["sc_potential_profile.dat", "potential_profile.dat"]:
+        p = output_dir / f
+        if p.exists():
+            p.unlink()
+
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="delta_doped_gaas", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: delta-doped SC run failed, skipping.")
+        return
+
+    # Parse SC potential; fall back to flat-band profile
+    try:
+        z, EV, EV_SO, EC = parse_sc_potential(output_dir)
+    except FileNotFoundError:
+        try:
+            z, EV, EV_SO, EC = parse_potential_profile(output_dir)
+        except FileNotFoundError:
+            print("  WARNING: no potential profile output, skipping.")
+            return
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+
+    # Full profile
+    ax1.plot(z, EC, 'b-', linewidth=1.5, label='$E_C$')
+    ax1.plot(z, EV, 'r-', linewidth=1.5, label='$E_V$')
+    ax1.plot(z, EV_SO, 'g--', linewidth=1.0, label='$E_{SO}$')
+    ax1.axvline(0, color='gray', linestyle=':', linewidth=0.8, label='Doping plane')
+    ax1.set_xlabel(r'$z$ (Å)')
+    ax1.set_ylabel('Energy (eV)')
+    ax1.set_title(f'Delta-doped GaAs: $N_{{2D}}=5\\times10^{{11}}$ cm$^{{-2}}$')
+    ax1.legend(fontsize=8)
+    ax1.grid(True, alpha=0.3)
+
+    # Zoomed notch region
+    mask = (z > -50) & (z < 50)
+    ax2.plot(z[mask], EC[mask], 'b-', linewidth=1.5, label='$E_C$')
+    ax2.fill_between(z[mask], EC[mask].min() - 0.05, EC[mask], alpha=0.1, color='blue')
+    ax2.axvline(0, color='gray', linestyle=':', linewidth=0.8)
+    ax2.set_xlabel(r'$z$ (Å)')
+    ax2.set_ylabel('Energy (eV)')
+    ax2.set_title('V-shaped notch (zoom)')
+    ax2.legend(fontsize=8)
+    ax2.grid(True, alpha=0.3)
+
+    # Add reference annotation
+    ax2.annotate('cf. Sipahi et al., PRB 53, 9930 (1996)',
+                 xy=(0.02, 0.02), xycoords='axes fraction', fontsize=7,
+                 fontstyle='italic', color='gray')
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "sc_delta_doped_potential.png")
+    plt.close(fig)
+    print("  -> docs/figures/sc_delta_doped_potential.png")
+
+
+def fig_bandstructure_bulk_ek(output_dir: Path) -> None:
+    """Bulk E(k) bandstructure for GaAs, InAs, and InSb (1x3 panel).
+    Runs bandStructure for each material with a 101-point k-sweep along [100].
+    Output: docs/lecture/figures/bandstructure_bulk_ek.png
+    """
+    print("[figure] bandstructure_bulk_ek")
+
+    materials = ["GaAs", "InAs", "InSb"]
+    # Base configs for GaAs and InAs; InSb derived from GaAs template
+    cfg_gaas = CONFIG_DIR / "bulk_gaas_kx.cfg"
+    cfg_inas = CONFIG_DIR / "bulk_inas_kx.cfg"
+
+    if not cfg_gaas.exists():
+        print("  WARNING: bulk_gaas_kx.cfg not found, skipping.")
+        return
+
+    overrides = {"waveVectorMax": "0.15", "waveVectorStep": "101"}
+
+    cfg_map = {
+        "GaAs": config_with_overrides(cfg_gaas, overrides, "bulk_gaas_ek"),
+        "InAs": config_with_overrides(cfg_inas, overrides, "bulk_inas_ek") if cfg_inas.exists()
+                 else None,
+        "InSb": config_with_overrides(cfg_gaas,
+                                      {**overrides, "material1": "InSb"},
+                                      "bulk_insb_ek"),
+    }
+
+    if cfg_map["InAs"] is None:
+        print("  WARNING: bulk_inas_kx.cfg not found, deriving from GaAs.")
+        cfg_map["InAs"] = config_with_overrides(cfg_gaas,
+                                                {**overrides, "material1": "InAs"},
+                                                "bulk_inas_ek")
+
+    # Run each material and capture eigenvalues (shared output dir)
+    data: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+    for mat in materials:
+        cfg = cfg_map[mat]
+        result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                                label=f"bulk_{mat}_ek", timeout=300)
+        if result.returncode != 0:
+            print(f"  WARNING: {mat} run failed, skipping panel.")
+            continue
+        k, eig = parse_eigenvalues(output_dir)
+        data[mat] = (k, eig)
+
+    if not data:
+        print("  WARNING: no data collected, skipping figure.")
+        return
+
+    n_panels = len(data)
+    fig, axes = plt.subplots(1, n_panels, figsize=(4.5 * n_panels, 4.5), squeeze=False)
+    ax_row = axes[0]
+
+    for idx, mat in enumerate(materials):
+        if mat not in data:
+            continue
+        ax = ax_row[idx]
+        k_vals, eig = data[mat]
+        n_bands = eig.shape[0]
+        for b in range(n_bands):
+            ax.plot(k_vals, eig[b], color=BAND_COLORS[b], linewidth=1.0)
+        ax.set_xlabel(r"$k$ (1/$\AA$)")
+        ax.set_ylabel("Energy (eV)")
+        ax.set_title(f"Bulk {mat}")
+        ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+        ax.grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(LECTURE_FIG_DIR / "bandstructure_bulk_ek.png", dpi=150)
+    plt.close(fig)
+    print(f"  -> docs/lecture/figures/bandstructure_bulk_ek.png")
+
+
+def fig_bandstructure_qw_subbands(output_dir: Path) -> None:
+    """bandstructure_qw_subbands.png: GaAs/AlGaAs QW subband dispersion, 2-panel (CB + VB)."""
+    print("[figure] bandstructure_qw_subbands")
+    cfg = CONFIG_DIR / "qw_gaas_algaas_absorption.cfg"
+    result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+                           label="qw_gaas_algaas_absorption", timeout=600)
+    if result.returncode != 0:
+        print("  WARNING: qw_gaas_algaas_absorption run failed, skipping.")
+        return
+    try:
+        k_vals, eig = parse_eigenvalues(output_dir)
+    except FileNotFoundError:
+        print("  WARNING: eigenvalues.dat not found, skipping.")
+        return
+
+    n_bands = eig.shape[0]
+    fig, (ax_cb, ax_vb) = plt.subplots(2, 1, figsize=(6.5, 8), sharex=True)
+
+    cb_handle, vb_handle, so_handle = _band_legend_handles()
+
+    # Classify bands using spectral gap algorithm (material-independent)
+    e0 = eig[:, 0]
+    sorted_e = np.sort(e0)
+    gap_idx, _, e_cb_min = _spectral_gap_split(sorted_e, -2.0, 3.0)
+    cb_indices = [i for i in range(n_bands) if e0[i] >= e_cb_min]
+    # Within VB+SO, find SO-VB gap (second-largest gap below CB)
+    vbso_sorted = sorted_e[:gap_idx + 1]
+    if vbso_sorted.size > 1:
+        so_gap, _, e_vb_floor = _spectral_gap_split(vbso_sorted, vbso_sorted[0], e_cb_min)
+        if vbso_sorted[so_gap + 1] - vbso_sorted[so_gap] > 0.15:
+            vb_indices = [i for i in range(n_bands) if e_vb_floor <= e0[i] < e_cb_min]
+            so_indices = [i for i in range(n_bands) if e0[i] < e_vb_floor]
+        else:
+            vb_indices = [i for i in range(n_bands) if e0[i] < e_cb_min]
+            so_indices = []
+    else:
+        vb_indices = [i for i in range(n_bands) if e0[i] < e_cb_min]
+        so_indices = []
+
+    # Barrier edge for Al30Ga70As (EC ~ 1.018 eV)
+    barrier_ec = 1.018
+
+    # ---- Top panel: CB subbands ----
+    for i in cb_indices:
+        ax_cb.plot(k_vals, eig[i], color="#17becf", linewidth=0.9, alpha=0.85)
+    ax_cb.axhline(barrier_ec, color="#17becf", linewidth=0.6, linestyle=":",
+                  alpha=0.5)
+    ax_cb.text(k_vals[-1], barrier_ec + 0.005, "  Barrier $E_C$",
+               fontsize=7, color="#17becf", ha="right", alpha=0.7)
+    ax_cb.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+    ax_cb.grid(True, alpha=0.2, linewidth=0.5)
+    ax_cb.set_ylabel("Energy (eV)")
+    ax_cb.set_title(r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Conduction Subbands")
+
+    # Label first few CB subbands
+    if cb_indices:
+        cb_bands_at_0 = sorted(e0[i] for i in cb_indices)
+        for j, e_cb in enumerate(cb_bands_at_0[:4]):
+            ax_cb.annotate(f"e{j+1}", xy=(k_vals[-1], e_cb), fontsize=7,
+                           color="#17becf", fontweight="bold",
+                           xytext=(5, 0), textcoords="offset points",
+                           va="center")
+    ax_cb.legend(handles=[cb_handle], loc="best", fontsize=9, framealpha=0.9)
+
+    # ---- Bottom panel: VB subbands (VB + SO) ----
+    for i in vb_indices:
+        ax_vb.plot(k_vals, eig[i], color="#d62728", linewidth=0.9, alpha=0.85)
+    for i in so_indices:
+        ax_vb.plot(k_vals, eig[i], color="#ff7f0e", linewidth=0.9, alpha=0.85)
+
+    ax_vb.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+    ax_vb.grid(True, alpha=0.2, linewidth=0.5)
+    ax_vb.set_xlabel(r"$k$ (1/$\AA$)")
+    ax_vb.set_ylabel("Energy (eV)")
+    ax_vb.set_title(r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Valence Subbands")
+
+    # Label first few VB subbands
+    if vb_indices:
+        vb_bands_at_0 = sorted((e0[i] for i in vb_indices), reverse=True)
+        labels = ["HH1", "LH1", "HH2", "LH2"]
+        for j, e_vb in enumerate(vb_bands_at_0[:4]):
+            lbl = labels[j] if j < len(labels) else f"VB{j+1}"
+            ax_vb.annotate(lbl, xy=(k_vals[1], e_vb), fontsize=7,
+                            color="#d62728", fontweight="bold", va="top")
+
+    vb_handles = [vb_handle]
+    if so_indices:
+        vb_handles.append(so_handle)
+    ax_vb.legend(handles=vb_handles, loc="best", fontsize=9, framealpha=0.9)
+
+    fig.tight_layout()
+    fig.savefig(LECTURE_FIG_DIR / "bandstructure_qw_subbands.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/lecture/figures/bandstructure_qw_subbands.png")
+
+
+def fig_wavefunctions_qw(output_dir: Path) -> None:
+    """wavefunctions_qw.png: QW wavefunctions overlaid on band edge profile, 2-panel.
+
+    Runs bandStructure for a GaAs/AlGaAs QW, parses eigenfunctions,
+    and plots CB states (top panel) + VB states (bottom panel) as
+    filled |psi|^2 curves over the band edge step profile.
+
+    Output: docs/lecture/figures/wavefunctions_qw.png
+    """
+    print("[figure] wavefunctions_qw_lecture")
+
+    # --- Build a temporary config for a symmetric AlGaAs/GaAs/AlGaAs QW ---
+    cfg_text = (
+        "waveVector: kx\n"
+        "waveVectorMax: 0.001\n"
+        "waveVectorStep: 3\n"
+        "confinement: 1\n"
+        "FDstep: 201\n"
+        "FDorder: 4\n"
+        "numLayers: 2\n"
+        "material1: Al30Ga70As -200 200\n"
+        "material2: GaAs -50 50\n"
+        "numcb: 4\n"
+        "numvb: 8\n"
+        "ExternalField: 0  EF\n"
+        "EFParams: 0.0\n"
+    )
+    tmp_cfg = REPO_ROOT / "tmp" / "qw_wavefunctions_lecture.cfg"
+    tmp_cfg.parent.mkdir(parents=True, exist_ok=True)
+    tmp_cfg.write_text(cfg_text)
+
+    result = run_executable(EXE_BAND, tmp_cfg, REPO_ROOT,
+                           label="qw_wavefunctions_lecture", timeout=120)
+    if result.returncode != 0:
+        print("  WARNING: QW wavefunction run failed, skipping.")
+        return
+
+    n_z = 201
+    numcb = 4
+    numvb = 8
+    n_ev = numvb + numcb
+    try:
+        z, wf = parse_eigenfunctions_qw(output_dir, k_idx=1, n_ev=n_ev, n_z=n_z)
+    except FileNotFoundError:
+        print("  WARNING: no eigenfunction data found, skipping.")
+        return
+
+    if z.size == 0 or wf.shape[0] < n_ev:
+        print(f"  WARNING: expected {n_ev} states, got {wf.shape[0]}, skipping.")
+        return
+
+    # Parse eigenvalues at k=0 for energy labels
+    try:
+        _, eig = parse_eigenvalues(output_dir)
+        e0 = eig[:, 0]  # energies at k=0
+    except (FileNotFoundError, IndexError):
+        e0 = None
+
+    # --- Construct band edge profile ---
+    # GaAs (Winkler params): EC=0.719 eV, EV=-0.8 eV
+    # Al30Ga70As: delta_Eg = 1.247*0.3 = 0.374 eV
+    #   CB offset = 0.67 * 0.374 = 0.251 eV
+    #   EC_barrier = 0.719 + 0.251 = 0.970 eV
+    #   VB offset = -0.33 * 0.374 = -0.123 eV (pushes VB lower)
+    #   EV_barrier = -0.8 - 0.123 = -0.923 eV
+    well_cb = 0.719
+    barrier_cb = 0.970
+    well_vb = -0.8
+    barrier_vb = -0.923
+
+    cb_edge = np.where((z >= -50) & (z <= 50), well_cb, barrier_cb)
+    vb_edge = np.where((z >= -50) & (z <= 50), well_vb, barrier_vb)
+
+    # --- Compute |psi|^2 for each state (sum over 8 bands) ---
+    psi2_all = np.sum(wf ** 2, axis=2)  # (n_ev, n_z)
+
+    # State ordering: states 1..numvb = VB, states numvb+1..numvb+numcb = CB
+    n_cb_show = 3
+    n_vb_show = 3
+    cb_psi2 = psi2_all[numvb:numvb + n_cb_show]  # (n_cb_show, n_z)
+    # VB states are ordered top-down (highest VB state first = state 1)
+    vb_psi2 = psi2_all[:n_vb_show]  # first 3 VB states (topmost)
+
+    # Scale wavefunctions for visibility on the band-edge plot
+    # Use a fraction of the CB-VB gap as the visual amplitude
+    scale = 0.08  # fraction of the plot range for max |psi|^2
+
+    # --- Plot ---
+    fig, (ax_cb, ax_vb) = plt.subplots(
+        2, 1, figsize=(7, 6.5), sharex=True,
+        gridspec_kw={"height_ratios": [1, 1]},
+    )
+
+    # Top panel: CB states on CB band edge
+    ax_cb.fill_between(z, well_vb - 0.5, cb_edge, alpha=0.06, color="grey")
+    ax_cb.plot(z, cb_edge, color="grey", linewidth=1.0, linestyle="--", alpha=0.5)
+    ax_cb.axhline(well_cb, color="#17becf", linewidth=0.5, linestyle=":", alpha=0.4)
+    ax_cb.axhline(barrier_cb, color="#17becf", linewidth=0.5, linestyle=":", alpha=0.4)
+
+    cb_colors = ["#17becf", "#1f77b4", "#2ca02c"]
+    for idx in range(n_cb_show):
+        psi2 = cb_psi2[idx]
+        psi2_max = psi2.max()
+        if psi2_max == 0:
+            continue
+        psi2_scaled = psi2 / psi2_max * scale * 0.5
+        state_num = numvb + idx + 1
+        label = f"e{idx + 1}"
+        if e0 is not None and state_num - 1 < len(e0):
+            label += f" ({e0[state_num - 1]:.3f} eV)"
+        ax_cb.fill_between(z, well_cb, well_cb + psi2_scaled,
+                           alpha=0.35, color=cb_colors[idx % len(cb_colors)],
+                           label=label)
+        ax_cb.plot(z, well_cb + psi2_scaled,
+                   color=cb_colors[idx % len(cb_colors)], linewidth=0.9)
+
+    ax_cb.set_ylabel("Energy (eV)")
+    ax_cb.set_title(
+        r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Conduction Band States"
+    )
+    ax_cb.legend(loc="upper right", fontsize=8, framealpha=0.9)
+    ax_cb.set_ylim(well_cb - 0.15, barrier_cb + 0.15)
+    ax_cb.grid(True, alpha=0.2, linewidth=0.5)
+
+    # Bottom panel: VB states on VB band edge
+    ax_vb.fill_between(z, vb_edge, well_cb + 0.1, alpha=0.06, color="grey")
+    ax_vb.plot(z, vb_edge, color="grey", linewidth=1.0, linestyle="--", alpha=0.5)
+    ax_vb.axhline(well_vb, color="#d62728", linewidth=0.5, linestyle=":", alpha=0.4)
+    ax_vb.axhline(barrier_vb, color="#d62728", linewidth=0.5, linestyle=":", alpha=0.4)
+
+    vb_colors = ["#d62728", "#9467bd", "#1f77b4"]
+    for idx in range(n_vb_show):
+        psi2 = vb_psi2[idx]
+        psi2_max = psi2.max()
+        if psi2_max == 0:
+            continue
+        psi2_scaled = psi2 / psi2_max * scale * 0.5
+        state_num = idx + 1
+        label = f"VB{idx + 1}"
+        if e0 is not None and state_num - 1 < len(e0):
+            label += f" ({e0[state_num - 1]:.3f} eV)"
+        ax_vb.fill_between(z, well_vb, well_vb - psi2_scaled,
+                           alpha=0.35, color=vb_colors[idx % len(vb_colors)],
+                           label=label)
+        ax_vb.plot(z, well_vb - psi2_scaled,
+                   color=vb_colors[idx % len(vb_colors)], linewidth=0.9)
+
+    ax_vb.set_xlabel(r"$z$ (Å)")
+    ax_vb.set_ylabel("Energy (eV)")
+    ax_vb.set_title(
+        r"GaAs/Al$_{0.3}$Ga$_{0.7}$As QW — Valence Band States"
+    )
+    ax_vb.legend(loc="lower right", fontsize=8, framealpha=0.9)
+    ax_vb.set_ylim(barrier_vb - 0.15, well_vb + 0.15)
+    ax_vb.grid(True, alpha=0.2, linewidth=0.5)
+
+    fig.tight_layout()
+    fig.savefig(LECTURE_FIG_DIR / "wavefunctions_qw.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/lecture/figures/wavefunctions_qw.png")
+
+
+def fig_wire_geometry_potential(output_dir: Path) -> None:
+    """wire_geometry_potential.png: 2-panel wire geometry (material map) and radial potential cut."""
+    print("[figure] wire_geometry_potential")
+
+    # Reuse existing wire snapshot if available (same config/params as wire_inas_gaas_profile)
+    reuse_dir = REPO_ROOT / "tmp" / "wire_inas_gaas_profile"
+    if (reuse_dir / "potential_profile.dat").exists():
+        print("  Reusing existing wire_inas_gaas_profile snapshot")
+        run_dir = reuse_dir
+        cfg = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
+    else:
+        cfg = config_with_overrides(
+            CONFIG_DIR / "wire_inas_gaas_strain.cfg",
+            {"waveVectorMax": "0.01", "waveVectorStep": "2"},
+            "wire_geometry_potential",
+        )
+        result = run_executable(EXE_BAND, cfg, REPO_ROOT, label="wire_geometry_potential", timeout=600)
+        if result.returncode != 0:
+            print("  SKIP: wire_geometry_potential run failed")
+            return
+        run_dir = snapshot_output_dir(output_dir, REPO_ROOT / "tmp" / "wire_geometry_potential")
+
+    try:
+        x, y, EV, EV_SO, EC = _parse_wire_potential_profile(run_dir)
+    except FileNotFoundError:
+        print("  SKIP: output/potential_profile.dat not found")
+        return
+
+    if x.size == 0:
+        print("  SKIP: empty potential profile data")
+        return
+
+    # Parse geometry from config
+    core_outer = _wire_material_boundary(cfg)
+    wire_w = float(
+        next(
+            (l.split(":")[1].strip() for l in open(cfg) if l.strip().startswith("wire_width")),
+            "150.0",
+        )
+    )
+
+    # Build a material map: 0 = GaAs (shell), 1 = InAs (core)
+    X, Y, R = _wire_boundary_mesh(x, y)
+    material = (R <= core_outer).astype(float)
+
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(10, 4.5))
+
+    # --- Left panel: material map ---
+    from matplotlib.colors import ListedColormap
+    from matplotlib.patches import Patch
+    cmap_mat = ListedColormap(["#4c72b0", "#dd8452"])  # GaAs blue, InAs orange
+    ax_left.pcolormesh(x, y, material, cmap=cmap_mat, shading="auto", vmin=0, vmax=1)
+
+    # Overlay core boundary circle
+    if core_outer > 0:
+        ax_left.contour(X, Y, R, levels=[core_outer], colors="white", linewidths=1.5,
+                        linestyles="--")
+
+    # Draw wire outer boundary (rectangle)
+    rect = plt.Rectangle(
+        (0.0, 0.0), wire_w, wire_w,
+        linewidth=1.0, edgecolor="white", facecolor="none", linestyle=":",
+    )
+    ax_left.add_patch(rect)
+
+    legend_elements = [
+        Patch(facecolor="#dd8452", edgecolor="k", label="InAs (core)"),
+        Patch(facecolor="#4c72b0", edgecolor="k", label="GaAs (shell)"),
+    ]
+    ax_left.legend(handles=legend_elements, loc="upper right", fontsize=8, framealpha=0.8)
+
+    ax_left.set_xlabel(r"$x$ ($\AA$)")
+    ax_left.set_ylabel(r"$y$ ($\AA$)")
+    ax_left.set_title("Material map")
+    ax_left.set_aspect("equal")
+
+    # --- Right panel: EC along a radial cut through the center ---
+    xc = 0.5 * (x[0] + x[-1])
+    iy_center = int(np.argmin(np.abs(y - xc)))
+    ec_radial = EC[iy_center, :]
+    ax_right.plot(x, ec_radial, "-", color="#dd8452", linewidth=1.5)
+
+    # Mark core boundary
+    if core_outer > 0:
+        ax_right.axvline(xc - core_outer, color="gray", ls="--", lw=0.8, label="Core edge")
+        ax_right.axvline(xc + core_outer, color="gray", ls="--", lw=0.8)
+
+    ax_right.set_xlabel(r"$x$ ($\AA$)")
+    ax_right.set_ylabel(r"$E_C$ (eV)")
+    ax_right.set_title(r"Radial cut ($y = y_{\rm center}$)")
+    ax_right.legend(fontsize=8)
+    ax_right.grid(True, alpha=0.2, linewidth=0.5)
+
+    fig.tight_layout()
+    fig.savefig(FIGURE_DIR / "wire_geometry_potential.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/figures/wire_geometry_potential.png")
+
+
+def fig_zeeman_fan_diagram(output_dir: Path) -> None:
+    """zeeman_fan_diagram.png: analytical Zeeman fan diagram for spin-split CB levels.
+
+    Pure matplotlib figure -- no Fortran execution.  Shows the spin-up and
+    spin-down conduction band edge shifts as a function of magnetic field for
+    two materials: a free electron (g* = 2.0) and bulk InAs (g* = -14.9).
+
+    Formula:  E_CB_pm = +/- (1/2) * g* * mu_B * B
+
+    The bandStructure executable does not yet support bulk Zeeman splitting
+    (B-field is only wired into topologicalAnalysis), so this figure is
+    entirely analytical.
+    """
+    print("[figure] zeeman_fan_diagram")
+
+    LECTURE_FIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    materials = [
+        ("Free electron", 2.0),
+        ("InAs", -14.9),
+    ]
+
+    B_markers = np.array([0.0, 0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0])
+    B_fine = np.linspace(0, 10, 300)
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5), sharey=True)
+
+    for ax, (name, g_star) in zip(axes, materials):
+        prefactor = 0.5 * g_star * BOHR_MAGNETON_MEV_PER_T  # meV/T
+
+        E_up_fine = prefactor * B_fine
+        E_dn_fine = -prefactor * B_fine
+        E_up_marks = prefactor * B_markers
+        E_dn_marks = -prefactor * B_markers
+
+        ax.plot(B_fine, E_up_fine, color="#d62728", linewidth=1.5,
+                label=r"$m_J = +\frac{1}{2}$")
+        ax.plot(B_fine, E_dn_fine, color="#1f77b4", linewidth=1.5,
+                label=r"$m_J = -\frac{1}{2}$")
+
+        ax.plot(B_markers, E_up_marks, "o", color="#d62728", markersize=5, zorder=5)
+        ax.plot(B_markers, E_dn_marks, "s", color="#1f77b4", markersize=5, zorder=5)
+
+        ax.axhline(0, color="grey", linewidth=0.4, linestyle="--")
+
+        ax.set_xlabel("B (T)")
+        ax.set_title(f"{name}  ($g^* = {g_star:+.1f}$)")
+        ax.legend(loc="best", fontsize=9)
+        ax.grid(True, alpha=0.15, linewidth=0.5)
+
+        # Annotate total splitting at B = 10 T
+        split_10 = abs(prefactor) * 10.0 * 2
+        ax.annotate(
+            f"Total $\\Delta E$ = {split_10:.2f} meV\nat 10 T",
+            xy=(10.0, split_10 / 2), xytext=(6.5, split_10 / 2 + 0.15 * split_10),
+            fontsize=8, ha="center",
+            arrowprops=dict(arrowstyle="->", lw=0.8, color="grey"),
+        )
+
+    axes[0].set_ylabel("Energy shift (meV)")
+
+    fig.tight_layout()
+    fig.savefig(LECTURE_FIG_DIR / "zeeman_fan_diagram.png", dpi=150)
+    plt.close(fig)
+    print("  -> docs/lecture/figures/zeeman_fan_diagram.png")
+
+
 ALL_FIGURES = {
     "bulk_gaas_bands": fig_bulk_gaas_bands,
     "bulk_gaas_parts": fig_bulk_gaas_parts,
@@ -6026,6 +6637,8 @@ ALL_FIGURES = {
     "wire_strain_2d": fig_wire_strain_2d,
     "wire_strain_tensor": fig_wire_strain_tensor,
     "bulk_inas_bands": fig_bulk_inas_bands,
+    "bandstructure_bulk_ek": fig_bandstructure_bulk_ek,
+    "bandstructure_qw_subbands": fig_bandstructure_qw_subbands,
     "qw_alsbw_gasbw_inasw_bands": fig_qw_alsbw_gasbw_inasw_bands,
     "qw_potential_profile": fig_qw_potential_profile,
     "qw_wavefunctions": fig_qw_wavefunctions,
@@ -6035,6 +6648,7 @@ ALL_FIGURES = {
     "gfactor_components": fig_gfactor_components,
     "gfactor_zeeman": fig_gfactor_zeeman,
     "sc_potential": fig_sc_potential,
+    "delta_doping_potential": fig_delta_doping_potential,
     "sc_charge_density": fig_sc_charge_density,
     "sc_convergence": fig_sc_convergence,
     "wire_subbands": fig_wire_subbands,
@@ -6072,12 +6686,16 @@ ALL_FIGURES = {
     "wire_inas_gaas_subbands": fig_wire_inas_gaas_subbands,
     "wire_inas_gaas_wavefunctions": fig_wire_inas_gaas_wavefunctions,
     "wire_gfactor_vs_size": fig_wire_gfactor_vs_size,
+    "wire_optical_spectrum": fig_wire_optical_spectrum,
+    "wire_geometry_potential": fig_wire_geometry_potential,
     "sc_inas_alsb_potential": fig_sc_inas_alsb_potential,
     "sc_inas_alsb_convergence": fig_sc_inas_alsb_convergence,
     "qw_gfactor_vs_width": fig_qw_gfactor_vs_width,
     "bulk_gaas_absorption": fig_bulk_gaas_absorption,
     "qw_absorption_optics_exe": fig_qw_absorption_optics_exe,
     "qw_absorption_spin_resolved": fig_qw_absorption_spin_resolved,
+    "wavefunctions_qw_lecture": fig_wavefunctions_qw,
+    "zeeman_fan_diagram": fig_zeeman_fan_diagram,
 }
 
 

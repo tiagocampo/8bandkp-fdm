@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=SC_convergence geometry=QW material=InAsW/AlSbW ref=Winkler2003
 # Integration test: InAs/AlSb QW self-consistent (narrow-gap Type-II, Winkler parameters)
 # Args: <bandStructure_exe> <config_file> <ref_data_dir> <compare_script>
 set -euo pipefail

@@ -154,4 +154,26 @@ contains
     @assertTrue(abs(sum(coeffs)) < 1.0e-12_dp, message="Order-4 coeffs sum to zero")
   end subroutine test_central_coeffs_sum_to_zero
 
+  @test
+  subroutine test_d1_order10_coefficients()
+    ! Order-10 central 1st-derivative coefficients (divided by dz)
+    ! Analytical values: [-1, 5/504, -5/84, 5/21, -5/6, 0, 5/6, -5/21, 5/84, -5/504, 1]/1260
+    real(kind=dp), allocatable :: coeffs(:)
+    real(kind=dp) :: dz, tol
+    dz = 0.1_dp
+    tol = 1.0e-12_dp
+    call FDcentralCoeffs1st(10, dz, coeffs)
+    @assertEqual(-1.0_dp/1260.0_dp/dz, coeffs(1), tolerance=tol)
+    @assertEqual(5.0_dp/504.0_dp/dz, coeffs(2), tolerance=tol)
+    @assertEqual(-5.0_dp/84.0_dp/dz, coeffs(3), tolerance=tol)
+    @assertEqual(5.0_dp/21.0_dp/dz, coeffs(4), tolerance=tol)
+    @assertEqual(-5.0_dp/6.0_dp/dz, coeffs(5), tolerance=tol)
+    @assertEqual(0.0_dp, coeffs(6), tolerance=tol)
+    @assertEqual(5.0_dp/6.0_dp/dz, coeffs(7), tolerance=tol)
+    @assertEqual(-5.0_dp/21.0_dp/dz, coeffs(8), tolerance=tol)
+    @assertEqual(5.0_dp/84.0_dp/dz, coeffs(9), tolerance=tol)
+    @assertEqual(-5.0_dp/504.0_dp/dz, coeffs(10), tolerance=tol)
+    @assertEqual(1.0_dp/1260.0_dp/dz, coeffs(11), tolerance=tol)
+  end subroutine test_d1_order10_coefficients
+
 end module test_finitedifferences

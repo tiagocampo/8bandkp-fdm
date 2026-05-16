@@ -1,0 +1,359 @@
+module test_green_functions
+  use funit
+  use definitions
+  use parameters
+  use sparse_matrices
+  use hamiltonianConstructor
+  use confinement_init, only: confinementInitialization_raw
+  use green_functions
+  use linalg
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! Helper: build a 2x2 diagonal CSR matrix for simple testing.
+  ! ==================================================================
+  subroutine build_diagonal_csr_2x2(d1, d2, mat)
+    real(kind=dp), intent(in) :: d1, d2
+    type(csr_matrix), intent(out) :: mat
+    integer, allocatable :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    allocate(rows(2), cols(2), vals(2))
+    rows(1) = 1; cols(1) = 1; vals(1) = cmplx(d1, 0.0_dp, kind=dp)
+    rows(2) = 2; cols(2) = 2; vals(2) = cmplx(d2, 0.0_dp, kind=dp)
+    call csr_build_from_coo(mat, 2, 2, 2, rows, cols, vals)
+    deallocate(rows, cols, vals)
+  end subroutine build_diagonal_csr_2x2
+
+  ! ==================================================================
+  ! Test 1: LDOS is non-negative for a simple 2x2 diagonal Hamiltonian.
+  !
+  ! H = diag(E1, E2), G = diag(1/(E+i*eta - E1), 1/(E+i*eta - E2))
+  ! LDOS(r) = -(1/pi) * Im[G(r,r)]
+  !         = (1/pi) * eta / ((E - Er)^2 + eta^2)   (Lorentzian)
+  ! This is always >= 0.
+  ! ==================================================================
+  @test
+  subroutine test_ldos_non_negative()
+    type(csr_matrix) :: H
+    real(kind=dp) :: ldos(2)
+    real(kind=dp) :: E, eta
+    integer :: r
+
+    ! H with eigenvalues at 0.5 eV and 1.5 eV
+    call build_diagonal_csr_2x2(0.5_dp, 1.5_dp, H)
+
+    E = 1.0_dp    ! energy in the middle
+    eta = 0.01_dp ! broadening
+
+    call compute_ldos_csr(H, E, eta, ldos)
+
+    ! LDOS must be non-negative at all grid points
+    do r = 1, 2
+      @assertTrue(ldos(r) >= 0.0_dp)
+    end do
+
+    call H%free()
+  end subroutine test_ldos_non_negative
+
+  ! ==================================================================
+  ! Test 2: LDOS peaks near eigenenergies (2x2 case).
+  !
+  ! At E = 0.5 eV (first eigenenergy), LDOS should peak at r=1.
+  ! At E = 1.5 eV (second eigenenergy), LDOS should peak at r=2.
+  ! The Lorentzian formula gives: peak value = 1/eta/pi = ~31.83 for eta=0.01
+  ! ==================================================================
+  @test
+  subroutine test_ldos_peak_at_eigenenergy()
+    type(csr_matrix) :: H
+    real(kind=dp) :: ldos_at_05(2), ldos_at_15(2)
+    real(kind=dp) :: E, eta
+
+    call build_diagonal_csr_2x2(0.5_dp, 1.5_dp, H)
+
+    eta = 0.01_dp
+
+    ! Energy at first eigenenergy (0.5 eV)
+    E = 0.5_dp
+    call compute_ldos_csr(H, E, eta, ldos_at_05)
+
+    ! Energy at second eigenenergy (1.5 eV)
+    E = 1.5_dp
+    call compute_ldos_csr(H, E, eta, ldos_at_15)
+
+    ! At r=1 (eigenenergy 0.5 eV), LDOS should be larger when E=0.5
+    ! than when E=1.5
+    @assertTrue(ldos_at_05(1) > ldos_at_15(1))
+
+    ! At r=2 (eigenenergy 1.5 eV), LDOS should be larger when E=1.5
+    @assertTrue(ldos_at_15(2) > ldos_at_05(2))
+
+    call H%free()
+  end subroutine test_ldos_peak_at_eigenenergy
+
+  ! ==================================================================
+  ! Test 3: LDOS for a tridiagonal matrix (more realistic case).
+  ! ==================================================================
+  @test
+  subroutine test_ldos_tridiagonal()
+    type(csr_matrix) :: H
+    real(kind=dp) :: ldos(4)
+    real(kind=dp) :: E, eta
+    integer :: r
+    integer, allocatable :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    ! 4x4 tridiagonal: diagonal = 0, off-diagonal = -1
+    ! This is a 1D tight-binding chain with eigenvalues in [-2, 2]
+    allocate(rows(10), cols(10), vals(10))
+    rows(1) = 1; cols(1) = 1; vals(1) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    rows(2) = 1; cols(2) = 2; vals(2) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(3) = 2; cols(3) = 1; vals(3) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(4) = 2; cols(4) = 2; vals(4) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    rows(5) = 2; cols(5) = 3; vals(5) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(6) = 3; cols(6) = 2; vals(6) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(7) = 3; cols(7) = 3; vals(7) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    rows(8) = 3; cols(8) = 4; vals(8) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(9) = 4; cols(9) = 3; vals(9) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+    rows(10) = 4; cols(10) = 4; vals(10) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call csr_build_from_coo(H, 4, 4, 10, rows, cols, vals)
+    deallocate(rows, cols, vals)
+
+    E = 0.0_dp   ! center of band
+    eta = 0.05_dp
+
+    call compute_ldos_csr(H, E, eta, ldos)
+
+    ! All LDOS values should be non-negative
+    do r = 1, 4
+      @assertTrue(ldos(r) >= 0.0_dp)
+    end do
+
+    ! At band center, LDOS should be roughly similar across sites
+    ! (no edge localization at E=0 for this symmetric chain)
+    call H%free()
+  end subroutine test_ldos_tridiagonal
+
+  ! ==================================================================
+  ! Test 4: Spectral function A(k,E) shape and non-negativity.
+  !
+  ! Build a small QW Hamiltonian, compute A(k,E) at several k and E,
+  ! verify: correct shape (nk x nE), non-negativity, positive peaks.
+  ! ==================================================================
+  @test
+  subroutine test_spectral_function_qw_sum_rule()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    real(kind=dp), allocatable :: A_kE(:,:), k_arr(:), E_arr(:)
+    integer :: N, nE, nk, ik, iE
+    real(kind=dp) :: dE, integral
+
+    N = 5
+    nE = 801
+    nk = 10
+
+    cfg%confinement = 1
+    cfg%fdStep = N
+    cfg%FDorder = 2
+    cfg%numLayers = 1
+    cfg%confDir = 'z'
+    cfg%totalSize = 50.0_dp
+    cfg%delta = 10.0_dp
+    cfg%dz = 10.0_dp
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+
+    allocate(profile(N, 3))
+    profile(:, 1) = 0.0_dp
+    profile(:, 2) = 0.0_dp
+    profile(:, 3) = 1.0_dp
+
+    allocate(kpterms(N, N, 10))
+    kpterms = 0.0_dp
+
+    allocate(k_arr(nk), E_arr(nE))
+    do ik = 1, nk
+      k_arr(ik) = -0.05_dp + real(ik - 1, kind=dp) * 0.01_dp
+    end do
+    do iE = 1, nE
+      E_arr(iE) = -10.0_dp + real(iE - 1, kind=dp) * 20.0_dp / real(nE - 1, kind=dp)
+    end do
+
+    call compute_spectral_function_qw(cfg, profile, kpterms, k_arr, E_arr, &
+                                       eta=0.05_dp, A_kE=A_kE)
+
+    @assertEqual(nk, size(A_kE, 1), message="A_kE rows = nk")
+    @assertEqual(nE, size(A_kE, 2), message="A_kE cols = nE")
+
+    ! Check non-negativity
+    @assertTrue(all(A_kE >= 0.0_dp), message="A(k,E) must be non-negative")
+
+    ! Check that max values are positive (peaks at eigenvalues)
+    @assertTrue(maxval(A_kE) > 0.0_dp, message="A(k,E) should have positive peaks")
+
+    dE = E_arr(2) - E_arr(1)
+    integral = sum(A_kE(1,:)) * dE
+    @assertTrue(abs(integral - real(8 * cfg%fdStep, kind=dp)) < 1.0_dp, message="spectral integral should recover the number of states")
+
+    deallocate(profile, kpterms, k_arr, E_arr, A_kE)
+  end subroutine test_spectral_function_qw_sum_rule
+
+  @test
+  subroutine test_ldos_csr_shifts_diagonal_only()
+    type(csr_matrix) :: H
+    real(kind=dp) :: ldos(2), expected_ldos
+    integer :: rows(4), cols(4)
+    complex(kind=dp) :: vals(4), z, det, dense_g11
+
+    rows = [1, 1, 2, 2]
+    cols = [1, 2, 1, 2]
+    vals = [cmplx(0.0_dp, 0.0_dp, kind=dp), cmplx(-0.5_dp, 0.0_dp, kind=dp), &
+            cmplx(-0.5_dp, 0.0_dp, kind=dp), cmplx(0.0_dp, 0.0_dp, kind=dp)]
+    call csr_build_from_coo(H, 2, 2, 4, rows, cols, vals)
+
+    call compute_ldos_csr(H, 0.0_dp, 0.1_dp, ldos)
+
+    z = cmplx(0.0_dp, 0.1_dp, kind=dp)
+    det = z * z - cmplx(0.25_dp, 0.0_dp, kind=dp)
+    dense_g11 = z / det
+    expected_ldos = -aimag(dense_g11) / pi_dp
+
+    @assertTrue(all(ldos > 0.0_dp), message="coupled LDOS must be positive")
+    @assertEqual(expected_ldos, ldos(1), tolerance=1.0e-10_dp)
+    @assertEqual(expected_ldos, ldos(2), tolerance=1.0e-10_dp)
+
+    call H%free()
+  end subroutine test_ldos_csr_shifts_diagonal_only
+
+  @test
+  subroutine test_spectral_function_rejects_zero_eta()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:), k_arr(:), E_arr(:), A(:,:)
+
+    cfg%confinement = 1
+    cfg%fdStep = 3
+    allocate(profile(3,3), kpterms(3,3,10), k_arr(1), E_arr(3))
+    profile = 0.0_dp
+    kpterms = 0.0_dp
+    k_arr = [0.0_dp]
+    E_arr = [-1.0_dp, 0.0_dp, 1.0_dp]
+
+    call compute_spectral_function_qw(cfg, profile, kpterms, k_arr, E_arr, 0.0_dp, A)
+    @assertTrue(allocated(A), message="invalid eta returns allocated empty output")
+    @assertEqual(0, size(A, 1), message="eta=0 must not compute NaN spectrum")
+
+    deallocate(profile, kpterms, k_arr, E_arr)
+    if (allocated(A)) deallocate(A)
+  end subroutine test_spectral_function_rejects_zero_eta
+
+  @test
+  subroutine test_landauer_single_perfect_channel()
+    real(kind=dp) :: T, G
+
+    T = compute_landauer_transmission_1d(E=0.0_dp, onsite=0.0_dp, hopping=-1.0_dp, eta=1.0e-6_dp)
+    G = T  ! conductance = transmission (identity in single-channel Landauer)
+
+    @assertEqual(1.0_dp, T, tolerance=1.0e-5_dp)
+    @assertEqual(1.0_dp, G, tolerance=1.0e-5_dp)
+  end subroutine test_landauer_single_perfect_channel
+
+  @test
+  subroutine test_landauer_transmission_is_bounded_near_band_edge()
+    real(kind=dp) :: T
+
+    T = compute_landauer_transmission_1d(E=2.0_dp, onsite=0.0_dp, hopping=-1.0_dp, eta=1.0e-3_dp)
+
+    @assertTrue(T >= 0.0_dp, message="single-channel transmission must be non-negative")
+    @assertTrue(T <= 1.0_dp, message="single-channel transmission must not exceed one")
+  end subroutine test_landauer_transmission_is_bounded_near_band_edge
+
+  ! ==================================================================
+  ! Test 5: Spectral function is suppressed in the band gap.
+  !
+  ! Build a GaAs/AlGaAs QW with confinementInitialization_raw so that
+  ! the Hamiltonian has a realistic band gap. A(k,E) should be small
+  ! inside the gap relative to its peak value.
+  ! ==================================================================
+  @test
+  subroutine test_spectral_function_gap_region()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    real(kind=dp), allocatable :: A_kE(:,:), k_arr(:), E_arr(:)
+    integer :: ngrid, nE, nk, iE, ik, idx
+    real(kind=dp) :: gap_max, peak_val, dz_val
+    real(kind=dp), allocatable :: z(:)
+    character(len=255) :: material(2)
+    type(paramStruct) :: params(2)
+    integer :: intStartPos(2), intEndPos(2)
+
+    ! Grid: 20 nm QW region, dz=1 nm
+    dz_val = 10.0_dp
+    ngrid = 11
+    nk = 3
+    nE = 100
+
+    cfg%confinement = 1
+    cfg%fdStep = ngrid
+    cfg%FDorder = 2
+    cfg%numLayers = 2
+    cfg%confDir = 'z'
+    cfg%totalSize = real(ngrid, kind=dp) * dz_val
+    cfg%delta = dz_val
+    cfg%dz = dz_val
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+
+    ! Grid points
+    allocate(z(ngrid))
+    do idx = 1, ngrid
+      z(idx) = -50.0_dp + real(idx - 1, kind=dp) * dz_val
+    end do
+
+    ! 2-layer: AlGaAs barrier | GaAs well
+    intStartPos(1) = 1;  intEndPos(1) = 3
+    intStartPos(2) = 4;  intEndPos(2) = ngrid
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    call paramDatabase(material, 2, params)
+
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+      2, params, 'z', profile, kpterms, FDorder=2)
+
+    ! Small k range near Gamma
+    allocate(k_arr(nk), E_arr(nE))
+    do ik = 1, nk
+      k_arr(ik) = real(ik - 1, kind=dp) * 0.001_dp
+    end do
+    ! Energy range covering VB and CB (GaAs Eg ~1.42 eV, AlGaAs Eg ~1.98 eV)
+    do iE = 1, nE
+      E_arr(iE) = -0.5_dp + real(iE - 1, kind=dp) * 3.0_dp / real(nE - 1, kind=dp)
+    end do
+
+    call compute_spectral_function_qw(cfg, profile, kpterms, k_arr, E_arr, &
+                                       eta=0.01_dp, A_kE=A_kE)
+
+    ! Peak value of A(k,E)
+    peak_val = maxval(A_kE)
+
+    ! In the gap region (between VB max and CB min, roughly 0.3 to 0.7 eV
+    ! above the VB top which is set by the material offsets), A should be
+    ! much smaller than peak
+    gap_max = 0.0_dp
+    do iE = 1, nE
+      if (E_arr(iE) > 0.5_dp .and. E_arr(iE) < 1.0_dp) then
+        gap_max = max(gap_max, maxval(A_kE(:, iE)))
+      end if
+    end do
+
+    @assertTrue(gap_max < peak_val, message="spectral function should be suppressed in gap")
+
+    deallocate(z, profile, kpterms, k_arr, E_arr, A_kE)
+  end subroutine test_spectral_function_gap_region
+
+end module test_green_functions

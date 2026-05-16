@@ -1,4 +1,5 @@
 #!/bin/bash
+# COVERAGE: observable=optical_selection geometry=QW material=GaAs/AlGaAs
 # Integration test: QW k=0 optical matrix elements should preserve the
 # expected TE/TM selection rules for the simple GaAs/AlGaAs benchmark.
 # Args: <gfactorCalculation_exe> <config_file>

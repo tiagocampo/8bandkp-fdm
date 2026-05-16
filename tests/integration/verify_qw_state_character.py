@@ -5,6 +5,7 @@ Usage:
     verify_qw_state_character.py <config> <eigenvalues.dat> <parts.dat>
 """
 
+# COVERAGE: observable=CB_ground_state geometry=QW material=GaAs/AlGaAs
 import sys
 
 import numpy as np

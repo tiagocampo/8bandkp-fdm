@@ -1,0 +1,427 @@
+module test_csr_structural
+  use funit
+  use definitions
+  use sparse_matrices
+  use csr_test_helpers
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! csr_conjugate_transpose: known 3x3 complex matrix
+  ! ==================================================================
+  @test
+  subroutine test_csr_conjugate_transpose()
+    type(csr_matrix) :: A, AH
+    integer :: rows(6), cols(6)
+    complex(kind=dp) :: vals(6)
+    complex(kind=dp), allocatable :: dense(:,:)
+    real(kind=dp) :: max_err
+    integer :: i, j
+
+    ! [1+2i  0    3-1i]
+    ! [4     5+3i 0   ]
+    ! [0     6-2i 7   ]
+    rows = [1, 1, 2, 2, 3, 3]
+    cols = [1, 3, 1, 2, 2, 3]
+    vals = [cmplx(1.0_dp, 2.0_dp, dp), cmplx(3.0_dp, -1.0_dp, dp), &
+            cmplx(4.0_dp, 0.0_dp, dp), cmplx(5.0_dp, 3.0_dp, dp), &
+            cmplx(6.0_dp, -2.0_dp, dp), cmplx(7.0_dp, 0.0_dp, dp)]
+    call csr_build_from_coo(A, 3, 3, 6, rows, cols, vals)
+    call csr_conjugate_transpose(A, AH)
+
+    ! Check dimensions
+    @assertEqual(3, AH%nrows)
+    @assertEqual(3, AH%ncols)
+
+    ! Structural invariants
+    @assertTrue(assert_csr_structural_invariants(AH, .true.), message="AH structural invariants")
+
+    ! Check A^H values via dense comparison
+    allocate(dense(AH%nrows, AH%ncols))
+    call csr_to_dense(AH, dense)
+
+    ! Expected A^H:
+    ! [1-2i  4     0   ]
+    ! [0     5-3i  6+2i]
+    ! [3+1i  0     7   ]
+    max_err = 0.0_dp
+    max_err = max(max_err, abs(dense(1,1) - cmplx(1.0_dp, -2.0_dp, dp)))
+    max_err = max(max_err, abs(dense(1,2) - cmplx(4.0_dp, 0.0_dp, dp)))
+    max_err = max(max_err, abs(dense(1,3)))
+    max_err = max(max_err, abs(dense(2,1)))
+    max_err = max(max_err, abs(dense(2,2) - cmplx(5.0_dp, -3.0_dp, dp)))
+    max_err = max(max_err, abs(dense(2,3) - cmplx(6.0_dp, 2.0_dp, dp)))
+    max_err = max(max_err, abs(dense(3,1) - cmplx(3.0_dp, 1.0_dp, dp)))
+    max_err = max(max_err, abs(dense(3,2)))
+    max_err = max(max_err, abs(dense(3,3) - cmplx(7.0_dp, 0.0_dp, dp)))
+
+    @assertTrue(max_err < 1.0e-14_dp, message="A^H values correct")
+
+    deallocate(dense)
+    call A%free()
+    call AH%free()
+  end subroutine test_csr_conjugate_transpose
+
+  ! ==================================================================
+  ! csr_conjugate_transpose_to_preallocated: matches slow path
+  ! ==================================================================
+  @test
+  subroutine test_csr_conjugate_transpose_preallocated()
+    type(csr_matrix) :: A, AH_slow, AH_fast
+    integer :: rows(6), cols(6)
+    complex(kind=dp) :: vals(6)
+    real(kind=dp) :: max_err
+    integer :: k
+
+    rows = [1, 1, 2, 2, 3, 3]
+    cols = [1, 3, 1, 2, 2, 3]
+    vals = [cmplx(1.0_dp, 2.0_dp, dp), cmplx(3.0_dp, -1.0_dp, dp), &
+            cmplx(4.0_dp, 0.0_dp, dp), cmplx(5.0_dp, 3.0_dp, dp), &
+            cmplx(6.0_dp, -2.0_dp, dp), cmplx(7.0_dp, 0.0_dp, dp)]
+    call csr_build_from_coo(A, 3, 3, 6, rows, cols, vals)
+
+    ! Slow path
+    call csr_conjugate_transpose(A, AH_slow)
+
+    ! Fast path: preallocate with correct structure
+    call csr_clone_structure(AH_slow, AH_fast)
+    call csr_conjugate_transpose_to_preallocated(A, AH_fast)
+
+    ! Structural invariants
+    @assertTrue(assert_csr_structural_invariants(AH_fast, .true.), message="AH_fast structural invariants")
+
+    ! Compare values
+    @assertEqual(AH_slow%nnz, AH_fast%nnz, message="nnz match")
+    max_err = 0.0_dp
+    do k = 1, AH_slow%nnz
+      max_err = max(max_err, abs(AH_slow%values(k) - AH_fast%values(k)))
+    end do
+    @assertTrue(max_err < 1.0e-14_dp, message="fast path matches slow path")
+
+    call A%free()
+    call AH_slow%free()
+    call AH_fast%free()
+  end subroutine test_csr_conjugate_transpose_preallocated
+
+  ! ==================================================================
+  ! csr_find_diag_positions: known 4x4 matrix
+  ! ==================================================================
+  @test
+  subroutine test_csr_find_diag_positions()
+    type(csr_matrix) :: A
+    integer :: rows(7), cols(7)
+    complex(kind=dp) :: vals(7)
+    integer :: diag_pos(4), k
+
+    ! Tridiagonal 4x4
+    rows = [1, 1, 2, 2, 2, 3, 4]
+    cols = [1, 2, 1, 2, 3, 3, 4]
+    vals = [(cmplx(1.0_dp, 0, dp), k=1, 7)]
+
+    call csr_build_from_coo(A, 4, 4, 7, rows, cols, vals)
+    call csr_find_diag_positions(A, diag_pos)
+
+    ! Expected: diag at CSR indices 1, 3, 6, 7 (after COO sort+merge)
+    ! After sort: (1,1)=2, (1,2)=1, (2,1)=1, (2,2)=2, (2,3)=1, (3,3)=1, (4,4)=1
+    ! Wait — COO has duplicate (2,2) which merges. Let me reconsider.
+    ! Actually: rows=[1,1,2,2,2,3,4], cols=[1,2,1,2,3,3,4]
+    ! After sort: (1,1), (1,2), (2,1), (2,2), (2,3), (3,3), (4,4)
+    ! No duplicates. diag positions: 1, 4, 6, 7
+    @assertEqual(1, diag_pos(1), message="diag row 1 at position 1")
+    @assertEqual(4, diag_pos(2), message="diag row 2 at position 4")
+    @assertEqual(6, diag_pos(3), message="diag row 3 at position 6")
+    @assertEqual(7, diag_pos(4), message="diag row 4 at position 7")
+
+    call A%free()
+  end subroutine test_csr_find_diag_positions
+
+  ! ==================================================================
+  ! csr_find_diag_positions: error path — missing diagonal stops
+  ! ==================================================================
+  @test
+  subroutine test_csr_find_diag_positions_missing()
+    type(csr_matrix) :: A
+    integer :: rows(2), cols(2)
+    complex(kind=dp) :: vals(2)
+    integer :: diag_pos(3)
+
+    ! 3x3 with no diagonal in row 2
+    rows = [1, 3]
+    cols = [1, 3]
+    vals = [cmplx(1.0_dp, 0, dp), cmplx(1.0_dp, 0, dp)]
+    call csr_build_from_coo(A, 3, 3, 2, rows, cols, vals)
+
+    ! This should print error and stop 1
+    ! We verify by checking diag_pos would be zero for row 2
+    ! Since pFUnit can't catch stop, we check the manual scan
+    block
+      integer :: i, k
+      logical :: found
+      do i = 1, A%nrows
+        found = .false.
+        do k = A%rowptr(i), A%rowptr(i + 1) - 1
+          if (A%colind(k) == i) then
+            found = .true.
+            exit
+          end if
+        end do
+        if (i == 2) then
+          @assertFalse(found, message="row 2 has no diagonal")
+        end if
+      end do
+    end block
+
+    call A%free()
+  end subroutine test_csr_find_diag_positions_missing
+
+  ! ==================================================================
+  ! csr_clone_structure: same sparsity, all values zero
+  ! ==================================================================
+  @test
+  subroutine test_csr_clone_structure()
+    type(csr_matrix) :: A, B
+    integer :: rows(3), cols(3)
+    complex(kind=dp) :: vals(3)
+    integer :: k
+
+    rows = [1, 2, 3]
+    cols = [1, 2, 3]
+    vals = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
+    call csr_build_from_coo(A, 3, 3, 3, rows, cols, vals)
+
+    call csr_clone_structure(A, B)
+
+    @assertEqual(A%nrows, B%nrows, message="nrows match")
+    @assertEqual(A%ncols, B%ncols, message="ncols match")
+    @assertEqual(A%nnz, B%nnz, message="nnz match")
+
+    ! Same sparsity pattern
+    do k = 1, A%nnz
+      @assertEqual(A%colind(k), B%colind(k), message="colind match")
+    end do
+
+    ! All values zero
+    do k = 1, B%nnz
+      @assertEqual(cmplx(0.0_dp, 0.0_dp, dp), B%values(k), tolerance=1.0e-15_dp)
+    end do
+
+    @assertTrue(assert_csr_structural_invariants(B, .true.), message="clone structural invariants")
+
+    call A%free()
+    call B%free()
+  end subroutine test_csr_clone_structure
+
+  ! ==================================================================
+  ! csr_add with overlapping patterns: union sparsity, correct values
+  ! ==================================================================
+  @test
+  subroutine test_csr_add_overlapping()
+    type(csr_matrix) :: A, B, C
+    integer :: rows_a(3), cols_a(3), rows_b(3), cols_b(3)
+    complex(kind=dp) :: vals_a(3), vals_b(3)
+    complex(kind=dp), allocatable :: dense(:,:)
+    real(kind=dp) :: max_err
+
+    ! A = diag(1, 2, 3)
+    rows_a = [1, 2, 3]
+    cols_a = [1, 2, 3]
+    vals_a = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
+    call csr_build_from_coo(A, 3, 3, 3, rows_a, cols_a, vals_a)
+
+    ! B = diag(4, 5, 6) — same pattern
+    rows_b = [1, 2, 3]
+    cols_b = [1, 2, 3]
+    vals_b = [cmplx(4.0_dp, 0, dp), cmplx(5.0_dp, 0, dp), cmplx(6.0_dp, 0, dp)]
+    call csr_build_from_coo(B, 3, 3, 3, rows_b, cols_b, vals_b)
+
+    call csr_add(A, B, C)
+
+    @assertTrue(assert_csr_structural_invariants(C, .true.), message="csr_add overlapping structural invariants")
+
+    ! C = A + B = diag(5, 7, 9)
+    allocate(dense(3, 3))
+    call csr_to_dense(C, dense)
+    max_err = 0.0_dp
+    max_err = max(max_err, abs(dense(1,1) - cmplx(5.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(2,2) - cmplx(7.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(3,3) - cmplx(9.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(1,2)))
+    max_err = max(max_err, abs(dense(2,1)))
+    @assertTrue(max_err < 1.0e-14_dp, message="csr_add overlapping values correct")
+
+    deallocate(dense)
+    call A%free()
+    call B%free()
+    call C%free()
+  end subroutine test_csr_add_overlapping
+
+  ! ==================================================================
+  ! csr_add with disjoint patterns: union of non-overlapping sparsity
+  ! ==================================================================
+  @test
+  subroutine test_csr_add_disjoint()
+    type(csr_matrix) :: A, B, C
+    integer :: rows_a(2), cols_a(2), rows_b(2), cols_b(2)
+    complex(kind=dp) :: vals_a(2), vals_b(2)
+    complex(kind=dp), allocatable :: dense(:,:)
+    real(kind=dp) :: max_err
+
+    ! A has entries at (1,1) and (2,2)
+    rows_a = [1, 2]
+    cols_a = [1, 2]
+    vals_a = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp)]
+    call csr_build_from_coo(A, 2, 2, 2, rows_a, cols_a, vals_a)
+
+    ! B has entries at (1,2) and (2,1) — completely disjoint from A
+    rows_b = [1, 2]
+    cols_b = [2, 1]
+    vals_b = [cmplx(3.0_dp, 0, dp), cmplx(4.0_dp, 0, dp)]
+    call csr_build_from_coo(B, 2, 2, 2, rows_b, cols_b, vals_b)
+
+    call csr_add(A, B, C)
+
+    @assertEqual(4, C%nnz, message="disjoint union has 4 nonzeros")
+    @assertTrue(assert_csr_structural_invariants(C), message="disjoint add structural invariants")
+
+    ! C = [[1, 3], [4, 2]]
+    allocate(dense(2, 2))
+    call csr_to_dense(C, dense)
+    max_err = 0.0_dp
+    max_err = max(max_err, abs(dense(1,1) - cmplx(1.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(1,2) - cmplx(3.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(2,1) - cmplx(4.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(2,2) - cmplx(2.0_dp, 0, dp)))
+    @assertTrue(max_err < 1.0e-14_dp, message="disjoint csr_add values correct")
+
+    deallocate(dense)
+    call A%free()
+    call B%free()
+    call C%free()
+  end subroutine test_csr_add_disjoint
+
+  ! ==================================================================
+  ! kron_dense_eye: known 2x2 dense x I_2
+  ! ==================================================================
+  @test
+  subroutine test_kron_dense_eye()
+    type(csr_matrix) :: C
+    complex(kind=dp) :: A(2, 2)
+    complex(kind=dp), allocatable :: dense(:,:)
+    real(kind=dp) :: max_err
+
+    A(1,1) = cmplx(1.0_dp, 0, dp)
+    A(1,2) = cmplx(2.0_dp, 0, dp)
+    A(2,1) = cmplx(3.0_dp, 0, dp)
+    A(2,2) = cmplx(4.0_dp, 0, dp)
+
+    call kron_dense_eye(A, 2, 2, C)
+
+    @assertEqual(4, C%nrows)
+    @assertEqual(4, C%ncols)
+
+    @assertTrue(assert_csr_structural_invariants(C, .true.), message="kron_dense_eye structural invariants")
+
+    ! Expected: [[1 0 2 0], [0 1 0 2], [3 0 4 0], [0 3 0 4]]
+    allocate(dense(4, 4))
+    call csr_to_dense(C, dense)
+    max_err = 0.0_dp
+    max_err = max(max_err, abs(dense(1,1) - cmplx(1.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(1,3) - cmplx(2.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(2,2) - cmplx(1.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(2,4) - cmplx(2.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(3,1) - cmplx(3.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(3,3) - cmplx(4.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(4,2) - cmplx(3.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(4,4) - cmplx(4.0_dp, 0, dp)))
+    ! Off-block entries should be zero
+    max_err = max(max_err, abs(dense(1,2)))
+    max_err = max(max_err, abs(dense(2,1)))
+    max_err = max(max_err, abs(dense(3,4)))
+    max_err = max(max_err, abs(dense(4,3)))
+    @assertTrue(max_err < 1.0e-14_dp, message="kron_dense_eye values correct")
+
+    deallocate(dense)
+    call C%free()
+  end subroutine test_kron_dense_eye
+
+  ! ==================================================================
+  ! kron_dense_dense_1d: outer product of 1D vectors
+  ! (dead code — tested for coverage, removal deferred)
+  ! ==================================================================
+  @test
+  subroutine test_kron_dense_dense_1d()
+    type(csr_matrix) :: C
+    complex(kind=dp) :: A(3), B(2)
+    complex(kind=dp), allocatable :: dense(:,:)
+    real(kind=dp) :: max_err
+
+    A = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
+    B = [cmplx(4.0_dp, 0, dp), cmplx(5.0_dp, 0, dp)]
+
+    call kron_dense_dense_1d(A, 3, B, 2, C)
+
+    @assertEqual(3, C%nrows)
+    @assertEqual(2, C%ncols)
+
+    @assertTrue(assert_csr_structural_invariants(C), message="kron_1d structural invariants")
+
+    ! Expected: outer product [[4, 5], [8, 10], [12, 15]]
+    allocate(dense(3, 2))
+    call csr_to_dense(C, dense)
+    max_err = 0.0_dp
+    max_err = max(max_err, abs(dense(1,1) - cmplx(4.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(1,2) - cmplx(5.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(2,1) - cmplx(8.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(2,2) - cmplx(10.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(3,1) - cmplx(12.0_dp, 0, dp)))
+    max_err = max(max_err, abs(dense(3,2) - cmplx(15.0_dp, 0, dp)))
+    @assertTrue(max_err < 1.0e-14_dp, message="kron_dense_dense_1d outer product correct")
+
+    deallocate(dense)
+    call C%free()
+  end subroutine test_kron_dense_dense_1d
+
+  ! ==================================================================
+  ! csr_scale: values scaled correctly, structure unchanged
+  ! ==================================================================
+  @test
+  subroutine test_csr_scale()
+    type(csr_matrix) :: A, B
+    integer :: rows(3), cols(3)
+    complex(kind=dp) :: vals(3)
+    complex(kind=dp) :: scale_factor
+    integer :: k
+    real(kind=dp) :: max_err
+
+    rows = [1, 2, 3]
+    cols = [1, 2, 3]
+    vals = [cmplx(1.0_dp, 0, dp), cmplx(2.0_dp, 0, dp), cmplx(3.0_dp, 0, dp)]
+    call csr_build_from_coo(A, 3, 3, 3, rows, cols, vals)
+
+    scale_factor = cmplx(2.0_dp, 1.0_dp, dp)
+    call csr_scale(A, B, scale_factor)
+
+    @assertEqual(A%nrows, B%nrows, message="nrows preserved")
+    @assertEqual(A%ncols, B%ncols, message="ncols preserved")
+    @assertEqual(A%nnz, B%nnz, message="nnz preserved")
+
+    @assertTrue(assert_csr_structural_invariants(B, .true.), message="csr_scale structural invariants")
+
+    ! Same colind
+    do k = 1, A%nnz
+      @assertEqual(A%colind(k), B%colind(k), message="colind preserved")
+    end do
+
+    ! Values scaled
+    max_err = 0.0_dp
+    do k = 1, A%nnz
+      max_err = max(max_err, abs(B%values(k) - scale_factor * A%values(k)))
+    end do
+    @assertTrue(max_err < 1.0e-14_dp, message="values scaled correctly")
+
+    call A%free()
+    call B%free()
+  end subroutine test_csr_scale
+
+end module test_csr_structural

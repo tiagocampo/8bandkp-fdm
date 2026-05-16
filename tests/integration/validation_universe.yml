@@ -1,0 +1,405 @@
+# Validation Coverage Universe
+# Authoritative definition of (observable, geometry, material) cells that should be covered.
+# Each cell is either "required" (CI gates on it) or "aspirational" (reported as info).
+# Adding or removing a cell is an explicit scope decision.
+
+metadata:
+  observables:
+    - Eg
+    - Delta_SO
+    - m*_e
+    - m*_hh
+    - m*_lh
+    - g*_cb
+    - g*_vb
+    - subband_spacing
+    - stark_shift
+    - HH_LH_splitting
+    - absorption_edge
+    - absorption_polarization
+    - ISBT
+    - strain_shift
+    - chern_number
+    - z2_invariant
+    - ldos
+    - majorana_modes
+    - landau_levels
+    - fermi_level
+    - band_overlap
+    - SC_convergence
+    - CB_ground_state
+    - dense_sparse_agreement
+    - optical_selection
+    - conductance
+    - rashba_phase
+  geometries:
+    - bulk
+    - QW
+    - wire
+  materials:
+    - GaAs
+    - InAs
+    - InSb
+    - GaSb
+    - AlAs
+    - AlSb
+    - GaAsW
+    - InAsW
+    - InSbW
+    - GaSbW
+    - AlSbW
+    - GaAs/AlGaAs
+    - InAs/GaAs
+    - InAsW/GaSbW
+    - InAsW/AlSbW
+    - AlSbW/GaSbW/InAsW
+    - InAs/GaAs-core-shell
+    - InGaAs/AlGaAs
+
+cells:
+  # ── Bulk: band gap ──────────────────────────────────────────
+  - observable: Eg
+    geometry: bulk
+    material: GaAs
+    tier: required
+    reference: Vurgaftman2001 Table I
+
+  - observable: Eg
+    geometry: bulk
+    material: InAs
+    tier: required
+    reference: Vurgaftman2001 Table I
+
+  - observable: Eg
+    geometry: bulk
+    material: InSb
+    tier: required
+    reference: Vurgaftman2001 Table I
+
+  - observable: Eg
+    geometry: bulk
+    material: GaSb
+    tier: required
+    reference: Vurgaftman2001 Table I
+
+  - observable: Eg
+    geometry: bulk
+    material: GaSbW
+    tier: required
+    reference: Winkler2003
+
+  # ── Bulk: split-off ─────────────────────────────────────────
+  - observable: Delta_SO
+    geometry: bulk
+    material: GaAs
+    tier: required
+    reference: Vurgaftman2001 Table I
+
+  - observable: Delta_SO
+    geometry: bulk
+    material: InAs
+    tier: required
+    reference: Vurgaftman2001 Table I
+
+  - observable: Delta_SO
+    geometry: bulk
+    material: InSb
+    tier: required
+    reference: Vurgaftman2001 Table I
+
+  - observable: Delta_SO
+    geometry: bulk
+    material: GaSb
+    tier: required
+    reference: Vurgaftman2001 Table I
+
+  - observable: Delta_SO
+    geometry: bulk
+    material: GaSbW
+    tier: required
+    reference: Winkler2003
+
+  # ── Bulk: effective mass ────────────────────────────────────
+  - observable: m*_e
+    geometry: bulk
+    material: GaAs
+    tier: required
+    reference: Kane formula (2-band)
+
+  - observable: m*_e
+    geometry: bulk
+    material: InAs
+    tier: required
+    reference: Kane formula (2-band)
+
+  - observable: m*_e
+    geometry: bulk
+    material: InSb
+    tier: required
+    reference: Kane formula (2-band)
+
+  - observable: m*_e
+    geometry: bulk
+    material: GaSb
+    tier: required
+    reference: Kane formula (2-band)
+
+  # ── Bulk: g-factor ──────────────────────────────────────────
+  - observable: g*_cb
+    geometry: bulk
+    material: GaAs
+    tier: required
+    reference: Winkler2003 Eq 6.42 (Roth)
+
+  - observable: g*_cb
+    geometry: bulk
+    material: InAsW
+    tier: required
+    reference: Winkler2003 Eq 6.42 (Roth)
+
+  - observable: g*_cb
+    geometry: bulk
+    material: InSb
+    tier: required
+    reference: Winkler2003 Eq 6.42 (Roth)
+
+  # ── Bulk: absorption ────────────────────────────────────────
+  - observable: absorption_edge
+    geometry: bulk
+    material: GaAs
+    tier: required
+    reference: Vurgaftman2001
+
+  # ── QW: subband spacing ─────────────────────────────────────
+  - observable: subband_spacing
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: benchmarks.md nextnano
+
+  - observable: subband_spacing
+    geometry: QW
+    material: InAs/GaAs
+    tier: required
+
+  # ── QW: g-factor ────────────────────────────────────────────
+  - observable: g*_cb
+    geometry: QW
+    material: AlSbW/GaSbW/InAsW
+    tier: required
+    reference: Winkler2003 Eq 6.42 (Roth)
+
+  - observable: g*_cb
+    geometry: QW
+    material: InAs/GaAs
+    tier: required
+    reference: Winkler2003 Eq 6.42 (Roth)
+
+  - observable: g*_cb
+    geometry: QW
+    material: InAsW/GaSbW
+    tier: required
+    reference: Winkler2003
+
+  # ── QW: Stark shift ─────────────────────────────────────────
+  - observable: stark_shift
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: benchmarks.md nextnano
+
+  # ── QW: strain ──────────────────────────────────────────────
+  - observable: HH_LH_splitting
+    geometry: QW
+    material: InAs/GaAs
+    tier: required
+    reference: Vurgaftman2001 Table XV
+
+  # ── QW: optical ─────────────────────────────────────────────
+  - observable: absorption_polarization
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+
+  - observable: absorption_polarization
+    geometry: QW
+    material: InGaAs/AlGaAs
+    tier: required
+
+  # ── QW: band overlap (broken-gap) ───────────────────────────
+  - observable: band_overlap
+    geometry: QW
+    material: InAsW/GaSbW
+    tier: required
+    reference: Winkler2003
+
+  # ── QW: self-consistent Schrodinger-Poisson ─────────────────
+  - observable: SC_convergence
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+
+  - observable: SC_convergence
+    geometry: QW
+    material: InAsW/AlSbW
+    tier: required
+
+  - observable: fermi_level
+    geometry: bulk
+    material: GaAs
+    tier: required
+
+  # ── Wire: g-factor ──────────────────────────────────────────
+  - observable: g*_cb
+    geometry: wire
+    material: InAs
+    tier: required
+    reference: Winkler2003 (bulk limit)
+
+  - observable: g*_cb
+    geometry: wire
+    material: InSbW
+    tier: required
+
+  # ── Wire: ground state ──────────────────────────────────────
+  - observable: CB_ground_state
+    geometry: wire
+    material: GaAs
+    tier: required
+
+  - observable: CB_ground_state
+    geometry: wire
+    material: InAs
+    tier: required
+
+  # ── Wire: solver agreement ──────────────────────────────────
+  - observable: dense_sparse_agreement
+    geometry: wire
+    material: GaAs
+    tier: required
+
+  # ── Wire: optical ───────────────────────────────────────────
+  - observable: optical_selection
+    geometry: wire
+    material: GaAs
+    tier: required
+
+  # ── Topology: Chern number ──────────────────────────────────
+  - observable: chern_number
+    geometry: QW
+    tier: required
+
+  # ── Topology: Z2 invariant ──────────────────────────────────
+  - observable: z2_invariant
+    geometry: QW
+    tier: required
+
+  # ── Topology: LDOS ──────────────────────────────────────────
+  - observable: ldos
+    geometry: QW
+    tier: required
+
+  # ── Topology: conductance ───────────────────────────────────
+  - observable: conductance
+    geometry: QW
+    tier: required
+
+  # ── Topology: Rashba phase ──────────────────────────────────
+  - observable: rashba_phase
+    geometry: QW
+    tier: required
+
+  # ── Landau levels ───────────────────────────────────────────
+  - observable: landau_levels
+    geometry: bulk
+    material: GaAs
+    tier: required
+
+  - observable: landau_levels
+    geometry: bulk
+    material: InAs
+    tier: required
+
+  # ── Strain validation ──────────────────────────────────────────
+  - observable: strain_shift
+    geometry: bulk
+    material: InAs/GaAs
+    tier: required
+    reference: Vurgaftman2001
+
+  - observable: HH_LH_splitting
+    geometry: bulk
+    material: InAs/GaAs
+    tier: required
+    reference: Vurgaftman2001
+
+  - observable: strain_shift
+    geometry: QW
+    material: InAs/GaAs
+    tier: required
+    reference: Bastard1981
+
+  - observable: strain_shift
+    geometry: wire
+    material: InAs/GaAs-core-shell
+    tier: required
+    reference: biaxial_analytical
+
+  # ── Aspirational cells (known gaps) ─────────────────────────
+  - observable: m*_hh
+    geometry: bulk
+    material: GaAs
+    tier: aspirational
+    reference: Vurgaftman2001 Table III
+
+  - observable: m*_lh
+    geometry: bulk
+    material: GaAs
+    tier: aspirational
+    reference: Vurgaftman2001 Table III
+
+  - observable: g*_vb
+    geometry: bulk
+    material: GaAs
+    tier: aspirational
+    reference: Winkler2003
+
+  - observable: g*_vb
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: aspirational
+
+  - observable: ISBT
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: aspirational
+
+  - observable: strain_shift
+    geometry: bulk
+    material: GaAs
+    tier: aspirational
+
+  - observable: majorana_modes
+    geometry: wire
+    material: InAsW
+    tier: aspirational
+
+  - observable: SC_convergence
+    geometry: bulk
+    material: InAs
+    tier: aspirational
+
+  - observable: absorption_edge
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: aspirational
+
+  - observable: CB_ground_state
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: aspirational
+
+  - observable: CB_ground_state
+    geometry: wire
+    material: InAs/GaAs-core-shell
+    tier: aspirational

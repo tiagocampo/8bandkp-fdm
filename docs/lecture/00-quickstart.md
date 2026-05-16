@@ -398,3 +398,27 @@ does not (permissions issue), create it manually:
 ```bash
 mkdir -p output
 ```
+
+---
+
+## Verification
+
+This lecture's derivations can be verified by running the executable lecture-test pair:
+
+```bash
+make lecture-00
+```
+
+or directly:
+
+```bash
+python3 scripts/lecture_00_quickstart.py
+```
+
+### Code-Output Anchors
+
+Running `bulk_gaas_k0.cfg` produces:
+- **8 eigenvalues**: 2x SO at -0.341 eV, 4x HH/LH at 0 eV, 2x CB at 1.519 eV (matches Vurgaftman parameters exactly)
+- **Band gap**: Eg = 1.519 eV; **Spin-orbit splitting**: Delta_SO = 0.341 eV
+
+![Overlay plot](figures/lecture_00_quickstart.png)

@@ -1,0 +1,597 @@
+module test_edge_states
+  use funit
+  use definitions
+  use topological_analysis
+  use sparse_matrices
+  use linalg
+  use eigensolver
+  implicit none
+
+contains
+
+  @test
+  subroutine test_bhz_trivial_no_edge_states()
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    integer :: z2
+    real(kind=dp), parameter :: gap_threshold = 1.0_dp
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 200
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    @assertTrue(result%converged)
+    @assertTrue(allocated(result%eigenvalues))
+
+    z2 = compute_z2_gap(result%eigenvalues, gap_threshold)
+
+    @assertEqual(0, z2)
+
+    call csr_free(H_csr)
+  end subroutine test_bhz_trivial_no_edge_states
+
+  @test
+  subroutine test_bhz_topological_has_edge_states()
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    integer :: z2
+    real(kind=dp), parameter :: gap_threshold = 40.0_dp
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = -10.0_dp
+    params%d_wire = 70.0_dp
+    params%N = 200
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    @assertTrue(result%converged)
+    @assertTrue(allocated(result%eigenvalues))
+
+    z2 = compute_z2_gap(result%eigenvalues, gap_threshold)
+
+    @assertEqual(1, z2, message="BHZ topological phase (M=-10 meV, d=70A) should have Z2=1")
+
+    call csr_free(H_csr)
+  end subroutine test_bhz_topological_has_edge_states
+
+  @test
+  subroutine test_fit_exponential_decay()
+    real(kind=dp) :: density(100), xvals(100)
+    real(kind=dp) :: xi
+    logical :: success
+    integer :: i
+    real(kind=dp), parameter :: xi_true = 5.0_dp
+    real(kind=dp), parameter :: dz = 1.0_dp
+
+    ! Build exponential decay with a clear peak at index 50 and tail from 51 onwards
+    do i = 1, 100
+      xvals(i) = real(i - 1, kind=dp) * dz
+      if (i >= 50) then
+        density(i) = exp(-2.0_dp * real(i - 50, kind=dp) / xi_true)
+      else
+        density(i) = 0.0_dp
+      end if
+    end do
+
+    call fit_exponential_decay(density, xvals, xi, success)
+
+    @assertTrue(success, message="fit_exponential_decay should succeed")
+    @assertTrue(xi > 0.0_dp, message="xi should be positive")
+  end subroutine test_fit_exponential_decay
+
+  ! R29: Verify fit accuracy on known exponential with zero-valued tail entries
+  @test
+  subroutine test_fit_exponential_decay_accuracy()
+    real(kind=dp), parameter :: xi_true = 5.0_dp
+    real(kind=dp), parameter :: dz = 1.0_dp
+    real(kind=dp) :: density(100), xvals(100)
+    real(kind=dp) :: xi
+    logical :: success
+    integer :: i
+
+    ! Construct pure exponential: rho(i) = exp(-(x - x_peak) / xi_true)
+    ! Peak at index 20, tail from 21 onward, with zero-valued entries at end
+    do i = 1, 100
+      xvals(i) = real(i - 1, kind=dp) * dz
+    end do
+
+    ! Rising part before peak
+    density(1:19) = 0.0_dp
+    ! Peak
+    density(20) = 1.0_dp
+    ! Exponential tail after peak
+    do i = 21, 80
+      density(i) = exp(-2.0_dp * real(i - 20, kind=dp) / xi_true)
+    end do
+    ! Zero-valued tail entries (R10: these should not bias regression)
+    density(81:100) = 0.0_dp
+
+    call fit_exponential_decay(density, xvals, xi, success)
+
+    @assertTrue(success, message="fit_exponential_decay should succeed with zero tail entries")
+    @assertTrue(xi > 0.0_dp, message="xi should be positive")
+    ! Verify recovered xi is within 10% of true value (2.5 for exp(-2*x/xi_true))
+    @assertTrue(abs(xi - xi_true * 0.5_dp) < 0.5_dp, message="recovered xi should be within 10% of xi_true/2")
+  end subroutine test_fit_exponential_decay_accuracy
+
+  @test
+  subroutine test_bhz_wire_params_defaults()
+    type(bhz_wire_params) :: params
+
+    @assertEqual(364.5_dp, params%A, tolerance=1.0e-6_dp)
+    @assertEqual(-686.0_dp, params%B, tolerance=1.0e-6_dp)
+    @assertEqual(-512.0_dp, params%D, tolerance=1.0e-6_dp)
+    @assertEqual(10.0_dp, params%M, tolerance=1.0e-6_dp)
+    @assertEqual(58.0_dp, params%d_wire, tolerance=1.0e-6_dp)
+    @assertEqual(200, params%N)
+  end subroutine test_bhz_wire_params_defaults
+
+  @test
+  subroutine test_extract_edge_states_wire_returns_allocatable()
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(spatial_grid) :: grid
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    real(kind=dp), allocatable :: edge_info(:)
+    integer :: i
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%M = -10.0_dp
+    params%d_wire = 70.0_dp
+    params%N = 100
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    grid%ndim = 1
+    grid%ny = params%N
+    grid%dx = params%dz
+    grid%dy = params%dz
+    allocate(grid%z(params%N))
+    do i = 1, params%N
+      grid%z(i) = real(i - 1, kind=dp) * params%dz
+    end do
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    edge_info = extract_edge_states_wire(result%eigenvalues, result%eigenvectors, &
+                                        grid, 5.0_dp)
+
+    @assertTrue(allocated(edge_info))
+    @assertEqual(3, size(edge_info))
+    @assertTrue(edge_info(1) >= 0.0_dp)
+    @assertTrue(edge_info(2) >= 0.0_dp)
+    @assertTrue(edge_info(3) >= 0.0_dp)
+
+    call csr_free(H_csr)
+    deallocate(grid%z)
+    deallocate(edge_info)
+  end subroutine test_extract_edge_states_wire_returns_allocatable
+
+  @test
+  subroutine test_edge_density_topological()
+    ! Topological phase should have edge-localized density
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: edge_info(:)
+    integer :: i
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%M = -10.0_dp
+    params%d_wire = 70.0_dp
+    params%N = 200
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    grid%ndim = 1
+    grid%ny = params%N
+    grid%dx = params%dz
+    grid%dy = params%dz
+    allocate(grid%z(params%N))
+    do i = 1, params%N
+      grid%z(i) = real(i - 1, kind=dp) * params%dz
+    end do
+
+    edge_info = extract_edge_states_wire(result%eigenvalues, result%eigenvectors, &
+                                         grid, 50.0_dp)
+
+    ! Function should return a 3-element array with non-negative values
+    @assertTrue(allocated(edge_info), message="edge_info should be allocated")
+    @assertEqual(3, size(edge_info))
+    @assertTrue(edge_info(1) >= 0.0_dp, message="xi_min should be non-negative")
+    @assertTrue(edge_info(2) >= 0.0_dp, message="xi_avg should be non-negative")
+    @assertTrue(edge_info(3) >= 0.0_dp, message="n_edge should be non-negative")
+
+    call csr_free(H_csr)
+    deallocate(grid%z, edge_info)
+  end subroutine test_edge_density_topological
+
+  @test
+  subroutine test_edge_bulk_density_ratio()
+    ! Edge state density should decay exponentially into bulk
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: edge_info(:)
+    integer :: i
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%M = -10.0_dp
+    params%d_wire = 70.0_dp
+    params%N = 100
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    grid%ndim = 1
+    grid%ny = params%N
+    grid%dx = params%dz
+    grid%dy = params%dz
+    allocate(grid%z(params%N))
+    do i = 1, params%N
+      grid%z(i) = real(i - 1, kind=dp) * params%dz
+    end do
+
+    edge_info = extract_edge_states_wire(result%eigenvalues, result%eigenvectors, &
+                                         grid, 50.0_dp)
+
+    ! Function should return a valid 3-element array with non-negative values
+    @assertTrue(allocated(edge_info), message="edge_info should be allocated")
+    @assertEqual(3, size(edge_info))
+    @assertTrue(edge_info(2) >= 0.0_dp, message="avg edge xi should be non-negative")
+    @assertTrue(edge_info(3) >= 0.0_dp, message="n_edge should be non-negative")
+
+    call csr_free(H_csr)
+    deallocate(grid%z, edge_info)
+  end subroutine test_edge_bulk_density_ratio
+
+  @test
+  subroutine test_trivial_no_edge_decay()
+    ! Trivial phase should have no edge states (or very large xi)
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: result
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: edge_info(:)
+    integer :: i
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 100
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    cfg%method = 'DENSE'
+    cfg%emin = -100.0_dp
+    cfg%emax = 100.0_dp
+    cfg%nev = 4 * params%N
+
+    call solve_sparse_evp(H_csr, cfg, result)
+
+    grid%ndim = 1
+    grid%ny = params%N
+    grid%dx = params%dz
+    grid%dy = params%dz
+    allocate(grid%z(params%N))
+    do i = 1, params%N
+      grid%z(i) = real(i - 1, kind=dp) * params%dz
+    end do
+
+    edge_info = extract_edge_states_wire(result%eigenvalues, result%eigenvectors, &
+                                         grid, 5.0_dp)
+
+    ! Trivial phase should have zero edge states detected
+    @assertEqual(0.0_dp, edge_info(3), tolerance=0.5_dp, message="trivial phase should have no edge states")
+
+    call csr_free(H_csr)
+    deallocate(grid%z, edge_info)
+  end subroutine test_trivial_no_edge_decay
+
+  @test
+  subroutine test_bhz_forward_hopping_connects_neighbors()
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    integer :: j
+    logical :: found
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 10
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    ! Site 1, band 1: row index = (1-1)*4 + 1 = 1
+    ! Forward A-term for row=1: col = i*4 + 5 - row = 1*4 + 5 - 1 = 8
+    ! (connects site 1 band 1 to site 2 band 4)
+    ! Old bug gave col = (i-1)*4 + 5 - row = 0 + 4 = 4 (same-site band 4)
+    found = .false.
+    do j = H_csr%rowptr(1), H_csr%rowptr(2) - 1
+      if (H_csr%colind(j) == 8) then
+        found = .true.
+        exit
+      end if
+    end do
+    @assertTrue(found, message="Forward A-term from site 1 band 1 should connect to site 2 band 4 (col=8)")
+
+    ! Verify H(1, 4) is zero — old bug connected here (same-site)
+    found = .false.
+    do j = H_csr%rowptr(1), H_csr%rowptr(2) - 1
+      if (H_csr%colind(j) == 4) then
+        found = .true.
+        exit
+      end if
+    end do
+    @assertFalse(found, message="Forward A-term should NOT connect site 1 band 1 to same-site band 4 (col=4)")
+
+    ! Also verify B+D forward: for row=1, col = i*4 + mod(1,4) + 1 = 4 + 1 + 1 = 6
+    ! (connects site 1 band 1 to site 2 band 2)
+    ! Old bug gave col = (i-1)*4 + mod(1,4) + 1 = 0 + 2 = 2 (same-site band 2)
+    found = .false.
+    do j = H_csr%rowptr(1), H_csr%rowptr(2) - 1
+      if (H_csr%colind(j) == 6) then
+        found = .true.
+        exit
+      end if
+    end do
+    @assertTrue(found, message="Forward B+D from site 1 band 1 should connect to site 2 band 2 (col=6)")
+
+    ! Verify H(1, 2) is zero for off-diagonal B+D — old bug connected here
+    found = .false.
+    do j = H_csr%rowptr(1), H_csr%rowptr(2) - 1
+      if (H_csr%colind(j) == 2) then
+        found = .true.
+        exit
+      end if
+    end do
+    @assertFalse(found, message="Forward B+D should NOT connect site 1 band 1 to same-site band 2 (col=2)")
+
+    call csr_free(H_csr)
+  end subroutine test_bhz_forward_hopping_connects_neighbors
+
+  @test
+  subroutine test_bhz_backward_hopping_connects_neighbors()
+    ! Backward A-term: col = (i-2)*4 + 5 - row
+    ! Backward B+D:    col = (i-2)*4 + mod(row+2,4) + 1
+    ! For site i=2, these connect to site 1.
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    integer :: j, row_idx
+    logical :: found
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 10
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    ! Site 2, band 1: row = (2-1)*4 + 1 = 5
+    ! Backward B+D for row=1: col = (2-2)*4 + mod(1+2,4) + 1 = 0 + 3 + 1 = 4
+    ! Connects site 2 band 1 -> site 1 band 4
+    row_idx = 5
+    found = .false.
+    do j = H_csr%rowptr(row_idx), H_csr%rowptr(row_idx + 1) - 1
+      if (H_csr%colind(j) == 4) found = .true.
+    end do
+    @assertTrue(found, message="Backward B+D from site 2 band 1 should connect to site 1 band 4 (col=4)")
+
+    ! Site 2, band 2: row = (2-1)*4 + 2 = 6
+    ! Backward B+D for row=2: col = (2-2)*4 + mod(2+2,4) + 1 = 0 + 0 + 1 = 1
+    ! Connects site 2 band 2 -> site 1 band 1
+    row_idx = 6
+    found = .false.
+    do j = H_csr%rowptr(row_idx), H_csr%rowptr(row_idx + 1) - 1
+      if (H_csr%colind(j) == 1) found = .true.
+    end do
+    @assertTrue(found, message="Backward B+D from site 2 band 2 should connect to site 1 band 1 (col=1)")
+
+    ! Verify no same-site backward B+D: site 2 row 1 should NOT connect to col 5
+    ! (which would be (2-1)*4+1 = same-site band 1)
+    row_idx = 5
+    found = .false.
+    do j = H_csr%rowptr(row_idx), H_csr%rowptr(row_idx + 1) - 1
+      if (H_csr%colind(j) == 5 .and. H_csr%values(j) == cmplx((params%B + params%D) * 0.0001_dp / (params%dz**2), 0.0_dp, kind=dp)) found = .true.
+    end do
+    @assertFalse(found, message="Backward B+D should NOT connect site 2 band 1 to same-site (col=5) with B+D value")
+
+    call csr_free(H_csr)
+  end subroutine test_bhz_backward_hopping_connects_neighbors
+
+  @test
+  subroutine test_bhz_wire_hamiltonian_is_hermitian()
+    type(bhz_wire_params) :: params
+    type(csr_matrix) :: H_csr
+    complex(kind=dp), allocatable :: Hd(:,:)
+    real(kind=dp) :: herr
+    integer :: i, j
+
+    params%A = 364.5_dp
+    params%B = -686.0_dp
+    params%D = -512.0_dp
+    params%M = 10.0_dp
+    params%d_wire = 58.0_dp
+    params%N = 5
+    params%dz = params%d_wire / real(params%N, kind=dp)
+
+    call build_bhz_wire_hamiltonian(H_csr, params)
+
+    allocate(Hd(H_csr%nrows, H_csr%ncols))
+    Hd = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, H_csr%nrows
+      do j = H_csr%rowptr(i), H_csr%rowptr(i + 1) - 1
+        Hd(i, H_csr%colind(j)) = H_csr%values(j)
+      end do
+    end do
+
+    herr = 0.0_dp
+    do j = 1, H_csr%ncols
+      do i = 1, H_csr%nrows
+        herr = max(herr, abs(Hd(i, j) - conjg(Hd(j, i))))
+      end do
+    end do
+    @assertTrue(herr < 1.0e-12_dp, message="BHZ wire Hamiltonian must be Hermitian")
+
+    deallocate(Hd)
+    call csr_free(H_csr)
+  end subroutine test_bhz_wire_hamiltonian_is_hermitian
+
+  @test
+  subroutine test_majorana_coords_2d_wire()
+    ! Verify compute_majorana_profile uses grid%coords(2,:) for 2D wires
+    ! instead of grid%z (which has only ny entries, not nx*ny).
+    !
+    ! Multi-column grid (nx=3, ny=7) ensures nspatial=21 > ny=7, so using
+    ! grid%z as y-coords would be out-of-bounds or give wrong results.
+    type(spatial_grid) :: grid
+    complex(kind=dp), allocatable :: evec(:)
+    real(kind=dp), allocatable :: profile(:)
+    real(kind=dp) :: xi, xi_expected, dy, y_pos
+    integer :: i, ib, nspatial, half_n, ix, iy, flat
+
+    ! 2D wire: 3 columns x 7 rows = 21 spatial points
+    grid%ndim = 2
+    grid%nx = 3
+    grid%ny = 7
+    dy = 5.0_dp
+    grid%dx = 2.0_dp
+    grid%dy = dy
+    nspatial = grid%nx * grid%ny  ! 21
+    half_n = 8 * nspatial
+
+    allocate(grid%z(7))
+    grid%z = [(real(i - 1, kind=dp) * dy, i=1, 7)]
+    allocate(grid%coords(2, nspatial))
+    ! Column-major: flat = (iy-1)*nx + ix
+    do iy = 1, 7
+      do ix = 1, 3
+        flat = (iy - 1) * 3 + ix
+        grid%coords(1, flat) = real(ix - 1, kind=dp) * grid%dx
+        grid%coords(2, flat) = grid%z(iy)
+      end do
+    end do
+
+    ! Exponential decay along y with xi_expected = 15 A
+    ! rho ~ |psi|^2 ~ exp(-2*y/xi), so fitted xi = xi_expected/2
+    xi_expected = 15.0_dp
+    allocate(evec(2 * half_n))
+    evec = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, nspatial
+      y_pos = grid%coords(2, i)
+      do ib = 1, 8
+        evec((ib - 1) * nspatial + i) = cmplx(exp(-y_pos / xi_expected), 0.0_dp, kind=dp)
+        evec(half_n + (ib - 1) * nspatial + i) = cmplx(exp(-y_pos / xi_expected), 0.0_dp, kind=dp)
+      end do
+    end do
+
+    allocate(profile(nspatial))
+
+    xi = compute_majorana_profile(evec, grid, 0.1_dp, half_n, profile)
+
+    ! With physical coords (dy=5): fitted xi ~ xi_expected/2 = 7.5 A
+    ! With buggy grid%z (length 7 for 21 sites): OOB or garbage coordinates
+    @assertTrue(xi > 0.0_dp, message="xi must be positive for exponential tail")
+    @assertTrue(abs(xi - xi_expected * 0.5_dp) < 2.0_dp, message="xi must use physical coords from grid%coords, not grid%z")
+
+    deallocate(grid%z, grid%coords, evec, profile)
+  end subroutine test_majorana_coords_2d_wire
+
+  @test
+  subroutine test_fit_exponential_decay_right_edge()
+    ! Right-edge density: peak near end, tail to the left.
+    ! Old bug: backward search finds tail_start, but regression runs forward
+    ! over increasing density, producing meaningless xi.
+    real(kind=dp), parameter :: xi_true = 5.0_dp
+    real(kind=dp), parameter :: dz = 1.0_dp
+    real(kind=dp) :: density(100), xvals(100)
+    real(kind=dp) :: xi
+    logical :: success
+    integer :: i
+
+    do i = 1, 100
+      xvals(i) = real(i - 1, kind=dp) * dz
+    end do
+
+    ! Peak at index 80, exponential tail to the LEFT
+    density = 0.0_dp
+    density(80) = 1.0_dp
+    do i = 79, 21, -1
+      density(i) = exp(-2.0_dp * real(80 - i, kind=dp) / xi_true)
+    end do
+    ! density(1:20) stays 0.0 (before the tail)
+
+    call fit_exponential_decay(density, xvals, xi, success)
+
+    @assertTrue(success, message="fit_exponential_decay should succeed for right-edge profile")
+    @assertTrue(xi > 0.0_dp, message="xi should be positive for right-edge profile")
+    ! Recovered xi should be within 25% of xi_true/2 (exp uses -2*x/xi)
+    @assertTrue(abs(xi - xi_true * 0.5_dp) < 1.0_dp, message="right-edge xi should match left-edge xi (within 25%)")
+  end subroutine test_fit_exponential_decay_right_edge
+
+end module test_edge_states

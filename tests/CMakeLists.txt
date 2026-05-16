@@ -1,5 +1,7 @@
 # tests/CMakeLists.txt — pFUnit unit tests + regression tests
 
+add_subdirectory(support)
+
 # pFUnit installs as PFUNIT (uppercase) — use CMAKE_PREFIX_PATH or -DPFUNIT_DIR
 find_package(PFUNIT QUIET)
 
@@ -7,90 +9,186 @@ if(PFUNIT_FOUND)
     # --- pFUnit unit tests ---
     add_pfunit_ctest(test_defs
         TEST_SOURCES unit/test_defs.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_finitedifferences
         TEST_SOURCES unit/test_finitedifferences.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_utils
         TEST_SOURCES unit/test_utils.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_parameters
         TEST_SOURCES unit/test_parameters.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_hamiltonian
         TEST_SOURCES unit/test_hamiltonian.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_poisson
         TEST_SOURCES unit/test_poisson.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_charge_density
         TEST_SOURCES unit/test_charge_density.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_sc_loop
         TEST_SOURCES unit/test_sc_loop.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_geometry
         TEST_SOURCES unit/test_geometry.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_hamiltonian_2d
         TEST_SOURCES unit/test_hamiltonian_2d.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_eigensolver
         TEST_SOURCES unit/test_eigensolver.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_strain_solver
         TEST_SOURCES unit/test_strain_solver.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_csr_spmv
         TEST_SOURCES unit/test_csr_spmv.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_csr_helpers
+        TEST_SOURCES unit/test_csr_helpers.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_csr_structural
+        TEST_SOURCES unit/test_csr_structural.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_krylov_helpers
+        TEST_SOURCES unit/test_krylov_helpers.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_krylov_snapshots
+        TEST_SOURCES unit/test_krylov_snapshots.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_optical
         TEST_SOURCES unit/test_optical.pf
-        LINK_LIBRARIES 8bandkp_common
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
 
     add_pfunit_ctest(test_optical_qw
         TEST_SOURCES unit/test_optical_qw.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_topology_types
+        TEST_SOURCES unit/test_topology_types.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_topology_parser
+        TEST_SOURCES unit/test_topology_parser.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_magnetic_field
+        TEST_SOURCES unit/test_magnetic_field.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_chern_number
+        TEST_SOURCES unit/test_chern_number.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_bdg_hamiltonian
+        TEST_SOURCES unit/test_bdg_hamiltonian.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_bdg_config
+        TEST_SOURCES unit/test_bdg_config.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_phase_diagram
+        TEST_SOURCES unit/test_phase_diagram.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_green_functions
+        TEST_SOURCES unit/test_green_functions.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_edge_states
+        TEST_SOURCES unit/test_edge_states.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_landau
+        TEST_SOURCES unit/test_landau.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_z2_invariant
+        TEST_SOURCES unit/test_z2_invariant.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_fd_convergence
+        TEST_SOURCES unit/test_fd_convergence.pf
         LINK_LIBRARIES 8bandkp_common
         LABELS "unit"
     )
@@ -178,6 +276,39 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
+# g-factor Bulk GaAs VB
+add_test(
+    NAME regression_gfactor_bulk_gaas_vb
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_gfactor.sh
+        $<TARGET_FILE:gfactorCalculation>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/gfactor_bulk_gaas_vb.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/gfactor_bulk_gaas_vb
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# g-factor Bulk GaAsW CB
+add_test(
+    NAME regression_gfactor_bulk_gaasw_cb
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_gfactor.sh
+        $<TARGET_FILE:gfactorCalculation>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/gfactor_bulk_gaasw_cb.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/gfactor_bulk_gaasw_cb
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# g-factor QW VB (AlSbW/GaSbW/InAsW)
+add_test(
+    NAME regression_gfactor_qw_vb
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_gfactor.sh
+        $<TARGET_FILE:gfactorCalculation>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/gfactor_qw_vb.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/gfactor_qw_vb
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
 # Bulk InAs band structure
 add_test(
     NAME regression_bulk_inas
@@ -189,12 +320,66 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
+# Landau levels in InAs bulk at B=5T (Zeeman + Peierls)
+add_test(
+    NAME regression_landau_inas
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_landau_levels.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/landau_InAs.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/landau_InAs
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Landau mode (confinement=3) bulk regression tests
+add_test(
+    NAME regression_landau_bulk_gaas
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_landau_bulk.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/landau_bulk_GaAs.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/landau_bulk_GaAs
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_landau_bulk_inas
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_landau_bulk.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/landau_bulk_InAs.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/landau_bulk_InAs
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_landau_bulk_inas_bsweep
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_landau_bulk.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/landau_bulk_InAs_Bsweep.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/landau_bulk_InAs_Bsweep
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Landau analytical validation (CB ground state vs E_n = E_C + hbar*omega_c/2)
+add_test(
+    NAME regression_landau_analytical
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_landau_analytical.py
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/landau_bulk_InAs.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
 set_tests_properties(
     regression_bulk_gaas regression_qw_alsbw_gasbw_inasw
     regression_qw_character_and_output_dir regression_qw_absorption_polarization
     regression_qw_absorption_strained_polarization
     regression_scattering_transition_sanity regression_gfactor_cb
-    regression_gfactor_no_optics regression_bulk_inas
+    regression_gfactor_no_optics regression_gfactor_bulk_gaas_vb
+    regression_gfactor_bulk_gaasw_cb regression_gfactor_qw_vb
+    regression_bulk_inas
+    regression_landau_inas regression_landau_bulk_gaas regression_landau_bulk_inas
+    regression_landau_bulk_inas_bsweep regression_landau_analytical
     PROPERTIES LABELS "regression"
 )
 
@@ -416,3 +601,328 @@ set_tests_properties(
     regression_wire_dense_sparse_consistency
     PROPERTIES LABELS "regression"
 )
+
+# Wire hexagonal geometry
+add_test(
+    NAME regression_wire_gaas_hexagon
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_hexagon.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_gaas_hexagon.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/wire_gaas_hexagon
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_wire_gaas_hexagon
+    PROPERTIES LABELS "regression"
+)
+
+# SC wire convergence
+add_test(
+    NAME regression_sc_wire_gaas
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_sc_wire.sh
+        $<TARGET_FILE:bandStructure>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/sc_wire_gaas.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/sc_wire_gaas
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/compare_output.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_sc_wire_gaas
+    PROPERTIES LABELS "regression"
+)
+
+# Topological analysis QHE (Chern number via QWZ model)
+add_test(
+    NAME regression_topology_qhe
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_qhe.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_qhe_qwz.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_qhe
+    PROPERTIES LABELS "regression"
+)
+
+# QWZ Chern number regression (three u values: -0.8, 0.5, 2.5)
+add_test(
+    NAME regression_topology_qwz_chern
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_chern_qwz.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_qwz_chern_u-0.8.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_qwz_chern_u0.5.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_qwz_chern_u2.5.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_qwz_chern
+    PROPERTIES LABELS "regression"
+)
+
+# BHZ Z2 invariant regression (trivial d=58A and topological d=70A)
+add_test(
+    NAME regression_topology_bhz_z2
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_bhz_z2.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_bhz_z2_trivial.cfg
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_bhz_z2_topological.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_bhz_z2
+    PROPERTIES LABELS "regression"
+)
+
+# QW Fu-Kane parity Z2 regression
+add_test(
+    NAME regression_topology_qw_fukane_z2
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_fukane_z2.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_qw_fukane.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_qw_fukane_z2
+    PROPERTIES LABELS "regression"
+)
+
+# QWZ conductance regression
+add_test(
+    NAME regression_topology_conductance_qwz
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_conductance_qwz.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_conductance_qwz.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_conductance_qwz
+    PROPERTIES LABELS "regression"
+)
+
+# Topological spectral mode regressions
+add_test(
+    NAME regression_topology_spectral_bulk
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_spectral.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_spectral_bulk.cfg
+        1
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_topology_spectral_qw
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_spectral.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_spectral_qw.cfg
+        1
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_topology_spectral_wire
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_spectral.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_spectral_wire.cfg
+        1
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_spectral_bulk regression_topology_spectral_qw
+    regression_topology_spectral_wire
+    PROPERTIES LABELS "regression"
+)
+
+# Topological sweep mode regressions
+add_test(
+    NAME regression_topology_sweep_bhz
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_sweep.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_sweep_bhz.cfg
+        bhz_analytic
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME regression_topology_sweep_qw
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_sweep.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_sweep_qw.cfg
+        qw_fukane
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_sweep_bhz regression_topology_sweep_qw
+    PROPERTIES LABELS "regression"
+)
+
+# Rashba wire phase boundary regression (mu=0.5 meV, Delta=0.3 meV)
+add_test(
+    NAME regression_topology_rashba_phase
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_rashba_phase_boundary.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_rashba_phase.cfg
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    regression_topology_rashba_phase
+    PROPERTIES LABELS "regression"
+)
+
+# --- 8-Band Verification Ladder (4 rungs) ---
+# Rung 1: Bulk k=0 structural validation (R1-R5)
+add_test(
+    NAME verification_rung1_bulk_k0
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_8band_rung1_bulk_k0.py
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Rung 2: Bulk dispersion effective mass validation (R6-R9)
+add_test(
+    NAME verification_rung2_dispersion
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_8band_rung2_dispersion.py
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Rung 3: QW subband energy validation (R10, R12, R13)
+add_test(
+    NAME verification_rung3_qw
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_8band_rung3_qw.py
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Rung 4: Wire internal consistency validation (R14-R16)
+add_test(
+    NAME verification_rung4_wire
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_8band_rung4_wire.py
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_rung1_bulk_k0 verification_rung2_dispersion
+    verification_rung3_qw verification_rung4_wire
+    PROPERTIES LABELS "verification"
+)
+
+# --- Strain Verification (Rungs 5-6) ---
+add_test(
+    NAME verification_rung5_strain_bulk
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_strain_rung5_bulk.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME verification_rung6_strain_qw
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_strain_rung6_qw.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_rung5_strain_bulk verification_rung6_strain_qw
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
+# --- Wire Strain Validation ---
+add_test(
+    NAME strain_validation_wire
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_strain_wire_profile.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    strain_validation_wire
+    PROPERTIES LABELS "strain-validation" TIMEOUT 600
+)
+
+# --- Standard-Star Benchmarks (S1-S7) ---
+# Physics validation against published literature observables.
+# Each test runs the Fortran executables and compares against analytical
+# predictions or regression reference values.
+
+add_test(
+    NAME star_s1_gaas_bulk
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_gaas_bulk.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s2_inas_bulk
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_inas_bulk.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s3_insb_bulk
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_insb_bulk.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s4_gaas_algaas_qw
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_gaas_algaas_qw.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s5_inas_gasb_qw
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_inas_gasb_qw.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s6_inas_gaas_strained_qw
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_inas_gaas_qw.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+add_test(
+    NAME star_s7_inas_wire
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_star_inas_wire.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    star_s1_gaas_bulk star_s2_inas_bulk star_s3_insb_bulk
+    star_s4_gaas_algaas_qw star_s5_inas_gasb_qw
+    star_s6_inas_gaas_strained_qw star_s7_inas_wire
+    PROPERTIES LABELS "standard-star;verification"
+              TIMEOUT 600
+)
+
+# Validation coverage matrix — cross-checks universe file vs test annotations
+add_test(
+    NAME coverage_matrix
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/coverage_matrix.py
+        --source-dir ${CMAKE_SOURCE_DIR}
+        --output ${CMAKE_BINARY_DIR}/coverage_report.md
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(coverage_matrix PROPERTIES LABELS "coverage" TIMEOUT 120)

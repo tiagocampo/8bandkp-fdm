@@ -7,6 +7,7 @@ Checks that CB1 shifts in the expected direction and magnitude under electric
 field, and that the config's EFParams value converts to the expected kV/cm
 label.
 """
+# COVERAGE: observable=stark_shift geometry=QW material=GaAs/AlGaAs
 import sys
 
 

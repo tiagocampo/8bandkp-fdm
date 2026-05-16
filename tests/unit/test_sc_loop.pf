@@ -805,4 +805,69 @@ contains
 
   end subroutine test_sc_loop_wire_convergence
 
+
+  @test
+  subroutine test_delta_doping_gaussian()
+    ! Delta-doping produces a Gaussian charge profile centered at delta_pos
+    integer, parameter :: nz = 101
+    real(kind=dp) :: rho(nz)
+    type(simulation_config) :: cfg
+    integer :: iz, iz_peak
+    real(kind=dp) :: z(nz), dz, expected_peak, sigma
+
+    ! Setup: single layer GaAs, 101 points from -50 to 50 A
+    dz = 1.0_dp  ! Angstrom
+    do iz = 1, 101
+      z(iz) = (iz - 51) * dz
+    end do
+
+    cfg%fdStep = nz
+    cfg%dz = dz
+    allocate(cfg%z(nz))
+    cfg%z = z
+    allocate(cfg%doping(1))
+    cfg%doping(1)%dtype = 'delta'
+    cfg%doping(1)%NS = 5.0_dp            ! 5 x 10^11 cm^-2
+    cfg%doping(1)%delta_fwhm = 10.0_dp   ! 10 Angstrom
+    cfg%doping(1)%delta_pos = 0.0_dp     ! center
+
+    ! Layer mapping: all points in layer 1
+    cfg%numLayers = 1
+    allocate(cfg%intStartPos(1), cfg%intEndPos(1))
+    cfg%intStartPos(1) = 1
+    cfg%intEndPos(1) = nz
+
+    call build_doping_charge(rho, cfg, nz)
+
+    ! Peak should be at iz=51 (z=0), Gaussian should be symmetric
+    iz_peak = maxloc(rho, dim=1)
+    @assertEqual(51, iz_peak)
+
+    ! Peak value: NS / (sigma * sqrt(2*pi)) converted to cm^-3
+    ! sigma = FWHM / (2*sqrt(2*ln2)) = 10 / 2.3548 = 4.247 A
+    ! amplitude = NS * 1e11 / (sigma_cm * sqrt(2*pi))
+    ! sigma_cm = 4.247e-8 cm
+    sigma = 10.0_dp / (2.0_dp * sqrt(2.0_dp * log(2.0_dp)))
+    expected_peak = 5.0e11_dp / (sigma * 1.0e-8_dp * sqrt(2.0_dp * pi_dp))
+    @assertEqual(expected_peak, rho(51), tolerance=expected_peak * 1.0e-6_dp)
+
+    ! Check symmetry: rho(51-dz) == rho(51+dz)
+    @assertEqual(rho(50), rho(52), tolerance=1.0e-10_dp * max(rho(50), 1.0_dp))
+
+    ! Normalization check: integral of rho(z) * dz (in cm) should equal NS * 1e11 cm^-2.
+    ! rho is in cm^-3, dz is in Angstrom.  Integrate via Simpson's rule:
+    !   integral = sum(rho) * dz_cm  (trapezoidal for simplicity)
+    ! Expected: NS = 5.0 x 10^11 cm^-2
+    block
+      real(kind=dp) :: dz_cm, rho_integral, ns_expected
+      dz_cm = dz * 1.0e-8_dp  ! Angstrom -> cm
+      rho_integral = sum(rho) * dz_cm
+      ns_expected = cfg%doping(1)%NS * 1.0e11_dp  ! NS in cm^-2
+      ! The Gaussian integral over a discrete grid should match NS within ~0.1%
+      @assertTrue(abs(rho_integral - ns_expected) / ns_expected < 1.0e-3_dp, message="Delta-doping integral matches NS")
+    end block
+
+    deallocate(cfg%z, cfg%doping, cfg%intStartPos, cfg%intEndPos)
+  end subroutine test_delta_doping_gaussian
+
 end module test_sc_loop

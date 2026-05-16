@@ -16,6 +16,7 @@ module confinement_init
   public :: confinementInitialization
   public :: confinementInitialization_raw
   public :: confinementInitialization_2d
+  public :: confinementInitialization_landau
 
 contains
 
@@ -722,5 +723,141 @@ contains
     deallocate(temp, result)
 
   end subroutine applyVariableCoeffStaggered
+
+  !---------------------------------------------------------------------------
+  !> Confinement initialization for Landau mode (confinement=3).
+  !>
+  !> Sets up kpterms for a single homogeneous material using the same FD
+  !> stencil machinery as the QW path.  No heterostructure interfaces are
+  !> present, so material parameters are constant across all grid points.
+  !>
+  !> Reuses build_kpterm_block for order=2 FD, and higher-order machinery
+  !> (buildStaggeredD1Inner, buildStaggeredD1Outer, interpolateToHalfPoints,
+  !> applyVariableCoeffStaggered) for FDorder > 2.
+  !---------------------------------------------------------------------------
+  subroutine confinementInitialization_landau(x_grid, material, params, &
+      & profile, kpterms, FDorder)
+
+    real(kind=dp), intent(in), contiguous :: x_grid(:)
+    character(len=255), intent(in) :: material(1)
+    type(paramStruct), intent(in) :: params(1)
+    real(kind=dp), intent(inout), allocatable :: profile(:,:)
+    real(kind=dp), intent(inout), contiguous :: kpterms(:,:,:)
+    integer, intent(in), optional :: FDorder
+
+    real(kind=dp) :: delta
+    integer :: N, order, ii
+
+    N = size(x_grid)
+    delta = abs(x_grid(2) - x_grid(1))
+
+    if (present(FDorder)) then
+      order = FDorder
+    else
+      order = 2
+    end if
+
+    ! Validate material parameters
+    if (params(1)%EV == 0.0_dp .and. params(1)%EC == 0.0_dp) then
+      print *, "ERROR: Material '", trim(material(1)), &
+        & "' has EV=0 and EC=0. Band offsets are required."
+      stop 1
+    end if
+
+    ! Constant profile (single material)
+    if (allocated(profile)) deallocate(profile)
+    allocate(profile(N, 3))
+    profile(:, 1) = params(1)%EV
+    profile(:, 2) = params(1)%EV - params(1)%DeltaSO
+    profile(:, 3) = params(1)%EC
+
+    ! Diagonal material parameters (constant across all grid points)
+    do concurrent (ii = 1:N)
+      kpterms(ii, ii, 1) = params(1)%gamma1
+      kpterms(ii, ii, 2) = params(1)%gamma2
+      kpterms(ii, ii, 3) = params(1)%gamma3
+      kpterms(ii, ii, 4) = params(1)%P
+      kpterms(ii, ii, 10) = params(1)%A
+    end do
+
+    ! Build FD stencil terms using the same machinery as QW
+    block
+      real(kind=dp), allocatable :: kptermsProfile(:,:)
+      real(kind=dp), allocatable :: forward(:,:), backward(:,:), central(:,:)
+      real(kind=dp), allocatable :: diag(:), offup(:), offdown(:)
+      real(kind=dp), allocatable :: D_inner(:,:), D_outer(:,:), g_half(:)
+
+      allocate(kptermsProfile(N, 5))
+      kptermsProfile(:, 1) = params(1)%gamma1
+      kptermsProfile(:, 2) = params(1)%gamma2
+      kptermsProfile(:, 3) = params(1)%gamma3
+      kptermsProfile(:, 4) = params(1)%A
+      kptermsProfile(:, 5) = params(1)%P
+
+      allocate(forward(N,N), backward(N,N), central(N,N))
+      forward = 0.0_dp; backward = 0.0_dp; central = 0.0_dp
+      do ii = 1, N - 1
+        forward(ii, ii) = 1; forward(ii, ii+1) = 1
+      end do
+      forward(N, N) = 1
+      backward = transpose(forward)
+      central = backward + forward
+
+      if (order == 2) then
+        allocate(diag(N), offup(N), offdown(N))
+
+        ! A*kx**2 (term 5)
+        call build_kpterm_block(kpterms, kptermsProfile(:,4), central, forward, &
+          & backward, diag, offup, offdown, N, 5, 1.0_dp/(2.0_dp*delta**2), .True.)
+        ! Q (term 7): (gamma1-2*gamma2)
+        call build_kpterm_block(kpterms, kptermsProfile(:,1) - 2.0_dp*kptermsProfile(:,2), &
+          & central, forward, backward, diag, offup, offdown, N, 7, &
+          & 1.0_dp/(2.0_dp*delta**2), .True.)
+        ! T (term 8): (gamma1+2*gamma2)
+        call build_kpterm_block(kpterms, kptermsProfile(:,1) + 2.0_dp*kptermsProfile(:,2), &
+          & central, forward, backward, diag, offup, offdown, N, 8, &
+          & 1.0_dp/(2.0_dp*delta**2), .True.)
+        ! P*kx (term 6)
+        call build_kpterm_block(kpterms, kptermsProfile(:,5), central, forward, &
+          & backward, diag, offup, offdown, N, 6, 1.0_dp/(4.0_dp*delta), .False.)
+        ! S -> gamma3*kx (term 9)
+        call build_kpterm_block(kpterms, kptermsProfile(:,3), central, forward, &
+          & backward, diag, offup, offdown, N, 9, 1.0_dp/(4.0_dp*delta), .False.)
+      else
+        ! Higher-order FD (same as QW path)
+        call buildStaggeredD1Inner(N, delta, 2, D_inner)
+        call buildStaggeredD1Outer(N, delta, 2, D_outer)
+        allocate(g_half(N - 1))
+        allocate(diag(N), offup(N), offdown(N))
+
+        ! A*kx**2 (term 5)
+        call interpolateToHalfPoints(kptermsProfile(:,4), N, order, g_half)
+        call applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, 5)
+
+        ! Q (term 7): (gamma1-2*gamma2)
+        call interpolateToHalfPoints(kptermsProfile(:,1) - 2.0_dp*kptermsProfile(:,2), &
+          & N, order, g_half)
+        call applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, 7)
+
+        ! T (term 8): (gamma1+2*gamma2)
+        call interpolateToHalfPoints(kptermsProfile(:,1) + 2.0_dp*kptermsProfile(:,2), &
+          & N, order, g_half)
+        call applyVariableCoeffStaggered(kpterms, g_half, D_inner, D_outer, N, 8)
+
+        ! P*kx (term 6) — 1st derivative, same as order=2
+        call build_kpterm_block(kpterms, kptermsProfile(:,5), central, forward, &
+          & backward, diag, offup, offdown, N, 6, 1.0_dp/(4.0_dp*delta), .False.)
+
+        ! S -> gamma3*kx (term 9) — 1st derivative, same as order=2
+        call build_kpterm_block(kpterms, kptermsProfile(:,3), central, forward, &
+          & backward, diag, offup, offdown, N, 9, 1.0_dp/(4.0_dp*delta), .False.)
+
+        deallocate(D_inner, D_outer, g_half)
+      end if
+
+      deallocate(kptermsProfile, forward, backward, central, diag, offup, offdown)
+    end block
+
+  end subroutine confinementInitialization_landau
 
 end module confinement_init
