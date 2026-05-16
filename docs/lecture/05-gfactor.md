@@ -14,6 +14,7 @@ where $\mu_B = e\hbar/(2m_0)$ is the Bohr magneton, $g_0 \approx 2.00231$ is the
 
 In a crystal, the orbital angular momentum is no longer a good quantum number. The spin-orbit coupling inherited from the atomic $p$-like valence band states mixes spin and orbital character, producing an **effective g-factor** that deviates significantly from $g_0$. For conduction-band electrons in narrow-gap semiconductors like InSb or InAs, the g-factor can be $|g^*| \gg g_0$ and even change sign. The deviation $\Delta g = g^* - g_0$ is almost entirely due to inter-band coupling, which we compute via second-order perturbation theory.
 
+<!-- placeholder: figure not yet generated -->
 ![Zeeman splitting of the conduction band doublet](../figures/gfactor_zeeman.png)
 
 The figure above is a **derived visualization**, not a direct spectrum computed
@@ -489,6 +490,7 @@ The terminal output also shows the intermediate quantities:
 
 The dependence of $g^*$ on the quantum well width $L_w$ provides direct insight into how confinement modifies the effective g-factor. For the InAsW/GaSbW/AlSbW broken-gap system, we sweep the InAsW well half-width from 10 to 120 Å (total widths 20 to 240 Å) while keeping the GaSbW layer wide enough to always surround the well by at least 50 Å. The `bandIdx: 1` parameter selects the ground-state CB Kramers doublet.
 
+<!-- placeholder: figure not yet generated -->
 ![QW g-factor vs well width](../figures/qw_gfactor_vs_width.png)
 
 **Figure 5.3:** Conduction-band g-factor components $g_x = g_y$ (in-plane) and $g_z$ (growth direction) as a function of well width $L_w$ for the InAsW/GaSbW/AlSbW broken-gap quantum well. The dashed line marks the bulk InAsW value $g^* = -14.858$.
@@ -516,10 +518,12 @@ The three g-factor components $g_x$, $g_y$, $g_z$ reflect the broken rotational 
 
 The detailed wire g-factor calculation is presented in Chapter 8 (Quantum Wires), which includes full config files, convergence analysis, and cross-section geometry effects.
 
+<!-- placeholder: figure not yet generated -->
 ![Wire g-factor vs cross-section size (InSbW)](../figures/wire_gfactor_vs_size.png)
 
 **Figure 5.4:** Wire g-factor components $g_x$, $g_y$, $g_z$ as a function of square cross-section width for an InSbW wire. The bulk value ($g^* \approx -51$, dashed line) is approached for larger cross-sections, while tight confinement pushes $|g^*|$ toward $g_0 \approx 2$.
 
+<!-- placeholder: figure not yet generated -->
 ![g-factor components for different confinement geometries](../figures/gfactor_components.png)
 
 ---

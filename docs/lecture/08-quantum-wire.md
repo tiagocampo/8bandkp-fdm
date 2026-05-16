@@ -424,10 +424,12 @@ The energy references differ because the QW uses the heterostructure band offset
 
 The wire figures below are computed from the current solver path. For the GaAs hard-wall wire, the gap scale and Kramers degeneracy are already on reasonably firm ground; for the core-shell example, the figures are best read as qualitative until the external wire benchmark suite is completed.
 
+<!-- placeholder: figure not yet generated -->
 ![Wire subband dispersion](../figures/wire_subbands.png)
 
 *Figure 1: Subband dispersion $E(k_z)$ for the GaAs rectangular wire ($63 \times 63$ A cross-section, $21 \times 21$ grid). The corrected wire Hamiltonian produces a discrete near-gap ladder with an effective split of about 2.035 eV at $k_z = 0$. Points are plotted as sorted near-gap eigenvalues at each $k_z$ with zero-padding removed, so the figure does not imply branch continuity that the current output writer does not track robustly.*
 
+<!-- placeholder: figure not yet generated -->
 ![Wire charge density](../figures/wire_density_2d.png)
 
 *Figure 2: Probability density $|F_n(x,y)|^2$ of selected wire subbands at $k_z = 0$, plotted over the wire cross-section. The lowest conduction-like state is center-peaked and $s$-like, while higher states develop nodal structure consistent with 2D box-like confinement in the square cross-section.*
@@ -660,6 +662,7 @@ The `strain: T` flag activates the continuum elasticity solver, which computes t
 
 ### 7.3 Band-edge profile: strain-induced confinement
 
+<!-- placeholder: figure not yet generated -->
 ![InAs/GaAs wire band-edge profile](../figures/wire_inas_gaas_profile.png)
 
 *Figure 3: Conduction band edge $E_C(x,y)$ for the strained InAs/GaAs core-shell wire. The InAs core (interior of the dashed white circle, radius 40 A) forms a deep potential well for electrons due to the large conduction band offset between strained InAs and GaAs.*
@@ -685,6 +688,7 @@ The strain modifies the band edges through the Bir-Pikus mechanism. Under the co
 
 ### 7.4 Subband dispersion
 
+<!-- placeholder: figure not yet generated -->
 ![InAs/GaAs wire subband dispersion](../figures/wire_inas_gaas_subbands.png)
 
 *Figure 4: Subband dispersion $E(k_z)$ for the InAs/GaAs core-shell wire. The plot shows sorted near-edge eigenvalues at each $k_z$ with zero-padding removed; it should not be read as branch-continuous tracking. The $k_z = 0$ edge labels come from band-character weights in `parts.dat`.*
@@ -701,6 +705,7 @@ The subband structure differs markedly from the unstrained GaAs wire of Section 
 
 ### 7.5 Wavefunction cross-sections
 
+<!-- placeholder: figure not yet generated -->
 ![InAs/GaAs wire wavefunctions](../figures/wire_inas_gaas_wavefunctions.png)
 
 *Figure 5: Probability density $|\psi(x,y)|^2$ for selected near-edge states at $k_z = 0$. The dashed white circle marks the InAs/GaAs material boundary. The lowest CB-like state is now centered and core-confined, as expected for a Type-I InAs/GaAs core-shell wire.*

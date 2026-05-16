@@ -412,6 +412,7 @@ pattern**.
    transition energy measured relative to the local band gap is determined by
    the subband confinement relative to the field-shifted band edges.
 
+<!-- placeholder: figure not yet generated -->
 ![QCSE Stark shift](../figures/qcse_stark_shift.png)
 
 *Figure: Subband energies of the GaAs/Al$_{0.2}$Ga$_{0.8}$As QW at zero field

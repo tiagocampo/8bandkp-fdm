@@ -291,6 +291,7 @@ Three features to notice:
 
 The following figure shows all eight bands across the full k-range:
 
+<!-- placeholder: figure not yet generated -->
 ![Bulk GaAs 8-band E(k) dispersion](../figures/bulk_gaas_bands.png)
 
 *Figure 1: Bulk GaAs 8-band E(k) dispersion along [100], computed with the

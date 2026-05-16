@@ -507,6 +507,7 @@ renormalize the effective confinement. The CB1 state lies $256.7$ meV below the
 AlGaAs barrier top at $1.018$ eV, confirming strong confinement in the $299$ meV
 CB well.
 
+<!-- placeholder: figure not yet generated -->
 ![GaAs/AlGaAs QW dispersion](../figures/qw_dispersion_gaas_algaas.png)
 
 *Figure 1: Subband dispersion $E(k_\parallel)$ for the GaAs/Al$_{0.3}$Ga$_{0.7}$As
@@ -559,6 +560,7 @@ executable computes these via the `compute_optical_matrix_qw` subroutine, which
 evaluates $|\langle \psi_{\text{CB}} | dH/dk | \psi_{\text{VB}} \rangle|^2$ for all
 CB-VB pairs.
 
+<!-- placeholder: figure not yet generated -->
 ![Optical matrix elements for the GaAs/AlGaAs QW](../figures/qw_optical_matrix_elements.png)
 
 *Figure 2: Optical momentum matrix elements $|p_i|^2$ for transitions between the
@@ -609,6 +611,7 @@ transition for polarization control.
 The band edge profile of the heterostructure shows the spatial variation of the
 conduction and valence band edges along the growth direction:
 
+<!-- placeholder: figure not yet generated -->
 ![Band edge profile for GaAs/AlGaAs QW](../figures/qw_potential_profile_gaas.png)
 
 *Figure 3: Band-edge profile of the GaAs/Al$_{0.3}$Ga$_{0.7}$As heterostructure,
@@ -689,6 +692,7 @@ Key observations:
 - **Spectrum:** 32 CB + 32 VB states -- the large number reflects the deep wells
   that host many bound states
 
+<!-- placeholder: figure not yet generated -->
 ![QW band-edge profile](../figures/qw_potential_profile.png)
 
 *Figure 4: Band-edge profile of the AlSbW/GaSbW/InAsW heterostructure, showing
@@ -738,6 +742,7 @@ confined hole at $-0.0609$ eV sitting $30.9$ meV below the GaSbW edge. The CB st
 span a wider range: the lowest at $+0.0319$ eV (204 meV above $E_C(\text{InAsW})$),
 with excited states reaching $+0.872$ eV, approaching the GaSbW CB edge at $0.782$ eV.
 
+<!-- placeholder: figure not yet generated -->
 ![QW subband dispersion](../figures/qw_alsbw_gasbw_inasw_bands.png)
 
 *Figure 5: Subband dispersion $E(k_\parallel)$ for the AlSbW/GaSbW/InAsW quantum
@@ -786,6 +791,7 @@ heterostructures: the **anticrossing** of electron and hole subbands. To illustr
 this physics clearly, we use a symmetric structure with 15 nm InAsW and 15 nm GaSbW
 layers:
 
+<!-- placeholder: figure not yet generated -->
 ![Broken-gap QW dispersion with anticrossing](../figures/qw_dispersion_broken_gap.png)
 
 *Figure 6: Subband dispersion $E(k_\parallel)$ for an InAsW(8 nm)/GaSbW(8 nm) broken-gap
@@ -879,10 +885,12 @@ topological phase transition.
 
 When two quantum wells are separated by a thin barrier, the degenerate bound states of the individual wells hybridize into symmetric and antisymmetric combinations, analogous to molecular bonding and antibonding orbitals. This is the simplest manifestation of quantum mechanical tunneling in a heterostructure, and it produces a characteristic **anticrossing** pattern in the subband spectrum.
 
+<!-- placeholder: figure not yet generated -->
 ![Double QW band-edge profile](../figures/double_qw_potential_profile.png)
 
 **Figure 6b:** Band-edge profile of a GaAs/Al$_{0.3}$Ga$_{0.7}$As double quantum well. Two 50 A GaAs wells are separated by a 20 A Al$_{0.3}$Ga$_{0.7}$As coupling barrier, with outer AlGaAs barriers extending to $\pm 150$ A. The conduction band offset of 299 meV creates the electron confinement potential. The dashed lines indicate the first two confined electron states (CB1 and CB2), split by the tunnel coupling through the thin central barrier. The 20 A barrier is thin enough that the evanescent wavefunctions of the two wells overlap significantly, producing a measurable splitting of the otherwise degenerate ground state.
 
+<!-- placeholder: figure not yet generated -->
 ![Double QW subband anticrossing](../figures/double_qw_anticrossing.png)
 
 **Figure 7:** Subband dispersion for a double GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well (two 50 A wells separated by a 20 A AlGaAs barrier). At $k_\parallel = 0$, the symmetric and antisymmetric combinations of the lowest confined state are split by approximately 42 meV. This splitting is the **tunnel coupling energy** $\Delta_{\text{SAS}}$, which reflects the transparency of the barrier: the overlap of the exponentially decaying wavefunctions in the barrier region determines the magnitude of the off-diagonal matrix element connecting the two wells. For a barrier of width $d$ and height $V_0$, the coupling scales as $\Delta_{\text{SAS}} \propto \exp(-\kappa d)$, where $\kappa = \sqrt{2m_b^*(V_0 - E)}/\hbar$ is the decay constant in the barrier. The 42 meV splitting for the 20 A barrier indicates strong coupling; increasing the barrier width to 40 A would reduce $\Delta_{\text{SAS}}$ by roughly a factor of $\exp(-\kappa \cdot 20\;\text{A}) \approx 3$--$5$.

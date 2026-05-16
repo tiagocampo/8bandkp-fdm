@@ -478,6 +478,7 @@ At $\Gamma$, the full set of 8 eigenvalues is:
 | SO (bands 5, 6) | -0.341 | 2-fold |
 | CB (bands 7, 8) | 1.519 | 2-fold |
 
+<!-- placeholder: figure not yet generated -->
 ![Bulk GaAs 8-band E(k) dispersion](../figures/bulk_gaas_bands.png)
 
 *Figure 1: Bulk GaAs 8-band E(k) dispersion along [100], computed with
@@ -500,6 +501,7 @@ $$
 Compare with [100] where $Q_{[100]} = -(\gamma_1 + \gamma_2)k^2$: the
 diagonal direction produces twice the kinetic energy for the same $|k|$.
 
+<!-- placeholder: figure not yet generated -->
 ![Bulk GaAs E(k) along [110]](../figures/bulk_gaas_bands_110.png)
 
 *Figure 2: Bulk GaAs E(k) along [110]. The valence band curvature differs
@@ -529,6 +531,7 @@ Along [100], $R$ depends on $\gamma_2$ only; along [110], it depends on
 $\gamma_3$ only. The difference in HH effective mass between the two directions
 is a direct measure of the $\gamma_2/\gamma_3$ anisotropy.
 
+<!-- placeholder: figure not yet generated -->
 ![Valence band warping: [100] vs [110]](../figures/bulk_gaas_warping.png)
 
 *Figure 3: Comparison of GaAs band structure along [100] (solid) and [110]
@@ -604,12 +607,14 @@ SC: 0
 strainSubstrate: 5.869
 ```
 
+<!-- placeholder: figure not yet generated -->
 ![Strained GaAs bands](../figures/bulk_gaas_strained_bands.png)
 
 *Figure 4: GaAs strained on InP substrate ($a_{\mathrm{sub}} = 5.869$ \AA).
 The HH/LH splitting at $\Gamma$ is clearly visible: heavy holes move up while
 light holes move down, producing a 111 meV splitting.*
 
+<!-- placeholder: figure not yet generated -->
 ![Strained vs unstrained comparison](../figures/bulk_gaas_strain_comparison.png)
 
 *Figure 5: Comparison of unstrained (dashed) vs strained (solid) GaAs band
@@ -645,12 +650,14 @@ valence admixture from the $P$-coupling. This mixing increases with $|k|$ and is
 qualitatively different along [100] vs [110] because the warping terms ($R$,
 $\bar{R}$) depend on the direction.
 
+<!-- placeholder: figure not yet generated -->
 ![Band decomposition at Gamma](../figures/bulk_gaas_parts.png)
 
 *Figure 6: Band decomposition of each eigenstate at $\Gamma$ ($k=0$). Each
 state is 100% pure in a single band character, confirming the diagonal nature
 of the Hamiltonian at the zone center.*
 
+<!-- placeholder: figure not yet generated -->
 ![Band character evolution along k](../figures/bulk_gaas_parts_vs_k.png)
 
 *Figure 7: Evolution of band character from pure states at $\Gamma$ to mixed
@@ -681,6 +688,7 @@ Key observations:
 - **Larger Luttinger parameters:** $\gamma_1 = 20.0$ produces flatter valence
   bands (heavier holes).
 
+<!-- placeholder: figure not yet generated -->
 ![Bulk InAs 8-band E(k) dispersion](../figures/bulk_inas_bands.png)
 
 *Figure 8: Bulk InAs 8-band E(k) dispersion along [100]. The narrower gap

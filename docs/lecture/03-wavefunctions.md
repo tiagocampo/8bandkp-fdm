@@ -45,6 +45,7 @@ $$
 \text{flat\_idx}(b, i) = (b - 1) \times N + i, \qquad b = 1, \ldots, 8, \quad i = 1, \ldots, N.
 $$
 
+<!-- placeholder: figure not yet generated -->
 ![Block structure of the $8N$-component eigenvector. Each of the 8 band blocks contains $N$ spatial amplitudes. The flat index maps band $b$ at grid point $i$ to position $(b-1)N + i$.](../figures/eigenvector_block_structure.png){ width=85% }
 
 This mapping is implemented directly in the code's `get_eigenvector_component` subroutine, which extracts the $N$-element spatial profile for a given band from the full eigenvector:
@@ -93,6 +94,7 @@ end do
 
 The output file `eigenfunctions_k_XXXXX_ev_YYYYY.dat` contains $N$ rows (one per grid point), each with 9 columns: the $z$-coordinate followed by $|\psi_b^{(n)}(z_i)|$ for $b = 1, \ldots, 8$.
 
+<!-- placeholder: figure not yet generated -->
 ![Per-band probability density $|\psi_b(z)|^2$ for the CB1 ground state of the AlSbW/GaSbW/InAsW QW at $k_{\parallel} = 0$. Each panel shows one of the 8 band components; the conduction-band amplitudes (CB $\uparrow$, CB $\downarrow$) dominate with valence-band tails from the broken-gap coupling.](../figures/perband_density.png){ width=95% }
 
 ### 3.2 Total probability density
@@ -196,6 +198,7 @@ At $k_\parallel = 0$, a ground-state heavy hole will have $f_{\text{HH}} \approx
 
 The conduction band states (bands 7--8) also acquire valence band character at large $k$ through the interband coupling term $P$ (the Kane momentum matrix element). This non-parabolicity effect is encoded in the parts as small but nonzero $P_1^{(n)}, \ldots, P_6^{(n)}$ for nominally CB states.
 
+<!-- placeholder: figure not yet generated -->
 ![HH and LH fractions $f_{\text{HH}}$, $f_{\text{LH}}$ vs.\ $k_{\parallel}$ for two valence-band states of the AlSbW/GaSbW/InAsW QW. At $k=0$ both states are purely HH; at finite $k$ the LH admixture grows, with state 7 crossing over to majority-LH character.](../figures/vb_hh_lh_mixing.png){ width=80% }
 
 ## 6. Implementation: How the Code Writes Wavefunctions
@@ -358,6 +361,7 @@ Several features are worth noting:
 
 ### 7.6 Spatial profiles
 
+<!-- placeholder: figure not yet generated -->
 ![QW wavefunctions](../figures/qw_wavefunctions.png)
 
 *Figure 1: Probability density $|\psi(z)|^2$ for the first four
@@ -372,6 +376,7 @@ conduction-like states are localized within the narrow InAs insert
 with a decay length that depends on the energy difference between the eigenvalue
 and the barrier band edge.
 
+<!-- placeholder: figure not yet generated -->
 ![QW band decomposition](../figures/qw_parts.png)
 
 *Figure 2: Band character decomposition (integrated parts) for the eigenstates of the AlSbW/GaSbW/InAsW QW. The conduction-band states (cyan) show ~18% valence-band admixture, reflecting the broken-gap alignment. The valence-band states show significant HH--LH mixing at finite $k_\parallel$ (see Section 7c).*
@@ -429,6 +434,7 @@ CB↓ ($|\psi_8|$) components are comparable in magnitude, reflecting the spin
 degeneracy at $k_\parallel = 0$. The exponential decay into the barrier spans
 $\sim 10^{-2}$ to $\sim 10^{-11}$ Å$^{-1}$, a factor of $10^9$.
 
+<!-- placeholder: figure not yet generated -->
 ![Probability density $|\psi(z)|^2$ for the first four conduction-band eigenstates of the GaAs/Al$_{0.3}$Ga$_{0.7}$As QW at $k_{\parallel} = 0$. The type-I confinement localizes the wavefunction in the GaAs well ($|z| < 50$ A). Dashed lines mark the well boundaries.](../figures/qw_wavefunctions_gaas.png){ width=95% }
 
 ### 7b.3 Band-resolved parts
@@ -467,6 +473,7 @@ Several features stand out:
    type-I system, the coupling strength is relatively uniform across the
    confined CB states.
 
+<!-- placeholder: figure not yet generated -->
 ![Band character decomposition for the GaAs/Al$_{0.3}$Ga$_{0.7}$As QW eigenstates at $k_{\parallel} = 0$. Conduction-band states (cyan) show ~84% CB purity with 16% valence-band admixture. Compare with the broken-gap QW in Figure 2.](../figures/qw_parts_gaas.png){ width=90% }
 
 ### 7b.4 Comparison: Type-I vs. Type-III
@@ -497,6 +504,7 @@ and larger Luttinger parameters of InAs and GaSb compared to GaAs.
 
 When two identical quantum wells are separated by a thin barrier, each confined state of the single well splits into a symmetric (bonding) and antisymmetric (antibonding) combination. This is the solid-state analogue of the molecular orbital picture: the double quantum well acts like a "diatomic molecule" for electrons.
 
+<!-- placeholder: figure not yet generated -->
 ![Double QW wavefunctions](../figures/double_qw_wavefunctions.png)
 
 *Figure 3b: Probability densities $|\psi(z)|^2$ for the first four conduction-band eigenstates of a double GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well at $k_{\parallel} = 0$. Two 50 A GaAs wells are separated by a 20 A AlGaAs coupling barrier.*
@@ -532,6 +540,7 @@ The qualitative trends are:
 3. **The state never becomes purely conduction-band.** Even at larger
    $k_{\parallel}$ the broken-gap interface keeps a visible LH/SO tail.
 
+<!-- placeholder: figure not yet generated -->
 ![Band character of the CB1 ground state vs.\ $k_{\parallel}$ for the AlSbW/GaSbW/InAsW QW. CB purity increases from 67% at $k=0$ to 81% at $k=0.10$ A$^{-1}$ as the state moves away from the broken-gap coupling region.](../figures/cb_parts_evolution.png){ width=80% }
 
 ### 7c.2 Valence band evolution
@@ -592,6 +601,7 @@ preserving the well shape but breaking the inversion symmetry. The right panel s
 the resulting subband energy shifts as horizontal lines, with annotated Stark shifts
 in meV.
 
+<!-- placeholder: figure not yet generated -->
 ![QCSE band-edge tilt and subband Stark shifts for the GaAs/Al$_{0.2}$Ga$_{0.8}$As QW. Left: band-edge profiles at zero field (solid) and at $F = -7\times10^{-3}$ eV/A (dashed). Right: subband energy levels at zero field (blue) and under field (orange), with annotated energy shifts in meV.](../figures/qcse_stark_shift.png){ width=95% }
 
 The Stark shift $\Delta E_n = E_n(F) - E_n(0)$ is negative for the electron

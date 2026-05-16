@@ -140,6 +140,7 @@ corrected.
 The deep VB states show much smaller absolute errors (sub-$10^{-4}$ eV) because they are
 well separated from the conduction band and their wavefunctions are smooth.
 
+<!-- placeholder: figure not yet generated -->
 ![Eigenvalue error vs. FD order for all eight bands of the broken-gap QW](../figures/convergence_fd_order.png)
 
 The figure shows the error $|E_n - E_n^{\rm ref}|$ for each band as a function
@@ -219,6 +220,7 @@ system: the CB1 state has strong HH/LH character due to the type-III alignment,
 and the inter-band coupling terms in the Hamiltonian introduce additional
 numerical errors that are not captured by the simple truncation-error analysis.
 
+<!-- placeholder: figure not yet generated -->
 ![Eigenvalue error vs. grid spacing for all eight bands, with a $\Delta z^2$ reference slope](../figures/convergence_grid_spacing.png)
 
 ### 11.4.3 Type-I system: GaAs/AlGaAs

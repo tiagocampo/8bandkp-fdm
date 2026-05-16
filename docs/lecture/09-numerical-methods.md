@@ -214,6 +214,7 @@ The CB states converge more slowly because the broken-gap band mixing
 introduces additional $k$-dependent coupling that is not captured by a simple
 truncation-error analysis.
 
+<!-- placeholder: figure not yet generated -->
 ![Eigenvalue error vs. grid spacing for all eight bands, with a $\Delta z^2$ reference slope](../figures/convergence_grid_spacing.png)
 
 ### 9.3.4 FD Order Convergence
@@ -240,6 +241,7 @@ convergence data showed large apparent errors at order 4 that were caused by
 a bug in the variable-coefficient treatment (naive row scaling instead of
 midpoint averaging), which has since been corrected.
 
+<!-- placeholder: figure not yet generated -->
 ![CB1 eigenvalue error vs. FD order for the AlSbW/GaSbW/InAsW QW](../figures/convergence_fd_order.png)
 
 The figure above shows the eigenvalue error vs.\ FD order for all eight bands.
@@ -579,6 +581,7 @@ n_{\text{iter}})$ while dense scales as $O(N^3)$.
 | AlSbW/GaSbW/InAsW QW | $808\times 808$ | dense | 21 | `zheevx` | 0.7 s |
 | GaAs rectangular wire | $20000\times 20000$ | $\sim 10^6$ | 1 | FEAST | 127.9 s |
 
+<!-- placeholder: figure not yet generated -->
 ![Wall-clock timing: dense (zheevx) vs. sparse (FEAST) eigensolver](../figures/timing_dense_vs_sparse.png)
 
 The wire calculation is dominated by the CSR assembly and FEAST iteration;
