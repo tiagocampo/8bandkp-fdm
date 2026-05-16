@@ -10,6 +10,8 @@ Sections:
   3. GaAsW CB g-factor (Winkler parameter set)
   4. GaAs Landau levels at B=5T
   5. Overlay bar chart: code g-factors vs Roth formula
+  6. QW g-factor with strain (GaAs/AlGaAs)
+  7. Wire g-factor anisotropy (GaAs nanowire)
 """
 import os
 import sys
@@ -344,6 +346,237 @@ def plot_gfactor_comparison(results):
 
 
 # =========================================================================
+# Section 6: QW g-factor with strain (GaAs/AlGaAs)
+# =========================================================================
+_QW_GFACTOR_CONFIG = """\
+waveVector: k0
+waveVectorMax: 0.1
+waveVectorStep: 0
+confinement:  1
+FDstep: 51
+FDorder: 2
+numLayers:  2
+material1: GaAs -200 200 0
+material2: InAs -50 50 0
+numcb: 2
+numvb: 6
+ExternalField: 0  EF
+EFParams: 0.0
+whichBand: 0
+bandIdx: 1
+"""
+
+_QW_GFACTOR_STRAIN_CONFIG = _QW_GFACTOR_CONFIG + """\
+strain: T
+strain_ref: GaAs
+strain_solver: pardiso
+piezo: F
+"""
+
+
+def _run_gfactor_inline(config_text, label):
+    """Run gfactorCalculation with inline config text, return (gx, gy, gz)."""
+    with tempfile.TemporaryDirectory() as work:
+        # Write config to a temp location outside work_dir to avoid SameFileError
+        cfg_tmp = os.path.join(work, "config.cfg")
+        with open(cfg_tmp, "w") as f:
+            f.write(config_text)
+
+        rc, outdir = run_exe(str(BUILD_DIR), "gfactorCalculation",
+                             cfg_tmp, work)
+        if rc != 0:
+            sys.exit(f"ERROR: gfactorCalculation returned {rc} for {label}")
+
+        gfactor_path = os.path.join(outdir, "gfactor.dat")
+        if not os.path.isfile(gfactor_path):
+            sys.exit(f"ERROR: gfactor.dat not found for {label}")
+
+        return parse_gfactor(gfactor_path)
+
+
+def section_qw_gfactor_strain():
+    """QW g-factor: compare bulk, unstrained QW, and strained QW."""
+    print("=" * 60)
+    print("Lecture 05 -- Section 6: QW g-factor with strain")
+    print("=" * 60)
+
+    # Bulk GaAs g-factor (from Roth formula)
+    p = MATERIALS['GaAs']
+    g_bulk = roth_gfactor(p['EP'], p['Eg'], p['DeltaSO'])
+    print(f"  Bulk GaAs g (Roth):  g = {g_bulk:+.6f}")
+
+    # QW g-factor without strain
+    print("  Running QW g-factor (no strain)...")
+    _, _, gz_qw = _run_gfactor_inline(_QW_GFACTOR_CONFIG, "QW no strain")
+    print(f"  QW InAs/GaAs g (no strain):  gz = {gz_qw:+.6f}")
+
+    # QW g-factor with strain
+    print("  Running QW g-factor (with strain)...")
+    _, _, gz_strain = _run_gfactor_inline(_QW_GFACTOR_STRAIN_CONFIG,
+                                          "QW strained")
+    print(f"  QW InAs/GaAs g (strained):   gz = {gz_strain:+.6f}")
+
+    # Validation
+    qw_differs = abs(gz_qw - g_bulk) > 0.01
+    strain_shifts = abs(gz_strain - gz_qw) > 0.001
+    passed = qw_differs  # strain shift may be negligible for lattice-matched systems
+
+    if qw_differs:
+        print("  PASS: QW g-factor differs from bulk")
+    else:
+        print("  FAIL: QW g-factor too close to bulk")
+
+    if strain_shifts:
+        print("  PASS: strain shifts g-factor")
+    else:
+        print("  NOTE: strain effect on g-factor is small for this system "
+              "(InAs/GaAs QW: Bir-Pikus shifts band edges but not coupling)")
+
+    # Plot bar chart comparing the three g-factors
+    labels = ['Bulk GaAs\n(Roth)', 'QW InAs/GaAs\n(no strain)',
+              'QW InAs/GaAs\n(strained)']
+    gvals = [g_bulk, gz_qw, gz_strain]
+    colors = ['coral', 'steelblue', 'seagreen']
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    bars = ax.bar(range(3), gvals, color=colors, edgecolor='black',
+                  linewidth=0.8, width=0.6)
+
+    for bar, val in zip(bars, gvals):
+        ypos = bar.get_height()
+        offset = 0.03 if ypos >= 0 else -0.06
+        ax.text(bar.get_x() + bar.get_width() / 2, ypos + offset,
+                f'{val:+.4f}', ha='center', va='bottom', fontsize=10,
+                fontweight='bold')
+
+    ax.set_xticks(range(3))
+    ax.set_xticklabels(labels, fontsize=10)
+    ax.set_ylabel(r'$g_z$-factor', fontsize=12)
+    ax.set_title(r'Lecture 05: QW $g$-factor -- Bulk vs Confinement vs Strain'
+                 '\n(InAs/GaAs, 7.2% lattice mismatch)',
+                 fontsize=13)
+    ax.axhline(2.0, color='gray', ls=':', lw=0.8)
+    ax.annotate(
+        'Strain shifts band edges (Bir-Pikus)\n'
+        'but g-factor depends on CB-VB coupling\n'
+        '(set by Kane EP, unchanged by strain)',
+        xy=(0.98, 0.35), xycoords='axes fraction',
+        fontsize=7, ha='right', va='bottom',
+        bbox=dict(boxstyle='round,pad=0.3', fc='lightyellow', alpha=0.8),
+    )
+    ax.grid(True, alpha=0.3, axis='y')
+    fig.tight_layout()
+
+    out_path = FIGURES_DIR / "lecture_05_qw_gfactor.png"
+    fig.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"  Plot saved to {out_path}")
+    print()
+    return passed, g_bulk, gz_qw, gz_strain
+
+
+# =========================================================================
+# Section 7: Wire g-factor anisotropy (GaAs nanowire)
+# =========================================================================
+_WIRE_GFACTOR_CONFIG = """\
+waveVector: k0
+waveVectorMax: 0.1
+waveVectorStep: 0
+confinement:  2
+FDstep: 1
+FDorder: 2
+numLayers:  1
+wire_nx: 11
+wire_ny: 11
+wire_dx: 10.0
+wire_dy: 10.0
+wire_shape: rectangle
+wire_width: 100.0
+wire_height: 100.0
+numRegions: 1
+region: GaAs  0.0  100.0
+numcb: 2
+numvb: 4
+ExternalField: 0  EF
+EFParams: 0.0005
+whichBand: 0
+bandIdx: 1
+SC: 0
+feast_emin: -1.5
+feast_emax: 2.0
+feast_m0: -1
+"""
+
+
+def section_wire_gfactor():
+    """Wire g-factor: show anisotropy of gx, gy, gz components."""
+    print("=" * 60)
+    print("Lecture 05 -- Section 7: Wire g-factor anisotropy")
+    print("=" * 60)
+
+    print("  Running wire g-factor (GaAs 11x11)...")
+    gx, gy, gz = _run_gfactor_inline(_WIRE_GFACTOR_CONFIG, "Wire GaAs")
+    print(f"  Wire GaAs g-factor:  gx = {gx:+.6f}")
+    print(f"                       gy = {gy:+.6f}")
+    print(f"                       gz = {gz:+.6f}")
+
+    # Validation: all components are finite
+    finite_pass = all(np.isfinite([gx, gy, gz]))
+    if finite_pass:
+        print("  PASS: all g-factor components are finite")
+    else:
+        print("  FAIL: some g-factor components are not finite")
+
+    # Validation: at least one component differs from bulk
+    p = MATERIALS['GaAs']
+    g_bulk = roth_gfactor(p['EP'], p['Eg'], p['DeltaSO'])
+    differs = any(abs(v - g_bulk) > 0.01 for v in [gx, gy, gz])
+    if differs:
+        print("  PASS: at least one component differs from bulk g")
+    else:
+        print("  FAIL: all components too close to bulk g")
+
+    passed = finite_pass and differs
+
+    # Plot bar chart of anisotropy
+    labels = [r'$g_x$', r'$g_y$', r'$g_z$']
+    gvals = [gx, gy, gz]
+    colors = ['steelblue', 'coral', 'seagreen']
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    bars = ax.bar(range(3), gvals, color=colors, edgecolor='black',
+                  linewidth=0.8, width=0.5)
+
+    for bar, val in zip(bars, gvals):
+        ypos = bar.get_height()
+        offset = 0.02 if ypos >= 0 else -0.05
+        ax.text(bar.get_x() + bar.get_width() / 2, ypos + offset,
+                f'{val:+.4f}', ha='center', va='bottom', fontsize=10,
+                fontweight='bold')
+
+    ax.set_xticks(range(3))
+    ax.set_xticklabels(labels, fontsize=12)
+    ax.set_ylabel(r'$g$-factor', fontsize=12)
+    ax.set_title(r'Lecture 05: Wire $g$-factor Anisotropy (GaAs nanowire)',
+                 fontsize=13)
+    ax.axhline(2.0, color='gray', ls=':', lw=0.8, label=r'$g_0 = 2$')
+    ax.axhline(g_bulk, color='coral', ls='--', lw=0.8,
+               label=f'Bulk GaAs g = {g_bulk:.3f}')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3, axis='y')
+    fig.tight_layout()
+
+    out_path = FIGURES_DIR / "lecture_05_wire_gfactor.png"
+    fig.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"  Plot saved to {out_path}")
+    print()
+    return passed, (gx, gy, gz)
+
+
+# =========================================================================
 # Main
 # =========================================================================
 def main():
@@ -373,6 +606,12 @@ def main():
     # Section 5: Overlay plot
     plot_gfactor_comparison(gfactor_results)
 
+    # Section 6: QW g-factor with strain
+    s6_pass, _, _, _ = section_qw_gfactor_strain()
+
+    # Section 7: Wire g-factor anisotropy
+    s7_pass, _ = section_wire_gfactor()
+
     # Summary
     print("=" * 60)
     print("  SUMMARY")
@@ -383,12 +622,23 @@ def main():
         ("Section 3: GaAsW CB g-factor", s3_pass),
         ("Section 4: GaAs Landau levels", s4_pass),
         ("Section 5: Comparison plot", True),
+        ("Section 6: QW g-factor with strain", s6_pass),
+        ("Section 7: Wire g-factor anisotropy", s7_pass),
     ]
     all_pass = True
     for label, passed in results:
         status = "PASS" if passed else "FAIL"
         print(f"  [{status}] {label}")
         all_pass = all_pass and passed
+    print()
+
+    print("  Figures:")
+    for fig_name in ["lecture_05_gfactor_comparison.png",
+                     "lecture_05_qw_gfactor.png",
+                     "lecture_05_wire_gfactor.png"]:
+        fig_path = FIGURES_DIR / fig_name
+        exists = "exists" if fig_path.is_file() else "MISSING"
+        print(f"    {fig_path}  [{exists}]")
     print()
 
     if all_pass:

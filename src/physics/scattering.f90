@@ -60,7 +60,7 @@ contains
     integer, allocatable :: cb_state_idx(:)
     real(kind=dp) :: temperature, omega_lo, eps_inf, eps_0
     real(kind=dp), parameter :: e0_AA = e0 / 10.0_dp   ! C/(V*AA)
-    real(kind=dp) :: coupling_const, N_lo
+    real(kind=dp) :: coupling_eVAA, m0_over_hbar2_AA, N_lo
     real(kind=dp), allocatable :: phi_i(:), phi_j(:)
     real(kind=dp), allocatable :: rate_em(:,:), rate_ab(:,:)
     real(kind=dp) :: E_i, E_j, dE, r_em, r_ab
@@ -113,12 +113,20 @@ contains
       temperature = T_DEFAULT
     end if
 
-    ! Froehlich coupling constant:
-    !   C_F = e^2 * omega_lo / (4*pi*eps0) * (1/eps_inf - 1/eps_0)
-    ! in SI-like code units.  We compute the rate in 1/s using:
-    !   prefactor = C_F / hbar   (1/s)
-    coupling_const = e**2 * omega_lo / (4.0_dp * pi_dp * e0_AA) &
+    ! Froehlich coupling in eV*AA:
+    !   e^2/(4*pi*eps0) = 14.4 eV*AA  (standard Coulomb constant)
+    ! Coupling includes the dielectric factor (1/eps_inf - 1/eps_0).
+    ! Rate formula (Ferreira & Bastard 1989):
+    !   Gamma = coupling * omega_LO * (m0/hbar^2) * (N+1) * J_ij
+    ! where J_ij = (L_z/2pi) * integral over q_z of |I_ij(q_z)|^2 * H(q_z)
+    ! Units: [eV*AA] * [1/s] * [1/(eV*AA^2)] * [AA] = [1/s]
+    coupling_eVAA = e**2 / (4.0_dp * pi_dp * e0_AA) / e &
       & * (1.0_dp / eps_inf - 1.0_dp / eps_0)
+    ! m0/hbar^2 in code units where hbar2O2m0 acts as eV*AA^2.
+    ! When hbar2O2m0 is multiplied by k^2 in 1/AA^2, the result is in eV
+    ! (the 1e-20 m^2/AA^2 and 1e20 AA^2/m^2 cancel). So we use the same
+    ! convention: m0/hbar^2 = 1/(2*hbar2O2m0) gives 1/(eV*AA^2) in code units.
+    m0_over_hbar2_AA = 1.0_dp / (2.0_dp * hbar2O2m0)
 
     ! Bose-Einstein occupation N_LO = 1/(exp(hbar*omega/(kB*T)) - 1)
     N_lo = bose_einstein(cfg%scattering%phonon_energy, temperature)
@@ -153,7 +161,8 @@ contains
 
         ! Compute scattering rates
         call compute_pair_rates(phi_i, phi_j, z_grid, dz, fdstep, &
-          & dE, coupling_const, N_lo, cfg%scattering%phonon_energy, &
+          & dE, coupling_eVAA, m0_over_hbar2_AA, omega_lo, N_lo, &
+          & cfg%scattering%phonon_energy, &
           & r_em, r_ab)
 
         rate_em(i, j) = r_em
@@ -230,95 +239,87 @@ contains
   !
   ! Following Ferreira & Bastard (PRB 40, 1074, 1989):
   !
-  !   Gamma_em  = C_F/hbar * (N_LO + 1) * F_ij(dE - hbar*omega_LO)
-  !   Gamma_abs = C_F/hbar *  N_LO      * F_ij(dE + hbar*omega_LO)
+  !   Gamma = coupling * omega_LO * (m0/hbar^2) * (N +/- 1) * J_ij
   !
-  ! where F_ij is the dimensionless form factor that integrates over
-  ! q_z and in-plane kinematics:
+  ! where J_ij = (L_z / 2*pi) * integral dq_z |I_ij(q_z)|^2 * H(q_z)
   !
-  !   F_ij(delta) = (2*pi / L_z) * sum_{q_z} |I_ij(q_z)|^2
-  !                 * ln| (q_z^2 + 2*m*delta/hbar^2 + k_lo^2) / (q_z^2 + k_lo^2) |
-  !                 / sqrt(q_z^2 + k_lo^2)
+  ! and H(q_z) = ln((q_z^2 + k_plus^2)/(q_z^2 + k_minus^2))
+  !              / sqrt(q_z^2 + k_minus^2)
   !
-  ! For this first implementation we use a simplified form factor:
-  !
-  !   F_ij = (2*pi/L_z) * sum_qz |I_ij(q_z)|^2 * g(q_z, delta)
-  !
-  ! where g(q_z, delta) captures the dominant kinematic factor and
-  ! I_ij(q_z) = sum_n psi_i(z_n) * cos(q_z * z_n) * psi_j(z_n) * dz
-  !
-  ! Note: emission is only allowed when dE > hbar*omega_LO.
+  ! with k^2(delta) = 2*m0*delta/hbar^2 in 1/AA^2.
+  ! All wavevectors consistently in 1/AA.
   ! ------------------------------------------------------------------
   subroutine compute_pair_rates(phi_i, phi_j, z_grid, dz, fdstep, &
-    & dE, coupling_const, N_lo, phonon_energy, rate_em, rate_ab)
+    & dE, coupling_eVAA, m0_over_hbar2_AA, omega_lo, N_lo, phonon_energy, &
+    & rate_em, rate_ab)
 
     real(kind=dp), intent(in)  :: phi_i(:), phi_j(:), z_grid(:)
-    real(kind=dp), intent(in)  :: dz, dE, coupling_const, N_lo
-    real(kind=dp), intent(in)  :: phonon_energy
+    real(kind=dp), intent(in)  :: dz, dE, coupling_eVAA, m0_over_hbar2_AA
+    real(kind=dp), intent(in)  :: omega_lo, N_lo, phonon_energy
     integer, intent(in)        :: fdstep
     real(kind=dp), intent(out) :: rate_em, rate_ab
 
-    real(kind=dp) :: qz, dqz, I_ij, I_ij2, F_em, F_ab
-    real(kind=dp) :: k_lo2, delta_em, delta_ab, L_z
+    real(kind=dp) :: qz, dqz, I_ij, I_ij2, J_em, J_ab
+    real(kind=dp) :: k_lo2, k_em2, k_ab2, L_z
     real(kind=dp) :: log_arg, g_factor
+    real(kind=dp) :: delta_em, delta_ab
     integer :: iq
 
     rate_em = 0.0_dp
     rate_ab = 0.0_dp
 
-    ! Well width
     L_z = real(fdstep, kind=dp) * dz
 
-    ! LO phonon wavevector squared: k_lo^2 = 2*m0*omega_LO / hbar
-    ! (in code units: m0 in eV/c^2, hbar in eV*s)
-    ! k_lo^2 = 2*m0*(omega_LO*hbar)/hbar^2 = 2*m0*phonon_energy/hbar^2
-    k_lo2 = 2.0_dp * m0 * phonon_energy / hbar**2
+    ! LO phonon wavevector squared in 1/AA^2
+    k_lo2 = 2.0_dp * m0_over_hbar2_AA * phonon_energy
 
     ! Energy differences after phonon exchange
     delta_em = dE - phonon_energy   ! must be > 0 for emission
     delta_ab = dE + phonon_energy   ! always > 0
 
+    ! Additional wavevector from excess kinetic energy (1/AA^2)
+    k_em2 = 2.0_dp * m0_over_hbar2_AA * delta_em
+    k_ab2 = 2.0_dp * m0_over_hbar2_AA * delta_ab
+
     ! q_z integration using Simpson's rule
     dqz = QZ_MAX / real(NQZ - 1, kind=dp)
 
-    F_em = 0.0_dp
-    F_ab = 0.0_dp
+    J_em = 0.0_dp
+    J_ab = 0.0_dp
 
     do iq = 1, NQZ
       qz = real(iq - 1, kind=dp) * dqz
 
-      ! Form factor: I_ij(q_z) = sum_n psi_i(z_n)*cos(q_z*z_n)*psi_j(z_n)*dz
       I_ij = form_factor(phi_i, phi_j, z_grid, dz, fdstep, qz)
       I_ij2 = I_ij * I_ij
 
-      ! Kinematic factor for emission: g = ln((qz^2 + k_em^2)/(qz^2 + k_lo^2))
-      !   / sqrt(qz^2 + k_lo^2)
-      ! where k_em^2 = k_lo^2 + 2*m0*delta_em/hbar^2
+      ! Emission kinematic factor (only if delta_em > 0)
       if (delta_em > 0.0_dp) then
-        log_arg = (qz**2 + k_lo2 + 2.0_dp * m0 * delta_em / hbar**2) &
-          & / (qz**2 + k_lo2)
+        log_arg = (qz**2 + k_lo2 + k_em2) / (qz**2 + k_lo2)
         g_factor = log(log_arg) / sqrt(qz**2 + k_lo2)
-        F_em = F_em + simpson_weight(iq, NQZ, dqz) * I_ij2 * g_factor
+        J_em = J_em + simpson_weight(iq, NQZ, dqz) * I_ij2 * g_factor
       end if
 
-      ! Kinematic factor for absorption
-      log_arg = (qz**2 + k_lo2 + 2.0_dp * m0 * delta_ab / hbar**2) &
-        & / (qz**2 + k_lo2)
+      ! Absorption kinematic factor
+      log_arg = (qz**2 + k_lo2 + k_ab2) / (qz**2 + k_lo2)
       g_factor = log(log_arg) / sqrt(qz**2 + k_lo2)
-      F_ab = F_ab + simpson_weight(iq, NQZ, dqz) * I_ij2 * g_factor
+      J_ab = J_ab + simpson_weight(iq, NQZ, dqz) * I_ij2 * g_factor
 
     end do
 
-    ! Prefactor: (2*pi/L_z) factor from q_z normalisation
-    F_em = (2.0_dp * pi_dp / L_z) * F_em
-    F_ab = (2.0_dp * pi_dp / L_z) * F_ab
+    ! Convert sum to integral via (L_z/2*pi) normalisation for discrete q_z
+    J_em = (L_z / (2.0_dp * pi_dp)) * J_em
+    J_ab = (L_z / (2.0_dp * pi_dp)) * J_ab
 
-    ! Scattering rates (1/s)
-    ! Gamma = (coupling_const / hbar) * (N_LO + 1/2 +/- 1/2) * F_ij
+    ! Scattering rates (1/s):
+    !   Gamma = coupling * omega * (m0/hbar^2) * (N+1) * J_ij
+    ! Units: [eV*AA] * [1/s] * [1/(eV*AA^2)] * [AA] = [1/s]
     if (delta_em > 0.0_dp) then
-      rate_em = (coupling_const / hbar) * (N_lo + 1.0_dp) * F_em
+      rate_em = coupling_eVAA * omega_lo * m0_over_hbar2_AA &
+        & * (N_lo + 1.0_dp) * J_em
     end if
-    rate_ab = (coupling_const / hbar) * N_lo * F_ab
+    rate_ab = coupling_eVAA * omega_lo * m0_over_hbar2_AA &
+      & * N_lo * J_ab
 
   end subroutine compute_pair_rates
 

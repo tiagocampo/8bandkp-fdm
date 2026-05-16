@@ -287,6 +287,7 @@ module definitions
     real(kind=dp)   :: g_factor = 2.0_dp  ! Lande g-factor for Zeeman splitting
     character(len=20) :: gauge = 'landau_x'  ! gauge choice
     real(kind=dp)   :: B_sweep(3) = 0.0_dp ! B sweep: min, max, step
+    real(kind=dp)   :: kz = 0.0_dp        ! along-wire momentum (1/A) for BdG dispersion
   end type
 
   ! ------------------------------------------------------------------

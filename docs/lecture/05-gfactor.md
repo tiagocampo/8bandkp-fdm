@@ -622,3 +622,7 @@ Running `gfactor_bulk_gaas_cb.cfg` produces:
 - **GaAs Landau levels**: spacing 10.90 meV vs Kane-mass hbar*omega_c=11.55 meV (6% error)
 
 ![Overlay plot](figures/lecture_05_gfactor_comparison.png)
+
+![QW g-factor](figures/lecture_05_qw_gfactor.png)
+
+![Wire g-factor anisotropy](figures/lecture_05_wire_gfactor.png)

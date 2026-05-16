@@ -7,11 +7,14 @@ zero-energy Majorana modes at their boundaries. These modes are their own
 antiparticles and obey non-Abelian statistics, making them promising candidates
 for fault-tolerant quantum computation.
 
-This chapter covers three complementary topological invariants:
+This chapter covers three complementary topological invariants plus spectral analysis:
 
 1. **Chern number (C)** — characterizes the quantum Hall effect (QHE)
 2. **Z₂ invariant** — characterizes the quantum spin Hall effect (QSHE)
 3. **BdG Majorana modes** — characterizes topological superconductivity
+4. **Spectral function A(k,E)** — visualizes band topology in energy-momentum space
+5. **Z₂ phase diagrams** — maps topological phase boundaries in parameter space
+6. **Hall conductance** — quantized transport via Kubo formula
 
 The implementation extends the 8-band k.p Hamiltonian with magnetic field
 coupling (Zeeman and Peierls), Nambu-space doubling for superconducting pairing,
@@ -482,6 +485,88 @@ to apply Peierls phase factors to the bulk Hamiltonian for Landau level quantiza
 
 ---
 
+## 13.13 Spectral Function A(k, E)
+
+The spectral function provides a direct visualization of the electronic
+structure in energy-momentum space:
+
+$$
+A(\mathbf{k}, E) = -\frac{1}{\pi} \operatorname{Im} G^R(\mathbf{k}, E),
+$$
+
+where $G^R$ is the retarded Green's function. For a non-interacting system:
+
+$$
+A(\mathbf{k}, E) = \sum_n \frac{\eta/\pi}{(E - E_n(\mathbf{k}))^2 + \eta^2},
+$$
+
+a sum of Lorentzians centered at each eigenvalue $E_n(\mathbf{k})$ with
+broadening $\eta$.
+
+The spectral function reveals:
+- **Band dispersions** as ridges of high spectral weight
+- **Band gaps** as regions of zero spectral weight
+- **Topological features** such as gap closings at phase transitions
+
+For bulk GaAs, the spectral function shows the 8-band dispersion with the
+valence bands clustered near $E = 0$ and the conduction band near $E_g = 1.519$ eV.
+
+![Spectral function A(k,E)](figures/lecture_13_spectral.png)
+
+## 13.14 Z₂ Phase Diagram
+
+The topological phase can be mapped in a multi-dimensional parameter space.
+For the BHZ model, the effective mass parameter determines the topological
+character:
+
+$$
+M_{\mathrm{eff}} = M + B - \mu,
+$$
+
+where $M$ is the BHZ mass (meV), $B$ is a tuning parameter, and $\mu$ is the
+chemical potential. The Z₂ invariant changes at the critical line
+$M_{\mathrm{eff}} = 0$:
+
+$$
+\mathbb{Z}_2 = \begin{cases} 0 & \text{(trivial)} & M_{\mathrm{eff}} > 0 \\ 1 & \text{(topological)} & M_{\mathrm{eff}} < 0 \end{cases}
+$$
+
+The bulk gap closes at the phase boundary:
+
+$$
+\Delta_{\mathrm{gap}} = 2|M_{\mathrm{eff}}| \to 0 \quad \text{at transition.}
+$$
+
+![Z2 phase diagram](figures/lecture_13_phase_diagram.png)
+
+## 13.15 Hall Conductance and Quantized Transport
+
+The Hall conductance is quantized in units of $e^2/h$ by the Chern number:
+
+$$
+\sigma_{xy} = C \frac{e^2}{h}.
+$$
+
+This is verified via the Kubo formula:
+
+$$
+\sigma_{xy} = \frac{e^2}{\hbar} \int_{\mathrm{BZ}} \frac{d^2k}{(2\pi)^2} \Omega(\mathbf{k}),
+$$
+
+which reduces to $C \cdot e^2/h$ for a system with Chern number $C$.
+
+For the QWZ model:
+- $u = -0.8$: $C = +1$, $\sigma_{xy} = e^2/h$
+- $u = +0.5$: $C = -1$, $\sigma_{xy} = -e^2/h$
+- $u = +2.5$: $C = 0$, $\sigma_{xy} = 0$
+
+The Berry curvature is concentrated near the gap-closing points in momentum
+space, producing quantized plateaus in the Hall conductance.
+
+![Hall conductance](figures/lecture_13_conductance.png)
+
+---
+
 ## Verification
 
 This lecture's derivations can be verified by running the executable lecture-test pair:
@@ -501,7 +586,10 @@ python3 scripts/lecture_13_topological.py
 Running `topology_qwz.cfg` produces:
 - **QWZ Chern**: C=+1 (u=-0.8), C=-1 (u=0.5), C=0 (u=2.5)
 - **BHZ Z2**: 0 (trivial) and 1 (topological)
-- **BdG Majorana**: InAs Rashba wire, B_crit ≈ 1.22 T (mu=0.1 meV, Delta=0.1 meV)
+- **BdG Majorana**: InAs/GaAs QW, B_crit ~ 0.25 T (mu=-0.1413 eV, Delta=0.2 meV, g=15)
+- **Spectral function**: A(k,E) for bulk GaAs, CB peak near 1.6 eV
+- **Z2 phase diagram**: BHZ analytic sweep showing trivial/topological boundary
+- **Hall conductance**: sigma_xy = C * e^2/h for QWZ model
 
 ![Berry curvature](figures/lecture_13_chern.png)
 
@@ -511,9 +599,15 @@ Running `topology_qwz.cfg` produces:
 
 ![Landau levels](figures/lecture_13_landau.png)
 
+![Spectral function](figures/lecture_13_spectral.png)
+
+![Z2 phase diagram sweep](figures/lecture_13_phase_diagram.png)
+
+![Hall conductance](figures/lecture_13_conductance.png)
+
 ---
 
-## 13.13 References
+## 13.16 References
 
 - Fukui & Hatsugai, J. Phys. Soc. Jpn. 76, 053710 (2007) — FHS method
 - Qi, Wu & Zhang, Phys. Rev. B 74, 085308 (2006) — QWZ model

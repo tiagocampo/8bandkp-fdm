@@ -489,13 +489,14 @@ contains
     type(eigensolver_config) :: eigen_cfg_local
     type(eigensolver_result) :: eigen_res_local
     integer :: Ngrid_local, Ntot_local, nev_local
-    real(kind=dp) :: emin_local, emax_local
+    real(kind=dp) :: emin_local, emax_local, kz_val
     real(kind=dp), allocatable :: eigvals_bdg(:)
-    integer :: i
+    integer :: i, j, iounit_ev, iounit_prof, status_ev
 
     print *, '--- BdG wire mode: Majorana modes ---'
 
     cfg = cfg_in
+    kz_val = cfg%bdg%kz
 
     ! Initialize 2D confinement
     call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
@@ -507,13 +508,14 @@ contains
     print *, '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, ' Ngrid=', Ngrid_local
     print *, '  8N x 8N = ', Ntot_local, 'x', Ntot_local, ' (electron)'
     print *, '  16N x 16N BdG matrix'
+    print *, '  kz=', kz_val, ' 1/A'
     print *, '  mu=', cfg%bdg%mu, ' eV'
     print *, '  delta_0=', cfg%bdg%delta_0, ' eV'
     print *, '  B_vec=', cfg%bdg%B_vec
 
-    ! Build BdG Hamiltonian
+    ! Build BdG Hamiltonian at kz from config
     call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d_local, kpterms_2d_local, &
-      & 0.0_dp, cfg%bdg%mu, cfg%bdg%delta_0, wire_ws_local, &
+      & kz_val, cfg%bdg%mu, cfg%bdg%delta_0, wire_ws_local, &
       & cfg%bdg%B_vec, cfg%bdg%g_factor)
 
     ! Configure FEAST for BdG (search around zero energy for Majoranas)
@@ -522,15 +524,18 @@ contains
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
-    ! FEAST M0 must be >= nev and <= N (matrix dimension).
     eigen_cfg_local%feast_m0 = min(max(8 * nev_local, 200), 16 * Ngrid_local)
 
     ! Search near zero energy for Majorana modes.
-    ! Window must capture BdG eigenvalues near the Fermi level.
-    ! ±5*delta is too narrow for wire geometries where confinement pushes
-    ! subbands away from mu by meV-to-eV scale. Use ±50*delta as a safer default.
-    emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
-    emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
+    ! Use feast_emin/emax from config when set (for kz sweeps at finite kz),
+    ! otherwise use the default ±10 meV window.
+    if (cfg%feast_emin /= 0.0_dp .or. cfg%feast_emax /= 0.0_dp) then
+      emin_local = cfg%feast_emin
+      emax_local = cfg%feast_emax
+    else
+      emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
+      emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
+    end if
     eigen_cfg_local%emin = emin_local
     eigen_cfg_local%emax = emax_local
 
@@ -554,8 +559,25 @@ contains
       allocate(eigvals_bdg(eigen_res_local%nev_found))
       eigvals_bdg = eigen_res_local%eigenvalues
 
-      ! Find minimum gap: full superconducting gap = 2 × min|E|
+      ! Find minimum gap: full superconducting gap = 2 * min|E|
       result%min_gap = 2.0_dp * bdg_zero_energy_gap(eigvals_bdg)
+
+      ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
+      call ensure_output_dir()
+      call get_unit(iounit_ev)
+      open(unit=iounit_ev, file='output/bdg_eigenvalues.dat', status='replace', &
+           action='write', iostat=status_ev)
+      if (status_ev == 0) then
+        write(iounit_ev, '(A)') '# BdG eigenvalues (eV)'
+        write(iounit_ev, '(A,ES16.8)') '# kz (1/A) = ', kz_val
+        write(iounit_ev, '(A,I0)') '# n_eigenvalues = ', eigen_res_local%nev_found
+        write(iounit_ev, '(A)') '# Columns: index, energy (eV)'
+        do i = 1, eigen_res_local%nev_found
+          write(iounit_ev, '(I6,ES20.12)') i, eigvals_bdg(i)
+        end do
+        close(iounit_ev)
+        print *, '  Eigenvalues written to output/bdg_eigenvalues.dat'
+      end if
 
       ! Check for zero-energy Majorana modes
       block
@@ -563,6 +585,8 @@ contains
         real(kind=dp), allocatable :: majorana_xi(:)
         integer :: n_majorana, n_fit_ok, n_fit_failed
         real(kind=dp) :: xi_val
+        real(kind=dp), allocatable :: profile_rho(:)
+        integer :: nspatial, status_prof
 
         n_zero = 0
         do i = 1, eigen_res_local%nev_found
@@ -578,31 +602,57 @@ contains
         if (n_zero > 0) then
           print *, '  Majorana modes detected!'
 
-          ! Compute Majorana localization length for zero-energy states
+          ! Compute Majorana localization and profile for zero-energy states
           allocate(majorana_xi(n_zero))
           n_majorana = 0
           n_fit_ok = 0
           n_fit_failed = 0
+          nspatial = Ntot_local / 8
+
           do i = 1, eigen_res_local%nev_found
             if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
               n_majorana = n_majorana + 1
+              allocate(profile_rho(nspatial))
               xi_val = compute_majorana_profile( &
                 & eigen_res_local%eigenvectors(:, i), cfg%grid, &
-                & cfg%bdg%delta_0 * 0.01_dp, Ntot_local)
+                & cfg%bdg%delta_0 * 0.01_dp, Ntot_local, profile_rho)
               if (xi_val > 0.0_dp) then
                 n_fit_ok = n_fit_ok + 1
                 majorana_xi(n_fit_ok) = xi_val
               else
                 n_fit_failed = n_fit_failed + 1
               end if
+
+              ! Write Majorana profile to file (first Majorana mode only)
+              if (n_majorana == 1) then
+                call get_unit(iounit_prof)
+                open(unit=iounit_prof, file='output/majorana_profile.dat', &
+                     status='replace', action='write', iostat=status_prof)
+                if (status_prof == 0) then
+                  write(iounit_prof, '(A)') '# Majorana wavefunction spatial profile'
+                  write(iounit_prof, '(A,ES16.8)') '# kz (1/A) = ', kz_val
+                  write(iounit_prof, '(A,ES16.8)') '# xi (AA) = ', xi_val
+                  write(iounit_prof, '(A,I0)') '# n_spatial = ', nspatial
+                  write(iounit_prof, '(A)') '# Columns: index, x (AA), y (AA), rho'
+                  do j = 1, nspatial
+                    write(iounit_prof, '(I6,2ES16.8,ES20.12)') j, &
+                      & cfg%grid%coords(1, j), cfg%grid%coords(2, j), profile_rho(j)
+                  end do
+                  close(iounit_prof)
+                  print *, '  Majorana profile written to output/majorana_profile.dat'
+                end if
+              end if
+              deallocate(profile_rho)
             end if
           end do
 
           if (n_fit_ok > 0) then
             result%edge_xi = sum(majorana_xi(1:n_fit_ok)) / real(n_fit_ok, kind=dp)
+            result%edge_xi_min = minval(majorana_xi(1:n_fit_ok))
             print *, '  Average Majorana localization length: ', result%edge_xi, ' AA'
           else
             result%edge_xi = 0.0_dp
+            result%edge_xi_min = 0.0_dp
             print *, '  Average Majorana localization length: unavailable'
           end if
           if (n_fit_failed > 0) then
@@ -658,7 +708,8 @@ contains
     type(spatial_grid) :: qw_grid
     integer :: N_local, Ntot_local, Nbdg_local, lwork_local, info_local
     integer :: i, j, n_zero, n_fit_ok, n_fit_failed
-    real(kind=dp) :: zero_tol, xi_val, dz_local
+    integer :: iounit_ev, iounit_prof, status_ev, status_prof
+    real(kind=dp) :: zero_tol, xi_val, dz_local, k_par_val
     real(kind=dp), allocatable :: majorana_xi(:)
 
     print *, '--- BdG QW mode: dense Majorana modes ---'
@@ -667,16 +718,18 @@ contains
     Ntot_local = 8 * N_local
     Nbdg_local = 16 * N_local
     zero_tol = max(1.0e-10_dp, 0.001_dp * abs(cfg_in%bdg%delta_0))
+    k_par_val = cfg_in%bdg%kz
 
     print *, '  Grid: N=', N_local
     print *, '  8N x 8N = ', Ntot_local, 'x', Ntot_local, ' (electron)'
     print *, '  16N x 16N BdG matrix'
+    print *, '  k_par=', k_par_val, ' 1/A'
     print *, '  mu=', cfg_in%bdg%mu, ' eV'
     print *, '  delta_0=', cfg_in%bdg%delta_0, ' eV'
     print *, '  B_vec=', cfg_in%bdg%B_vec
 
     call build_bdg_hamiltonian_qw(H_bdg, cfg_in, profile_in, kpterms_in, &
-      & 0.0_dp, cfg_in%bdg%mu, cfg_in%bdg%delta_0, &
+      & k_par_val, cfg_in%bdg%mu, cfg_in%bdg%delta_0, &
       & cfg_in%bdg%B_vec, cfg_in%bdg%g_factor)
 
     allocate(eigvals_bdg(Nbdg_local), rwork_local(max(1, 3 * Nbdg_local - 2)), work_local(1))
@@ -693,6 +746,23 @@ contains
     end if
 
     result%min_gap = 2.0_dp * minval(abs(eigvals_bdg))
+
+    ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
+    call ensure_output_dir()
+    call get_unit(iounit_ev)
+    open(unit=iounit_ev, file='output/bdg_eigenvalues.dat', status='replace', &
+         action='write', iostat=status_ev)
+    if (status_ev == 0) then
+      write(iounit_ev, '(A)') '# BdG eigenvalues (eV)'
+      write(iounit_ev, '(A,ES16.8)') '# k_par (1/A) = ', k_par_val
+      write(iounit_ev, '(A,I0)') '# n_eigenvalues = ', Nbdg_local
+      write(iounit_ev, '(A)') '# Columns: index, energy (eV)'
+      do i = 1, Nbdg_local
+        write(iounit_ev, '(I6,ES20.12)') i, eigvals_bdg(i)
+      end do
+      close(iounit_ev)
+      print *, '  Eigenvalues written to output/bdg_eigenvalues.dat'
+    end if
 
     n_zero = 0
     do i = 1, Nbdg_local
@@ -736,6 +806,25 @@ contains
           else
             n_fit_failed = n_fit_failed + 1
           end if
+
+          ! Write Majorana profile for first zero-energy mode
+          if (n_fit_ok + n_fit_failed == 1) then
+            call get_unit(iounit_prof)
+            open(unit=iounit_prof, file='output/majorana_profile.dat', &
+                 status='replace', action='write', iostat=status_prof)
+            if (status_prof == 0) then
+              write(iounit_prof, '(A)') '# Majorana wavefunction spatial profile'
+              write(iounit_prof, '(A,ES16.8)') '# k_par (1/A) = ', k_par_val
+              write(iounit_prof, '(A,ES16.8)') '# xi (AA) = ', xi_val
+              write(iounit_prof, '(A,I0)') '# n_spatial = ', N_local
+              write(iounit_prof, '(A)') '# Columns: z (AA), rho'
+              do j = 1, N_local
+                write(iounit_prof, '(ES16.8,ES20.12)') qw_grid%z(j), profile_majorana(j)
+              end do
+              close(iounit_prof)
+              print *, '  Majorana profile written to output/majorana_profile.dat'
+            end if
+          end if
         end if
       end do
 
@@ -762,6 +851,44 @@ contains
       end do
       deallocate(majorana_xi, profile_majorana)
     end if
+
+    ! Always output spatial profile of the lowest-|E| BdG state
+    block
+      integer :: i_min_e, iounit_low, status_low
+      real(kind=dp) :: min_abs_e
+      real(kind=dp), allocatable :: profile_lowest(:)
+
+      i_min_e = 1
+      min_abs_e = abs(eigvals_bdg(1))
+      do j = 2, Nbdg_local
+        if (abs(eigvals_bdg(j)) < min_abs_e) then
+          min_abs_e = abs(eigvals_bdg(j))
+          i_min_e = j
+        end if
+      end do
+
+      allocate(profile_lowest(N_local))
+      xi_val = compute_majorana_profile(H_bdg(:, i_min_e), qw_grid, &
+        & zero_tol, Ntot_local, profile_lowest)
+
+      call ensure_output_dir()
+      call get_unit(iounit_low)
+      open(unit=iounit_low, file='output/bdg_lowest_state_profile.dat', &
+           status='replace', action='write', iostat=status_low)
+      if (status_low == 0) then
+        write(iounit_low, '(A)') '# Lowest-|E| BdG state spatial profile'
+        write(iounit_low, '(A,ES16.8)') '# k_par (1/A) = ', k_par_val
+        write(iounit_low, '(A,ES16.8)') '# Energy (eV) = ', eigvals_bdg(i_min_e)
+        write(iounit_low, '(A,ES16.8)') '# xi (AA) = ', xi_val
+        write(iounit_low, '(A)') '# Columns: z (AA), rho'
+        do j = 1, N_local
+          write(iounit_low, '(ES16.8,ES20.12)') qw_grid%z(j), profile_lowest(j)
+        end do
+        close(iounit_low)
+        print *, '  Lowest-state profile written to output/bdg_lowest_state_profile.dat'
+      end if
+      deallocate(profile_lowest)
+    end block
 
     print *, '  Zero-energy BdG gap: ', result%min_gap, ' eV'
 

@@ -15,8 +15,8 @@ module bdg_hamiltonian
   ! Key properties:
   !   - BdG matrix IS Hermitian (FEAST works directly, no non-Hermitian solver)
   !   - Particle-hole symmetry: eigenvalues come in ±E pairs
-  !   - Pairing matrix: Xi = delta_0 * antidiag(+1,-1,+1,-1,-1,+1,+1,-1)
-  !     in zinc-blende 8-band basis
+  !   - Pairing matrix: Delta = delta_0 * (iσ_y ⊗ I_4), intra-band s-wave
+  !     pairing within each Kramers pair in zinc-blende 8-band basis
   !
   ! Basis ordering (fixed throughout codebase):
   !   Bands 1-4 = valence (HH, LH, LH, SO), 5-6 = split-off, 7-8 = conduction
@@ -38,17 +38,23 @@ module bdg_hamiltonian
   public :: build_bdg_hamiltonian_1d
   public :: build_bdg_hamiltonian_qw
 
-  ! Pairing sign antidiagonal pattern for zinc-blende 8-band basis.
-  ! Xi = delta_0 * antidiag(+1,-1,+1,-1,-1,+1,+1,-1) in bands 1..8.
-  real(kind=dp), parameter :: pairing_sign_xi(8) = [ &
-    +1.0_dp, &  ! band 1 (HH)
-    -1.0_dp, &  ! band 2 (LH)
-    +1.0_dp, &  ! band 3 (LH)
-    -1.0_dp, &  ! band 4 (HH)
-    -1.0_dp, &  ! band 5 (SO)
-    +1.0_dp, &  ! band 6 (SO)
-    +1.0_dp, &  ! band 7 (CB)
-    -1.0_dp ]   ! band 8 (CB)
+  ! s-wave pairing partner band indices (iσ_y ⊗ I_4 in zinc-blende basis).
+  ! Basis: HH↑(1), LH↑(2), LH↓(3), HH↓(4), SO↑(5), SO↓(6), CB↑(7), CB↓(8).
+  ! Each spin-up partner is the spin-down within the same Kramers pair:
+  !   1↔4 (HH↑↔HH↓), 2↔3 (LH↑↔LH↓), 5↔6 (SO↑↔SO↓), 7↔8 (CB↑↔CB↓).
+  integer, parameter :: pairing_partner(8) = [4, 3, 2, 1, 6, 5, 8, 7]
+
+  ! Sign for each band in the pairing: +1 for spin-up, -1 for spin-down.
+  ! Kramers pairs (1,4), (2,3), (5,6), (7,8) get (+1,-1) respectively.
+  real(kind=dp), parameter :: pairing_sign(8) = [ &
+    +1.0_dp, &  ! band 1 (HH↑)
+    +1.0_dp, &  ! band 2 (LH↑)
+    -1.0_dp, &  ! band 3 (LH↓)
+    -1.0_dp, &  ! band 4 (HH↓)
+    +1.0_dp, &  ! band 5 (SO↑)
+    -1.0_dp, &  ! band 6 (SO↓)
+    +1.0_dp, &  ! band 7 (CB↑)
+    -1.0_dp ]   ! band 8 (CB↓)
 
 contains
 
@@ -73,11 +79,10 @@ contains
   !         | Delta^dagger  -H0^T+mu*I |
   !
   ! The pairing matrix in the zinc-blende 8-band basis is:
-  !   Xi = delta_0 * antidiag(+1,-1,+1,-1,-1,+1,+1,-1)
-  !
-  ! The 8x8 block pattern (+1,-1,+1,-1,-1,+1,+1,-1) reflects the spinor
-  ! structure: CB states get (+1,-1) for spin-up/spin-down pairing, and
-  ! VB states get paired with opposite signs according to their character.
+  !   Delta = delta_0 * (iσ_y ⊗ I_4)
+  ! This gives intra-band s-wave pairing within each Kramers pair:
+  !   CB↑(7)↔CB↓(8), HH↑(1)↔HH↓(4), LH↑(2)↔LH↓(3), SO↑(5)↔SO↓(6)
+  ! with signs (+1,-1,+1,-1,+1,-1,+1,-1) reflecting iσ_y structure.
   !
   ! For the wire, each band-block is replicated at each spatial point.
   ! ==============================================================================
@@ -219,35 +224,35 @@ contains
 
     ! ==================================================================
     ! Block (2,1): Delta^dagger  (rows 8N..16N-1, cols 0..8N-1)
-    ! Antidiagonal pairing in band-major: row = (band-1)*N + site
+    ! Delta^dagger(j,i) = conjg(Delta(i,j)), so sign is from partner band.
     ! ==================================================================
     do i = 1, N  ! spatial index
       do row = 1, 8  ! hole band
-        col = 9 - row  ! antidiagonal electron partner
+        col = pairing_partner(row)  ! electron partner band
         coo_idx = coo_idx + 1
         call check_coo_bounds(coo_idx, coo_capacity)
         global_row = 8 * N + (row - 1) * N + i
         global_col = (col - 1) * N + i
+        coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(col), 0.0_dp, kind=dp)
         coo_row_bdg(coo_idx) = global_row
         coo_col_bdg(coo_idx) = global_col
-        coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign_xi(col), 0.0_dp, kind=dp)
       end do
     end do
 
     ! ==================================================================
     ! Block (1,2): Delta  (rows 0..8N-1, cols 8N..16N-1)
-    ! Antidiagonal pairing in band-major: row = (band-1)*N + site
+    ! Intra-band s-wave pairing: electron(ib) couples to hole(partner(ib))
     ! ==================================================================
     do i = 1, N  ! spatial index
       do row = 1, 8  ! electron band
-        col = 9 - row  ! antidiagonal hole partner
+        col = pairing_partner(row)  ! hole partner band
         coo_idx = coo_idx + 1
         call check_coo_bounds(coo_idx, coo_capacity)
         global_row = (row - 1) * N + i
         global_col = 8 * N + (col - 1) * N + i
+        coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign(row), 0.0_dp, kind=dp)
         coo_row_bdg(coo_idx) = global_row
         coo_col_bdg(coo_idx) = global_col
-        coo_vals_bdg(coo_idx) = cmplx(delta_0 * pairing_sign_xi(row), 0.0_dp, kind=dp)
       end do
     end do
 
@@ -308,7 +313,7 @@ contains
   !         | Delta^dagger  -H0^T+mu*I  |
   !
   ! H0 is the 8N x 8N dense QW Hamiltonian from ZB8bandQW.
-  ! Delta is diagonal with antidiagonal band pairing within each spatial site.
+  ! Delta uses intra-band s-wave pairing (iσ_y ⊗ I_4) within each Kramers pair.
   !
   ! Arguments:
   !   H_bdg    - (out) 16N x 16N dense BdG matrix (allocated here)
@@ -384,23 +389,22 @@ contains
       H_bdg(i, i) = H_bdg(i, i) - cmplx(mu, 0.0_dp, kind=dp)
     end do
 
-    ! --- Block (1,2): Delta (antidiagonal pairing, band-major) ---
-    ! Delta(b, 9-b) = delta_0 * pairing_sign(b) at each spatial site
+    ! --- Block (1,2): Delta (intra-band s-wave pairing, band-major) ---
+    ! Delta(ib, partner(ib)) = delta_0 * pairing_sign(ib) at each spatial site
     do i = 1, N
       do ib = 1, 8
         row = (ib - 1) * N + i
-        col = (9 - ib - 1) * N + i
-        H_bdg(row, N8 + col) = cmplx(delta_0 * pairing_sign_xi(ib), 0.0_dp, kind=dp)
+        col = (pairing_partner(ib) - 1) * N + i
+        H_bdg(row, N8 + col) = cmplx(delta_0 * pairing_sign(ib), 0.0_dp, kind=dp)
       end do
     end do
 
-    ! --- Block (2,1): Delta^dagger = Delta^T (real-valued, symmetric within site) ---
-    ! Since Delta is real and antidiagonal: Delta^dagger(b',b) = Delta(b,b')
+    ! --- Block (2,1): Delta^dagger = conjg(Delta^T), sign from partner band ---
     do i = 1, N
       do ib = 1, 8
         row = (ib - 1) * N + i
-        col = (9 - ib - 1) * N + i
-        H_bdg(N8 + row, col) = cmplx(delta_0 * pairing_sign_xi(9 - ib), 0.0_dp, kind=dp)
+        col = (pairing_partner(ib) - 1) * N + i
+        H_bdg(N8 + row, col) = cmplx(delta_0 * pairing_sign(pairing_partner(ib)), 0.0_dp, kind=dp)
       end do
     end do
 

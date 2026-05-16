@@ -257,34 +257,105 @@ def plot_wire_subbands(kz_vals, eig_matrix, nx, ny, hdim):
 
     n_evals = eig_matrix.shape[1]
 
+    # Identify the band gap at each kz-point as the largest energy spacing.
+    # This separates CB from VB even when spurious solutions are present.
+    midpoints = np.zeros(len(kz_vals))
+    for i in range(len(kz_vals)):
+        evals_sorted = np.sort(eig_matrix[i])
+        diffs = np.diff(evals_sorted)
+        gi = np.argmax(diffs)
+        midpoints[i] = 0.5 * (evals_sorted[gi] + evals_sorted[gi + 1])
+
+    # Use the k=0 gap as reference for display window.
+    evals_k0 = np.sort(eig_matrix[0])
+    diffs_k0 = np.diff(evals_k0)
+    gap_idx = np.argmax(diffs_k0)
+    vb_top = evals_k0[gap_idx]
+    cb_bot = evals_k0[gap_idx + 1]
+    band_gap = cb_bot - vb_top
+    mid_ref = 0.5 * (vb_top + cb_bot)
+
+    # Band tracking with gap-aware greedy matching and jump rejection.
+    # At each k-point, split eigenvalues into CB/VB by the local midpoint,
+    # then track within each group independently. Reject matches where
+    # the energy jump exceeds a physical threshold.
+    max_jump = 0.15  # eV — max allowed jump between consecutive kz-points
+
+    cb_bands = []  # list of arrays, each is a tracked CB subband
+    vb_bands = []  # list of arrays, each is a tracked VB subband
+
+    # Initialize from k=0
+    cb_idx_k0 = np.where(eig_matrix[0] > mid_ref)[0]
+    vb_idx_k0 = np.where(eig_matrix[0] <= mid_ref)[0]
+
+    # Track CB bands
+    cb_tracked = np.full((len(kz_vals), len(cb_idx_k0)), np.nan)
+    cb_tracked[0] = np.sort(eig_matrix[0][cb_idx_k0])
+    for i in range(1, len(kz_vals)):
+        mid = midpoints[i]
+        cb_cur = np.sort(eig_matrix[i][eig_matrix[i] > mid])
+        prev = cb_tracked[i - 1]
+        n_prev = len(prev)
+        n_cur = len(cb_cur)
+        if n_cur == 0 or n_prev == 0:
+            continue
+        used = np.zeros(n_cur, dtype=bool)
+        for j in range(n_prev):
+            if np.isnan(prev[j]):
+                continue
+            dists = np.abs(cb_cur - prev[j])
+            dists[used] = np.inf
+            best = np.argmin(dists)
+            if dists[best] < max_jump:
+                cb_tracked[i, j] = cb_cur[best]
+                used[best] = True
+
+    # Track VB bands
+    vb_tracked = np.full((len(kz_vals), len(vb_idx_k0)), np.nan)
+    vb_tracked[0] = np.sort(eig_matrix[0][vb_idx_k0])
+    for i in range(1, len(kz_vals)):
+        mid = midpoints[i]
+        vb_cur = np.sort(eig_matrix[i][eig_matrix[i] <= mid])
+        prev = vb_tracked[i - 1]
+        n_prev = len(prev)
+        n_cur = len(vb_cur)
+        if n_cur == 0 or n_prev == 0:
+            continue
+        used = np.zeros(n_cur, dtype=bool)
+        for j in range(n_prev):
+            if np.isnan(prev[j]):
+                continue
+            dists = np.abs(vb_cur - prev[j])
+            dists[used] = np.inf
+            best = np.argmin(dists)
+            if dists[best] < max_jump:
+                vb_tracked[i, j] = vb_cur[best]
+                used[best] = True
+
     fig, ax = plt.subplots(figsize=(10, 7))
 
-    # Separate CB and VB: eigenvalues are sorted per kz-point.
-    # For GaAs, CB bottom is near Eg ~ 1.5 eV. VB top is near 0 eV.
-    # Plot all eigenvalues as thin lines, color by energy region.
-    for j in range(n_evals):
-        band_e = eig_matrix[:, j]
-        # Color: blue for VB (E < 0 region), red for CB (E > ~1.4 eV)
-        mid_e = band_e[0]
-        if mid_e > 0.5:
-            color = "crimson"
-            alpha = 0.7
-            lw = 0.8
-        else:
-            color = "steelblue"
-            alpha = 0.4
-            lw = 0.5
-        ax.plot(kz_vals, band_e, color=color, alpha=alpha, lw=lw)
+    # Plot CB bands
+    n_cb = cb_tracked.shape[1]
+    for j in range(n_cb):
+        mask = ~np.isnan(cb_tracked[:, j])
+        if np.sum(mask) > 1:
+            ax.plot(kz_vals[mask], cb_tracked[mask, j],
+                    color="crimson", alpha=0.7, lw=0.8)
 
-    # Annotate subband count
-    n_cb = sum(1 for j in range(n_evals) if eig_matrix[0, j] > 0.5)
-    n_vb = n_evals - n_cb
+    # Plot VB bands near the gap (limit to upper portion)
+    vb_display = min(16, vb_tracked.shape[1])
+    n_vb_total = vb_tracked.shape[1]
+    for j in range(n_vb_total - vb_display, n_vb_total):
+        mask = ~np.isnan(vb_tracked[:, j])
+        if np.sum(mask) > 1:
+            ax.plot(kz_vals[mask], vb_tracked[mask, j],
+                    color="steelblue", alpha=0.4, lw=0.5)
 
     ax.annotate(
         f"Grid: {nx} x {ny}\n"
-        f"H dim: {hdim}\n"
+        f"Gap: {band_gap:.3f} eV\n"
         f"CB subbands: {n_cb}\n"
-        f"VB subbands: {n_vb}",
+        f"VB subbands (shown): {vb_display}",
         xy=(0.98, 0.02),
         xycoords="axes fraction",
         fontsize=9,
@@ -300,6 +371,10 @@ def plot_wire_subbands(kz_vals, eig_matrix, nx, ny, hdim):
         f"(GaAs, {nx}x{ny} grid, 8-band k.p)",
         fontsize=13, fontweight="bold",
     )
+    # Set y-limits around the gap region
+    e_lo = vb_top - 0.3
+    e_hi = cb_bot + 0.3
+    ax.set_ylim(e_lo, e_hi)
     ax.grid(True, alpha=0.3)
 
     # Add legend entries for CB/VB coloring
@@ -317,7 +392,8 @@ def plot_wire_subbands(kz_vals, eig_matrix, nx, ny, hdim):
     plt.close(fig)
 
     print(f"  Plot saved to {out_path}")
-    print(f"  CB subbands: {n_cb}, VB subbands: {n_vb}, total: {n_evals}")
+    print(f"  Near-gap bands: {n_cb} CB + {vb_display} VB (of {n_vb_total} total)")
+    print(f"  Band gap at k=0: {band_gap:.4f} eV")
     print()
 
 

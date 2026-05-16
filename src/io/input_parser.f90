@@ -1150,6 +1150,10 @@ contains
         if (status /= 0) then; status = 0; exit bdg_block; end if
         print *, trim(label), trim(cfg%bdg%gauge)
 
+        read(data_unit, *, iostat=status) label, cfg%bdg%kz
+        if (status /= 0) then; cfg%bdg%kz = 0.0_dp; status = 0; exit bdg_block; end if
+        print *, trim(label), cfg%bdg%kz
+
       else if (found_optional) then
         ! bdg=F, skip remaining bdg lines
         print *, trim(label), cfg%bdg%enabled

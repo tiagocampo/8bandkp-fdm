@@ -1145,3 +1145,9 @@ Running `optics_bulk_gaas.cfg` produces:
 - **ISBT peak**: at 0.11 eV (conduction intersubband transition)
 
 ![Overlay plot](figures/lecture_06_absorption.png)
+
+![Gain spectra](figures/lecture_06_gain.png)
+
+![Spontaneous emission](figures/lecture_06_spontaneous.png)
+
+![Spin-resolved absorption](figures/lecture_06_spin_resolved.png)

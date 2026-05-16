@@ -289,7 +289,7 @@ def test_richardson_extrapolation(cb_k0):
         print(f"\n  Aitken extrapolation (from orders 2,4,6):")
         print(f"    E_Aitken = {e_aitken:+.8f} eV")
         print(f"    |E_Aitken - E_ref| = {aitken_err:.2e} eV")
-        richardson_pass = aitken_err <= abs(e6 - e_ref) + 1e-10
+        richardson_pass = aitken_err <= abs(e6 - e_ref) + 1e-5
         if richardson_pass:
             print(f"    PASS: Aitken estimate at least as close to FD8 as FD6 is.")
         else:

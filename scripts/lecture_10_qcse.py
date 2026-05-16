@@ -98,13 +98,12 @@ def run_bandstructure(config_name, work_dir):
 
 
 def plot_stark_shift(evals_0, evals_f, cb1_0, cb1_f, vb1_0, vb1_f,
-                     save_path):
-    """Generate overlay plot comparing subband energies with/without field.
+                     save_path, transition_shift_mev):
+    """Generate overlay plot showing QCSE transition energy shift.
 
-    Left panel: all eigenvalue levels at k=0 for both runs, with connecting
-    lines showing the field-induced shifts.
-    Right panel: QW schematic showing the tilted potential and the shift
-    of CB1 and VB1 energy levels.
+    Left panel: transition energy (CB1-VB1 gap) with and without field.
+    Right panel: QW schematic showing the tilted potential and wavefunction
+    shift that causes the QCSE red shift.
 
     Args:
         evals_0: eigenvalue array without field
@@ -118,110 +117,144 @@ def plot_stark_shift(evals_0, evals_f, cb1_0, cb1_f, vb1_0, vb1_f,
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.5),
                               gridspec_kw={"width_ratios": [3, 2]})
 
-    # --- Left panel: Subband energy levels ---
+    # --- Left panel: Transition energy diagram ---
     ax1 = axes[0]
 
-    n_bands = len(evals_0)
-    x_positions = np.arange(n_bands)
-
-    # Plot energies without field
-    ax1.plot(x_positions, evals_0, 'o', color='royalblue', markersize=7,
-             label='No field', zorder=3)
-    # Plot energies with field
-    ax1.plot(x_positions, evals_f, 's', color='crimson', markersize=7,
-             label=f'Field ({EFIELD_KV_PER_CM:.0f} kV/cm)', zorder=3)
-
-    # Draw connecting lines to show shifts
-    for i in range(n_bands):
-        shift = evals_f[i] - evals_0[i]
-        if abs(shift) > 0.001:
-            ax1.plot([x_positions[i], x_positions[i]],
-                     [evals_0[i], evals_f[i]],
-                     '-', color='gray', linewidth=0.8, alpha=0.6)
-
-    # Annotate CB1 raw shift
-    raw_shift_mev = (cb1_f - cb1_0) * 1000
-    ax1.annotate(
-        f'$\\Delta E_{{CB1}}$ = {raw_shift_mev:+.1f} meV\n(raw shift)',
-        xy=(CB1_IDX, cb1_f),
-        xytext=(CB1_IDX + 1.5, cb1_f + 0.05),
-        fontsize=9, color='crimson', fontweight='bold',
-        arrowprops=dict(arrowstyle='->', color='crimson', lw=1.2),
-    )
-
-    # Draw bracket showing transition energy without field
     gap_0 = cb1_0 - vb1_0
-    ax1.annotate(
-        '', xy=(n_bands - 0.3, cb1_0), xytext=(n_bands - 0.3, vb1_0),
-        arrowprops=dict(arrowstyle='<->', color='royalblue', lw=1.5),
-    )
-    ax1.text(n_bands + 0.1, (cb1_0 + vb1_0) / 2,
-             f'$E_{{gap}}$ = {gap_0 * 1000:.1f}\nmeV',
-             fontsize=8, va='center', color='royalblue')
+    gap_f = cb1_f - vb1_f
+    qcse_shift_mev = (gap_f - gap_0) * 1000.0
 
-    ax1.set_xlabel('Eigenvalue index', fontsize=11)
+    # Draw subband levels
+    x_no = 0.3
+    x_ef = 0.7
+
+    # VB1 levels
+    ax1.plot([x_no - 0.15, x_no + 0.15], [vb1_0, vb1_0], 'b-', lw=2.5)
+    ax1.plot([x_ef - 0.15, x_ef + 0.15], [vb1_f, vb1_f], 'r--', lw=2.5)
+
+    # CB1 levels
+    ax1.plot([x_no - 0.15, x_no + 0.15], [cb1_0, cb1_0], 'b-', lw=2.5)
+    ax1.plot([x_ef - 0.15, x_ef + 0.15], [cb1_f, cb1_f], 'r--', lw=2.5)
+
+    # Transition energy arrows
+    ax1.annotate('', xy=(x_no, cb1_0), xytext=(x_no, vb1_0),
+                 arrowprops=dict(arrowstyle='<->', color='royalblue', lw=2))
+    ax1.text(x_no - 0.05, (cb1_0 + vb1_0) / 2,
+             f'$E_{{gap}}^0$ = {gap_0 * 1000:.1f} meV',
+             fontsize=9, ha='right', va='center', color='royalblue')
+
+    ax1.annotate('', xy=(x_ef, cb1_f), xytext=(x_ef, vb1_f),
+                 arrowprops=dict(arrowstyle='<->', color='crimson', lw=2))
+    ax1.text(x_ef + 0.05, (cb1_f + vb1_f) / 2,
+             f'$E_{{gap}}^F$ = {gap_f * 1000:.1f} meV',
+             fontsize=9, ha='left', va='center', color='crimson')
+
+    # Labels
+    ax1.text(x_no, vb1_0 - 0.03, 'VB1', ha='center', fontsize=9, color='gray')
+    ax1.text(x_no, cb1_0 + 0.03, 'CB1', ha='center', fontsize=9, color='gray')
+    ax1.text(x_no, 0.5 * (cb1_0 + vb1_0) + 0.05, 'No field',
+             ha='center', fontsize=10, fontweight='bold', color='royalblue')
+    ax1.text(x_ef, 0.5 * (cb1_f + vb1_f) + 0.05,
+             f'F = {EFIELD_KV_PER_CM:.0f}\nkV/cm',
+             ha='center', fontsize=10, fontweight='bold', color='crimson')
+
+    # QCSE shift annotation
+    ax1.annotate(
+        f'QCSE red shift\n$\\Delta E_{{trans}}$ = {qcse_shift_mev:+.1f} meV',
+        xy=(0.5, 0.5 * (gap_0 + gap_f) + vb1_0),
+        xycoords='data',
+        fontsize=11, ha='center', va='center', fontweight='bold',
+        bbox=dict(boxstyle='round,pad=0.4', facecolor='lightyellow',
+                  edgecolor='orange', alpha=0.9),
+    )
+
+    ax1.set_xlim(0, 1)
     ax1.set_ylabel('Energy (eV)', fontsize=11)
-    ax1.set_title('Subband Energies at $k=0$', fontsize=12)
-    ax1.legend(fontsize=9, loc='upper left')
+    ax1.set_title('Transition Energy: CB1 $-$ VB1', fontsize=12)
+    ax1.set_xticks([])
     ax1.grid(True, alpha=0.3, axis='y')
 
     # --- Right panel: QW potential schematic ---
+    # Show the well potential profile. The field-shifted eigenvalues include
+    # a large linear ramp across the full simulation domain, so we plot them
+    # relative to the no-field levels to isolate the QCSE effect.
     ax2 = axes[1]
 
     qw_half = QW_WIDTH_ANG / 2  # 30 Angstrom
-    # Al0.2Ga0.8As band offset above GaAs CB edge: ~0.25 eV (20% of ~1.25 eV)
     barrier_cb_offset = 0.25
 
-    # QW potential without field (rectangular)
-    vb_no_field = vb1_0 - 0.1  # Approximate VB well bottom
+    # No-field potential
     cb_no_field = cb1_0
     barrier_top = cb_no_field + barrier_cb_offset
 
     ax2.plot([-qw_half, -qw_half, qw_half, qw_half],
              [barrier_top, cb_no_field, cb_no_field, barrier_top],
-             'b-', linewidth=2, label='No field')
+             'b-', linewidth=2, label='No field (CB)')
 
-    # Tilted QW potential with field
-    # V(z) = EFIELD_EV_PER_ANG * z (linear potential)
-    field_shift_at_edge = EFIELD_EV_PER_ANG * qw_half  # shift at well edges
-    cb_field_left = cb_no_field - field_shift_at_edge   # left edge (z=-30)
-    cb_field_right = cb_no_field + field_shift_at_edge  # right edge (z=+30)
-    barrier_field_left = barrier_top - field_shift_at_edge
-    barrier_field_right = barrier_top + field_shift_at_edge
+    # Tilted potential across the well
+    field_drop = EFIELD_EV_PER_ANG * QW_WIDTH_ANG  # total drop across well
+    cb_field_left = cb_no_field - field_drop / 2
+    cb_field_right = cb_no_field + field_drop / 2
 
     ax2.plot([-qw_half, -qw_half, qw_half, qw_half],
-             [barrier_field_left, cb_field_left,
-              cb_field_right, barrier_field_right],
-             'r--', linewidth=2, label=f'Field ({EFIELD_KV_PER_CM:.0f} kV/cm)')
+             [cb_field_left + barrier_cb_offset, cb_field_left,
+              cb_field_right, cb_field_right + barrier_cb_offset],
+             'r--', linewidth=2,
+             label=f'Field ({EFIELD_KV_PER_CM:.0f} kV/cm)')
 
-    # Energy levels without field
+    # No-field energy levels
     ax2.hlines(cb1_0, -qw_half * 0.7, qw_half * 0.7,
                colors='royalblue', linewidth=2.5, linestyles='-',
-               label=f'CB1 (no field): {cb1_0:.4f} eV')
+               label=f'CB1 (no field)')
+    ax2.hlines(vb1_0, -qw_half * 0.7, qw_half * 0.7,
+               colors='royalblue', linewidth=2.5, linestyles='-',
+               label=f'VB1 (no field)')
 
-    # Energy levels with field (approximate - show at well center)
-    ax2.hlines(cb1_f, -qw_half * 0.7, qw_half * 0.7,
+    # Field-shifted levels: subtract the domain-wide ramp to show the
+    # QCSE shift relative to the no-field position. The ramp adds ~EF*z_avg
+    # where z_avg is the wavefunction centroid in the full domain.
+    # For the QCSE effect, what matters is the relative change.
+    # The transition energy shift is the key quantity, already shown in left panel.
+    # Here show approximate CB1/VB1 shifts within the well.
+    cb1_shift_within_well = (cb1_f - cb1_0) - EFIELD_EV_PER_ANG * 0  # ref at z=0
+    # The actual within-well shift is smaller than the raw shift.
+    # Plot the field levels at positions that show the gap narrowing.
+    # Use the transition energy change: CB1 drops by ~half, VB1 rises by ~half
+    half_qcse = transition_shift_mev / 2.0 / 1000.0  # eV
+    cb1_qcse = cb1_0 + half_qcse  # drops (half_qcse is negative)
+    vb1_qcse = vb1_0 - half_qcse  # rises (subtract negative = add)
+
+    ax2.hlines(cb1_qcse, -qw_half * 0.4, qw_half * 0.7,
                colors='crimson', linewidth=2.5, linestyles='--',
-               label=f'CB1 (field): {cb1_f:.4f} eV')
+               label=f'CB1 (QCSE shift)')
+    ax2.hlines(vb1_qcse, -qw_half * 0.4, qw_half * 0.7,
+               colors='crimson', linewidth=2.5, linestyles='--',
+               label=f'VB1 (QCSE shift)')
 
-    # Arrow showing raw CB1 shift
-    ax2.annotate('', xy=(qw_half * 0.5, cb1_f),
-                 xytext=(qw_half * 0.5, cb1_0),
-                 arrowprops=dict(arrowstyle='->', color='black', lw=1.5))
-    raw_mev = (cb1_f - cb1_0) * 1000
-    ax2.text(qw_half * 0.65, (cb1_0 + cb1_f) / 2,
-             f'{raw_mev:+.0f} meV',
-             fontsize=10, va='center', fontweight='bold')
+    # Arrows showing the shifts
+    ax2.annotate('', xy=(0, cb1_qcse), xytext=(0, cb1_0),
+                 arrowprops=dict(arrowstyle='->', color='darkred', lw=1.5))
+    ax2.annotate('', xy=(0, vb1_qcse), xytext=(0, vb1_0),
+                 arrowprops=dict(arrowstyle='->', color='darkred', lw=1.5))
+
+    ax2.annotate(
+        f'QCSE shift:\n'
+        f'$\\Delta V$ = {abs(field_drop)*1000:.0f} meV across well\n'
+        f'$\\Delta E_{{trans}}$ = {qcse_shift_mev:+.0f} meV',
+        xy=(0.03, 0.97), xycoords='axes fraction',
+        fontsize=8, va='top',
+        bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8),
+    )
 
     ax2.set_xlabel('$z$ (Angstrom)', fontsize=11)
     ax2.set_ylabel('Energy (eV)', fontsize=11)
-    ax2.set_title('QCSE: Electric Field in QW', fontsize=12)
-    ax2.legend(fontsize=7, loc='upper right')
+    ax2.set_title('QCSE: Level Shifts in QW', fontsize=12)
+    ax2.legend(fontsize=6.5, loc='center right')
     ax2.grid(True, alpha=0.3)
 
     fig.suptitle(
-        'Lecture 10: Quantum-Confined Stark Effect '
-        f'(GaAs/{QW_WIDTH_ANG:.0f} A QW)',
+        'Quantum-Confined Stark Effect '
+        f'(GaAs/{QW_WIDTH_ANG:.0f} A QW, F = {EFIELD_KV_PER_CM:.0f} kV/cm)',
         fontsize=13, fontweight='bold',
     )
     fig.tight_layout(rect=[0, 0, 1, 0.94])
@@ -384,6 +417,7 @@ def main():
     plot_stark_shift(
         evals_0, evals_f, cb1_0, cb1_f, vb1_0, vb1_f,
         FIGURES_DIR / "lecture_10_stark_shift.png",
+        transition_shift_mev,
     )
 
     # ------------------------------------------------------------------
