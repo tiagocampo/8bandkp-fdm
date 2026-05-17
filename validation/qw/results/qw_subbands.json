@@ -1,0 +1,41 @@
+[
+  {
+    "config": "GaAs/Al20Ga80As 10.0nm",
+    "barrier": "Al20Ga80As",
+    "well": "GaAs",
+    "l_well_nm": 10.0,
+    "cb1_fortran_meV": 757.171,
+    "cb1_kdotpy_meV": 769.9579044897794,
+    "cb1_delta_meV": -12.786904489779317,
+    "vb1_fortran_meV": -802.2139999999999,
+    "vb1_kdotpy_meV": -807.3492330275401,
+    "vb1_delta_meV": 5.135233027540153,
+    "note": "Delta caused by missing const on diagonal k-dependent terms"
+  },
+  {
+    "config": "GaAs/Al20Ga80As 7.0nm",
+    "barrier": "Al20Ga80As",
+    "well": "GaAs",
+    "l_well_nm": 7.0,
+    "cb1_fortran_meV": 780.277,
+    "cb1_kdotpy_meV": 795.9017191126696,
+    "cb1_delta_meV": -15.624719112669595,
+    "vb1_fortran_meV": -804.279,
+    "vb1_kdotpy_meV": -812.9415896203941,
+    "vb1_delta_meV": 8.662589620394101,
+    "note": "Delta caused by missing const on diagonal k-dependent terms"
+  },
+  {
+    "config": "GaAs/Al30Ga70As 10.0nm",
+    "barrier": "Al30Ga70As",
+    "well": "GaAs",
+    "l_well_nm": 10.0,
+    "cb1_fortran_meV": 760.6220000000001,
+    "cb1_kdotpy_meV": 775.2610221037182,
+    "cb1_delta_meV": -14.639022103718162,
+    "vb1_fortran_meV": -802.2810000000001,
+    "vb1_kdotpy_meV": -807.7941207946385,
+    "vb1_delta_meV": 5.513120794638439,
+    "note": "Delta caused by missing const on diagonal k-dependent terms"
+  }
+]

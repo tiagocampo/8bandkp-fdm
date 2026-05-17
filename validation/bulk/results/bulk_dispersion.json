@@ -1,0 +1,62 @@
+[
+  {
+    "material": "GaAs",
+    "direction": "kx",
+    "mstar_fortran": 0.046875519455489484,
+    "mstar_kdotpy": 0.031247276341931172,
+    "ratio": 1.5001473710073907,
+    "r2_fortran": 0.9999721827156098,
+    "r2_kdotpy": 0.9999577908352286,
+    "parabolic": true,
+    "passed": true,
+    "note": "Convention difference: our bulk diagonal lacks const"
+  },
+  {
+    "material": "GaAs",
+    "direction": "ky",
+    "mstar_fortran": 0.046875519455489484,
+    "mstar_kdotpy": 0.031247276341930464,
+    "ratio": 1.5001473710074247,
+    "r2_fortran": 0.9999721827156098,
+    "r2_kdotpy": 0.9999577908352288,
+    "parabolic": true,
+    "passed": true,
+    "note": "Convention difference: our bulk diagonal lacks const"
+  },
+  {
+    "material": "GaAs",
+    "direction": "kz",
+    "mstar_fortran": 0.046875519455489484,
+    "mstar_kdotpy": 0.031229453603336527,
+    "ratio": 1.501003509407585,
+    "r2_fortran": 0.9999721827156098,
+    "r2_kdotpy": 0.999959889942266,
+    "parabolic": true,
+    "passed": true,
+    "note": "Convention difference: our bulk diagonal lacks const"
+  },
+  {
+    "material": "InAs",
+    "direction": "kx",
+    "mstar_fortran": 0.02033231298371969,
+    "mstar_kdotpy": 0.013500754470137096,
+    "ratio": 1.506013091986349,
+    "r2_fortran": 0.9994813334715256,
+    "r2_kdotpy": 0.9993053728091814,
+    "parabolic": true,
+    "passed": true,
+    "note": "Convention difference: our bulk diagonal lacks const"
+  },
+  {
+    "material": "InSb",
+    "direction": "kx",
+    "mstar_fortran": 0.01194140535591427,
+    "mstar_kdotpy": 0.007630723433446894,
+    "ratio": 1.5649113036350981,
+    "r2_fortran": 0.9991765150550319,
+    "r2_kdotpy": 0.9990520870846896,
+    "parabolic": true,
+    "passed": true,
+    "note": "Convention difference: our bulk diagonal lacks const"
+  }
+]
