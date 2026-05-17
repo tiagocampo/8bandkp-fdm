@@ -1,7 +1,7 @@
 ---
-date: 2026-05-08
+date: 2026-05-17
 topic: core-kp-validation
-focus: Validating core k.p physics against published literature through tests, regression checks, and lecture documentation
+focus: Validating core k.p physics against published literature, independent codes, and internal consistency checks
 mode: repo-grounded
 ---
 
@@ -9,101 +9,159 @@ mode: repo-grounded
 
 ## Grounding Context
 
-**Codebase Context:** Fortran 2018 k.p FD code with 4 executables (bandStructure, gfactorCalculation, opticalProperties, topologicalAnalysis). 20+ regression test configs in `tests/regression/configs/` with golden-output comparison via `compare_output.py`. `docs/reference/benchmarks.md` documents 6 validation regimes but lacks systematic publishable benchmarks. 15 unit + 24 regression tests pass; pFUnit-based unit testing. Known gaps: sparse matrix assembly tested only via eigenvalues (not CSR structure); lecture docs don't cover all physics modules. Known 8-band model limitation: 20-30% g-factor shortfall vs experiment (model, not bug).
+**Codebase Context (updated May 2026):** Fortran 2018 k.p FD code with 4 executables. 91 tests: 31 unit (pFUnit), 44 regression, 13 verification (4 ladder rungs + 2 strain rungs), 7 standard-star benchmarks (S1-S7), 1 coverage matrix. 87 regression configs. 14 lecture scripts (L00-L14). Verification ladder (4 rungs), standard-stars (S1-S7: GaAs/InAs/InSb bulk, GaAs/AlGaAs QW, InAs/GaSb QW, InAs/GaAs strained QW, InAs wire), CSR structure + Krylov snapshot tests, coverage matrix with validation_universe.yml (49 required + 12 aspirational cells, 61 COVERAGE annotations).
 
-**Past Learnings:** G-factor Roth formula gives exact analytical match (GaAs -0.315, InAsW -14.858). SC-SP had hidden unit-mismatch bug (Angstroms vs nm) only visible under strongest feedback mode. Topological modules had 5 index bugs — need structural CSR tests. gfortran -O3 can corrupt derived-type allocatable components via temporaries.
+**Remaining Gaps:** Richardson extrapolation only on FD stencil coefficients, not physics observables. Wire strain: profile test but no physics observable validation. Optics wire validation thin, no exciton binding energy regression. SC loop tests are "does it converge" checks. Standard-star suite missing g-factor, optical spectra, topological invariants. No cross-code comparison capability.
 
-**External Context:** Nextnano (Birner thesis) validates via Fock-Darwin, HgTe/CdTe crossover (~6.5 nm), InAs/GaSb vs TB, SiGe QCL vs experiment. Sengupta et al. (arXiv:1409.4376) provides explicit 8-band k.p FD coefficient matrices. Canonical benchmarks: bulk effective masses (GaAs 0.067 m0), band gaps (InAs 0.354 eV), spin-orbit splitting (GaAs 0.34 eV), BHZ edge states. Spurious solution detection via ellipticity criterion. Richardson extrapolation for convergence testing. No open-source competitor covers bulk+QW+wire+optics+topology.
+**Past Learnings:** CB effective mass from 8-band model ≠ Vurgaftman (29% deviation is expected model physics, not a bug). Lecture-test review found 13 systemic failures (vacuous assertions, material mismatch, FEAST window misses, hardcoded PASS). Richardson convergence: max-rate strategy, order-adaptive tolerance. FD coefficient bugs at order-10 were silently wrong. CSR test infrastructure had tautological assertions. Automated review has 80%+ false-positive rate on physics code. Last-layer-wins overlapping material layer pitfall in SC configs.
 
-## Ranked Ideas
+**External Context:** kdotpy (Wuerzburg, SciPost Phys. Codebases 47, 2025) is closest open-source 8-band k.p comparator — Python, plane-wave discretization, same Vurgaftman parameters. No shared inter-code benchmark suite exists (CECAM 2024 workshop identified gap). Gershoni 1993 is canonical optical benchmark. WannierTools has BdG with Fu-Kane analytical benchmarks. Richardson extrapolation theoretically proven for FD eigenvalue problems (E(h) = E_exact + c_2 h^2 + c_4 h^4 + ...).
 
-### 1. 8-Band Verification Ladder
-**Description:** Build a hierarchy of 8-band benchmarks from simplest to most complex, each with published/analytical reference: (1) 8-band bulk at k=0 — eigenvalues match band gap + spin-orbit splitting from `parameters.f90` by construction; (2) 8-band bulk dispersion — effective masses (m*_e, m*_hh, m*_lh, m*_so) near Gamma compared against Vurgaftman 2001 tables for all 25+ materials; (3) 8-band QW — subband energies vs Bastard analytical results and nextnano cross-validation; (4) 8-band wire — 2D confinement eigenvalues vs published wire results. Each rung validates the full 8-band Hamiltonian at increasing complexity.
-**Warrant:** `direct:` benchmarks.md documents 6 validation regimes but lacks systematic progression from bulk k=0 through dispersion through confinement. `external:` Vurgaftman 2001 provides tabulated effective masses and band gaps for all III-V materials; Bastard 1981 gives analytical QW subband spacings.
-**Rationale:** Validates the 8-band model — the core of the codebase — at every level. When a regression fails, the hierarchy tells you exactly where: bulk at k=0 (parameters), bulk dispersion (Hamiltonian construction), QW (confinement + FD), or wire (2D + CSR assembly).
-**Downsides:** Requires parabolic fitting for effective masses from computed dispersion. Wire benchmark literature is thin.
-**Confidence:** 90%
+## Previously Ranked Ideas (May 2026 Status Update)
+
+### 1. 8-Band Verification Ladder — IMPLEMENTED
+**Status:** 4 rungs (bulk k=0, bulk dispersion, QW subbands, wire eigenvalues) + 2 strain rungs. All passing in CI.
+
+### 2. CSR Structure Testing — IMPLEMENTED
+**Status:** csr_spmv, csr_helpers, csr_structural unit tests + Krylov snapshot tests for SC loop, optics wire, gfactor wire.
+
+### 3. Standard-Star Benchmark Systems — IMPLEMENTED
+**Status:** S1-S7 (GaAs bulk, InAs bulk, InSb bulk, GaAs/AlGaAs QW, InAs/GaSb QW, InAs/GaAs strained QW, InAs wire).
+
+### 4. Executable Lecture-Test Pairs — IMPLEMENTED
+**Status:** 14 lecture scripts (L00-L14) serving dual pedagogy + validation roles.
+
+### 5. Validation Coverage Matrix — IMPLEMENTED
+**Status:** validation_universe.yml (49 required + 12 aspirational cells), 61 COVERAGE annotations, ctest -L coverage.
+
+### 6. Richardson Extrapolation Convergence Fixture — PARTIALLY IMPLEMENTED
+**Status:** Unit test exists for FD stencil coefficients only. NOT extended to physics observables (Eg, subband spacing, g-factor, absorption edge).
+
+### 7. Strain Validation Across Geometries — PARTIALLY IMPLEMENTED
+**Status:** Bulk + QW rungs done. Wire has profile test but no physics observable validation (strain_shift, subband spacing under strain).
+
+## Ranked Ideas (May 2026 — Continued Ideation)
+
+### 1. kdotpy Cross-Code Comparison
+**Description:** Build an automated comparison pipeline against kdotpy (Wuerzburg, Python-based, open-source 8-band k.p solver using plane-wave expansion). Translate parameters.f90 material data to kdotpy format, run identical bulk and QW configurations in both codes, compare eigenvalues, effective masses, and g-factors. Start with the 7 standard-star materials where expected values are already documented. JSON/CSV interchange format. The comparison does not need to cover wire, topology, or optics — just the shared physics (bulk + QW eigenvalues and masses).
+**Warrant:** `external:` kdotpy (Beugeling et al., arXiv:2407.12651, SciPost Phys. Codebases 47, 2025) is an independent Python-based 8-band k.p implementation using different discretization. No shared inter-code benchmark exists for k.p codes — CECAM 2024 workshop identified this gap. `direct:` CLAUDE.md states "no cross-code comparison capability."
+**Rationale:** The deepest validation gap is not "we test too few things" but "we test against references that cannot distinguish 8-band-correct from 8-band-wrong." When the 8-band CB mass deviates 29% from Vurgaftman, the test tolerance accommodates that deviation — but also accommodates a wrong implementation. An independent 8-band code provides ground truth that 2-band analytical formulas cannot. "Our code agrees with kdotpy to X ppm on these benchmarks" is publishable in a way that "our code matches the 2-band Kane formula to within 30%" is not.
+**Downsides:** Requires kdotpy installation, parameter mapping, and config translation. One-time setup effort for bulk and QW.
+**Confidence:** 80%
+**Complexity:** High
+**Status:** Unexplored
+
+### 2. Richardson Extrapolation on Physics Observables
+**Description:** Build a convergence fixture that runs the same config at FD orders 2, 4, 6, 8 and multiple grid spacings, extracts a named physics observable (subband energy, g-factor, absorption edge), fits E(h) = E_exact + c_2 h^2 + c_4 h^4 + ..., and asserts the observed convergence rate matches the theoretical order. For standard-stars, report a Grid Convergence Index (GCI) — quantified discretization uncertainty alongside every benchmark number. The extrapolated continuum value becomes a self-generated reference that any future config can be compared against.
+**Warrant:** `direct:` CLAUDE.md explicitly states "Richardson extrapolation only on FD stencil coefficients, NOT on physics observables." The order-10 D1 coefficient bug produced silently wrong results caught only by operator-level convergence testing. `external:` Roache 1998 GCI methodology is the community standard for FD code verification (ASME V&V 20, AIAA guidelines). Theoretical basis: FD eigenvalue approximations satisfy E(h) = E_exact + c_2 h^2 + c_4 h^4 + ... (J. Comput. Appl. Math. 2009).
+**Rationale:** The codebase supports FD orders 2-10 but no test uses more than one order at a time on physics observables. Richardson turns this latent capability into a validation tool: every observable gets a convergence certificate. If the convergence rate is wrong, the FD stencils or matrix assembly have a bug — regardless of whether the numbers look plausible. The GCI turns standard-star snapshots into certified measurements with uncertainty bounds, making them scientifically publishable.
+**Downsides:** Multiplies runtime per config by 3-5x. Some observables may not converge cleanly at high orders. Some configs already take minutes at one resolution.
+**Confidence:** 95%
 **Complexity:** Medium
 **Status:** Unexplored
 
-### 2. CSR Structure Testing
-**Description:** Add unit tests that validate sparse matrix assembly independently of eigenvalue comparison. Two complementary approaches: (a) golden CSR structure files (row pointers, column indices, nnz count, spot-check element values) for canonical configs, and (b) Krylov-action snapshots (SpMV chain at fixed seed vector) for exponential sensitivity to structural differences.
-**Warrant:** `direct:` "Known gap: sparse matrix assembly tested only via eigenvalues, not CSR structure" — explicitly documented gap. The topological/magnetic bug report confirms CSR indexing bugs passed eigenvalue tests.
-**Rationale:** Eigenvalue identity is necessary but insufficient — two different matrices can share the same spectrum. Structural tests break the circularity and protect the wire and topology executables.
-**Downsides:** Golden CSR files must be regenerated when Hamiltonian construction intentionally changes.
+### 3. Exciton Binding Energy Validation
+**Description:** Add validation for the exciton module (exciton.f90), which is wired into production executables (bandStructure, opticalProperties) but has zero test coverage — no unit test, no regression test, no verification script, no standard-star benchmark. Validate against the 2D hydrogen model (E_b = Rydberg/4 for infinite barriers, with finite-barrier corrections) and published QW exciton binding energies (e.g., Miller et al., Phys. Rev. B 1985 for GaAs/AlGaAs).
+**Warrant:** `direct:` Searching for exciton tests yields nothing. The module is called in main_optics.f90:548-575 but no test validates the output. A figure in the lecture docs hardcodes E_b = 10 meV while the code outputs 4.82 meV — this discrepancy is undetected by any automated test. The validation_universe.yml has no exciton observable at all.
+**Rationale:** Shipped code with zero validation is the highest-risk category. The 2D hydrogen model provides an analytical reference. Even a minimal test (exciton binding energy within 50% of R/4 for a GaAs/AlGaAs QW) would be a vast improvement over the current state of no test at all.
+**Downsides:** Exciton physics is sensitive to barrier height and well width. Finite-barrier corrections reduce binding energy from the infinite-barrier limit. Non-parabolicity corrections from the 8-band model may cause deviations from the 2D hydrogen model.
+**Confidence:** 90%
+**Complexity:** Low
+**Status:** Unexplored
+
+### 4. SC Loop Physics-Output Regression
+**Description:** After self-consistent convergence, assert quantitative physics outputs: Fermi level matches charge-neutrality expectation, subband energy shift relative to flat-band matches analytical estimate (Bastard 1981 for QW subband shift under electric field), charge density profile integrates to the doping level. Currently tests only check "did the loop converge." The SC benchmark verifier checks gap within a 120x range (0.05-6.0 eV) that nearly any wrong answer falls within.
+**Warrant:** `direct:` CLAUDE.md explicitly states "SC loop convergence tests are 'does it converge' checks, no physics-output regression." A bug in charge_density.f90 (wrong Fermi integration, incorrect k_parallel sampling) or poisson.f90 (wrong boundary condition application) would still produce a convergent SC loop — converging to an unphysical steady state.
+**Rationale:** SC is the most complex multi-module interaction (Hamiltonian + Poisson + charge density + DIIS + k-parallel sampling). "Converges" is necessary but not sufficient — the converged state must be physically correct. A single GaAs/AlGaAs reference with frozen Fermi level, subband energies, and charge profile would catch regressions in any of the five coupled modules.
+**Downsides:** SC results are grid- and k-point-dependent. Reference values must be established at a specific configuration. Different doping configurations (uniform vs modulation-doped) may need different physics invariants.
 **Confidence:** 85%
-**Complexity:** Low-Medium
-**Status:** Unexplored
-
-### 3. Standard-Star Benchmark Systems
-**Description:** Define 3-4 canonical material systems (GaAs bulk, InAs/GaSb QW, HgTe/CdTe topological, InSb extreme spin-orbit) and validate each against multiple independent published observables — not just band structure but also effective mass, g-factor, and optical absorption edge. A GaAs "standard system passes" means band gap matches Vurgaftman, effective mass matches Kane prediction, AND g-factor matches Roth formula — all with the same parameter set.
-**Warrant:** `direct:` benchmarks.md lacks systematic published benchmarks. `external:` Nextnano validates InAs/GaSb against tight-binding AND HgTe/CdTe crossover against BHZ — multiple properties from same material (Birner thesis, TUM 2011).
-**Rationale:** Turns "does the code match itself?" into "does it reproduce Vurgaftman Table X for GaAs?" Multi-property validation per material makes the g-factor shortfall quantitatively traceable.
-**Downsides:** Requires literature lookup for multiple observables per material. Some properties may lack clean published values.
-**Confidence:** 90%
 **Complexity:** Medium
 **Status:** Unexplored
 
-### 4. Executable Lecture-Test Pairs
-**Description:** Refactor each lecture doc into a triple: (1) derivation of expected physics with equations, (2) committed regression config that exercises exactly that physics, (3) script that runs the config and plots output alongside the analytical derivation. Running `make lecture-roth` reproduces the derivation with code output.
-**Warrant:** `direct:` Lecture docs exist in docs/lecture/ but don't cover all physics modules — the BdG/topological module has a design spec but no lecture. `reasoned:` Connecting derivation to code doubles as validation: if output diverges from derivation, either the code or the derivation is wrong.
-**Rationale:** Every new lecture creates a new validation point at marginal cost. The topological module becomes accessible to anyone who didn't write it. No open-source k.p competitor offers executable lectures.
-**Downsides:** Significant documentation effort. Plot scripts need maintenance as output formats change.
+### 5. Verification Ladder Extension to Optical and g-Factor
+**Description:** Extend the existing 4-rung verification ladder (band structure observables) to optical and g-factor observables. Rung 1: bulk Kane interband matrix element P vs Vurgaftman/Winkler tabulated values. Rung 2: QW intersubband transition energies vs effective-mass approximation (known to be approximate, tests the deviation direction). Rung 3: bulk g-factor vs Roth formula (already analytically verified in lecture scripts). Rung 4: QW g-factor vs published experimental data for InGaAs/GaAs. The ladder structure provides diagnostic precision: if rung 1 passes but rung 3 fails, the bug is in QW-specific g-factor calculation.
+**Warrant:** `direct:` Standard-star suite is missing g-factor and optical spectra benchmarks. The optical module and g-factor module are tested by lecture scripts but lack the systematic rung structure that makes the band-structure ladder so diagnostically valuable. `external:` Roth formula is exact for 2-band g-factor; Winkler 2003 Table 6.2 lists expected accuracy for 8-band g-factors.
+**Rationale:** Optical and g-factor calculations depend on the full k.p machinery — Hamiltonian construction, eigensolution, velocity matrices, and post-processing. They are integration tests for the entire pipeline. The verification ladder structure provides diagnostic precision and fills cells in the coverage matrix automatically.
+**Downsides:** 8-band g-factor has known 20-30% shortfall vs experiment (model limitation). Optical spectra benchmarks require linewidth assumptions.
+**Confidence:** 85%
+**Complexity:** Medium
+**Status:** Unexplored
+
+### 6. Wire Strain Physics Observable Validation
+**Description:** Replace the 60% tolerance profile-shape test with quantitative band-edge shift checks. In the wide-core limit (wire diameter >> lattice constant), the strain field should converge to bulk biaxial strain values — analytically computable from Vurgaftman deformation potentials (a_v, a_c, b, d) via Chuang strained-band formulas. Add tests: (a) strained wire band gap shift vs bulk biaxial prediction in wide-core limit; (b) HH-LH splitting under strain matches analytical Bir-Pikus prediction; (c) subband spacing under strain is physically consistent (compression increases confinement, tension decreases it).
+**Warrant:** `direct:` CLAUDE.md states "Wire strain: profile test exists but no physics observable validation." The verify_strain_wire_profile.py tolerance of 60% on strain magnitude is enormous — even a qualitatively wrong PDE solution could pass. `external:` Vurgaftman 2001 Tables XIV-XV provide deformation potentials; Chuang Chapter 4 derives strained band edges analytically.
+**Rationale:** Wire strain is the gateway to wire g-factor, wire optics, and wire topological analysis. If the strain field is wrong, every downstream observable built on top of it inherits the error. The wide-core analytic limit provides a rigorous anchor that the current 60% tolerance cannot deliver.
+**Downsides:** Wide-core limit requires large wire configs (expensive). Strain field non-uniformity at finite diameter means the limit is approximate.
 **Confidence:** 80%
 **Complexity:** Medium
 **Status:** Unexplored
 
-### 5. Validation Coverage Matrix
-**Description:** Build a heat map with axes: observable type (eigenvalues, g-factor, optical peak, Chern number, Z2, LDOS) x geometry (bulk, QW, wire) x material family (III-As, III-Sb, II-VI, nitride). Each cell is green (published/analytical benchmark), yellow (regression test, no published reference), or red (no test). Drives test-creation priorities.
-**Warrant:** `direct:` 24 regression tests exist but their cross-product coverage is undocumented. `reasoned:` Coverage matrix is the standard first step in systematic testing — makes gaps visible before they become bugs.
-**Rationale:** The highest-leverage meta-investment. Without it, test creation is ad hoc. With it, you identify that (e.g.) optical-properties-in-wire-mode has no published benchmark and prioritize filling it.
-**Downsides:** Requires upfront audit of all 20+ configs. Must be maintained as tests are added.
-**Confidence:** 85%
+### 7. TRK Sum Rule / Optical Invariant Gate
+**Description:** Implement the Thomas-Reiche-Kuhn f-sum rule (sum of oscillator strengths = 1 for a complete eigenbasis) as a parameter-free, material-independent check on the commutator-based velocity matrices. Extend to Kramers degeneracy (E(+k) = E(-k) without B-field) and time-reversal symmetry. These are algebraic identities that hold to machine precision for a correct Hamiltonian and eigensolver.
+**Warrant:** `direct:` Velocity matrices v_alpha = -i[r_alpha, H] are tested only indirectly through optical absorption peaks. The commutator construction on CSR is the most subtle algebraic operation in the codebase. `reasoned:` TRK is an algebraic identity of the complete eigenbasis, independent of material parameters, geometry, or grid spacing. No external reference needed.
+**Rationale:** Currently every validation compares against published numbers. Sum rules and symmetry checks are zero-parameter oracles that catch entire classes of bugs (wrong velocity matrix, missing band contributions, eigenstate normalization errors) that literature comparisons miss. A code change that silently corrupts the velocity operator corrupts g-factor, optical absorption, and ISBT simultaneously — the TRK check catches this at the source.
+**Downsides:** Finite-basis truncation means the sum rule holds approximately, not exactly. Tolerance setting requires physics judgment (how many bands must be included for the sum to converge).
+**Confidence:** 90%
+**Complexity:** Medium
+**Status:** Unexplored
+
+### 8. Hermiticity Smoke Test for All Geometries
+**Description:** Assert H = H† to machine precision for bulk, QW (dense), wire (CSR), and BdG (16N x 16N Nambu) Hamiltonians at representative k-points and multiple materials. Eigenvalue reality check: all eigenvalues purely real. Material-independent, zero-tolerance pass/fail. Clear diagnostics: "block (3,5) differs from conjugate of (5,3) by 2.3e-4" rather than cryptic eigenvalue mismatch.
+**Warrant:** `direct:` Wire CSR assembly has no Hermiticity test. Current bulk Hermiticity test only checks GaAs at one arbitrary k-point. `reasoned:` Hermiticity is an algebraic identity checkable to machine precision. Any non-Hermitian term (wrong sign, missing conjugate, incorrect k.p coupling) is caught immediately.
+**Rationale:** The verification ladder catches wrong eigenvalues at specific k-points and materials. A dedicated Hermiticity test catches the bug at the matrix level with clear diagnostics, protecting every geometry with a single cheap unambiguous test.
+**Downsides:** CSR Hermiticity test requires CSR-to-dense conversion (infrastructure exists in csr_test_helpers). BdG Nambu-space assembly is complex (16N x 16N).
+**Confidence:** 90%
 **Complexity:** Low
-**Status:** Unexplored
-
-### 6. Richardson Extrapolation Convergence Fixture
-**Description:** Build a reusable test fixture (pFUnit or Python wrapper) that runs any regression config at multiple FD orders (2, 4, 6, 8) and grid spacings, then asserts the observed convergence rate matches the theoretical order. Outputs a convergence certificate per observable. Once built, applies to every existing and future config with zero additional test code.
-**Warrant:** `external:` Richardson extrapolation is the standard method for verifying FD codes (Roache 1998). `direct:` FD stencils support orders 2-10 and CLAUDE.md flags stencil coefficients as "require approval" — critical infrastructure lacking isolated convergence testing.
-**Rationale:** The FD stencils are the mathematical foundation. If a coefficient is wrong, every result is silently corrupted. Wrong coefficients produce wrong convergence rates, detectable even when answers look close. The fixture compounds because new modules inherit it for free.
-**Downsides:** Running configs at multiple FD orders is computationally expensive. Some configs may not converge cleanly at all orders.
-**Confidence:** 85%
-**Complexity:** Medium
-**Status:** Unexplored
-
-### 7. Strain Validation Across Geometries
-**Description:** Dedicated strain validation suite covering all three geometries against published results: (a) bulk — hydrostatic + biaxial strain shifts (Eg shift, HH-LH splitting) vs Vurgaftman deformation potentials (a_v, a_c, b, d) and Chuang strained-band formulas; (b) QW — strained InGaAs/GaAs subband energies and HH-LH crossover vs Bastard/Winkler analytical results and nextnano comparisons; (c) wire — strain in nanowire cross-section vs published FEM or analytical strain profiles, verifying Bir-Pikus Hamiltonian modification produces correct band-edge shifts in 2D confinement.
-**Warrant:** `direct:` CLAUDE.md flags Bir-Pikus sign convention as "NEVER change" — the `P_eps = -av * Tr(eps)` sign flip is a known source of subtle errors. The gfortran -O3 segfault in QW strain path confirms the strain code path is fragile and undertested. `external:` Vurgaftman 2001 Tables XIV-XV provide deformation potentials; Chuang Chapter 4 derives strained band edges analytically; Winkler 2003 Section 4.4 covers Bir-Pikus in 8-band context.
-**Rationale:** Strain is one of the most error-prone parts of the k.p implementation (sign conventions, unit consistency, geometry-dependent tensor components). It modifies the Hamiltonian directly — if wrong, everything downstream is silently corrupted. Validating across all three geometries ensures Bir-Pikus terms are correct regardless of confinement dimensionality.
-**Downsides:** Wire strain comparisons are scarce in literature — may need synthetic reference data from independent FEM solver.
-**Confidence:** 85%
-**Complexity:** Medium
 **Status:** Unexplored
 
 ## Rejection Summary
 
+### Original Rejections (May 2026)
 | # | Idea | Reason Rejected |
 |---|------|-----------------|
-| 1 | Per-material g-factor gap dashboard | Subsumed by Standard-Star Benchmarks (#3) |
+| 1 | Per-material g-factor gap dashboard | Subsumed by Standard-Star Benchmarks (implemented) |
 | 2 | Negative-validation / model limitation tests | Subsumed by Standard-Stars and 8-Band Ladder |
-| 3 | Spurious mode sentinel (ellipticity) | Important but more of a code feature than validation strategy; better as brainstorm topic |
-| 4 | Parameter provenance / Vurgaftman audit | Lower priority than physics validation; useful follow-up |
+| 3 | Spurious mode sentinel (ellipticity) | Better as brainstorm topic for new feature |
+| 4 | Parameter provenance / Vurgaftman audit | Lower priority than physics validation |
 | 5 | Sengupta matrix diff (block-level comparison) | Subsumed by 8-Band Ladder and CSR Structure Testing |
-| 6 | Topological test oracle (integrality checks) | Strong but narrow; better as brainstorm topic for topological track |
-| 7 | Cross-executable consistency tests | Largely assured if 8-Band Ladder passes (shared Hamiltonian construction) |
+| 6 | Topological test oracle (integrality checks) | Better as brainstorm topic for topological track |
+| 7 | Cross-executable consistency tests | Largely assured if 8-Band Ladder passes |
 | 8 | Validation-as-publication (citable tests) | Subsumed by Executable Lecture-Test Pairs |
-| 9 | Forced-degradation testing | Clever but high implementation burden for uncertain value |
+| 9 | Forced-degradation testing | High implementation burden for uncertain value |
 | 10 | Fast physics gate (30-second smoke tests) | Off-topic: DX/performance, not physics validation |
 | 11 | One-command test scaffolding | Off-topic: DX tooling |
 | 12 | Dimensional consistency checks | Off-topic: general code quality |
-| 13 | Cross-code validation pipeline (Nextnano) | Too expensive; requires Nextnano installation and config translation |
+| 13 | Cross-code validation pipeline (Nextnano) | Too expensive; requires Nextnano installation |
 | 14 | k.p phantoms (independent solver) | Too expensive; analytical benchmarks cover similar ground |
 | 15 | Temporal regression (git history) | Too expensive; high infrastructure cost |
-| 16 | Published-plot-to-tolerance pipeline | Too expensive; PDF curve extraction is a separate project |
+| 16 | Published-plot-to-tolerance pipeline | Too expensive; PDF curve extraction is separate project |
 | 17 | Inverse parameter recovery | Subsumed by Standard-Stars effective mass validation |
 | 18 | Proof-load benchmarks (extreme FD orders) | Subsumed by Richardson Extrapolation Fixture |
 | 19 | Delta reports with drift attribution | Nice-to-have infrastructure, not essential |
-| 20 | Physics-labeled regression assertions | DX improvement for debugging, not physics validation |
+| 20 | Physics-labeled regression assertions | DX improvement, not physics validation |
 | 21 | Sweep-to-config auto-benchmark factory | Too ambitious / vague |
 | 22 | Physics-module coverage sentinel | Subsumed by Validation Coverage Matrix |
-| 23 | Analytical shadow suite (Roth + free-particle + infinite-barrier) | Subsumed by 8-Band Ladder rung 1 and rung 2 |
+| 23 | Analytical shadow suite | Subsumed by 8-Band Ladder rungs 1-2 |
+
+### Continued Ideation Rejections (May 2026)
+| # | Idea | Reason Rejected |
+|---|------|-----------------|
+| 24 | Topological Phase Diagram Sweep | Lower leverage than Richardson/TRK/kdotpy; single-point invariant tests adequate for now |
+| 25 | Mutation Testing / Vacuous Assertion Detection | Meta-level test-quality idea, better as brainstorm topic |
+| 26 | Kill Golden Files / Analytical Invariant Tests | Too radical; some observables lack clean analytical invariants |
+| 27 | COVERAGE Annotation Lint | DX tooling, not physics validation |
+| 28 | Aspirational-to-Required Promotion | Process improvement, subsumed by broader ideas |
+| 29 | Geometry-Limit Consistency | Subsumed by Hermiticity + Richardson + kdotpy combination |
+| 30 | Optical Gauge Consistency | Narrow, subsumed by TRK sum rule |
+| 31 | Systematic Error Budget | Documentation exercise, not core validation |
+| 32 | Regression Config Physics Assertion Layer | Too expensive; standard-stars already cover key systems |
+| 33 | Eigenstate Orthonormality | Subsumed by Hermiticity (LAPACK returns orthonormal vectors from Hermitian H) |
+| 34 | Hamiltonian Test Vectors | Subsumed by kdotpy comparison |
+| 35 | Blind Analysis for Benchmarks | Process methodology, difficult to enforce |
+| 36 | Negative-Space Testing | Conflicts with CLAUDE.md boundary on parameter modification |
+| 37 | 30-Second Smoke Test Tier | DX improvement, not physics validation |
+| 38 | Spurious-Mode Sentinel | Tests model pathology, better as feature brainstorm |
+| 39 | CECAM Benchmark Suite | Publication-oriented, subsumed by kdotpy comparison as first entry |
+| 40 | Parameter-Set Invariance (W-variant) | Narrow, subsumed by kdotpy |
+| 41 | FD Order Convergence as Regression | Duplicate of Richardson on Observables |
+| 42 | Topological Perturbation Robustness | Narrow to topology module |

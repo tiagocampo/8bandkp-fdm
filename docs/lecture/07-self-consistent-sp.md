@@ -463,9 +463,9 @@ The peak density of $7.66 \times 10^{18}$ cm$^{-3}$ exceeds the nominal doping o
 
 **Figures:**
 
-- SC potential profile: `../figures/sc_potential.png`
-- Charge density: `../figures/sc_charge_density.png`
-- Convergence history: `../figures/sc_convergence.png`
+![SC potential profile](../figures/sc_potential.png)
+![Charge density](../figures/sc_charge_density.png)
+![Convergence history](../figures/sc_convergence.png)
 
 ### 7.9.2 Modulation-doped GaAs/AlAs quantum well
 
@@ -667,7 +667,7 @@ kpar_max: 0.3
 delta1: 5.0 10.0 0.0
 ```
 
-This places $N_{2D} = 5 \times 10^{11}$ cm$^{-2}$ donors in a 10 Å FWHM Gaussian at the center. The SC loop converges in ~20 iterations to a V-shaped potential well approximately 100 meV deep. Two subbands form within the notch, with the Fermi level pinned between the first and second subband.
+This places $N_{2D} = 5 \times 10^{11}$ cm$^{-2}$ donors in a 10 Å FWHM Gaussian at the center. The SC loop converges in ~20 iterations to a V-shaped potential well approximately 9 meV deep. Two subbands form within the notch, with the Fermi level pinned between the first and second subband.
 
 ![Delta-doped GaAs potential profile](../figures/sc_delta_doped_potential.png)
 **Figure 7.3:** Self-consistent band-edge profile for delta-doped GaAs ($N_{2D} = 5 \times 10^{11}$ cm$^{-2}$). The V-shaped notch confines electron subbands near the doping plane.

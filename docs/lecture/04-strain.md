@@ -222,7 +222,7 @@ $$
 \boxed{\Delta E_{\text{SO}} = a_v\;\mathrm{Tr}(\varepsilon) = -P_\varepsilon\,.}
 $$
 
-![Bir--Pikus strain-induced band edge shifts. Under compressive strain the HH/LH degeneracy is lifted with HH moving toward the CB; under tensile strain the splitting reverses.](../figures/bir_pikus_band_shifts.png){ width=90% }
+![Bir--Pikus strain-induced band edge shifts. Under compressive strain the HH/LH degeneracy is lifted with LH moving toward the CB; under tensile strain HH moves toward the CB.](../figures/bir_pikus_band_shifts.png){ width=90% }
 
 ### 3.3 Heavy-hole / light-hole splitting
 
@@ -242,8 +242,8 @@ $$
 $$
 
 Since $b < 0$ for all III-V materials and $\varepsilon_{xx} < 0$ for
-compressive strain, the product $-b\varepsilon_{xx} > 0$.  This means
-compressive strain pushes the HH band up (toward the CB) and the LH band down
+compressive strain, $Q_\varepsilon < 0$.  This means
+compressive strain pushes the LH band up (toward the CB) and the HH band down
 relative to the unstrained average.  For GaAs ($b = -2.0$ eV), the splitting is
 substantial -- on the order of 100 meV for 1% strain.
 
@@ -258,7 +258,7 @@ important for device physics:
 
 1. **Strain-modified band gap.**  Under compressive biaxial strain
    ($\varepsilon_{xx} < 0$), the conduction band moves up ($a_c < 0$,
-   $\mathrm{Tr}(\varepsilon) < 0$) and the top of the valence band (HH) also
+   $\mathrm{Tr}(\varepsilon) < 0$) and the top of the valence band (LH) also
    moves up ($a_v > 0$, $\mathrm{Tr}(\varepsilon) < 0$).  The net gap change is:
    $$
    \Delta E_g = \Delta E_c - \Delta E_{\text{HH}}
@@ -266,11 +266,11 @@ important for device physics:
    $$
    The gap typically increases under compressive strain.
 
-2. **Valence band ordering.**  Under compressive biaxial strain, HH is above LH
-   at $\Gamma$; under tensile strain, LH is above HH.  This switching changes
+2. **Valence band ordering.**  Under compressive biaxial strain, LH is above HH
+   at $\Gamma$; under tensile strain, HH is above LH.  This switching changes
    the polarization selection rules and the dominant hole type in transport.
 
-![Valence band ordering under biaxial strain: unstrained (HH = LH degenerate), compressive (HH above LH), and tensile (LH above HH). The splitting reverses the ordering, changing the dominant hole character at the valence band maximum.](../figures/hh_lh_ordering.png){ width=90% }
+![Valence band ordering under biaxial strain: unstrained (HH = LH degenerate), compressive (LH above HH), and tensile (HH above LH). The splitting reverses the ordering, changing the dominant hole character at the valence band maximum.](../figures/hh_lh_ordering.png){ width=90% }
 
 ---
 
@@ -731,8 +731,8 @@ The HH/LH splitting is $2|Q_\varepsilon| = \mathbf{54\;\text{meV}}$ -- a
 moderate but physically significant splitting.  This is comparable to $2k_BT$
 at room temperature, meaning strain has a direct impact on the thermal
 occupation of HH versus LH subbands.  The compressive strain pushes the
-HH band up toward the CB and the LH band down, making the valence band
-maximum purely HH in character.
+LH band up toward the CB and the HH band down, making the valence band
+maximum purely LH in character.
 
 ![Band edge profiles for an In$_{0.2}$Ga$_{0.8}$As/GaAs quantum well: unstrained (left) vs strained (right). The left panel shows the unstrained well where HH and LH are degenerate. The right panel shows the effect of biaxial compressive strain, which lifts the HH/LH degeneracy by 54 meV via the Bir-Pikus shear term. All parameters computed from Vegard-interpolated Vurgaftman values.](../figures/strained_ingaas_qw_band_edges.png){ width=90% }
 

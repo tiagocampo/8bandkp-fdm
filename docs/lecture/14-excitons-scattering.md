@@ -203,7 +203,7 @@ python3 scripts/lecture_14_excitons_scattering.py
 ### Code-Output Anchors
 
 Running `lecture_14_excitons_scattering.py` produces:
-- **Exciton binding energy**: Eb = 12--13 meV for GaAs QWs (30--200 A widths), decreasing with width
+- **Exciton binding energy**: Eb = 7--13 meV for GaAs QWs (30--200 A widths), decreasing with width
 - **Phonon scattering rates**: Emission rates $10^{9}$--$10^{12}$ s$^{-1}$ for transitions with $\Delta E > 36$ meV
 
 ![Exciton binding energy](figures/lecture_14_exciton_binding.png)

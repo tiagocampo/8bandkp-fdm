@@ -658,6 +658,8 @@ strain_solver: pardiso
 
 The `strain: T` flag activates the continuum elasticity solver, which computes the full strain tensor $\varepsilon_{ij}(x,y)$ on the wire cross-section. The Bir-Pikus deformation potentials then shift the band edges at each grid point before the Hamiltonian is assembled.
 
+![Wire geometry and confinement potential for the rectangular InAs/GaAs core-shell wire. The InAs core forms a deep potential well for electrons within the GaAs barrier.](../figures/wire_geometry_potential.png){ width=80% }
+
 ### 7.3 Band-edge profile: strain-induced confinement
 
 ![InAs/GaAs wire band-edge profile](../figures/wire_inas_gaas_profile.png)
@@ -687,7 +689,7 @@ The strain modifies the band edges through the Bir-Pikus mechanism. Under the co
 
 ![InAs/GaAs wire subband dispersion](../figures/wire_inas_gaas_subbands.png)
 
-*Figure 4: Subband dispersion $E(k_z)$ for the InAs/GaAs core-shell wire. The plot shows sorted near-edge eigenvalues at each $k_z$ with zero-padding removed; it should not be read as branch-continuous tracking. The $k_z = 0$ edge labels come from band-character weights in `parts.dat`.*
+*Figure 4: Subband dispersion $E(k_z)$ for the InAs/GaAs core-shell wire. The plot shows sorted near-edge eigenvalues at each $k_z$ with zero-padding removed; it should not be read as branch-continuous tracking. The dispersion uses only a small number of $k_z$ points (sufficient for a qualitative overview but not for tracking individual band branches). The $k_z = 0$ edge labels come from band-character weights in `parts.dat`.*
 
 The subband structure differs markedly from the unstrained GaAs wire of Section 3. Key observations:
 

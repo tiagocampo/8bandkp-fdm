@@ -447,6 +447,8 @@ Despite the current computational limitation, the selection rules for wire optic
 
 For a smaller wire ($\sim$10 nm cross-section), the confinement energy would be significant ($\sim$50 meV for electrons), producing a larger fundamental gap and more widely spaced subbands, making the selection rules more clearly visible in the transition spectrum.
 
+![Wire optical absorption spectrum showing van Hove singularities at subband edges for the InAs/GaAs wire.](../figures/wire_optical_spectrum.png){ width=80% }
+
 ### 6.6.5 Quantum Well Optical Transitions
 
 The same momentum matrix element formalism applies to quantum wells. The routine
@@ -612,12 +614,12 @@ with spherical quadrature and Simpson integration.
 
 **Figure 6.4b:** TE-polarized interband absorption spectrum for a 10 nm
 GaAs/Al$_{0.3}$Ga$_{0.7}$As QW with a post-processed exciton-resonance marker.
-The underlying blue curve is the computed TE absorption, while the dashed
-vertical line marks $E_g - E_b$ using the binding energy written to
-`exciton.dat`. This figure is therefore useful as an annotation of where the
-lowest excitonic resonance is expected, but it is not a directly computed
-excitonic peak shape and should not be read as quantitative lineshape
-validation.
+The underlying blue curve is the computed free-carrier absorption (no
+electron-hole Coulomb interaction), while the dashed vertical line marks
+$E_g - E_b$ using the binding energy written to `exciton.dat`. This figure
+is therefore useful as an annotation of where the lowest excitonic resonance
+is expected, but the absorption magnitudes are free-carrier and the dashed
+marker is not a directly computed excitonic peak shape.
 
 ### 6.7.4 Lineshape broadening
 
@@ -750,7 +752,7 @@ For the zincblende segments, the present code can compute:
 - Oscillator strengths from the Kane $E_P$ parameter (InP: $E_P = 20.7$ eV)
 - Polarization anisotropy arising from the nanowire cross-section geometry
 
-The ZB Hamiltonian naturally produces the correct polarization dependence: TE-polarized absorption (in-plane, $p_x$ and $p_y$) dominates for HH-related transitions, while TM-polarized absorption ($p_z$) is stronger for LH-related transitions. Full reproduction of the Holmberg results requires wurtzite support (see Section 6.11.4).
+The ZB Hamiltonian naturally produces the correct polarization dependence: TE-polarized absorption (in-plane, $p_x$ and $p_y$) dominates for HH-related transitions, while TM-polarized absorption ($p_z$) is stronger for LH-related transitions. Full reproduction of the Holmberg results requires wurtzite support (see Section 6.12.4).
 
 ---
 
@@ -808,7 +810,7 @@ For computational purposes, the code evaluates $z_{ij}$ via the commutator-based
 
 ![ISBT dipole moments](../figures/isbt_dipole_moments.png)
 
-**Figure 6.7:** Intersubband $z$-dipole matrix elements $|z_{ij}|$ (angstrom) for conduction subband pairs in a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well. The dominant transitions ($\Delta n = 1$) have the largest dipole moments, consistent with the parity selection rule.
+**Figure 6.7:** Intersubband velocity matrix elements for conduction subband pairs in a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As quantum well, plotted in velocity gauge ($\partial H / \partial k_z$ units). The dominant transitions ($\Delta n = 1$) have the largest matrix elements, consistent with the parity selection rule. Conversion to length-gauge dipole moments $|z_{ij}|$ requires the factor $i m_0 \omega_{ij}$.
 
 ![ISBT absorption spectrum](../figures/isbt_absorption.png)
 
@@ -966,7 +968,7 @@ $$
 
 At the band edge ($E \to E_g$), $S_{2D} \to 2$ in the ideal 2D limit, meaning the absorption is enhanced by a factor of 2 compared to the non-interacting case. This is a hallmark of 2D excitonic physics.
 
-For a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As QW, the computed binding energy is approximately 3--5 meV, with the exciton Bohr radius $\lambda \approx 100$--$200$ angstrom. The binding energy increases for narrower wells due to the enhanced electron-hole overlap, following the well-known trend of Bastard (1982).
+For a 10 nm GaAs/Al$_{0.3}$Ga$_{0.7}$As QW, the computed binding energy is approximately 3--5 meV, with the exciton Bohr radius $\lambda \approx 100$--$113$ angstrom (approaching but not exceeding the 3D bulk value of $a_B^{3D} \approx 113$ Å). The binding energy increases for narrower wells due to the enhanced electron-hole overlap, following the well-known trend of Bastard (1982).
 
 ![Exciton binding vs well width](../figures/exciton_binding_vs_width.png)
 
@@ -1061,11 +1063,11 @@ from what still needs a benchmark closure.
 
 **Notes:**
 
-1. The exciton binding energy is computed variationally (Section 6.9), but this
+1. The exciton binding energy is computed variationally (Section 6.11.5), but this
    audit has not yet rerun and provenance-stamped the width sweep needed to
    retain a precise validation number in the table above.
 
-2. The LO-phonon Froehlich scattering kernel (Section 6.10) is implemented, but
+2. The LO-phonon Froehlich scattering kernel (Section 6.11) is implemented, but
    the current plotting/parsing path for scattering outputs is still under
    repair. Quantitative lifetime claims therefore remain withheld until that
    audit closes.

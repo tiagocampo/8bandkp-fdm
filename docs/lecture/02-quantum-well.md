@@ -89,7 +89,7 @@ D_1 = \frac{1}{2\,\Delta z}
 Variable coefficients $g(z)$ are applied as $G \cdot D_2$ where $G =
 \mathrm{diag}(g_1, \ldots, g_N)$, yielding tridiagonal coupling between nearest-
 neighbor grid points. Higher FD orders produce banded matrices with wider stencils
-(see Section 4.1).
+(see Section 1.2).
 
 ### 1.3 Block matrix structure: $8 \times 8$ blocks, each $N \times N$
 
@@ -377,7 +377,7 @@ At interfaces, the off-diagonal weights smoothly transition between the barrier
 coefficient ($4.00/\mathrm{dz}^2$) and the well coefficient ($2.88/\mathrm{dz}^2$),
 correctly capturing the abrupt change in material parameters. For FDorder=2, the
 code achieves the same result implicitly via a `dgemv`-based construction that
-computes `profile-weighted stencil sums` (see Section 4.6 for details).
+computes `profile-weighted stencil sums` (see Section 2.3 for details).
 
 When `confinementInitialization` has finished, all ten kpterms matrices are ready,
 and the Hamiltonian assembly loop over $\mathbf{k}_\parallel$ values needs only to

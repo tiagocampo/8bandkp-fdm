@@ -145,7 +145,7 @@ $$
 
 where $E_P = 2m_0 P^2/\hbar^2$ is the Kane energy, $E_g$ is the band gap, and $\Delta_{\mathrm{SO}}$ is the spin-orbit splitting. This formula captures the essential physics:
 
-1. **Narrow-gap enhancement.** As $E_g \to 0$, the denominator shrinks and $|\Delta g|$ grows without bound. This explains why narrow-gap materials like InSb ($E_g \approx 0.17$ eV) have $|g^*| \approx 50$.
+1. **Narrow-gap enhancement.** As $E_g \to 0$, the denominator shrinks and $|\Delta g|$ grows without bound. This explains why narrow-gap materials like InSb ($E_g \approx 0.17$ eV at 300 K) have $|g^*| \approx 50$.
 
 2. **Spin-orbit coupling dependence.** The factor $\Delta_{\mathrm{SO}}/(E_g + \Delta_{\mathrm{SO}})$ ranges from 0 (no SO coupling) to 1 (extreme SO limit). In the InSb limit where $\Delta_{\mathrm{SO}} \gg E_g$, the formula reduces to $g^* \approx g_0 - 2E_P/(3E_g)$.
 
@@ -187,7 +187,7 @@ $$
 E_{\mathrm{CB}}(n) + E_{\mathrm{CB}}(m) - 2E_{\mathrm{VB}}(l),
 $$
 
-which is dominated by the band gap $E_g$. For narrow-gap materials (small $E_g$), this denominator is small and the inter-band contribution is large. This is why InSb ($E_g \approx 0.17\;\mathrm{eV}$) has $|g^*| \approx 50$ while GaAs ($E_g \approx 1.52\;\mathrm{eV}$) has $g^* \approx -0.32$.
+which is dominated by the band gap $E_g$. For narrow-gap materials (small $E_g$), this denominator is small and the inter-band contribution is large. This is why InSb ($E_g \approx 0.17\;\mathrm{eV}$ at 300 K) has $|g^*| \approx 50$ while GaAs ($E_g \approx 1.52\;\mathrm{eV}$) has $g^* \approx -0.32$.
 
 **Intra-band contributions** (CB $\leftrightarrow$ CB or VB $\leftrightarrow$ VB). The intermediate states run over the other conduction subbands (excluding the doublet states themselves, i.e., $l \neq n, m$). The energy denominator is now
 
@@ -487,7 +487,7 @@ The terminal output also shows the intermediate quantities:
 
 ### 5.3.3 QW g-factor vs well width
 
-The dependence of $g^*$ on the quantum well width $L_w$ provides direct insight into how confinement modifies the effective g-factor. For the InAsW/GaSbW/AlSbW broken-gap system, we sweep the InAsW well half-width from 10 to 120 Å (total widths 20 to 240 Å) while keeping the GaSbW layer wide enough to always surround the well by at least 50 Å. The `bandIdx: 1` parameter selects the ground-state CB Kramers doublet.
+The dependence of $g^*$ on the quantum well width $L_w$ provides direct insight into how confinement modifies the effective g-factor. For the InAsW/GaSbW/AlSbW broken-gap system, we sweep the InAsW well half-width from 10 to 40 Å (total widths 20 to 80 Å) while keeping the GaSbW layer wide enough to always surround the well by at least 50 Å. The `bandIdx: 1` parameter selects the ground-state CB Kramers doublet.
 
 ![QW g-factor vs well width](../figures/qw_gfactor_vs_width.png)
 
@@ -618,7 +618,7 @@ python3 scripts/lecture_05_gfactor.py
 ### Code-Output Anchors
 
 Running `gfactor_bulk_gaas_cb.cfg` produces:
-- **GaAs CB g**: -0.317 (Roth formula within 1%); **InSb |g|** > 40
+- **GaAs CB g**: -0.315 (Roth formula within 1%); **InSb |g|** > 40
 - **GaAs Landau levels**: spacing 10.90 meV vs Kane-mass hbar*omega_c=11.55 meV (6% error)
 
 ![Overlay plot](figures/lecture_05_gfactor_comparison.png)

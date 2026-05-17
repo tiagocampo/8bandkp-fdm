@@ -62,7 +62,7 @@ FDstep: 51
 FDorder: 2
 numLayers: 2
 material1: Al30Ga70As -200 200 0
-material2: GaAs {half_w} {half_w} 0
+material2: GaAs -{half_w} {half_w} 0
 numcb: 2
 numvb: 6
 ExternalField: 0  EF
