@@ -36,7 +36,6 @@ elastically rather than forming misfit dislocations.  This is the
 **pseudomorphic growth** regime, and it is the regime assumed throughout the
 code.
 
-<!-- placeholder: figure not yet generated -->
 ![Lattice mismatch between substrate and epitaxial layer. In the pseudomorphic configuration the layer is forced to adopt the substrate lattice constant, producing in-plane compression when $a_0^{\text{layer}} > a_0^{\text{sub}}$.](../figures/strain_lattice_mismatch.png){ width=90% }
 
 ### 1.2 Sign convention
@@ -133,7 +132,6 @@ $$
 \end{pmatrix}\,.
 $$
 
-<!-- placeholder: figure not yet generated -->
 ![Biaxial strain geometry for a (001)-oriented quantum well. The in-plane strain components are equal by symmetry; the out-of-plane response is determined by the Poisson ratio.](../figures/strain_biaxial_tensor.png){ width=70% }
 
 ### 2.5 Numerical example: InAs on GaAs
@@ -162,7 +160,6 @@ $$
 
 The hydrostatic component (volume change) is negative: the unit cell shrinks.
 
-<!-- placeholder: figure not yet generated -->
 ![InAs unit cell before and after biaxial compression on a GaAs substrate. The in-plane lattice is compressed by 6.7% while the out-of-plane direction expands by 7.3% via the Poisson effect. The dashed outline shows the unstrained cubic cell.](../figures/strained_unit_cell.png){ width=90% }
 
 ---
@@ -191,7 +188,6 @@ $$
 Q_\varepsilon = \frac{b}{2}\left(\varepsilon_{zz} - \frac{\varepsilon_{xx} + \varepsilon_{yy}}{2}\right)\,.
 $$
 
-<!-- placeholder: figure not yet generated -->
 ![GaAs band structure under biaxial strain on an InP substrate. The HH/LH degeneracy at $\Gamma$ is lifted by the shear component of the Bir--Pikus Hamiltonian.](../figures/bulk_gaas_strained_bands.png){ width=70% }
 
 ### 3.2 Band edge shifts
@@ -226,8 +222,7 @@ $$
 \boxed{\Delta E_{\text{SO}} = a_v\;\mathrm{Tr}(\varepsilon) = -P_\varepsilon\,.}
 $$
 
-<!-- placeholder: figure not yet generated -->
-![Bir--Pikus strain-induced band edge shifts. Under compressive strain the HH/LH degeneracy is lifted with HH moving toward the CB; under tensile strain the splitting reverses.](../figures/bir_pikus_band_shifts.png){ width=90% }
+![Bir--Pikus strain-induced band edge shifts. Under compressive strain the HH/LH degeneracy is lifted with LH moving toward the CB; under tensile strain HH moves toward the CB.](../figures/bir_pikus_band_shifts.png){ width=90% }
 
 ### 3.3 Heavy-hole / light-hole splitting
 
@@ -247,12 +242,11 @@ $$
 $$
 
 Since $b < 0$ for all III-V materials and $\varepsilon_{xx} < 0$ for
-compressive strain, the product $-b\varepsilon_{xx} > 0$.  This means
-compressive strain pushes the HH band up (toward the CB) and the LH band down
+compressive strain, $Q_\varepsilon < 0$.  This means
+compressive strain pushes the LH band up (toward the CB) and the HH band down
 relative to the unstrained average.  For GaAs ($b = -2.0$ eV), the splitting is
 substantial -- on the order of 100 meV for 1% strain.
 
-<!-- placeholder: figure not yet generated -->
 ![Valence band comparison: unstrained (dashed) vs strained (solid) GaAs on InP. The HH/LH splitting at $\Gamma$ is clearly visible in the right panel.](../figures/bulk_gaas_strain_comparison.png){ width=90% }
 
 ### 3.4 Physical interpretation
@@ -264,7 +258,7 @@ important for device physics:
 
 1. **Strain-modified band gap.**  Under compressive biaxial strain
    ($\varepsilon_{xx} < 0$), the conduction band moves up ($a_c < 0$,
-   $\mathrm{Tr}(\varepsilon) < 0$) and the top of the valence band (HH) also
+   $\mathrm{Tr}(\varepsilon) < 0$) and the top of the valence band (LH) also
    moves up ($a_v > 0$, $\mathrm{Tr}(\varepsilon) < 0$).  The net gap change is:
    $$
    \Delta E_g = \Delta E_c - \Delta E_{\text{HH}}
@@ -272,12 +266,11 @@ important for device physics:
    $$
    The gap typically increases under compressive strain.
 
-2. **Valence band ordering.**  Under compressive biaxial strain, HH is above LH
-   at $\Gamma$; under tensile strain, LH is above HH.  This switching changes
+2. **Valence band ordering.**  Under compressive biaxial strain, LH is above HH
+   at $\Gamma$; under tensile strain, HH is above LH.  This switching changes
    the polarization selection rules and the dominant hole type in transport.
 
-<!-- placeholder: figure not yet generated -->
-![Valence band ordering under biaxial strain: unstrained (HH = LH degenerate), compressive (HH above LH), and tensile (LH above HH). The splitting reverses the ordering, changing the dominant hole character at the valence band maximum.](../figures/hh_lh_ordering.png){ width=90% }
+![Valence band ordering under biaxial strain: unstrained (HH = LH degenerate), compressive (LH above HH), and tensile (HH above LH). The splitting reverses the ordering, changing the dominant hole character at the valence band maximum.](../figures/hh_lh_ordering.png){ width=90% }
 
 ---
 
@@ -513,10 +506,8 @@ This strain tensor is then fed to `compute_bir_pikus_blocks` exactly as in the Q
 The Bir--Pikus formulas are local: they depend only on the strain components at
 each point, not on how those components were obtained.
 
-<!-- placeholder: figure not yet generated -->
 ![Biaxial strain component $\varepsilon_{xx}$ in an InAs/GaAs wire cross-section. The InAs core (compressive) and GaAs matrix show the strain concentration at the interface corners.](../figures/wire_strain_2d.png){ width=70% }
 
-<!-- placeholder: figure not yet generated -->
 ![All four non-zero strain tensor components in the InAs/GaAs wire cross-section. The axial component $\varepsilon_{zz}$ (bottom-left) is prescribed from lattice mismatch. The in-plane components $\varepsilon_{xx}$, $\varepsilon_{yy}$ (top row) and the shear component $\varepsilon_{yz}$ (bottom-right) are obtained from the Navier--Cauchy PDE solution. The non-zero $\varepsilon_{yz}$ is the key wire-specific feature absent in QW biaxial strain.](../figures/wire_strain_tensor.png){ width=95% }
 
 ---
@@ -635,10 +626,8 @@ Values are rounded to the nearest meV.  Under tensile strain ($\varepsilon_{xx} 
 our sign convention) while the heavy-hole band also moves upward but by a
 larger amount ($\Delta E_{\text{HH}} > 0$).  The valence band maximum is HH.
 
-<!-- placeholder: figure not yet generated -->
 ![Band edge profiles for the AlSb/GaSb/InAs quantum well: unstrained (left) vs strained (right). The Bir--Pikus Hamiltonian splits the HH/LH degeneracy and shifts the conduction band.](../figures/qw_strained_band_edges.png){ width=90% }
 
-<!-- placeholder: figure not yet generated -->
 ![Subband dispersion $E(k_{\parallel})$ for the AlSbW/GaSbW/InAsW QW: unstrained (left) vs strained (right). The Bir--Pikus corrections shift the CB subbands and split the HH/LH valence subbands.](../figures/qw_strained_bands.png){ width=95% }
 
 ### 7.2 Example B: InAs/GaAs quantum well -- large mismatch
@@ -742,10 +731,9 @@ The HH/LH splitting is $2|Q_\varepsilon| = \mathbf{54\;\text{meV}}$ -- a
 moderate but physically significant splitting.  This is comparable to $2k_BT$
 at room temperature, meaning strain has a direct impact on the thermal
 occupation of HH versus LH subbands.  The compressive strain pushes the
-HH band up toward the CB and the LH band down, making the valence band
-maximum purely HH in character.
+LH band up toward the CB and the HH band down, making the valence band
+maximum purely LH in character.
 
-<!-- placeholder: figure not yet generated -->
 ![Band edge profiles for an In$_{0.2}$Ga$_{0.8}$As/GaAs quantum well: unstrained (left) vs strained (right). The left panel shows the unstrained well where HH and LH are degenerate. The right panel shows the effect of biaxial compressive strain, which lifts the HH/LH degeneracy by 54 meV via the Bir-Pikus shear term. All parameters computed from Vegard-interpolated Vurgaftman values.](../figures/strained_ingaas_qw_band_edges.png){ width=90% }
 
 This system is experimentally realizable for well widths up to the
@@ -803,7 +791,6 @@ strain:
 | $-3.0$ | 113 | 139 | 223 |
 | $-6.7$ | 252 | 311 | 498 |
 
-<!-- placeholder: figure not yet generated -->
 ![Strain-induced energy shifts in InAs as a function of compressive strain magnitude. The HH/LH splitting, CB shift, and band gap change all scale linearly with $|\varepsilon_{xx}|$. Even 1% strain produces a 38 meV splitting, comparable to $k_BT$ at room temperature.](../figures/hh_lh_splitting_vs_mismatch.png){ width=75% }
 
 The HH/LH splitting grows linearly with strain magnitude.  Even modest

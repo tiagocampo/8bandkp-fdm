@@ -4082,75 +4082,102 @@ def fig_qw_absorption_strained(output_dir: Path) -> None:
     print("  -> docs/figures/qw_absorption_strained.png")
 
 
+def _run_absorption_width_sweep(output_dir: Path, widths_aa: list) -> bool:
+    """Run bandStructure with Optics: T for each well width, cache results."""
+    print(f"  Running absorption sweep over {len(widths_aa)} well widths ...")
+    for w_aa in widths_aa:
+        half = w_aa / 2.0
+        barrier = max(200.0, half + 100.0)
+        fdstep = max(201, int(barrier) + 1)
+        lines = [
+            "waveVector: kx",
+            "waveVectorMax: 0.08",
+            "waveVectorStep: 51",
+            "confinement:  1",
+            f"FDstep: {fdstep}",
+            "FDorder: 4",
+            "numLayers:  2",
+            f"material1: Al30Ga70As {-barrier:.0f} {barrier:.0f} 0",
+            f"material2: GaAs {-half:.1f} {half:.1f} 0",
+            "numcb: 4",
+            "numvb: 8",
+            "ExternalField: 0  EF",
+            "EFParams: 0.0",
+            "whichBand: 0",
+            "bandIdx: 1",
+            "SC: 0",
+            "Optics: T",
+            "LinewidthLorentzian: 0.030",
+            "LinewidthGaussian: 0.005",
+            "RefractiveIndex: 3.3",
+            "Emin: 1.3",
+            "Emax: 2.0",
+            "NEnergyPoints: 300",
+            "Temperature: 300.0",
+            "CarrierDensity: 0.0",
+            "Gain: F",
+            "GainCarrierDensity: 0.0",
+            "ISBT: F",
+            "SpontaneousEnabled: F",
+            "SpinResolved: F",
+            "Exciton: F",
+        ]
+        tmp = REPO_ROOT / "input.cfg"
+        tmp.write_text("\n".join(lines) + "\n")
+        result = subprocess.run(
+            [str(EXE_OPTICS)], cwd=str(REPO_ROOT),
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode != 0:
+            print(f"    width={w_aa} A: FAILED")
+            continue
+        # Cache each width's spectra
+        for pol in ("TE", "TM"):
+            src = output_dir / f"absorption_{pol}.dat"
+            dst = output_dir / f"absorption_{pol}_W{w_aa}.dat"
+            if src.exists():
+                shutil.copy2(str(src), str(dst))
+        print(f"    width={w_aa} A: done")
+    return True
+
+
 def fig_qw_absorption_vs_width(output_dir: Path) -> None:
-    """qw_absorption_vs_width.png: absorption curves for different QW well widths.
-
-    Known-risk figure. The width sweep is ad hoc and the current outputs are
-    not benchmarked well enough for quantitative width-trend claims.
-    """
+    """qw_absorption_vs_width.png: absorption curves for different QW well widths."""
     print("[figure] qw_absorption_vs_width")
-
-    # Check for any absorption data -- look for convention:
-    #   absorption_TE_W<width>.dat / absorption_TM_W<width>.dat
-    # or the default absorption_TE.dat / absorption_TM.dat
-    te_file = output_dir / "absorption_TE.dat"
-    tm_file = output_dir / "absorption_TM.dat"
 
     # Search for width-annotated files
     te_width_files = sorted(output_dir.glob("absorption_TE_W*.dat"))
     tm_width_files = sorted(output_dir.glob("absorption_TM_W*.dat"))
-
     have_width_sweep = len(te_width_files) > 0 and len(tm_width_files) > 0
-    have_single = te_file.exists() and tm_file.exists()
 
-    if not have_width_sweep and not have_single:
-        print("  WARNING: No absorption data files found. Run bandStructure with "
-              "Optics: T to generate data. For a full well-width sweep, run "
-              "multiple configs with different FDstep/totalSize values and save "
-              "output as absorption_TE_W<width>.dat / absorption_TM_W<width>.dat.")
+    if not have_width_sweep:
+        _run_absorption_width_sweep(output_dir, [50, 80, 100, 150, 200])
+        te_width_files = sorted(output_dir.glob("absorption_TE_W*.dat"))
+        tm_width_files = sorted(output_dir.glob("absorption_TM_W*.dat"))
+        have_width_sweep = len(te_width_files) > 0 and len(tm_width_files) > 0
+
+    if not have_width_sweep:
+        print("  WARNING: No absorption width-sweep data, skipping.")
         return
 
     fig, (ax_te, ax_tm) = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
 
     cmap = plt.cm.viridis
+    n_curves = len(te_width_files)
+    colors = [cmap(i / max(n_curves - 1, 1)) for i in range(n_curves)]
 
-    if have_width_sweep:
-        n_curves = len(te_width_files)
-        colors = [cmap(i / max(n_curves - 1, 1)) for i in range(n_curves)]
+    for i, (te_path, tm_path) in enumerate(zip(te_width_files, tm_width_files)):
+        width_str = te_path.stem.split("_W")[-1]
+        label = f"{width_str} A"
 
-        for i, (te_path, tm_path) in enumerate(zip(te_width_files, tm_width_files)):
-            # Extract width from filename (e.g. absorption_TE_W50.dat -> 50)
-            width_str = te_path.stem.split("_W")[-1]
-            label = f"{width_str} A"
+        E_te, a_te = np.loadtxt(str(te_path), unpack=True, comments="#")
+        E_tm, a_tm = np.loadtxt(str(tm_path), unpack=True, comments="#")
 
-            E_te, a_te = np.loadtxt(str(te_path), unpack=True, comments="#")
-            E_tm, a_tm = np.loadtxt(str(tm_path), unpack=True, comments="#")
+        ax_te.plot(E_te, a_te, color=colors[i], linewidth=1.3, label=label)
+        ax_tm.plot(E_tm, a_tm, color=colors[i], linewidth=1.3, label=label)
 
-            ax_te.plot(E_te, a_te, color=colors[i], linewidth=1.3, label=label)
-            ax_tm.plot(E_tm, a_tm, color=colors[i], linewidth=1.3, label=label)
-
-        ax_te.set_title("TE Polarization", fontsize=11)
-        ax_tm.set_title("TM Polarization", fontsize=11)
-
-    elif have_single:
-        E_te, a_te = _read_absorption(output_dir, "TE")
-        E_tm, a_tm = _read_absorption(output_dir, "TM")
-
-        ax_te.plot(E_te, a_te, color="#1f77b4", linewidth=1.5, label="Single width")
-        ax_tm.plot(E_tm, a_tm, color="#d62728", linewidth=1.5, label="Single width")
-
-        ax_te.set_title("TE Polarization", fontsize=11)
-        ax_tm.set_title("TM Polarization", fontsize=11)
-
-        # Annotation about width dependence
-        ax_te.text(0.5, 0.92,
-                   "Full well-width parameter sweep\n"
-                   "requires multiple manual runs\n"
-                   "(save as absorption_TE_W<width>.dat)",
-                   transform=ax_te.transAxes, fontsize=8, ha="center", va="top",
-                   color="grey", style="italic",
-                   bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
-                             edgecolor="lightgrey", alpha=0.9))
+    ax_te.set_title("TE Polarization", fontsize=11)
+    ax_tm.set_title("TM Polarization", fontsize=11)
 
     for ax in (ax_te, ax_tm):
         ax.set_xlabel("Photon Energy (eV)")
@@ -4160,7 +4187,7 @@ def fig_qw_absorption_vs_width(output_dir: Path) -> None:
 
     ax_te.set_ylabel(r"Absorption Coefficient (cm$^{-1}$)")
 
-    fig.suptitle("QW Absorption vs Well Width", fontsize=12)
+    fig.suptitle("GaAs/AlGaAs QW Absorption vs Well Width", fontsize=12)
     fig.tight_layout()
     fig.savefig(FIGURE_DIR / "qw_absorption_vs_width.png", dpi=150)
     plt.close(fig)
@@ -4250,10 +4277,10 @@ def fig_isbt_absorption(output_dir: Path) -> None:
     path = output_dir / "absorption_ISBT.dat"
     cfg = CONFIG_DIR / "qw_gaas_algaas_isbt.cfg"
     if cfg.exists():
-        result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+        result = run_executable(EXE_OPTICS, cfg, REPO_ROOT,
                                label="isbt_absorption", timeout=600)
         if result.returncode != 0:
-            print("  WARNING: bandStructure run failed, skipping.")
+            print("  WARNING: opticalProperties run failed, skipping.")
             return
     else:
         if not path.exists():
@@ -4286,10 +4313,10 @@ def fig_gain_strained_comparison(output_dir: Path) -> None:
     # Always re-run with interband config to avoid stale ISBT-range data
     cfg = CONFIG_DIR / "qw_gaas_algaas_optics_full.cfg"
     if cfg.exists():
-        result = run_executable(EXE_BAND, cfg, REPO_ROOT,
+        result = run_executable(EXE_OPTICS, cfg, REPO_ROOT,
                                label="gain_strained_comparison", timeout=600)
         if result.returncode != 0:
-            print("  WARNING: bandStructure run failed, skipping.")
+            print("  WARNING: opticalProperties run failed, skipping.")
             return
     else:
         print("  WARNING: No interband optics config found, skipping.")
@@ -4773,45 +4800,38 @@ def fig_scattering_lifetime_vs_width(output_dir: Path) -> None:
     if data.ndim == 1:
         data = data.reshape(1, -1)
 
-    # PROVISIONAL LEGACY INTERPRETATION:
-    # This block still assumes a simple column layout for triage plotting only.
-    # Those assumptions are not trusted physics semantics yet, and the derived
-    # `rate` / `lifetime` arrays below must not be read as authoritative until
-    # the scattering parser is repaired and benchmarked.
-    #
-    # Assumed columns:
-    #   transition_index  transition_energy(eV)  rate(ps^-1)  [lifetime(ps)]
-    if data.shape[1] < 3:
-        print("  WARNING: scattering_rates.dat has fewer than 3 columns, skipping.")
+    # Fortran output columns (scattering.f90):
+    #   i  j  E_ij(meV)  rate_emission(1/s)  rate_absorption(1/s)  tau_emission(ps)  tau_absorption(ps)
+    if data.shape[1] < 7:
+        print("  WARNING: scattering_rates.dat has fewer than 7 columns, skipping.")
         return
 
-    idx = data[:, 0].astype(int)
-    transition_energy = data[:, 1]
-    # Provisional legacy mapping for triage only; not validated semantics.
-    rate = data[:, 2]
-    # Derived from the provisional `rate` column above; not authoritative.
-    lifetime = 1.0 / np.maximum(rate, 1e-12)  # ps, avoid division by zero
+    idx_i = data[:, 0].astype(int)
+    idx_j = data[:, 1].astype(int)
+    transition_energy = data[:, 2]  # meV
+    total_rate = data[:, 3] + data[:, 4]  # 1/s
+    lifetime = 1.0e12 / np.maximum(total_rate, 1.0)  # 1/s -> ps
 
     fig, (ax_rate, ax_life) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
 
     # Top panel: scattering rate vs transition energy
-    colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(idx)))
-    ax_rate.bar(range(len(idx)), rate, color=colors, edgecolor="black", linewidth=0.5)
-    ax_rate.set_ylabel(r"Scattering Rate (ps$^{-1}$)")
-    ax_rate.set_title("Legacy Scattering Summary by Transition", fontsize=12)
+    colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(transition_energy)))
+    ax_rate.bar(range(len(transition_energy)), total_rate, color=colors, edgecolor="black", linewidth=0.5)
+    ax_rate.set_ylabel(r"Total Scattering Rate (s$^{-1}$)")
+    ax_rate.set_title("LO-Phonon Scattering by Intersubband Transition", fontsize=12)
     ax_rate.grid(True, alpha=0.3, linewidth=0.5, axis="y")
     ax_rate.set_axisbelow(True)
 
     # Bottom panel: lifetime vs transition energy
-    ax_life.bar(range(len(idx)), lifetime, color=colors, edgecolor="black", linewidth=0.5)
-    ax_life.set_xlabel("Transition Energy Label (legacy parser)")
+    ax_life.bar(range(len(transition_energy)), lifetime, color=colors, edgecolor="black", linewidth=0.5)
+    ax_life.set_xlabel("Transition Energy (meV)")
     ax_life.set_ylabel("Lifetime (ps)")
     ax_life.grid(True, alpha=0.3, linewidth=0.5, axis="y")
     ax_life.set_axisbelow(True)
 
-    # Add transition energy labels on x-axis
-    tick_labels = [f"{e:.3f}" for e in transition_energy]
-    ax_life.set_xticks(range(len(idx)))
+    # Add transition labels on x-axis: i->j (E_ij meV)
+    tick_labels = [f"{i}->{j} ({e:.0f})" for i, j, e in zip(idx_i, idx_j, transition_energy)]
+    ax_life.set_xticks(range(len(transition_energy)))
     ax_life.set_xticklabels(tick_labels, rotation=45, ha="right", fontsize=8)
 
     fig.align_ylabels([ax_rate, ax_life])

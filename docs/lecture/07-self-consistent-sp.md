@@ -463,9 +463,9 @@ The peak density of $7.66 \times 10^{18}$ cm$^{-3}$ exceeds the nominal doping o
 
 **Figures:**
 
-- SC potential profile: `../figures/sc_potential.png`
-- Charge density: `../figures/sc_charge_density.png`
-- Convergence history: `../figures/sc_convergence.png`
+![SC potential profile](../figures/sc_potential.png)
+![Charge density](../figures/sc_charge_density.png)
+![Convergence history](../figures/sc_convergence.png)
 
 ### 7.9.2 Modulation-doped GaAs/AlAs quantum well
 
@@ -625,14 +625,12 @@ cat tests/regression/configs/sc_qw_inas_alsb.cfg > input.cfg
 
 **Band-edge profile.** The SC-converged band-edge profile (Figure 7.1) shows the characteristic InAsW/AlSbW alignment. The enormous conduction band offset ($\sim 2.15$ eV) creates a deep potential well for electrons, spanning from EC ~ 1.97 eV in the AlSbW barrier down to EC ~ $-0.17$ eV in the InAsW well. The self-consistent band bending is modest because the doping is lower ($5 \times 10^{17}$ cm$^{-3}$) and the temperature is low (77 K reduces thermal broadening). The CB subband energies are indicated by horizontal dashed lines.
 
-<!-- placeholder: figure not yet generated -->
 ![InAsW/AlSbW QW band-edge profile after SC convergence](../figures/sc_inas_alsb_potential.png)
 
 **Figure 7.1:** Self-consistent band-edge profile for the doped InAsW/AlSbW QW at 77 K. The green shaded region marks the 50-A InAs well. Dashed cyan lines indicate the first few CB subband energies. The type-II band alignment and narrow InAs gap produce strong nonparabolicity, captured by the full 8-band k.p treatment.
 
 **SC convergence.** The convergence history (Figure 7.2) shows the SC loop converging in 16 iterations. The potential change $|\Delta\Phi|_\infty$ starts at $\sim 2.3 \times 10^{-5}$ eV (already small, reflecting the low doping and cryogenic temperature) and decreases monotonically to below the $10^{-6}$ eV tolerance. The rapid convergence is a consequence of the conservative mixing parameter ($\alpha = 0.2$) and the strong quantum confinement provided by the large band offset.
 
-<!-- placeholder: figure not yet generated -->
 ![SC convergence history for InAsW/AlSbW QW](../figures/sc_inas_alsb_convergence.png)
 
 **Figure 7.2:** Convergence history of the SC loop for the InAsW/AlSbW QW. The potential change $|\Delta\Phi|_\infty$ decreases monotonically over 16 iterations, reaching the $10^{-6}$ eV tolerance. The dashed line marks the convergence threshold.
@@ -669,9 +667,8 @@ kpar_max: 0.3
 delta1: 5.0 10.0 0.0
 ```
 
-This places $N_{2D} = 5 \times 10^{11}$ cm$^{-2}$ donors in a 10 Å FWHM Gaussian at the center. The SC loop converges in ~20 iterations to a V-shaped potential well approximately 100 meV deep. Two subbands form within the notch, with the Fermi level pinned between the first and second subband.
+This places $N_{2D} = 5 \times 10^{11}$ cm$^{-2}$ donors in a 10 Å FWHM Gaussian at the center. The SC loop converges in ~20 iterations to a V-shaped potential well approximately 9 meV deep. Two subbands form within the notch, with the Fermi level pinned between the first and second subband.
 
-<!-- placeholder: figure not yet generated -->
 ![Delta-doped GaAs potential profile](../figures/sc_delta_doped_potential.png)
 **Figure 7.3:** Self-consistent band-edge profile for delta-doped GaAs ($N_{2D} = 5 \times 10^{11}$ cm$^{-2}$). The V-shaped notch confines electron subbands near the doping plane.
 

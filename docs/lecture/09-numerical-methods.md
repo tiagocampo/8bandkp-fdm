@@ -214,7 +214,6 @@ The CB states converge more slowly because the broken-gap band mixing
 introduces additional $k$-dependent coupling that is not captured by a simple
 truncation-error analysis.
 
-<!-- placeholder: figure not yet generated -->
 ![Eigenvalue error vs. grid spacing for all eight bands, with a $\Delta z^2$ reference slope](../figures/convergence_grid_spacing.png)
 
 ### 9.3.4 FD Order Convergence
@@ -223,7 +222,7 @@ Increasing the FD order at fixed grid spacing is more efficient than refining
 the grid, but the convergence behavior can be non-trivial in systems with
 strong band mixing (such as broken-gap heterostructures). The table below
 shows the CB1 eigenvalue ($k = 0$) for the AlSbW/GaSbW/InAsW QW at FDstep=101
-($\Delta z = 3$ A) as a function of FD order, using order 8 as the reference.
+($\Delta z = 5$ Å) as a function of FD order, using order 8 as the reference.
 
 **FD order convergence** (CB1 eigenvalue at $k = 0$, reference: order 8):
 
@@ -241,7 +240,6 @@ convergence data showed large apparent errors at order 4 that were caused by
 a bug in the variable-coefficient treatment (naive row scaling instead of
 midpoint averaging), which has since been corrected.
 
-<!-- placeholder: figure not yet generated -->
 ![CB1 eigenvalue error vs. FD order for the AlSbW/GaSbW/InAsW QW](../figures/convergence_fd_order.png)
 
 The figure above shows the eigenvalue error vs.\ FD order for all eight bands.
@@ -567,10 +565,10 @@ $20000\times 20000$ with $\sim 500000$ nonzeros. Typical timings:
 | Dense fallback `zheevx` | $\sim 30$ s |
 
 The cached COO-to-CSR mapping provides a 10$\times$ speedup for k-point
-sweeps by eliminating the sort. FEAST is approximately 15$\times$ faster
-than dense fallback for this problem size, and the advantage grows with
-$N$ since FEAST scales roughly as $O(\text{nnz} \times M_0 \times
-n_{\text{iter}})$ while dense scales as $O(N^3)$.
+sweeps by eliminating the sort. For the wire problem (20000$\times$20000),
+FEAST is the only viable option since dense diagonalization would require
+$O(N^3)$ operations on the full matrix. The measured wall-clock time for
+FEAST on the wire is 127.9 s (see Section 9.9.3).
 
 ### 9.9.3 Measured Benchmarks
 
@@ -581,7 +579,6 @@ n_{\text{iter}})$ while dense scales as $O(N^3)$.
 | AlSbW/GaSbW/InAsW QW | $808\times 808$ | dense | 21 | `zheevx` | 0.7 s |
 | GaAs rectangular wire | $20000\times 20000$ | $\sim 10^6$ | 1 | FEAST | 127.9 s |
 
-<!-- placeholder: figure not yet generated -->
 ![Wall-clock timing: dense (zheevx) vs. sparse (FEAST) eigensolver](../figures/timing_dense_vs_sparse.png)
 
 The wire calculation is dominated by the CSR assembly and FEAST iteration;

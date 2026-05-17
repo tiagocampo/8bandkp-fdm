@@ -256,6 +256,8 @@ module definitions
     logical          :: spontaneous_enabled = .false.
     ! Spin resolution
     logical          :: spin_resolved = .false.
+    ! Geometry context (set from cfg%confinement before k-sweep)
+    integer          :: confinement = 0
   end type optics_config
 
   ! ------------------------------------------------------------------
