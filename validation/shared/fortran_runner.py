@@ -113,14 +113,31 @@ def run_qw(build_dir, barrier_material, well_material,
             k_max = 0.0
             n_steps = 1
         else:
-            direction = "kx"
-            k_max = k_mag
-            n_steps = 1
+            # Single non-zero k-point: use n_steps=2 to avoid div-by-zero in Fortran
+            # (Fortran computes k_i = (i-1)*kmax/(nsteps-1), needs nstep >= 2)
+            if abs(ky) < 1e-12:
+                direction = "kx"
+                k_max = abs(kx)
+            elif abs(kx) < 1e-12:
+                direction = "ky"
+                k_max = abs(ky)
+            else:
+                raise ValueError(
+                    f"Non-axis-aligned single k-point ({kx}, {ky}) not supported for QW."
+                )
+            n_steps = 2
     else:
         k_mags = [(kx**2 + ky**2)**0.5 for kx, ky in k_points]
         k_max = max(k_mags)
         n_steps = len(k_points)
-        direction = "kx"
+
+        nonzero = [(kx, ky) for kx, ky in k_points if (kx**2 + ky**2) > 1e-12]
+        if nonzero and all(abs(p[1]) < 1e-12 for p in nonzero):
+            direction = "kx"
+        elif nonzero and all(abs(p[0]) < 1e-12 for p in nonzero):
+            direction = "ky"
+        else:
+            direction = "k0"
 
     # Last-layer-wins: barrier covers full domain, well overwrites center
     # Use centered coordinates (regression configs use symmetric -L/2 to L/2)
@@ -202,9 +219,10 @@ def _build_bulk_config(material, k_points):
             k_max = abs(kz)
             n_steps = 1
         else:
-            direction = "k0"
-            k_max = 0.0
-            n_steps = 1
+            raise ValueError(
+                f"Non-axis-aligned single k-point ({kx}, {ky}, {kz}) not supported. "
+                f"Use axis-aligned k-points (only one non-zero component)."
+            )
     else:
         k_mags = [(kx**2 + ky**2 + kz**2)**0.5 for kx, ky, kz in k_points]
         k_max = max(k_mags)

@@ -32,7 +32,7 @@ def run_test(name, script):
     if not os.path.isfile(script_path):
         return {"name": name, "script": script, "status": "SKIP", "output": "File not found"}
 
-    cmd = f"source {VENV_ACTIVATE} && python3 {script_path}"
+    cmd = f"source '{VENV_ACTIVATE}' && python3 '{script_path}'"
     result = subprocess.run(
         ["bash", "-c", cmd],
         capture_output=True, text=True, timeout=300,

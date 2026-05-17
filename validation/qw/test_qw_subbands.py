@@ -18,7 +18,8 @@ This test:
 2. Measures the systematic offset caused by the missing const
 3. Confirms the offset is consistent across well widths and materials
 
-Tolerance: Not applicable — this is a convention verification, not a pass/fail test.
+Since the offset is a known convention issue (not a test failure), this test
+passes as long as both codes run successfully and produce results.
 """
 
 import os
@@ -30,7 +31,7 @@ import numpy as np
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from validation.shared.param_mapper import map_material
+from validation.shared.param_mapper import map_material, FORTRAN_MATERIALS
 from validation.shared.kdotpy_runner import run_qw
 from validation.shared.fortran_runner import run_qw as fortran_run_qw
 
@@ -47,8 +48,14 @@ QW_TESTS = [
 ]
 
 
-def get_unique_evals(evals, threshold=0.1):
-    """Remove Kramers degeneracy from eigenvalue list."""
+def get_unique_evals(evals, threshold=0.5):
+    """Remove Kramers degeneracy from eigenvalue list.
+
+    Args:
+        evals: sorted eigenvalue list (meV)
+        threshold: minimum spacing to count as distinct (meV).
+                   0.5 meV accommodates numerical noise from different solvers.
+    """
     unique = []
     for e in sorted(evals):
         if not unique or abs(e - unique[-1]) > threshold:
@@ -56,9 +63,27 @@ def get_unique_evals(evals, threshold=0.1):
     return unique
 
 
+def classify_bands(unique_evals, well_material):
+    """Split eigenvalues into CB and VB using the well material's Ec as reference.
+
+    Returns (cb_list, vb_list) with cb above Ec and vb below Ec.
+    """
+    well_params = FORTRAN_MATERIALS[well_material]
+    ec_meV = well_params["EC"] * 1000.0  # meV
+    # Mid-gap as separator — CB above mid-gap, VB below
+    eg_meV = well_params["Eg"] * 1000.0
+    ev_meV = ec_meV - eg_meV
+    midgap = (ec_meV + ev_meV) / 2.0
+
+    cb = [e for e in unique_evals if e > midgap]
+    vb = sorted([e for e in unique_evals if e <= midgap], reverse=True)
+    return cb, vb
+
+
 def test_qw_subbands():
     """Compare QW subband energies, documenting const convention difference."""
     results = []
+    all_pass = True
 
     print("=" * 70)
     print("QW SUBBAND CROSS-CODE VALIDATION")
@@ -94,7 +119,9 @@ def test_qw_subbands():
             f_unique = get_unique_evals([e * 1000 for e in f_evals])  # meV
         except Exception as e:
             print(f"| {label} | ERROR | ERROR | - | ERROR | ERROR | - |")
+            print(f"  -> Fortran error: {e}")
             results.append({"config": label, "error": str(e)})
+            all_pass = False
             continue
 
         # Run kdotpy with QW-mode Ec/Ev (actual band offsets)
@@ -109,36 +136,40 @@ def test_qw_subbands():
             kd_unique = get_unique_evals(kd_evals)
         except Exception as e:
             print(f"| {label} | {f_unique[-1]:.2f} | ERROR | - | "
-                  f"{f_unique[-3]:.2f} | ERROR | - |")
+                  f"{f_unique[0] if f_unique else 'N/A'} | ERROR | - |")
+            print(f"  -> kdotpy error: {e}")
             results.append({"config": label, "error": str(e)})
+            all_pass = False
             continue
 
-        # Extract CB1 and VB1
-        f_cb = [e for e in f_unique if e > 500]
-        f_vb = sorted([e for e in f_unique if e < 500], reverse=True)
-        kd_cb = [e for e in kd_unique if e > 500]
-        kd_vb = sorted([e for e in kd_unique if e < 500], reverse=True)
+        # Classify using material-aware mid-gap
+        f_cb, f_vb = classify_bands(f_unique, well)
+        kd_cb, kd_vb = classify_bands(kd_unique, well)
 
-        if f_cb and kd_cb:
-            cb_delta = f_cb[0] - kd_cb[0]
-            vb_delta = f_vb[0] - kd_vb[0] if f_vb and kd_vb else 0
-            print(f"| {label} | {f_cb[0]:.2f} | {kd_cb[0]:.2f} | "
-                  f"{cb_delta:+.2f} | {f_vb[0]:.2f} | {kd_vb[0]:.2f} | "
-                  f"{vb_delta:+.2f} |")
+        if not f_cb or not kd_cb:
+            print(f"| {label} | MISSING | MISSING | - | MISSING | MISSING | - |")
+            all_pass = False
+            continue
 
-            results.append({
-                "config": label,
-                "barrier": barrier,
-                "well": well,
-                "l_well_nm": l_well_nm,
-                "cb1_fortran_meV": f_cb[0],
-                "cb1_kdotpy_meV": kd_cb[0],
-                "cb1_delta_meV": cb_delta,
-                "vb1_fortran_meV": f_vb[0] if f_vb else None,
-                "vb1_kdotpy_meV": kd_vb[0] if kd_vb else None,
-                "vb1_delta_meV": vb_delta,
-                "note": "Delta caused by missing const on diagonal k-dependent terms",
-            })
+        cb_delta = f_cb[0] - kd_cb[0]
+        vb_delta = (f_vb[0] - kd_vb[0]) if (f_vb and kd_vb) else 0.0
+        print(f"| {label} | {f_cb[0]:.2f} | {kd_cb[0]:.2f} | "
+              f"{cb_delta:+.2f} | {f_vb[0]:.2f} | {kd_vb[0]:.2f} | "
+              f"{vb_delta:+.2f} |")
+
+        results.append({
+            "config": label,
+            "barrier": barrier,
+            "well": well,
+            "l_well_nm": l_well_nm,
+            "cb1_fortran_meV": float(f_cb[0]),
+            "cb1_kdotpy_meV": float(kd_cb[0]),
+            "cb1_delta_meV": float(cb_delta),
+            "vb1_fortran_meV": float(f_vb[0]) if f_vb else None,
+            "vb1_kdotpy_meV": float(kd_vb[0]) if kd_vb else None,
+            "vb1_delta_meV": float(vb_delta),
+            "note": "Delta caused by missing const on diagonal k-dependent terms",
+        })
 
     results_dir = os.path.join(os.path.dirname(__file__), "results")
     os.makedirs(results_dir, exist_ok=True)
@@ -153,7 +184,7 @@ def test_qw_subbands():
     print()
     print("This affects all k≠0 results: bulk dispersion, QW subbands,")
     print("wire subbands, Landau levels, and g-factors.")
-    return True
+    return all_pass
 
 
 if __name__ == "__main__":

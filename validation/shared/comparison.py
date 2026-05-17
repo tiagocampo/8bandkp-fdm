@@ -49,6 +49,11 @@ def compare_eigenvalues(fortran_eV, kdotpy_meV, tolerance_meV=TOL_EXACT):
     theirs_meV = np.array(kdotpy_meV)
 
     n = min(len(ours_meV), len(theirs_meV))
+    n_ours = len(ours_meV)
+    n_theirs = len(theirs_meV)
+    if n_ours != n_theirs:
+        print(f"  Warning: eigenvalue count mismatch (ours={n_ours}, kdotpy={n_theirs}), "
+              f"comparing first {n} bands")
     per_band = []
     for i in range(n):
         delta = abs(float(ours_meV[i]) - float(theirs_meV[i]))
@@ -101,7 +106,9 @@ def write_json_report(results, filepath):
         results: list of comparison dicts
         filepath: output path
     """
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    dirname = os.path.dirname(filepath)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
     with open(filepath, "w") as f:
         json.dump(results, f, indent=2)
 
