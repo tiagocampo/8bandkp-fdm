@@ -23,9 +23,19 @@ TESTS = [
     ("QW Subbands", "validation/qw/test_qw_subbands.py"),
     ("QW Dispersion", "validation/qw/test_qw_dispersion.py"),
     ("QW Convergence", "validation/qw/test_qw_convergence.py"),
+    ("Landau Bulk", "validation/landau/test_landau_bulk.py"),
+    ("Wire Subbands", "validation/wire/test_wire_subbands.py"),
+    ("g-Factor", "validation/gfactor/test_gfactor_qw.py"),
+    ("Strain Bandedge", "validation/strain/test_strain_bandedge.py"),
+    ("Self-Consistent QW", "validation/selfconsistent/test_sc_qw.py"),
 ]
 
 VENV_ACTIVATE = os.path.join(project_root, "validation", "kdotpy_env", "bin", "activate")
+TIMEOUTS = {
+    "validation/wire/test_wire_subbands.py": 300,
+    "validation/selfconsistent/test_sc_qw.py": 300,
+    "validation/qw/test_qw_convergence.py": 600,
+}
 
 
 def run_test(name, script):
@@ -35,9 +45,10 @@ def run_test(name, script):
         return {"name": name, "script": script, "status": "SKIP", "output": "File not found"}
 
     cmd = f"source '{VENV_ACTIVATE}' && python3 '{script_path}'"
+    timeout = TIMEOUTS.get(script, 300)
     result = subprocess.run(
         ["bash", "-c", cmd],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True, text=True, timeout=timeout,
         cwd=project_root,
     )
 
