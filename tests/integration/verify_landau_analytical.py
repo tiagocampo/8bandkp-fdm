@@ -9,6 +9,7 @@ cyclotron energy spacing. Also validates ky degeneracy.
 """
 # COVERAGE: observable=landau_levels geometry=bulk material=GaAs
 # COVERAGE: observable=landau_levels geometry=bulk material=InAs
+import shutil
 import subprocess
 import sys
 import os
@@ -171,7 +172,6 @@ def main():
             print("SKIP: ky degeneracy check (only 1 k-point)")
 
     finally:
-        import shutil
         shutil.rmtree(workdir, ignore_errors=True)
 
 

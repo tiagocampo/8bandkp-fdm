@@ -264,9 +264,9 @@ def main():
                     )
 
                     bench_row = format_benchmark_row(
-                        "InAs", "m*_e (Kane)", m_star_computed, M_STAR_KANE,
-                        "2-band Kane formula",
-                        f"Analytical ({TOL_KANE*100:.0f}%)", delta,
+                        "InAs", "m*_e (8-band)", m_star_computed, M_STAR_8BAND,
+                        "8-band kdotpy cross-validation",
+                        f"Regression ({TOL_KANE*100:.0f}%)", delta,
                         "PASS" if passed else "FAIL"
                     )
                     rows.append(bench_row)

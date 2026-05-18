@@ -212,11 +212,11 @@ def check_effective_mass(build_dir, source_dir):
         )
         rows.append({
             "material": "GaAs",
-            "observable": "m*_e (Kane)",
+            "observable": "m*_e (8-band)",
             "computed": m_star,
-            "expected": M_STAR_KANE,
-            "reference": "2-band Kane formula",
-            "tolerance": "Analytical (10%)",
+            "expected": M_STAR_8BAND,
+            "reference": "8-band kdotpy cross-validation",
+            "tolerance": f"Regression ({TOL_MASS*100:.0f}%)",
             "delta": delta,
             "status": "PASS" if passed else "FAIL",
         })

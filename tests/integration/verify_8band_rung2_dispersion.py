@@ -67,7 +67,7 @@ MATERIALS = {
         "config": "bulk_insb_kx_dispersion.cfg",
         "Eg": 0.235,
         "EP": 23.3,
-        "m_star_8band": 0.0068,
+        "m_star_8band": 0.0069,
         "m_star_kane": 0.0100,
         "m_star_vurgaftman": 0.0135,
     },
@@ -334,12 +334,7 @@ def main():
             if k0_evals is not None:
                 cb_bottom = k0_evals[-1]
                 vb_top = k0_evals[-3]  # HH/LH are bands 3-6 (indices 2-5)
-                computed_eg = cb_bottom - vb_top if abs(vb_top) < 0.01 else cb_bottom
-                # For bulk with EV=0: cb_bottom = Eg directly
-                if abs(vb_top) < 0.01:
-                    computed_eg = cb_bottom
-                else:
-                    computed_eg = cb_bottom - vb_top
+                computed_eg = cb_bottom if abs(vb_top) < 0.01 else cb_bottom - vb_top
                 print(f"  Computed Eg at k=0: {computed_eg:.6f} eV "
                       f"(expected: {mat_data['Eg']:.3f} eV)")
 

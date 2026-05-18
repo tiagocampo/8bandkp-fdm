@@ -88,7 +88,7 @@ def copy_config_and_run(build_dir, repo_dir, config_relpath, label):
 # ---------------------------------------------------------------------------
 
 def check_r10(evals):
-    """R10: CB subband spacing = 9.92 meV for GaAs/AlGaAs QW."""
+    """R10: CB subband spacing = 144.36 meV for GaAs/AlGaAs QW (const-correct 8-band)."""
     n = len(evals)
     # numcb=4, numvb=8 => 12 eigenvalues
     # CB subbands are the 4 highest eigenvalues (ascending order).
