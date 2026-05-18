@@ -1,7 +1,7 @@
 {
-  "date": "2026-05-17T17:40:39.896331",
+  "date": "2026-05-17T22:42:29.580149",
   "summary": {
-    "pass": 4,
+    "pass": 6,
     "fail": 0,
     "skip": 0
   },
@@ -36,13 +36,31 @@
       "status": "PASS",
       "returncode": 0,
       "output": "======================================================================\nQW SUBBAND CROSS-CODE VALIDATION\n======================================================================\nTolerance: 2.0 meV for CB1\n\n| Config | CB1 ours | CB1 kd | Delta | VB1 ours | VB1 kd | Delta | Status |\n|--------|----------|--------|-------|----------|--------|-------|--------|\n| GaAs/Al20Ga80As 10.0nm | 768.49 | 769.96 | 1.46 | -807.09 | -807.35 | 0.26 | PASS |\n| GaAs/Al20Ga80As 7.0nm | 795.16 | 795.90 | 0.74 | -812.81 | -812.94 | 0.13 | PASS |\n| GaAs/Al30Ga70As 10.0nm | 773.56 | 775.26 | 1.70 | -807.50 | -807.79 | 0.29 | PASS |\n\nSummary: 3/3 passed (CB1 < 2.0 meV)\n",
-      "error": "**  ( 0.000,  0.000,  0.000)  C done (0.173423 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.394627 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.174908 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.392926 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.202660 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.328587 s)\n"
+      "error": "**  ( 0.000,  0.000,  0.000)  C done (0.182793 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.378968 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.170982 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.358364 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.181846 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.301409 s)\n"
+    },
+    {
+      "name": "QW Dispersion",
+      "script": "validation/qw/test_qw_dispersion.py",
+      "status": "PASS",
+      "returncode": 0,
+      "output": "======================================================================\nQW DISPERSION CROSS-CODE VALIDATION\n======================================================================\nTolerance: CB1 per k-point < 2.0 meV, effective mass < 2%\n\n\nConfig: GaAs/Al20Ga80As 10.0nm\n  m* Fortran: 0.0322 m0\n  m* kdotpy:  0.0323 m0\n  Mass deviation: 0.12% (PASS)\n  CB1 max delta: 1.47 meV\n  k-points: 21/21 within 2.0 meV\n  Overall: PASS\n\nSummary: 1/1 configs passed\n",
+      "error": "**  ( 0.180,  0.000,  0.000)  C done (0.164820 s)\n***  ( 0.180,  0.000,  0.000)  D start\n***  ( 0.180,  0.000,  0.000)  D done (0.386786 s)\n***  ( 0.190,  0.000,  0.000)  C start\n***  ( 0.190,  0.000,  0.000)  C done (0.170125 s)\n***  ( 0.190,  0.000,  0.000)  D start\n***  ( 0.190,  0.000,  0.000)  D done (0.387589 s)\n***  ( 0.200,  0.000,  0.000)  C start\n***  ( 0.200,  0.000,  0.000)  C done (0.167831 s)\n***  ( 0.200,  0.000,  0.000)  D start\n***  ( 0.200,  0.000,  0.000)  D done (0.375480 s)\n"
+    },
+    {
+      "name": "QW Convergence",
+      "script": "validation/qw/test_qw_convergence.py",
+      "status": "PASS",
+      "returncode": 0,
+      "output": "======================================================================\nQW CONVERGENCE STUDY WITH RICHARDSON EXTRAPOLATION\n======================================================================\nQW: GaAs/Al20Ga80As 10.0nm\nTolerance: extrapolated CB1 delta < 1.0 meV\n\nFortran FD convergence:\n    Resolution     CB1 (meV)       h (A)\n          N=81       766.461       5.000\n         N=121       767.603       3.333\n         N=161       768.162       2.500\n         N=201       768.493       2.000\n         N=301       768.929       1.333\n\nkdotpy plane-wave convergence:\n    Resolution     CB1 (meV)     dz (nm)\n     dz=0.50nm       769.978      0.5000\n     dz=0.25nm       769.958      0.2500\n    dz=0.125nm       769.967      0.1250\n     dz=0.10nm       769.971      0.1000\n\nFortran Richardson extrapolated CB1: 769.278 meV\nkdotpy Richardson extrapolated CB1:  769.978 meV\n\nExtrapolated CB1 delta: 0.700 meV (tolerance: 1.0 meV)\nOverall: PASS\n",
+      "error": "**  ( 0.000,  0.000,  0.000)  C done (0.165520 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.371064 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.341495 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.584882 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.432068 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.668634 s)\n"
     }
   ],
   "findings": [
-    "Bulk k=0 gate test passes exactly (0.000000 meV)",
-    "Bulk/QW diagonal terms lack const = hbar\u00b2/(2m\u2080)",
-    "QW subband offset ~13 meV CB1 from missing const",
-    "Wire path correctly applies const (confinement_init.f90:493-499)"
+    "Bulk k=0 Gate Test: PASS",
+    "Bulk Dispersion: PASS",
+    "Bulk Zeeman: PASS",
+    "QW Subbands: PASS",
+    "QW Dispersion: PASS",
+    "QW Convergence: PASS"
   ]
 }

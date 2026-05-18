@@ -1,0 +1,55 @@
+{
+  "fortran_resolution_sweep": [
+    {
+      "label": "N=81",
+      "cb1_meV": 766.4609999999999,
+      "h_ang": 5.0
+    },
+    {
+      "label": "N=121",
+      "cb1_meV": 767.6030000000001,
+      "h_ang": 3.3333333333333335
+    },
+    {
+      "label": "N=161",
+      "cb1_meV": 768.162,
+      "h_ang": 2.5
+    },
+    {
+      "label": "N=201",
+      "cb1_meV": 768.4929999999999,
+      "h_ang": 2.0
+    },
+    {
+      "label": "N=301",
+      "cb1_meV": 768.929,
+      "h_ang": 1.3333333333333333
+    }
+  ],
+  "kdotpy_resolution_sweep": [
+    {
+      "label": "dz=0.50nm",
+      "cb1_meV": 769.9776285742553,
+      "zres_nm": 0.5
+    },
+    {
+      "label": "dz=0.25nm",
+      "cb1_meV": 769.9579044897793,
+      "zres_nm": 0.25
+    },
+    {
+      "label": "dz=0.125nm",
+      "cb1_meV": 769.9671679035042,
+      "zres_nm": 0.125
+    },
+    {
+      "label": "dz=0.10nm",
+      "cb1_meV": 769.9709117560783,
+      "zres_nm": 0.1
+    }
+  ],
+  "fortran_richardson_cb1": 769.2778,
+  "kdotpy_richardson_cb1": 769.9775674939877,
+  "delta_meV": 0.6997674939877925,
+  "passed": true
+}

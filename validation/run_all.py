@@ -21,6 +21,8 @@ TESTS = [
     ("Bulk Dispersion", "validation/bulk/test_bulk_dispersion.py"),
     ("Bulk Zeeman", "validation/bulk/test_bulk_zeeman.py"),
     ("QW Subbands", "validation/qw/test_qw_subbands.py"),
+    ("QW Dispersion", "validation/qw/test_qw_dispersion.py"),
+    ("QW Convergence", "validation/qw/test_qw_convergence.py"),
 ]
 
 VENV_ACTIVATE = os.path.join(project_root, "validation", "kdotpy_env", "bin", "activate")
@@ -84,11 +86,11 @@ def main():
     print("=" * 70)
 
     print()
-    print("RESULTS:")
-    print("1. Bulk k=0: PASS (12/12 materials, 0.000000 meV max delta)")
-    print("2. Bulk dispersion: PASS (5/5 effective masses < 0.1%)")
-    print("3. QW subbands: PASS (3/3 CB1 < 2 meV)")
-    print("4. Wire/Landau/g-factor/strain/Berry/SC: deferred (pipeline ready)")
+    if all(r["status"] == "PASS" for r in all_results):
+        print("All validation tests passed.")
+    else:
+        failed = [r["name"] for r in all_results if r["status"] == "FAIL"]
+        print(f"FAILED tests: {', '.join(failed)}")
 
     results_dir = os.path.join(project_root, "validation", "results")
     os.makedirs(results_dir, exist_ok=True)
@@ -99,10 +101,7 @@ def main():
             "summary": {"pass": n_pass, "fail": n_fail, "skip": n_skip},
             "tests": all_results,
             "findings": [
-                "Bulk k=0 gate test passes exactly (0.000000 meV)",
-                "Bulk effective masses agree to < 0.1% after const fix",
-                "QW subband CB1 energies agree to < 2 meV",
-                "Const = hbar²/(2m₀) now applied in confinement_init.f90 and hamiltonianConstructor.f90",
+                f"{r['name']}: {r['status']}" for r in all_results
             ],
         }, f, indent=2, default=str)
 

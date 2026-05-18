@@ -1,0 +1,12 @@
+[
+  {
+    "config": "GaAs/Al20Ga80As 10.0nm",
+    "f_mass": 0.032234587182732456,
+    "kd_mass": 0.0322730410117553,
+    "mass_deviation_pct": 0.11915155131751481,
+    "mass_pass": true,
+    "cb1_max_delta_meV": 1.4650567423506118,
+    "cb1_pass": true,
+    "overall_pass": true
+  }
+]
