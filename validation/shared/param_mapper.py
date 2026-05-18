@@ -168,6 +168,21 @@ FORTRAN_MATERIALS = {
         "ac": -5.64*0.47 + (-5.08)*0.53, "av": 2.47*0.47 + 1.00*0.53,
         "b_dp": -2.3*0.47 + (-1.8)*0.53, "d_dp": -3.4*0.47 + (-3.6)*0.53,
     },
+    # II-VI materials (Pfeuffer-Jeschke PhD thesis, 2000; Novik et al., PRB 72, 2005)
+    "HgTe": {
+        "meff": 1.0, "EP": 18.8, "Eg": -0.303, "deltaSO": 1.003,
+        "gamma1": 4.1, "gamma2": 0.5, "gamma3": 1.3,
+        "EV": 0.0, "EC": -0.303, "eps0": 15.0,
+        "C11": 532.0, "C12": 368.0, "C44": 201.0, "a0": 6.461,
+        "ac": -0.48, "av": -0.35, "b_dp": 0.44, "d_dp": -1.7,
+    },
+    "CdTe": {
+        "meff": 1.2195, "EP": 18.8, "Eg": 1.606, "deltaSO": 0.91,
+        "gamma1": 5.0, "gamma2": 1.3, "gamma3": 2.1,
+        "EV": 0.0, "EC": 1.606, "eps0": 10.0,
+        "C11": 532.0, "C12": 368.0, "C44": 201.0, "a0": 6.481,
+        "ac": -0.38, "av": -0.17, "b_dp": 0.30, "d_dp": -4.9,
+    },
 }
 
 # Materials that lack strain parameters in parameters.f90
