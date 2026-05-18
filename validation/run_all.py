@@ -106,7 +106,7 @@ def main():
         }, f, indent=2, default=str)
 
     print(f"\nReport saved to: {report_path}")
-    return n_fail == 0
+    return n_fail == 0 and n_pass > 0
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ Compares QW subband dispersion E(k_par) between our Fortran code and kdotpy
 for a GaAs/AlGaAs QW. Extracts CB1 effective mass from parabolic curvature
 and verifies agreement.
 
-Tolerance: < 2% for effective mass, < 1 meV per k-point CB1 eigenvalue.
+Tolerance: < 2% for effective mass, < 2 meV per k-point CB1 eigenvalue.
 """
 
 import os
@@ -19,6 +19,7 @@ sys.path.insert(0, project_root)
 from validation.shared.param_mapper import map_material
 from validation.shared.kdotpy_runner import run_qw
 from validation.shared.fortran_runner import run_qw as fortran_run_qw
+from validation.qw.test_qw_subbands import classify_bands, get_unique_evals
 
 BUILD_DIR = os.path.join(project_root, "build")
 ANG_TO_NM = 10.0
@@ -39,9 +40,6 @@ def extract_cb1_dispersion(evals_all, well_material, threshold=0.5):
 
     Returns list of CB1 energies in meV (one per k-point).
     """
-    from validation.qw.test_qw_subbands import classify_bands, get_unique_evals
-    from validation.shared.param_mapper import FORTRAN_MATERIALS
-
     cb1_list = []
     for evals in evals_all:
         unique = get_unique_evals(sorted(evals), threshold)

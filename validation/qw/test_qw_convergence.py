@@ -4,7 +4,7 @@ Runs both our Fortran code and kdotpy at multiple grid resolutions,
 extracts CB1 at k_par=0, performs Richardson extrapolation to the
 continuum limit, and compares the extrapolated values.
 
-Tolerance: < 0.5 meV for Richardson-extrapolated CB1 energy.
+Tolerance: < 1.0 meV for Richardson-extrapolated CB1 energy.
 """
 
 import os
@@ -102,8 +102,7 @@ def test_qw_convergence():
     # --- Fortran convergence ---
     print("Fortran FD convergence:")
     print(f"  {'Resolution':>12s}  {'CB1 (meV)':>12s}  {'h (A)':>10s}")
-    f_cb1_list = []
-    f_h_list = []
+    f_sweep = []
 
     for res in FORTRAN_RESOLUTIONS:
         fdstep = res["fdstep"]
@@ -116,8 +115,7 @@ def test_qw_convergence():
             )
             cb1 = extract_cb1_k0(f_results[0][1], well)
             if cb1 is not None:
-                f_cb1_list.append(cb1)
-                f_h_list.append(h_ang)
+                f_sweep.append({"label": res["label"], "cb1_meV": cb1, "h_ang": h_ang})
                 print(f"  {res['label']:>12s}  {cb1:>12.3f}  {h_ang:>10.3f}")
         except Exception as e:
             print(f"  {res['label']:>12s}  ERROR: {e}")
@@ -125,8 +123,7 @@ def test_qw_convergence():
     # --- kdotpy convergence ---
     print("\nkdotpy plane-wave convergence:")
     print(f"  {'Resolution':>12s}  {'CB1 (meV)':>12s}  {'dz (nm)':>10s}")
-    kd_cb1_list = []
-    kd_h_list = []
+    kd_sweep = []
 
     barrier_mat = map_material(barrier, qw_mode=True)
     well_mat = map_material(well, qw_mode=True)
@@ -142,8 +139,7 @@ def test_qw_convergence():
             unique = get_unique_evals(evals_meV)
             cb, vb = classify_bands(unique, well)
             if cb:
-                kd_cb1_list.append(cb[0])
-                kd_h_list.append(zres)
+                kd_sweep.append({"label": res["label"], "cb1_meV": cb[0], "zres_nm": zres})
                 print(f"  {res['label']:>12s}  {cb[0]:>12.3f}  {zres:>10.4f}")
         except Exception as e:
             print(f"  {res['label']:>12s}  ERROR: {e}")
@@ -152,12 +148,16 @@ def test_qw_convergence():
     f_extrap = None
     kd_extrap = None
 
-    if len(f_cb1_list) >= 2:
-        f_extrap = richardson_extrapolate(f_h_list, f_cb1_list, order=2)
+    if len(f_sweep) >= 2:
+        f_h = [s["h_ang"] for s in f_sweep]
+        f_cb1 = [s["cb1_meV"] for s in f_sweep]
+        f_extrap = richardson_extrapolate(f_h, f_cb1, order=2)
         print(f"\nFortran Richardson extrapolated CB1: {f_extrap:.3f} meV")
 
-    if len(kd_cb1_list) >= 2:
-        kd_extrap = richardson_extrapolate(kd_h_list, kd_cb1_list, order=2)
+    if len(kd_sweep) >= 2:
+        kd_h = [s["zres_nm"] for s in kd_sweep]
+        kd_cb1 = [s["cb1_meV"] for s in kd_sweep]
+        kd_extrap = richardson_extrapolate(kd_h, kd_cb1, order=2)
         print(f"kdotpy Richardson extrapolated CB1:  {kd_extrap:.3f} meV")
 
     # --- Compare extrapolated values ---
@@ -173,12 +173,14 @@ def test_qw_convergence():
 
     results = {
         "fortran_resolution_sweep": [
-            {"label": r["label"], "cb1_meV": float(v), "h_ang": float(h)}
-            for r, v, h in zip(FORTRAN_RESOLUTIONS, f_cb1_list, f_h_list)
+            {"label": s["label"], "cb1_meV": float(s["cb1_meV"]),
+             "h_ang": float(s["h_ang"])}
+            for s in f_sweep
         ],
         "kdotpy_resolution_sweep": [
-            {"label": r["label"], "cb1_meV": float(v), "zres_nm": float(h)}
-            for r, v, h in zip(KDOTPY_RESOLUTIONS, kd_cb1_list, kd_h_list)
+            {"label": s["label"], "cb1_meV": float(s["cb1_meV"]),
+             "zres_nm": float(s["zres_nm"])}
+            for s in kd_sweep
         ],
         "fortran_richardson_cb1": float(f_extrap) if f_extrap else None,
         "kdotpy_richardson_cb1": float(kd_extrap) if kd_extrap else None,
