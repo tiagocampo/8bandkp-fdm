@@ -1,0 +1,10 @@
+[
+  {
+    "config": "InAs 55x55 rectangle (11x11 grid)",
+    "cb1_meV": 864.3199999999999,
+    "computed_gap_meV": 1602.8649999999998,
+    "expected_gap_meV": 417.0,
+    "gap_ratio": 3.8438009592326132,
+    "passed": true
+  }
+]

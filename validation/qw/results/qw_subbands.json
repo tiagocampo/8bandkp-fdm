@@ -5,11 +5,11 @@
     "well": "GaAs",
     "l_well_nm": 10.0,
     "cb1_fortran_meV": 768.4929999999999,
-    "cb1_kdotpy_meV": 769.9579044897793,
-    "cb1_delta_meV": 1.4649044897793146,
+    "cb1_kdotpy_meV": 769.9579044897794,
+    "cb1_delta_meV": 1.4649044897794283,
     "vb1_fortran_meV": -807.091,
-    "vb1_kdotpy_meV": -807.3492330275271,
-    "vb1_delta_meV": 0.25823302752712607,
+    "vb1_kdotpy_meV": -807.3492330275353,
+    "vb1_delta_meV": 0.2582330275353115,
     "passed": true
   },
   {
@@ -21,8 +21,8 @@
     "cb1_kdotpy_meV": 795.9017191126699,
     "cb1_delta_meV": 0.7397191126698317,
     "vb1_fortran_meV": -812.813,
-    "vb1_kdotpy_meV": -812.9415896203834,
-    "vb1_delta_meV": 0.1285896203834227,
+    "vb1_kdotpy_meV": -812.9415896203884,
+    "vb1_delta_meV": 0.12858962038842492,
     "passed": true
   },
   {
@@ -34,8 +34,8 @@
     "cb1_kdotpy_meV": 775.2610221037182,
     "cb1_delta_meV": 1.6960221037182919,
     "vb1_fortran_meV": -807.501,
-    "vb1_kdotpy_meV": -807.7941207946285,
-    "vb1_delta_meV": 0.29312079462852125,
+    "vb1_kdotpy_meV": -807.7941207946483,
+    "vb1_delta_meV": 0.29312079464830276,
     "passed": true
   }
 ]

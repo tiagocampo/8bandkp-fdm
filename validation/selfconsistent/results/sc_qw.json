@@ -1,0 +1,10 @@
+[
+  {
+    "config": "GaAs/AlGaAs doped QW",
+    "cb1_meV": 801.1239999999999,
+    "expected_cb1_meV": 800.0,
+    "delta_meV": 1.12399999999991,
+    "sc_converged": true,
+    "passed": true
+  }
+]

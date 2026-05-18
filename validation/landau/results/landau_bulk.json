@@ -1,0 +1,20 @@
+[
+  {
+    "material": "GaAs",
+    "B_T": 5.0,
+    "hbar_omega_c_meV": 18.259879503240217,
+    "LL0_analytical_eV": 0.72812993975162,
+    "LL0_numerical_eV": 0.727706,
+    "rel_error": 0.00058223090203466,
+    "passed": true
+  },
+  {
+    "material": "InAs",
+    "B_T": 5.0,
+    "hbar_omega_c_meV": 47.06001465469226,
+    "LL0_analytical_eV": -0.14946999267265385,
+    "LL0_numerical_eV": -0.152665,
+    "rel_error": 0.02137557693164114,
+    "passed": true
+  }
+]
