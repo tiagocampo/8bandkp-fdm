@@ -36,8 +36,8 @@ if [ "$Z2" != "0" ]; then
 fi
 
 MIN_GAP=$(grep "Min gap" "$WORKDIR/output/topology_result.dat" | awk '{print $5}')
-awk -v gap="$MIN_GAP" 'BEGIN { target = 1.563305; tol = 0.005; exit !(gap > target - tol && gap < target + tol) }' || {
-    echo "FAIL: Expected QW Fu-Kane min gap near 1.563305 eV, got '$MIN_GAP'"
+awk -v gap="$MIN_GAP" 'BEGIN { target = 1.597960; tol = 0.005; exit !(gap > target - tol && gap < target + tol) }' || {
+    echo "FAIL: Expected QW Fu-Kane min gap near 1.597960 eV, got '$MIN_GAP'"
     cat "$WORKDIR/output/topology_result.dat"
     exit 1
 }

@@ -1,26 +1,11 @@
 """Bulk dispersion cross-code validation.
 
-Known convention difference: Our bulk Hamiltonian diagonal terms
-(gamma*k², A*k²) do NOT include hbar²/(2m₀) = const = 3.80998 eV·Å²,
-while kdotpy's DO include it via hbarm0 = 38.0998 meV·nm².
+Compares effective masses extracted from band dispersion along high-symmetry
+directions for representative materials. The diagonal k-dependent terms now
+include const = hbar²/(2m₀) applied in confinement_init.f90 and
+hamiltonianConstructor.f90, matching kdotpy's convention.
 
-Evidence: confinement_init.f90:488-500 documents that the 1D QW path stores
-raw dimensionless gamma/A without const (applied later at Hamiltonian assembly),
-while the wire path bakes const into gamma/A profiles. The bulk Hamiltonian in
-hamiltonianConstructor.f90:649,729 uses the raw values without const.
-
-This convention difference causes the CB effective mass to be ~50% larger in
-our bulk code than in kdotpy (not exactly a factor of const because the
-off-diagonal P*k terms, which DO include const via P=sqrt(EP*const), also
-contribute to the mass renormalization).
-
-Since the bulk convention cannot be reconciled without modifying our Hamiltonian
-(which requires approval per CLAUDE.md), this test verifies:
-1. Both codes produce parabolic CB dispersion near k=0 (R² > 0.9999)
-2. The convention difference ratio is stable across materials and directions
-3. k=0 eigenvalues are exact (verified by test_bulk_k0.py)
-
-Tolerance: Convention ratio within 5% of expected value for each material.
+Tolerance: 1% for CB effective mass.
 """
 
 import os
@@ -88,13 +73,12 @@ def test_bulk_dispersion():
     results = []
 
     print("=" * 70)
-    print("BULK DISPERSION CROSS-CODE VALIDATION")
+    print("BULK DISPERSION CROSS-CODE VALIDATION (Effective Mass)")
     print("=" * 70)
-    print("Known convention: our bulk diagonal lacks const = hbar²/(2m₀)")
-    print("Verifying parabolicity and convention ratio stability")
+    print("Extracting effective mass from parabolic fit near k=0")
     print()
 
-    print("| Material | Dir | m*_ours | m*_kd | Ratio | R²_ours | R²_kd | Status |")
+    print("| Material | Direction | m*_ours | m*_kdotpy | Delta% | Status |")
     print("|----------|-----|---------|-------|-------|---------|-------|--------|")
 
     for test_cfg in DISPERSION_TESTS:
@@ -160,15 +144,14 @@ def test_bulk_dispersion():
             # Both must show parabolic dispersion (R² > 0.999 for narrow-gap materials)
             parabolic = r2_fortran > 0.999 and r2_kdotpy > 0.999
 
-            # Convention ratio should be > 1 (our mass larger due to missing const)
-            # and stable (not wildly varying between directions)
-            convention_ok = ratio > 1.0
+            # Effective mass agreement: delta_pct < 1%
+            delta_pct = abs(mstar_fortran - mstar_kdotpy) / mstar_kdotpy * 100
+            mass_ok = delta_pct < 1.0
 
-            status = "PASS" if (parabolic and convention_ok) else "FAIL"
+            status = "PASS" if (parabolic and mass_ok) else "FAIL"
 
             print(f"| {mat_name} | {direction} | {mstar_fortran:.6f} | "
-                  f"{mstar_kdotpy:.6f} | {ratio:.4f} | "
-                  f"{r2_fortran:.6f} | {r2_kdotpy:.6f} | {status} |")
+                  f"{mstar_kdotpy:.6f} | {delta_pct:.2f}% | {status} |")
 
             results.append({
                 "material": mat_name,
@@ -190,7 +173,6 @@ def test_bulk_dispersion():
 
     passed_count = sum(1 for r in results if r.get("passed", False))
     print(f"\nSummary: {passed_count}/{len(results)} passed")
-    print("Note: Mass ratio > 1 is expected (our bulk diagonal lacks const)")
     return all_pass
 
 

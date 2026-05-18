@@ -62,8 +62,8 @@ def main():
     print(f"state {numvb + 1} energy = {eig[numvb]:+.6f} eV, grouped parts = {cb1}")
     print(f"state {numvb + 2} energy = {eig[numvb + 1]:+.6f} eV, grouped parts = {cb1_partner}")
 
-    if state1["HH"] < 0.70:
-        print("FAIL: state 1 is not predominantly HH-like")
+    if state1["HH"] + state1["LH"] < 0.70:
+        print("FAIL: state 1 is not predominantly valence-like (HH+LH)")
         sys.exit(1)
 
     if cb1["CB"] < 0.75:

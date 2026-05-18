@@ -12,8 +12,9 @@
  numvb:          32
  ExternalField:           0 EF
  EFParams:   5.0000000000000001E-004
- whichBand:           0
- bandIdx:           1
+ whichBand           0
+ bandIdx           1
+ bandIdx           0
   
  Material: AlSbW
  Parameters
@@ -45,37 +46,37 @@
  adjusting numcb and numvb to get all states
  gfactor for conduction band
  sigma
-   0.0000   -0.0000   0.9235    0.0002
-   0.9235   -0.0002  -0.0000   -0.0000
+  -0.0347   -0.0000  -0.9183    0.2541
+  -0.9183   -0.2541   0.0347    0.0000
   
-   0.0000   -0.0000   0.0002   -0.9235
-   0.0002    0.9235  -0.0000    0.0000
+  -0.0096    0.0000  -0.2539   -0.9190
+  -0.2539    0.9190   0.0096   -0.0000
   
-  -0.8486    0.0000   0.0000   -0.0000
-   0.0000    0.0000   0.8486   -0.0000
- WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=  -6.5225602696727947E-016
- WARNING: near-zero energy denominator, n=           2 m=           2 l=           1 denom=   6.5225602696727947E-016
+   0.9061   -0.0000  -0.0342    0.0000
+  -0.0342   -0.0000  -0.9061    0.0000
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=  -5.2874371547773080E-015
+ WARNING: near-zero energy denominator, n=           2 m=           2 l=           1 denom=   5.2874371547773080E-015
  Total skipped contributions:           2
- WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=  -6.5225602696727947E-016
- WARNING: near-zero energy denominator, n=           2 m=           2 l=           1 denom=   6.5225602696727947E-016
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=  -5.2874371547773080E-015
+ WARNING: near-zero energy denominator, n=           2 m=           2 l=           1 denom=   5.2874371547773080E-015
  Total skipped contributions:           4
- WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=  -6.5225602696727947E-016
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=  -5.2874371547773080E-015
  Total skipped contributions:           6
  tensor
-   0.0000    0.0000   8.1136    0.0016
-   8.1136   -0.0016  -0.0000   -0.0000
+  -0.2490   -0.0000  -6.5922    1.8240
+  -6.5922   -1.8240   0.2490    0.0000
   
-   0.0000   -0.0000   0.0016   -8.1136
-   0.0016    8.1136  -0.0000   -0.0000
+  -0.0688    0.0000  -1.8227   -6.5969
+  -1.8227    6.5969   0.0688    0.0000
   
-  -5.6693   -0.0000   0.0000   -0.0000
-   0.0000    0.0000   5.6693   -0.0000
+   5.5218   -0.0000  -0.2086    0.0000
+  -0.2086   -0.0000  -5.5218   -0.0000
  gx
    0.0000000000000000     
-  -17.570555826126597     
+  -14.356541700486392     
  gy
    0.0000000000000000     
-  -17.570555826126594     
+  -14.356541700486385     
  gz
    0.0000000000000000     
-  -13.361628879187892     
+  -12.187823166071025     

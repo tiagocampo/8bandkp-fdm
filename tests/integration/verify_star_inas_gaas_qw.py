@@ -87,7 +87,7 @@ G_ROTH_BULK = roth_gfactor(INAS_EP, INAS_EG, INAS_DELTA_SO)  # ~ -14.6
 
 # CB subband spacing: 8-band regression reference for the 20A InAs/GaAs strained QW.
 # The narrow well + light mass (~0.023 m0) gives large CB confinement spacing.
-CB_SPACING_REF = 0.409      # eV (8-band QW regression; Bastard model: rough estimate)
+CB_SPACING_REF = 0.472      # eV (const-correct 8-band QW regression)
 TOL_CB_SPACING = 0.05       # 5% regression tolerance
 
 # ---------------------------------------------------------------------------
@@ -123,8 +123,8 @@ TOL_GFACTOR = 0.05     # 5% regression tolerance vs 8-band QW reference
 #
 # The bulk Bir-Pikus and Roth predictions are printed for comparison but
 # the QW results differ due to confinement and band-mixing effects.
-HHLH_REF = 0.082710    # eV (8-band QW; bulk Bir-Pikus: 0.241 eV)
-G_REF = -2.358147      # gz (8-band QW; bulk Roth: -14.6)
+HHLH_REF = 0.0567      # eV (const-correct 8-band QW; bulk Bir-Pikus: 0.241 eV)
+G_REF = -1.829         # gz (const-correct 8-band QW; bulk Roth: -14.6)
 
 
 def check_hh_lh_splitting(evals, num_vb):

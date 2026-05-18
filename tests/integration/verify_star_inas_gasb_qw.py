@@ -101,7 +101,7 @@ TOL_OVERLAP = 0.10      # 10% parameter-based (band alignment varies across sour
 # The bulk Roth formula gives g ~ -14.86 for InAsW, but the QW g-factor
 # is modified by confinement and broken-gap band mixing. Use regression
 # reference values for the specific QW structure.
-G_REF = -13.3616        # gz, 8-band QW (Roth bulk: -14.86)
+G_REF = -12.1878        # gz, const-correct 8-band QW
 
 # CB eigenvalue index for the broken-gap QW config:
 # Overlap config: numcb=4, numvb=8 => CB starts at index 8 (0-based)

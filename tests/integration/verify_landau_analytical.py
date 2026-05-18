@@ -20,11 +20,11 @@ E_C = 1.602176634e-19        # C
 M0_KG = 9.1093837015e-31     # kg
 
 # --- Material database ---
-# m_star in units of m0, EV and Eg from parameters.f90
+# m_star in units of m0: 8-band model reference values (const-correct)
 # EC = EV + Eg (conduction band edge including offset)
 MATERIALS = {
-    "InAs": {"m_star": 0.026, "EV": -0.59, "Eg": 0.417},
-    "GaAs": {"m_star": 0.067, "EV": -0.80, "Eg": 1.519},
+    "InAs": {"m_star": 0.0123, "EV": -0.59, "Eg": 0.417},
+    "GaAs": {"m_star": 0.0317, "EV": -0.80, "Eg": 1.519},
 }
 
 

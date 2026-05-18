@@ -1,25 +1,12 @@
 """QW subband cross-code validation.
 
-MAJOR FINDING: Our code's QW Hamiltonian lacks the const = hbar²/(2m₀) factor
-on diagonal k-dependent terms (gamma*k², A*k²). This is confirmed by:
+Compares QW subband energies at k_par=0 between our Fortran code and kdotpy.
+After the const fix (confinement_init.f90 applies const to gamma/A profiles
+and hamiltonianConstructor.f90 applies const in the bulk Hamiltonian), the
+remaining discrepancy is from grid resolution differences.
 
-1. confinement_init.f90:488-500 documents that the wire path bakes const into
-   gamma/A profiles, but the QW path does NOT.
-2. hamiltonianConstructor.f90 never references const — the QW kpterms use
-   raw dimensionless gamma/A values.
-3. The wire-path comment says "Unlike the 1D QW path where const is applied at
-   Hamiltonian assembly" — but const is NOT applied at assembly either.
-
-Impact: QW eigenvalues at k_par=0 have mixed units (EC in eV, A*k² in Å^{-2}).
-The discrepancy grows with confinement energy and is larger for lighter masses.
-
-This test:
-1. Verifies kdotpy QW eigenvalues are in the correct reference frame
-2. Measures the systematic offset caused by the missing const
-3. Confirms the offset is consistent across well widths and materials
-
-Since the offset is a known convention issue (not a test failure), this test
-passes as long as both codes run successfully and produce results.
+Tolerance: 2 meV for CB1 subband energy (accounts for FD vs plane-wave
+discretization differences at finite grid resolution).
 """
 
 import os
@@ -37,6 +24,7 @@ from validation.shared.fortran_runner import run_qw as fortran_run_qw
 
 BUILD_DIR = os.path.join(project_root, "build")
 ANG_TO_NM = 10.0
+TOL_QW_CB = 2.0  # meV
 
 QW_TESTS = [
     {"barrier": "Al20Ga80As", "well": "GaAs", "l_well_nm": 10.0,
@@ -49,13 +37,7 @@ QW_TESTS = [
 
 
 def get_unique_evals(evals, threshold=0.5):
-    """Remove Kramers degeneracy from eigenvalue list.
-
-    Args:
-        evals: sorted eigenvalue list (meV)
-        threshold: minimum spacing to count as distinct (meV).
-                   0.5 meV accommodates numerical noise from different solvers.
-    """
+    """Remove Kramers degeneracy from eigenvalue list."""
     unique = []
     for e in sorted(evals):
         if not unique or abs(e - unique[-1]) > threshold:
@@ -64,13 +46,9 @@ def get_unique_evals(evals, threshold=0.5):
 
 
 def classify_bands(unique_evals, well_material):
-    """Split eigenvalues into CB and VB using the well material's Ec as reference.
-
-    Returns (cb_list, vb_list) with cb above Ec and vb below Ec.
-    """
+    """Split eigenvalues into CB and VB using material-aware mid-gap."""
     well_params = FORTRAN_MATERIALS[well_material]
-    ec_meV = well_params["EC"] * 1000.0  # meV
-    # Mid-gap as separator — CB above mid-gap, VB below
+    ec_meV = well_params["EC"] * 1000.0
     eg_meV = well_params["Eg"] * 1000.0
     ev_meV = ec_meV - eg_meV
     midgap = (ec_meV + ev_meV) / 2.0
@@ -81,18 +59,18 @@ def classify_bands(unique_evals, well_material):
 
 
 def test_qw_subbands():
-    """Compare QW subband energies, documenting const convention difference."""
+    """Compare QW subband energies between codes."""
     results = []
     all_pass = True
 
     print("=" * 70)
     print("QW SUBBAND CROSS-CODE VALIDATION")
     print("=" * 70)
-    print("Known issue: our QW Hamiltonian diagonal lacks const = hbar²/(2m₀)")
+    print(f"Tolerance: {TOL_QW_CB} meV for CB1")
     print()
 
-    print("| Config | CB1 ours | CB1 kd | Delta | VB1 ours | VB1 kd | Delta |")
-    print("|--------|----------|--------|-------|----------|--------|-------|")
+    print("| Config | CB1 ours | CB1 kd | Delta | VB1 ours | VB1 kd | Delta | Status |")
+    print("|--------|----------|--------|-------|----------|--------|-------|--------|")
 
     for cfg in QW_TESTS:
         barrier = cfg["barrier"]
@@ -108,23 +86,19 @@ def test_qw_subbands():
 
         label = f"{well}/{barrier} {l_well_nm}nm"
 
-        # Run Fortran
         try:
             f_results = fortran_run_qw(
                 BUILD_DIR, barrier, well,
                 l_well_ang, l_barrier_ang, total_ang,
                 [(0.0, 0.0)], fdstep=fdstep, numcb=6, numvb=12,
             )
-            f_evals = f_results[0][1]  # eV ascending
-            f_unique = get_unique_evals([e * 1000 for e in f_evals])  # meV
+            f_evals = f_results[0][1]
+            f_unique = get_unique_evals([e * 1000 for e in f_evals])
         except Exception as e:
-            print(f"| {label} | ERROR | ERROR | - | ERROR | ERROR | - |")
-            print(f"  -> Fortran error: {e}")
-            results.append({"config": label, "error": str(e)})
+            print(f"| {label} | ERROR | ERROR | - | ERROR | ERROR | - | ERROR |")
             all_pass = False
             continue
 
-        # Run kdotpy with QW-mode Ec/Ev (actual band offsets)
         try:
             barrier_mat = map_material(barrier, qw_mode=True)
             well_mat = map_material(well, qw_mode=True)
@@ -136,26 +110,29 @@ def test_qw_subbands():
             kd_unique = get_unique_evals(kd_evals)
         except Exception as e:
             print(f"| {label} | {f_unique[-1]:.2f} | ERROR | - | "
-                  f"{f_unique[0] if f_unique else 'N/A'} | ERROR | - |")
-            print(f"  -> kdotpy error: {e}")
-            results.append({"config": label, "error": str(e)})
+                  f"{f_unique[0] if f_unique else 'N/A'} | ERROR | - | ERROR |")
             all_pass = False
             continue
 
-        # Classify using material-aware mid-gap
         f_cb, f_vb = classify_bands(f_unique, well)
         kd_cb, kd_vb = classify_bands(kd_unique, well)
 
         if not f_cb or not kd_cb:
-            print(f"| {label} | MISSING | MISSING | - | MISSING | MISSING | - |")
+            print(f"| {label} | MISSING | MISSING | - | MISSING | MISSING | - | ERROR |")
             all_pass = False
             continue
 
-        cb_delta = f_cb[0] - kd_cb[0]
-        vb_delta = (f_vb[0] - kd_vb[0]) if (f_vb and kd_vb) else 0.0
+        cb_delta = abs(f_cb[0] - kd_cb[0])
+        vb_delta = abs(f_vb[0] - kd_vb[0]) if (f_vb and kd_vb) else 0.0
+        cb_passed = cb_delta < TOL_QW_CB
+
+        if not cb_passed:
+            all_pass = False
+
+        status = "PASS" if cb_passed else "FAIL"
         print(f"| {label} | {f_cb[0]:.2f} | {kd_cb[0]:.2f} | "
-              f"{cb_delta:+.2f} | {f_vb[0]:.2f} | {kd_vb[0]:.2f} | "
-              f"{vb_delta:+.2f} |")
+              f"{cb_delta:.2f} | {f_vb[0]:.2f} | {kd_vb[0]:.2f} | "
+              f"{vb_delta:.2f} | {status} |")
 
         results.append({
             "config": label,
@@ -168,7 +145,7 @@ def test_qw_subbands():
             "vb1_fortran_meV": float(f_vb[0]) if f_vb else None,
             "vb1_kdotpy_meV": float(kd_vb[0]) if kd_vb else None,
             "vb1_delta_meV": float(vb_delta),
-            "note": "Delta caused by missing const on diagonal k-dependent terms",
+            "passed": bool(cb_passed),
         })
 
     results_dir = os.path.join(os.path.dirname(__file__), "results")
@@ -176,14 +153,8 @@ def test_qw_subbands():
     with open(os.path.join(results_dir, "qw_subbands.json"), "w") as f:
         json.dump(results, f, indent=2)
 
-    print()
-    print("FINDING: QW eigenvalues differ systematically because our Hamiltonian")
-    print("lacks const = hbar²/(2m₀) on diagonal k-dependent terms.")
-    print("kdotpy (correct): diagonal includes hbarm0 = 38.1 meV·nm²")
-    print("Our code: diagonal uses raw dimensionless gamma/A (missing const)")
-    print()
-    print("This affects all k≠0 results: bulk dispersion, QW subbands,")
-    print("wire subbands, Landau levels, and g-factors.")
+    passed_count = sum(1 for r in results if r.get("passed", False))
+    print(f"\nSummary: {passed_count}/{len(results)} passed (CB1 < {TOL_QW_CB} meV)")
     return all_pass
 
 

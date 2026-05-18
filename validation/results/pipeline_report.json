@@ -1,5 +1,5 @@
 {
-  "date": "2026-05-17T17:12:31.962680",
+  "date": "2026-05-17T17:40:39.896331",
   "summary": {
     "pass": 4,
     "fail": 0,
@@ -19,7 +19,7 @@
       "script": "validation/bulk/test_bulk_dispersion.py",
       "status": "PASS",
       "returncode": 0,
-      "output": "======================================================================\nBULK DISPERSION CROSS-CODE VALIDATION\n======================================================================\nKnown convention: our bulk diagonal lacks const = hbar\u00b2/(2m\u2080)\nVerifying parabolicity and convention ratio stability\n\n| Material | Dir | m*_ours | m*_kd | Ratio | R\u00b2_ours | R\u00b2_kd | Status |\n|----------|-----|---------|-------|-------|---------|-------|--------|\n| GaAs | kx | 0.046876 | 0.031247 | 1.5001 | 0.999972 | 0.999958 | PASS |\n| GaAs | ky | 0.046876 | 0.031247 | 1.5001 | 0.999972 | 0.999958 | PASS |\n| GaAs | kz | 0.046876 | 0.031229 | 1.5010 | 0.999972 | 0.999960 | PASS |\n| InAs | kx | 0.020332 | 0.013501 | 1.5060 | 0.999481 | 0.999305 | PASS |\n| InSb | kx | 0.011941 | 0.007631 | 1.5649 | 0.999177 | 0.999052 | PASS |\n\nSummary: 5/5 passed\nNote: Mass ratio > 1 is expected (our bulk diagonal lacks const)\n",
+      "output": "======================================================================\nBULK DISPERSION CROSS-CODE VALIDATION (Effective Mass)\n======================================================================\nExtracting effective mass from parabolic fit near k=0\n\n| Material | Direction | m*_ours | m*_kdotpy | Delta% | Status |\n|----------|-----|---------|-------|-------|---------|-------|--------|\n| GaAs | kx | 0.031231 | 0.031247 | 0.05% | PASS |\n| GaAs | ky | 0.031231 | 0.031247 | 0.05% | PASS |\n| GaAs | kz | 0.031231 | 0.031229 | 0.01% | PASS |\n| InAs | kx | 0.013492 | 0.013501 | 0.06% | PASS |\n| InSb | kx | 0.007627 | 0.007631 | 0.05% | PASS |\n\nSummary: 5/5 passed\n",
       "error": ""
     },
     {
@@ -35,8 +35,8 @@
       "script": "validation/qw/test_qw_subbands.py",
       "status": "PASS",
       "returncode": 0,
-      "output": "======================================================================\nQW SUBBAND CROSS-CODE VALIDATION\n======================================================================\nKnown issue: our QW Hamiltonian diagonal lacks const = hbar\u00b2/(2m\u2080)\n\n| Config | CB1 ours | CB1 kd | Delta | VB1 ours | VB1 kd | Delta |\n|--------|----------|--------|-------|----------|--------|-------|\n| GaAs/Al20Ga80As 10.0nm | 757.17 | 769.96 | -12.79 | -802.21 | -807.35 | +5.14 |\n| GaAs/Al20Ga80As 7.0nm | 780.28 | 795.90 | -15.62 | -804.28 | -812.94 | +8.66 |\n| GaAs/Al30Ga70As 10.0nm | 760.62 | 775.26 | -14.64 | -802.28 | -807.79 | +5.51 |\n\nFINDING: QW eigenvalues differ systematically because our Hamiltonian\nlacks const = hbar\u00b2/(2m\u2080) on diagonal k-dependent terms.\nkdotpy (correct): diagonal includes hbarm0 = 38.1 meV\u00b7nm\u00b2\nOur code: diagonal uses raw dimensionless gamma/A (missing const)\n\nThis affects all k\u22600 results: bulk dispersion, QW subbands,\nwire subbands, Landau levels, and g-factors.\n",
-      "error": "**  ( 0.000,  0.000,  0.000)  C done (0.181949 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.390655 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.165751 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.353855 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.188151 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.328082 s)\n"
+      "output": "======================================================================\nQW SUBBAND CROSS-CODE VALIDATION\n======================================================================\nTolerance: 2.0 meV for CB1\n\n| Config | CB1 ours | CB1 kd | Delta | VB1 ours | VB1 kd | Delta | Status |\n|--------|----------|--------|-------|----------|--------|-------|--------|\n| GaAs/Al20Ga80As 10.0nm | 768.49 | 769.96 | 1.46 | -807.09 | -807.35 | 0.26 | PASS |\n| GaAs/Al20Ga80As 7.0nm | 795.16 | 795.90 | 0.74 | -812.81 | -812.94 | 0.13 | PASS |\n| GaAs/Al30Ga70As 10.0nm | 773.56 | 775.26 | 1.70 | -807.50 | -807.79 | 0.29 | PASS |\n\nSummary: 3/3 passed (CB1 < 2.0 meV)\n",
+      "error": "**  ( 0.000,  0.000,  0.000)  C done (0.173423 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.394627 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.174908 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.392926 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.202660 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.328587 s)\n"
     }
   ],
   "findings": [

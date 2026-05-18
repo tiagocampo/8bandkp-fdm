@@ -637,11 +637,14 @@ module hamiltonianConstructor
         P = params(1)%P
         A = 0.0_dp
       else
-        gamma1 = params(1)%gamma1
-        gamma2 = params(1)%gamma2
-        gamma3 = params(1)%gamma3
+        ! Scale gamma and A by const = hbar^2/(2*m_0) so that k-dependent
+        ! diagonal terms have energy units (eV). P already includes const
+        ! via P = sqrt(EP*const), so it is NOT scaled here.
+        gamma1 = params(1)%gamma1 * const
+        gamma2 = params(1)%gamma2 * const
+        gamma3 = params(1)%gamma3 * const
         P = params(1)%P
-        A = params(1)%A
+        A = params(1)%A * const
       end if
 
 

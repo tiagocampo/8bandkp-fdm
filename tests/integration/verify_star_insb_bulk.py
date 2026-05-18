@@ -56,8 +56,11 @@ EG_INSB = 0.235       # eV, Vurgaftman 2001 Table I
 DELTA_SO = 0.810      # eV, Vurgaftman 2001 Table I
 EP_INSB = 23.3        # eV, parameters.f90
 
-# 2-band Kane formula: m*_kane = Eg / (EP + Eg)
+# 2-band Kane formula: m*_kane = Eg / (EP + Eg) (informational)
 M_STAR_KANE = EG_INSB / (EP_INSB + EG_INSB)  # ~0.00997 m0
+
+# 8-band model reference (validated against kdotpy)
+M_STAR_8BAND = 0.0069  # m0
 
 # Roth g-factor formula (Winkler 2003, Eq. 6.42):
 #   g_roth = 2 - 2*EP*DeltaSO / (3*Eg*(Eg + DeltaSO))
@@ -66,7 +69,7 @@ G_ROTH = roth_gfactor(EP_INSB, EG_INSB, DELTA_SO)
 # ---------------------------------------------------------------------------
 # Tolerances (KD6)
 # ---------------------------------------------------------------------------
-TOL_MASS = 0.15        # 15%: InSb extreme non-parabolicity (8-band deviates ~11% from 2-band Kane)
+TOL_MASS = 0.05        # 5%: 8-band reference comparison
 TOL_GFACTOR = 0.01     # 1%: Roth g-factor vs 8-band
 
 # CB eigenvalue index (0-based): bands 1-4 valence, 5-6 SO, 7-8 CB
@@ -187,10 +190,10 @@ def main():
                 all_pass = False
             else:
                 print(f"  m* (numerical): {m_star:.6f} m0")
-                print(f"  m* (Kane):      {M_STAR_KANE:.6f} m0 "
-                      f"(Eg/(EP+Eg) = {EG_INSB}/{EP_INSB}+{EG_INSB}))")
+                print(f"  m* (8-band ref): {M_STAR_8BAND:.6f} m0 "
+                      f"(Kane: {M_STAR_KANE:.6f})")
                 passed, delta, row = compare_value(
-                    m_star, M_STAR_KANE, TOL_MASS, "m*_e", "m0"
+                    m_star, M_STAR_8BAND, TOL_MASS, "m*_e", "m0"
                 )
                 status = "PASS" if passed else "FAIL"
                 if not passed:
