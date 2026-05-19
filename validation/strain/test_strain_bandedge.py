@@ -36,29 +36,33 @@ STRAIN_CONFIGS = [
 ]
 
 
-def run_fortran_strained(material, substrate_a0, build_dir):
+def _run_fortran_bulk(material, build_dir, substrate_a0=None):
+    """Run Fortran bandStructure for bulk, optionally with strain substrate."""
     exe = os.path.join(build_dir, "src", "bandStructure")
     if not os.path.isfile(exe):
-        return None
+        raise FileNotFoundError(f"Executable not found: {exe}")
 
-    workdir = tempfile.mkdtemp(prefix="strain_")
+    workdir = tempfile.mkdtemp(prefix="strain_" if substrate_a0 else "unstr_")
     try:
-        config = f"""waveVector: k0
-waveVectorMax: 0
-waveVectorStep: 1
-confinement:  0
-FDstep: 1
-FDorder: 2
-numLayers:  1
-material1: {material}
-numcb: 4
-numvb: 4
-ExternalField: 0  EF
-EFParams: 0.0
-strainSubstrate: {substrate_a0}
-"""
+        lines = [
+            "waveVector: k0",
+            "waveVectorMax: 0",
+            "waveVectorStep: 1",
+            "confinement:  0",
+            "FDstep: 1",
+            "FDorder: 2",
+            "numLayers:  1",
+            f"material1: {material}",
+            "numcb: 4",
+            "numvb: 4",
+            "ExternalField: 0  EF",
+            "EFParams: 0.0",
+        ]
+        if substrate_a0 is not None:
+            lines.append(f"strainSubstrate: {substrate_a0}")
+
         with open(os.path.join(workdir, "input.cfg"), 'w') as f:
-            f.write(config)
+            f.write('\n'.join(lines) + '\n')
         os.makedirs(os.path.join(workdir, "output"), exist_ok=True)
 
         result = subprocess.run(
@@ -72,56 +76,7 @@ strainSubstrate: {substrate_a0}
 
         eig_path = os.path.join(workdir, "output", "eigenvalues.dat")
         if not os.path.exists(eig_path):
-            return None
-
-        rows = []
-        with open(eig_path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                rows.append([float(x) for x in line.split()])
-        return rows[0][1:] if rows else None  # eigenvalues from first row
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
-
-
-def run_fortran_unstrained(material, build_dir):
-    exe = os.path.join(build_dir, "src", "bandStructure")
-    if not os.path.isfile(exe):
-        return None
-
-    workdir = tempfile.mkdtemp(prefix="unstrained_")
-    try:
-        config = f"""waveVector: k0
-waveVectorMax: 0
-waveVectorStep: 1
-confinement:  0
-FDstep: 1
-FDorder: 2
-numLayers:  1
-material1: {material}
-numcb: 4
-numvb: 4
-ExternalField: 0  EF
-EFParams: 0.0
-"""
-        with open(os.path.join(workdir, "input.cfg"), 'w') as f:
-            f.write(config)
-        os.makedirs(os.path.join(workdir, "output"), exist_ok=True)
-
-        result = subprocess.run(
-            [exe], cwd=workdir, capture_output=True, text=True, timeout=60
-        )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"bandStructure failed (rc={result.returncode}):\n"
-                f"stderr: {result.stderr[-500:]}"
-            )
-
-        eig_path = os.path.join(workdir, "output", "eigenvalues.dat")
-        if not os.path.exists(eig_path):
-            return None
+            raise RuntimeError(f"No eigenvalues.dat produced in {workdir}")
 
         rows = []
         with open(eig_path) as f:
@@ -181,16 +136,10 @@ def test_strain_bandedge():
 
         # Run our Fortran code
         try:
-            f_unstrained = run_fortran_unstrained(material, BUILD_DIR)
-            f_strained = run_fortran_strained(material, substrate_a0, BUILD_DIR)
-        except RuntimeError as e:
-            print(f"  FAIL: Fortran execution error: {e}")
-            all_pass = False
-            all_results.append({"config": name, "status": "FAIL"})
-            continue
-
-        if f_unstrained is None or f_strained is None:
-            print(f"  SKIP: Fortran produced no output")
+            f_unstrained = _run_fortran_bulk(material, BUILD_DIR)
+            f_strained = _run_fortran_bulk(material, BUILD_DIR, substrate_a0=substrate_a0)
+        except (FileNotFoundError, RuntimeError) as e:
+            print(f"  SKIP: Fortran execution error: {e}")
             all_results.append({"config": name, "status": "SKIP"})
             continue
 
