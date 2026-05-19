@@ -733,8 +733,8 @@ module parameters
 
           ! II-VI materials (Pfeuffer-Jeschke PhD thesis, U. Wuerzburg, 2000;
           ! Novik et al., PRB 72, 035321, 2005; Becker et al., PRB 62, 10353, 2000).
-          ! Inverted-gap semimetal: Gamma_6 below Gamma_8.
           case ("HgTe")
+            ! Inverted-gap semimetal: Gamma_6 below Gamma_8.
 
             params(i)%meff    = 1.0_dp       ! F = 0 => 1/(2F+1) = 1.0
             params(i)%EP      = 18.8_dp
