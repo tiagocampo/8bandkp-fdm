@@ -30,8 +30,10 @@ EV_TO_MEV = 1000.0
 def compare_eigenvalues(fortran_eV, kdotpy_meV, tolerance_meV=TOL_EXACT):
     """Compare eigenvalues from both codes.
 
-    Both arrays must have the same length. Fortran eigenvalues are sorted
-    ascending (our output format). kdotpy eigenvalues are sorted ascending.
+    Arrays of different lengths are allowed; the overlapping subset is compared
+    for diagnostics, but `passed` will be False if lengths differ. Empty arrays
+    produce `max_delta_meV=inf`. Fortran eigenvalues are sorted ascending (our
+    output format). kdotpy eigenvalues are sorted ascending.
 
     Args:
         fortran_eV: array-like, eigenvalues from our code in eV
@@ -47,12 +49,13 @@ def compare_eigenvalues(fortran_eV, kdotpy_meV, tolerance_meV=TOL_EXACT):
     ours_meV = np.array(fortran_eV) * EV_TO_MEV
     theirs_meV = np.array(kdotpy_meV)
 
-    if len(ours_meV) == 0 and len(theirs_meV) == 0:
+    if len(ours_meV) == 0 or len(theirs_meV) == 0:
         return {
             "passed": False,
-            "max_delta_meV": 0.0,
+            "max_delta_meV": float("inf"),
             "per_band": [],
-            "error": "No eigenvalues to compare (both arrays empty)",
+            "error": (f"Empty eigenvalue array: ours={len(ours_meV)}, "
+                      f"kdotpy={len(theirs_meV)}"),
         }
 
     n = min(len(ours_meV), len(theirs_meV))
