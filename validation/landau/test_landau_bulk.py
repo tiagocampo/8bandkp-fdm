@@ -93,13 +93,8 @@ def test_landau_bulk():
     print(f"Tolerance: CB LL0 relative error < {TOL_REL*100:.0f}%")
     print()
 
-    # Check kdotpy availability (used for analytical comparison)
-    try:
-        from kdotpy.config import initialize_config
-        initialize_config()
-    except ImportError:
-        print("SKIP: kdotpy not available (activate kdotpy_env first)")
-        return False
+    # This test validates against analytical formulas, not kdotpy.
+    # No kdotpy availability check needed.
 
     all_pass = True
     all_results = []

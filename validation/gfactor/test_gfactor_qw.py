@@ -69,6 +69,7 @@ def parse_gfactor(output):
     result = {}
     lines = output.split('\n')
     current = None
+    unparseable = []
     for line in lines:
         line = line.strip()
         if line.startswith('gx'):
@@ -83,7 +84,12 @@ def parse_gfactor(output):
                 if vals:
                     result[current] = vals
             except ValueError:
-                pass
+                unparseable.append(line)
+    if unparseable and not result:
+        raise RuntimeError(
+            f"Could not parse any g-factor values. "
+            f"Unparseable lines: {unparseable[:5]}"
+        )
     return result
 
 
@@ -94,13 +100,8 @@ def test_gfactor_qw():
     print(f"Tolerance: < {TOL_GFACTOR_PCT*100:.0f}% deviation from reference")
     print()
 
-    # Check kdotpy availability
-    try:
-        from kdotpy.config import initialize_config
-        initialize_config()
-    except ImportError:
-        print("SKIP: kdotpy not available (activate kdotpy_env first)")
-        return False
+    # This test validates against analytical references, not kdotpy.
+    # No kdotpy availability check needed.
 
     all_pass = True
     all_results = []
