@@ -13,7 +13,7 @@ Fortran 2018 code solving the **8-band zinc-blende k.p Hamiltonian** via finite 
 cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl
 
 # Build
-cmake --build build                # builds all three executables into build/src/
+cmake --build build                # builds all four executables into build/src/
 
 # Or use the Make wrapper
 make all            # Configure + build all executables
@@ -117,7 +117,7 @@ src/
   math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90, linalg.f90, sparse_matrices.f90, eigensolver.f90, geometry.f90
   io/         outputFunctions.f90, input_parser.f90
   physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90, magnetic_field.f90, topological_analysis.f90, bdg_hamiltonian.f90, green_functions.f90
-  apps/       main.f90, main_gfactor.f90, main_optics.f90
+  apps/       main.f90, main_gfactor.f90, main_optics.f90, main_topology.f90
 tests/
   unit/       pFUnit .pf test files (31 tests: defs, FD, utils, parameters, Hamiltonian, CSR, eigensolver, Poisson, charge density, SC loop, geometry, optical, topology, magnetic field, BdG, Landau, Z2, strain_solver, green_functions)
   support/    shared test-support library (CSR helpers, Krylov infrastructure, reference data)
