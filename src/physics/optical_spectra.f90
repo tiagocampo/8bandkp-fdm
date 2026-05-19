@@ -175,9 +175,9 @@ contains
           ! Bulk: cubic isotropy => TE = TM = (px+py+pz)/2 for each
           ! (factor 1/2 so total = px+py+pz, matching standard convention)
           do ie = 1, nE
-            alpha_te(ie) = alpha_te(ie) + occ_factor * (px + py + pz) &
+            alpha_te(ie) = alpha_te(ie) + occ_factor * (px + py + pz) * 0.5_dp &
               & * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
-            alpha_tm(ie) = alpha_tm(ie) + occ_factor * (px + py + pz) &
+            alpha_tm(ie) = alpha_tm(ie) + occ_factor * (px + py + pz) * 0.5_dp &
               & * lineshape_voigt(E_grid(ie), dE, gamma_l, gamma_g) * k_weight
           end do
         else
