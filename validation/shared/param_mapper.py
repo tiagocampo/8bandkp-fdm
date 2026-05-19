@@ -245,7 +245,7 @@ def map_material(mat_name, qw_mode=False):
     if "ac" in m:
         param["strain_C1"] = m["ac"] * 1000.0
         param["strain_Dd"] = m["av"] * 1000.0
-        param["strain_Du"] = -1.5 * m["b_dp"] * 1000.0
+        param["strain_Du"] = -0.75 * m["b_dp"] * 1000.0
         param["strain_Duprime"] = -0.5 * math.sqrt(3.0) * m["d_dp"] * 1000.0
 
     return Material(mat_name, param=param)

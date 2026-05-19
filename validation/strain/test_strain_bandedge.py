@@ -8,7 +8,7 @@ the substrate lattice constant. kdotpy uses substrate_material in PhysParams.
 
 Both should produce identical strain shifts for matched parameters.
 
-Tolerance: < 1 meV for strained band edge eigenvalues.
+Tolerance: < 1 meV for all strained eigenvalue shifts.
 """
 import os
 import sys
@@ -211,19 +211,12 @@ def test_strain_bandedge():
 
         # Compare shifts
         max_delta = max(abs(f - kd) for f, kd in zip(f_shifts, kd_shifts))
-        # CB shift should match closely; VB may differ due to Bir-Pikus conventions
-        cb_shift_f = f_shifts[-1]
-        cb_shift_kd = kd_shifts[-1]
-        cb_delta = abs(cb_shift_f - cb_shift_kd)
-        passed = cb_delta < TOL_MEV
+        passed = max_delta < TOL_MEV
 
         print(f"  Fortran strained (meV):  {[f'{e:.3f}' for e in f_str_meV]}")
         print(f"  kdotpy strained (meV):   {[f'{e:.3f}' for e in kd_str_meV]}")
-        print(f"  Fortran CB shift: {cb_shift_f:.3f} meV")
-        print(f"  kdotpy  CB shift: {cb_shift_kd:.3f} meV")
-        print(f"  CB delta: {cb_delta:.3f} meV")
         print(f"  Max total delta: {max_delta:.3f} meV")
-        print(f"  Status: {'PASS' if passed else 'FAIL'} (CB shift only)")
+        print(f"  Status: {'PASS' if passed else 'FAIL'}")
 
         if not passed:
             all_pass = False
@@ -232,7 +225,7 @@ def test_strain_bandedge():
             "config": name,
             "fortran_strained_meV": f_str_meV,
             "kdotpy_strained_meV": kd_str_meV,
-            "cb_delta_meV": cb_delta,
+            "max_delta_meV": max_delta,
             "passed": bool(passed),
         })
 

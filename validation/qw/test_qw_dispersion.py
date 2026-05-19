@@ -204,7 +204,7 @@ def test_qw_dispersion():
     with open(os.path.join(results_dir, "qw_dispersion.json"), "w") as f:
         json.dump(all_results, f, indent=2)
 
-    n_pass = sum(1 for r in all_results if r.get("overall_pass"))
+    n_pass = sum(1 for r in all_results if r.get("passed"))
     print(f"\nSummary: {n_pass}/{len(all_results)} configs passed")
     return all_pass
 

@@ -85,7 +85,7 @@ Our 91 tests validate against analytical formulas and literature, but no indepen
 | `delta_SO` (eV) | `delta_so` (meV) | `× 1000` | Yes |
 | `ac` (eV) | `strain_C1` (meV) | `ac * 1000` | Yes |
 | `av` (eV) | `strain_Dd` (meV) | `av * 1000` | Yes |
-| `b_dp` (eV) | `strain_Du` (meV) | `-1.5 * b_dp * 1000` | Yes (convention) |
+| `b_dp` (eV) | `strain_Du` (meV) | `-0.75 * b_dp * 1000` | Yes (convention) |
 | `d_dp` (eV) | `strain_Duprime` (meV) | `-0.5 * sqrt(3) * d_dp * 1000` | Yes (convention) |
 | `ge` | `ge` | `2.0` (default, adjust if Zeeman fails) | Approximate |
 | (absent) | `q` | `0.0` | N/A (BIA parameter, not used) |
@@ -249,7 +249,7 @@ validation/
   - `Ev = 0.0` (energy reference)
   - `delta_so = delta_SO * 1000` (eV→meV)
   - `strain_C1 = ac * 1000`, `strain_Dd = av * 1000`
-  - `strain_Du = -1.5 * b_dp * 1000`, `strain_Duprime = -0.5 * sqrt(3) * d_dp * 1000`
+  - `strain_Du = -0.75 * b_dp * 1000`, `strain_Duprime = -0.5 * sqrt(3) * d_dp * 1000`
   - `a = a0 / 10` (Å→nm)
   - `ge = 2.0` (default, adjustable)
   - `q = 0.0` (no BIA)
