@@ -92,7 +92,8 @@ def test_all_bulk_k0():
                 "comparison": comp,
             })
 
-        except (ImportError, FileNotFoundError, RuntimeError, ValueError, OSError) as e:
+        except (ImportError, FileNotFoundError, RuntimeError, ValueError,
+                OSError, KeyError) as e:
             print(f"| {mat_name} | ERROR | ERROR | ERROR | ERROR | ERROR |")
             print(f"  -> {type(e).__name__}: {e}")
             failures.append(mat_name)

@@ -6,7 +6,7 @@ and verifies convergence behavior and subband energies against expected values.
 Note: kdotpy cross-code comparison is deferred to follow-up work due to
 different SC mixing strategies (DIIS vs dynamic time stepping).
 
-Tolerance: < 10 meV for CB1 subband energy.
+Tolerance: < 5 meV for CB1 subband energy.
 """
 import os
 import sys
@@ -20,7 +20,7 @@ sys.path.insert(0, project_root)
 
 BUILD_DIR = os.path.join(project_root, "build")
 MEV_PER_EV = 1000.0
-TOL_CB1_MEV = 10.0
+TOL_CB1_MEV = 5.0
 
 SC_CONFIGS = [
     {
@@ -79,7 +79,7 @@ def test_sc_qw():
     print("=" * 70)
     print("SELF-CONSISTENT QW CROSS-VALIDATION")
     print("=" * 70)
-    print(f"Tolerance: CB1 within {TOL_CB1_MEV} meV of expected range")
+    print(f"Tolerance: CB1 within {TOL_CB1_MEV} meV of expected value")
     print()
 
     all_pass = True
