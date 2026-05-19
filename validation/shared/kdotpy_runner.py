@@ -43,7 +43,12 @@ def run_bulk(material, k_points):
     results = []
     for kx, ky, kz in k_points:
         k = Vector(kx, ky, kz)
-        dd = hbulk(k, pp)
+        try:
+            dd = hbulk(k, pp)
+        except Exception as e:
+            raise RuntimeError(
+                f"kdotpy hbulk failed for material, k=({kx},{ky},{kz}): {e}"
+            ) from e
         results.append(sorted(dd.eival))
     return results
 
@@ -93,6 +98,11 @@ def run_qw(barrier_material, well_material, l_well_nm, l_barrier_nm,
     results = []
     for kx, ky in k_points:
         k = Vector(kx, ky, 0.0)
-        dd = hz(k, pp, neig=neig, energy=energy)
+        try:
+            dd = hz(k, pp, neig=neig, energy=energy)
+        except Exception as e:
+            raise RuntimeError(
+                f"kdotpy hz failed for QW, k=({kx},{ky}): {e}"
+            ) from e
         results.append(sorted(dd.eival))
     return results

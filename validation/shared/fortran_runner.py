@@ -274,19 +274,29 @@ def _parse_eigenvalues(filepath):
 
     Each line: |k| eval_1 eval_2 ... eval_N
     Comment lines start with '#'.
+    Eigenvalues are sorted ascending within each k-point.
 
     Returns:
         list of (float, list[float])
     """
     results = []
+    skipped = 0
     with open(filepath) as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
-            vals = [float(x) for x in line.split()]
+            try:
+                vals = [float(x) for x in line.split()]
+            except ValueError:
+                skipped += 1
+                continue
             if len(vals) >= 2:
                 k = vals[0]
                 evals = sorted(vals[1:])
                 results.append((k, evals))
+            else:
+                skipped += 1
+    if skipped > 0:
+        print(f"  Warning: skipped {skipped} malformed lines in {filepath}")
     return results
