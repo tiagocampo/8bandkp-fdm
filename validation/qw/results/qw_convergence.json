@@ -29,7 +29,7 @@
   "kdotpy_resolution_sweep": [
     {
       "label": "dz=0.50nm",
-      "cb1_meV": 769.9822849256709,
+      "cb1_meV": 769.9822849256708,
       "zres_nm": 0.5
     },
     {
