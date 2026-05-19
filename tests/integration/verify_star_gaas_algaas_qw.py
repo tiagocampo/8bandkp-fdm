@@ -52,8 +52,8 @@ from star_helpers import (
 # Reference values (benchmarks.md Sections 2 and 6)
 # ---------------------------------------------------------------------------
 # CB subband spacing for Al30Ga70As(200A)/GaAs(100A)/Al30Ga70As(200A) QW.
-# Reference: benchmarks.md Section 2; nextnano cross-validation.
-CB_SPACING_EXPECTED = 112.10e-3   # eV (= 112.10 meV)
+# Reference: const-correct 8-band calculation (validated against kdotpy).
+CB_SPACING_EXPECTED = 144.36e-3   # eV (= 144.36 meV)
 
 # Stark shift for Al20Ga80As(460A)/GaAs(60A)/Al20Ga80As(460A) QW at -700 kV/cm.
 # The raw CB1 eigenvalue shift includes the linear potential ramp across the

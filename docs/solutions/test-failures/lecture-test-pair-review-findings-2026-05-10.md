@@ -35,7 +35,7 @@ related_components:
 
 ## Problem
 
-14 Python lecture-test pair scripts (`scripts/lecture_00_quickstart.py` through `scripts/lecture_13_topological.py`) serve dual roles as pedagogical companions and integration tests. Five commits (`5a0984f..6923863`) addressed multiple classes of issues: incorrect material choices for physics validation (L05), oversized grids causing excessive runtime (L08), FEAST eigensolver failures at finite magnetic field (L13, Fortran fix), false-positive risks from hardcoded PASS and vacuous assertions (L04, L06), duplicate constants and missing timeouts, plus documentation mismatches across all 14 lecture chapters. Since these scripts validate the Fortran solver, false positives or fragile tests silently hide real regressions.
+15 Python lecture-test pair scripts (`scripts/lecture_00_quickstart.py` through `scripts/lecture_14_excitons_scattering.py`) serve dual roles as pedagogical companions and integration tests. Five commits (`5a0984f..6923863`) addressed multiple classes of issues: incorrect material choices for physics validation (L05), oversized grids causing excessive runtime (L08), FEAST eigensolver failures at finite magnetic field (L13, Fortran fix), false-positive risks from hardcoded PASS and vacuous assertions (L04, L06), duplicate constants and missing timeouts, plus documentation mismatches across all 15 lecture chapters. Since these scripts validate the Fortran solver, false positives or fragile tests silently hide real regressions.
 
 ## Symptoms
 

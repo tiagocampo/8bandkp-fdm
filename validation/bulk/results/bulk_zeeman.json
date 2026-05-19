@@ -1,0 +1,23 @@
+[
+  {
+    "material": "GaAs",
+    "g_roth": -0.3173140223831461,
+    "g_computed": -0.3150039013682271,
+    "deviation_pct": 0.7280236144526934,
+    "passed": true
+  },
+  {
+    "material": "InAs",
+    "g_roth": -14.611246318929986,
+    "g_computed": -14.608935451456455,
+    "deviation_pct": 0.015815676658170595,
+    "passed": true
+  },
+  {
+    "material": "InSb",
+    "g_roth": -49.23485696833961,
+    "g_computed": -49.232544292749765,
+    "deviation_pct": 0.004697232270480403,
+    "passed": true
+  }
+]

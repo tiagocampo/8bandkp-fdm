@@ -1,0 +1,120 @@
+"""Comparison and reporting utilities for cross-code validation.
+
+Compares eigenvalues between our Fortran code (eV) and kdotpy (meV),
+handles unit conversion and band-index alignment.
+"""
+
+import json
+import os
+
+import numpy as np
+
+
+# Tolerance tiers in meV
+TOL_EXACT = 0.01       # Parameter mapping validation
+TOL_BULK_DISPERSION = 0.1
+TOL_QW_SUBBAND = 1.0
+TOL_QW_CONVERGED = 0.5
+TOL_WIRE = 2.0
+TOL_LANDAU = 1.0
+TOL_GFACTOR_PCT = 5.0   # percent
+TOL_BHZ_PCT = 10.0      # percent
+TOL_STRAIN = 1.0
+TOL_BERRY_PCT = 10.0    # percent
+TOL_SC_SUBBAND = 5.0
+TOL_SC_CHARGE_PCT = 10.0
+
+EV_TO_MEV = 1000.0
+
+
+def compare_eigenvalues(fortran_eV, kdotpy_meV, tolerance_meV=TOL_EXACT):
+    """Compare eigenvalues from both codes.
+
+    Arrays of different lengths are allowed; the overlapping subset is compared
+    for diagnostics, but `passed` will be False if lengths differ. Empty arrays
+    produce `max_delta_meV=inf`. Fortran eigenvalues are sorted ascending (our
+    output format). kdotpy eigenvalues are sorted ascending.
+
+    Args:
+        fortran_eV: array-like, eigenvalues from our code in eV
+        kdotpy_meV: array-like, eigenvalues from kdotpy in meV
+        tolerance_meV: maximum allowed absolute difference in meV
+
+    Returns:
+        dict with keys:
+          passed: bool
+          max_delta_meV: float
+          per_band: list of {band, ours_meV, kdotpy_meV, delta_meV, passed}
+    """
+    ours_meV = np.array(fortran_eV) * EV_TO_MEV
+    theirs_meV = np.array(kdotpy_meV)
+
+    if len(ours_meV) == 0 or len(theirs_meV) == 0:
+        return {
+            "passed": False,
+            "max_delta_meV": float("inf"),
+            "per_band": [],
+            "error": (f"Empty eigenvalue array: ours={len(ours_meV)}, "
+                      f"kdotpy={len(theirs_meV)}"),
+        }
+
+    n = min(len(ours_meV), len(theirs_meV))
+    n_ours = len(ours_meV)
+    n_theirs = len(theirs_meV)
+    count_mismatch = n_ours != n_theirs
+    if count_mismatch:
+        print(f"  Warning: eigenvalue count mismatch (ours={n_ours}, kdotpy={n_theirs}), "
+              f"comparing first {n} bands")
+    per_band = []
+    for i in range(n):
+        delta = abs(float(ours_meV[i]) - float(theirs_meV[i]))
+        per_band.append({
+            "band": i,
+            "ours_meV": float(ours_meV[i]),
+            "kdotpy_meV": float(theirs_meV[i]),
+            "delta_meV": delta,
+            "passed": delta <= tolerance_meV,
+        })
+
+    max_delta = max(b["delta_meV"] for b in per_band) if per_band else 0.0
+    passed = all(b["passed"] for b in per_band) and not count_mismatch
+
+    return {
+        "passed": passed,
+        "max_delta_meV": max_delta,
+        "per_band": per_band,
+    }
+
+
+def write_json_report(results, filepath):
+    """Write comparison results to JSON file.
+
+    Args:
+        results: list of comparison dicts
+        filepath: output path
+    """
+    dirname = os.path.dirname(filepath)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
+    with open(filepath, "w") as f:
+        json.dump(results, f, indent=2)
+
+
+def print_summary(results):
+    """Print a summary table of all comparison results.
+
+    Args:
+        results: list of dicts with 'material', 'test', 'comparison' keys
+    """
+    print("\n| Material | Test | Max Delta (meV) | Status |")
+    print("|----------|------|-----------------|--------|")
+    for r in results:
+        comp = r["comparison"]
+        status = "PASS" if comp["passed"] else "FAIL"
+        print(f"| {r['material']} | {r['test']} | "
+              f"{comp['max_delta_meV']:.6f} | {status} |")
+
+    total = len(results)
+    passed = sum(1 for r in results if r["comparison"]["passed"])
+    print(f"\nSummary: {passed}/{total} tests passed")
+    return passed == total

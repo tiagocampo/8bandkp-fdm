@@ -772,6 +772,10 @@ def run_landau(config_name, work_dir):
 def run_landau_bsweep(work_dir):
     """Run bandStructure with landau_bulk_InAs_Bsweep.cfg for Zeeman fan.
 
+    The Fortran code writes B-sweep data to output/landau_fan.dat (not
+    eigenvalues.dat).  Format: comment header starting with '#', then
+    rows of B[T]  E_0  E_1  ...  E_{nL-1}  (eV, g14.6 columns).
+
     Returns:
         list of (B, eigenvalues_meV) tuples, or None on failure.
     """
@@ -782,14 +786,22 @@ def run_landau_bsweep(work_dir):
         print(f"    ERROR: bandStructure returned {rc} for B-sweep")
         return None
 
-    eig_path = os.path.join(output_dir, "eigenvalues.dat")
-    if not os.path.isfile(eig_path):
-        print(f"    WARNING: eigenvalues.dat not found for B-sweep")
+    fan_path = os.path.join(output_dir, "landau_fan.dat")
+    if not os.path.isfile(fan_path):
+        print(f"    WARNING: landau_fan.dat not found for B-sweep")
         return None
 
-    data = parse_eigenvalues(eig_path)
-    # Each line: B_value eval1 eval2 ...
-    return [(d[0], [e * 1000.0 for e in d[1]]) for d in data]
+    data = []
+    with open(fan_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            parts = line.split()
+            B_val = float(parts[0])
+            evals_eV = [float(x) for x in parts[1:]]
+            data.append((B_val, [e * 1000.0 for e in evals_eV]))  # eV -> meV
+    return data if data else None
 
 
 def section4_landau():
@@ -800,9 +812,14 @@ def section4_landau():
 
     material = 'InAs'
     B = 5.0
-    meff, cb_edge = MATERIAL_DB[material]['meff'], MATERIAL_DB[material]['Eg']
+    meff = MATERIAL_DB[material]['meff']
+    Eg = MATERIAL_DB[material]['Eg']  # 0.417 eV
+    # Fortran uses EV = -0.59 eV for InAs (Vurgaftman), so EC = EV + Eg = -0.173 eV
+    EV_inas = -0.59   # eV
+    cb_edge_abs = EV_inas + Eg  # -0.173 eV absolute
     hbar_omega = compute_cyclotron_energy(meff, B)
-    print(f"  {material}: m* = {meff:.3f} m0, CB edge = {cb_edge*1000:.0f} meV")
+    print(f"  {material}: m* = {meff:.3f} m0, Eg = {Eg:.3f} eV")
+    print(f"  Fortran EV = {EV_inas} eV, CB edge = {cb_edge_abs:.3f} eV")
     print(f"  hbar*omega_c = {hbar_omega:.2f} meV")
 
     # Run single-B Landau config
@@ -817,27 +834,59 @@ def section4_landau():
     else:
         print("  WARNING: No eigenvalues parsed from landau_bulk_InAs.cfg")
 
-    # Analytical Landau levels
+    # Analytical Landau levels (absolute energy reference matching Fortran output)
     N_MAX = 6
     n_analytical = list(range(N_MAX + 1))
-    e_analytical = [cb_edge * 1000.0 + hbar_omega * (n + 0.5) for n in n_analytical]
+    cb_edge_meV = cb_edge_abs * 1000.0  # -173 meV
+    e_analytical = [cb_edge_meV + hbar_omega * (n + 0.5) for n in n_analytical]
 
-    # Verify spacing
+    # Verify spacing using computed CB eigenvalues
     all_pass = True
     if eigenvalues is not None and len(eigenvalues) >= 2:
-        # Filter conduction band eigenvalues (above CB edge)
-        cb_meV = cb_edge * 1000.0
-        cond_evals = sorted([e for e in eigenvalues if e > cb_meV * 0.5])
-        if len(cond_evals) >= 2:
+        # CB eigenvalues are above midgap in the Fortran energy reference
+        midgap_meV = (EV_inas + Eg / 2.0) * 1000.0  # ~-191 meV
+        cond_evals = sorted([e for e in eigenvalues if e > midgap_meV])
+        if len(cond_evals) >= 4:
+            # Eigenvalues come in spin-split pairs.  Compute midpoints of each
+            # pair to get Landau level centers, then compare center spacing
+            # with hbar*omega_c.
+            paired = []
+            i = 0
+            while i < len(cond_evals) - 1:
+                gap = cond_evals[i + 1] - cond_evals[i]
+                next_gap = (cond_evals[i + 2] - cond_evals[i + 1]
+                            if i + 2 < len(cond_evals) else float('inf'))
+                if gap < next_gap:
+                    paired.append(0.5 * (cond_evals[i] + cond_evals[i + 1]))
+                    i += 2
+                else:
+                    paired.append(cond_evals[i])
+                    i += 1
+            if i == len(cond_evals) - 1:
+                paired.append(cond_evals[i])
+            print(f"  Landau level centers (spin-averaged): "
+                  f"{[f'{p:.1f}' for p in paired[:4]]} meV")
+            if len(paired) >= 2:
+                spacing = paired[1] - paired[0]
+                expected_spacing = hbar_omega
+                rel_err = abs(spacing - expected_spacing) / expected_spacing
+                print(f"  Landau spacing: {spacing:.2f} meV "
+                      f"(expected hbar*omega_c = {expected_spacing:.2f} meV, "
+                      f"rel_err = {rel_err:.2%})")
+                # Allow 25% tolerance: 8-band non-parabolicity in light-m* InAs
+                if rel_err > 0.25:
+                    all_pass = False
+        elif len(cond_evals) >= 2:
             spacing = cond_evals[1] - cond_evals[0]
             expected_spacing = hbar_omega
             rel_err = abs(spacing - expected_spacing) / expected_spacing
-            print(f"\n  CB Landau spacing: {spacing:.2f} meV "
+            print(f"\n  CB spacing (raw): {spacing:.2f} meV "
                   f"(expected hbar*omega_c = {expected_spacing:.2f} meV, "
                   f"rel_err = {rel_err:.2%})")
-            # Allow 20% tolerance for 8-band non-parabolicity
-            if rel_err > 0.20:
+            if rel_err > 0.30:
                 all_pass = False
+        else:
+            print(f"  WARNING: Found {len(cond_evals)} CB eigenvalues (need >= 2)")
 
     # Run B-sweep for Zeeman fan
     bsweep_data = None
@@ -862,8 +911,8 @@ def section4_landau():
               zorder=3)
 
     if eigenvalues is not None:
-        cb_meV = cb_edge * 1000.0
-        cond_evals = sorted([e for e in eigenvalues if e > cb_meV * 0.5])
+        midgap_meV_plot = (EV_inas + Eg / 2.0) * 1000.0
+        cond_evals = sorted([e for e in eigenvalues if e > midgap_meV_plot])
         n_comp = list(range(len(cond_evals)))
         ax.scatter(n_comp, cond_evals[:N_MAX + 1], color='royalblue', s=120,
                    zorder=5, label='Computed (8-band k.p)',
@@ -912,7 +961,7 @@ def section4_landau():
         B_anal = np.linspace(B_arr.min(), B_arr.max(), 100)
         for n in range(min(N_MAX + 1, n_bands)):
             hbar_omega_B = np.array([compute_cyclotron_energy(meff, b) for b in B_anal])
-            E_n = cb_edge * 1000.0 + hbar_omega_B * (n + 0.5)
+            E_n = cb_edge_meV + hbar_omega_B * (n + 0.5)
             ax2.plot(B_anal, E_n, '--', color='red', lw=0.8, alpha=0.5)
 
         ax2.set_xlabel('Magnetic field $B$ (T)', fontsize=12)

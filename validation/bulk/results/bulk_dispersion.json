@@ -1,0 +1,62 @@
+[
+  {
+    "material": "GaAs",
+    "direction": "kx",
+    "mstar_fortran": 0.031231092904372197,
+    "mstar_kdotpy": 0.031247276341931172,
+    "ratio": 0.9994820848581526,
+    "r2_fortran": 0.999959791933364,
+    "r2_kdotpy": 0.9999577908352286,
+    "parabolic": true,
+    "passed": true,
+    "note": "const = hbar^2/(2m_0) applied in both codes"
+  },
+  {
+    "material": "GaAs",
+    "direction": "ky",
+    "mstar_fortran": 0.031231092904372197,
+    "mstar_kdotpy": 0.031247276341930464,
+    "ratio": 0.9994820848581752,
+    "r2_fortran": 0.999959791933364,
+    "r2_kdotpy": 0.9999577908352288,
+    "parabolic": true,
+    "passed": true,
+    "note": "const = hbar^2/(2m_0) applied in both codes"
+  },
+  {
+    "material": "GaAs",
+    "direction": "kz",
+    "mstar_fortran": 0.031231092904372197,
+    "mstar_kdotpy": 0.031229453603336527,
+    "ratio": 1.000052492145924,
+    "r2_fortran": 0.999959791933364,
+    "r2_kdotpy": 0.999959889942266,
+    "parabolic": true,
+    "passed": true,
+    "note": "const = hbar^2/(2m_0) applied in both codes"
+  },
+  {
+    "material": "InAs",
+    "direction": "kx",
+    "mstar_fortran": 0.01349242122930386,
+    "mstar_kdotpy": 0.013500754470137096,
+    "ratio": 0.9993827573968797,
+    "r2_fortran": 0.9993136594742432,
+    "r2_kdotpy": 0.9993053728091814,
+    "parabolic": true,
+    "passed": true,
+    "note": "const = hbar^2/(2m_0) applied in both codes"
+  },
+  {
+    "material": "InSb",
+    "direction": "kx",
+    "mstar_fortran": 0.00762710212700441,
+    "mstar_kdotpy": 0.007630723433446894,
+    "ratio": 0.9995254307833238,
+    "r2_fortran": 0.9990585649832964,
+    "r2_kdotpy": 0.9990520870846896,
+    "parabolic": true,
+    "passed": true,
+    "note": "const = hbar^2/(2m_0) applied in both codes"
+  }
+]

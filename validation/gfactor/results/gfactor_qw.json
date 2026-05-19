@@ -1,0 +1,9 @@
+[
+  {
+    "material": "GaAs",
+    "g_z_computed": -0.3150039013682271,
+    "g_z_reference": -0.315,
+    "deviation_pct": 0.0012385295959010504,
+    "passed": true
+  }
+]

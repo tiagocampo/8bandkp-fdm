@@ -121,9 +121,9 @@ the Fermi level.
 
 With the midpoint-averaged variable-coefficient discretization, FD orders 4, 6,
 and 8 agree to machine precision for this grid spacing ($\Delta z = 5$ A).
-The convergence is smooth and monotonic: the order-2 result differs from the
-converged value by only $1.2 \times 10^{-4}$ eV, reflecting the small
-discretization error at this grid density. The old "level reordering" artifacts
+The convergence is smooth and monotonic: order-2 is the only order with visible
+error ($1.2 \times 10^{-4}$ eV from the converged value), reflecting the small
+discretization error at this grid density. Orders 4, 6, and 8 are all converged. The old "level reordering" artifacts
 previously observed at FD order 4 were caused by a bug in the variable-coefficient
 treatment (naive row scaling instead of midpoint averaging), which has been
 corrected.

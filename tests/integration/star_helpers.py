@@ -282,15 +282,15 @@ def bir_pikus_biaxial_001(a0, a_sub, C11, C12, ac, av, b_dp,
 
     Sign convention matches compute_bp_scalar in strain_solver.f90:
       P_eps = -av * Tr(eps)
-      Q_eps = b_dp/2 * (eps_zz - 0.5*(eps_xx + eps_yy))
+      Q_eps = -(b_dp/2) * (eps_zz - 0.5*(eps_xx + eps_yy))
       delta_Ec  = ac * Tr(eps)
       delta_EHH = -P_eps + Q_eps
       delta_ELH = -P_eps - Q_eps
       delta_ESO = -P_eps
 
     The LH-SO off-diagonal coupling QT2/sqrt(2) produces a 2x2 eigenvalue
-    problem. Under compressive strain (InAs on GaAs): LHSO_low < HH < LHSO_high < CB.
-    Under tensile strain (GaAs on larger substrate): LHSO_low < LHSO_high < HH < CB.
+    problem. Under compressive strain (InAs on GaAs): LHSO_low < LHSO_high < HH < CB.
+    Under tensile strain (GaAs on larger substrate): LHSO_low < HH < LHSO_high < CB.
 
     Args:
         a0: film lattice constant (Angstrom)
@@ -312,7 +312,7 @@ def bir_pikus_biaxial_001(a0, a_sub, C11, C12, ac, av, b_dp,
 
     Tr_eps = eps_xx + eps_yy + eps_zz
     P_eps = -av * Tr_eps
-    Q_eps = b_dp / 2.0 * (eps_zz - 0.5 * (eps_xx + eps_yy))
+    Q_eps = -b_dp / 2.0 * (eps_zz - 0.5 * (eps_xx + eps_yy))
 
     delta_Ec  = ac * Tr_eps
     delta_EHH = -P_eps + Q_eps

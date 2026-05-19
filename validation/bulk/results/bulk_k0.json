@@ -1,0 +1,954 @@
+[
+  {
+    "material": "GaAs",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -341.0,
+          "kdotpy_meV": -341.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -341.0,
+          "kdotpy_meV": -341.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 1519.0,
+          "kdotpy_meV": 1519.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 1519.0,
+          "kdotpy_meV": 1519.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "InAs",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -390.0,
+          "kdotpy_meV": -390.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -390.0,
+          "kdotpy_meV": -390.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 417.0,
+          "kdotpy_meV": 417.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 417.0,
+          "kdotpy_meV": 417.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "InSb",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -810.0,
+          "kdotpy_meV": -810.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -810.0,
+          "kdotpy_meV": -810.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 235.0,
+          "kdotpy_meV": 235.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 235.0,
+          "kdotpy_meV": 235.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "AlAs",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -280.0,
+          "kdotpy_meV": -280.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -280.0,
+          "kdotpy_meV": -280.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 3099.0,
+          "kdotpy_meV": 3099.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 3099.0,
+          "kdotpy_meV": 3099.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "GaSb",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -760.0,
+          "kdotpy_meV": -760.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -760.0,
+          "kdotpy_meV": -760.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 812.0,
+          "kdotpy_meV": 812.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 812.0,
+          "kdotpy_meV": 812.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "AlSb",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -676.0,
+          "kdotpy_meV": -676.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -676.0,
+          "kdotpy_meV": -676.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 2386.0,
+          "kdotpy_meV": 2386.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 2386.0,
+          "kdotpy_meV": 2386.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "InP",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -108.0,
+          "kdotpy_meV": -108.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -108.0,
+          "kdotpy_meV": -108.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 1423.6,
+          "kdotpy_meV": 1423.6,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 1423.6,
+          "kdotpy_meV": 1423.6,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "GaAsW",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -341.0,
+          "kdotpy_meV": -341.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -341.0,
+          "kdotpy_meV": -341.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 1519.0,
+          "kdotpy_meV": 1519.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 1519.0,
+          "kdotpy_meV": 1519.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "InAsW",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -380.0,
+          "kdotpy_meV": -380.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -380.0,
+          "kdotpy_meV": -380.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 418.0,
+          "kdotpy_meV": 418.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 418.0,
+          "kdotpy_meV": 418.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "InSbW",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -810.0,
+          "kdotpy_meV": -810.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -810.0,
+          "kdotpy_meV": -810.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 237.0,
+          "kdotpy_meV": 237.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 237.0,
+          "kdotpy_meV": 237.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "Al20Ga80As",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -328.79999999999995,
+          "kdotpy_meV": -328.79999999999995,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -328.79999999999995,
+          "kdotpy_meV": -328.79999999999995,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 1835.0,
+          "kdotpy_meV": 1835.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 1835.0,
+          "kdotpy_meV": 1835.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "Al30Ga70As",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -353.0,
+          "kdotpy_meV": -353.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -353.0,
+          "kdotpy_meV": -353.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 1977.0,
+          "kdotpy_meV": 1977.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 1977.0,
+          "kdotpy_meV": 1977.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "HgTe",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -1002.9999999999999,
+          "kdotpy_meV": -1002.9999999999999,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -1002.9999999999999,
+          "kdotpy_meV": -1002.9999999999999,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -303.0,
+          "kdotpy_meV": -303.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -303.0,
+          "kdotpy_meV": -303.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "CdTe",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -910.0,
+          "kdotpy_meV": -910.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -910.0,
+          "kdotpy_meV": -910.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 1606.0,
+          "kdotpy_meV": 1606.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 1606.0,
+          "kdotpy_meV": 1606.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  }
+]

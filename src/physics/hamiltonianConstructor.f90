@@ -637,11 +637,14 @@ module hamiltonianConstructor
         P = params(1)%P
         A = 0.0_dp
       else
-        gamma1 = params(1)%gamma1
-        gamma2 = params(1)%gamma2
-        gamma3 = params(1)%gamma3
+        ! Scale gamma and A by const = hbar^2/(2*m_0) so that k-dependent
+        ! diagonal terms have energy units (eV). P already includes const
+        ! via P = sqrt(EP*const), so it is NOT scaled here.
+        gamma1 = params(1)%gamma1 * const
+        gamma2 = params(1)%gamma2 * const
+        gamma3 = params(1)%gamma3 * const
         P = params(1)%P
-        A = params(1)%A
+        A = params(1)%A * const
       end if
 
 
@@ -800,7 +803,7 @@ module hamiltonianConstructor
       ! parameters (gamma1, gamma2, gamma3):
       !
       !   P_eps     = -av * Tr(eps)                           (hydrostatic)
-      !   Q_eps     =  b_dp/2 * (eps_zz - 0.5*(eps_xx+eps_yy)) (tetragonal shear)
+      !   Q_eps     = -(b_dp/2) * (eps_zz - 0.5*(eps_xx+eps_yy)) (tetragonal shear)
       !   R_eps     = -sqrt(3) * [b_dp/2*(eps_xx-eps_yy) - i*d_dp*eps_xy]
       !   S_eps     =  i*2*sqrt(3) * d_dp * (eps_xz - i*eps_yz)
       !   S_eps_bar = -i*2*sqrt(3) * d_dp * (eps_xz + i*eps_yz)

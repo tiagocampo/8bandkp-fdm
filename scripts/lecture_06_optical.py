@@ -184,6 +184,9 @@ def test_bulk_absorption_onset():
           f"E = [{energies[0]:.3f}, {energies[-1]:.3f}] eV")
     print(f"  Absorption range: [{absorption.min():.4e}, "
           f"{absorption.max():.4e}] cm^-1")
+    if absorption.max() < 100:
+        print("  NOTE: Bulk absorption magnitude is anomalously low "
+              "(known optics_accumulate bug). Onset detection is unaffected.")
 
     # Find onset via inflection point, searching in a window around the
     # expected band gap. The 8-band joint-DOS produces oscillations at

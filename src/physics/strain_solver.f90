@@ -712,7 +712,7 @@ contains
   !
   ! Returns a bir_pikus_blocks type with per-band diagonal shifts and
   ! off-diagonal coupling terms, ready for insertion into the 8-band
-  ! Hamiltonian by ZB8bandQW or ZB8bandGeneralized.
+  ! Hamiltonian by ZB8bandQW or ZB8bandBulk (hamiltonianConstructor.f90).
   !
   ! The diagonal shifts are:
   !   HH (bands 1,4): -P_eps + Q_eps
@@ -720,7 +720,7 @@ contains
   !   SO (bands 5,6): -P_eps
   !   CB (bands 7,8): ac * Tr(eps)
   !
-  ! where P_eps = -av * Tr(eps), Q_eps = b/2 * (ezz - 0.5*(exx+eyy)).
+  ! where P_eps = -av * Tr(eps), Q_eps = -(b/2) * (ezz - 0.5*(exx+eyy)).
   !
   ! Off-diagonal terms (same structure as k-dependent R, S in bulk):
   !   R_eps = -sqrt(3) * [b/2*(exx-eyy) - i*d*exy]
@@ -838,7 +838,7 @@ contains
 
     Tr_eps = eps_xx + eps_yy + eps_zz
     P_eps = -params%av * Tr_eps
-    Q_eps = params%b_dp * 0.5_dp * (eps_zz - 0.5_dp * (eps_yy + eps_xx))
+    Q_eps = -params%b_dp * 0.5_dp * (eps_zz - 0.5_dp * (eps_yy + eps_xx))
     T_eps = -Q_eps
 
     s%delta_Ec  = params%ac * Tr_eps

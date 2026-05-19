@@ -731,6 +731,54 @@ module parameters
             params(i)%b_dp  = -1.35_dp*0.63_dp + (-2.0_dp)*0.37_dp
             params(i)%d_dp  = -4.3_dp*0.63_dp + (-4.7_dp)*0.37_dp
 
+          ! II-VI materials (Pfeuffer-Jeschke PhD thesis, U. Wuerzburg, 2000;
+          ! Novik et al., PRB 72, 035321, 2005; Becker et al., PRB 62, 10353, 2000).
+          case ("HgTe")
+            ! Inverted-gap semimetal: Gamma_6 below Gamma_8.
+
+            params(i)%meff    = 1.0_dp       ! F = 0 => 1/(2F+1) = 1.0
+            params(i)%EP      = 18.8_dp
+            params(i)%Eg      = -0.303_dp    ! negative gap = inverted
+            params(i)%deltaSO = 1.003_dp
+            params(i)%gamma1  = 4.1_dp
+            params(i)%gamma2  = 0.5_dp
+            params(i)%gamma3  = 1.3_dp
+            params(i)%EV      = 0.0_dp
+            params(i)%EC      = -0.303_dp    ! EC = EV + Eg
+            params(i)%eps0    = 15.0_dp
+            ! Strain (Pfeuffer-Jeschke)
+            params(i)%C11   = 532.0_dp
+            params(i)%C12   = 368.0_dp
+            params(i)%C44   = 201.0_dp
+            params(i)%a0    = 6.461_dp
+            params(i)%ac    = -0.48_dp
+            params(i)%av    = -0.35_dp
+            params(i)%b_dp  = 0.44_dp
+            params(i)%d_dp  = -1.7_dp
+
+          ! II-VI wide-gap semiconductor (Pfeuffer-Jeschke; Novik et al.)
+          case ("CdTe")
+
+            params(i)%meff    = 1.2195_dp    ! F = -0.09 => 1/(2F+1) = 1/0.82
+            params(i)%EP      = 18.8_dp
+            params(i)%Eg      = 1.606_dp
+            params(i)%deltaSO = 0.91_dp
+            params(i)%gamma1  = 5.0_dp
+            params(i)%gamma2  = 1.3_dp
+            params(i)%gamma3  = 2.1_dp
+            params(i)%EV      = 0.0_dp
+            params(i)%EC      = 1.606_dp     ! EC = EV + Eg
+            params(i)%eps0    = 10.0_dp
+            ! Strain (Pfeuffer-Jeschke)
+            params(i)%C11   = 532.0_dp
+            params(i)%C12   = 368.0_dp
+            params(i)%C44   = 201.0_dp
+            params(i)%a0    = 6.481_dp
+            params(i)%ac    = -0.38_dp
+            params(i)%av    = -0.17_dp
+            params(i)%b_dp  = 0.30_dp
+            params(i)%d_dp  = -4.9_dp
+
           case default
             stop "material not defined"
 

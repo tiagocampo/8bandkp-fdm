@@ -188,6 +188,7 @@ program opticalProperties
     ! ================================================================
     ! Initialize optics accumulation
     ! ================================================================
+    cfg%optics%confinement = cfg%confinement
     call optics_init(cfg%optics)
 
     ! ================================================================
@@ -216,7 +217,7 @@ program opticalProperties
       else
         simpson_w(i) = 2.0_dp * dk / 3.0_dp
       end if
-      ! Multiply by 4*pi*k^2 / (2*pi)^3 for 3D spherical integration
+      ! Multiply by 4*pi*k^2 / (2*pi)^3 for 3D spherical BZ integration
       simpson_w(i) = simpson_w(i) * 4.0_dp * pi_dp &
         & * (real(i - 1, kind=dp) * dk)**2 / (2.0_dp * pi_dp)**3
     end do
@@ -428,6 +429,7 @@ program opticalProperties
     ! ================================================================
     ! Initialize optics accumulation
     ! ================================================================
+    cfg%optics%confinement = cfg%confinement
     call optics_init(cfg%optics)
 
     ! ================================================================
@@ -529,6 +531,13 @@ program opticalProperties
           & simpson_w(k), cfg%sc%fermi_level)
       end if
     end do
+
+    ! ISBT dipole transition table (zone-center only)
+    if (cfg%optics%isbt_enabled) then
+      call compute_intersubband_transitions(eig(:, 1), eigv(:, :, 1), &
+        & cfg%z, cfg%dz, cfg%numcb, cfg%numvb, cfg%fdstep, &
+        & "output/isbt_transitions.dat")
+    end if
 
     ! ================================================================
     ! Finalize: apply prefactor, write output files
@@ -664,9 +673,9 @@ program opticalProperties
     ! Create polymorphic eigensolver
     eigen_solver = make_eigensolver(eigen_cfg)
 
-    ! ----------------------------------------------------------------
     ! Initialize optics accumulation
     ! ----------------------------------------------------------------
+    cfg%optics%confinement = cfg%confinement
     call optics_init(cfg%optics)
 
     ! ----------------------------------------------------------------

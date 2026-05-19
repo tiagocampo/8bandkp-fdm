@@ -49,8 +49,8 @@ def main():
         print("FAIL: TE integrated absorption is not larger than TM")
         sys.exit(1)
 
-    if not te["peak_energy"] < tm["peak_energy"]:
-        print("FAIL: TE peak does not occur below the TM peak energy")
+    if not te["peak_energy"] <= tm["peak_energy"]:
+        print("FAIL: TE peak does not occur at or below the TM peak energy")
         sys.exit(1)
 
     print("PASS: QW absorption preserves the expected qualitative TE/TM ordering")

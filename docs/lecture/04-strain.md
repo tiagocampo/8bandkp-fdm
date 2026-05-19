@@ -185,7 +185,7 @@ $$
 **Shear (uniaxial) splitting** (breaks cubic symmetry, splits HH from LH):
 
 $$
-Q_\varepsilon = \frac{b}{2}\left(\varepsilon_{zz} - \frac{\varepsilon_{xx} + \varepsilon_{yy}}{2}\right)\,.
+Q_\varepsilon = -\frac{b}{2}\left(\varepsilon_{zz} - \frac{\varepsilon_{xx} + \varepsilon_{yy}}{2}\right)\,.
 $$
 
 ![GaAs band structure under biaxial strain on an InP substrate. The HH/LH degeneracy at $\Gamma$ is lifted by the shear component of the Bir--Pikus Hamiltonian.](../figures/bulk_gaas_strained_bands.png){ width=70% }
@@ -222,7 +222,7 @@ $$
 \boxed{\Delta E_{\text{SO}} = a_v\;\mathrm{Tr}(\varepsilon) = -P_\varepsilon\,.}
 $$
 
-![Bir--Pikus strain-induced band edge shifts. Under compressive strain the HH/LH degeneracy is lifted with HH moving toward the CB; under tensile strain the splitting reverses.](../figures/bir_pikus_band_shifts.png){ width=90% }
+![Bir--Pikus strain-induced band edge shifts. Under compressive strain the HH/LH degeneracy is lifted with HH moving toward the CB; under tensile strain LH moves toward the CB.](../figures/bir_pikus_band_shifts.png){ width=90% }
 
 ### 3.3 Heavy-hole / light-hole splitting
 
@@ -231,18 +231,18 @@ directions, lifting their degeneracy at $\Gamma$.  The splitting is:
 
 $$
 \Delta E_{\text{HH-LH}} = \Delta E_{\text{HH}} - \Delta E_{\text{LH}} = 2\,Q_\varepsilon
-= b\left(\varepsilon_{zz} - \frac{\varepsilon_{xx} + \varepsilon_{yy}}{2}\right)\,.
+= -b\left(\varepsilon_{zz} - \frac{\varepsilon_{xx} + \varepsilon_{yy}}{2}\right)\,.
 $$
 
 Substituting the biaxial relation $\varepsilon_{zz} = -2C_{12}\varepsilon_{xx}/C_{11}$:
 
 $$
-\Delta E_{\text{HH-LH}} = b\left(-\frac{2C_{12}}{C_{11}} - 1\right)\varepsilon_{xx}
-= -b\left(1 + \frac{2C_{12}}{C_{11}}\right)\varepsilon_{xx}\,.
+\Delta E_{\text{HH-LH}} = -b\left(-\frac{2C_{12}}{C_{11}} - 1\right)\varepsilon_{xx}
+= b\left(1 + \frac{2C_{12}}{C_{11}}\right)\varepsilon_{xx}\,.
 $$
 
 Since $b < 0$ for all III-V materials and $\varepsilon_{xx} < 0$ for
-compressive strain, the product $-b\varepsilon_{xx} > 0$.  This means
+compressive strain, $Q_\varepsilon > 0$.  This means
 compressive strain pushes the HH band up (toward the CB) and the LH band down
 relative to the unstrained average.  For GaAs ($b = -2.0$ eV), the splitting is
 substantial -- on the order of 100 meV for 1% strain.
@@ -259,7 +259,7 @@ important for device physics:
 1. **Strain-modified band gap.**  Under compressive biaxial strain
    ($\varepsilon_{xx} < 0$), the conduction band moves up ($a_c < 0$,
    $\mathrm{Tr}(\varepsilon) < 0$) and the top of the valence band (HH) also
-   moves up ($a_v > 0$, $\mathrm{Tr}(\varepsilon) < 0$).  The net gap change is:
+   moves up ($Q_\varepsilon > 0$).  The net gap change is:
    $$
    \Delta E_g = \Delta E_c - \Delta E_{\text{HH}}
    = (a_c - a_v)\,\mathrm{Tr}(\varepsilon) - Q_\varepsilon\,.
@@ -339,7 +339,7 @@ After the strain tensor is computed, the diagonal and off-diagonal Bir--Pikus te
 
 ```fortran
 P_eps = -params%av * Tr_eps
-Q_eps = params%b_dp * 0.5_dp * (eps_zz - 0.5_dp * (eps_yy + eps_xx))
+Q_eps = -params%b_dp * 0.5_dp * (eps_zz - 0.5_dp * (eps_yy + eps_xx))
 
 s%delta_Ec  = params%ac * Tr_eps
 s%delta_EHH = -P_eps + Q_eps
@@ -582,8 +582,8 @@ P_\varepsilon^{\text{GaSb}} = -0.8 \times 0.00708 = -5.66\;\text{meV}\,,
 $$
 
 $$
-Q_\varepsilon^{\text{GaSb}} = \frac{-2.0}{2}\left(-0.00591 - \frac{0.00649 + 0.00649}{2}\right)
-= -1.0 \times (-0.01240) = +12.40\;\text{meV}\,.
+Q_\varepsilon^{\text{GaSb}} = -\frac{-2.0}{2}\left(-0.00591 - \frac{0.00649 + 0.00649}{2}\right)
+= 1.0 \times (-0.01240) = -12.40\;\text{meV}\,.
 $$
 
 For InAs ($a_c = -5.08$, $a_v = 1.00$, $b = -1.8$ eV):
@@ -597,8 +597,8 @@ P_\varepsilon^{\text{InAs}} = -1.00 \times 0.01163 = -11.63\;\text{meV}\,,
 $$
 
 $$
-Q_\varepsilon^{\text{InAs}} = \frac{-1.8}{2}\left(-0.01385 - \frac{0.01274 + 0.01274}{2}\right)
-= -0.9 \times (-0.02659) = +23.93\;\text{meV}\,.
+Q_\varepsilon^{\text{InAs}} = -\frac{-1.8}{2}\left(-0.01385 - \frac{0.01274 + 0.01274}{2}\right)
+= 0.9 \times (-0.02659) = -23.93\;\text{meV}\,.
 $$
 
 **Step 4: Summary of strain-induced shifts.**
@@ -617,14 +617,14 @@ $$
 | Layer | $\varepsilon_{xx}$ | $\varepsilon_{zz}$ | $\mathrm{Tr}(\varepsilon)$ | $\Delta E_c$ (meV) | $\Delta E_{\text{HH}}$ (meV) | $\Delta E_{\text{LH}}$ (meV) | $\Delta E_{\text{SO}}$ (meV) | HH/LH split (meV) |
 |---|---|---|---|---|---|---|---|---|
 | AlSb (ref) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| GaSb | $+0.65\%$ | $-0.59\%$ | $+0.71\%$ | $-53$ | $+18$ | $-7$ | $+6$ | $+25$ |
-| InAs | $+1.27\%$ | $-1.39\%$ | $+1.16\%$ | $-59$ | $+36$ | $-12$ | $+12$ | $+48$ |
+| GaSb | $+0.65\%$ | $-0.59\%$ | $+0.71\%$ | $-53$ | $-7$ | $+18$ | $+6$ | $25$ |
+| InAs | $+1.27\%$ | $-1.39\%$ | $+1.16\%$ | $-59$ | $-12$ | $+36$ | $+12$ | $48$ |
 
 Values are rounded to the nearest meV.  Under tensile strain ($\varepsilon_{xx} >
 0$), the HH/LH splitting reverses compared to compressive strain: the
-**light-hole band moves upward** (toward the CB, $\Delta E_{\text{LH}} < 0$ in
-our sign convention) while the heavy-hole band also moves upward but by a
-larger amount ($\Delta E_{\text{HH}} > 0$).  The valence band maximum is HH.
+**light-hole band moves upward** (toward the CB, $\Delta E_{\text{LH}} > 0$)
+while the heavy-hole band moves downward ($\Delta E_{\text{HH}} < 0$).
+The valence band maximum is LH.
 
 ![Band edge profiles for the AlSb/GaSb/InAs quantum well: unstrained (left) vs strained (right). The Bir--Pikus Hamiltonian splits the HH/LH degeneracy and shifts the conduction band.](../figures/qw_strained_band_edges.png){ width=90% }
 
@@ -660,8 +660,8 @@ P_\varepsilon = -1.00 \times (-0.0610) = +61.0\;\text{meV}\,,
 $$
 
 $$
-Q_\varepsilon = \frac{-1.8}{2}\left(0.0728 - \frac{-0.0669 + (-0.0669)}{2}\right)
-= \frac{-1.8}{2}(0.0728 + 0.0669) = -125.7\;\text{meV}\,.
+Q_\varepsilon = -\frac{-1.8}{2}\left(0.0728 - \frac{-0.0669 + (-0.0669)}{2}\right)
+= \frac{1.8}{2}(0.0728 + 0.0669) = +125.7\;\text{meV}\,.
 $$
 
 Band edge shifts (using the code's convention $\delta E = -P_\varepsilon + Q_\varepsilon$):
@@ -669,14 +669,14 @@ Band edge shifts (using the code's convention $\delta E = -P_\varepsilon + Q_\va
 | Band | Shift formula | Value (eV) |
 |---|---|---|
 | CB | $\Delta E_c = a_c\,\mathrm{Tr}(\varepsilon) = (-5.08)(-0.0610)$ | $+0.310$ |
-| HH | $\Delta E_{\text{HH}} = -P_\varepsilon + Q_\varepsilon = -61.0 - 125.7$ | $-0.187$ |
-| LH | $\Delta E_{\text{LH}} = -P_\varepsilon - Q_\varepsilon = -61.0 + 125.7$ | $+0.065$ |
+| HH | $\Delta E_{\text{HH}} = -P_\varepsilon + Q_\varepsilon = -61.0 + 125.7$ | $+0.065$ |
+| LH | $\Delta E_{\text{LH}} = -P_\varepsilon - Q_\varepsilon = -61.0 - 125.7$ | $-0.187$ |
 | SO | $\Delta E_{\text{SO}} = -P_\varepsilon = -61.0\;\text{meV}$ | $-0.061$ |
 
 The HH/LH splitting is $2|Q_\varepsilon| = 251$ meV -- a very large effect.
 Under compressive strain, the heavy-hole band moves upward (toward the CB,
-$\Delta E_{\text{HH}} < 0$) while the light-hole band moves downward
-($\Delta E_{\text{LH}} > 0$).  This is the well-known result that compressive
+$\Delta E_{\text{HH}} > 0$) while the light-hole band moves downward
+($\Delta E_{\text{LH}} < 0$).  This is the well-known result that compressive
 strain favors heavy-hole states at the valence band maximum.
 
 ### 7.2b Example C: In$_{0.2}$Ga$_{0.8}$As/GaAs quantum well
@@ -723,8 +723,8 @@ The resulting band edge shifts in the InGaAs well are:
 | Band | Shift formula | Value (meV) |
 |---|---|---|
 | CB | $a_c\,\mathrm{Tr}(\varepsilon)$ | $+100$ |
-| HH | $-P_\varepsilon + Q_\varepsilon$ | $-27$ |
-| LH | $-P_\varepsilon - Q_\varepsilon$ | $+27$ |
+| HH | $-P_\varepsilon + Q_\varepsilon$ | $+27$ |
+| LH | $-P_\varepsilon - Q_\varepsilon$ | $-27$ |
 | SO | $-P_\varepsilon$ | $0$ |
 
 The HH/LH splitting is $2|Q_\varepsilon| = \mathbf{54\;\text{meV}}$ -- a
@@ -746,17 +746,19 @@ degeneracy, lowering the threshold current density.
 ### 7.3 Comparison: strained vs unstrained band gaps
 
 The band gap change under strain is $\Delta E_g = \Delta E_c - \Delta
-E_{\text{HH}}$ (difference between CB and HH-VB shifts).  The following table
+E_{\text{VBM}}$ (difference between CB and valence-band-maximum shifts,
+where VBM = HH under compressive strain and VBM = LH under tensile strain).
+The following table
 compares the strain-induced gap changes for both example systems.
 
 | System | Layer | $E_g^0$ (eV) | $\varepsilon_{xx}$ | $\Delta E_g$ (meV) | HH/LH split (meV) |
 |---|---|---|---|---|---|
 | AlSb/GaSb/InAs | GaSb on AlSb | 0.812 | $+0.65\%$ (tensile) | $-71$ | 25 |
 | AlSb/GaSb/InAs | InAs on AlSb | 0.417 | $+1.27\%$ (tensile) | $-95$ | 48 |
-| InAs/GaAs | InAs on GaAs | 0.417 | $-6.69\%$ (compressive) | $+497$ | 251 |
+| InAs/GaAs | InAs on GaAs | 0.417 | $-6.69\%$ (compressive) | $+245$ | 251 |
 
 The InAs/GaAs system shows dramatically larger strain effects: the band gap
-increases by 497 meV and the HH/LH splitting reaches 251 meV.  In practice,
+increases by 245 meV and the HH/LH splitting reaches 251 meV.  In practice,
 such a large mismatch (~6.7%) exceeds the critical thickness for pseudomorphic
 growth (typically a few monolayers for InAs on GaAs), so this system is of more
 theoretical interest.  The AlSb/GaSb/InAs system, with mismatches below 1.3%,
@@ -774,7 +776,7 @@ on the competition between the hydrostatic and shear terms.
 The HH/LH splitting for biaxial strain on a (001) substrate is
 
 $$
-\Delta E_{\text{HH-LH}} = -b\left(1 + \frac{2C_{12}}{C_{11}}\right)\varepsilon_{xx}\,.
+\Delta E_{\text{HH-LH}} = b\left(1 + \frac{2C_{12}}{C_{11}}\right)\varepsilon_{xx}\,.
 $$
 
 The factor $1 + 2C_{12}/C_{11}$ is approximately 1.9 for most III-V materials,
@@ -784,12 +786,12 @@ strain:
 
 | $\varepsilon_{xx}$ (%) | $\Delta E_{\text{HH-LH}}$ (meV) | $\Delta E_c$ (meV) | $\Delta E_g$ (meV) |
 |---|---|---|---|
-| $-0.5$ | 19 | 23 | 37 |
-| $-1.0$ | 38 | 46 | 74 |
-| $-1.3$ | 49 | 60 | 97 |
-| $-2.0$ | 75 | 93 | 149 |
-| $-3.0$ | 113 | 139 | 223 |
-| $-6.7$ | 252 | 311 | 498 |
+| $-0.5$ | 19 | 23 | 18 |
+| $-1.0$ | 38 | 46 | 37 |
+| $-1.3$ | 49 | 60 | 48 |
+| $-2.0$ | 75 | 93 | 73 |
+| $-3.0$ | 113 | 139 | 110 |
+| $-6.7$ | 252 | 311 | 246 |
 
 ![Strain-induced energy shifts in InAs as a function of compressive strain magnitude. The HH/LH splitting, CB shift, and band gap change all scale linearly with $|\varepsilon_{xx}|$. Even 1% strain produces a 38 meV splitting, comparable to $k_BT$ at room temperature.](../figures/hh_lh_splitting_vs_mismatch.png){ width=75% }
 
@@ -814,7 +816,7 @@ Chapter 01). Key quantitative checks:
 | GaAs on InP ($\varepsilon = -3.7\%$) | HH/LH splitting | 111 meV | nextnano tutorial |
 | GaAs on InP | CB shift | $-294$ meV | nextnano tutorial |
 | InAs on GaAs ($\varepsilon = -6.7\%$) | HH/LH splitting | 252 meV | Bir-Pikus formula |
-| InAs on GaAs | $\Delta E_g$ | 498 meV | Bir-Pikus formula |
+| InAs on GaAs | $\Delta E_g$ | 246 meV | Bir-Pikus formula |
 
 The Bir-Pikus diagonal shifts are verified by the unit tests
 (`tests/unit/test_strain_solver.pf`), which check the deformation potential

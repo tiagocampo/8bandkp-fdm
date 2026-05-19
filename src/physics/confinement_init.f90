@@ -122,10 +122,13 @@ contains
           profile(j, 1) = params(i)%EV
           profile(j, 2) = params(i)%EV - params(i)%DeltaSO
           profile(j, 3) = params(i)%EC
-          kptermsProfile(j, 1) = params(i)%gamma1
-          kptermsProfile(j, 2) = params(i)%gamma2
-          kptermsProfile(j, 3) = params(i)%gamma3
-          kptermsProfile(j, 4) = params(i)%A
+          ! Scale gamma and A by const = hbar^2/(2*m_0) so that kpterms
+          ! operators have energy units (eV). P already includes const
+          ! via P = sqrt(EP*const), so it is NOT scaled here.
+          kptermsProfile(j, 1) = params(i)%gamma1 * const
+          kptermsProfile(j, 2) = params(i)%gamma2 * const
+          kptermsProfile(j, 3) = params(i)%gamma3 * const
+          kptermsProfile(j, 4) = params(i)%A * const
           kptermsProfile(j, 5) = params(i)%P
         end do
       end do
@@ -772,12 +775,14 @@ contains
     profile(:, 3) = params(1)%EC
 
     ! Diagonal material parameters (constant across all grid points)
+    ! Scale gamma and A by const = hbar^2/(2*m_0) so that kpterms
+    ! operators have energy units (eV). P already includes const.
     do concurrent (ii = 1:N)
-      kpterms(ii, ii, 1) = params(1)%gamma1
-      kpterms(ii, ii, 2) = params(1)%gamma2
-      kpterms(ii, ii, 3) = params(1)%gamma3
+      kpterms(ii, ii, 1) = params(1)%gamma1 * const
+      kpterms(ii, ii, 2) = params(1)%gamma2 * const
+      kpterms(ii, ii, 3) = params(1)%gamma3 * const
       kpterms(ii, ii, 4) = params(1)%P
-      kpterms(ii, ii, 10) = params(1)%A
+      kpterms(ii, ii, 10) = params(1)%A * const
     end do
 
     ! Build FD stencil terms using the same machinery as QW
@@ -788,10 +793,10 @@ contains
       real(kind=dp), allocatable :: D_inner(:,:), D_outer(:,:), g_half(:)
 
       allocate(kptermsProfile(N, 5))
-      kptermsProfile(:, 1) = params(1)%gamma1
-      kptermsProfile(:, 2) = params(1)%gamma2
-      kptermsProfile(:, 3) = params(1)%gamma3
-      kptermsProfile(:, 4) = params(1)%A
+      kptermsProfile(:, 1) = params(1)%gamma1 * const
+      kptermsProfile(:, 2) = params(1)%gamma2 * const
+      kptermsProfile(:, 3) = params(1)%gamma3 * const
+      kptermsProfile(:, 4) = params(1)%A * const
       kptermsProfile(:, 5) = params(1)%P
 
       allocate(forward(N,N), backward(N,N), central(N,N))

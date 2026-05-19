@@ -196,7 +196,7 @@ At $k_\parallel = 0$, a ground-state heavy hole will have $f_{\text{HH}} \approx
 
 The conduction band states (bands 7--8) also acquire valence band character at large $k$ through the interband coupling term $P$ (the Kane momentum matrix element). This non-parabolicity effect is encoded in the parts as small but nonzero $P_1^{(n)}, \ldots, P_6^{(n)}$ for nominally CB states.
 
-![HH and LH fractions $f_{\text{HH}}$, $f_{\text{LH}}$ vs.\ $k_{\parallel}$ for two valence-band states of the AlSbW/GaSbW/InAsW QW. At $k=0$ both states are purely HH; at finite $k$ the LH admixture grows, with state 7 crossing over to majority-LH character.](../figures/vb_hh_lh_mixing.png){ width=80% }
+![HH and LH fractions $f_{\text{HH}}$, $f_{\text{LH}}$ vs.\ $k_{\parallel}$ for two valence-band states of the AlSbW/GaSbW/InAsW QW. At $k=0$ both states are purely HH; at finite $k$ the LH admixture grows, with state 7 crossing over to majority-LH character (67% LH at $k_\parallel = 0.10$ Å$^{-1}$).](../figures/vb_hh_lh_mixing.png){ width=80% }
 
 ## 6. Implementation: How the Code Writes Wavefunctions
 
@@ -532,7 +532,7 @@ The qualitative trends are:
 3. **The state never becomes purely conduction-band.** Even at larger
    $k_{\parallel}$ the broken-gap interface keeps a visible LH/SO tail.
 
-![Band character of the CB1 ground state vs.\ $k_{\parallel}$ for the AlSbW/GaSbW/InAsW QW. CB purity increases from 67% at $k=0$ to 81% at $k=0.10$ A$^{-1}$ as the state moves away from the broken-gap coupling region.](../figures/cb_parts_evolution.png){ width=80% }
+![Band character of the CB1 ground state vs.\ $k_{\parallel}$ for the AlSbW/GaSbW/InAsW QW. CB purity is 81% at $k=0$ and increases with $k_\parallel$ as the state moves away from the broken-gap coupling region.](../figures/cb_parts_evolution.png){ width=80% }
 
 ### 7c.2 Valence band evolution
 
