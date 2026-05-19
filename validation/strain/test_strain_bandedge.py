@@ -1,7 +1,7 @@
 """Strain bandedge cross-validation.
 
 Compares Bir-Pikus strain shifts between our Fortran code and kdotpy
-for InAs on GaAs substrate (compressive strain).
+for InAs on GaAs substrate (compressive) and GaAs on InP substrate (tensile).
 
 Our code uses the strain: block in input.cfg with strainSubstrate for
 the substrate lattice constant. kdotpy uses substrate_material in PhysParams.
@@ -32,6 +32,12 @@ STRAIN_CONFIGS = [
         "material": "InAs",
         "substrate": "GaAs",
         "substrate_a0": 5.65325,  # GaAs lattice constant in Angstrom
+    },
+    {
+        "name": "GaAs on InP substrate (tensile)",
+        "material": "GaAs",
+        "substrate": "InP",
+        "substrate_a0": 5.8687,  # InP lattice constant (Vurgaftman 2001)
     },
 ]
 
