@@ -123,3 +123,4 @@ The CB was unaffected because `delta_Ec = ac * Tr(eps)` has no Q_eps dependence,
 - [8-band verification ladder](../best-practices/8band-verification-ladder-2026-05-09.md) -- strain rungs 5-6 extend this framework
 - [Standard-star benchmark logic errors](standard-star-benchmark-suite-logic-errors-2026-05-09.md) -- testing framework patterns for silently wrong physics
 - `docs/lecture/04-strain.md` -- updated to match corrected Q_eps formula and HH/LH ordering
+- [Cross-validation code review fixes](cross-validation-review-logic-errors-2026-05-19.md) -- param_mapper docstring was left stale after the Bir-Pikus correction; caught in follow-up code review
