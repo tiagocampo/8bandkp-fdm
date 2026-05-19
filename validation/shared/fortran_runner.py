@@ -144,7 +144,10 @@ def run_qw(build_dir, barrier_material, well_material,
         elif nonzero and all(abs(p[0]) < 1e-12 for p in nonzero):
             direction = "ky"
         else:
-            direction = "k0"
+            raise ValueError(
+                "Multi-point QW k-path must be axis-aligned (all points along "
+                "kx or ky). Non-axis-aligned paths are not supported."
+            )
 
     # Last-layer-wins: barrier covers full domain, well overwrites center
     # Use centered coordinates (regression configs use symmetric -L/2 to L/2)
@@ -249,7 +252,10 @@ def _build_bulk_config(material, k_points):
         elif nonzero and all(abs(p[0]) < 1e-12 and abs(p[1]) < 1e-12 for p in nonzero):
             direction = "kz"
         else:
-            direction = "k0"
+            raise ValueError(
+                "Multi-point bulk k-path must be axis-aligned (all points along "
+                "kx, ky, or kz). Non-axis-aligned paths are not supported."
+            )
 
     lines = [
         f"waveVector: {direction}",

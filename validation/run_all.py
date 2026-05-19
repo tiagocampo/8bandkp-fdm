@@ -56,7 +56,8 @@ def run_test(name, script):
     except subprocess.TimeoutExpired as e:
         partial = ""
         if hasattr(e, 'stdout') and e.stdout:
-            lines = e.stdout.decode('utf-8', errors='replace').split('\n')
+            stdout_str = e.stdout if isinstance(e.stdout, str) else e.stdout.decode('utf-8', errors='replace')
+            lines = stdout_str.split('\n')
             partial = '\n'.join(lines[-10:])
         return {"name": name, "script": script, "status": "TIMEOUT",
                 "output": f"Exceeded {timeout}s timeout\n{partial}", "error": ""}
