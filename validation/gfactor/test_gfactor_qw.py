@@ -44,8 +44,10 @@ def run_gfactor(config_name, build_dir, project_root):
     exe = os.path.join(build_dir, "src", "gfactorCalculation")
     config_path = os.path.join(project_root, "tests", "regression", "configs", config_name)
 
-    if not os.path.isfile(exe) or not os.path.isfile(config_path):
-        return None
+    if not os.path.isfile(exe):
+        raise FileNotFoundError(f"Executable not found: {exe}")
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(f"Config not found: {config_path}")
 
     workdir = tempfile.mkdtemp(prefix="gfactor_")
     try:
@@ -117,14 +119,10 @@ def test_gfactor_qw():
 
         try:
             output = run_gfactor(config, BUILD_DIR, project_root)
-        except RuntimeError as e:
-            print(f"  FAIL: Fortran execution error: {e}")
+        except (RuntimeError, FileNotFoundError) as e:
+            print(f"  FAIL: {e}")
             all_pass = False
             all_results.append({"material": mat_name, "status": "FAIL"})
-            continue
-        if output is None:
-            print(f"  SKIP: gfactorCalculation produced no output")
-            all_results.append({"material": mat_name, "status": "SKIP"})
             continue
 
         gfactors = parse_gfactor(output)

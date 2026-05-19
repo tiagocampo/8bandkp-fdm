@@ -37,8 +37,10 @@ def run_fortran_wire(config_name, build_dir, project_root, timeout=180):
     exe = os.path.join(build_dir, "src", "bandStructure")
     config_path = os.path.join(project_root, "tests", "regression", "configs", config_name)
 
-    if not os.path.isfile(exe) or not os.path.isfile(config_path):
-        return None
+    if not os.path.isfile(exe):
+        raise FileNotFoundError(f"Executable not found: {exe}")
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(f"Config not found: {config_path}")
 
     workdir = tempfile.mkdtemp(prefix="wire_")
     try:
@@ -55,7 +57,7 @@ def run_fortran_wire(config_name, build_dir, project_root, timeout=180):
 
         eig_path = os.path.join(workdir, "output", "eigenvalues.dat")
         if not os.path.exists(eig_path):
-            return None
+            raise RuntimeError(f"No eigenvalues.dat produced in {workdir}")
 
         rows = []
         with open(eig_path) as f:
@@ -90,14 +92,10 @@ def test_wire_subbands():
 
         try:
             rows = run_fortran_wire(config, BUILD_DIR, project_root, timeout=timeout)
-        except RuntimeError as e:
-            print(f"  FAIL: Fortran execution error: {e}")
+        except (RuntimeError, FileNotFoundError) as e:
+            print(f"  FAIL: {e}")
             all_pass = False
             all_results.append({"config": name, "status": "FAIL"})
-            continue
-        if rows is None:
-            print(f"  SKIP: Fortran wire produced no output")
-            all_results.append({"config": name, "status": "SKIP"})
             continue
 
         # First row is kz=0

@@ -46,8 +46,10 @@ def run_fortran_landau(config_name, build_dir, project_root):
     exe = os.path.join(build_dir, "src", "bandStructure")
     config_path = os.path.join(project_root, "tests", "regression", "configs", config_name)
 
-    if not os.path.isfile(exe) or not os.path.isfile(config_path):
-        return None
+    if not os.path.isfile(exe):
+        raise FileNotFoundError(f"Executable not found: {exe}")
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError(f"Config not found: {config_path}")
 
     workdir = tempfile.mkdtemp(prefix="landau_")
     try:
@@ -64,7 +66,7 @@ def run_fortran_landau(config_name, build_dir, project_root):
 
         eig_path = os.path.join(workdir, "output", "eigenvalues.dat")
         if not os.path.exists(eig_path):
-            return None
+            raise RuntimeError(f"No eigenvalues.dat produced in {workdir}")
 
         rows = []
         with open(eig_path) as f:
@@ -108,14 +110,10 @@ def test_landau_bulk():
 
         try:
             rows = run_fortran_landau(config, BUILD_DIR, project_root)
-        except RuntimeError as e:
-            print(f"  FAIL: Fortran execution error: {e}")
+        except (RuntimeError, FileNotFoundError) as e:
+            print(f"  FAIL: {e}")
             all_pass = False
             all_results.append({"material": mat_name, "status": "FAIL"})
-            continue
-        if rows is None:
-            print(f"  SKIP: Fortran produced no output")
-            all_results.append({"material": mat_name, "status": "SKIP"})
             continue
 
         # Parse B-field from config
