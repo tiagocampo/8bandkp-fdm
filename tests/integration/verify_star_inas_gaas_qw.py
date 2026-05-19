@@ -9,7 +9,7 @@ Validates InAs/GaAs strained QW observables against published references:
 
 The InAs/GaAs system has ~6.7% lattice mismatch, providing a strong strain
 test for the Bir-Pikus implementation. The resulting HH-LH splitting of
-~0.241 eV is large and easily detectable, though it exceeds the ~1-2%
+~0.251 eV is large and easily detectable, though it exceeds the ~1-2%
 validity range of linear elasticity.
 
 NOTE: This is a stress test at the code's limits. The Bir-Pikus linear
@@ -77,7 +77,7 @@ EPS_BIAXIAL = (A_GAAS - A_INAS) / A_INAS  # ~ -0.0669
 INAS_C11 = 832.9   # GPa, elastic constant (Vurgaftman 2001, Table XIV)
 INAS_C12 = 452.6   # GPa, elastic constant (Vurgaftman 2001, Table XIV)
 EPS_ZZ = -2.0 * (INAS_C12 / INAS_C11) * EPS_BIAXIAL
-HH_LH_SPLITTING_BULK = abs(INAS_B * (EPS_ZZ - EPS_BIAXIAL))  # ~ 0.251 eV
+HH_LH_SPLITTING_BULK = abs(INAS_B * (EPS_ZZ - EPS_BIAXIAL))  # ~ 0.251 eV (2*|Q_eps|)
 
 # Roth g-factor formula (Winkler 2003, Eq. 6.42) — bulk InAs:
 #   g = 2 - 2*EP*DeltaSO / (3*Eg*(Eg + DeltaSO))
@@ -123,7 +123,7 @@ TOL_GFACTOR = 0.05     # 5% regression tolerance vs 8-band QW reference
 #
 # The bulk Bir-Pikus and Roth predictions are printed for comparison but
 # the QW results differ due to confinement and band-mixing effects.
-HHLH_REF = 0.0567      # eV (const-correct 8-band QW; bulk Bir-Pikus: 0.241 eV)
+HHLH_REF = 0.1623      # eV (const-correct 8-band QW with corrected Q_eps sign)
 G_REF = -1.829         # gz (const-correct 8-band QW; bulk Roth: -14.6)
 
 

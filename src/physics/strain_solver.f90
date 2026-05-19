@@ -838,7 +838,7 @@ contains
 
     Tr_eps = eps_xx + eps_yy + eps_zz
     P_eps = -params%av * Tr_eps
-    Q_eps = params%b_dp * 0.5_dp * (eps_zz - 0.5_dp * (eps_yy + eps_xx))
+    Q_eps = -params%b_dp * 0.5_dp * (eps_zz - 0.5_dp * (eps_yy + eps_xx))
     T_eps = -Q_eps
 
     s%delta_Ec  = params%ac * Tr_eps

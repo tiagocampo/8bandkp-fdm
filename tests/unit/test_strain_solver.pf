@@ -449,7 +449,7 @@ contains
     ! Expected values
     Tr_eps = 2.0_dp * eps_xx_val + eps_zz_val
     P_eps = -params(1)%av * Tr_eps
-    Q_eps = params(1)%b_dp * 0.5_dp * (eps_zz_val - 0.5_dp * 2.0_dp * eps_xx_val)
+    Q_eps = -params(1)%b_dp * 0.5_dp * (eps_zz_val - 0.5_dp * 2.0_dp * eps_xx_val)
     delta_Ec_exp  = params(1)%ac * Tr_eps
     delta_EHH_exp = -P_eps + Q_eps
     delta_ELH_exp = -P_eps - Q_eps
@@ -536,7 +536,7 @@ contains
       0.0_dp, 0.0_dp, 0.0_dp)
 
     P_eps = -params(1)%av * Tr_eps
-    Q_eps = params(1)%b_dp * 0.5_dp * (eps_zz - eps_xx)
+    Q_eps = -params(1)%b_dp * 0.5_dp * (eps_zz - eps_xx)
 
     @assertEqual(params(1)%ac * Tr_eps, s%delta_Ec, tolerance=1.0e-12_dp)
     @assertEqual(-P_eps + Q_eps, s%delta_EHH, tolerance=1.0e-12_dp)

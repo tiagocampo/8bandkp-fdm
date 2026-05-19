@@ -107,12 +107,12 @@ def test_r1_strained_eigenvalues(build_dir, bp):
     evals = run_with_config(build_dir, CONFIG_STRAINED, "strained")
 
     # Ascending order with LH-SO mixing:
-    #   bands 0,1 = LHSO_low; bands 2,3 = HH; bands 4,5 = LHSO_high; bands 6,7 = CB
-    # Under compressive strain, HH shifts below the upper LH-SO mixed state.
+    #   bands 0,1 = LHSO_low; bands 2,3 = LHSO_high; bands 4,5 = HH; bands 6,7 = CB
+    # Under compressive strain, HH shifts above the upper LH-SO mixed state.
     expected_map = {
         "LHSO_low":  (0, bp["E_LHSO_low"]),
-        "HH":        (2, bp["E_HH"]),
-        "LHSO_high": (4, bp["E_LHSO_high"]),
+        "LHSO_high": (2, bp["E_LHSO_high"]),
+        "HH":        (4, bp["E_HH"]),
         "CB":        (6, bp["E_CB"]),
     }
 
@@ -134,8 +134,8 @@ def test_r1_strained_eigenvalues(build_dir, bp):
 def test_r2_hh_lh_splitting(evals, bp):
     """R2: HH-LH splitting matches analytical value with LH-SO mixing."""
     print("  [R2] HH-LH splitting (with LH-SO mixing)")
-    # Ascending: LHSO_low(0,1), HH(2,3), LHSO_high(4,5), CB(6,7)
-    computed_splitting = evals[2] - evals[4]  # HH - LHSO_high
+    # Ascending: LHSO_low(0,1), LHSO_high(2,3), HH(4,5), CB(6,7)
+    computed_splitting = evals[4] - evals[2]  # HH - LHSO_high
     expected_splitting = bp["HH_LH_splitting"]
     passed, delta, _ = compare_value(
         computed_splitting, expected_splitting, TOL_STRAIN,
@@ -167,8 +167,8 @@ def test_r3_additive_modification(build_dir, bp):
           f"delta={delta_cb:.2e}  {status_cb}")
     all_pass = all_pass and passed_cb
 
-    # HH: no LH-SO mixing. Strained HH at index 2, unstrained HH at index 4 (both 0.0)
-    hh_shift = evals_strained[2] - evals_unref[4]
+    # HH: no LH-SO mixing. Strained HH at index 4, unstrained HH at index 4 (both 0.0)
+    hh_shift = evals_strained[4] - evals_unref[4]
     expected_hh = bp["delta_EHH"]
     passed_hh, delta_hh, _ = compare_value(
         hh_shift, expected_hh, TOL_ADDITIVE,
@@ -180,10 +180,10 @@ def test_r3_additive_modification(build_dir, bp):
     all_pass = all_pass and passed_hh
 
     # LH+SO block: off-diagonal QT2 coupling preserves the trace.
-    # Strained LHSO = indices 0,1 (LHSO_low) + 4,5 (LHSO_high)
+    # Strained LHSO = indices 0,1 (LHSO_low) + 2,3 (LHSO_high)
     # Unstrained LH+SO = indices 0,1 (SO) + 2,3 (LH)
     lhsstrained_sum = (evals_strained[0] + evals_strained[1] +
-                       evals_strained[4] + evals_strained[5])
+                       evals_strained[2] + evals_strained[3])
     expected_block_sum = 2 * bp["E_LHSO_low"] + 2 * bp["E_LHSO_high"]
     passed_block, delta_block, _ = compare_value(
         lhsstrained_sum, expected_block_sum, TOL_ADDITIVE,

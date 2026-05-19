@@ -803,7 +803,7 @@ module hamiltonianConstructor
       ! parameters (gamma1, gamma2, gamma3):
       !
       !   P_eps     = -av * Tr(eps)                           (hydrostatic)
-      !   Q_eps     =  b_dp/2 * (eps_zz - 0.5*(eps_xx+eps_yy)) (tetragonal shear)
+      !   Q_eps     = -(b_dp/2) * (eps_zz - 0.5*(eps_xx+eps_yy)) (tetragonal shear)
       !   R_eps     = -sqrt(3) * [b_dp/2*(eps_xx-eps_yy) - i*d_dp*eps_xy]
       !   S_eps     =  i*2*sqrt(3) * d_dp * (eps_xz - i*eps_yz)
       !   S_eps_bar = -i*2*sqrt(3) * d_dp * (eps_xz + i*eps_yz)
