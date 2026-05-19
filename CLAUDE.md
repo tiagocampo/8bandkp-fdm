@@ -96,7 +96,7 @@ Convention: new tests should include `# COVERAGE:` annotations so the matrix can
 ## Cross-Code Validation
 
 ```bash
-# Run all 12 cross-code validation tests (compares against kdotpy)
+# Run all 12 validation tests (6 cross-code against kdotpy + 6 single-code/analytical)
 source validation/kdotpy_env/bin/activate
 python3 validation/run_all.py
 
@@ -105,7 +105,7 @@ python3 validation/bulk/test_bulk_k0.py
 python3 validation/strain/test_strain_bandedge.py
 ```
 
-The `validation/` directory contains 12 cross-code validation tests comparing our Fortran solver against kdotpy (Python, plane-wave discretization). Tests cover: bulk k=0 gate, bulk dispersion, bulk Zeeman, QW subbands, QW dispersion, QW convergence, Landau bulk, wire subbands, g-factor QW, strain bandedge, strain QW, and self-consistent QW. Results saved to `validation/*/results/`. Shared infrastructure: `validation/shared/` (parameter mapper, Fortran/kdotpy runners, comparison utilities). Parameter mapping between Fortran and kdotpy conventions in `validation/shared/param_mapper.py`.
+The `validation/` directory contains 12 validation tests. Six are cross-code tests comparing our Fortran solver against kdotpy (Python, plane-wave discretization): bulk k=0 gate, bulk dispersion, QW subbands, QW dispersion, QW convergence, and strain bandedge. Six are single-code/analytical tests (kdotpy lacks a comparable API for these physics): bulk Zeeman (analytical Roth formula), Landau bulk (analytical LL formula), wire subbands (single-code consistency), g-factor QW (analytical Roth formula), strain QW (analytical Bir-Pikus), and self-consistent QW (single-code convergence). Strain tests cover both compressive (InAs/GaAs) and tensile (GaAs/InP) regimes. Results saved to `validation/*/results/`. Shared infrastructure: `validation/shared/` (parameter mapper, Fortran/kdotpy runners, comparison utilities). Parameter mapping between Fortran and kdotpy conventions in `validation/shared/param_mapper.py`.
 
 ## Architecture
 
@@ -123,7 +123,7 @@ tests/
   support/    shared test-support library (CSR helpers, Krylov infrastructure, reference data)
   integration/  shell scripts + Python verification scripts for full-executable tests
   regression/   configs/, data/, compare_output.py
-validation/   cross-code validation pipeline (12 tests comparing against kdotpy)
+validation/   validation pipeline (12 tests: 6 cross-code against kdotpy + 6 analytical)
 cmake/        FindFFTW3.cmake
 build/        .o, .mod, executables (created by cmake)
 scripts/      lecture_*.py executable lecture-companion scripts (L00-L13) + generate_all_figures.py
