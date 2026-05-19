@@ -86,6 +86,14 @@ def test_qw_dispersion():
           f"effective mass < {TOL_MASS_PCT*100:.0f}%")
     print()
 
+    # Check kdotpy availability
+    try:
+        from kdotpy.config import initialize_config
+        initialize_config()
+    except ImportError:
+        print("SKIP: kdotpy not available (activate kdotpy_env first)")
+        return False
+
     for cfg in QW_CONFIGS:
         barrier = cfg["barrier"]
         well = cfg["well"]
@@ -120,8 +128,8 @@ def test_qw_dispersion():
                 [[e * MEV_PER_EV for e in row[1]] for row in f_results],
                 well,
             )
-        except Exception as e:
-            print(f"  Fortran ERROR: {e}")
+        except (FileNotFoundError, RuntimeError, OSError) as e:
+            print(f"  Fortran ERROR ({type(e).__name__}): {e}")
             all_pass = False
             continue
 
@@ -134,8 +142,8 @@ def test_qw_dispersion():
                 k_points_nm, zres=zres, neig=50, energy=700.0,
             )
             kd_cb1 = extract_cb1_dispersion(kd_results, well)
-        except Exception as e:
-            print(f"  kdotpy ERROR: {e}")
+        except (ImportError, RuntimeError, ValueError, OSError) as e:
+            print(f"  kdotpy ERROR ({type(e).__name__}): {e}")
             all_pass = False
             continue
 
@@ -188,7 +196,7 @@ def test_qw_dispersion():
             "mass_pass": bool(mass_pass),
             "cb1_max_delta_meV": float(max_delta),
             "cb1_pass": bool(cb1_pass),
-            "overall_pass": bool(config_pass),
+            "passed": bool(config_pass),
         })
 
     results_dir = os.path.join(os.path.dirname(__file__), "results")

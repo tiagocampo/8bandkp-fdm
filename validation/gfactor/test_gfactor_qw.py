@@ -19,7 +19,6 @@ import json
 import subprocess
 import tempfile
 import shutil
-import re
 
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
@@ -32,11 +31,11 @@ TOL_GFACTOR_PCT = 0.10  # 10%
 # g* = ge - (2/3) * (EP/Eg) * (delta_SO / (Eg + delta_SO))
 # Using our 8-band model parameters (which give lighter masses and different g)
 # Reference g-factor values (8-band model, validated against kdotpy bulk)
-GFATOR_REFS = {
+GFACTOR_REFS = {
     "GaAs": {"g_z_cb": -0.315, "material": "GaAs", "whichBand": 0, "bandIdx": 1},
 }
 
-GFATOR_CONFIGS = {
+GFACTOR_CONFIGS = {
     "GaAs": "gfactor_bulk_gaas_cb.cfg",
 }
 
@@ -56,7 +55,10 @@ def run_gfactor(config_name, build_dir, project_root):
             [exe], cwd=workdir, capture_output=True, text=True, timeout=120
         )
         if result.returncode != 0:
-            return None
+            raise RuntimeError(
+                f"gfactorCalculation failed (rc={result.returncode}):\n"
+                f"stderr: {result.stderr[-500:]}"
+            )
         return result.stdout
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
@@ -92,11 +94,19 @@ def test_gfactor_qw():
     print(f"Tolerance: < {TOL_GFACTOR_PCT*100:.0f}% deviation from reference")
     print()
 
+    # Check kdotpy availability
+    try:
+        from kdotpy.config import initialize_config
+        initialize_config()
+    except ImportError:
+        print("SKIP: kdotpy not available (activate kdotpy_env first)")
+        return False
+
     all_pass = True
     all_results = []
 
-    for mat_name, ref in GFATOR_REFS.items():
-        config = GFATOR_CONFIGS.get(mat_name)
+    for mat_name, ref in GFACTOR_REFS.items():
+        config = GFACTOR_CONFIGS.get(mat_name)
         if not config:
             print(f"\n{mat_name}: SKIP (no config)")
             all_results.append({"material": mat_name, "status": "SKIP"})
@@ -104,9 +114,15 @@ def test_gfactor_qw():
 
         print(f"\nMaterial: {mat_name}")
 
-        output = run_gfactor(config, BUILD_DIR, project_root)
+        try:
+            output = run_gfactor(config, BUILD_DIR, project_root)
+        except RuntimeError as e:
+            print(f"  FAIL: Fortran execution error: {e}")
+            all_pass = False
+            all_results.append({"material": mat_name, "status": "FAIL"})
+            continue
         if output is None:
-            print(f"  SKIP: gfactorCalculation failed")
+            print(f"  SKIP: gfactorCalculation produced no output")
             all_results.append({"material": mat_name, "status": "SKIP"})
             continue
 

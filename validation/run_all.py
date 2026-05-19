@@ -25,8 +25,9 @@ TESTS = [
     ("QW Convergence", "validation/qw/test_qw_convergence.py"),
     ("Landau Bulk", "validation/landau/test_landau_bulk.py"),
     ("Wire Subbands", "validation/wire/test_wire_subbands.py"),
-    ("g-Factor", "validation/gfactor/test_gfactor_qw.py"),
+    ("g-Factor QW", "validation/gfactor/test_gfactor_qw.py"),
     ("Strain Bandedge", "validation/strain/test_strain_bandedge.py"),
+    ("Strain QW", "validation/strain/test_strain_qw.py"),
     ("Self-Consistent QW", "validation/selfconsistent/test_sc_qw.py"),
 ]
 
@@ -46,11 +47,18 @@ def run_test(name, script):
 
     cmd = f"source '{VENV_ACTIVATE}' && python3 '{script_path}'"
     timeout = TIMEOUTS.get(script, 300)
-    result = subprocess.run(
-        ["bash", "-c", cmd],
-        capture_output=True, text=True, timeout=timeout,
-        cwd=project_root,
-    )
+    try:
+        result = subprocess.run(
+            ["bash", "-c", cmd],
+            capture_output=True, text=True, timeout=timeout,
+            cwd=project_root,
+        )
+    except subprocess.TimeoutExpired:
+        return {"name": name, "script": script, "status": "TIMEOUT",
+                "output": f"Exceeded {timeout}s timeout", "error": ""}
+    except OSError as e:
+        return {"name": name, "script": script, "status": "ERROR",
+                "output": str(e), "error": ""}
 
     return {
         "name": name,
@@ -79,12 +87,19 @@ def main():
         result = run_test(name, script)
         all_results.append(result)
 
-        if result["status"] == "PASS":
+        status = result["status"]
+        if status == "PASS":
             n_pass += 1
             print(f"  -> PASS")
-        elif result["status"] == "SKIP":
+        elif status == "SKIP":
             n_skip += 1
             print(f"  -> SKIP: {result['output']}")
+        elif status == "TIMEOUT":
+            n_fail += 1
+            print(f"  -> TIMEOUT ({TIMEOUTS.get(script, 300)}s)")
+        elif status == "ERROR":
+            n_fail += 1
+            print(f"  -> ERROR: {result['output']}")
         else:
             n_fail += 1
             print(f"  -> FAIL (rc={result.get('returncode', '?')})")
@@ -100,8 +115,9 @@ def main():
     if all(r["status"] == "PASS" for r in all_results):
         print("All validation tests passed.")
     else:
-        failed = [r["name"] for r in all_results if r["status"] == "FAIL"]
-        print(f"FAILED tests: {', '.join(failed)}")
+        failed = [r["name"] for r in all_results if r["status"] not in ("PASS", "SKIP")]
+        if failed:
+            print(f"FAILED tests: {', '.join(failed)}")
 
     results_dir = os.path.join(project_root, "validation", "results")
     os.makedirs(results_dir, exist_ok=True)

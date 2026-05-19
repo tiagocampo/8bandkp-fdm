@@ -25,7 +25,7 @@ sys.path.insert(0, project_root)
 
 BUILD_DIR = os.path.join(project_root, "build")
 MEV_PER_EV = 1000.0
-TOL_CB1_MEV = 50.0  # SC convergence varies; use wide tolerance
+TOL_CB1_MEV = 10.0
 
 SC_CONFIGS = [
     {
@@ -52,7 +52,10 @@ def run_fortran_sc(config_name, build_dir, project_root):
         )
 
         if result.returncode != 0:
-            return None
+            raise RuntimeError(
+                f"bandStructure failed (rc={result.returncode}):\n"
+                f"stderr: {result.stderr[-500:]}"
+            )
 
         # Parse eigenvalues from output
         eig_path = os.path.join(workdir, "output", "eigenvalues.dat")
@@ -92,9 +95,15 @@ def test_sc_qw():
 
         print(f"\nConfig: {name}")
 
-        result = run_fortran_sc(config, BUILD_DIR, project_root)
+        try:
+            result = run_fortran_sc(config, BUILD_DIR, project_root)
+        except RuntimeError as e:
+            print(f"  FAIL: Fortran execution error: {e}")
+            all_pass = False
+            all_results.append({"config": name, "status": "FAIL"})
+            continue
         if result is None:
-            print(f"  SKIP: SC calculation failed")
+            print(f"  SKIP: SC calculation produced no output")
             all_results.append({"config": name, "status": "SKIP"})
             continue
 
@@ -115,7 +124,7 @@ def test_sc_qw():
         cb1_meV = cb_evals[0]
 
         delta_meV = abs(cb1_meV - expected_cb1)
-        passed = delta_meV < TOL_CB1_MEV
+        passed = delta_meV < TOL_CB1_MEV and result["converged"]
 
         print(f"  CB1 = {cb1_meV:.2f} meV ({cb_evals[0]/MEV_PER_EV:.6f} eV)")
         print(f"  Expected ~{expected_cb1:.0f} meV, delta = {delta_meV:.2f} meV")
@@ -123,6 +132,8 @@ def test_sc_qw():
         print(f"  CB eigenvalues: {[f'{e:.2f}' for e in cb_evals]} meV")
         print(f"  Status: {'PASS' if passed else 'FAIL'}")
 
+        if not result["converged"]:
+            print(f"  WARNING: SC loop did not converge")
         if not passed:
             all_pass = False
 

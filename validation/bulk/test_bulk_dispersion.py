@@ -78,12 +78,25 @@ def test_bulk_dispersion():
     print("Extracting effective mass from parabolic fit near k=0")
     print()
 
+    # Check kdotpy availability
+    try:
+        from kdotpy.config import initialize_config
+        initialize_config()
+    except ImportError:
+        print("SKIP: kdotpy not available (activate kdotpy_env first)")
+        return False
+
     print("| Material | Direction | m*_ours | m*_kdotpy | Delta% | Status |")
     print("|----------|-----|---------|-------|-------|---------|-------|--------|")
 
     for test_cfg in DISPERSION_TESTS:
         mat_name = test_cfg["material"]
-        kdotpy_mat = map_material(mat_name)
+        try:
+            kdotpy_mat = map_material(mat_name)
+        except (ImportError, KeyError) as e:
+            print(f"| {mat_name} | - | ERROR: material mapping ({type(e).__name__}: {e}) | - | - | - | ERROR |")
+            all_pass = False
+            continue
         k_max_ang = test_cfg["k_max_inv_ang"]
         n_pts = test_cfg["n_points"]
 
@@ -101,8 +114,8 @@ def test_bulk_dispersion():
 
             try:
                 fortran_results = fortran_run_bulk(BUILD_DIR, mat_name, fortran_kpts)
-            except Exception as e:
-                print(f"| {mat_name} | {direction} | ERROR | ERROR | - | - | - | ERROR |")
+            except (FileNotFoundError, RuntimeError, OSError) as e:
+                print(f"| {mat_name} | {direction} | ERROR ({type(e).__name__}: {e}) | ERROR | - | - | - | ERROR |")
                 all_pass = False
                 continue
 
@@ -122,8 +135,8 @@ def test_bulk_dispersion():
 
             try:
                 kdotpy_evals = run_bulk(kdotpy_mat, kdotpy_kpts)
-            except Exception as e:
-                print(f"| {mat_name} | {direction} | {mstar_fortran:.4f} | ERROR | - | "
+            except (ImportError, RuntimeError, ValueError, OSError) as e:
+                print(f"| {mat_name} | {direction} | {mstar_fortran:.4f} | ERROR ({type(e).__name__}: {e}) | - | "
                       f"{r2_fortran:.6f} | - | ERROR |")
                 all_pass = False
                 continue

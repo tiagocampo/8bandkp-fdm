@@ -51,7 +51,10 @@ def run_fortran_wire(config_name, build_dir, project_root, timeout=180):
             [exe], cwd=workdir, capture_output=True, text=True, timeout=timeout
         )
         if result.returncode != 0:
-            return None
+            raise RuntimeError(
+                f"bandStructure failed (rc={result.returncode}):\n"
+                f"stderr: {result.stderr[-500:]}"
+            )
 
         eig_path = os.path.join(workdir, "output", "eigenvalues.dat")
         if not os.path.exists(eig_path):
@@ -88,9 +91,15 @@ def test_wire_subbands():
 
         print(f"\nConfig: {name}")
 
-        rows = run_fortran_wire(config, BUILD_DIR, project_root, timeout=timeout)
+        try:
+            rows = run_fortran_wire(config, BUILD_DIR, project_root, timeout=timeout)
+        except RuntimeError as e:
+            print(f"  FAIL: Fortran execution error: {e}")
+            all_pass = False
+            all_results.append({"config": name, "status": "FAIL"})
+            continue
         if rows is None:
-            print(f"  SKIP: could not run Fortran wire calculation")
+            print(f"  SKIP: Fortran wire produced no output")
             all_results.append({"config": name, "status": "SKIP"})
             continue
 
@@ -117,7 +126,7 @@ def test_wire_subbands():
         computed_gap_meV = max_gap
         expected_gap_meV = Eg * MEV_PER_EV
         gap_positive = computed_gap_meV > 0
-        gap_larger_than_bulk = computed_gap_meV >= expected_gap_meV * 0.5  # at least half bulk gap
+        gap_larger_than_bulk = computed_gap_meV >= expected_gap_meV * 0.8
 
         passed = cb1_meV is not None and gap_positive and gap_larger_than_bulk
 

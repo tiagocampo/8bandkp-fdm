@@ -58,7 +58,10 @@ def run_fortran_landau(config_name, build_dir, project_root):
             [exe], cwd=workdir, capture_output=True, text=True, timeout=120
         )
         if result.returncode != 0:
-            return None
+            raise RuntimeError(
+                f"bandStructure failed (rc={result.returncode}):\n"
+                f"stderr: {result.stderr[-500:]}"
+            )
 
         eig_path = os.path.join(workdir, "output", "eigenvalues.dat")
         if not os.path.exists(eig_path):
@@ -91,6 +94,14 @@ def test_landau_bulk():
     print(f"Tolerance: CB LL0 relative error < {TOL_REL*100:.0f}%")
     print()
 
+    # Check kdotpy availability (used for analytical comparison)
+    try:
+        from kdotpy.config import initialize_config
+        initialize_config()
+    except ImportError:
+        print("SKIP: kdotpy not available (activate kdotpy_env first)")
+        return False
+
     all_pass = True
     all_results = []
 
@@ -101,9 +112,15 @@ def test_landau_bulk():
 
         print(f"\nMaterial: {mat_name} (m* = {m_star} m0)")
 
-        rows = run_fortran_landau(config, BUILD_DIR, project_root)
+        try:
+            rows = run_fortran_landau(config, BUILD_DIR, project_root)
+        except RuntimeError as e:
+            print(f"  FAIL: Fortran execution error: {e}")
+            all_pass = False
+            all_results.append({"material": mat_name, "status": "FAIL"})
+            continue
         if rows is None:
-            print(f"  SKIP: could not run Fortran Landau calculation")
+            print(f"  SKIP: Fortran produced no output")
             all_results.append({"material": mat_name, "status": "SKIP"})
             continue
 

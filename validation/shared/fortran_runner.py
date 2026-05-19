@@ -25,6 +25,7 @@ def run_bulk(build_dir, material, k_points, work_dir=None, timeout=120):
     Returns:
         list of (|k|, [eigenvalues]) tuples, eigenvalues in eV ascending
     """
+    cleanup = work_dir is None
     if work_dir is None:
         work_dir = tempfile.mkdtemp(prefix="fortran_bulk_")
 
@@ -64,9 +65,14 @@ def run_bulk(build_dir, material, k_points, work_dir=None, timeout=120):
 
     eig_path = os.path.join(output_dir, "eigenvalues.dat")
     if not os.path.isfile(eig_path):
+        if cleanup:
+            shutil.rmtree(work_dir, ignore_errors=True)
         raise FileNotFoundError(f"No eigenvalues.dat in {output_dir}")
 
-    return _parse_eigenvalues(eig_path)
+    parsed = _parse_eigenvalues(eig_path)
+    if cleanup:
+        shutil.rmtree(work_dir, ignore_errors=True)
+    return parsed
 
 
 def run_qw(build_dir, barrier_material, well_material,
@@ -97,6 +103,7 @@ def run_qw(build_dir, barrier_material, well_material,
     Returns:
         list of (|k|, [eigenvalues]) tuples, eigenvalues in eV ascending
     """
+    cleanup = work_dir is None
     if work_dir is None:
         work_dir = tempfile.mkdtemp(prefix="fortran_qw_")
 
@@ -187,9 +194,14 @@ def run_qw(build_dir, barrier_material, well_material,
 
     eig_path = os.path.join(output_dir, "eigenvalues.dat")
     if not os.path.isfile(eig_path):
+        if cleanup:
+            shutil.rmtree(work_dir, ignore_errors=True)
         raise FileNotFoundError(f"No eigenvalues.dat in {output_dir}")
 
-    return _parse_eigenvalues(eig_path)
+    parsed = _parse_eigenvalues(eig_path)
+    if cleanup:
+        shutil.rmtree(work_dir, ignore_errors=True)
+    return parsed
 
 
 def _build_bulk_config(material, k_points):
@@ -209,15 +221,15 @@ def _build_bulk_config(material, k_points):
         elif abs(ky) < 1e-12 and abs(kz) < 1e-12:
             direction = "kx"
             k_max = abs(kx)
-            n_steps = 1
+            n_steps = 2  # need >= 2 to avoid div-by-zero in Fortran sweep
         elif abs(kx) < 1e-12 and abs(kz) < 1e-12:
             direction = "ky"
             k_max = abs(ky)
-            n_steps = 1
+            n_steps = 2
         elif abs(kx) < 1e-12 and abs(ky) < 1e-12:
             direction = "kz"
             k_max = abs(kz)
-            n_steps = 1
+            n_steps = 2
         else:
             raise ValueError(
                 f"Non-axis-aligned single k-point ({kx}, {ky}, {kz}) not supported. "

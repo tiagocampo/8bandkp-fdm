@@ -68,6 +68,7 @@ docs/articles/
 # Python
 __pycache__/
 *.pyc
+**/kdotpy_env/
 
 # Test/debug artifacts
 test_debug_*

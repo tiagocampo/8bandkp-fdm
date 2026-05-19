@@ -8,9 +8,11 @@
     "cb1_kdotpy_meV": 769.9579044897794,
     "cb1_delta_meV": 1.4649044897794283,
     "vb1_fortran_meV": -807.091,
-    "vb1_kdotpy_meV": -807.3492330275353,
-    "vb1_delta_meV": 0.2582330275353115,
-    "passed": true
+    "vb1_kdotpy_meV": -807.3492330275278,
+    "vb1_delta_meV": 0.2582330275278082,
+    "passed": true,
+    "cb_passed": true,
+    "vb_passed": true
   },
   {
     "config": "GaAs/Al20Ga80As 7.0nm",
@@ -18,12 +20,14 @@
     "well": "GaAs",
     "l_well_nm": 7.0,
     "cb1_fortran_meV": 795.162,
-    "cb1_kdotpy_meV": 795.9017191126699,
-    "cb1_delta_meV": 0.7397191126698317,
+    "cb1_kdotpy_meV": 795.9017191126696,
+    "cb1_delta_meV": 0.7397191126696043,
     "vb1_fortran_meV": -812.813,
-    "vb1_kdotpy_meV": -812.9415896203884,
-    "vb1_delta_meV": 0.12858962038842492,
-    "passed": true
+    "vb1_kdotpy_meV": -812.9415896203952,
+    "vb1_delta_meV": 0.12858962039524613,
+    "passed": true,
+    "cb_passed": true,
+    "vb_passed": true
   },
   {
     "config": "GaAs/Al30Ga70As 10.0nm",
@@ -34,8 +38,10 @@
     "cb1_kdotpy_meV": 775.2610221037182,
     "cb1_delta_meV": 1.6960221037182919,
     "vb1_fortran_meV": -807.501,
-    "vb1_kdotpy_meV": -807.7941207946483,
-    "vb1_delta_meV": 0.29312079464830276,
-    "passed": true
+    "vb1_kdotpy_meV": -807.7941207946355,
+    "vb1_delta_meV": 0.29312079463556984,
+    "passed": true,
+    "cb_passed": true,
+    "vb_passed": true
   }
 ]

@@ -4,9 +4,6 @@ Wraps kdotpy's Python API for programmatic eigenvalue computation.
 Uses kdotpy as a library (not CLI) for clean structured access.
 """
 
-import sys
-import os
-
 from kdotpy.config import initialize_config
 from kdotpy.physparams import PhysParams
 from kdotpy.vector import Vector

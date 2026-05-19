@@ -34,7 +34,7 @@
     },
     {
       "label": "dz=0.25nm",
-      "cb1_meV": 769.9579044897794,
+      "cb1_meV": 769.9579044897793,
       "zres_nm": 0.25
     },
     {
@@ -44,12 +44,12 @@
     },
     {
       "label": "dz=0.10nm",
-      "cb1_meV": 769.9709117560784,
+      "cb1_meV": 769.9709117560783,
       "zres_nm": 0.1
     }
   ],
   "fortran_richardson_cb1": 769.2778,
-  "kdotpy_richardson_cb1": 769.9775674939881,
-  "delta_meV": 0.6997674939881335,
+  "kdotpy_richardson_cb1": 769.9775674939877,
+  "delta_meV": 0.6997674939877925,
   "passed": true
 }

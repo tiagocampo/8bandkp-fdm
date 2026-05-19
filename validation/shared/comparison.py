@@ -6,7 +6,6 @@ handles unit conversion and band-index alignment.
 
 import json
 import os
-import sys
 
 import numpy as np
 
@@ -48,6 +47,14 @@ def compare_eigenvalues(fortran_eV, kdotpy_meV, tolerance_meV=TOL_EXACT):
     ours_meV = np.array(fortran_eV) * EV_TO_MEV
     theirs_meV = np.array(kdotpy_meV)
 
+    if len(ours_meV) == 0 and len(theirs_meV) == 0:
+        return {
+            "passed": False,
+            "max_delta_meV": 0.0,
+            "per_band": [],
+            "error": "No eigenvalues to compare (both arrays empty)",
+        }
+
     n = min(len(ours_meV), len(theirs_meV))
     n_ours = len(ours_meV)
     n_theirs = len(theirs_meV)
@@ -73,30 +80,6 @@ def compare_eigenvalues(fortran_eV, kdotpy_meV, tolerance_meV=TOL_EXACT):
         "max_delta_meV": max_delta,
         "per_band": per_band,
     }
-
-
-def format_report(comparison, material, test_name, tolerance_meV):
-    """Format a comparison result as a markdown table row.
-
-    Args:
-        comparison: result from compare_eigenvalues
-        material: material name
-        test_name: test identifier
-        tolerance_meV: tolerance used
-
-    Returns:
-        list of markdown table row strings
-    """
-    rows = []
-    status = "PASS" if comparison["passed"] else "FAIL"
-    for b in comparison["per_band"]:
-        rows.append(
-            f"| {material} | {test_name} band {b['band']} | "
-            f"{b['ours_meV']:.4f} | {b['kdotpy_meV']:.4f} | "
-            f"{b['delta_meV']:.6f} | {tolerance_meV} | "
-            f"{'PASS' if b['passed'] else 'FAIL'} |"
-        )
-    return rows
 
 
 def write_json_report(results, filepath):

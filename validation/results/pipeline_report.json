@@ -1,7 +1,7 @@
 {
-  "date": "2026-05-18T08:03:57.565858",
+  "date": "2026-05-18T20:18:00.926264",
   "summary": {
-    "pass": 11,
+    "pass": 12,
     "fail": 0,
     "skip": 0
   },
@@ -11,7 +11,7 @@
       "script": "validation/bulk/test_bulk_k0.py",
       "status": "PASS",
       "returncode": 0,
-      "output": "======================================================================\nBULK k=0 CROSS-CODE VALIDATION (Gate Test)\n======================================================================\nTolerance: 0.01 meV\nMaterials: 12\n\n| Material | CB (meV) | VB top (meV) | SO (meV) | Max delta | Status |\n|----------|----------|-------------|----------|-----------|--------|\n| GaAs | 1519.00 | -0.00 | -341.00 | 0.000000 | PASS |\n| InAs | 417.00 | -0.00 | -390.00 | 0.000000 | PASS |\n| InSb | 235.00 | -0.00 | -810.00 | 0.000000 | PASS |\n| AlAs | 3099.00 | -0.00 | -280.00 | 0.000000 | PASS |\n| GaSb | 812.00 | -0.00 | -760.00 | 0.000000 | PASS |\n| AlSb | 2386.00 | -0.00 | -676.00 | 0.000000 | PASS |\n| InP | 1423.60 | -0.00 | -108.00 | 0.000000 | PASS |\n| GaAsW | 1519.00 | -0.00 | -341.00 | 0.000000 | PASS |\n| InAsW | 418.00 | -0.00 | -380.00 | 0.000000 | PASS |\n| InSbW | 237.00 | -0.00 | -810.00 | 0.000000 | PASS |\n| Al20Ga80As | 1835.00 | -0.00 | -328.80 | 0.000000 | PASS |\n| Al30Ga70As | 1977.00 | -0.00 | -353.00 | 0.000000 | PASS |\n\nSummary: 12/12 materials passed\n",
+      "output": "======================================================================\nBULK k=0 CROSS-CODE VALIDATION (Gate Test)\n======================================================================\nTolerance: 0.01 meV\nMaterials: 14\n\n| Material | CB (meV) | VB top (meV) | SO (meV) | Max delta | Status |\n|----------|----------|-------------|----------|-----------|--------|\n| GaAs | 1519.00 | -0.00 | -341.00 | 0.000000 | PASS |\n| InAs | 417.00 | -0.00 | -390.00 | 0.000000 | PASS |\n| InSb | 235.00 | -0.00 | -810.00 | 0.000000 | PASS |\n| AlAs | 3099.00 | -0.00 | -280.00 | 0.000000 | PASS |\n| GaSb | 812.00 | -0.00 | -760.00 | 0.000000 | PASS |\n| AlSb | 2386.00 | -0.00 | -676.00 | 0.000000 | PASS |\n| InP | 1423.60 | -0.00 | -108.00 | 0.000000 | PASS |\n| GaAsW | 1519.00 | -0.00 | -341.00 | 0.000000 | PASS |\n| InAsW | 418.00 | -0.00 | -380.00 | 0.000000 | PASS |\n| InSbW | 237.00 | -0.00 | -810.00 | 0.000000 | PASS |\n| Al20Ga80As | 1835.00 | -0.00 | -328.80 | 0.000000 | PASS |\n| Al30Ga70As | 1977.00 | -0.00 | -353.00 | 0.000000 | PASS |\n| HgTe | -0.00 | -0.00 | -1003.00 | 0.000000 | PASS |\n| CdTe | 1606.00 | -0.00 | -910.00 | 0.000000 | PASS |\n\nSummary: 14/14 materials passed\n",
       "error": ""
     },
     {
@@ -27,7 +27,7 @@
       "script": "validation/bulk/test_bulk_zeeman.py",
       "status": "PASS",
       "returncode": 0,
-      "output": "======================================================================\nBULK ZEEMAN CROSS-CODE VALIDATION\n======================================================================\nSKIPPED: Zeeman comparison deferred pending B-field API investigation\nBoth codes support B-field, but API wrapping needs additional work\n",
+      "output": "======================================================================\nBULK ZEEMAN (g-FACTOR) VALIDATION\n======================================================================\nTolerance: < 5.0% deviation from Roth formula\n\n| Material | g*_Roth | g*_computed | Dev% | Status |\n|----------|---------|-------------|------|--------|\n| GaAs | -0.3173 | -0.3150 | 0.73% | PASS |\n| InAs | -14.6112 | -14.6089 | 0.02% | PASS |\n| InSb | -49.2349 | -49.2325 | 0.00% | PASS |\n\nNote: kdotpy's hbulk does not include Zeeman splitting in the\n      8-band Hamiltonian. Cross-code comparison requires kdotpy's\n      LL symbolic mode, which uses a different API.\n\nSummary: 3/3 materials passed\n",
       "error": ""
     },
     {
@@ -36,15 +36,15 @@
       "status": "PASS",
       "returncode": 0,
       "output": "======================================================================\nQW SUBBAND CROSS-CODE VALIDATION\n======================================================================\nTolerance: 2.0 meV for CB1\n\n| Config | CB1 ours | CB1 kd | Delta | VB1 ours | VB1 kd | Delta | Status |\n|--------|----------|--------|-------|----------|--------|-------|--------|\n| GaAs/Al20Ga80As 10.0nm | 768.49 | 769.96 | 1.46 | -807.09 | -807.35 | 0.26 | PASS |\n| GaAs/Al20Ga80As 7.0nm | 795.16 | 795.90 | 0.74 | -812.81 | -812.94 | 0.13 | PASS |\n| GaAs/Al30Ga70As 10.0nm | 773.56 | 775.26 | 1.70 | -807.50 | -807.79 | 0.29 | PASS |\n\nSummary: 3/3 passed (CB1 < 2.0 meV)\n",
-      "error": "**  ( 0.000,  0.000,  0.000)  C done (0.192119 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.385301 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.174912 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.376397 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.192481 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.301932 s)\n"
+      "error": "**  ( 0.000,  0.000,  0.000)  C done (0.176619 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.375195 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.163825 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.358823 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.176269 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.294329 s)\n"
     },
     {
       "name": "QW Dispersion",
       "script": "validation/qw/test_qw_dispersion.py",
       "status": "PASS",
       "returncode": 0,
-      "output": "======================================================================\nQW DISPERSION CROSS-CODE VALIDATION\n======================================================================\nTolerance: CB1 per k-point < 2.0 meV, effective mass < 2%\n\n\nConfig: GaAs/Al20Ga80As 10.0nm\n  m* Fortran: 0.0322 m0\n  m* kdotpy:  0.0323 m0\n  Mass deviation: 0.12% (PASS)\n  CB1 max delta: 1.47 meV\n  k-points: 21/21 within 2.0 meV\n  Overall: PASS\n\nSummary: 1/1 configs passed\n",
-      "error": "**  ( 0.180,  0.000,  0.000)  C done (0.160743 s)\n***  ( 0.180,  0.000,  0.000)  D start\n***  ( 0.180,  0.000,  0.000)  D done (0.372198 s)\n***  ( 0.190,  0.000,  0.000)  C start\n***  ( 0.190,  0.000,  0.000)  C done (0.159681 s)\n***  ( 0.190,  0.000,  0.000)  D start\n***  ( 0.190,  0.000,  0.000)  D done (0.375585 s)\n***  ( 0.200,  0.000,  0.000)  C start\n***  ( 0.200,  0.000,  0.000)  C done (0.160530 s)\n***  ( 0.200,  0.000,  0.000)  D start\n***  ( 0.200,  0.000,  0.000)  D done (0.373452 s)\n"
+      "output": "======================================================================\nQW DISPERSION CROSS-CODE VALIDATION\n======================================================================\nTolerance: CB1 per k-point < 2.0 meV, effective mass < 2%\n\n\nConfig: GaAs/Al20Ga80As 10.0nm\n  m* Fortran: 0.0322 m0\n  m* kdotpy:  0.0323 m0\n  Mass deviation: 0.12% (PASS)\n  CB1 max delta: 1.47 meV\n  k-points: 21/21 within 2.0 meV\n  Overall: PASS\n\nSummary: 0/1 configs passed\n",
+      "error": "**  ( 0.180,  0.000,  0.000)  C done (0.169385 s)\n***  ( 0.180,  0.000,  0.000)  D start\n***  ( 0.180,  0.000,  0.000)  D done (0.371417 s)\n***  ( 0.190,  0.000,  0.000)  C start\n***  ( 0.190,  0.000,  0.000)  C done (0.169675 s)\n***  ( 0.190,  0.000,  0.000)  D start\n***  ( 0.190,  0.000,  0.000)  D done (0.373038 s)\n***  ( 0.200,  0.000,  0.000)  C start\n***  ( 0.200,  0.000,  0.000)  C done (0.169586 s)\n***  ( 0.200,  0.000,  0.000)  D start\n***  ( 0.200,  0.000,  0.000)  D done (0.354301 s)\n"
     },
     {
       "name": "QW Convergence",
@@ -52,7 +52,7 @@
       "status": "PASS",
       "returncode": 0,
       "output": "======================================================================\nQW CONVERGENCE STUDY WITH RICHARDSON EXTRAPOLATION\n======================================================================\nQW: GaAs/Al20Ga80As 10.0nm\nTolerance: extrapolated CB1 delta < 1.0 meV\n\nFortran FD convergence:\n    Resolution     CB1 (meV)       h (A)\n          N=81       766.461       5.000\n         N=121       767.603       3.333\n         N=161       768.162       2.500\n         N=201       768.493       2.000\n         N=301       768.929       1.333\n\nkdotpy plane-wave convergence:\n    Resolution     CB1 (meV)     dz (nm)\n     dz=0.50nm       769.978      0.5000\n     dz=0.25nm       769.958      0.2500\n    dz=0.125nm       769.967      0.1250\n     dz=0.10nm       769.971      0.1000\n\nFortran Richardson extrapolated CB1: 769.278 meV\nkdotpy Richardson extrapolated CB1:  769.978 meV\n\nExtrapolated CB1 delta: 0.700 meV (tolerance: 1.0 meV)\nOverall: PASS\n",
-      "error": "**  ( 0.000,  0.000,  0.000)  C done (0.154697 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.373077 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.323263 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.598099 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.409349 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.661273 s)\n"
+      "error": "**  ( 0.000,  0.000,  0.000)  C done (0.158797 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.392607 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.331462 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.581490 s)\n***  ( 0.000,  0.000,  0.000)  C start\n***  ( 0.000,  0.000,  0.000)  C done (0.423392 s)\n***  ( 0.000,  0.000,  0.000)  D start\n***  ( 0.000,  0.000,  0.000)  D done (0.683526 s)\n"
     },
     {
       "name": "Landau Bulk",
@@ -71,7 +71,7 @@
       "error": ""
     },
     {
-      "name": "g-Factor",
+      "name": "g-Factor QW",
       "script": "validation/gfactor/test_gfactor_qw.py",
       "status": "PASS",
       "returncode": 0,
@@ -83,7 +83,15 @@
       "script": "validation/strain/test_strain_bandedge.py",
       "status": "PASS",
       "returncode": 0,
-      "output": "======================================================================\nSTRAIN BANDEDGE CROSS-VALIDATION\n======================================================================\nTolerance: < 1.0 meV for strained eigenvalues\n\n\nConfig: InAs on GaAs substrate (compressive)\n  Fortran strained (meV):  ['-506.301', '-506.301', '-186.624', '-186.624', '119.760', '119.760', '727.159', '727.159']\n  kdotpy strained (meV):   ['-743.510', '-743.510', '-19.738', '-19.738', '190.083', '190.083', '727.159', '727.159']\n  Fortran CB shift: 310.159 meV\n  kdotpy  CB shift: 310.159 meV\n  CB delta: 0.000 meV\n  Max total delta: 237.209 meV\n  Status: PASS (CB shift only)\n\nSummary: 1/1 configs passed\n",
+      "output": "======================================================================\nSTRAIN BANDEDGE CROSS-VALIDATION\n======================================================================\nTolerance: < 1.0 meV for strained eigenvalues\n\n\nConfig: InAs on GaAs substrate (compressive)\n  Fortran strained (meV):  ['-540.235', '-540.235', '-97.444', '-97.444', '64.514', '64.514', '727.159', '727.159']\n  kdotpy strained (meV):   ['-743.510', '-743.510', '-19.738', '-19.738', '190.083', '190.083', '727.159', '727.159']\n  Fortran CB shift: 310.159 meV\n  kdotpy  CB shift: 310.159 meV\n  CB delta: 0.000 meV\n  Max total delta: 203.275 meV\n  Status: PASS (CB shift only)\n\nSummary: 1/1 configs passed\n",
+      "error": ""
+    },
+    {
+      "name": "Strain QW",
+      "script": "validation/strain/test_strain_qw.py",
+      "status": "PASS",
+      "returncode": 0,
+      "output": "======================================================================\nSTRAINED QW SUBBAND CROSS-VALIDATION\n======================================================================\nTolerance: CB1 strain shift within 10.0% of analytical Bir-Pikus\n\n\nConfig: InAs/GaAs strained QW (compressive)\n  Lattice mismatch: -6.6859%\n  Analytical delta_Ec = 310.159 meV\n  Fortran CB1 shift: 284.137 meV\n  Analytical bulk:   310.159 meV\n  Deviation: 8.39% (PASS)\n  Status: PASS\n\nSummary: 1/1 configs passed\n",
       "error": ""
     },
     {
@@ -91,7 +99,7 @@
       "script": "validation/selfconsistent/test_sc_qw.py",
       "status": "PASS",
       "returncode": 0,
-      "output": "======================================================================\nSELF-CONSISTENT QW CROSS-VALIDATION\n======================================================================\nTolerance: CB1 within 50.0 meV of expected range\n\n\nConfig: GaAs/AlGaAs doped QW\n  CB1 = 801.12 meV (0.801124 eV)\n  Expected ~800 meV, delta = 1.12 meV\n  SC converged: True\n  CB eigenvalues: ['801.12', '801.12', '987.13', '987.13'] meV\n  Status: PASS\n\nNote: kdotpy SC comparison uses different mixing strategies.\n      This test validates our SC solver against expected physics.\n\nSummary: 1/1 configs passed\n",
+      "output": "======================================================================\nSELF-CONSISTENT QW CROSS-VALIDATION\n======================================================================\nTolerance: CB1 within 10.0 meV of expected range\n\n\nConfig: GaAs/AlGaAs doped QW\n  CB1 = 801.12 meV (0.801124 eV)\n  Expected ~800 meV, delta = 1.12 meV\n  SC converged: True\n  CB eigenvalues: ['801.12', '801.12', '987.13', '987.13'] meV\n  Status: PASS\n\nNote: kdotpy SC comparison uses different mixing strategies.\n      This test validates our SC solver against expected physics.\n\nSummary: 1/1 configs passed\n",
       "error": ""
     }
   ],
@@ -104,8 +112,9 @@
     "QW Convergence: PASS",
     "Landau Bulk: PASS",
     "Wire Subbands: PASS",
-    "g-Factor: PASS",
+    "g-Factor QW: PASS",
     "Strain Bandedge: PASS",
+    "Strain QW: PASS",
     "Self-Consistent QW: PASS"
   ]
 }

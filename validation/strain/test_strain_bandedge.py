@@ -13,7 +13,6 @@ Tolerance: < 1 meV for strained band edge eigenvalues.
 import os
 import sys
 import json
-import math
 import tempfile
 import shutil
 import subprocess
@@ -66,7 +65,10 @@ strainSubstrate: {substrate_a0}
             [exe], cwd=workdir, capture_output=True, text=True, timeout=60
         )
         if result.returncode != 0:
-            return None
+            raise RuntimeError(
+                f"bandStructure failed (rc={result.returncode}):\n"
+                f"stderr: {result.stderr[-500:]}"
+            )
 
         eig_path = os.path.join(workdir, "output", "eigenvalues.dat")
         if not os.path.exists(eig_path):
@@ -112,7 +114,10 @@ EFParams: 0.0
             [exe], cwd=workdir, capture_output=True, text=True, timeout=60
         )
         if result.returncode != 0:
-            return None
+            raise RuntimeError(
+                f"bandStructure failed (rc={result.returncode}):\n"
+                f"stderr: {result.stderr[-500:]}"
+            )
 
         eig_path = os.path.join(workdir, "output", "eigenvalues.dat")
         if not os.path.exists(eig_path):
@@ -175,11 +180,17 @@ def test_strain_bandedge():
         print(f"\nConfig: {name}")
 
         # Run our Fortran code
-        f_unstrained = run_fortran_unstrained(material, BUILD_DIR)
-        f_strained = run_fortran_strained(material, substrate_a0, BUILD_DIR)
+        try:
+            f_unstrained = run_fortran_unstrained(material, BUILD_DIR)
+            f_strained = run_fortran_strained(material, substrate_a0, BUILD_DIR)
+        except RuntimeError as e:
+            print(f"  FAIL: Fortran execution error: {e}")
+            all_pass = False
+            all_results.append({"config": name, "status": "FAIL"})
+            continue
 
         if f_unstrained is None or f_strained is None:
-            print(f"  SKIP: Fortran calculation failed")
+            print(f"  SKIP: Fortran produced no output")
             all_results.append({"config": name, "status": "SKIP"})
             continue
 
@@ -192,9 +203,10 @@ def test_strain_bandedge():
             kd_unstr_meV = run_kdotpy_unstrained(material)
             kd_str_meV = run_kdotpy_strained(material, substrate)
             kd_shifts = [s - u for s, u in zip(kd_str_meV, kd_unstr_meV)]
-        except Exception as e:
-            print(f"  SKIP: kdotpy calculation failed: {e}")
-            all_results.append({"config": name, "status": "SKIP"})
+        except (ImportError, RuntimeError, ValueError, OSError) as e:
+            print(f"  FAIL: kdotpy calculation error ({type(e).__name__}): {e}")
+            all_pass = False
+            all_results.append({"config": name, "status": "FAIL"})
             continue
 
         # Compare shifts

@@ -1,0 +1,9 @@
+[
+  {
+    "config": "InAs/GaAs strained QW (compressive)",
+    "f_cb1_shift_meV": 284.1368,
+    "analytical_cb1_shift_meV": 310.1594604411765,
+    "deviation_pct": 8.39009082752511,
+    "passed": true
+  }
+]

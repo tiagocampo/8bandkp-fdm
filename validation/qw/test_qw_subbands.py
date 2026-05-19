@@ -25,6 +25,7 @@ from validation.shared.fortran_runner import run_qw as fortran_run_qw
 BUILD_DIR = os.path.join(project_root, "build")
 ANG_TO_NM = 10.0
 TOL_QW_CB = 2.0  # meV
+TOL_QW_VB = 3.0  # meV (VB more sensitive to grid)
 
 QW_TESTS = [
     {"barrier": "Al20Ga80As", "well": "GaAs", "l_well_nm": 10.0,
@@ -69,6 +70,14 @@ def test_qw_subbands():
     print(f"Tolerance: {TOL_QW_CB} meV for CB1")
     print()
 
+    # Check kdotpy availability
+    try:
+        from kdotpy.config import initialize_config
+        initialize_config()
+    except ImportError:
+        print("SKIP: kdotpy not available (activate kdotpy_env first)")
+        return False
+
     print("| Config | CB1 ours | CB1 kd | Delta | VB1 ours | VB1 kd | Delta | Status |")
     print("|--------|----------|--------|-------|----------|--------|-------|--------|")
 
@@ -94,8 +103,8 @@ def test_qw_subbands():
             )
             f_evals = f_results[0][1]
             f_unique = get_unique_evals([e * 1000 for e in f_evals])
-        except Exception as e:
-            print(f"| {label} | ERROR | ERROR | - | ERROR | ERROR | - | ERROR |")
+        except (FileNotFoundError, RuntimeError, OSError) as e:
+            print(f"| {label} | ERROR ({type(e).__name__}: {e}) | ERROR | - | ERROR | ERROR | - | ERROR |")
             all_pass = False
             continue
 
@@ -108,8 +117,8 @@ def test_qw_subbands():
             )
             kd_evals = sorted(kd_results[0])
             kd_unique = get_unique_evals(kd_evals)
-        except Exception as e:
-            print(f"| {label} | {f_unique[-1]:.2f} | ERROR | - | "
+        except (ImportError, RuntimeError, ValueError, OSError) as e:
+            print(f"| {label} | {f_unique[-1]:.2f} | ERROR ({type(e).__name__}: {e}) | - | "
                   f"{f_unique[0] if f_unique else 'N/A'} | ERROR | - | ERROR |")
             all_pass = False
             continue
@@ -125,11 +134,14 @@ def test_qw_subbands():
         cb_delta = abs(f_cb[0] - kd_cb[0])
         vb_delta = abs(f_vb[0] - kd_vb[0]) if (f_vb and kd_vb) else 0.0
         cb_passed = cb_delta < TOL_QW_CB
+        vb_passed = vb_delta < TOL_QW_VB if (f_vb and kd_vb) else True
 
         if not cb_passed:
             all_pass = False
+        if not vb_passed:
+            all_pass = False
 
-        status = "PASS" if cb_passed else "FAIL"
+        status = "PASS" if (cb_passed and vb_passed) else "FAIL"
         print(f"| {label} | {f_cb[0]:.2f} | {kd_cb[0]:.2f} | "
               f"{cb_delta:.2f} | {f_vb[0]:.2f} | {kd_vb[0]:.2f} | "
               f"{vb_delta:.2f} | {status} |")
@@ -145,7 +157,9 @@ def test_qw_subbands():
             "vb1_fortran_meV": float(f_vb[0]) if f_vb else None,
             "vb1_kdotpy_meV": float(kd_vb[0]) if kd_vb else None,
             "vb1_delta_meV": float(vb_delta),
-            "passed": bool(cb_passed),
+            "passed": bool(cb_passed and vb_passed),
+            "cb_passed": bool(cb_passed),
+            "vb_passed": bool(vb_passed),
         })
 
     results_dir = os.path.join(os.path.dirname(__file__), "results")

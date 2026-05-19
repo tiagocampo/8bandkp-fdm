@@ -10,7 +10,6 @@ Tolerance: 0.01 meV (parameter mapping should be exact at k=0).
 import os
 import sys
 import json
-import tempfile
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,7 +18,7 @@ sys.path.insert(0, project_root)
 from validation.shared.param_mapper import map_material, list_materials
 from validation.shared.kdotpy_runner import run_bulk_single
 from validation.shared.fortran_runner import run_bulk
-from validation.shared.comparison import compare_eigenvalues, TOL_EXACT, write_json_report, print_summary
+from validation.shared.comparison import compare_eigenvalues, TOL_EXACT, write_json_report
 
 BUILD_DIR = os.path.join(project_root, "build")
 
@@ -28,6 +27,7 @@ BULK_MATERIALS = [
     "GaAs", "InAs", "InSb", "AlAs", "GaSb", "AlSb", "InP",
     "GaAsW", "InAsW", "InSbW",
     "Al20Ga80As", "Al30Ga70As",
+    "HgTe", "CdTe",
 ]
 
 
@@ -42,6 +42,14 @@ def test_all_bulk_k0():
     print(f"Tolerance: {TOL_EXACT} meV")
     print(f"Materials: {len(BULK_MATERIALS)}")
     print()
+
+    # Check kdotpy availability
+    try:
+        from kdotpy.config import initialize_config
+        initialize_config()
+    except ImportError:
+        print("SKIP: kdotpy not available (activate kdotpy_env first)")
+        return False
 
     print("| Material | CB (meV) | VB top (meV) | SO (meV) | Max delta | Status |")
     print("|----------|----------|-------------|----------|-----------|--------|")
@@ -79,12 +87,14 @@ def test_all_bulk_k0():
             results.append({
                 "material": mat_name,
                 "test": "bulk_k0",
+                "passed": comp["passed"],
+                "max_delta_meV": comp["max_delta_meV"],
                 "comparison": comp,
             })
 
-        except Exception as e:
+        except (ImportError, FileNotFoundError, RuntimeError, ValueError, OSError) as e:
             print(f"| {mat_name} | ERROR | ERROR | ERROR | ERROR | ERROR |")
-            print(f"  -> {e}")
+            print(f"  -> {type(e).__name__}: {e}")
             failures.append(mat_name)
 
     # Save results

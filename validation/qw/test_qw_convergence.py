@@ -78,7 +78,10 @@ def richardson_extrapolate(h_vals, E_vals, order=2):
     h1, h2 = h[-1], h[-2]
     E1, E2 = E[-1], E[-2]
     p = order
-    E_ext = E1 + (E1 - E2) / ((h2 / h1)**p - 1)
+    ratio = (h2 / h1)**p - 1
+    if abs(ratio) < 1e-12:
+        return E1
+    E_ext = E1 + (E1 - E2) / ratio
     return E_ext
 
 
@@ -99,6 +102,14 @@ def test_qw_convergence():
     print(f"Tolerance: extrapolated CB1 delta < {TOL_RICHARDSON_MEV} meV")
     print()
 
+    # Check kdotpy availability
+    try:
+        from kdotpy.config import initialize_config
+        initialize_config()
+    except ImportError:
+        print("SKIP: kdotpy not available (activate kdotpy_env first)")
+        return False
+
     # --- Fortran convergence ---
     print("Fortran FD convergence:")
     print(f"  {'Resolution':>12s}  {'CB1 (meV)':>12s}  {'h (A)':>10s}")
@@ -117,16 +128,20 @@ def test_qw_convergence():
             if cb1 is not None:
                 f_sweep.append({"label": res["label"], "cb1_meV": cb1, "h_ang": h_ang})
                 print(f"  {res['label']:>12s}  {cb1:>12.3f}  {h_ang:>10.3f}")
-        except Exception as e:
-            print(f"  {res['label']:>12s}  ERROR: {e}")
+        except (FileNotFoundError, RuntimeError, OSError) as e:
+            print(f"  {res['label']:>12s}  ERROR ({type(e).__name__}): {e}")
 
     # --- kdotpy convergence ---
     print("\nkdotpy plane-wave convergence:")
     print(f"  {'Resolution':>12s}  {'CB1 (meV)':>12s}  {'dz (nm)':>10s}")
     kd_sweep = []
 
-    barrier_mat = map_material(barrier, qw_mode=True)
-    well_mat = map_material(well, qw_mode=True)
+    try:
+        barrier_mat = map_material(barrier, qw_mode=True)
+        well_mat = map_material(well, qw_mode=True)
+    except (ImportError, KeyError) as e:
+        print(f"  ERROR: material mapping failed ({type(e).__name__}): {e}")
+        return False
 
     for res in KDOTPY_RESOLUTIONS:
         zres = res["zres"]
@@ -141,8 +156,8 @@ def test_qw_convergence():
             if cb:
                 kd_sweep.append({"label": res["label"], "cb1_meV": cb[0], "zres_nm": zres})
                 print(f"  {res['label']:>12s}  {cb[0]:>12.3f}  {zres:>10.4f}")
-        except Exception as e:
-            print(f"  {res['label']:>12s}  ERROR: {e}")
+        except (ImportError, RuntimeError, ValueError, OSError) as e:
+            print(f"  {res['label']:>12s}  ERROR ({type(e).__name__}): {e}")
 
     # --- Richardson extrapolation ---
     f_extrap = None

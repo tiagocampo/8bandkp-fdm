@@ -40,13 +40,14 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all tests (~82: 30 unit + 39 regression + 11 verification + 2 coverage)
+ctest --test-dir build                    # all tests (~91: 31 unit + 44 regression + 13 verification + 2 other)
 ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
 ctest --test-dir build -L verification    # 8-band verification ladder (4 rungs)
 ctest --test-dir build -L standard-star   # standard-star physics benchmarks (S1-S7)
 ctest --test-dir build -L strain-validation  # strain validation (bulk/QW/wire InAs/GaAs)
+ctest --test-dir build -L coverage        # validation coverage matrix
 ctest --test-dir build -V                 # verbose output
 
 # With OpenMP threading for QW k-point sweeps:
@@ -81,7 +82,7 @@ OMP_NUM_THREADS=12 ctest --test-dir build --output-on-failure
 
 Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed examples in the canonical order documented in `docs/reference/input-reference.md`; optional block entry labels are name-aware (`optics:`, `exciton:`, `scattering:`, `feast_emin:`, `strain:`), but parameters inside each block still follow the documented sequence.
 
-**Lecture-test pair scripts:** 14 Python scripts in `scripts/` (`lecture_00_quickstart.py` through `lecture_13_topological.py`) serve dual roles as pedagogical companions and integration tests. Each runs a Fortran executable, validates physics results, generates overlay plots, and prints PASS/FAIL per section. Run individually: `python3 scripts/lecture_01_bulk.py`. Shared infrastructure: `tests/integration/star_helpers.py` (physical constants, `run_exe`, parse helpers).
+**Lecture-test pair scripts:** 15 Python scripts in `scripts/` (`lecture_00_quickstart.py` through `lecture_14_excitons_scattering.py`) serve dual roles as pedagogical companions and integration tests. Each runs a Fortran executable, validates physics results, generates overlay plots, and prints PASS/FAIL per section. Run individually: `python3 scripts/lecture_01_bulk.py`. Shared infrastructure: `tests/integration/star_helpers.py` (physical constants, `run_exe`, parse helpers).
 
 **Validation Coverage Matrix:** The `coverage` ctest label runs a cross-reference between declared physics observables and test annotations. Run with `ctest --test-dir build -L coverage`. The universe file `tests/integration/validation_universe.yml` declares cells with `(observable, geometry, material, tier)`. Test files carry annotations in the format:
 
@@ -91,6 +92,20 @@ Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed e
 ```
 
 Convention: new tests should include `# COVERAGE:` annotations so the matrix can track physics coverage. Shell scripts delegating to `verify_*.py` scripts should place annotations in the verifier, not the wrapper. Test dependency: PyYAML (`pip install pyyaml`) is required for the coverage matrix tool.
+
+## Cross-Code Validation
+
+```bash
+# Run all 12 cross-code validation tests (compares against kdotpy)
+source validation/kdotpy_env/bin/activate
+python3 validation/run_all.py
+
+# Run individual tests
+python3 validation/bulk/test_bulk_k0.py
+python3 validation/strain/test_strain_bandedge.py
+```
+
+The `validation/` directory contains 12 cross-code validation tests comparing our Fortran solver against kdotpy (Python, plane-wave discretization). Tests cover: bulk k=0 gate, bulk dispersion, bulk Zeeman, QW subbands, QW dispersion, QW convergence, Landau bulk, wire subbands, g-factor QW, strain bandedge, strain QW, and self-consistent QW. Results saved to `validation/*/results/`. Shared infrastructure: `validation/shared/` (parameter mapper, Fortran/kdotpy runners, comparison utilities). Parameter mapping between Fortran and kdotpy conventions in `validation/shared/param_mapper.py`.
 
 ## Architecture
 
@@ -104,10 +119,11 @@ src/
   physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90, magnetic_field.f90, topological_analysis.f90, bdg_hamiltonian.f90, green_functions.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90
 tests/
-  unit/       pFUnit .pf test files (30 tests covering defs, FD, utils, parameters, Hamiltonian, CSR, eigensolver, Poisson, charge density, SC loop, geometry, optical, topology, magnetic field, BdG, Landau, Z2)
+  unit/       pFUnit .pf test files (31 tests: defs, FD, utils, parameters, Hamiltonian, CSR, eigensolver, Poisson, charge density, SC loop, geometry, optical, topology, magnetic field, BdG, Landau, Z2, strain_solver, green_functions)
   support/    shared test-support library (CSR helpers, Krylov infrastructure, reference data)
   integration/  shell scripts + Python verification scripts for full-executable tests
   regression/   configs/, data/, compare_output.py
+validation/   cross-code validation pipeline (12 tests comparing against kdotpy)
 cmake/        FindFFTW3.cmake
 build/        .o, .mod, executables (created by cmake)
 scripts/      lecture_*.py executable lecture-companion scripts (L00-L13) + generate_all_figures.py
@@ -210,7 +226,7 @@ Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzi
 
 ## Git Workflow
 
-- **Branch naming:** `feature/<description>`, `fix/<description>`
+- **Branch naming:** `feature/<description>`, `feat/<description>`, `fix/<description>`
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`)
 - **PRs:** All tests must pass before merge. Use `gh pr create` from feature branches.
 
@@ -226,7 +242,7 @@ Always check for and follow applicable superpowers skills when working. In parti
 
 - **NEVER** modify material parameters in `parameters.f90` without verifying against published references (Vurgaftman 2001, Winkler 2003)
 - **NEVER** change the basis ordering (bands 1-4 valence, 5-6 split-off, 7-8 conduction) — it is hardcoded throughout
-- **NEVER** change the Bir-Pikus sign convention: VB diagonal shifts all contain `-P_eps` (which equals `av * Tr(eps)` due to the sign flip in the helper), so delta_EHH = -P_eps + Q_eps, delta_ELH = -P_eps - Q_eps, delta_ESO = -P_eps. The helper `P_eps = -av * Tr(eps)` introduces a sign flip — every consumer must negate it. Single source of truth: `compute_bp_scalar` in `strain_solver.f90`.
+- **NEVER** change the Bir-Pikus sign convention: `Q_eps = -(b_dp/2) * (eps_zz - 0.5*(eps_yy + eps_xx))` with the minus sign on b_dp matching the standard Chuang/Winkler convention. VB diagonal shifts are `delta_EHH = -P_eps + Q_eps`, `delta_ELH = -P_eps - Q_eps`, `delta_ESO = -P_eps` where `P_eps = -av * Tr(eps)`. Under compressive strain (Tr < 0, b < 0), HH shifts up and LH shifts down. Single source of truth: `compute_bp_scalar` in `strain_solver.f90`.
 - **NEVER** commit `input.cfg` with personal test configs — use `tests/regression/configs/` for test configs
 - **Require approval** for: changes to `defs.f90` derived types, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`, Poisson solver in `poisson.f90`, SC loop convergence logic in `sc_loop.f90`
 

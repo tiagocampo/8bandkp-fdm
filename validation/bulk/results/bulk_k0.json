@@ -2,6 +2,8 @@
   {
     "material": "GaAs",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -68,6 +70,8 @@
   {
     "material": "InAs",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -134,6 +138,8 @@
   {
     "material": "InSb",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -200,6 +206,8 @@
   {
     "material": "AlAs",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -266,6 +274,8 @@
   {
     "material": "GaSb",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -332,6 +342,8 @@
   {
     "material": "AlSb",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -398,6 +410,8 @@
   {
     "material": "InP",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -464,6 +478,8 @@
   {
     "material": "GaAsW",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -530,6 +546,8 @@
   {
     "material": "InAsW",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -596,6 +614,8 @@
   {
     "material": "InSbW",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -662,6 +682,8 @@
   {
     "material": "Al20Ga80As",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -728,6 +750,8 @@
   {
     "material": "Al30Ga70As",
     "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
     "comparison": {
       "passed": true,
       "max_delta_meV": 0.0,
@@ -785,6 +809,142 @@
           "band": 7,
           "ours_meV": 1977.0,
           "kdotpy_meV": 1977.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "HgTe",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -1002.9999999999999,
+          "kdotpy_meV": -1002.9999999999999,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -1002.9999999999999,
+          "kdotpy_meV": -1002.9999999999999,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -303.0,
+          "kdotpy_meV": -303.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -303.0,
+          "kdotpy_meV": -303.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        }
+      ]
+    }
+  },
+  {
+    "material": "CdTe",
+    "test": "bulk_k0",
+    "passed": true,
+    "max_delta_meV": 0.0,
+    "comparison": {
+      "passed": true,
+      "max_delta_meV": 0.0,
+      "per_band": [
+        {
+          "band": 0,
+          "ours_meV": -910.0,
+          "kdotpy_meV": -910.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 1,
+          "ours_meV": -910.0,
+          "kdotpy_meV": -910.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 2,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 3,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 4,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 5,
+          "ours_meV": -0.0,
+          "kdotpy_meV": 0.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 6,
+          "ours_meV": 1606.0,
+          "kdotpy_meV": 1606.0,
+          "delta_meV": 0.0,
+          "passed": true
+        },
+        {
+          "band": 7,
+          "ours_meV": 1606.0,
+          "kdotpy_meV": 1606.0,
           "delta_meV": 0.0,
           "passed": true
         }
