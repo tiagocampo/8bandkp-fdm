@@ -1,7 +1,7 @@
 ---
 title: kdotpy Cross-Code Validation Pipeline
 type: feat
-status: active
+status: completed
 date: 2026-05-17
 origin: docs/brainstorms/kdotpy-cross-validation-requirements.md
 ---
