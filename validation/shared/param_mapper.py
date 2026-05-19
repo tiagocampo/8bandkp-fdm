@@ -166,8 +166,34 @@ FORTRAN_MATERIALS = {
         "ac": -5.64*0.47 + (-5.08)*0.53, "av": 2.47*0.47 + 1.00*0.53,
         "b_dp": -2.3*0.47 + (-1.8)*0.53, "d_dp": -3.4*0.47 + (-3.6)*0.53,
     },
-    # II-VI materials (Pfeuffer-Jeschke PhD thesis, 2000; Novik et al., PRB 72, 2005)
-    # HgTe: deltaSO=1.003 eV from Pfeuffer-Jeschke; C11/C12/C44 from Landolt-Bornstein
+    # II-VI materials
+    #
+    # Source: Pfeuffer-Jeschke PhD thesis (U. Wuerzburg, 2000); Novik et al., PRB 72, 035321 (2005);
+    #         Becker et al., PRB 62, 10353 (2000).
+    # All parameters match src/core/parameters.f90 exactly.
+    #
+    # kdotpy has NO built-in HgTe or CdTe (its MaterialsList.materials dict is empty).
+    # This param_mapper supplies ALL parameters to both codes, so there is no cross-code
+    # discrepancy for these materials.
+    #
+    # deltaSO notes:
+    #   HgTe deltaSO = 1.003 eV (Pfeuffer-Jeschke). Novik 2005 Table I lists 1.08 eV as
+    #   the bare (unrenormalized) value; our 1.003 is the standard 8-band k.p value used
+    #   in the Pfeuffer-Jeschke/Novik HgTe/CdTe parameter set. Both codes receive the same
+    #   value from this mapper, so validation is self-consistent.
+    #   CdTe deltaSO = 0.91 eV (Pfeuffer-Jeschke), consistent across all references.
+    #
+    # Gamma convention:
+    #   gamma1/gamma2/gamma3 are bare (unmodified) Luttinger parameters. kdotpy's
+    #   blocks.py uses bare gammas directly (e.g., w0p = Ev + hbarm0 * kz2 * (2*gamma2 - gamma1)),
+    #   matching our Fortran convention. No Foreman renormalization conversion is needed.
+    #
+    # Elastic constants:
+    #   HgTe and CdTe share C11=532, C12=368, C44=201 (kbar) per Pfeuffer-Jeschke.
+    #   Landolt-Bornstein experimental values: CdTe C11=538, C12=374, C44=202 kbar;
+    #   HgTe C11=532, C12=368, C44=201 kbar. The shared values are within ~1% of
+    #   experimental data and are the standard choice for the HgTe/CdTe 8-band k.p set.
+    #
     "HgTe": {
         "meff": 1.0, "EP": 18.8, "Eg": -0.303, "deltaSO": 1.003,
         "gamma1": 4.1, "gamma2": 0.5, "gamma3": 1.3,
@@ -175,7 +201,6 @@ FORTRAN_MATERIALS = {
         "C11": 532.0, "C12": 368.0, "C44": 201.0, "a0": 6.461,
         "ac": -0.48, "av": -0.35, "b_dp": 0.44, "d_dp": -1.7,
     },
-    # CdTe: deltaSO=0.91 eV from Pfeuffer-Jeschke; C11/C12/C44 from Landolt-Bornstein
     "CdTe": {
         "meff": 1.2195, "EP": 18.8, "Eg": 1.606, "deltaSO": 0.91,
         "gamma1": 5.0, "gamma2": 1.3, "gamma3": 2.1,
