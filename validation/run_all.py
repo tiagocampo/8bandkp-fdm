@@ -53,9 +53,13 @@ def run_test(name, script):
             capture_output=True, text=True, timeout=timeout,
             cwd=project_root,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
+        partial = ""
+        if hasattr(e, 'stdout') and e.stdout:
+            lines = e.stdout.decode('utf-8', errors='replace').split('\n')
+            partial = '\n'.join(lines[-10:])
         return {"name": name, "script": script, "status": "TIMEOUT",
-                "output": f"Exceeded {timeout}s timeout", "error": ""}
+                "output": f"Exceeded {timeout}s timeout\n{partial}", "error": ""}
     except OSError as e:
         return {"name": name, "script": script, "status": "ERROR",
                 "output": str(e), "error": ""}
@@ -65,8 +69,8 @@ def run_test(name, script):
         "script": script,
         "status": "PASS" if result.returncode == 0 else "FAIL",
         "returncode": result.returncode,
-        "output": result.stdout[-2000:] if result.stdout else "",
-        "error": result.stderr[-500:] if result.stderr else "",
+        "output": '\n'.join(result.stdout.split('\n')[-50:]) if result.stdout else "",
+        "error": '\n'.join(result.stderr.split('\n')[-20:]) if result.stderr else "",
     }
 
 
@@ -110,6 +114,10 @@ def main():
     print("=" * 70)
     print(f"SUMMARY: {n_pass} passed, {n_fail} failed, {n_skip} skipped")
     print("=" * 70)
+
+    if n_pass == 0 and n_skip > 0:
+        print("\nWARNING: No tests passed. All tests were skipped.")
+        print("  Check: source validation/kdotpy_env/bin/activate")
 
     print()
     if all(r["status"] == "PASS" for r in all_results):
