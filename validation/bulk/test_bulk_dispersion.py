@@ -176,7 +176,7 @@ def test_bulk_dispersion():
                 "r2_kdotpy": float(r2_kdotpy),
                 "parabolic": bool(parabolic),
                 "passed": status == "PASS",
-                "note": "Convention difference: our bulk diagonal lacks const",
+                "note": "const = hbar^2/(2m_0) applied in both codes",
             })
 
     results_dir = os.path.join(os.path.dirname(__file__), "results")

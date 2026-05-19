@@ -29,7 +29,7 @@
   "kdotpy_resolution_sweep": [
     {
       "label": "dz=0.50nm",
-      "cb1_meV": 769.9822849256708,
+      "cb1_meV": 769.9822849256709,
       "zres_nm": 0.5
     },
     {
@@ -44,12 +44,12 @@
     },
     {
       "label": "dz=0.10nm",
-      "cb1_meV": 769.9756040537175,
+      "cb1_meV": 769.9756040537176,
       "zres_nm": 0.1
     }
   ],
   "fortran_richardson_cb1": 769.2778,
-  "kdotpy_richardson_cb1": 769.9822609461465,
-  "delta_meV": 0.7044609461465825,
+  "kdotpy_richardson_cb1": 769.9822609461469,
+  "delta_meV": 0.7044609461469236,
   "passed": true
 }

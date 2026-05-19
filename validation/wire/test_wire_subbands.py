@@ -1,15 +1,12 @@
-"""Wire subband cross-validation.
+"""Wire subband validation.
 
-Compares wire subband eigenvalues from our Fortran code against kdotpy's 1D mode.
+Runs our Fortran wire code at kz=0 and verifies subband energies are physically
+reasonable (confinement opens a gap larger than bulk).
 
-kdotpy's wire mode uses the hzy() function which constructs an 8x8 block
-Hamiltonian from a 2D cross-section (z+y grid). Full integration requires
-assembling sparse block matrices and calling scipy eigensolvers.
+Note: kdotpy wire comparison requires low-level hzy() integration and is deferred
+to follow-up work. This test validates single-code consistency only.
 
-This test runs our Fortran wire code at kz=0 and verifies subband energies
-are physically reasonable. kdotpy cross-comparison is documented for future work.
-
-Tolerance: < 5 meV for CB1 subband energy.
+Tolerance: wire gap >= 0.8 * bulk gap (physical lower bound).
 """
 import os
 import sys

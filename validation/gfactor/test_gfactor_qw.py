@@ -1,15 +1,15 @@
-"""QW g-factor cross-validation.
+"""Bulk g-factor validation.
 
 Compares our Fortran g-factor calculation (Lowdin partitioning) against
-analytical reference values.
+analytical reference values (Roth formula).
 
 Our code uses gfactorCalculation executable which computes g_x, g_y, g_z
 via 2nd-order Lowdin partitioning. For GaAs CB at k=0, the Roth formula
 gives g* ≈ 2 - (2EP/3)(1/Eg - 1/(Eg+Δ_SO)).
 
-kdotpy's g-factor requires its LL mode (symbolic Hamiltonian) which is
-not accessible via the simple API. This test validates against analytical
-references and notes kdotpy comparison as future work.
+Note: kdotpy's g-factor requires its LL mode (symbolic Hamiltonian) which is
+not accessible via the simple API. QW g-factor comparison is deferred to
+follow-up work. This test validates bulk g-factors against analytical references.
 
 Tolerance: < 10% for g-factor values.
 """

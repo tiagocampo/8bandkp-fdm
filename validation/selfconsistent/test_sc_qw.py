@@ -1,17 +1,12 @@
-"""Self-consistent QW cross-validation.
+"""Self-consistent QW validation.
 
-Compares our self-consistent Schrodinger-Poisson solver against kdotpy's SC loop
-for a doped GaAs/AlGaAs QW.
+Runs our self-consistent Schrodinger-Poisson solver for a doped GaAs/AlGaAs QW
+and verifies convergence behavior and subband energies against expected values.
 
-Our code uses the SC loop with DIIS mixing. kdotpy uses dynamic time stepping.
-Both converge to the same physical solution but may differ in convergence path.
+Note: kdotpy cross-code comparison is deferred to follow-up work due to
+different SC mixing strategies (DIIS vs dynamic time stepping).
 
-This test runs our SC code and verifies:
-1. The SC loop converges (SC residual decreases)
-2. The CB1 subband energy is physically reasonable
-3. The charge density integrates to the expected doping level
-
-Tolerance: < 50 meV for CB1 subband energy (SC convergence varies).
+Tolerance: < 10 meV for CB1 subband energy.
 """
 import os
 import sys
@@ -71,7 +66,7 @@ def run_fortran_sc(config_name, build_dir, project_root):
                 rows.append([float(x) for x in line.split()])
 
         # Check SC convergence from stdout
-        converged = "SC loop converged" in result.stdout or "converged" in result.stdout.lower()
+        converged = "SC loop converged" in result.stdout
 
         return {"eigenvalues": rows, "converged": converged, "stdout": result.stdout}
     finally:

@@ -12,7 +12,7 @@ Key mappings:
   delta_so = deltaSO * 1000    (meV)
   strain_C1 = ac * 1000        (meV)
   strain_Dd = av * 1000        (meV)
-  strain_Du = -1.5 * b_dp * 1000  (meV, convention)
+  strain_Du = -0.75 * b_dp * 1000  (meV, convention: bs = b_dp/2, Du = -(3/2)*bs)
   strain_Duprime = -0.5 * sqrt(3) * d_dp * 1000  (meV, convention)
   a = a0 / 10                  (nm)
 """

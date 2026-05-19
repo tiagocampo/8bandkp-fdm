@@ -1,14 +1,13 @@
-"""Bulk Landau level cross-validation.
+"""Bulk Landau level validation.
 
-Compares our Fortran Landau level eigenvalues against analytical formulas
-and (where feasible) kdotpy's bulk-ll mode.
+Compares our Fortran Landau level eigenvalues against analytical formulas.
 
 Our code uses confinement=3 (Landau gauge discretization) with landau_nx
 and landau_width parameters. Analytical reference: E_n = E_C + hbar*omega_c*(n+1/2).
 
-kdotpy's bulk-ll mode requires SymbolicHamiltonian setup that differs
-fundamentally from our FD approach. This test verifies against analytical
-formulas as the primary reference, with kdotpy comparison noted as future work.
+Note: kdotpy's bulk-ll mode requires SymbolicHamiltonian setup that differs
+fundamentally from our FD approach. This test validates against analytical
+formulas; kdotpy LL comparison is deferred to follow-up work.
 
 Tolerance: < 5% for CB ground state LL energy.
 """

@@ -9,7 +9,7 @@
     "r2_kdotpy": 0.9999577908352286,
     "parabolic": true,
     "passed": true,
-    "note": "Convention difference: our bulk diagonal lacks const"
+    "note": "const = hbar^2/(2m_0) applied in both codes"
   },
   {
     "material": "GaAs",
@@ -21,7 +21,7 @@
     "r2_kdotpy": 0.9999577908352288,
     "parabolic": true,
     "passed": true,
-    "note": "Convention difference: our bulk diagonal lacks const"
+    "note": "const = hbar^2/(2m_0) applied in both codes"
   },
   {
     "material": "GaAs",
@@ -33,7 +33,7 @@
     "r2_kdotpy": 0.999959889942266,
     "parabolic": true,
     "passed": true,
-    "note": "Convention difference: our bulk diagonal lacks const"
+    "note": "const = hbar^2/(2m_0) applied in both codes"
   },
   {
     "material": "InAs",
@@ -45,7 +45,7 @@
     "r2_kdotpy": 0.9993053728091814,
     "parabolic": true,
     "passed": true,
-    "note": "Convention difference: our bulk diagonal lacks const"
+    "note": "const = hbar^2/(2m_0) applied in both codes"
   },
   {
     "material": "InSb",
@@ -57,6 +57,6 @@
     "r2_kdotpy": 0.9990520870846896,
     "parabolic": true,
     "passed": true,
-    "note": "Convention difference: our bulk diagonal lacks const"
+    "note": "const = hbar^2/(2m_0) applied in both codes"
   }
 ]

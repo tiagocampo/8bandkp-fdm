@@ -58,7 +58,8 @@ def compare_eigenvalues(fortran_eV, kdotpy_meV, tolerance_meV=TOL_EXACT):
     n = min(len(ours_meV), len(theirs_meV))
     n_ours = len(ours_meV)
     n_theirs = len(theirs_meV)
-    if n_ours != n_theirs:
+    count_mismatch = n_ours != n_theirs
+    if count_mismatch:
         print(f"  Warning: eigenvalue count mismatch (ours={n_ours}, kdotpy={n_theirs}), "
               f"comparing first {n} bands")
     per_band = []
@@ -73,7 +74,7 @@ def compare_eigenvalues(fortran_eV, kdotpy_meV, tolerance_meV=TOL_EXACT):
         })
 
     max_delta = max(b["delta_meV"] for b in per_band) if per_band else 0.0
-    passed = all(b["passed"] for b in per_band)
+    passed = all(b["passed"] for b in per_band) and not count_mismatch
 
     return {
         "passed": passed,
