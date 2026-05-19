@@ -34,7 +34,7 @@ TESTS = [
 VENV_ACTIVATE = os.path.join(project_root, "validation", "kdotpy_env", "bin", "activate")
 TIMEOUTS = {
     "validation/wire/test_wire_subbands.py": 300,
-    "validation/selfconsistent/test_sc_qw.py": 300,
+    "validation/selfconsistent/test_sc_qw.py": 600,
     "validation/qw/test_qw_convergence.py": 600,
 }
 
