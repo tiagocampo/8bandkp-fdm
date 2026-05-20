@@ -21,8 +21,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 from star_helpers import run_exe, parse_eigenvalues, parse_gfactor
 from convergence_helpers import (
-    richardson_extrapolate, compute_gci, max_convergence_rate,
-    check_monotonic, make_convergence_report, write_convergence_json,
+    make_convergence_report, write_convergence_json,
 )
 
 

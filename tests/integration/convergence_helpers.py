@@ -90,9 +90,9 @@ def richardson_extrapolate_3grid(h_vals, obs_vals, order=2):
     r2 = richardson_extrapolate(h[1:3], E[1:3], order)
 
     # Second Richardson: eliminate O(h^{2p})
-    # After first round, effective spacings are ~h^2, so ratio is (h[1]/h[0])^2
-    hr = (h[1] / h[0]) ** 2 / (h[2] / h[1]) ** 2
-    denom = hr ** order - 1.0
+    # After first round, effective spacing ratio is (h[1]/h[0])^{2p}
+    hr = (h[1] / h[0]) ** (2 * order)
+    denom = hr - 1.0
     if abs(denom) < 1e-12:
         return r1
     return r1 + (r1 - r2) / denom
@@ -343,6 +343,11 @@ def make_convergence_report(system, observable, h_vals, obs_vals, order=2,
     """
     h = np.asarray(h_vals, dtype=float)
     E = np.asarray(obs_vals, dtype=float)
+
+    # Sort by h ascending so all analysis and output use consistent order
+    idx = np.argsort(h)
+    h = h[idx]
+    E = E[idx]
 
     report = {
         'system': system,
