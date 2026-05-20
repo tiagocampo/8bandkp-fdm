@@ -20,8 +20,6 @@ import os
 import sys
 import tempfile
 
-import numpy as np
-
 sys.path.insert(0, os.path.dirname(__file__))
 from star_helpers import run_exe, parse_eigenvalues, parse_gfactor, parse_absorption
 from convergence_helpers import (
@@ -171,15 +169,20 @@ def extract_cb1_energy(output_dir, numvb=8):
 
 
 def extract_cb2_energy(output_dir, numvb=8):
-    """Extract CB2 energy at k=0 from eigenvalues.dat."""
+    """Extract CB2 energy at k=0 from eigenvalues.dat.
+
+    At k=0, eigenvalues are doubly degenerate (time-reversal symmetry).
+    CB1 = evals[numvb], its degenerate partner = evals[numvb+1],
+    so the real CB2 is at evals[numvb+2].
+    """
     eig_path = os.path.join(output_dir, "eigenvalues.dat")
     data = parse_eigenvalues(eig_path)
     if not data:
         return None
     _, evals = data[0]
-    if len(evals) <= numvb + 1:
+    if len(evals) <= numvb + 2:
         return None
-    return evals[numvb + 1]
+    return evals[numvb + 2]
 
 
 def extract_gz(output_dir):

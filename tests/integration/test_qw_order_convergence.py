@@ -10,7 +10,6 @@ Usage:
     python3 test_qw_order_convergence.py <build_dir> <source_dir>
 """
 
-import json
 import os
 import sys
 import tempfile

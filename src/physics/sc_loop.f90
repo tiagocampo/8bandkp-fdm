@@ -313,7 +313,7 @@ contains
     ! --- Copy SC diagnostics to optional outputs ---
     if (present(fermi_level_out)) fermi_level_out = fermi_level
     if (present(converged_out)) converged_out = sc_converged
-    if (present(iterations_out)) iterations_out = iter
+    if (present(iterations_out)) iterations_out = min(iter, niter)
     if (present(delta_phi_out)) delta_phi_out = delta_phi
 
     ! --- Cleanup ---

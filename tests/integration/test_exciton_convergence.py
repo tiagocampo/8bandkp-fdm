@@ -13,13 +13,9 @@ Usage:
     python3 test_exciton_convergence.py <build_dir> <source_dir>
 """
 
-import json
 import os
-import re
 import sys
 import tempfile
-
-import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 from star_helpers import run_exe
@@ -142,7 +138,7 @@ def main():
         'passed': hydrogen_pass,
     }
 
-    overall_pass = report['monotonic'] and miller_pass and hydrogen_pass
+    overall_pass = report['passed'] and miller_pass and hydrogen_pass
     report['overall_pass'] = bool(overall_pass)
 
     # Write JSON

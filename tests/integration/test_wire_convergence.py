@@ -11,12 +11,9 @@ Usage:
     python3 test_wire_convergence.py <build_dir> <source_dir>
 """
 
-import json
 import os
 import sys
 import tempfile
-
-import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 from star_helpers import run_exe, parse_eigenvalues, parse_gfactor
