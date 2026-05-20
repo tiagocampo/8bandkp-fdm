@@ -25,8 +25,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 from star_helpers import run_exe, parse_eigenvalues, parse_gfactor, parse_absorption
 from convergence_helpers import (
-    richardson_extrapolate, compute_gci, max_convergence_rate,
-    check_monotonic, extract_absorption_edge, make_convergence_report,
+    extract_absorption_edge, make_convergence_report,
     write_convergence_json,
 )
 
@@ -138,6 +137,22 @@ S6_TEMPLATE = (
     "a_substrate: 5.6533\n"
 )
 
+S4_K0_TEMPLATE = (
+    "waveVector: k0\n"
+    "waveVectorMax: 0\n"
+    "waveVectorStep: 1\n"
+    "confinement: 1\n"
+    "FDstep: {fdstep}\n"
+    "FDorder: {fdorder}\n"
+    "numLayers: 2\n"
+    "material1: Al30Ga70As -200 200 0\n"
+    "material2: GaAs -50 50 0\n"
+    "numcb: 4\n"
+    "numvb: 8\n"
+    "ExternalField: 0  EF\n"
+    "EFParams: 0.0\n"
+)
+
 
 # ---------------------------------------------------------------------------
 # Observable extraction
@@ -178,41 +193,12 @@ def extract_gz(output_dir):
 
 def extract_effective_mass_fixed(output_dir):
     """Extract effective mass using fixed k-range from k-sweep eigenvalues."""
-    from star_helpers import extract_effective_mass, HBAR2_OVER_2M0
+    from star_helpers import extract_effective_mass
     eig_path = os.path.join(output_dir, "eigenvalues.dat")
     result = extract_effective_mass(eig_path, cb_index=-1)
     if result is None:
         return None
     return result[0]  # m_star
-
-
-# ---------------------------------------------------------------------------
-# Grid sweep runner
-# ---------------------------------------------------------------------------
-
-DOMAIN_WIDTH = 400.0  # Angstrom
-
-def run_grid_sweep(build_dir, template, fdsteps, fdorder, exe_name, timeout=300):
-    """Run Fortran exe at multiple FDstep values and collect outputs."""
-    results = []
-    for fdstep in fdsteps:
-        h = DOMAIN_WIDTH / (fdstep - 1)
-        cfg_content = template.format(fdstep=fdstep, fdorder=fdorder)
-        with tempfile.TemporaryDirectory() as work:
-            cfg_path = os.path.join(work, "staged.cfg")
-            with open(cfg_path, 'w') as f:
-                f.write(cfg_content)
-            rc, output_dir = run_exe(build_dir, exe_name, cfg_path, work, timeout=timeout)
-            if rc != 0:
-                print(f"    FDstep={fdstep}: FAILED (rc={rc})")
-                results.append({'fdstep': fdstep, 'h': h, 'rc': rc})
-                continue
-            results.append({
-                'fdstep': fdstep, 'h': h, 'rc': rc,
-                'output_dir': output_dir,
-                'work_dir': work,
-            })
-    return results
 
 
 # ---------------------------------------------------------------------------
@@ -268,11 +254,12 @@ def run_system_convergence(build_dir, source_dir, sys_key):
 
     # --- CB1 energy (bandStructure, k=0) ---
     if 'CB1_energy' in sys_info['observables']:
-        # Need k=0 config for energy extraction
-        k0_template = template
-        if sys_key == 'S4':
-            k0_template = S4_TEMPLATE.replace("waveVector: kx\n", "waveVector: k0\n").replace(
-                "waveVectorMax: 0.1\n", "waveVectorMax: 0\n")
+        k0_template_map = {
+            'S4': S4_K0_TEMPLATE,
+            'S5': S5_TEMPLATE,
+            'S6': S6_TEMPLATE,
+        }
+        k0_template = k0_template_map[sys_key]
 
         h_vals, cb1_vals, cb2_vals = [], [], []
         for fdstep in fdsteps:

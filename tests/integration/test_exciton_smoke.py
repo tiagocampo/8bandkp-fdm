@@ -11,60 +11,16 @@ Usage:
 """
 
 import os
-import re
 import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
 from star_helpers import run_exe
+from convergence_helpers import parse_exciton_file
 
 # Binding energy bounds for GaAs/AlGaAs QW (meV)
 EB_MIN_MEV = 1.0
 EB_MAX_MEV = 20.0
-
-
-def parse_exciton_stdout(stdout_text):
-    """Parse exciton binding energy from bandStructure stdout."""
-    result = {}
-
-    m_eb = re.search(r'E_binding\s*=\s*([\d.eE+-]+)', stdout_text)
-    if m_eb:
-        result['E_binding_meV'] = float(m_eb.group(1))
-
-    m_lam = re.search(r'lambda_opt\s*=\s*([\d.eE+-]+)', stdout_text)
-    if m_lam:
-        result['lambda_opt_AA'] = float(m_lam.group(1))
-
-    if 'E_binding_meV' not in result:
-        m_alt = re.search(r'Exciton binding energy:\s*([\d.eE+-]+)', stdout_text)
-        if m_alt:
-            result['E_binding_meV'] = float(m_alt.group(1))
-
-    if 'lambda_opt_AA' not in result:
-        m_alt2 = re.search(r'Variational parameter:\s*([\d.eE+-]+)', stdout_text)
-        if m_alt2:
-            result['lambda_opt_AA'] = float(m_alt2.group(1))
-
-    return result if result else None
-
-
-def parse_exciton_file(filepath):
-    """Parse output/exciton.dat file."""
-    import numpy as np
-    try:
-        data = np.loadtxt(filepath, comments='#')
-        if data.ndim == 1:
-            data = data.reshape(1, -1)
-        if data.shape[1] >= 2:
-            return {
-                'lambda_opt_AA': float(data[0, 0]),
-                'E_binding_meV': float(data[0, 1]),
-                'mu_over_m0': float(data[0, 2]) if data.shape[1] > 2 else None,
-                'eps_r': float(data[0, 3]) if data.shape[1] > 3 else None,
-            }
-    except Exception:
-        pass
-    return None
 
 
 def main():
@@ -99,15 +55,6 @@ def main():
         if os.path.isfile(exciton_path):
             file_result = parse_exciton_file(exciton_path)
             print(f"  exciton.dat parsed: {file_result}")
-
-        # Also parse stdout from the run
-        stdout_path = os.path.join(work_dir, "stdout.txt") if os.path.exists(
-            os.path.join(work_dir, "stdout.txt")) else None
-        stdout_result = None
-
-        # Re-run to capture stdout (or read from log)
-        # Actually, run_exe uses capture_output=True, so we need a different approach
-        # Let's just use the file output which is more reliable
 
         if file_result is None:
             print("FAIL: Could not parse exciton output")

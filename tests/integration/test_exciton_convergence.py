@@ -24,8 +24,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 from star_helpers import run_exe
 from convergence_helpers import (
-    richardson_extrapolate, compute_gci, check_monotonic,
-    make_convergence_report, write_convergence_json,
+    make_convergence_report, write_convergence_json, parse_exciton_file,
 )
 
 
@@ -64,24 +63,6 @@ MILLER_TOLERANCE = 0.30  # 30% tolerance (structure-dependent)
 # 2D hydrogen model sanity check
 RYDBERG_EV = 13.605693  # eV
 HYDROGEN_2D_MEV = RYDBERG_EV / 4.0 * 1000  # ~3400 meV (free exciton)
-
-
-def parse_exciton_file(filepath):
-    """Parse output/exciton.dat file."""
-    try:
-        data = np.loadtxt(filepath, comments='#')
-        if data.ndim == 1:
-            data = data.reshape(1, -1)
-        if data.shape[1] >= 2:
-            return {
-                'lambda_opt_AA': float(data[0, 0]),
-                'E_binding_meV': float(data[0, 1]),
-                'mu_over_m0': float(data[0, 2]) if data.shape[1] > 2 else None,
-                'eps_r': float(data[0, 3]) if data.shape[1] > 3 else None,
-            }
-    except Exception:
-        pass
-    return None
 
 
 def main():

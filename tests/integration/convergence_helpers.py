@@ -284,6 +284,31 @@ def extract_absorption_edge(spectrum, fraction=0.1):
 
 
 # ---------------------------------------------------------------------------
+# Exciton output parsing
+# ---------------------------------------------------------------------------
+
+def parse_exciton_file(filepath):
+    """Parse output/exciton.dat file.
+
+    Returns dict with lambda_opt_AA, E_binding_meV, mu_over_m0, eps_r.
+    """
+    try:
+        data = np.loadtxt(filepath, comments='#')
+        if data.ndim == 1:
+            data = data.reshape(1, -1)
+        if data.shape[1] >= 2:
+            return {
+                'lambda_opt_AA': float(data[0, 0]),
+                'E_binding_meV': float(data[0, 1]),
+                'mu_over_m0': float(data[0, 2]) if data.shape[1] > 2 else None,
+                'eps_r': float(data[0, 3]) if data.shape[1] > 3 else None,
+            }
+    except (ValueError, OSError, IndexError):
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
 # JSON diagnostics output
 # ---------------------------------------------------------------------------
 

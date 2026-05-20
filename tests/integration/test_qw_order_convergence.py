@@ -15,8 +15,6 @@ import os
 import sys
 import tempfile
 
-import numpy as np
-
 sys.path.insert(0, os.path.dirname(__file__))
 from star_helpers import run_exe, parse_eigenvalues
 from convergence_helpers import (
@@ -147,25 +145,11 @@ def main():
             print(f"    SKIP: insufficient data for {sys_key}")
             continue
 
-        # Check monotonic convergence (values should approach a common limit)
-        # For CB1, higher FD order should give more accurate (typically different) results
+        # Check spread is physically reasonable
         spread = max(cb1_vals) - min(cb1_vals)
         print(f"    Spread: {spread*1000:.4f} meV")
 
-        # Check that spread is physically reasonable (< 100 meV)
         spread_pass = spread < 0.1  # 100 meV
-
-        # Check that order-2 vs highest-order gap is larger than adjacent-order gaps
-        # (diminishing returns expected)
-        if len(cb1_vals) >= 3:
-            gap_2_to_4 = abs(cb1_vals[1] - cb1_vals[0]) if len(cb1_vals) > 1 else 0
-            gap_4_to_6 = abs(cb1_vals[2] - cb1_vals[1]) if len(cb1_vals) > 2 else 0
-            diminishing = gap_2_to_4 >= gap_4_to_6
-        else:
-            diminishing = True  # not enough data to check
-
-        passed = spread_pass
-        # Orders 8, 10 are informational - relax for them
 
         report = {
             'system': f'{sys_key}_{name}',
@@ -176,14 +160,14 @@ def main():
                 for i in range(len(order_vals))
             ],
             'spread_meV': spread * 1000,
-            'passed': passed,
+            'passed': spread_pass,
         }
 
         all_reports[sys_key] = report
-        status = 'PASS' if passed else 'FAIL'
+        status = 'PASS' if spread_pass else 'FAIL'
         print(f"    {status}: spread={spread*1000:.4f} meV")
 
-        if not passed:
+        if not spread_pass:
             all_passed = False
 
     # Write JSON
