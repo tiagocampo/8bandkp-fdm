@@ -278,9 +278,11 @@ def run_system_convergence(build_dir, source_dir, sys_key):
                 if cb1 is not None:
                     h_vals.append(h)
                     cb1_vals.append(cb1)
-                if cb2 is not None:
-                    cb2_vals.append(cb2)
-                print(f"    FDstep={fdstep}: h={h:.4f} A, CB1={cb1:.8f} eV")
+                    print(f"    FDstep={fdstep}: h={h:.4f} A, CB1={cb1:.8f} eV")
+                    if cb2 is not None:
+                        cb2_vals.append(cb2)
+                else:
+                    print(f"    FDstep={fdstep}: no CB1 eigenvalue")
 
         if len(h_vals) >= 3:
             rate_tol = sys_info.get('rate_tolerance', 0.5)

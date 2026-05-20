@@ -89,9 +89,9 @@ def richardson_extrapolate_3grid(h_vals, obs_vals, order=2):
     r1 = richardson_extrapolate(h[:2], E[:2], order)
     r2 = richardson_extrapolate(h[1:3], E[1:3], order)
 
-    # Second Richardson: eliminate O(h^{2p}) using h[0] and h[2]
-    # Ratio of effective spacings
-    hr = (h[1] / h[0]) / (h[2] / h[1])
+    # Second Richardson: eliminate O(h^{2p})
+    # After first round, effective spacings are ~h^2, so ratio is (h[1]/h[0])^2
+    hr = (h[1] / h[0]) ** 2 / (h[2] / h[1]) ** 2
     denom = hr ** order - 1.0
     if abs(denom) < 1e-12:
         return r1

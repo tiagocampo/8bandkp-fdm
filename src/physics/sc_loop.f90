@@ -52,7 +52,7 @@ contains
   ! ------------------------------------------------------------------
   subroutine self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv, &
       & smallk, N, il, iuu, n_electron_out, n_hole_out, fermi_level_out, &
-      & converged_out, iterations_out)
+      & converged_out, iterations_out, delta_phi_out)
 
     real(kind=dp), allocatable, intent(inout) :: profile(:,:)
     type(simulation_config), intent(in) :: cfg
@@ -67,6 +67,7 @@ contains
     real(kind=dp), intent(out), optional :: fermi_level_out
     logical, intent(out), optional :: converged_out
     integer, intent(out), optional :: iterations_out
+    real(kind=dp), intent(out), optional :: delta_phi_out
 
     ! SC loop variables
     integer :: iter, niter, info
@@ -313,6 +314,7 @@ contains
     if (present(fermi_level_out)) fermi_level_out = fermi_level
     if (present(converged_out)) converged_out = sc_converged
     if (present(iterations_out)) iterations_out = iter
+    if (present(delta_phi_out)) delta_phi_out = delta_phi
 
     ! --- Cleanup ---
     deallocate(kpar_grid, phi_old, phi_new, phi_poisson)

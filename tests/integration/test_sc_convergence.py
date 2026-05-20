@@ -238,14 +238,15 @@ def main():
             all_reports['charge_integral'] = report_q
             print(f"  Charge integral Richardson: {report_q['richardson_extrapolated']:.4e} cm^-2")
 
-    # SC tests pass if we got Richardson values and GCI is reasonable
-    sc_passed = len(all_reports) >= 1
+    # SC convergence is empirically determined, not governed by FD order.
+    # Override monotonicity failures (SC may oscillate) but check GCI.
     for name, report in all_reports.items():
         if not report['monotonic']:
             print(f"  WARN: {name} is non-monotonic (SC convergence is empirically determined)")
-            # SC convergence is not governed by FD order, so override monotonicity failure
             report['failures'] = [f for f in report['failures'] if 'monotonic' not in f]
             report['passed'] = bool(len(report['failures']) == 0)
+
+    sc_passed = len(all_reports) >= 1 and all(r['passed'] for r in all_reports.values())
 
     # Write JSON
     results_dir = os.path.join(source_dir, "tests", "integration", "convergence_results")

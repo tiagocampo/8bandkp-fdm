@@ -60,6 +60,7 @@ program kpfdm
   ! --- QW SC charge density output ---
   real(kind=dp), allocatable       :: sc_ne_qw(:), sc_nh_qw(:)
   real(kind=dp)                    :: sc_fermi_level
+  real(kind=dp)                    :: sc_delta_phi
   logical                          :: sc_converged_flag
   integer                          :: sc_iterations
 
@@ -616,7 +617,7 @@ program kpfdm
     call self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv, &
       & smallk, N, il, iuu, n_electron_out=sc_ne_qw, n_hole_out=sc_nh_qw, &
       & fermi_level_out=sc_fermi_level, converged_out=sc_converged_flag, &
-      & iterations_out=sc_iterations)
+      & iterations_out=sc_iterations, delta_phi_out=sc_delta_phi)
 
     ! Write updated profile after SC convergence
     call get_unit(iounit)
@@ -632,7 +633,7 @@ program kpfdm
     call get_unit(iounit)
     open(unit=iounit, file='output/sc_summary.dat', status="replace", action="write")
     write(iounit, '(A)') '# converged  iterations  |dPhi|  fermi_level(eV)'
-    write(iounit, '(L1,1x,I6,1x,ES14.6,1x,ES14.6)') sc_converged_flag, sc_iterations, 0.0_dp, sc_fermi_level
+    write(iounit, '(L1,1x,I6,1x,ES14.6,1x,ES14.6)') sc_converged_flag, sc_iterations, sc_delta_phi, sc_fermi_level
     close(iounit)
     print *, 'SC summary written to output/sc_summary.dat'
 
