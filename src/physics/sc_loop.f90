@@ -51,7 +51,8 @@ contains
   ! Main self-consistent loop for QW simulations
   ! ------------------------------------------------------------------
   subroutine self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv, &
-      & smallk, N, il, iuu, n_electron_out, n_hole_out)
+      & smallk, N, il, iuu, n_electron_out, n_hole_out, fermi_level_out, &
+      & converged_out, iterations_out)
 
     real(kind=dp), allocatable, intent(inout) :: profile(:,:)
     type(simulation_config), intent(in) :: cfg
@@ -63,6 +64,9 @@ contains
     integer, intent(in) :: N, il, iuu
     real(kind=dp), allocatable, intent(out), optional :: n_electron_out(:)
     real(kind=dp), allocatable, intent(out), optional :: n_hole_out(:)
+    real(kind=dp), intent(out), optional :: fermi_level_out
+    logical, intent(out), optional :: converged_out
+    integer, intent(out), optional :: iterations_out
 
     ! SC loop variables
     integer :: iter, niter, info
@@ -304,6 +308,11 @@ contains
         n_hole_out = n_hole
       end if
     end if
+
+    ! --- Copy SC diagnostics to optional outputs ---
+    if (present(fermi_level_out)) fermi_level_out = fermi_level
+    if (present(converged_out)) converged_out = sc_converged
+    if (present(iterations_out)) iterations_out = iter
 
     ! --- Cleanup ---
     deallocate(kpar_grid, phi_old, phi_new, phi_poisson)

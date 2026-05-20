@@ -926,3 +926,60 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 set_tests_properties(coverage_matrix PROPERTIES LABELS "coverage" TIMEOUT 120)
+
+# --- Convergence Tests (Richardson Extrapolation on Physics Observables) ---
+# On-demand only: ctest -L convergence
+
+# Exciton smoke test (R11a)
+add_test(
+    NAME convergence_exciton_smoke
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_exciton_smoke.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(convergence_exciton_smoke PROPERTIES LABELS "convergence" TIMEOUT 120)
+
+# QW grid convergence (U4): S4 GaAs/AlGaAs, S5 InAs/GaSb, S6 InAs/GaAs strained
+add_test(
+    NAME convergence_qw_grid
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_grid_convergence.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(convergence_qw_grid PROPERTIES LABELS "convergence" TIMEOUT 1200)
+
+# QW FD order convergence (U5): S4-S6 at orders {2,4,6,8,10}
+add_test(
+    NAME convergence_qw_order
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_order_convergence.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(convergence_qw_order PROPERTIES LABELS "convergence" TIMEOUT 1200)
+
+# Wire grid convergence (U6): S7 InAs wire
+add_test(
+    NAME convergence_wire
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_convergence.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(convergence_wire PROPERTIES LABELS "convergence" TIMEOUT 3600)
+
+# SC convergence benchmark (U7): GaAs/AlAs QW SC loop
+add_test(
+    NAME convergence_sc
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_sc_convergence.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(convergence_sc PROPERTIES LABELS "convergence" TIMEOUT 3600)
+
+# Exciton convergence benchmark (U8): GaAs/AlGaAs QW exciton
+add_test(
+    NAME convergence_exciton
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_exciton_convergence.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(convergence_exciton PROPERTIES LABELS "convergence" TIMEOUT 1200)

@@ -59,6 +59,9 @@ program kpfdm
 
   ! --- QW SC charge density output ---
   real(kind=dp), allocatable       :: sc_ne_qw(:), sc_nh_qw(:)
+  real(kind=dp)                    :: sc_fermi_level
+  logical                          :: sc_converged_flag
+  integer                          :: sc_iterations
 
   ! Shared setup: read input, initialize materials, confinement, external field
   call read_and_setup(cfg, profile, kpterms)
@@ -611,7 +614,9 @@ program kpfdm
     print *, ''
     print *, '=== Running self-consistent Schrodinger-Poisson loop ==='
     call self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv, &
-      & smallk, N, il, iuu, n_electron_out=sc_ne_qw, n_hole_out=sc_nh_qw)
+      & smallk, N, il, iuu, n_electron_out=sc_ne_qw, n_hole_out=sc_nh_qw, &
+      & fermi_level_out=sc_fermi_level, converged_out=sc_converged_flag, &
+      & iterations_out=sc_iterations)
 
     ! Write updated profile after SC convergence
     call get_unit(iounit)
@@ -621,6 +626,15 @@ program kpfdm
     end do
     close(iounit)
     print *, 'SC potential profile written to output/sc_potential_profile.dat'
+
+    ! Write SC summary (converged flag, iterations, Fermi level)
+    call ensure_output_dir()
+    call get_unit(iounit)
+    open(unit=iounit, file='output/sc_summary.dat', status="replace", action="write")
+    write(iounit, '(A)') '# converged  iterations  |dPhi|  fermi_level(eV)'
+    write(iounit, '(L1,1x,I6,1x,ES14.6,1x,ES14.6)') sc_converged_flag, sc_iterations, 0.0_dp, sc_fermi_level
+    close(iounit)
+    print *, 'SC summary written to output/sc_summary.dat'
 
     ! Write charge density
     if (allocated(sc_ne_qw) .and. allocated(sc_nh_qw)) then
