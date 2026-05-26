@@ -3,6 +3,7 @@ module test_simulation_setup
   use definitions
   use parameters
   use simulation_setup_mod
+  use strain_solver, only: strain_result, strain_result_free
   implicit none
 
 contains
@@ -128,7 +129,7 @@ contains
 
     ! Two layers: AlGaAs barrier (full domain) + GaAs well (center)
     allocate(cfg%materialN(2))
-    cfg%materialN(1) = 'AlGaAs'
+    cfg%materialN(1) = 'Al20Ga80As'
     cfg%materialN(2) = 'GaAs'
 
     allocate(cfg%startPos(2))
@@ -152,21 +153,14 @@ contains
 
     allocate(cfg%intStartPos(2))
     allocate(cfg%intEndPos(2))
-    block
-      integer :: i
-      do i = 1, cfg%numLayers
-        cfg%intStartPos(i) = int(abs((cfg%startPos(1)-cfg%startPos(i)) / &
-          (cfg%totalSize/(cfg%fdStep-1))))
-        cfg%intEndPos(i) = int(cfg%intStartPos(1) + &
-          ((cfg%endPos(1)+cfg%endPos(i))/cfg%delta))
-      end do
-      cfg%intStartPos = cfg%intStartPos + 1
-      cfg%intEndPos = cfg%intEndPos + 1
-    end block
+    cfg%intStartPos(1) = 1
+    cfg%intEndPos(1) = fdStep
+    cfg%intStartPos(2) = nint((cfg%startPos(2) - cfg%startPos(1)) / cfg%delta) + 1
+    cfg%intEndPos(2) = nint((cfg%endPos(2) - cfg%startPos(1)) / cfg%delta) + 1
 
     ! Material parameters
     allocate(cfg%params(2))
-    materials(1) = 'AlGaAs'
+    materials(1) = 'Al20Ga80As'
     materials(2) = 'GaAs'
     call paramDatabase(materials, 2, cfg%params)
     call init_grid_from_config(cfg)
@@ -323,7 +317,7 @@ contains
 
     ! Two layers: AlGaAs barrier (full domain) + GaAs well (center)
     allocate(cfg%materialN(2))
-    cfg%materialN(1) = 'AlGaAs'
+    cfg%materialN(1) = 'Al20Ga80As'
     cfg%materialN(2) = 'GaAs'
 
     allocate(cfg%startPos(2))
@@ -347,21 +341,14 @@ contains
 
     allocate(cfg%intStartPos(2))
     allocate(cfg%intEndPos(2))
-    block
-      integer :: i
-      do i = 1, cfg%numLayers
-        cfg%intStartPos(i) = int(abs((cfg%startPos(1)-cfg%startPos(i)) / &
-          (cfg%totalSize/(cfg%fdStep-1))))
-        cfg%intEndPos(i) = int(cfg%intStartPos(1) + &
-          ((cfg%endPos(1)+cfg%endPos(i))/cfg%delta))
-      end do
-      cfg%intStartPos = cfg%intStartPos + 1
-      cfg%intEndPos = cfg%intEndPos + 1
-    end block
+    cfg%intStartPos(1) = 1
+    cfg%intEndPos(1) = fdStep
+    cfg%intStartPos(2) = nint((cfg%startPos(2) - cfg%startPos(1)) / cfg%delta) + 1
+    cfg%intEndPos(2) = nint((cfg%endPos(2) - cfg%startPos(1)) / cfg%delta) + 1
 
     ! Material parameters
     allocate(cfg%params(2))
-    materials(1) = 'AlGaAs'
+    materials(1) = 'Al20Ga80As'
     materials(2) = 'GaAs'
     call paramDatabase(materials, 2, cfg%params)
     call init_grid_from_config(cfg)
@@ -568,5 +555,192 @@ contains
     call paramDatabase(materials, 1, cfg%params)
     call init_grid_from_config(cfg)
   end subroutine make_wire_gaas_config
+
+  ! Vertical slice 11: Strain setup — has_strain and strain_blocks populated
+  ! Uses InAs/GaAs QW (lattice-mismatched) to trigger nonzero strain.
+  @test
+  subroutine test_strain_setup()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    type(strain_result), allocatable :: strain_diag
+    character(len=255) :: materials(2)
+    integer :: fdStep, i
+    real(kind=dp) :: strain_sum
+
+    ! Build QW with InAs well in GaAs barrier (lattice mismatch ~7%)
+    fdStep = 51
+    cfg%confinement = 1
+    cfg%fdStep = fdStep
+    cfg%FDorder = 2
+    cfg%numLayers = 2
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+    cfg%confDir = 'z'
+    cfg%waveVector = 'k0'
+    cfg%waveVectorMax = 0.0_dp
+    cfg%waveVectorStep = 100
+    cfg%ExternalField = 0
+    cfg%EFtype = 'EF'
+    cfg%Evalue = 0.0_dp
+    cfg%whichBand = 0
+    cfg%bandIdx = 1
+
+    ! Two layers: GaAs barrier (full domain) + InAs well (center)
+    allocate(cfg%materialN(2))
+    cfg%materialN(1) = 'GaAs'
+    cfg%materialN(2) = 'InAs'
+
+    allocate(cfg%startPos(2))
+    allocate(cfg%endPos(2))
+    cfg%startPos(1) = 0.0_dp
+    cfg%endPos(1) = 200.0_dp     ! barrier covers full domain
+    cfg%startPos(2) = 80.0_dp
+    cfg%endPos(2) = 120.0_dp     ! well in center
+
+    cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
+    cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
+    cfg%dz = cfg%delta
+
+    allocate(cfg%z(fdStep))
+    do i = 1, fdStep
+      cfg%z(i) = cfg%startPos(1) + (i-1)*cfg%delta
+    end do
+
+    ! Compute layer index bounds from positions
+    allocate(cfg%intStartPos(2))
+    allocate(cfg%intEndPos(2))
+    do i = 1, cfg%numLayers
+      cfg%intStartPos(i) = max(1, nint((cfg%startPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
+      cfg%intEndPos(i) = min(fdStep, nint((cfg%endPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
+    end do
+
+    ! Material parameters
+    allocate(cfg%params(2))
+    materials(1) = 'GaAs'
+    materials(2) = 'InAs'
+    call paramDatabase(materials, 2, cfg%params)
+    call init_grid_from_config(cfg)
+
+    ! Enable strain
+    cfg%strain%enabled = .true.
+
+    ! Initialize with strain capture
+    call simulation_setup_init(cfg, setup, strain_out=strain_diag)
+
+    ! Assert: has_strain flag set
+    @assertTrue(setup%has_strain)
+
+    ! Assert: strain_blocks populated (bir_pikus_blocks allocated)
+    @assertTrue(allocated(cfg%strain_blocks%delta_Ec))
+    @assertTrue(allocated(cfg%strain_blocks%delta_EHH))
+    @assertTrue(allocated(cfg%strain_blocks%delta_ELH))
+    @assertTrue(allocated(cfg%strain_blocks%delta_ESO))
+
+    ! Assert: strain_diag allocated and has nonzero strain components
+    @assertTrue(allocated(strain_diag))
+    @assertTrue(allocated(strain_diag%eps_xx))
+    @assertTrue(allocated(strain_diag%eps_yy))
+    @assertTrue(allocated(strain_diag%eps_zz))
+
+    ! InAs well region should have nonzero in-plane strain
+    ! (InAs a0=6.058, GaAs a0=5.653 -> ~7% mismatch)
+    strain_sum = sum(abs(strain_diag%eps_xx)) + sum(abs(strain_diag%eps_yy)) + &
+                 sum(abs(strain_diag%eps_zz))
+    @assertTrue(strain_sum > 1.0e-6_dp)
+
+    ! Cleanup
+    call strain_result_free(strain_diag)
+    call simulation_setup_free(setup)
+  end subroutine test_strain_setup
+
+
+  ! Vertical slice 12: SC setup — sc_was_run flag and Fermi level adjustment
+  @test
+  subroutine test_sc_setup()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    character(len=255) :: materials(2)
+    integer :: fdStep, i
+
+    ! Build QW config inline with valid material names
+    ! (make_qw_gaas_config uses 'AlGaAs' which is not in the parameter DB)
+    fdStep = 11
+    cfg%confinement = 1
+    cfg%fdStep = fdStep
+    cfg%FDorder = 2
+    cfg%numLayers = 2
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+    cfg%confDir = 'z'
+    cfg%waveVector = 'k0'
+    cfg%waveVectorMax = 0.0_dp
+    cfg%waveVectorStep = 100
+    cfg%ExternalField = 0
+    cfg%EFtype = 'EF'
+    cfg%Evalue = 0.0_dp
+    cfg%whichBand = 0
+    cfg%bandIdx = 1
+
+    ! Two layers: Al20Ga80As barrier (full domain) + GaAs well (center)
+    allocate(cfg%materialN(2))
+    cfg%materialN(1) = 'Al20Ga80As'
+    cfg%materialN(2) = 'GaAs'
+
+    allocate(cfg%startPos(2))
+    allocate(cfg%endPos(2))
+    cfg%startPos(1) = 0.0_dp
+    cfg%endPos(1) = 200.0_dp
+    cfg%startPos(2) = 80.0_dp
+    cfg%endPos(2) = 120.0_dp
+
+    cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
+    cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
+    cfg%dz = cfg%delta
+
+    allocate(cfg%z(fdStep))
+    do i = 1, fdStep
+      cfg%z(i) = cfg%startPos(1) + (i-1)*cfg%delta
+    end do
+
+    ! Compute layer index bounds from positions (clamped to grid)
+    allocate(cfg%intStartPos(2))
+    allocate(cfg%intEndPos(2))
+    do i = 1, cfg%numLayers
+      cfg%intStartPos(i) = max(1, nint((cfg%startPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
+      cfg%intEndPos(i) = min(fdStep, nint((cfg%endPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
+    end do
+
+    ! Material parameters
+    allocate(cfg%params(2))
+    materials(1) = 'Al20Ga80As'
+    materials(2) = 'GaAs'
+    call paramDatabase(materials, 2, cfg%params)
+    call init_grid_from_config(cfg)
+
+    ! Enable SC with minimal parameters (3 iterations for speed)
+    cfg%sc%enabled = 1
+    cfg%sc%temperature = 300.0_dp
+    cfg%sc%max_iterations = 3
+    cfg%sc%tolerance = 1.0e-6_dp
+    cfg%sc%mixing_alpha = 0.3_dp
+    cfg%sc%num_kpar = 5
+    cfg%sc%kpar_max = 0.3_dp
+    cfg%sc%bc_type = 'DD'
+    cfg%sc%fermi_mode = 1
+    cfg%sc%fermi_level = 1.0_dp
+
+    call simulation_setup_init(cfg, setup)
+
+    ! Assert: SC was run
+    @assertTrue(setup%sc_was_run)
+
+    ! Assert: Fermi level was set (SC adjusts it from initial value)
+    @assertTrue(setup%fermi_level /= 0.0_dp)
+
+    call simulation_setup_free(setup)
+  end subroutine test_sc_setup
+
 
 end module test_simulation_setup
