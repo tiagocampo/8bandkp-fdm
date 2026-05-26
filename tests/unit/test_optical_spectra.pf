@@ -605,6 +605,14 @@ contains
     @assertEqual(3, ie, message="TE file has 3 data points")
 
     call optics_engine_free(oe)
+
+    ! Cleanup test artifacts
+    open(newunit=iounit, file='output/absorption_TE.dat', status='old', iostat=ios)
+    if (ios == 0) close(iounit, status='delete')
+    open(newunit=iounit, file='output/absorption_TM.dat', status='old', iostat=ios)
+    if (ios == 0) close(iounit, status='delete')
+    open(newunit=iounit, file='output/absorption_ISBT.dat', status='old', iostat=ios)
+    if (ios == 0) close(iounit, status='delete')
   end subroutine test_write_output_files
 
 
