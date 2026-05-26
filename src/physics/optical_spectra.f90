@@ -14,6 +14,7 @@ module optical_spectra
   public :: compute_intersubband_transitions, compute_isbt_absorption
   public :: compute_gain_qw, gain_reset
   public :: E_grid, alpha_te, alpha_tm, nE
+  public :: optics_engine, optics_engine_init, optics_engine_free
 
   ! Module-level accumulation arrays (set by optics_init)
   real(kind=dp), allocatable, save :: alpha_te(:)    ! TE accumulation on E_grid
@@ -37,6 +38,41 @@ module optical_spectra
 
   ! Minimum transition energy threshold (eV)
   real(kind=dp), parameter :: DE_MIN = 1.0e-6_dp
+
+  ! ------------------------------------------------------------------
+  ! optics_engine: encapsulates optical accumulation state.
+  ! Public allocatable arrays for hot-path access (same pattern as
+  ! csr_matrix).  Old module-level save variables remain untouched.
+  ! ------------------------------------------------------------------
+  type optics_engine
+    ! Stored configuration
+    type(optics_config)  :: config
+    ! Grid state
+    integer              :: nE = 0
+    ! Unconditional accumulation arrays
+    real(kind=dp), allocatable :: E_grid(:)
+    real(kind=dp), allocatable :: alpha_te(:)
+    real(kind=dp), allocatable :: alpha_tm(:)
+    real(kind=dp), allocatable :: alpha_isbt(:)
+    ! Conditional: gain
+    real(kind=dp), allocatable :: alpha_gain_te(:)
+    real(kind=dp), allocatable :: alpha_gain_tm(:)
+    ! Conditional: spontaneous emission
+    real(kind=dp), allocatable :: spont_te(:)
+    real(kind=dp), allocatable :: spont_tm(:)
+    ! Conditional: spin-resolved
+    real(kind=dp), allocatable :: alpha_te_up(:)
+    real(kind=dp), allocatable :: alpha_te_dw(:)
+    real(kind=dp), allocatable :: alpha_tm_up(:)
+    real(kind=dp), allocatable :: alpha_tm_dw(:)
+    ! Gain quasi-Fermi level state
+    real(kind=dp) :: mu_e = 0.0_dp
+    real(kind=dp) :: mu_h = 0.0_dp
+    logical       :: gain_fermi_computed = .false.
+  contains
+    procedure :: free => optics_engine_free_tbp
+    final :: optics_engine_finalize
+  end type optics_engine
 
 contains
 
@@ -1085,5 +1121,129 @@ contains
 
     deallocate(neg_Evb)
   end function find_quasi_fermi_holes
+
+
+  ! ==================================================================
+  ! optics_engine lifecycle routines (additive, coexist with old code)
+  ! ==================================================================
+
+  ! ------------------------------------------------------------------
+  ! Initialize the optics_engine: store config, allocate and zero all
+  ! arrays based on config flags.
+  ! ------------------------------------------------------------------
+  subroutine optics_engine_init(oe, optcfg)
+    type(optics_engine), intent(inout) :: oe
+    type(optics_config), intent(in)    :: optcfg
+
+    integer :: i
+    real(kind=dp) :: dE
+
+    ! Defensive cleanup in case of prior initialization
+    call optics_engine_free(oe)
+
+    ! Store config
+    oe%config = optcfg
+
+    ! Grid size
+    oe%nE = optcfg%num_energy_points
+
+    ! Unconditional arrays: E_grid, alpha_te, alpha_tm, alpha_isbt
+    allocate(oe%E_grid(oe%nE))
+    allocate(oe%alpha_te(oe%nE))
+    allocate(oe%alpha_tm(oe%nE))
+    allocate(oe%alpha_isbt(oe%nE))
+
+    ! Build linear energy grid
+    dE = (optcfg%E_max - optcfg%E_min) / max(oe%nE - 1, 1)
+    do i = 1, oe%nE
+      oe%E_grid(i) = optcfg%E_min + (i - 1) * dE
+    end do
+
+    ! Zero unconditional arrays
+    oe%alpha_te = 0.0_dp
+    oe%alpha_tm = 0.0_dp
+    oe%alpha_isbt = 0.0_dp
+
+    ! Conditional: gain
+    if (optcfg%gain_enabled) then
+      allocate(oe%alpha_gain_te(oe%nE))
+      allocate(oe%alpha_gain_tm(oe%nE))
+      oe%alpha_gain_te = 0.0_dp
+      oe%alpha_gain_tm = 0.0_dp
+    end if
+
+    ! Conditional: spontaneous emission
+    if (optcfg%spontaneous_enabled) then
+      allocate(oe%spont_te(oe%nE))
+      allocate(oe%spont_tm(oe%nE))
+      oe%spont_te = 0.0_dp
+      oe%spont_tm = 0.0_dp
+    end if
+
+    ! Conditional: spin-resolved
+    if (optcfg%spin_resolved) then
+      allocate(oe%alpha_te_up(oe%nE))
+      allocate(oe%alpha_te_dw(oe%nE))
+      allocate(oe%alpha_tm_up(oe%nE))
+      allocate(oe%alpha_tm_dw(oe%nE))
+      oe%alpha_te_up = 0.0_dp
+      oe%alpha_te_dw = 0.0_dp
+      oe%alpha_tm_up = 0.0_dp
+      oe%alpha_tm_dw = 0.0_dp
+    end if
+
+    ! Reset gain state
+    oe%gain_fermi_computed = .false.
+    oe%mu_e = 0.0_dp
+    oe%mu_h = 0.0_dp
+
+  end subroutine optics_engine_init
+
+
+  ! ------------------------------------------------------------------
+  ! Deallocate all arrays in the optics_engine and reset scalars.
+  ! Safe to call multiple times (double-free safe).
+  ! ------------------------------------------------------------------
+  subroutine optics_engine_free(oe)
+    type(optics_engine), intent(inout) :: oe
+
+    if (allocated(oe%E_grid))         deallocate(oe%E_grid)
+    if (allocated(oe%alpha_te))       deallocate(oe%alpha_te)
+    if (allocated(oe%alpha_tm))       deallocate(oe%alpha_tm)
+    if (allocated(oe%alpha_isbt))     deallocate(oe%alpha_isbt)
+    if (allocated(oe%alpha_gain_te))  deallocate(oe%alpha_gain_te)
+    if (allocated(oe%alpha_gain_tm))  deallocate(oe%alpha_gain_tm)
+    if (allocated(oe%spont_te))       deallocate(oe%spont_te)
+    if (allocated(oe%spont_tm))       deallocate(oe%spont_tm)
+    if (allocated(oe%alpha_te_up))    deallocate(oe%alpha_te_up)
+    if (allocated(oe%alpha_te_dw))    deallocate(oe%alpha_te_dw)
+    if (allocated(oe%alpha_tm_up))    deallocate(oe%alpha_tm_up)
+    if (allocated(oe%alpha_tm_dw))    deallocate(oe%alpha_tm_dw)
+
+    oe%nE = 0
+    oe%gain_fermi_computed = .false.
+    oe%mu_e = 0.0_dp
+    oe%mu_h = 0.0_dp
+
+  end subroutine optics_engine_free
+
+
+  ! ------------------------------------------------------------------
+  ! Type-bound procedure wrapper for free (delegates to free subroutine)
+  ! ------------------------------------------------------------------
+  subroutine optics_engine_free_tbp(oe)
+    class(optics_engine), intent(inout) :: oe
+    call optics_engine_free(oe)
+  end subroutine optics_engine_free_tbp
+
+
+  ! ------------------------------------------------------------------
+  ! Finalizer: delegates to optics_engine_free for automatic cleanup
+  ! when an optics_engine variable goes out of scope.
+  ! ------------------------------------------------------------------
+  subroutine optics_engine_finalize(oe)
+    type(optics_engine), intent(inout) :: oe
+    call optics_engine_free(oe)
+  end subroutine optics_engine_finalize
 
 end module optical_spectra

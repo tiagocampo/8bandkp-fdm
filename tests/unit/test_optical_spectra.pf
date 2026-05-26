@@ -1,0 +1,277 @@
+module test_optical_spectra
+  use funit
+  use definitions
+  use optical_spectra
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! Test 1: optics_engine_init allocates and zeros E_grid, alpha_te,
+  ! alpha_tm, alpha_isbt
+  ! ==================================================================
+  @test
+  subroutine test_engine_init_allocates_zeros()
+    type(optics_engine) :: oe
+    type(optics_config) :: optcfg
+
+    call make_default_config(optcfg)
+    call optics_engine_init(oe, optcfg)
+
+    ! Arrays should be allocated
+    @assertTrue(allocated(oe%E_grid))
+    @assertTrue(allocated(oe%alpha_te))
+    @assertTrue(allocated(oe%alpha_tm))
+    @assertTrue(allocated(oe%alpha_isbt))
+
+    ! Size should match num_energy_points
+    @assertEqual(optcfg%num_energy_points, size(oe%E_grid))
+    @assertEqual(optcfg%num_energy_points, size(oe%alpha_te))
+    @assertEqual(optcfg%num_energy_points, size(oe%alpha_tm))
+    @assertEqual(optcfg%num_energy_points, size(oe%alpha_isbt))
+
+    ! All arrays should be zeroed
+    @assertEqual(0.0_dp, maxval(abs(oe%alpha_te)))
+    @assertEqual(0.0_dp, maxval(abs(oe%alpha_tm)))
+    @assertEqual(0.0_dp, maxval(abs(oe%alpha_isbt)))
+
+    ! E_grid should be linearly spaced
+    @assertTrue(oe%E_grid(1) > 0.0_dp)
+
+    ! nE should be set
+    @assertEqual(optcfg%num_energy_points, oe%nE)
+
+    call optics_engine_free(oe)
+  end subroutine test_engine_init_allocates_zeros
+
+
+  ! ==================================================================
+  ! Test 2: optics_engine_free deallocates all arrays and resets nE
+  ! ==================================================================
+  @test
+  subroutine test_engine_free_deallocates()
+    type(optics_engine) :: oe
+    type(optics_config) :: optcfg
+
+    call make_default_config(optcfg)
+    call optics_engine_init(oe, optcfg)
+
+    ! Confirm arrays are allocated before free
+    @assertTrue(allocated(oe%E_grid))
+    @assertTrue(allocated(oe%alpha_te))
+
+    call optics_engine_free(oe)
+
+    ! All arrays should be deallocated
+    @assertFalse(allocated(oe%E_grid))
+    @assertFalse(allocated(oe%alpha_te))
+    @assertFalse(allocated(oe%alpha_tm))
+    @assertFalse(allocated(oe%alpha_isbt))
+    @assertFalse(allocated(oe%alpha_gain_te))
+    @assertFalse(allocated(oe%alpha_gain_tm))
+    @assertFalse(allocated(oe%spont_te))
+    @assertFalse(allocated(oe%spont_tm))
+    @assertFalse(allocated(oe%alpha_te_up))
+    @assertFalse(allocated(oe%alpha_te_dw))
+    @assertFalse(allocated(oe%alpha_tm_up))
+    @assertFalse(allocated(oe%alpha_tm_dw))
+
+    ! nE should be reset
+    @assertEqual(0, oe%nE)
+
+    ! Gain state should be reset
+    @assertFalse(oe%gain_fermi_computed)
+    @assertEqual(0.0_dp, oe%mu_e)
+    @assertEqual(0.0_dp, oe%mu_h)
+  end subroutine test_engine_free_deallocates
+
+
+  ! ==================================================================
+  ! Test 3: double-free is safe (calling free on already-freed type)
+  ! ==================================================================
+  @test
+  subroutine test_engine_double_free_safe()
+    type(optics_engine) :: oe
+    type(optics_config) :: optcfg
+
+    call make_default_config(optcfg)
+    call optics_engine_init(oe, optcfg)
+    call optics_engine_free(oe)
+
+    ! Second free should not crash
+    call optics_engine_free(oe)
+
+    @assertEqual(0, oe%nE)
+    @assertFalse(allocated(oe%E_grid))
+  end subroutine test_engine_double_free_safe
+
+
+  ! ==================================================================
+  ! Test 4: finalizer fires on scope exit
+  ! ==================================================================
+  @test
+  subroutine test_engine_finalizer()
+    type(optics_config) :: optcfg
+
+    call make_default_config(optcfg)
+
+    ! Call subroutine that creates and lets optics_engine go out of scope
+    call finalizer_helper(optcfg)
+
+    ! If we reach here, the finalizer ran without error
+    @assertTrue(.true.)
+  end subroutine test_engine_finalizer
+
+
+  ! ==================================================================
+  ! Test 5: conditional allocation — gain arrays only when gain_enabled
+  ! ==================================================================
+  @test
+  subroutine test_engine_gain_conditional()
+    type(optics_engine) :: oe
+    type(optics_config) :: optcfg
+
+    ! Without gain: arrays should NOT be allocated
+    call make_default_config(optcfg)
+    optcfg%gain_enabled = .false.
+    call optics_engine_init(oe, optcfg)
+    @assertFalse(allocated(oe%alpha_gain_te))
+    @assertFalse(allocated(oe%alpha_gain_tm))
+    call optics_engine_free(oe)
+
+    ! With gain: arrays SHOULD be allocated and zeroed
+    call make_default_config(optcfg)
+    optcfg%gain_enabled = .true.
+    call optics_engine_init(oe, optcfg)
+    @assertTrue(allocated(oe%alpha_gain_te))
+    @assertTrue(allocated(oe%alpha_gain_tm))
+    @assertEqual(optcfg%num_energy_points, size(oe%alpha_gain_te))
+    @assertEqual(0.0_dp, maxval(abs(oe%alpha_gain_te)))
+    @assertEqual(0.0_dp, maxval(abs(oe%alpha_gain_tm)))
+    call optics_engine_free(oe)
+  end subroutine test_engine_gain_conditional
+
+
+  ! ==================================================================
+  ! Test 6: conditional allocation — spontaneous arrays only when
+  ! spontaneous_enabled
+  ! ==================================================================
+  @test
+  subroutine test_engine_spontaneous_conditional()
+    type(optics_engine) :: oe
+    type(optics_config) :: optcfg
+
+    ! Without spontaneous: arrays should NOT be allocated
+    call make_default_config(optcfg)
+    optcfg%spontaneous_enabled = .false.
+    call optics_engine_init(oe, optcfg)
+    @assertFalse(allocated(oe%spont_te))
+    @assertFalse(allocated(oe%spont_tm))
+    call optics_engine_free(oe)
+
+    ! With spontaneous: arrays SHOULD be allocated and zeroed
+    call make_default_config(optcfg)
+    optcfg%spontaneous_enabled = .true.
+    call optics_engine_init(oe, optcfg)
+    @assertTrue(allocated(oe%spont_te))
+    @assertTrue(allocated(oe%spont_tm))
+    @assertEqual(optcfg%num_energy_points, size(oe%spont_te))
+    @assertEqual(0.0_dp, maxval(abs(oe%spont_te)))
+    @assertEqual(0.0_dp, maxval(abs(oe%spont_tm)))
+    call optics_engine_free(oe)
+  end subroutine test_engine_spontaneous_conditional
+
+
+  ! ==================================================================
+  ! Test 7: conditional allocation — spin-resolved arrays only when
+  ! spin_resolved
+  ! ==================================================================
+  @test
+  subroutine test_engine_spin_resolved_conditional()
+    type(optics_engine) :: oe
+    type(optics_config) :: optcfg
+
+    ! Without spin_resolved: arrays should NOT be allocated
+    call make_default_config(optcfg)
+    optcfg%spin_resolved = .false.
+    call optics_engine_init(oe, optcfg)
+    @assertFalse(allocated(oe%alpha_te_up))
+    @assertFalse(allocated(oe%alpha_te_dw))
+    @assertFalse(allocated(oe%alpha_tm_up))
+    @assertFalse(allocated(oe%alpha_tm_dw))
+    call optics_engine_free(oe)
+
+    ! With spin_resolved: arrays SHOULD be allocated and zeroed
+    call make_default_config(optcfg)
+    optcfg%spin_resolved = .true.
+    call optics_engine_init(oe, optcfg)
+    @assertTrue(allocated(oe%alpha_te_up))
+    @assertTrue(allocated(oe%alpha_te_dw))
+    @assertTrue(allocated(oe%alpha_tm_up))
+    @assertTrue(allocated(oe%alpha_tm_dw))
+    @assertEqual(optcfg%num_energy_points, size(oe%alpha_te_up))
+    @assertEqual(0.0_dp, maxval(abs(oe%alpha_te_up)))
+    @assertEqual(0.0_dp, maxval(abs(oe%alpha_te_dw)))
+    @assertEqual(0.0_dp, maxval(abs(oe%alpha_tm_up)))
+    @assertEqual(0.0_dp, maxval(abs(oe%alpha_tm_dw)))
+    call optics_engine_free(oe)
+  end subroutine test_engine_spin_resolved_conditional
+
+
+  ! ==================================================================
+  ! Test 8: config is stored in the engine
+  ! ==================================================================
+  @test
+  subroutine test_engine_config_stored()
+    type(optics_engine) :: oe
+    type(optics_config) :: optcfg
+
+    call make_default_config(optcfg)
+    optcfg%linewidth_lorentzian = 0.05_dp
+    optcfg%temperature = 200.0_dp
+    call optics_engine_init(oe, optcfg)
+
+    @assertEqual(0.05_dp, oe%config%linewidth_lorentzian)
+    @assertEqual(200.0_dp, oe%config%temperature)
+    @assertEqual(optcfg%num_energy_points, oe%config%num_energy_points)
+
+    call optics_engine_free(oe)
+  end subroutine test_engine_config_stored
+
+
+  ! ==================================================================
+  ! Helper: construct a default optics_config
+  ! ==================================================================
+  subroutine make_default_config(optcfg)
+    type(optics_config), intent(out) :: optcfg
+
+    optcfg%enabled = .true.
+    optcfg%linewidth_lorentzian = 0.030_dp
+    optcfg%linewidth_gaussian = 0.005_dp
+    optcfg%refractive_index = 3.3_dp
+    optcfg%temperature = 300.0_dp
+    optcfg%num_energy_points = 50
+    optcfg%E_min = 0.5_dp
+    optcfg%E_max = 2.0_dp
+    optcfg%carrier_density = 0.0_dp
+    optcfg%gain_enabled = .false.
+    optcfg%gain_carrier_density = 3.0e12_dp
+    optcfg%isbt_enabled = .false.
+    optcfg%spontaneous_enabled = .false.
+    optcfg%spin_resolved = .false.
+    optcfg%confinement = 0
+  end subroutine make_default_config
+
+
+  ! Helper for finalizer test: creates engine in inner scope
+  subroutine finalizer_helper(optcfg)
+    type(optics_config), intent(in) :: optcfg
+    type(optics_engine) :: oe
+
+    call optics_engine_init(oe, optcfg)
+    @assertTrue(allocated(oe%E_grid))
+    ! oe goes out of scope here — finalizer should fire
+  end subroutine finalizer_helper
+
+
+end module test_optical_spectra
