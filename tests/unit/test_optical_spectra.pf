@@ -17,7 +17,7 @@ contains
     type(optics_config) :: optcfg
 
     call make_default_config(optcfg)
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     ! Arrays should be allocated
     @assertTrue(allocated(oe%E_grid))
@@ -42,7 +42,7 @@ contains
     ! nE should be set
     @assertEqual(optcfg%num_energy_points, oe%nE)
 
-    call optics_engine_free(oe)
+    call optics_free(oe)
   end subroutine test_engine_init_allocates_zeros
 
 
@@ -55,13 +55,13 @@ contains
     type(optics_config) :: optcfg
 
     call make_default_config(optcfg)
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     ! Confirm arrays are allocated before free
     @assertTrue(allocated(oe%E_grid))
     @assertTrue(allocated(oe%alpha_te))
 
-    call optics_engine_free(oe)
+    call optics_free(oe)
 
     ! All arrays should be deallocated
     @assertFalse(allocated(oe%E_grid))
@@ -96,11 +96,11 @@ contains
     type(optics_config) :: optcfg
 
     call make_default_config(optcfg)
-    call optics_engine_init(oe, optcfg)
-    call optics_engine_free(oe)
+    call optics_init(oe, optcfg)
+    call optics_free(oe)
 
     ! Second free should not crash
-    call optics_engine_free(oe)
+    call optics_free(oe)
 
     @assertEqual(0, oe%nE)
     @assertFalse(allocated(oe%E_grid))
@@ -135,21 +135,21 @@ contains
     ! Without gain: arrays should NOT be allocated
     call make_default_config(optcfg)
     optcfg%gain_enabled = .false.
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
     @assertFalse(allocated(oe%alpha_gain_te))
     @assertFalse(allocated(oe%alpha_gain_tm))
-    call optics_engine_free(oe)
+    call optics_free(oe)
 
     ! With gain: arrays SHOULD be allocated and zeroed
     call make_default_config(optcfg)
     optcfg%gain_enabled = .true.
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
     @assertTrue(allocated(oe%alpha_gain_te))
     @assertTrue(allocated(oe%alpha_gain_tm))
     @assertEqual(optcfg%num_energy_points, size(oe%alpha_gain_te))
     @assertEqual(0.0_dp, maxval(abs(oe%alpha_gain_te)))
     @assertEqual(0.0_dp, maxval(abs(oe%alpha_gain_tm)))
-    call optics_engine_free(oe)
+    call optics_free(oe)
   end subroutine test_engine_gain_conditional
 
 
@@ -165,21 +165,21 @@ contains
     ! Without spontaneous: arrays should NOT be allocated
     call make_default_config(optcfg)
     optcfg%spontaneous_enabled = .false.
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
     @assertFalse(allocated(oe%spont_te))
     @assertFalse(allocated(oe%spont_tm))
-    call optics_engine_free(oe)
+    call optics_free(oe)
 
     ! With spontaneous: arrays SHOULD be allocated and zeroed
     call make_default_config(optcfg)
     optcfg%spontaneous_enabled = .true.
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
     @assertTrue(allocated(oe%spont_te))
     @assertTrue(allocated(oe%spont_tm))
     @assertEqual(optcfg%num_energy_points, size(oe%spont_te))
     @assertEqual(0.0_dp, maxval(abs(oe%spont_te)))
     @assertEqual(0.0_dp, maxval(abs(oe%spont_tm)))
-    call optics_engine_free(oe)
+    call optics_free(oe)
   end subroutine test_engine_spontaneous_conditional
 
 
@@ -195,17 +195,17 @@ contains
     ! Without spin_resolved: arrays should NOT be allocated
     call make_default_config(optcfg)
     optcfg%spin_resolved = .false.
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
     @assertFalse(allocated(oe%alpha_te_up))
     @assertFalse(allocated(oe%alpha_te_dw))
     @assertFalse(allocated(oe%alpha_tm_up))
     @assertFalse(allocated(oe%alpha_tm_dw))
-    call optics_engine_free(oe)
+    call optics_free(oe)
 
     ! With spin_resolved: arrays SHOULD be allocated and zeroed
     call make_default_config(optcfg)
     optcfg%spin_resolved = .true.
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
     @assertTrue(allocated(oe%alpha_te_up))
     @assertTrue(allocated(oe%alpha_te_dw))
     @assertTrue(allocated(oe%alpha_tm_up))
@@ -215,7 +215,7 @@ contains
     @assertEqual(0.0_dp, maxval(abs(oe%alpha_te_dw)))
     @assertEqual(0.0_dp, maxval(abs(oe%alpha_tm_up)))
     @assertEqual(0.0_dp, maxval(abs(oe%alpha_tm_dw)))
-    call optics_engine_free(oe)
+    call optics_free(oe)
   end subroutine test_engine_spin_resolved_conditional
 
 
@@ -230,13 +230,13 @@ contains
     call make_default_config(optcfg)
     optcfg%linewidth_lorentzian = 0.05_dp
     optcfg%temperature = 200.0_dp
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     @assertEqual(0.05_dp, oe%config%linewidth_lorentzian)
     @assertEqual(200.0_dp, oe%config%temperature)
     @assertEqual(optcfg%num_energy_points, oe%config%num_energy_points)
 
-    call optics_engine_free(oe)
+    call optics_free(oe)
   end subroutine test_engine_config_stored
 
 
@@ -269,7 +269,7 @@ contains
     type(optics_config), intent(in) :: optcfg
     type(optics_engine) :: oe
 
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
     @assertTrue(allocated(oe%E_grid))
     ! oe goes out of scope here — finalizer should fire
   end subroutine finalizer_helper
@@ -346,7 +346,7 @@ contains
     optcfg%E_min = 0.5_dp
     optcfg%E_max = 2.0_dp
     optcfg%confinement = 0   ! bulk mode
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     ! Eigenvalues: VB states low, CB states high
     ! VB: -1.0, -0.9, -0.8, -0.7, -0.6, -0.5
@@ -372,14 +372,14 @@ contains
     fermi_level = 0.0_dp   ! mid-gap
 
     ! Call the new engine routine
-    call optics_accumulate_engine(oe, eigvals, eigvecs, k_weight, &
+    call optics_accumulate(oe, eigvals, eigvecs, k_weight, &
       & vel, numcb, numvb, fermi_level)
 
     ! alpha_te should be non-zero (at least some VB-CB transitions)
     @assertTrue(maxval(abs(oe%alpha_te)) > 0.0_dp, message="alpha_te non-zero after accumulate")
 
     ! Cleanup
-    call optics_engine_free(oe)
+    call optics_free(oe)
     call csr_free(vel(1))
     call csr_free(vel(2))
     call csr_free(vel(3))
@@ -407,7 +407,7 @@ contains
     optcfg%E_min = 0.5_dp
     optcfg%E_max = 2.0_dp
     optcfg%confinement = 0   ! bulk: TE == TM
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     eigvals(1:6) = [-1.0_dp, -0.9_dp, -0.8_dp, -0.7_dp, -0.6_dp, -0.5_dp]
     eigvals(7:8) = [1.0_dp, 1.1_dp]
@@ -427,14 +427,14 @@ contains
     k_weight = 1.0_dp
     fermi_level = 0.0_dp
 
-    call optics_accumulate_engine(oe, eigvals, eigvecs, k_weight, &
+    call optics_accumulate(oe, eigvals, eigvecs, k_weight, &
       & vel, numcb, numvb, fermi_level)
 
     ! In bulk mode, TE == TM (both = (px+py+pz)/2)
     max_diff = maxval(abs(oe%alpha_te - oe%alpha_tm))
     @assertTrue(max_diff < 1.0e-14_dp, message="bulk: TE == TM within tolerance")
 
-    call optics_engine_free(oe)
+    call optics_free(oe)
     call csr_free(vel(1))
     call csr_free(vel(2))
     call csr_free(vel(3))
@@ -459,7 +459,7 @@ contains
     optcfg%num_energy_points = 5
     optcfg%E_min = 1.0_dp   ! all E > 0
     optcfg%E_max = 2.0_dp
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     ! Manually set some values in alpha_te, alpha_tm, alpha_isbt
     oe%alpha_te = [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp]
@@ -486,7 +486,7 @@ contains
     max_err = maxval(abs(oe%alpha_tm - expected_tm))
     @assertTrue(max_err < 1.0e-10_dp, message="alpha_tm scaled correctly")
 
-    call optics_engine_free(oe)
+    call optics_free(oe)
   end subroutine test_apply_prefactor_scales
 
 
@@ -503,7 +503,7 @@ contains
     optcfg%num_energy_points = 5
     optcfg%E_min = -1.0_dp   ! first point is E < 0
     optcfg%E_max = 1.0_dp
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     ! Find index of E <= 0
     idx_zero = 0
@@ -529,7 +529,7 @@ contains
       @assertTrue(oe%alpha_te(oe%nE) /= 0.0_dp, message="E>0 point has non-zero alpha_te after prefactor")
     end if
 
-    call optics_engine_free(oe)
+    call optics_free(oe)
   end subroutine test_apply_prefactor_zero_energy
 
 
@@ -543,20 +543,20 @@ contains
 
     call make_default_config(optcfg)
     optcfg%gain_enabled = .true.
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     ! Simulate gain state having been computed
     oe%gain_fermi_computed = .true.
     oe%mu_e = 1.5_dp
     oe%mu_h = -0.5_dp
 
-    call gain_reset_engine(oe)
+    call gain_reset(oe)
 
     @assertFalse(oe%gain_fermi_computed)
     @assertEqual(0.0_dp, oe%mu_e)
     @assertEqual(0.0_dp, oe%mu_h)
 
-    call optics_engine_free(oe)
+    call optics_free(oe)
   end subroutine test_gain_reset_engine
 
 
@@ -574,7 +574,7 @@ contains
     optcfg%num_energy_points = 3
     optcfg%E_min = 1.0_dp
     optcfg%E_max = 2.0_dp
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     ! Set known values (already "finalized" — no prefactor)
     oe%alpha_te = [10.0_dp, 20.0_dp, 30.0_dp]
@@ -604,7 +604,7 @@ contains
     close(iounit)
     @assertEqual(3, ie, message="TE file has 3 data points")
 
-    call optics_engine_free(oe)
+    call optics_free(oe)
 
     ! Cleanup test artifacts
     open(newunit=iounit, file='output/absorption_TE.dat', status='old', iostat=ios)
@@ -636,7 +636,7 @@ contains
     optcfg%E_min = 0.01_dp
     optcfg%E_max = 0.5_dp
     optcfg%confinement = 1   ! QW for ISBT
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     ! For ISBT, we need two CB subbands at different energies.
     ! CB1 = 1.0, CB2 = 1.2 (transition energy = 0.2, within E_grid)
@@ -660,7 +660,7 @@ contains
     k_weight = 1.0_dp
     fermi_level = 0.0_dp
 
-    call compute_isbt_absorption_engine(oe, eigvals, eigvecs, &
+    call compute_isbt_absorption(oe, eigvals, eigvecs, &
       & vel, numcb, numvb, k_weight, fermi_level)
 
     ! ISBT should be zero here because eigenvectors are identity and
@@ -669,7 +669,7 @@ contains
     ! So we just verify it runs without error.
     @assertTrue(allocated(oe%alpha_isbt), message="alpha_isbt allocated")
 
-    call optics_engine_free(oe)
+    call optics_free(oe)
     call csr_free(vel(1))
     call csr_free(vel(2))
     call csr_free(vel(3))
@@ -697,7 +697,7 @@ contains
     optcfg%E_max = 2.0_dp
     optcfg%confinement = 1   ! QW for TE = px+py, TM = pz
     optcfg%spontaneous_enabled = .true.
-    call optics_engine_init(oe, optcfg)
+    call optics_init(oe, optcfg)
 
     ! Use eigenvalues where VB states are near the Fermi level so
     ! that (1 - f_v) is not ~0.  Set fermi_level between VB and CB.
@@ -719,7 +719,7 @@ contains
     k_weight = 1.0_dp
     fermi_level = 0.5_dp   ! between VB and CB so f_c > 0 and (1-f_v) > 0
 
-    call optics_accumulate_spontaneous_engine(oe, eigvals, eigvecs, &
+    call optics_accumulate_spontaneous(oe, eigvals, eigvecs, &
       & k_weight, vel, numcb, numvb, fermi_level)
 
     ! spont arrays should be allocated (spontaneous_enabled = .true.)
@@ -730,7 +730,7 @@ contains
     @assertTrue(maxval(abs(oe%spont_te)) > 0.0_dp, message="spont_te non-zero after accumulate")
     @assertTrue(maxval(abs(oe%spont_tm)) > 0.0_dp, message="spont_tm non-zero after accumulate")
 
-    call optics_engine_free(oe)
+    call optics_free(oe)
     call csr_free(vel(1))
     call csr_free(vel(2))
     call csr_free(vel(3))

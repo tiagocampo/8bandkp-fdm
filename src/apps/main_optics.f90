@@ -18,6 +18,7 @@ program opticalProperties
   ! Shared configuration from input_parser
   type(simulation_config) :: cfg
   type(simulation_setup)  :: setup
+  type(optics_engine)     :: oe
 
   ! Iteration
   integer :: i, k
@@ -128,7 +129,7 @@ program opticalProperties
     ! Initialize optics accumulation
     ! ================================================================
     cfg%optics%confinement = cfg%confinement
-    call optics_init(cfg%optics)
+    call optics_init(oe, cfg%optics)
 
     ! ================================================================
     ! Simpson integration weights for 3D spherical k-space integration
@@ -210,25 +211,25 @@ program opticalProperties
     ! Accumulate optical spectra (serial, uses setup%vel)
     print '(a)', ' Accumulating optical spectra...'
     do k = 1, npts
-      call optics_accumulate(cfg%optics, &
+      call optics_accumulate(oe, &
         & eig(:, k), eigv(:, :, k), simpson_w(k), &
         & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
 
       if (cfg%optics%spontaneous_enabled) then
-        call optics_accumulate_spontaneous(cfg%optics, &
+        call optics_accumulate_spontaneous(oe, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
           & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
       end if
 
       if (cfg%optics%gain_enabled) then
-        call compute_gain_qw(cfg%optics, &
+        call compute_gain_qw(oe, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
           & setup%vel, cfg%numcb, cfg%numvb, &
           & cfg%optics%gain_carrier_density)
       end if
 
       if (cfg%optics%isbt_enabled) then
-        call compute_isbt_absorption(cfg%optics, &
+        call compute_isbt_absorption(oe, &
           & eig(:, k), eigv(:, :, k), &
           & setup%vel, cfg%numcb, cfg%numvb, &
           & simpson_w(k), cfg%sc%fermi_level)
@@ -238,8 +239,9 @@ program opticalProperties
     ! ================================================================
     ! Finalize: apply prefactor, write output files
     ! ================================================================
-    call optics_finalize(cfg%optics)
-    call optics_cleanup()
+    call optics_apply_prefactor(oe)
+    call optics_write_output(oe)
+    call optics_free(oe)
 
     deallocate(simpson_w)
     call simulation_setup_free(setup)
@@ -325,7 +327,7 @@ program opticalProperties
     ! Initialize optics accumulation
     ! ================================================================
     cfg%optics%confinement = cfg%confinement
-    call optics_init(cfg%optics)
+    call optics_init(oe, cfg%optics)
 
     ! ================================================================
     ! Simpson integration weights for 2D cylindrical k_par integration
@@ -402,25 +404,25 @@ program opticalProperties
     ! Accumulate optical spectra (serial, uses setup%vel)
     print '(a)', ' Accumulating optical spectra...'
     do k = 1, npts
-      call optics_accumulate(cfg%optics, &
+      call optics_accumulate(oe, &
         & eig(:, k), eigv(:, :, k), simpson_w(k), &
         & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
 
       if (cfg%optics%spontaneous_enabled) then
-        call optics_accumulate_spontaneous(cfg%optics, &
+        call optics_accumulate_spontaneous(oe, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
           & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
       end if
 
       if (cfg%optics%gain_enabled) then
-        call compute_gain_qw(cfg%optics, &
+        call compute_gain_qw(oe, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
           & setup%vel, cfg%numcb, cfg%numvb, &
           & cfg%optics%gain_carrier_density)
       end if
 
       if (cfg%optics%isbt_enabled) then
-        call compute_isbt_absorption(cfg%optics, &
+        call compute_isbt_absorption(oe, &
           & eig(:, k), eigv(:, :, k), &
           & setup%vel, cfg%numcb, cfg%numvb, &
           & simpson_w(k), cfg%sc%fermi_level)
@@ -435,15 +437,15 @@ program opticalProperties
     end if
 
     ! ================================================================
-    ! Finalize: apply prefactor, write output files
+    ! Finalize: apply prefactor, optional exciton, write output files
     ! ================================================================
-    call optics_finalize(cfg%optics)
+    call optics_apply_prefactor(oe)
 
-    ! Exciton corrections (applied after finalize, before cleanup)
+    ! Exciton corrections (applied after prefactor, before write_output)
     if (cfg%exciton%enabled) then
       block
         real(kind=dp) :: E_binding_ex, lambda_opt_ex, E_gap_ex
-        integer :: ie, iounit_ex, cb_st, vb_st
+        integer :: cb_st, vb_st
         cb_st = cfg%numvb + 1
         vb_st = cfg%numvb
         E_gap_ex = eig(cb_st, 1) - eig(vb_st, 1)
@@ -452,32 +454,14 @@ program opticalProperties
           & cfg%numcb, cfg%numvb, cfg%fdstep, E_binding_ex, lambda_opt_ex, &
           & cfg%grid%material_id)
         print '(a,f8.3,a)', ' Exciton binding energy: ', E_binding_ex, ' meV'
-        call apply_excitonic_corrections(E_grid, alpha_te, alpha_tm, &
+        call apply_excitonic_corrections(oe%E_grid, oe%alpha_te, oe%alpha_tm, &
           & E_gap_ex, E_binding_ex, cfg%optics)
-        ! Rewrite absorption files with excitonic corrections
-        call ensure_output_dir()
-        call get_unit(iounit_ex)
-        open(unit=iounit_ex, file='output/absorption_TE.dat', &
-          & status='replace', action='write')
-        write(iounit_ex, '(a)') '# TE absorption with excitonic corrections'
-        write(iounit_ex, '(a)') '# E(eV)  alpha(cm^-1)'
-        do ie = 1, nE
-          write(iounit_ex, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_te(ie)
-        end do
-        close(iounit_ex)
-        open(unit=iounit_ex, file='output/absorption_TM.dat', &
-          & status='replace', action='write')
-        write(iounit_ex, '(a)') '# TM absorption with excitonic corrections'
-        write(iounit_ex, '(a)') '# E(eV)  alpha(cm^-1)'
-        do ie = 1, nE
-          write(iounit_ex, '(es16.8, 2x, es16.8)') E_grid(ie), alpha_tm(ie)
-        end do
-        close(iounit_ex)
         print '(a)', ' Excitonic corrections applied to absorption spectra'
       end block
     end if
 
-    call optics_cleanup()
+    call optics_write_output(oe)
+    call optics_free(oe)
 
     deallocate(simpson_w)
     call simulation_setup_free(setup)
@@ -525,7 +509,7 @@ program opticalProperties
     ! Initialize optics accumulation
     ! ----------------------------------------------------------------
     cfg%optics%confinement = cfg%confinement
-    call optics_init(cfg%optics)
+    call optics_init(oe, cfg%optics)
 
     ! ----------------------------------------------------------------
     ! Simpson integration weights for 1D kz integration
@@ -589,14 +573,14 @@ program opticalProperties
         end if
 
         ! Accumulate optical spectra for this kz
-        call optics_accumulate(cfg%optics, &
+        call optics_accumulate(oe, &
           & eigen_res%eigenvalues(1:nev_wire), &
           & eigen_res%eigenvectors(:, 1:nev_wire), &
           & simpson_w(k), &
           & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
 
         if (cfg%optics%spontaneous_enabled) then
-          call optics_accumulate_spontaneous(cfg%optics, &
+          call optics_accumulate_spontaneous(oe, &
             & eigen_res%eigenvalues(1:nev_wire), &
             & eigen_res%eigenvectors(:, 1:nev_wire), &
             & simpson_w(k), &
@@ -604,7 +588,7 @@ program opticalProperties
         end if
 
         if (cfg%optics%gain_enabled) then
-          call compute_gain_qw(cfg%optics, &
+          call compute_gain_qw(oe, &
             & eigen_res%eigenvalues(1:nev_wire), &
             & eigen_res%eigenvectors(:, 1:nev_wire), &
             & simpson_w(k), &
@@ -613,7 +597,7 @@ program opticalProperties
         end if
 
         if (cfg%optics%isbt_enabled) then
-          call compute_isbt_absorption(cfg%optics, &
+          call compute_isbt_absorption(oe, &
             & eigen_res%eigenvalues(1:nev_wire), &
             & eigen_res%eigenvectors(:, 1:nev_wire), &
             & setup%vel, cfg%numcb, cfg%numvb, &
@@ -628,8 +612,9 @@ program opticalProperties
     ! ----------------------------------------------------------------
     ! Finalize: apply prefactor, write output files
     ! ----------------------------------------------------------------
-    call optics_finalize(cfg%optics)
-    call optics_cleanup()
+    call optics_apply_prefactor(oe)
+    call optics_write_output(oe)
+    call optics_free(oe)
 
     deallocate(simpson_w)
     call simulation_setup_free(setup)
