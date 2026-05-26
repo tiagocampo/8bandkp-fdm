@@ -300,6 +300,10 @@ contains
         allocate(setup%work(1))
         allocate(rwork_local(max(1, 3*8 - 2)))
         call zheev('V', 'L', 8, setup%HT, 8, evals, setup%work, -1, rwork_local, info)
+        if (info /= 0) then
+          print *, 'Error: zheev workspace query failed in setup_solve_kpoint_serial, info =', info
+          stop 1
+        end if
         setup%lwork = int(real(setup%work(1)))
         deallocate(setup%work)
         allocate(setup%work(setup%lwork))
@@ -458,6 +462,10 @@ contains
     integer, intent(in) :: nthreads
     type(thread_workspace), allocatable, intent(out) :: tws(:)
     integer :: t
+    if (setup%confinement /= 2) then
+      print *, 'Error: setup_alloc_sweep requires confinement=2 (wire)'
+      stop 1
+    end if
     allocate(tws(nthreads))
     do t = 1, nthreads
       call csr_clone_structure(setup%HT_csr_ptr, tws(t)%HT_step)
