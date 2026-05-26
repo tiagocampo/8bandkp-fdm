@@ -182,7 +182,7 @@ contains
       deallocate(eig_tmp)
 
     case(2)
-      call init_wire_from_config(cfg)
+      if (.not. allocated(cfg%grid%x)) call init_wire_from_config(cfg)
       call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
         setup%profile_2d, setup%kpterms_2d, cfg%FDorder)
       if (cfg%strain%enabled) then
@@ -214,14 +214,25 @@ contains
         setup%eigen_cfg%method = 'FEAST'
       end if
       setup%eigen_cfg%nev = nev
-      setup%eigen_cfg%emin = -1.0_dp
-      setup%eigen_cfg%emax = 1.0_dp
       setup%eigen_cfg%max_iter = 100
       setup%eigen_cfg%tol = 1.0e-10_dp
       setup%eigen_cfg%feast_m0 = cfg%feast_m0
       allocate(setup%HT_csr_ptr)
       allocate(setup%coo_cache_ptr)
       allocate(setup%wire_ws_ptr)
+      ! Build preliminary Hamiltonian at kz=0 to estimate FEAST energy window
+      call ZB8bandGeneralized(setup%HT_csr_ptr, 0.0_dp, setup%profile_2d, &
+        setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
+      if (cfg%feast_emin /= 0.0_dp .or. cfg%feast_emax /= 0.0_dp) then
+        setup%eigen_cfg%emin = cfg%feast_emin
+        setup%eigen_cfg%emax = cfg%feast_emax
+      else
+        call auto_compute_energy_window(setup%HT_csr_ptr, &
+          setup%eigen_cfg%emin, setup%eigen_cfg%emax)
+        print *, '  Auto FEAST window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
+      end if
+      ! Free CSR data but preserve COO cache for fast rebuild by apps
+      call csr_free(setup%HT_csr_ptr)
       setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
       if (cfg%sc%enabled == 1) then
         block
@@ -435,7 +446,6 @@ contains
       do i = 1, 3
         call csr_free(setup%vel(i))
       end do
-      setup%vel_built = .false.
     end if
     setup%N = 0
     setup%confinement = -1

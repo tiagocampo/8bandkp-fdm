@@ -3,20 +3,12 @@ program gfactor
   use definitions
   use parameters
   use hamiltonianConstructor
-  use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free, &
-    & wire_workspace, wire_workspace_free, build_velocity_matrices, &
-    & ZB8bandGeneralized
-  use confinement_init, only: confinementInitialization_2d
-  use finitedifferences
   use outputFunctions
   use gfactorFunctions
   use utils
   use input_parser
   use sparse_matrices
-  use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
-    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
-  use strain_solver
-  use sc_loop, only: self_consistent_loop, self_consistent_loop_wire
+  use eigensolver, only: eigensolver_result, eigensolver_result_free
   use linalg, only: mkl_set_num_threads_local
   use spin_projection, only: compute_band_parts
   use simulation_setup_mod
@@ -49,16 +41,8 @@ program gfactor
   ! file handling
   integer(kind=4) :: iounit
 
-  ! --- Wire mode (confinement=2) variables ---
-  real(kind=dp), allocatable       :: profile_2d(:,:)
-  type(csr_matrix), allocatable    :: kpterms_2d(:)
-  type(csr_matrix)                 :: HT_csr
-  type(wire_coo_cache)             :: coo_cache
-  type(eigensolver_config)         :: eigen_cfg
-  class(eigensolver_base), allocatable :: eigen_solver
+  ! --- Wire mode (confinement=2) g-factor extraction variables ---
   type(eigensolver_result)         :: eigen_res
-  type(csr_matrix)                 :: vel(3)
-  integer                          :: Ngrid, Ntot, nev_wire
   integer                          :: gap_idx, cb_start, vb_start
   real(kind=dp), allocatable       :: gaps(:)
   real(kind=dp), allocatable       :: band_parts(:,:), cb_char(:)
@@ -103,284 +87,186 @@ program gfactor
   if (cfg%confinement == 2) then
 
     ! ----------------------------------------------------------------
-    ! Wire mode: sparse Hamiltonian + FEAST eigensolver
+    ! Wire mode: sparse Hamiltonian + FEAST eigensolver via setup
     ! ----------------------------------------------------------------
 
     ! For wire mode, numcb/numvb are used directly from input (not * fdStep)
     cfg%evnum = cfg%numcb + cfg%numvb
 
-    ! Initialize 2D confinement operators (sparse CSR kpterms)
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
-      & profile_2d, kpterms_2d, cfg%FDorder)
+    block
+      type(simulation_setup) :: setup
 
-    ! Optional strain
-    if (cfg%strain%enabled) then
-      block
-        type(strain_result) :: strain_out
-        real(kind=dp) :: a0_ref
+      ! Initialize: confinement, strain, SC, energy window, eigensolver
+      call simulation_setup_init(cfg, setup)
 
-        a0_ref = cfg%params(1)%a0
-        call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
-          cfg%strain, a0_ref, strain_out)
-        call compute_bir_pikus_blocks(strain_out, cfg%params, cfg%grid%material_id, &
-          cfg%grid, cfg%strain_blocks)
-        call strain_result_free(strain_out)
-
-        print *, '  Wire strain calculation complete'
-      end block
-    end if
-
-    Ngrid = grid_ngrid(cfg%grid)
-    Ntot  = 8 * Ngrid
-    nev_wire = cfg%evnum
-    if (nev_wire > Ntot) then
-      print *, "Warning: requesting more bands than matrix size. Clamping."
-      nev_wire = Ntot
-    end if
-
-    print *, ''
-    print *, '=== Wire g-factor (2D confinement) ==='
-    print *, '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, ' Ngrid=', Ngrid
-    print *, '  Matrix size: ', Ntot, 'x', Ntot
-    print *, '  numcb=', cfg%numcb, ' numvb=', cfg%numvb
-    print *, ''
-
-    ! Configure FEAST eigensolver (needed before SC loop and production solve)
-    eigen_cfg%method   = 'FEAST'
-    eigen_cfg%nev      = nev_wire
-    eigen_cfg%max_iter = 100
-    eigen_cfg%tol      = 1.0e-10_dp
-    eigen_cfg%feast_m0 = cfg%feast_m0  ! 0 = auto: 2*nev
-
-    ! Set energy window: use manual values if provided, otherwise auto-compute
-    if (cfg%feast_emin /= 0.0_dp .and. cfg%feast_emax /= 0.0_dp) then
-      eigen_cfg%emin = cfg%feast_emin
-      eigen_cfg%emax = cfg%feast_emax
-    else
-      ! Build preliminary Hamiltonian to estimate energy window
-      call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
-      call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
-      call csr_free(HT_csr)
-      print *, '  Auto FEAST window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
-    end if
-
-    ! Self-consistent loop for wire (before production Hamiltonian construction)
-    if (cfg%sc%enabled == 1) then
-      block
-        ! SC kx sweep arrays (separate from production kz solve)
-        integer :: nk_sc, nev_sc
-        real(kind=dp), allocatable :: eig_sc(:,:)
-        complex(kind=dp), allocatable :: eigv_sc(:,:,:)
-        real(kind=dp), allocatable :: sc_phi(:,:), sc_ne(:,:), sc_nh(:,:)
-        logical :: sc_converged
-
-        nk_sc = cfg%sc%num_kpar
-        if (mod(nk_sc, 2) == 0) nk_sc = nk_sc - 1
-        nev_sc = nev_wire
-
-        allocate(eig_sc(nev_sc, nk_sc))
-        allocate(eigv_sc(Ntot, nev_sc, nk_sc))
-        eig_sc = 0.0_dp
-        eigv_sc = cmplx(0.0_dp, 0.0_dp, kind=dp)
-
-        print *, ''
-        print *, '=== Running wire self-consistent SP loop (gfactor) ==='
-
-        call self_consistent_loop_wire(profile_2d, cfg, kpterms_2d, cfg%grid, &
-          & coo_cache, eigen_cfg, eig_sc, eigv_sc, &
-          & phi_out=sc_phi, n_electron_out=sc_ne, n_hole_out=sc_nh, &
-          & converged_out=sc_converged)
-
-        print *, '  Wire SC complete. Converged:', sc_converged
-
-        if (allocated(sc_phi)) deallocate(sc_phi)
-        if (allocated(sc_ne)) deallocate(sc_ne)
-        if (allocated(sc_nh)) deallocate(sc_nh)
-        if (allocated(eig_sc)) deallocate(eig_sc)
-        if (allocated(eigv_sc)) deallocate(eigv_sc)
-
-        ! Reset COO cache — profile_2d changed
-        call wire_coo_cache_free(coo_cache)
-      end block
-    end if
-
-    ! Build wire Hamiltonian at kz=0
-    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg, coo_cache)
-
-    ! Build commutator-based velocity matrices for x,y directions
-    call build_velocity_matrices(HT_csr, cfg%grid, vel(1), vel(2))
-
-    ! Build velocity matrix for z direction (free axis, uses existing dH/dkz)
-    call ZB8bandGeneralized(vel(3), 1.0_dp, profile_2d, kpterms_2d, cfg, g='g3')
-
-    ! Create polymorphic eigensolver
-    eigen_solver = make_eigensolver(eigen_cfg)
-
-    ! Solve eigenvalue problem
-    call eigen_solver%solve(HT_csr, eigen_cfg, eigen_res)
-
-    if (eigen_res%nev_found == 0) then
-      print *, 'Error: FEAST found no eigenvalues. Check energy window.'
-      print *, '  Window: [', eigen_cfg%emin, ',', eigen_cfg%emax, ']'
-      stop 1
-    end if
-
-    if (.not. eigen_res%converged) then
-      print *, 'Warning: FEAST did not converge for g-factor calculation'
-    end if
-
-    if (eigen_res%nev_found < cfg%numcb + cfg%numvb) then
-      print *, 'Error: FEAST found', eigen_res%nev_found, &
-        ' eigenvalues but need', cfg%numcb + cfg%numvb
+      print *, ''
+      print *, '=== Wire g-factor (2D confinement) ==='
+      print *, '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, ' Ngrid=', setup%Ngrid
+      print *, '  Matrix size: ', setup%Ntot, 'x', setup%Ntot
       print *, '  numcb=', cfg%numcb, ' numvb=', cfg%numvb
-      stop 1
-    end if
+      print *, ''
 
-    if (bandIdx < 1 .or. bandIdx + 1 > cfg%numcb) then
-      print *, 'Error: bandIdx=', bandIdx, ' out of range for numcb=', cfg%numcb
-      print *, '  Need bandIdx >= 1 and bandIdx+1 <= numcb'
-      stop 1
-    end if
+      ! Build wire Hamiltonian at kz=0
+      call setup_build_H(setup, cfg, smallk(1))
 
-    N = Ntot
+      ! Build commutator-based velocity matrices
+      call setup_build_velocity_matrices(setup, cfg)
 
-    ! Write wire eigenfunctions at kz=0
-    call writeEigenfunctions2d(cfg%grid, eigen_res%eigenvalues, &
-      & eigen_res%eigenvectors, 1, eigen_res%nev_found, write_parts=.true.)
+      ! Solve eigenvalue problem
+      call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
-    ! Extract CB/VB states from the band edge, not from fixed sorted positions.
-    ! FEAST may return many states in the search window, so the user-supplied
-    ! numvb/numcb should be interpreted as counts around the actual gap.
-    ! Prefer band character over a raw largest-gap split: wide wire windows can
-    ! contain remote valence manifolds whose largest spectral gap is not the
-    ! fundamental VB/CB edge.
-    allocate(cb_value(cfg%numcb))
-    allocate(vb_value(cfg%numvb))
-    allocate(cb_state(N, cfg%numcb))
-    allocate(vb_state(N, cfg%numvb))
-
-    allocate(band_parts(8, eigen_res%nev_found))
-    allocate(cb_char(eigen_res%nev_found))
-    do i = 1, eigen_res%nev_found
-      call compute_band_parts(eigen_res%eigenvectors(:, i), band_parts(:, i))
-      cb_char(i) = band_parts(7, i) + band_parts(8, i)
-    end do
-
-    first_cb_idx = 0
-    do i = 1, eigen_res%nev_found
-      if (cb_char(i) >= cb_threshold) then
-        first_cb_idx = i
-        exit
+      if (eigen_res%nev_found == 0) then
+        print *, 'Error: FEAST found no eigenvalues. Check energy window.'
+        print *, '  Window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
+        stop 1
       end if
-    end do
 
-    used_character_gap = .false.
-    if (first_cb_idx > 0 .and. first_cb_idx - cfg%numvb >= 1 .and. &
-      & first_cb_idx + cfg%numcb - 1 <= eigen_res%nev_found) then
-      gap_idx = first_cb_idx - 1
-      used_character_gap = .true.
-    else
-      allocate(gaps(eigen_res%nev_found - 1))
-      gaps(:) = eigen_res%eigenvalues(2:eigen_res%nev_found) - &
-        & eigen_res%eigenvalues(1:eigen_res%nev_found-1)
-      gap_idx = 0
-      ! Find the largest gap that can accommodate numvb states below and numcb above
-      do while (gap_idx == 0)
-        gap_idx = maxloc(gaps, dim=1)
-        if (gap_idx - cfg%numvb + 1 >= 1 .and. &
-          & gap_idx + cfg%numcb <= eigen_res%nev_found) exit
-        gaps(gap_idx) = -1.0_dp  ! disqualify and retry
-        gap_idx = 0
+      if (.not. eigen_res%converged) then
+        print *, 'Warning: FEAST did not converge for g-factor calculation'
+      end if
+
+      if (eigen_res%nev_found < cfg%numcb + cfg%numvb) then
+        print *, 'Error: FEAST found', eigen_res%nev_found, &
+          ' eigenvalues but need', cfg%numcb + cfg%numvb
+        print *, '  numcb=', cfg%numcb, ' numvb=', cfg%numvb
+        stop 1
+      end if
+
+      if (bandIdx < 1 .or. bandIdx + 1 > cfg%numcb) then
+        print *, 'Error: bandIdx=', bandIdx, ' out of range for numcb=', cfg%numcb
+        print *, '  Need bandIdx >= 1 and bandIdx+1 <= numcb'
+        stop 1
+      end if
+
+      N = setup%Ntot
+
+      ! Write wire eigenfunctions at kz=0
+      call writeEigenfunctions2d(cfg%grid, eigen_res%eigenvalues, &
+        & eigen_res%eigenvectors, 1, eigen_res%nev_found, write_parts=.true.)
+
+      ! Extract CB/VB states from the band edge, not from fixed sorted positions.
+      ! FEAST may return many states in the search window, so the user-supplied
+      ! numvb/numcb should be interpreted as counts around the actual gap.
+      ! Prefer band character over a raw largest-gap split: wide wire windows can
+      ! contain remote valence manifolds whose largest spectral gap is not the
+      ! fundamental VB/CB edge.
+      allocate(cb_value(cfg%numcb))
+      allocate(vb_value(cfg%numvb))
+      allocate(cb_state(N, cfg%numcb))
+      allocate(vb_state(N, cfg%numvb))
+
+      allocate(band_parts(8, eigen_res%nev_found))
+      allocate(cb_char(eigen_res%nev_found))
+      do i = 1, eigen_res%nev_found
+        call compute_band_parts(eigen_res%eigenvectors(:, i), band_parts(:, i))
+        cb_char(i) = band_parts(7, i) + band_parts(8, i)
       end do
-      deallocate(gaps)
-    end if
 
-    cb_start = gap_idx + 1
-    vb_start = gap_idx - cfg%numvb + 1
+      first_cb_idx = 0
+      do i = 1, eigen_res%nev_found
+        if (cb_char(i) >= cb_threshold) then
+          first_cb_idx = i
+          exit
+        end if
+      end do
 
-    if (vb_start >= 1 .and. cb_start + cfg%numcb - 1 <= eigen_res%nev_found) then
-      if (used_character_gap) then
-        print *, '  Wire band edge selected by band character between eigenvalues ', &
-          gap_idx, ' and ', gap_idx + 1
-        print *, '  Edge characters: VB top CB-weight=', cb_char(gap_idx), &
-          ' CB bottom CB-weight=', cb_char(cb_start)
+      used_character_gap = .false.
+      if (first_cb_idx > 0 .and. first_cb_idx - cfg%numvb >= 1 .and. &
+        & first_cb_idx + cfg%numcb - 1 <= eigen_res%nev_found) then
+        gap_idx = first_cb_idx - 1
+        used_character_gap = .true.
       else
-        print *, '  Wire band edge detected by largest spectral gap between eigenvalues ', &
-          gap_idx, ' and ', gap_idx + 1
-      end if
-      print *, '  Selecting VB indices ', vb_start, ':', gap_idx, &
-        & ' and CB indices ', cb_start, ':', cb_start + cfg%numcb - 1
-
-      cb_value(:) = eigen_res%eigenvalues(cb_start:cb_start+cfg%numcb-1)
-      vb_value(:) = eigen_res%eigenvalues(gap_idx:vb_start:-1)
-
-      cb_state(:,:) = eigen_res%eigenvectors(:, cb_start:cb_start+cfg%numcb-1)
-      vb_state(:,:) = eigen_res%eigenvectors(:, gap_idx:vb_start:-1)
-    else
-      print *, '  WARNING: automatic wire band-edge detection did not have enough'
-      print *, '           states on both sides of the gap. Falling back to the'
-      print *, '           legacy contiguous selection around numvb/numcb.'
-      print *, '  gap_idx=', gap_idx, ' nev_found=', eigen_res%nev_found
-
-      cb_value(:) = eigen_res%eigenvalues(cfg%numvb+1:cfg%numvb+cfg%numcb)
-      vb_value(:) = eigen_res%eigenvalues(cfg%numvb:1:-1)
-
-      cb_state(:,:) = eigen_res%eigenvectors(:, cfg%numvb+1:cfg%numvb+cfg%numcb)
-      vb_state(:,:) = eigen_res%eigenvectors(:, cfg%numvb:1:-1)
-    end if
-
-    deallocate(band_parts, cb_char)
-
-    ! Compute g-factor tensor
-    allocate(tensor(2,2,3))
-    tensor = 0
-
-    call gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, cfg%numcb, &
-      & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg, vel)
-
-    if (cfg%optics%enabled) then
-      ! Compute optical transitions only for optics-enabled runs.
-      block
-        type(optical_transition), allocatable :: transitions(:)
-        integer :: num_trans, it
-
-        call compute_optical_matrix_wire(transitions, num_trans, &
-          cb_state, vb_state, cb_value, vb_value, cfg%numcb, cfg%numvb, &
-          vel)
-
-        ! Write to file
-        call ensure_output_dir()
-        call get_unit(iounit)
-        open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
-        write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
-        do it = 1, num_trans
-          write(iounit, '(2(I4,1x),5(g14.6,1x))') &
-            transitions(it)%cb_idx, transitions(it)%vb_idx, &
-            transitions(it)%energy, transitions(it)%px, &
-            transitions(it)%py, transitions(it)%pz, &
-            transitions(it)%oscillator_strength
+        allocate(gaps(eigen_res%nev_found - 1))
+        gaps(:) = eigen_res%eigenvalues(2:eigen_res%nev_found) - &
+          & eigen_res%eigenvalues(1:eigen_res%nev_found-1)
+        gap_idx = 0
+        ! Find the largest gap that can accommodate numvb states below and numcb above
+        do while (gap_idx == 0)
+          gap_idx = maxloc(gaps, dim=1)
+          if (gap_idx - cfg%numvb + 1 >= 1 .and. &
+            & gap_idx + cfg%numcb <= eigen_res%nev_found) exit
+          gaps(gap_idx) = -1.0_dp  ! disqualify and retry
+          gap_idx = 0
         end do
-        close(iounit)
-        print *, '  Optical transitions written to output/optical_transitions.dat'
+        deallocate(gaps)
+      end if
 
-        deallocate(transitions)
-      end block
-    end if
+      cb_start = gap_idx + 1
+      vb_start = gap_idx - cfg%numvb + 1
 
-    ! Free wire-specific resources
-    call csr_free(HT_csr)
-    do i = 1, 3
-      call csr_free(vel(i))
-    end do
-    call wire_coo_cache_free(coo_cache)
-    call eigensolver_result_free(eigen_res)
-    if (allocated(profile_2d)) deallocate(profile_2d)
-    if (allocated(kpterms_2d)) then
-      do i = 1, size(kpterms_2d)
-        call csr_free(kpterms_2d(i))
-      end do
-      deallocate(kpterms_2d)
-    end if
+      if (vb_start >= 1 .and. cb_start + cfg%numcb - 1 <= eigen_res%nev_found) then
+        if (used_character_gap) then
+          print *, '  Wire band edge selected by band character between eigenvalues ', &
+            gap_idx, ' and ', gap_idx + 1
+          print *, '  Edge characters: VB top CB-weight=', cb_char(gap_idx), &
+            ' CB bottom CB-weight=', cb_char(cb_start)
+        else
+          print *, '  Wire band edge detected by largest spectral gap between eigenvalues ', &
+            gap_idx, ' and ', gap_idx + 1
+        end if
+        print *, '  Selecting VB indices ', vb_start, ':', gap_idx, &
+          & ' and CB indices ', cb_start, ':', cb_start + cfg%numcb - 1
+
+        cb_value(:) = eigen_res%eigenvalues(cb_start:cb_start+cfg%numcb-1)
+        vb_value(:) = eigen_res%eigenvalues(gap_idx:vb_start:-1)
+
+        cb_state(:,:) = eigen_res%eigenvectors(:, cb_start:cb_start+cfg%numcb-1)
+        vb_state(:,:) = eigen_res%eigenvectors(:, gap_idx:vb_start:-1)
+      else
+        print *, '  WARNING: automatic wire band-edge detection did not have enough'
+        print *, '           states on both sides of the gap. Falling back to the'
+        print *, '           legacy contiguous selection around numvb/numcb.'
+        print *, '  gap_idx=', gap_idx, ' nev_found=', eigen_res%nev_found
+
+        cb_value(:) = eigen_res%eigenvalues(cfg%numvb+1:cfg%numvb+cfg%numcb)
+        vb_value(:) = eigen_res%eigenvalues(cfg%numvb:1:-1)
+
+        cb_state(:,:) = eigen_res%eigenvectors(:, cfg%numvb+1:cfg%numvb+cfg%numcb)
+        vb_state(:,:) = eigen_res%eigenvectors(:, cfg%numvb:1:-1)
+      end if
+
+      deallocate(band_parts, cb_char)
+
+      ! Compute g-factor tensor
+      allocate(tensor(2,2,3))
+      tensor = 0
+
+      call gfactorCalculation_wire(tensor, g_eff, whichBand, bandIdx, cfg%numcb, &
+        & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg, setup%vel)
+
+      if (cfg%optics%enabled) then
+        ! Compute optical transitions only for optics-enabled runs.
+        block
+          type(optical_transition), allocatable :: transitions(:)
+          integer :: num_trans, it
+
+          call compute_optical_matrix_wire(transitions, num_trans, &
+            cb_state, vb_state, cb_value, vb_value, cfg%numcb, cfg%numvb, &
+            setup%vel)
+
+          ! Write to file
+          call ensure_output_dir()
+          call get_unit(iounit)
+          open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
+          write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
+          do it = 1, num_trans
+            write(iounit, '(2(I4,1x),5(g14.6,1x))') &
+              transitions(it)%cb_idx, transitions(it)%vb_idx, &
+              transitions(it)%energy, transitions(it)%px, &
+              transitions(it)%py, transitions(it)%pz, &
+              transitions(it)%oscillator_strength
+          end do
+          close(iounit)
+          print *, '  Optical transitions written to output/optical_transitions.dat'
+
+          deallocate(transitions)
+        end block
+      end if
+
+      ! Free eigenresult and setup resources
+      call eigensolver_result_free(eigen_res)
+      call simulation_setup_free(setup)
+    end block
 
   else
 

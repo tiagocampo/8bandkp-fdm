@@ -3,19 +3,13 @@ program opticalProperties
   use definitions
   use parameters
   use hamiltonianConstructor
-  use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
-    & build_velocity_matrices, ZB8bandGeneralized
-  use confinement_init, only: confinementInitialization_2d
   use input_parser, only: read_config
   use simulation_setup_mod, only: simulation_setup, simulation_setup_init, &
-    & simulation_setup_free, setup_build_velocity_matrices
+    & simulation_setup_free, setup_build_velocity_matrices, setup_build_H
   use optical_spectra
   use exciton_solver, only: compute_exciton_binding, apply_excitonic_corrections
   use sparse_matrices
-  use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
-    & eigensolver_result, eigensolver_result_free, &
-    & auto_compute_energy_window
-  use strain_solver
+  use eigensolver, only: eigensolver_result, eigensolver_result_free
   use linalg, only: zheevx, ilaenv, dlamch, mkl_set_num_threads_local
   use outputFunctions, only: ensure_output_dir, get_unit
 
@@ -46,15 +40,8 @@ program opticalProperties
   real(kind=dp), allocatable :: simpson_w(:)
 
   ! Wire-specific variables (confinement=2)
-  real(kind=dp), allocatable       :: profile_2d(:,:)
-  type(csr_matrix), allocatable    :: kpterms_2d(:)
-  type(csr_matrix)                 :: HT_csr
-  type(wire_workspace)             :: wire_ws
-  class(eigensolver_base), allocatable :: eigen_solver
-  type(eigensolver_config)         :: eigen_cfg
-  type(eigensolver_result)         :: eigen_res
-  type(csr_matrix)                 :: vel_wire(3)
-  integer                          :: Ngrid, Ntot, nev_wire
+  type(eigensolver_result) :: eigen_res
+  integer                  :: Ngrid, Ntot, nev_wire
 
   ! File handling
   integer(kind=4) :: iounit
@@ -502,35 +489,14 @@ program opticalProperties
   case (2)
 
     ! ----------------------------------------------------------------
-    ! Initialize 2D confinement operators (sparse CSR kpterms)
+    ! Initialize via simulation_setup (2D confinement, strain, SC, eigensolver)
     ! ----------------------------------------------------------------
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
-      & profile_2d, kpterms_2d, cfg%FDorder)
+    call simulation_setup_init(cfg, setup)
+    Ntot = setup%Ntot
+    nev_wire = setup%nev_wire
+    if (setup%sc_was_run) cfg%sc%fermi_level = setup%fermi_level
 
-    ! Optional strain
-    if (cfg%strain%enabled) then
-      block
-        type(strain_result) :: strain_out
-        real(kind=dp) :: a0_ref
-
-        a0_ref = cfg%params(1)%a0
-        call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
-          cfg%strain, a0_ref, strain_out)
-        call compute_bir_pikus_blocks(strain_out, cfg%params, &
-          cfg%grid%material_id, cfg%grid, cfg%strain_blocks)
-        call strain_result_free(strain_out)
-        print '(a)', '  Wire strain calculation complete'
-      end block
-    end if
-
-    Ngrid = grid_ngrid(cfg%grid)
-    Ntot  = 8 * Ngrid
-    nev_wire = cfg%numcb + cfg%numvb
-    if (nev_wire > Ntot) then
-      print '(a,i0,a,i0)', ' Warning: requesting ', nev_wire, &
-        & ' bands but matrix size is ', Ntot
-      nev_wire = Ntot
-    end if
+    Ngrid = setup%Ngrid
 
     print '(a)', ''
     print '(a)', '=== Wire optical properties (2D confinement) ==='
@@ -541,41 +507,20 @@ program opticalProperties
     print '(a)', ''
 
     ! ----------------------------------------------------------------
-    ! Build wire Hamiltonian at kz=0
+    ! Build velocity matrices via simulation_setup
     ! ----------------------------------------------------------------
-    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, &
-      & cfg, ws=wire_ws)
+    ! Need a Hamiltonian built first for velocity matrix construction
+    block
+      type(wavevector) :: kv_zero
+      kv_zero%kx = 0.0_dp
+      kv_zero%ky = 0.0_dp
+      kv_zero%kz = 0.0_dp
+      call setup_build_H(setup, cfg, kv_zero)
+    end block
 
-    ! Build commutator-based velocity matrices for x,y directions
-    call build_velocity_matrices(HT_csr, cfg%grid, vel_wire(1), vel_wire(2))
-
-    ! Build velocity matrix for z direction (free axis, uses dH/dkz)
-    call ZB8bandGeneralized(vel_wire(3), 1.0_dp, profile_2d, kpterms_2d, &
-      & cfg, g='g3')
-
-    ! Keep HT_csr alive: the COO cache fast path in the kz sweep reuses its CSR structure
+    call setup_build_velocity_matrices(setup, cfg)
 
     print '(a)', ' Wire velocity matrices built successfully'
-
-    ! ----------------------------------------------------------------
-    ! Configure FEAST eigensolver
-    ! ----------------------------------------------------------------
-    eigen_cfg%method   = 'FEAST'
-    eigen_cfg%nev      = nev_wire
-    eigen_cfg%max_iter = 100
-    eigen_cfg%tol      = 1.0e-10_dp
-    eigen_cfg%feast_m0 = cfg%feast_m0
-
-    ! Set energy window once (before the kz sweep)
-    if (cfg%feast_emin /= 0.0_dp .and. cfg%feast_emax /= 0.0_dp) then
-      eigen_cfg%emin = cfg%feast_emin
-      eigen_cfg%emax = cfg%feast_emax
-    else
-      call auto_compute_energy_window(HT_csr, eigen_cfg%emin, eigen_cfg%emax)
-    end if
-
-    ! Create polymorphic eigensolver
-    eigen_solver = make_eigensolver(eigen_cfg)
 
     ! Initialize optics accumulation
     ! ----------------------------------------------------------------
@@ -610,25 +555,24 @@ program opticalProperties
     ! ----------------------------------------------------------------
     ! kz sweep: build H(kz), diagonalize with FEAST, accumulate spectra
     ! ----------------------------------------------------------------
-    ! The COO cache preserves the CSR sparsity pattern across kz values,
-    ! so only the values are updated on subsequent calls (fast path).
-    ! We keep HT_csr allocated throughout the sweep.
-    ! ----------------------------------------------------------------
     print '(a,i0,a)', ' Wire optics kz-sweep: ', npts, ' k-points'
 
     do k = 1, npts
       ! Build kz value for this sweep point
       block
         real(kind=dp) :: kz_val
+        type(wavevector) :: kv_sweep
 
         kz_val = real(k - 1, kind=dp) * dk
 
-        ! Build wire Hamiltonian at this kz (cache reuses CSR structure)
-        call ZB8bandGeneralized(HT_csr, kz_val, profile_2d, kpterms_2d, &
-          & cfg, ws=wire_ws)
+        ! Build wire Hamiltonian at this kz (setup dispatches internally)
+        kv_sweep%kx = 0.0_dp
+        kv_sweep%ky = 0.0_dp
+        kv_sweep%kz = kz_val
+        call setup_build_H(setup, cfg, kv_sweep)
 
         ! Solve eigenvalue problem
-        call eigen_solver%solve(HT_csr, eigen_cfg, eigen_res)
+        call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
         if (eigen_res%nev_found == 0) then
           print '(a,i0,a)', ' WARNING: FEAST found no eigenvalues at kz-point ', k
@@ -649,14 +593,14 @@ program opticalProperties
           & eigen_res%eigenvalues(1:nev_wire), &
           & eigen_res%eigenvectors(:, 1:nev_wire), &
           & simpson_w(k), &
-          & vel_wire, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+          & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
 
         if (cfg%optics%spontaneous_enabled) then
           call optics_accumulate_spontaneous(cfg%optics, &
             & eigen_res%eigenvalues(1:nev_wire), &
             & eigen_res%eigenvectors(:, 1:nev_wire), &
             & simpson_w(k), &
-            & vel_wire, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+            & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
         end if
 
         if (cfg%optics%gain_enabled) then
@@ -664,7 +608,7 @@ program opticalProperties
             & eigen_res%eigenvalues(1:nev_wire), &
             & eigen_res%eigenvectors(:, 1:nev_wire), &
             & simpson_w(k), &
-            & vel_wire, cfg%numcb, cfg%numvb, &
+            & setup%vel, cfg%numcb, cfg%numvb, &
             & cfg%optics%gain_carrier_density)
         end if
 
@@ -672,7 +616,7 @@ program opticalProperties
           call compute_isbt_absorption(cfg%optics, &
             & eigen_res%eigenvalues(1:nev_wire), &
             & eigen_res%eigenvectors(:, 1:nev_wire), &
-            & vel_wire, cfg%numcb, cfg%numvb, &
+            & setup%vel, cfg%numcb, cfg%numvb, &
             & simpson_w(k), cfg%sc%fermi_level)
         end if
 
@@ -681,32 +625,14 @@ program opticalProperties
       end block
     end do
 
-    ! Free Hamiltonian CSR after sweep completes
-    call csr_free(HT_csr)
-
     ! ----------------------------------------------------------------
     ! Finalize: apply prefactor, write output files
     ! ----------------------------------------------------------------
     call optics_finalize(cfg%optics)
     call optics_cleanup()
 
-    ! Free velocity matrices
-    do i = 1, 3
-      call csr_free(vel_wire(i))
-    end do
-
-    ! Free wire-specific resources
-    call wire_workspace_free(wire_ws)
-    if (allocated(eigen_solver)) deallocate(eigen_solver)
-    if (allocated(profile_2d)) deallocate(profile_2d)
-    if (allocated(kpterms_2d)) then
-      do i = 1, size(kpterms_2d)
-        call csr_free(kpterms_2d(i))
-      end do
-      deallocate(kpterms_2d)
-    end if
-
     deallocate(simpson_w)
+    call simulation_setup_free(setup)
     print '(a)', ' Wire optical spectra written to output/'
 
   case default
