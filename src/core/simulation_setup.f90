@@ -329,7 +329,15 @@ contains
     type(simulation_setup), intent(inout) :: setup
     type(simulation_config), intent(in) :: cfg
     complex(kind=dp), allocatable :: vel_dense(:,:)
+    type(csr_matrix) :: H_csr_tmp
     type(wavevector) :: kv_g
+
+    if (setup%confinement == 2) then
+      if (.not. allocated(setup%HT_csr_ptr%rowptr)) then
+        print *, 'Error: call setup_build_H before setup_build_velocity_matrices for wire'
+        stop 1
+      end if
+    end if
 
     select case(setup%confinement)
     case(0)
@@ -345,19 +353,32 @@ contains
       call dense_to_csr_8(vel_dense, setup%vel(3))
       deallocate(vel_dense)
     case(1)
+      ! vel(3): commutator -i[r_z, H] via build_velocity_matrices (1D QW)
+      ! vel(1), vel(2): overwritten with k-derivative dH/dkx, dH/dky
       allocate(vel_dense(setup%N, setup%N))
-      vel_dense = 0.0_dp; kv_g%kx = 1.0_dp; kv_g%ky = 0.0_dp; kv_g%kz = 0.0_dp
+      vel_dense = 0.0_dp
+      kv_g%kx = 0.0_dp; kv_g%ky = 0.0_dp; kv_g%kz = 0.0_dp
+      call ZB8bandQW(vel_dense, kv_g, setup%profile, setup%kpterms, cfg=cfg)
+      call dense_to_csr_N(vel_dense, H_csr_tmp)
+      call build_velocity_matrices(H_csr_tmp, cfg%grid, setup%vel)
+      call csr_free(H_csr_tmp)
+      ! Overwrite vel(1) with k-derivative (x-direction)
+      vel_dense = 0.0_dp
+      kv_g%kx = 1.0_dp; kv_g%ky = 0.0_dp; kv_g%kz = 0.0_dp
       call ZB8bandQW(vel_dense, kv_g, setup%profile, setup%kpterms, cfg=cfg, g='g')
+      call csr_free(setup%vel(1))
       call dense_to_csr_N(vel_dense, setup%vel(1))
-      vel_dense = 0.0_dp; kv_g%kx = 0.0_dp; kv_g%ky = 1.0_dp; kv_g%kz = 0.0_dp
+      ! Overwrite vel(2) with k-derivative (y-direction)
+      vel_dense = 0.0_dp
+      kv_g%kx = 0.0_dp; kv_g%ky = 1.0_dp; kv_g%kz = 0.0_dp
       call ZB8bandQW(vel_dense, kv_g, setup%profile, setup%kpterms, cfg=cfg, g='g')
+      call csr_free(setup%vel(2))
       call dense_to_csr_N(vel_dense, setup%vel(2))
-      vel_dense = 0.0_dp; kv_g%kx = 0.0_dp; kv_g%ky = 0.0_dp; kv_g%kz = 1.0_dp
-      call ZB8bandQW(vel_dense, kv_g, setup%profile, setup%kpterms, cfg=cfg, g='g')
-      call dense_to_csr_N(vel_dense, setup%vel(3))
       deallocate(vel_dense)
     case(2)
       call build_velocity_matrices(setup%HT_csr_ptr, cfg%grid, setup%vel(1), setup%vel(2))
+      call ZB8bandGeneralized(setup%vel(3), 1.0_dp, setup%profile_2d, &
+        setup%kpterms_2d, cfg, g='g3')
     case default
       print *, 'Error: setup_build_velocity_matrices unsupported confinement=', setup%confinement
       stop 1
