@@ -3,6 +3,7 @@ set(COMMON_SOURCES
     core/defs.f90
     core/parameters.f90
     core/utils.f90
+    core/simulation_setup.f90
     math/sparse_matrices.f90
     math/geometry.f90
     math/finitedifferences.f90
@@ -58,6 +59,7 @@ set_source_files_properties(
     core/defs.f90
     core/parameters.f90
     core/utils.f90
+    core/simulation_setup.f90
     math/sparse_matrices.f90
     math/geometry.f90
     math/finitedifferences.f90

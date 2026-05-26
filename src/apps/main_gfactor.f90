@@ -18,6 +18,8 @@ program gfactor
   use strain_solver
   use sc_loop, only: self_consistent_loop, self_consistent_loop_wire
   use linalg, only: mkl_set_num_threads_local
+  use spin_projection, only: compute_band_parts
+  use simulation_setup_mod
 
   implicit NONE
 
@@ -262,7 +264,7 @@ program gfactor
     allocate(band_parts(8, eigen_res%nev_found))
     allocate(cb_char(eigen_res%nev_found))
     do i = 1, eigen_res%nev_found
-      call compute_wire_band_parts(eigen_res%eigenvectors(:, i), band_parts(:, i))
+      call compute_band_parts(eigen_res%eigenvectors(:, i), band_parts(:, i))
       cb_char(i) = band_parts(7, i) + band_parts(8, i)
     end do
 
@@ -385,7 +387,7 @@ program gfactor
   else
 
     ! ----------------------------------------------------------------
-    ! Bulk / QW mode: dense Hamiltonian + LAPACK diagonalization
+    ! Bulk / QW mode: dense Hamiltonian via simulation_setup
     ! ----------------------------------------------------------------
 
     print *, 'adjusting numcb and numvb to get all states'
@@ -398,145 +400,59 @@ program gfactor
 
     if (cfg%evnum /= N) stop 'evnum not equal to total matrix size'
 
-    ! Allocate arrays
-    if (allocated(eig)) deallocate(eig)
-    allocate(eig(N,1))  ! Only one k-point for g-factor
-    eig(:,:) = 0_dp
+    ! Initialize simulation setup (confinement, profile, kpterms, workspace)
+    block
+      type(simulation_setup) :: setup
 
-    allocate(HT(N,N))
-    HT = 0.0_dp
+      call simulation_setup_init(cfg, setup)
 
-    ! Workspace query for LAPACK
-    if (allocated(work)) deallocate(work)
-    allocate(work(1))
-    if (allocated(rwork)) deallocate(rwork)
-    allocate(rwork(1))
-    if (allocated(iwork)) deallocate(iwork)
-    allocate(iwork(1))
-
-    ! Workspace query
-    if (cfg%numLayers == 1) then
-      call zheev('V', 'U', N, HT, N, eig(:,1), work, -1, rwork, info)
-      if (info /= 0) then
-        print *, 'Error: zheev workspace query failed, info =', info
-        stop 1
+      ! Print profile for QW mode
+      if (cfg%confDir == 'z') then
+        call ensure_output_dir()
+        call get_unit(iounit)
+        open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
+        do i = 1, cfg%fdStep
+          write(iounit, *) cfg%z(i), setup%profile(i,1), setup%profile(i,2), setup%profile(i,3)
+        end do
+        close(iounit)
       end if
-      lwork = int(work(1))
-      if (allocated(work)) deallocate(work)
-      allocate(work(lwork))
-      if (allocated(rwork)) deallocate(rwork)
-      allocate(rwork(max(1,3*N-2)))
-    else
-      call zheevd('V', 'U', N, HT, N, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
-      if (info /= 0) then
-        print *, 'Error: zheevd workspace query failed, info =', info
-        stop 1
-      end if
-      lwork = int(work(1))
-      lrwork = int(rwork(1))
-      liwork = iwork(1)
-      if (allocated(work)) deallocate(work)
-      allocate(work(lwork))
-      if (allocated(rwork)) deallocate(rwork)
-      allocate(rwork(lrwork))
-      if (allocated(iwork)) deallocate(iwork)
-      allocate(iwork(liwork))
-    end if
 
-    ! Print profile for QW mode
-    if (cfg%confDir == 'z') then
-      call ensure_output_dir()
-      call get_unit(iounit)
-      open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
-      do i = 1, cfg%fdStep
-        write(iounit, *) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
-      end do
-      close(iounit)
-    end if
+      ! Solve at k=0
+      allocate(eig(N,1))
+      allocate(HT(N,N))
+      HT = 0.0_dp
+      eig = 0.0_dp
 
-    !only Gamma points
-    k = 1
+      call setup_solve_kpoint_serial(setup, cfg, smallk(1), eig(:,1), HT)
 
-    ! Self-consistent loop for QW (before Hamiltonian construction)
-    if (cfg%sc%enabled == 1 .and. cfg%confDir == 'z') then
-      block
-        complex(kind=dp), allocatable :: eigv_sc(:,:,:)
-        real(kind=dp), allocatable :: sc_ne_out(:), sc_nh_out(:)
-        integer :: il_sc, iuu_sc
+      ! Write eigenfunctions for multi-layer QW
+      if (cfg%numLayers > 1) call writeEigenfunctions(N, N, HT, 1, cfg%fdstep, cfg%z, cfg%numLayers==1)
 
-        ! SC loop uses zheevx with index range; compute all states for gfactor
-        il_sc = 1
-        iuu_sc = N
+      allocate(cb_state(N,cfg%numcb))
+      allocate(vb_state(N,cfg%numvb))
 
-        ! Minimal dummy allocation — SC loop uses internal eigv_kpar
-        allocate(eigv_sc(1, 1, 1))
+      allocate(cb_value(cfg%numcb))
+      allocate(vb_value(cfg%numvb))
 
-        print *, ''
-        print *, '=== Running QW self-consistent SP loop (gfactor) ==='
-        call self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv_sc, &
-          & smallk, N, il_sc, iuu_sc, &
-          & n_electron_out=sc_ne_out, n_hole_out=sc_nh_out)
-        print *, '  QW SC complete.'
+      cb_state(:,:) = HT(:, cfg%numvb+1:cfg%numvb+cfg%numcb)
+      vb_state(:,:) = HT(:, cfg%numvb:1:-1)
 
-        if (allocated(eigv_sc)) deallocate(eigv_sc)
-        if (allocated(sc_ne_out)) deallocate(sc_ne_out)
-        if (allocated(sc_nh_out)) deallocate(sc_nh_out)
-      end block
-    end if
-
-    ! Bulk SC warning
-    if (cfg%sc%enabled == 1 .and. cfg%confDir == 'n') then
-      print *, 'Warning: SC with bulk mode (confDir=n) requires confDir=z with single material.'
-      print *, '  Skipping SC. Use confinement=1, confDir=z, numLayers=1 for delta-doped bulk.'
-    end if
-
-    if (cfg%confDir == 'n') then !BULK
-      call ZB8bandBulk(HT,smallk(k),cfg%params(1), cfg=cfg)
-    else if (cfg%confDir == 'z') then ! QUANTUM WELL
-      call ZB8bandQW(HT, smallk(k), profile, kpterms, cfg=cfg)
-    else
-      stop "verify confinement direction or something else"
-    end if
+      cb_value(:) = eig(cfg%numvb+1:cfg%numvb+cfg%numcb,1)
+      vb_value(:) = eig(cfg%numvb:1:-1,1)
 
 
-    ! full diagonalization
+      allocate(tensor(2,2,3))
+      tensor = 0
 
-    if (cfg%numLayers == 1) call zheev('V', 'L', N, HT, N, eig(:,k), work, lwork, rwork, info)
+      if (cfg%numLayers == 1) call gfactorCalculation(tensor, g_eff, whichBand, bandIdx, cfg%numcb, &
+      & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg%numLayers, cfg%params, &
+      & cfg%startPos(1), cfg%endPos(1), dz=cfg%dz)
+      if (cfg%numLayers > 1)  call gfactorCalculation(tensor, g_eff, whichBand, bandIdx, cfg%numcb, &
+      & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg%numLayers, cfg%params, &
+      & cfg%startPos(1), cfg%endPos(1), profile=setup%profile, kpterms=setup%kpterms, dz=cfg%dz)
 
-    if (cfg%numLayers > 1) call zheevd('V', 'U', N, HT, N, eig(:,k), work, lwork, rwork, lrwork, iwork, liwork, info)
-
-    if (info /= 0) then
-      print *, "Diagonalization error in g-factor calculation, info = ", info
-      if (info < 0) print *, "Parameter ", -info, " had illegal value"
-      stop 1
-    end if
-
-
-     if (cfg%numLayers > 1 ) call writeEigenfunctions(N, N, HT, k, cfg%fdstep, cfg%z, cfg%numLayers==1)
-
-
-    allocate(cb_state(N,cfg%numcb))
-    allocate(vb_state(N,cfg%numvb))
-
-    allocate(cb_value(cfg%numcb))
-    allocate(vb_value(cfg%numvb))
-
-    cb_state(:,:) = HT(:, cfg%numvb+1:cfg%numvb+cfg%numcb)
-    vb_state(:,:) = HT(:, cfg%numvb:1:-1)
-
-    cb_value(:) = eig(cfg%numvb+1:cfg%numvb+cfg%numcb,1)
-    vb_value(:) = eig(cfg%numvb:1:-1,1)
-
-
-    allocate(tensor(2,2,3))
-    tensor = 0
-
-    if (cfg%numLayers == 1) call gfactorCalculation(tensor, g_eff, whichBand, bandIdx, cfg%numcb, &
-    & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg%numLayers, cfg%params, &
-    & cfg%startPos(1), cfg%endPos(1), dz=cfg%dz)
-    if (cfg%numLayers > 1)  call gfactorCalculation(tensor, g_eff, whichBand, bandIdx, cfg%numcb, &
-    & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg%numLayers, cfg%params, &
-    & cfg%startPos(1), cfg%endPos(1), profile=profile, kpterms=kpterms, dz=cfg%dz)
+      call simulation_setup_free(setup)
+    end block
 
   end if  ! confinement /= 2
 
@@ -614,27 +530,5 @@ program gfactor
   if (allocated(tensor)) deallocate(tensor)
 
 contains
-
-  subroutine compute_wire_band_parts(state_vec, parts)
-    complex(kind=dp), intent(in) :: state_vec(:)
-    real(kind=dp), intent(out) :: parts(8)
-
-    integer :: band, ngrid_local, start_idx, end_idx
-    real(kind=dp) :: total_weight
-
-    ngrid_local = size(state_vec) / 8
-    parts = 0.0_dp
-    if (ngrid_local <= 0) return
-
-    do band = 1, 8
-      start_idx = (band - 1) * ngrid_local + 1
-      end_idx = band * ngrid_local
-      parts(band) = real(sum(conjg(state_vec(start_idx:end_idx)) * &
-        & state_vec(start_idx:end_idx)), kind=dp)
-    end do
-
-    total_weight = sum(parts)
-    if (total_weight > 0.0_dp) parts = parts / total_weight
-  end subroutine compute_wire_band_parts
 
 end program gfactor

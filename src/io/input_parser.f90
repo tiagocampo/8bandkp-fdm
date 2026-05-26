@@ -11,6 +11,7 @@ module input_parser
 
   private
   public :: read_and_setup
+  public :: read_config
 
 contains
 
@@ -138,10 +139,8 @@ contains
     found = .true.
   end subroutine read_optional_real_flag
 
-  subroutine read_and_setup(cfg, profile, kpterms)
+  subroutine read_config(cfg)
     type(simulation_config), intent(out) :: cfg
-    real(kind=dp), allocatable, intent(out) :: profile(:,:)
-    real(kind=dp), allocatable, intent(out) :: kpterms(:,:,:)
 
     ! Local variables for file handling
     integer(kind=4) :: data_unit
@@ -1362,6 +1361,22 @@ contains
       call init_wire_from_config(cfg)
     end if
 
+    ! Close input file
+    close(data_unit)
+
+    ! Final validation pass: catch any inconsistent state
+    call cfg%validate()
+
+  end subroutine read_config
+
+  subroutine read_and_setup(cfg, profile, kpterms)
+    type(simulation_config), intent(out) :: cfg
+    real(kind=dp), allocatable, intent(out) :: profile(:,:)
+    real(kind=dp), allocatable, intent(out) :: kpterms(:,:,:)
+
+    ! Read config (parses input.cfg, validates, closes file)
+    call read_config(cfg)
+
     ! Confinement initialization for QW mode (not wire)
     if (cfg%confDir == 'z' .and. cfg%confinement == 1) then
       allocate(kpterms(grid_ngrid(cfg%grid), grid_ngrid(cfg%grid), 10))
@@ -1379,12 +1394,6 @@ contains
         call externalFieldSetup_electricField(profile, cfg%Evalue, cfg%totalSize, cfg%z)
       end if
     end if
-
-    ! Close input file
-    close(data_unit)
-
-    ! Final validation pass: catch any inconsistent state
-    call cfg%validate()
 
   end subroutine read_and_setup
 

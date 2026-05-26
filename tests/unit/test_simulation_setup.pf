@@ -1,0 +1,398 @@
+module test_simulation_setup
+  use funit
+  use definitions
+  use parameters
+  use simulation_setup_mod
+  implicit none
+
+contains
+
+  ! Vertical slice 1: Bulk init — simulation_setup_init with bulk GaAs config
+  @test
+  subroutine test_bulk_init()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    character(len=255) :: materials(1)
+
+    ! Build a minimal bulk GaAs config programmatically
+    cfg%confinement = 0
+    cfg%fdStep = 1
+    cfg%FDorder = 2
+    cfg%numLayers = 1
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+    cfg%confDir = 'n'
+    cfg%waveVector = 'k0'
+    cfg%waveVectorMax = 0.0_dp
+    cfg%waveVectorStep = 100
+    cfg%ExternalField = 0
+    cfg%EFtype = 'EF'
+    cfg%Evalue = 0.0_dp
+    cfg%totalSize = 0.0_dp
+    cfg%delta = 0.0_dp
+    cfg%dz = 0.0_dp
+    cfg%whichBand = 0
+    cfg%bandIdx = 1
+
+    allocate(cfg%materialN(1))
+    cfg%materialN(1) = 'GaAs'
+    allocate(cfg%startPos(1))
+    allocate(cfg%endPos(1))
+    cfg%startPos(1) = 0.0_dp
+    cfg%endPos(1) = 1.0_dp
+
+    ! Material parameters
+    allocate(cfg%params(1))
+    materials(1) = 'GaAs'
+    call paramDatabase(materials, 1, cfg%params)
+
+    ! Grid init (bulk)
+    call init_grid_from_config(cfg)
+
+    ! Init setup
+    call simulation_setup_init(cfg, setup)
+
+    ! Assertions
+    @assertEqual(0, setup%confinement)
+    @assertEqual(8, setup%N)
+    @assertEqual(1, setup%il)
+    @assertEqual(8, setup%iuu)
+    @assertFalse(setup%has_strain)
+    @assertFalse(setup%sc_was_run)
+
+    ! Cleanup
+    call simulation_setup_free(setup)
+  end subroutine test_bulk_init
+
+
+  ! Vertical slice 2: Bulk build_H — 8x8 Hamiltonian
+  @test
+  subroutine test_bulk_build_H()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    character(len=255) :: materials(1)
+    complex(kind=dp), allocatable :: HT(:,:)
+    type(wavevector) :: kv
+    real(kind=dp) :: max_val
+
+    ! Build bulk GaAs config
+    cfg%confinement = 0
+    cfg%fdStep = 1
+    cfg%FDorder = 2
+    cfg%numLayers = 1
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+    cfg%confDir = 'n'
+    cfg%waveVector = 'k0'
+    cfg%waveVectorMax = 0.0_dp
+    cfg%waveVectorStep = 100
+    cfg%ExternalField = 0
+    cfg%EFtype = 'EF'
+    cfg%Evalue = 0.0_dp
+    cfg%totalSize = 0.0_dp
+    cfg%delta = 0.0_dp
+    cfg%dz = 0.0_dp
+    cfg%whichBand = 0
+    cfg%bandIdx = 1
+
+    allocate(cfg%materialN(1))
+    cfg%materialN(1) = 'GaAs'
+    allocate(cfg%startPos(1))
+    allocate(cfg%endPos(1))
+    cfg%startPos(1) = 0.0_dp
+    cfg%endPos(1) = 1.0_dp
+
+    allocate(cfg%params(1))
+    materials(1) = 'GaAs'
+    call paramDatabase(materials, 1, cfg%params)
+    call init_grid_from_config(cfg)
+
+    call simulation_setup_init(cfg, setup)
+
+    ! Build H at k=0
+    allocate(HT(8, 8))
+    HT = 0.0_dp
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+
+    call setup_build_H(setup, cfg, kv, HT)
+
+    ! HT should be 8x8 with nonzero diagonal (bandgaps)
+    @assertTrue(size(HT, 1) == 8)
+    @assertTrue(size(HT, 2) == 8)
+    ! CB diagonal (bands 7,8) should have Eg on the diagonal at k=0
+    @assertTrue(abs(real(HT(7,7))) > 0.1_dp)
+    @assertTrue(abs(real(HT(8,8))) > 0.1_dp)
+
+    deallocate(HT)
+    call simulation_setup_free(setup)
+  end subroutine test_bulk_build_H
+
+
+  ! Vertical slice 3: Bulk solve at k=0 — eigenvalues match known GaAs bandgap
+  @test
+  subroutine test_bulk_solve_k0()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    character(len=255) :: materials(1)
+    real(kind=dp), allocatable :: evals(:)
+    complex(kind=dp), allocatable :: evecs(:,:)
+    type(wavevector) :: kv
+    real(kind=dp) :: eg_gaas, eg_computed
+
+    ! Build bulk GaAs config
+    cfg%confinement = 0
+    cfg%fdStep = 1
+    cfg%FDorder = 2
+    cfg%numLayers = 1
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+    cfg%confDir = 'n'
+    cfg%waveVector = 'k0'
+    cfg%waveVectorMax = 0.0_dp
+    cfg%waveVectorStep = 100
+    cfg%ExternalField = 0
+    cfg%EFtype = 'EF'
+    cfg%Evalue = 0.0_dp
+    cfg%totalSize = 0.0_dp
+    cfg%delta = 0.0_dp
+    cfg%dz = 0.0_dp
+    cfg%whichBand = 0
+    cfg%bandIdx = 1
+
+    allocate(cfg%materialN(1))
+    cfg%materialN(1) = 'GaAs'
+    allocate(cfg%startPos(1))
+    allocate(cfg%endPos(1))
+    cfg%startPos(1) = 0.0_dp
+    cfg%endPos(1) = 1.0_dp
+
+    allocate(cfg%params(1))
+    materials(1) = 'GaAs'
+    call paramDatabase(materials, 1, cfg%params)
+    call init_grid_from_config(cfg)
+
+    call simulation_setup_init(cfg, setup)
+
+    ! Solve at k=0
+    allocate(evals(8))
+    allocate(evecs(8, 8))
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+
+    call setup_solve_kpoint_serial(setup, cfg, kv, evals, evecs)
+
+    ! GaAs bandgap ~1.519 eV (Vurgaftman 2001)
+    ! CB minimum = evals(7) (7th eigenvalue sorted ascending)
+    ! VB maximum = evals(6)
+    eg_gaas = 1.519_dp
+    eg_computed = evals(7) - evals(6)
+
+    @assertEqual(eg_gaas, eg_computed, tolerance=0.01_dp)
+
+    ! VB top should be near 0 (EV reference)
+    @assertTrue(abs(evals(6)) < 0.5_dp)
+
+    deallocate(evals, evecs)
+    call simulation_setup_free(setup)
+  end subroutine test_bulk_solve_k0
+
+
+  ! Vertical slice 4: QW init — correct N, il, iuu
+  @test
+  subroutine test_qw_init()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    character(len=255) :: materials(2)
+    integer :: fdStep, expected_N
+
+    ! Build a minimal QW GaAs/AlGaAs config
+    fdStep = 51
+    cfg%confinement = 1
+    cfg%fdStep = fdStep
+    cfg%FDorder = 2
+    cfg%numLayers = 2
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+    cfg%confDir = 'z'
+    cfg%waveVector = 'k0'
+    cfg%waveVectorMax = 0.0_dp
+    cfg%waveVectorStep = 100
+    cfg%ExternalField = 0
+    cfg%EFtype = 'EF'
+    cfg%Evalue = 0.0_dp
+    cfg%whichBand = 0
+    cfg%bandIdx = 1
+
+    ! Two layers: AlGaAs barrier (full domain) + GaAs well (center)
+    allocate(cfg%materialN(2))
+    cfg%materialN(1) = 'AlGaAs'
+    cfg%materialN(2) = 'GaAs'
+
+    allocate(cfg%startPos(2))
+    allocate(cfg%endPos(2))
+    cfg%startPos(1) = 0.0_dp
+    cfg%endPos(1) = 200.0_dp    ! barrier covers full domain
+    cfg%startPos(2) = 80.0_dp
+    cfg%endPos(2) = 120.0_dp    ! well in center
+
+    cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
+    cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
+    cfg%dz = cfg%delta
+
+    allocate(cfg%z(fdStep))
+    block
+      integer :: i
+      do i = 1, fdStep
+        cfg%z(i) = cfg%startPos(1) + (i-1)*cfg%delta
+      end do
+    end block
+
+    allocate(cfg%intStartPos(2))
+    allocate(cfg%intEndPos(2))
+    block
+      integer :: i
+      do i = 1, cfg%numLayers
+        cfg%intStartPos(i) = int(abs((cfg%startPos(1)-cfg%startPos(i)) / &
+          (cfg%totalSize/(cfg%fdStep-1))))
+        cfg%intEndPos(i) = int(cfg%intStartPos(1) + &
+          ((cfg%endPos(1)+cfg%endPos(i))/cfg%delta))
+      end do
+      cfg%intStartPos = cfg%intStartPos + 1
+      cfg%intEndPos = cfg%intEndPos + 1
+    end block
+
+    ! Material parameters
+    allocate(cfg%params(2))
+    materials(1) = 'AlGaAs'
+    materials(2) = 'GaAs'
+    call paramDatabase(materials, 2, cfg%params)
+    call init_grid_from_config(cfg)
+
+    call simulation_setup_init(cfg, setup)
+
+    expected_N = fdStep * 8
+
+    @assertEqual(1, setup%confinement)
+    @assertEqual(expected_N, setup%N)
+    @assertTrue(allocated(setup%profile))
+    @assertTrue(allocated(setup%kpterms))
+    @assertTrue(allocated(setup%HT))
+    @assertTrue(allocated(setup%work))
+    @assertTrue(setup%lwork > 0)
+
+    call simulation_setup_free(setup)
+  end subroutine test_qw_init
+
+
+  ! Vertical slice 5: Bulk velocity matrices — CSR with correct size
+  @test
+  subroutine test_bulk_velocity_matrices()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    character(len=255) :: materials(1)
+
+    ! Build bulk GaAs config
+    cfg%confinement = 0
+    cfg%fdStep = 1
+    cfg%FDorder = 2
+    cfg%numLayers = 1
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+    cfg%confDir = 'n'
+    cfg%waveVector = 'k0'
+    cfg%waveVectorMax = 0.0_dp
+    cfg%waveVectorStep = 100
+    cfg%ExternalField = 0
+    cfg%EFtype = 'EF'
+    cfg%Evalue = 0.0_dp
+    cfg%totalSize = 0.0_dp
+    cfg%delta = 0.0_dp
+    cfg%dz = 0.0_dp
+    cfg%whichBand = 0
+    cfg%bandIdx = 1
+
+    allocate(cfg%materialN(1))
+    cfg%materialN(1) = 'GaAs'
+    allocate(cfg%startPos(1))
+    allocate(cfg%endPos(1))
+    cfg%startPos(1) = 0.0_dp
+    cfg%endPos(1) = 1.0_dp
+
+    allocate(cfg%params(1))
+    materials(1) = 'GaAs'
+    call paramDatabase(materials, 1, cfg%params)
+    call init_grid_from_config(cfg)
+
+    call simulation_setup_init(cfg, setup)
+    call setup_build_velocity_matrices(setup, cfg)
+
+    @assertTrue(setup%vel_built)
+
+    ! Each velocity matrix should be 8x8 CSR
+    @assertEqual(8, setup%vel(1)%nrows)
+    @assertEqual(8, setup%vel(1)%ncols)
+    @assertTrue(setup%vel(1)%nnz > 0)
+
+    @assertEqual(8, setup%vel(2)%nrows)
+    @assertEqual(8, setup%vel(2)%ncols)
+    @assertTrue(setup%vel(2)%nnz > 0)
+
+    @assertEqual(8, setup%vel(3)%nrows)
+    @assertEqual(8, setup%vel(3)%ncols)
+    @assertTrue(setup%vel(3)%nnz > 0)
+
+    ! Kane P matrix element should be nonzero for vx/vy
+    ! (GaAs has P ~ 10.493 eV*A)
+    @assertTrue(setup%vel(1)%nnz > 0)
+
+    call simulation_setup_free(setup)
+  end subroutine test_bulk_velocity_matrices
+
+
+  ! Helper: build a minimal bulk GaAs config (shared across tests)
+  subroutine make_bulk_gaas_config(cfg)
+    type(simulation_config), intent(out) :: cfg
+    character(len=255) :: materials(1)
+
+    cfg%confinement = 0
+    cfg%fdStep = 1
+    cfg%FDorder = 2
+    cfg%numLayers = 1
+    cfg%numcb = 2
+    cfg%numvb = 6
+    cfg%evnum = 8
+    cfg%confDir = 'n'
+    cfg%waveVector = 'k0'
+    cfg%waveVectorMax = 0.0_dp
+    cfg%waveVectorStep = 100
+    cfg%ExternalField = 0
+    cfg%EFtype = 'EF'
+    cfg%Evalue = 0.0_dp
+    cfg%totalSize = 0.0_dp
+    cfg%delta = 0.0_dp
+    cfg%dz = 0.0_dp
+    cfg%whichBand = 0
+    cfg%bandIdx = 1
+
+    allocate(cfg%materialN(1))
+    cfg%materialN(1) = 'GaAs'
+    allocate(cfg%startPos(1))
+    allocate(cfg%endPos(1))
+    cfg%startPos(1) = 0.0_dp
+    cfg%endPos(1) = 1.0_dp
+
+    allocate(cfg%params(1))
+    materials(1) = 'GaAs'
+    call paramDatabase(materials, 1, cfg%params)
+    call init_grid_from_config(cfg)
+  end subroutine make_bulk_gaas_config
+
+end module test_simulation_setup
