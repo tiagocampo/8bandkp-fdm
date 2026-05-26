@@ -65,9 +65,11 @@ module simulation_setup_mod
 
 contains
 
-  subroutine simulation_setup_init(cfg, setup)
+  subroutine simulation_setup_init(cfg, setup, strain_out, sc_phi_out, sc_ne_out, sc_nh_out)
     type(simulation_config), intent(inout) :: cfg
     type(simulation_setup), intent(inout) :: setup
+    type(strain_result), intent(out), optional, allocatable :: strain_out
+    real(kind=dp), allocatable, intent(out), optional :: sc_phi_out(:,:), sc_ne_out(:,:), sc_nh_out(:,:)
 
     integer :: info, lrwork, liwork, Ngrid_local, Ntot_local, nev
     real(kind=dp), allocatable :: eig_tmp(:,:)
@@ -105,21 +107,26 @@ contains
       end if
       if (cfg%strain%enabled) then
         block
-          type(strain_result) :: strain_out
+          type(strain_result), allocatable :: strain_local
           real(kind=dp) :: a0_ref
+          allocate(strain_local)
           a0_ref = cfg%params(1)%a0
           call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
-            cfg%strain, a0_ref, strain_out)
-          call compute_bir_pikus_blocks(strain_out, cfg%params, &
+            cfg%strain, a0_ref, strain_local)
+          call compute_bir_pikus_blocks(strain_local, cfg%params, &
             cfg%grid%material_id, cfg%grid, cfg%strain_blocks)
-          call strain_result_free(strain_out)
+          if (present(strain_out)) then
+            call move_alloc(strain_local, strain_out)
+          else
+            call strain_result_free(strain_local)
+          end if
           setup%has_strain = .true.
         end block
       end if
       if (cfg%sc%enabled == 1) then
         block
           complex(kind=dp), allocatable :: eigv_sc(:,:,:)
-          real(kind=dp), allocatable :: sc_ne_out(:), sc_nh_out(:)
+          real(kind=dp), allocatable :: sc_ne_local(:), sc_nh_local(:)
           type(wavevector), allocatable :: smallk_arr(:)
           allocate(smallk_arr(1))
           smallk_arr(1)%kx = 0.0_dp
@@ -131,12 +138,12 @@ contains
           call self_consistent_loop(setup%profile, cfg, setup%kpterms, &
             setup%HT, eig_tmp, eigv_sc, &
             smallk_arr, setup%N, 1, setup%N, &
-            n_electron_out=sc_ne_out, n_hole_out=sc_nh_out, &
+            n_electron_out=sc_ne_local, n_hole_out=sc_nh_local, &
             fermi_level_out=setup%fermi_level)
           setup%sc_was_run = .true.
           if (allocated(eigv_sc)) deallocate(eigv_sc)
-          if (allocated(sc_ne_out)) deallocate(sc_ne_out)
-          if (allocated(sc_nh_out)) deallocate(sc_nh_out)
+          if (allocated(sc_ne_local)) deallocate(sc_ne_local)
+          if (allocated(sc_nh_local)) deallocate(sc_nh_local)
           if (allocated(eig_tmp)) deallocate(eig_tmp)
           if (allocated(smallk_arr)) deallocate(smallk_arr)
         end block
@@ -187,14 +194,19 @@ contains
         setup%profile_2d, setup%kpterms_2d, cfg%FDorder)
       if (cfg%strain%enabled) then
         block
-          type(strain_result) :: strain_out
+          type(strain_result), allocatable :: strain_local
           real(kind=dp) :: a0_ref
+          allocate(strain_local)
           a0_ref = cfg%params(1)%a0
           call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
-            cfg%strain, a0_ref, strain_out)
-          call compute_bir_pikus_blocks(strain_out, cfg%params, &
+            cfg%strain, a0_ref, strain_local)
+          call compute_bir_pikus_blocks(strain_local, cfg%params, &
             cfg%grid%material_id, cfg%grid, cfg%strain_blocks)
-          call strain_result_free(strain_out)
+          if (present(strain_out)) then
+            call move_alloc(strain_local, strain_out)
+          else
+            call strain_result_free(strain_local)
+          end if
           setup%has_strain = .true.
         end block
       end if
@@ -253,7 +265,21 @@ contains
             phi_out=sc_phi, n_electron_out=sc_ne, n_hole_out=sc_nh)
           setup%sc_was_run = .true.
           deallocate(eig_sc, eigv_sc)
-          deallocate(sc_phi, sc_ne, sc_nh)
+          if (present(sc_phi_out)) then
+            call move_alloc(sc_phi, sc_phi_out)
+          else
+            if (allocated(sc_phi)) deallocate(sc_phi)
+          end if
+          if (present(sc_ne_out)) then
+            call move_alloc(sc_ne, sc_ne_out)
+          else
+            if (allocated(sc_ne)) deallocate(sc_ne)
+          end if
+          if (present(sc_nh_out)) then
+            call move_alloc(sc_nh, sc_nh_out)
+          else
+            if (allocated(sc_nh)) deallocate(sc_nh)
+          end if
           call wire_coo_cache_free(setup%coo_cache_ptr)
           call wire_workspace_free(setup%wire_ws_ptr)
         end block

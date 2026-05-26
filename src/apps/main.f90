@@ -3,17 +3,13 @@ program kpfdm
   use definitions
   use parameters
   use hamiltonianConstructor
-  use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
-    & wire_coo_cache, wire_coo_cache_free, ZB8bandGeneralized
-  use confinement_init, only: confinementInitialization_2d, confinementInitialization_landau
+  use confinement_init, only: confinementInitialization_landau
   use OMP_lib
   use outputFunctions
   use input_parser
   use sc_loop
-  use sparse_matrices
-  use eigensolver, only: eigensolver_config, eigensolver_result, eigensolver_result_free, &
-    & make_eigensolver, auto_compute_energy_window
-  use strain_solver
+  use eigensolver, only: eigensolver_result, eigensolver_result_free
+  use strain_solver, only: strain_result, strain_result_free
   use exciton_solver
   use scattering_solver
   use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch
@@ -128,181 +124,87 @@ program kpfdm
   if (cfg%confinement == 2) then
     block
       type(simulation_setup) :: setup
-      ! Local CSR and workspace for k-sweep
-      type(csr_matrix) :: HT_csr, HT_csr_step
-      type(wire_workspace) :: wire_ws
       type(eigensolver_result) :: eigen_res
       real(kind=dp), allocatable :: eig_wire(:,:)
       real(kind=dp), allocatable :: prev_wire_eval(:)
       complex(kind=dp), allocatable :: prev_wire_evec(:,:)
       integer :: Ngrid, Ntot, nev_wire, max_nev_found
+      ! Diagnostic outputs from simulation_setup_init
+      type(strain_result), allocatable :: strain_diag
+      real(kind=dp), allocatable :: sc_phi_diag(:,:), sc_ne_diag(:,:), sc_nh_diag(:,:)
 
-      ! Manual wire setup: simulation_setup_init handles confinement, strain,
-      ! SC, energy window, eigensolver creation. However, this app writes
-      ! strain tensor data (strain.dat) and SC diagnostics (sc_phi.dat,
-      ! sc_charge.dat) that require access to intermediate results freed by
-      ! simulation_setup_init. The init_wire_from_config double-call guard
-      ! exists in simulation_setup.f90, so if diagnostics move into the setup
-      ! module this block can be replaced with simulation_setup_init.
-      setup%confinement = 2
-      setup%has_strain = .false.
-      setup%sc_was_run = .false.
-      setup%vel_built = .false.
+      ! Delegate confinement, strain, SC, eigensolver to simulation_setup_init.
+      ! Optional arguments capture strain/SC diagnostics for file output below.
+      call simulation_setup_init(cfg, setup, strain_out=strain_diag, &
+        sc_phi_out=sc_phi_diag, sc_ne_out=sc_ne_diag, sc_nh_out=sc_nh_diag)
 
-      ! 2D confinement operators
-      call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
-        setup%profile_2d, setup%kpterms_2d, cfg%FDorder)
-
-      ! Strain
-      if (cfg%strain%enabled) then
-        block
-          type(strain_result) :: strain_out
-          real(kind=dp) :: a0_ref
-          a0_ref = cfg%params(1)%a0
-          call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
-            cfg%strain, a0_ref, strain_out)
-
-          ! Write strain tensor to file (gnuplot splot format)
-          call ensure_output_dir()
-          call get_unit(iounit)
-          open(unit=iounit, file='output/strain.dat', status='replace', action='write')
-          write(iounit, '(A)') '# x(A) y(A) eps_xx eps_yy eps_zz eps_xy eps_xz eps_yz'
-          do jj = 1, cfg%grid%ny
-            do ii = 1, cfg%grid%nx
-              k = (jj - 1) * cfg%grid%nx + ii
-              write(unit=iounit, fmt='(8(g14.6,1x))') &
-                cfg%grid%x(ii), cfg%grid%z(jj), &
-                strain_out%eps_xx(k), strain_out%eps_yy(k), &
-                strain_out%eps_zz(k), 0.0_dp, 0.0_dp, &
-                strain_out%eps_yz(k)
-            end do
-            write(iounit, '(A)') ''
+      ! --- Write strain tensor (if strain was computed) ---
+      if (allocated(strain_diag)) then
+        call ensure_output_dir()
+        call get_unit(iounit)
+        open(unit=iounit, file='output/strain.dat', status='replace', action='write')
+        write(iounit, '(A)') '# x(A) y(A) eps_xx eps_yy eps_zz eps_xy eps_xz eps_yz'
+        do jj = 1, cfg%grid%ny
+          do ii = 1, cfg%grid%nx
+            k = (jj - 1) * cfg%grid%nx + ii
+            write(unit=iounit, fmt='(8(g14.6,1x))') &
+              cfg%grid%x(ii), cfg%grid%z(jj), &
+              strain_diag%eps_xx(k), strain_diag%eps_yy(k), &
+              strain_diag%eps_zz(k), 0.0_dp, 0.0_dp, &
+              strain_diag%eps_yz(k)
           end do
-          close(iounit)
-          print *, '  Wire strain tensor written to output/strain.dat'
-
-          call compute_bir_pikus_blocks(strain_out, cfg%params, cfg%grid%material_id, &
-            cfg%grid, cfg%strain_blocks)
-          call strain_result_free(strain_out)
-          setup%has_strain = .true.
-          print *, '  Wire strain calculation complete'
-        end block
+          write(iounit, '(A)') ''
+        end do
+        close(iounit)
+        print *, '  Wire strain tensor written to output/strain.dat'
+        call strain_result_free(strain_diag)
       end if
 
-      ! Dimensions
-      Ngrid = grid_ngrid(cfg%grid)
-      Ntot = 8 * Ngrid
-      setup%Ngrid = Ngrid
-      setup%Ntot = Ntot
-      setup%N = Ntot
-      nev_wire = cfg%numcb + cfg%numvb
-      if (nev_wire > Ntot) nev_wire = Ntot
-      setup%nev_wire = nev_wire
-
-      ! Eigensolver configuration
-      if (cfg%feast_m0 < 0) then
-        setup%eigen_cfg%method = 'DENSE'
-      else
-        setup%eigen_cfg%method = 'FEAST'
-      end if
-      setup%eigen_cfg%nev = nev_wire
-      setup%eigen_cfg%max_iter = 100
-      setup%eigen_cfg%tol = 1.0e-10_dp
-      setup%eigen_cfg%feast_m0 = cfg%feast_m0
-
-      ! Build preliminary Hamiltonian at kz=0 for energy window
-      allocate(setup%HT_csr_ptr)
-      allocate(setup%wire_ws_ptr)
-      call ZB8bandGeneralized(setup%HT_csr_ptr, 0.0_dp, setup%profile_2d, &
-        setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
-      if (cfg%feast_emin /= 0.0_dp .or. cfg%feast_emax /= 0.0_dp) then
-        setup%eigen_cfg%emin = cfg%feast_emin
-        setup%eigen_cfg%emax = cfg%feast_emax
-      else
-        call auto_compute_energy_window(setup%HT_csr_ptr, &
-          setup%eigen_cfg%emin, setup%eigen_cfg%emax)
-        print *, '  Auto FEAST window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
-      end if
-      ! Free CSR data but keep workspace for fast rebuild
-      call csr_free(setup%HT_csr_ptr)
-
-      ! Create eigensolver
-      setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
-
-      ! Wire self-consistent loop
-      if (cfg%sc%enabled == 1) then
-        block
-          integer :: nk_sc, nev_sc
-          real(kind=dp), allocatable :: eig_sc(:,:), sc_phi(:,:), sc_ne(:,:), sc_nh(:,:)
-          complex(kind=dp), allocatable :: eigv_sc(:,:,:)
-          type(wire_coo_cache), allocatable :: coo_cache_sc
-
-          nk_sc = cfg%sc%num_kpar
-          if (mod(nk_sc, 2) == 0) nk_sc = nk_sc - 1
-          nev_sc = nev_wire
-          allocate(eig_sc(nev_sc, nk_sc))
-          allocate(eigv_sc(Ntot, nev_sc, nk_sc))
-          allocate(coo_cache_sc)
-          eig_sc = 0.0_dp
-          eigv_sc = cmplx(0.0_dp, 0.0_dp, kind=dp)
-
-          print *, ''
-          print *, '=== Running wire self-consistent Schrodinger-Poisson loop ==='
-          call self_consistent_loop_wire(setup%profile_2d, cfg, &
-            setup%kpterms_2d, cfg%grid, coo_cache_sc, setup%eigen_cfg, &
-            eig_sc, eigv_sc, &
-            phi_out=sc_phi, n_electron_out=sc_ne, n_hole_out=sc_nh)
-          setup%sc_was_run = .true.
-          print *, '  Wire SC loop complete. profile_2d updated.'
-          print *, ''
-
-          ! Write SC diagnostics
-          call ensure_output_dir()
-          call get_unit(iounit)
-          open(unit=iounit, file='output/sc_potential_profile.dat', status='replace', action='write')
-          write(iounit, '(A)') '# x(A) y(A) EV EV_DeltaSO EC'
-          do jj = 1, cfg%grid%ny
-            do ii = 1, cfg%grid%nx
-              k = (jj - 1) * cfg%grid%nx + ii
-              write(unit=iounit, fmt='(5(g14.6,1x))') &
-                cfg%grid%x(ii), cfg%grid%z(jj), &
-                setup%profile_2d(k, 1), setup%profile_2d(k, 2), setup%profile_2d(k, 3)
-            end do
-            write(iounit, '(A)') ''
+      ! --- Write SC diagnostics (if SC was run) ---
+      if (allocated(sc_phi_diag)) then
+        call ensure_output_dir()
+        call get_unit(iounit)
+        open(unit=iounit, file='output/sc_potential_profile.dat', status='replace', action='write')
+        write(iounit, '(A)') '# x(A) y(A) EV EV_DeltaSO EC'
+        do jj = 1, cfg%grid%ny
+          do ii = 1, cfg%grid%nx
+            k = (jj - 1) * cfg%grid%nx + ii
+            write(unit=iounit, fmt='(5(g14.6,1x))') &
+              cfg%grid%x(ii), cfg%grid%z(jj), &
+              setup%profile_2d(k, 1), setup%profile_2d(k, 2), setup%profile_2d(k, 3)
           end do
-          close(iounit)
-          print *, '  SC band edge profile written to output/sc_potential_profile.dat'
+          write(iounit, '(A)') ''
+        end do
+        close(iounit)
+        print *, '  SC band edge profile written to output/sc_potential_profile.dat'
 
-          call get_unit(iounit)
-          open(unit=iounit, file='output/sc_phi.dat', status='replace', action='write')
-          write(iounit, '(A)') '# x(A) y(A) phi'
-          do jj = 1, cfg%grid%ny
-            do ii = 1, cfg%grid%nx
-              write(unit=iounit, fmt='(3(g14.6,1x))') &
-                cfg%grid%x(ii), cfg%grid%z(jj), sc_phi(ii, jj)
-            end do
-            write(iounit, '(A)') ''
+        call get_unit(iounit)
+        open(unit=iounit, file='output/sc_phi.dat', status='replace', action='write')
+        write(iounit, '(A)') '# x(A) y(A) phi'
+        do jj = 1, cfg%grid%ny
+          do ii = 1, cfg%grid%nx
+            write(unit=iounit, fmt='(3(g14.6,1x))') &
+              cfg%grid%x(ii), cfg%grid%z(jj), sc_phi_diag(ii, jj)
           end do
-          close(iounit)
-          print *, '  SC electrostatic potential written to output/sc_phi.dat'
+          write(iounit, '(A)') ''
+        end do
+        close(iounit)
+        print *, '  SC electrostatic potential written to output/sc_phi.dat'
 
-          call get_unit(iounit)
-          open(unit=iounit, file='output/sc_charge.dat', status='replace', action='write')
-          write(iounit, '(A)') '# x(A) y(A) n_e n_h'
-          do jj = 1, cfg%grid%ny
-            do ii = 1, cfg%grid%nx
-              write(unit=iounit, fmt='(4(g14.6,1x))') &
-                cfg%grid%x(ii), cfg%grid%z(jj), sc_ne(ii, jj), sc_nh(ii, jj)
-            end do
-            write(iounit, '(A)') ''
+        call get_unit(iounit)
+        open(unit=iounit, file='output/sc_charge.dat', status='replace', action='write')
+        write(iounit, '(A)') '# x(A) y(A) n_e n_h'
+        do jj = 1, cfg%grid%ny
+          do ii = 1, cfg%grid%nx
+            write(unit=iounit, fmt='(4(g14.6,1x))') &
+              cfg%grid%x(ii), cfg%grid%z(jj), sc_ne_diag(ii, jj), sc_nh_diag(ii, jj)
           end do
-          close(iounit)
-          print *, '  SC charge density written to output/sc_charge.dat'
+          write(iounit, '(A)') ''
+        end do
+        close(iounit)
+        print *, '  SC charge density written to output/sc_charge.dat'
 
-          deallocate(eig_sc, eigv_sc, sc_phi, sc_ne, sc_nh)
-          call wire_coo_cache_free(coo_cache_sc)
-          call wire_workspace_free(setup%wire_ws_ptr)
-        end block
+        deallocate(sc_phi_diag, sc_ne_diag, sc_nh_diag)
       end if
 
       Ngrid = setup%Ngrid
@@ -364,17 +266,15 @@ program kpfdm
       ! --- Serial k=1: build CSR, solve ---
       print *, 'k-point 1/', cfg%waveVectorStep, ' kz=', smallk(1)%kz
 
-      call ZB8bandGeneralized(HT_csr, smallk(1)%kz, setup%profile_2d, &
-        & setup%kpterms_2d, cfg, ws=wire_ws)
+      call setup_build_H(setup, cfg, smallk(1))
 
-      ! Energy window already computed by simulation_setup_init
       if (cfg%feast_emin /= 0.0_dp .or. cfg%feast_emax /= 0.0_dp) then
         print *, '  Manual energy window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
       else
         print *, '  Auto energy window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
       end if
 
-      call setup%eigen_solver%solve(HT_csr, setup%eigen_cfg, eigen_res)
+      call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
       if (.not. eigen_res%converged) then
         if (eigen_res%nev_found < nev_wire) then
@@ -414,17 +314,14 @@ program kpfdm
       if (cfg%waveVectorStep > 1) then
         info = mkl_set_num_threads_local(1)
 
-        call csr_clone_structure(HT_csr, HT_csr_step)
-
         print '(A,I0,A)', ' Wire kz-sweep: k=2..', cfg%waveVectorStep, &
           & ' (serial branch tracking)'
 
         do k = 2, cfg%waveVectorStep
           print *, 'k-point ', k, '/', cfg%waveVectorStep, ' kz=', smallk(k)%kz
 
-          call ZB8bandGeneralized(HT_csr_step, smallk(k)%kz, setup%profile_2d, &
-            & setup%kpterms_2d, cfg, ws=wire_ws)
-          call setup%eigen_solver%solve(HT_csr_step, setup%eigen_cfg, eigen_res)
+          call setup_build_H(setup, cfg, smallk(k))
+          call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
           if (.not. eigen_res%converged) then
             if (eigen_res%nev_found < nev_wire) then
@@ -457,13 +354,7 @@ program kpfdm
 
           call eigensolver_result_free(eigen_res)
         end do
-
-        call csr_free(HT_csr_step)
       end if
-
-      ! Free local CSR and workspace
-      call csr_free(HT_csr)
-      call wire_workspace_free(wire_ws)
 
       ! Write eigenvalues to file
       if (max_nev_found > 0) then
@@ -479,7 +370,7 @@ program kpfdm
       if (allocated(prev_wire_eval)) deallocate(prev_wire_eval)
       if (allocated(prev_wire_evec)) deallocate(prev_wire_evec)
 
-      ! Free setup (profile_2d, kpterms_2d, eigen_solver, etc.)
+      ! Free setup (profile_2d, kpterms_2d, eigen_solver, HT_csr_ptr, etc.)
       call simulation_setup_free(setup)
 
     end block
