@@ -463,6 +463,54 @@ contains
   end subroutine test_wire_velocity_matrices
 
 
+  ! Vertical slice 10: Full bulk pipeline integration — GaAs bandgap at Gamma
+  ! Exercises: simulation_setup_init → setup_build_H → setup_solve_kpoint_serial
+  ! Validates that the CB-VB gap matches Vurgaftman 2001 Eg(GaAs) = 1.519 eV.
+  @test
+  subroutine test_gaas_bulk_pipeline()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    real(kind=dp), allocatable :: evals(:)
+    complex(kind=dp), allocatable :: evecs(:,:)
+    type(wavevector) :: kv
+    real(kind=dp) :: eg_gaas, eg_computed, cb_min, vb_max
+
+    call make_bulk_gaas_config(cfg)
+
+    ! Step 1: Initialize setup (bulk path)
+    call simulation_setup_init(cfg, setup)
+    @assertEqual(0, setup%confinement)
+    @assertEqual(8, setup%N)
+
+    ! Step 2: Build H at k=0 via setup_build_H
+    allocate(setup%HT(8, 8))
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+    call setup_build_H(setup, cfg, kv, setup%HT)
+    ! CB diagonal should be nonzero at k=0
+    @assertTrue(abs(real(setup%HT(7,7))) > 0.1_dp)
+
+    ! Step 3: Solve at k=0 via setup_solve_kpoint_serial
+    allocate(evals(8))
+    allocate(evecs(8, 8))
+    call setup_solve_kpoint_serial(setup, cfg, kv, evals, evecs)
+
+    ! Step 4: Verify GaAs bandgap at Gamma (Vurgaftman 2001: Eg = 1.519 eV)
+    ! Eigenvalues are sorted ascending: bands 1-6 = VB, 7-8 = CB
+    cb_min = evals(7)
+    vb_max = evals(6)
+    eg_computed = cb_min - vb_max
+    eg_gaas = 1.519_dp
+
+    @assertEqual(eg_gaas, eg_computed, tolerance=0.01_dp)
+
+    ! Step 5: Free
+    deallocate(evals, evecs)
+    call simulation_setup_free(setup)
+  end subroutine test_gaas_bulk_pipeline
+
+
   ! Helper: build a minimal wire GaAs config for testing
   subroutine make_wire_gaas_config(cfg)
     type(simulation_config), intent(out) :: cfg
