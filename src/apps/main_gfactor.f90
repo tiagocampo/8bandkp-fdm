@@ -25,8 +25,6 @@ program gfactor
 
   ! Shared configuration from input_parser
   type(simulation_config) :: cfg
-  real(kind=dp), allocatable, dimension(:,:) :: profile
-  real(kind=dp), allocatable, dimension(:,:,:) :: kpterms
 
   ! wave vector
   type(wavevector), allocatable, dimension(:) :: smallk
@@ -73,8 +71,8 @@ program gfactor
   ! MKL_THREADING=intel_thread.
   info = mkl_set_num_threads_local(1)
 
-  ! Shared setup: read input, initialize materials, confinement, external field
-  call read_and_setup(cfg, profile, kpterms)
+  ! Shared setup: read input, initialize materials
+  call read_config(cfg)
 
   ! g-factor specific validation
   if (cfg%waveVectorStep /= 0 .and. cfg%waveVector /= 'k0') stop 'g-factor calculation requires only k=0'
@@ -451,6 +449,34 @@ program gfactor
       & cfg%numvb, cb_state, vb_state, cb_value, vb_value, cfg%numLayers, cfg%params, &
       & cfg%startPos(1), cfg%endPos(1), profile=setup%profile, kpterms=setup%kpterms, dz=cfg%dz)
 
+      ! QW optical transitions (must be before setup_free so profile/kpterms are alive)
+      if (cfg%optics%enabled .and. cfg%confDir == 'z' .and. cfg%numLayers > 1) then
+        block
+          type(optical_transition), allocatable :: transitions(:)
+          integer :: num_trans, it
+
+          call compute_optical_matrix_qw(transitions, num_trans, &
+            cb_state, vb_state, cb_value, vb_value, cfg%numcb, cfg%numvb, &
+            cfg%numLayers, cfg%params, setup%profile, setup%kpterms, &
+            cfg%startPos(1), cfg%endPos(1), cfg%dz)
+
+          call ensure_output_dir()
+          call get_unit(iounit)
+          open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
+          write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
+          do it = 1, num_trans
+            write(iounit, '(2(I4,1x),5(g14.6,1x))') &
+              transitions(it)%cb_idx, transitions(it)%vb_idx, &
+              transitions(it)%energy, transitions(it)%px, &
+              transitions(it)%py, transitions(it)%pz, &
+              transitions(it)%oscillator_strength
+          end do
+          close(iounit)
+          print *, '  Optical transitions written to output/optical_transitions.dat'
+          deallocate(transitions)
+        end block
+      end if
+
       call simulation_setup_free(setup)
     end block
 
@@ -485,34 +511,6 @@ program gfactor
   open(unit=iounit, file='output/gfactor.dat', status="replace", action="write")
   write(iounit,*) g_eff(1), g_eff(2), g_eff(3)
   close(iounit)
-
-  ! QW optical transitions
-  if (cfg%optics%enabled .and. cfg%confDir == 'z' .and. cfg%numLayers > 1) then
-    block
-      type(optical_transition), allocatable :: transitions(:)
-      integer :: num_trans, it
-
-      call compute_optical_matrix_qw(transitions, num_trans, &
-        cb_state, vb_state, cb_value, vb_value, cfg%numcb, cfg%numvb, &
-        cfg%numLayers, cfg%params, profile, kpterms, &
-        cfg%startPos(1), cfg%endPos(1), cfg%dz)
-
-      call ensure_output_dir()
-      call get_unit(iounit)
-      open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
-      write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
-      do it = 1, num_trans
-        write(iounit, '(2(I4,1x),5(g14.6,1x))') &
-          transitions(it)%cb_idx, transitions(it)%vb_idx, &
-          transitions(it)%energy, transitions(it)%px, &
-          transitions(it)%py, transitions(it)%pz, &
-          transitions(it)%oscillator_strength
-      end do
-      close(iounit)
-      print *, '  Optical transitions written to output/optical_transitions.dat'
-      deallocate(transitions)
-    end block
-  end if
 
   !----------------------------------------------------------------------------
 

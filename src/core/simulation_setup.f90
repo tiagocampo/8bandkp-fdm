@@ -6,7 +6,7 @@ module simulation_setup_mod
   use confinement_init, only: confinementInitialization
   use strain_solver
   use sc_loop, only: self_consistent_loop
-  use linalg, only: zheev, zheevd, zheevx
+  use linalg, only: zheev, zheevd
   use utils
   use sparse_matrices
 
@@ -35,10 +35,7 @@ module simulation_setup_mod
     complex(kind=dp), allocatable :: work(:)
     real(kind=dp), allocatable :: rwork(:)
     integer, allocatable :: iwork(:)
-    integer, allocatable :: ifail(:)
     integer :: lwork = 0
-    ! Strain
-    type(bir_pikus_blocks) :: strain_blocks
     ! Velocity matrices (opt-in)
     type(csr_matrix) :: vel(3)
     logical :: vel_built = .false.
@@ -59,7 +56,6 @@ contains
 
     integer :: info, lrwork, liwork
     real(kind=dp), allocatable :: eig_tmp(:,:)
-    real(kind=dp) :: vl, vu
 
     setup%confinement = cfg%confinement
     setup%has_strain = .false.
@@ -70,6 +66,10 @@ contains
     select case(cfg%confinement)
     case(0)
       ! ---- Bulk mode: 8x8 matrix ----
+      if (cfg%sc%enabled == 1) then
+        print *, 'Warning: SC with bulk mode requires confinement=1, confDir=z.'
+        print *, '  Skipping SC. Use confinement=1, confDir=z, numLayers=1 for delta-doped bulk.'
+      end if
       setup%N = 8
       setup%il = 1
       setup%iuu = 8
@@ -78,7 +78,7 @@ contains
     case(1)
       ! ---- QW mode: 8*Nz dense matrix ----
       setup%N = cfg%fdStep * 8
-      setup%il = cfg%numvb * cfg%fdStep + 1
+      setup%il = cfg%numvb + 1
       setup%iuu = setup%N
 
       ! Confinement initialization (cfg is intent(inout) for the _cfg variant)
@@ -107,7 +107,7 @@ contains
           call compute_strain(cfg%grid, cfg%params, cfg%grid%material_id, &
             cfg%strain, a0_ref, strain_out)
           call compute_bir_pikus_blocks(strain_out, cfg%params, &
-            cfg%grid%material_id, cfg%grid, setup%strain_blocks)
+            cfg%grid%material_id, cfg%grid, cfg%strain_blocks)
           call strain_result_free(strain_out)
           setup%has_strain = .true.
         end block
@@ -136,7 +136,8 @@ contains
           call self_consistent_loop(setup%profile, cfg, setup%kpterms, &
             setup%HT, eig_tmp, eigv_sc, &
             smallk_arr, setup%N, 1, setup%N, &
-            n_electron_out=sc_ne_out, n_hole_out=sc_nh_out)
+            n_electron_out=sc_ne_out, n_hole_out=sc_nh_out, &
+            fermi_level_out=setup%fermi_level)
           print *, '  QW SC complete.'
 
           setup%sc_was_run = .true.
@@ -157,7 +158,6 @@ contains
       allocate(setup%work(1))
       allocate(setup%rwork(1))
       allocate(setup%iwork(1))
-      allocate(setup%ifail(setup%N))
 
       setup%HT = 0.0_dp
       allocate(eig_tmp(setup%N, 1))
@@ -165,7 +165,7 @@ contains
 
       if (cfg%numLayers == 1) then
         ! zheev workspace query
-        call zheev('V', 'U', setup%N, setup%HT, setup%N, eig_tmp(:,1), &
+        call zheev('V', 'L', setup%N, setup%HT, setup%N, eig_tmp(:,1), &
           setup%work, -1, setup%rwork, info)
         if (info /= 0) then
           print *, 'Error: zheev workspace query failed, info =', info
@@ -257,7 +257,7 @@ contains
       if (setup%lwork == 0) then
         allocate(setup%work(1))
         allocate(rwork_local(max(1, 3*8 - 2)))
-        call zheev('V', 'U', 8, setup%HT, 8, evals, setup%work, -1, &
+        call zheev('V', 'L', 8, setup%HT, 8, evals, setup%work, -1, &
           rwork_local, info)
         if (info /= 0) then
           print *, 'Error: zheev workspace query failed, info =', info
@@ -396,23 +396,6 @@ contains
     if (allocated(setup%work)) deallocate(setup%work)
     if (allocated(setup%rwork)) deallocate(setup%rwork)
     if (allocated(setup%iwork)) deallocate(setup%iwork)
-    if (allocated(setup%ifail)) deallocate(setup%ifail)
-
-    ! Strain blocks
-    if (allocated(setup%strain_blocks%delta_Ec)) &
-      deallocate(setup%strain_blocks%delta_Ec)
-    if (allocated(setup%strain_blocks%delta_EHH)) &
-      deallocate(setup%strain_blocks%delta_EHH)
-    if (allocated(setup%strain_blocks%delta_ELH)) &
-      deallocate(setup%strain_blocks%delta_ELH)
-    if (allocated(setup%strain_blocks%delta_ESO)) &
-      deallocate(setup%strain_blocks%delta_ESO)
-    if (allocated(setup%strain_blocks%R_eps)) &
-      deallocate(setup%strain_blocks%R_eps)
-    if (allocated(setup%strain_blocks%S_eps)) &
-      deallocate(setup%strain_blocks%S_eps)
-    if (allocated(setup%strain_blocks%QT2_eps)) &
-      deallocate(setup%strain_blocks%QT2_eps)
 
     ! Velocity matrices
     if (setup%vel_built) then
@@ -421,6 +404,16 @@ contains
       end do
       setup%vel_built = .false.
     end if
+
+    ! Reset scalars
+    setup%N = 0
+    setup%confinement = -1
+    setup%lwork = 0
+    setup%il = 0
+    setup%iuu = 0
+    setup%has_strain = .false.
+    setup%sc_was_run = .false.
+    setup%vel_built = .false.
 
   end subroutine simulation_setup_free
 

@@ -12,45 +12,8 @@ contains
   subroutine test_bulk_init()
     type(simulation_config) :: cfg
     type(simulation_setup) :: setup
-    character(len=255) :: materials(1)
 
-    ! Build a minimal bulk GaAs config programmatically
-    cfg%confinement = 0
-    cfg%fdStep = 1
-    cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%numcb = 2
-    cfg%numvb = 6
-    cfg%evnum = 8
-    cfg%confDir = 'n'
-    cfg%waveVector = 'k0'
-    cfg%waveVectorMax = 0.0_dp
-    cfg%waveVectorStep = 100
-    cfg%ExternalField = 0
-    cfg%EFtype = 'EF'
-    cfg%Evalue = 0.0_dp
-    cfg%totalSize = 0.0_dp
-    cfg%delta = 0.0_dp
-    cfg%dz = 0.0_dp
-    cfg%whichBand = 0
-    cfg%bandIdx = 1
-
-    allocate(cfg%materialN(1))
-    cfg%materialN(1) = 'GaAs'
-    allocate(cfg%startPos(1))
-    allocate(cfg%endPos(1))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = 1.0_dp
-
-    ! Material parameters
-    allocate(cfg%params(1))
-    materials(1) = 'GaAs'
-    call paramDatabase(materials, 1, cfg%params)
-
-    ! Grid init (bulk)
-    call init_grid_from_config(cfg)
-
-    ! Init setup
+    call make_bulk_gaas_config(cfg)
     call simulation_setup_init(cfg, setup)
 
     ! Assertions
@@ -71,44 +34,10 @@ contains
   subroutine test_bulk_build_H()
     type(simulation_config) :: cfg
     type(simulation_setup) :: setup
-    character(len=255) :: materials(1)
     complex(kind=dp), allocatable :: HT(:,:)
     type(wavevector) :: kv
-    real(kind=dp) :: max_val
 
-    ! Build bulk GaAs config
-    cfg%confinement = 0
-    cfg%fdStep = 1
-    cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%numcb = 2
-    cfg%numvb = 6
-    cfg%evnum = 8
-    cfg%confDir = 'n'
-    cfg%waveVector = 'k0'
-    cfg%waveVectorMax = 0.0_dp
-    cfg%waveVectorStep = 100
-    cfg%ExternalField = 0
-    cfg%EFtype = 'EF'
-    cfg%Evalue = 0.0_dp
-    cfg%totalSize = 0.0_dp
-    cfg%delta = 0.0_dp
-    cfg%dz = 0.0_dp
-    cfg%whichBand = 0
-    cfg%bandIdx = 1
-
-    allocate(cfg%materialN(1))
-    cfg%materialN(1) = 'GaAs'
-    allocate(cfg%startPos(1))
-    allocate(cfg%endPos(1))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = 1.0_dp
-
-    allocate(cfg%params(1))
-    materials(1) = 'GaAs'
-    call paramDatabase(materials, 1, cfg%params)
-    call init_grid_from_config(cfg)
-
+    call make_bulk_gaas_config(cfg)
     call simulation_setup_init(cfg, setup)
 
     ! Build H at k=0
@@ -137,45 +66,12 @@ contains
   subroutine test_bulk_solve_k0()
     type(simulation_config) :: cfg
     type(simulation_setup) :: setup
-    character(len=255) :: materials(1)
     real(kind=dp), allocatable :: evals(:)
     complex(kind=dp), allocatable :: evecs(:,:)
     type(wavevector) :: kv
     real(kind=dp) :: eg_gaas, eg_computed
 
-    ! Build bulk GaAs config
-    cfg%confinement = 0
-    cfg%fdStep = 1
-    cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%numcb = 2
-    cfg%numvb = 6
-    cfg%evnum = 8
-    cfg%confDir = 'n'
-    cfg%waveVector = 'k0'
-    cfg%waveVectorMax = 0.0_dp
-    cfg%waveVectorStep = 100
-    cfg%ExternalField = 0
-    cfg%EFtype = 'EF'
-    cfg%Evalue = 0.0_dp
-    cfg%totalSize = 0.0_dp
-    cfg%delta = 0.0_dp
-    cfg%dz = 0.0_dp
-    cfg%whichBand = 0
-    cfg%bandIdx = 1
-
-    allocate(cfg%materialN(1))
-    cfg%materialN(1) = 'GaAs'
-    allocate(cfg%startPos(1))
-    allocate(cfg%endPos(1))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = 1.0_dp
-
-    allocate(cfg%params(1))
-    materials(1) = 'GaAs'
-    call paramDatabase(materials, 1, cfg%params)
-    call init_grid_from_config(cfg)
-
+    call make_bulk_gaas_config(cfg)
     call simulation_setup_init(cfg, setup)
 
     ! Solve at k=0
@@ -296,41 +192,8 @@ contains
   subroutine test_bulk_velocity_matrices()
     type(simulation_config) :: cfg
     type(simulation_setup) :: setup
-    character(len=255) :: materials(1)
 
-    ! Build bulk GaAs config
-    cfg%confinement = 0
-    cfg%fdStep = 1
-    cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%numcb = 2
-    cfg%numvb = 6
-    cfg%evnum = 8
-    cfg%confDir = 'n'
-    cfg%waveVector = 'k0'
-    cfg%waveVectorMax = 0.0_dp
-    cfg%waveVectorStep = 100
-    cfg%ExternalField = 0
-    cfg%EFtype = 'EF'
-    cfg%Evalue = 0.0_dp
-    cfg%totalSize = 0.0_dp
-    cfg%delta = 0.0_dp
-    cfg%dz = 0.0_dp
-    cfg%whichBand = 0
-    cfg%bandIdx = 1
-
-    allocate(cfg%materialN(1))
-    cfg%materialN(1) = 'GaAs'
-    allocate(cfg%startPos(1))
-    allocate(cfg%endPos(1))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = 1.0_dp
-
-    allocate(cfg%params(1))
-    materials(1) = 'GaAs'
-    call paramDatabase(materials, 1, cfg%params)
-    call init_grid_from_config(cfg)
-
+    call make_bulk_gaas_config(cfg)
     call simulation_setup_init(cfg, setup)
     call setup_build_velocity_matrices(setup, cfg)
 
