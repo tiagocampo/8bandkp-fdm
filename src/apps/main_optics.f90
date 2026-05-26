@@ -84,6 +84,7 @@ program opticalProperties
     N = setup%N   ! 8 for bulk
     il = setup%il
     iuu = setup%iuu
+    if (setup%sc_was_run) cfg%sc%fermi_level = setup%fermi_level
     print '(a)', ' Bulk optics: 8x8 Hamiltonian, all 8 states'
 
     ! Build velocity matrices via simulation_setup
@@ -268,6 +269,7 @@ program opticalProperties
 
     call simulation_setup_init(cfg, setup)
     N = setup%N
+    if (setup%sc_was_run) cfg%sc%fermi_level = setup%fermi_level
     ! Compute eigenvalue range for optics: top numvb valence + bottom numcb conduction
     il = NUM_VB_STATES*cfg%fdStep - cfg%numvb + 1
     iuu = NUM_VB_STATES*cfg%fdStep + cfg%numcb

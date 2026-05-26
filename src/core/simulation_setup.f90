@@ -309,14 +309,26 @@ contains
       setup%HT = 0.0_dp
       call ZB8bandBulk(setup%HT, kvec, cfg%params(1), cfg=cfg)
       call zheev('V', 'L', 8, setup%HT, 8, evals, setup%work, setup%lwork, setup%rwork, info)
+      if (info /= 0) then
+        print *, 'Error: zheev failed in setup_solve_kpoint_serial, info =', info
+        stop 1
+      end if
       evecs = setup%HT
     case(1)
       setup%HT = 0.0_dp
       call ZB8bandQW(setup%HT, kvec, setup%profile, setup%kpterms, cfg=cfg)
       if (cfg%numLayers == 1) then
         call zheev('V', 'L', setup%N, setup%HT, setup%N, evals, setup%work, setup%lwork, setup%rwork, info)
+        if (info /= 0) then
+          print *, 'Error: zheev failed in setup_solve_kpoint_serial, info =', info
+          stop 1
+        end if
       else
         call zheevd('V', 'U', setup%N, setup%HT, setup%N, evals, setup%work, setup%lwork, setup%rwork, size(setup%rwork), setup%iwork, size(setup%iwork), info)
+        if (info /= 0) then
+          print *, 'Error: zheevd failed in setup_solve_kpoint_serial, info =', info
+          stop 1
+        end if
       end if
       evecs = setup%HT
     case default
