@@ -5,7 +5,7 @@ program kpfdm
   use hamiltonianConstructor
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
     & wire_coo_cache, wire_coo_cache_free, ZB8bandGeneralized
-  use confinement_init, only: confinementInitialization_2d, confinementInitialization_landau
+  use confinement_init, only: confinementInitialization, confinementInitialization_2d, confinementInitialization_landau
   use OMP_lib
   use outputFunctions
   use input_parser
@@ -66,7 +66,22 @@ program kpfdm
   integer                          :: sc_iterations
 
   ! Shared setup: read input, initialize materials, confinement, external field
-  call read_and_setup(cfg, profile, kpterms)
+  call read_config(cfg)
+
+  ! Confinement initialization for QW mode (not wire)
+  if (cfg%confDir == 'z' .and. cfg%confinement == 1) then
+    allocate(kpterms(grid_ngrid(cfg%grid), grid_ngrid(cfg%grid), 10))
+    kpterms = 0.0_dp
+    call confinementInitialization(cfg, profile, kpterms)
+    if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
+      if (abs(cfg%z(1)) < tolerance) then
+        print *, 'Error: Electric field requires z(1) /= 0.'
+        print *, '  Adjust startPos/endPos so grid does not start at z=0.'
+        stop 1
+      end if
+      call externalFieldSetup_electricField(profile, cfg%Evalue, cfg%totalSize, cfg%z)
+    end if
+  end if
 
   ! Build wave vector array
   allocate(smallk(cfg%waveVectorStep))

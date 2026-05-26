@@ -3,14 +3,11 @@ module input_parser
   use definitions
   use parameters
   use geometry
-  use hamiltonianConstructor
-  use confinement_init, only: confinementInitialization
   use outputFunctions
 
   implicit none
 
   private
-  public :: read_and_setup
   public :: read_config
 
 contains
@@ -1368,33 +1365,5 @@ contains
     call cfg%validate()
 
   end subroutine read_config
-
-  subroutine read_and_setup(cfg, profile, kpterms)
-    type(simulation_config), intent(out) :: cfg
-    real(kind=dp), allocatable, intent(out) :: profile(:,:)
-    real(kind=dp), allocatable, intent(out) :: kpterms(:,:,:)
-
-    ! Read config (parses input.cfg, validates, closes file)
-    call read_config(cfg)
-
-    ! Confinement initialization for QW mode (not wire)
-    if (cfg%confDir == 'z' .and. cfg%confinement == 1) then
-      allocate(kpterms(grid_ngrid(cfg%grid), grid_ngrid(cfg%grid), 10))
-      kpterms = 0.0_dp
-      call confinementInitialization(cfg, profile, kpterms)
-      ! Guard: electric field requires z(1) /= 0
-      if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
-        if (abs(cfg%z(1)) < tolerance) then
-          print *, 'Error: Electric field requires z(1) /= 0.'
-          print *, '  Adjust startPos/endPos so grid does not start at z=0.'
-          stop 1
-        end if
-      end if
-      if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
-        call externalFieldSetup_electricField(profile, cfg%Evalue, cfg%totalSize, cfg%z)
-      end if
-    end if
-
-  end subroutine read_and_setup
 
 end module input_parser

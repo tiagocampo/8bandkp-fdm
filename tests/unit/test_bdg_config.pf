@@ -9,7 +9,6 @@ contains
   @test
   subroutine test_bdg_g_factor_parsing()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
 
     ! Write a minimal config with bdg block including g_factor
     open(unit=99, file='input.cfg', status='replace', action='write')
@@ -33,7 +32,7 @@ contains
     write(99, '(A)') 'bdg_gauge landau_y'
     close(99)
 
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
 
     ! Verify g_factor was parsed correctly
     @assertEqual(2.0_dp, cfg%bdg%g_factor, tolerance=1.0e-6_dp)

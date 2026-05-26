@@ -5,7 +5,7 @@ program topologicalAnalysis
   use hamiltonianConstructor
   use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free, &
     & wire_workspace, wire_workspace_free, ZB8bandGeneralized
-  use confinement_init, only: confinementInitialization_2d
+  use confinement_init, only: confinementInitialization, confinementInitialization_2d
   use finitedifferences
   use outputFunctions
   use input_parser
@@ -62,7 +62,22 @@ program topologicalAnalysis
   ! MKL_THREADING=intel_thread.
   info = mkl_set_num_threads_local(1)
 
-  call read_and_setup(cfg, profile, kpterms)
+  call read_config(cfg)
+
+  ! Confinement initialization for QW mode
+  if (cfg%confDir == 'z' .and. cfg%confinement == 1) then
+    allocate(kpterms(grid_ngrid(cfg%grid), grid_ngrid(cfg%grid), 10))
+    kpterms = 0.0_dp
+    call confinementInitialization(cfg, profile, kpterms)
+    if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
+      if (abs(cfg%z(1)) < tolerance) then
+        print *, 'Error: Electric field requires z(1) /= 0.'
+        print *, '  Adjust startPos/endPos so grid does not start at z=0.'
+        stop 1
+      end if
+      call externalFieldSetup_electricField(profile, cfg%Evalue, cfg%totalSize, cfg%z)
+    end if
+  end if
 
   ! Validate topology mode is set
   if (.not. cfg%topo%enabled) then

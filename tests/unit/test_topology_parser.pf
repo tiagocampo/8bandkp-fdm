@@ -8,7 +8,6 @@ contains
   @test
   subroutine test_parse_topology_and_bdg_block()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
     open(unit=99, file='input.cfg', status='replace', action='write')
     write(99, '(A)') 'waveVector k0'
     write(99, '(A)') 'waveVectorMax 0.0'
@@ -28,7 +27,7 @@ contains
     write(99, '(A)') 'bdg_mu 0.010'
     write(99, '(A)') 'bdg_delta 0.0003'
     close(99)
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
     @assertTrue(cfg%topo%enabled)
     @assertEqual('bdg', trim(cfg%topo%mode))
     @assertTrue(cfg%topo%compute_chern)
@@ -41,7 +40,6 @@ contains
   @test
   subroutine test_parse_topology_false_values()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
     open(unit=99, file='input.cfg', status='replace', action='write')
     write(99, '(A)') 'waveVector k0'
     write(99, '(A)') 'waveVectorMax 0.0'
@@ -68,7 +66,7 @@ contains
     write(99, '(A)') 'topology_ldos_E_range: 0.1'
     write(99, '(A)') 'topology_ldos_num_E 100'
     close(99)
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
     @assertTrue(cfg%topo%enabled)
     @assertEqual('qhe', trim(cfg%topo%mode))
     @assertFalse(cfg%topo%compute_chern)
@@ -86,7 +84,6 @@ contains
   @test
   subroutine test_parse_topology_phase6_name_aware_fields()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
 
     open(unit=99, file='input.cfg', status='replace', action='write')
     write(99, '(A)') 'waveVector k0'
@@ -126,7 +123,7 @@ contains
     write(99, '(A)') 'gap_sweep_B: -0.01 0.01 3'
     close(99)
 
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
 
     @assertTrue(cfg%topo%compute_spectral)
     @assertEqual(5, cfg%topo%spectral_nk)
@@ -147,7 +144,6 @@ contains
   @test
   subroutine test_parse_topology_old_qhe_block()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
 
     open(unit=99, file='input.cfg', status='replace', action='write')
     write(99, '(A)') 'waveVector k0'
@@ -166,7 +162,7 @@ contains
     write(99, '(A)') 'compute_chern: T'
     close(99)
 
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
 
     @assertTrue(cfg%topo%enabled)
     @assertEqual('qhe', trim(cfg%topo%mode))
@@ -178,7 +174,6 @@ contains
   @test
   subroutine test_parse_topology_sweep_model()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
 
     open(unit=99, file='input.cfg', status='replace', action='write')
     write(99, '(A)') 'waveVector k0'
@@ -211,7 +206,7 @@ contains
     write(99, '(A)') 'sweep_model qw_fukane'
     close(99)
 
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
 
     @assertTrue(cfg%topo%compute_gap_sweep)
     @assertEqual('qw_fukane', trim(cfg%topo%sweep_model))
