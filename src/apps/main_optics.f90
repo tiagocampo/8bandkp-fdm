@@ -6,7 +6,9 @@ program opticalProperties
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
     & build_velocity_matrices, ZB8bandGeneralized
   use confinement_init, only: confinementInitialization_2d
-  use input_parser
+  use input_parser, only: read_config
+  use simulation_setup_mod, only: simulation_setup, simulation_setup_init, &
+    & simulation_setup_free, setup_build_velocity_matrices
   use optical_spectra
   use exciton_solver, only: compute_exciton_binding, apply_excitonic_corrections
   use sparse_matrices
@@ -15,15 +17,13 @@ program opticalProperties
     & auto_compute_energy_window
   use strain_solver
   use linalg, only: zheevx, ilaenv, dlamch, mkl_set_num_threads_local
-  use utils, only: dnscsr_z_mkl
   use outputFunctions, only: ensure_output_dir, get_unit
 
   implicit none
 
   ! Shared configuration from input_parser
   type(simulation_config) :: cfg
-  real(kind=dp), allocatable, dimension(:,:) :: profile
-  real(kind=dp), allocatable, dimension(:,:,:) :: kpterms
+  type(simulation_setup)  :: setup
 
   ! Iteration
   integer :: i, k
@@ -45,13 +45,6 @@ program opticalProperties
   ! Simpson integration weights
   real(kind=dp), allocatable :: simpson_w(:)
 
-  ! Velocity matrices
-  type(csr_matrix) :: vel_opt(3)
-  type(csr_matrix) :: H_csr_tmp
-  complex(kind=dp), allocatable :: H_k0(:,:)
-  type(wavevector) :: pert_kx, pert_ky
-  integer :: nzmax_tmp
-
   ! Wire-specific variables (confinement=2)
   real(kind=dp), allocatable       :: profile_2d(:,:)
   type(csr_matrix), allocatable    :: kpterms_2d(:)
@@ -69,7 +62,7 @@ program opticalProperties
   ! ================================================================
   ! Parse input, initialize materials, external fields
   ! ================================================================
-  call read_and_setup(cfg, profile, kpterms)
+  call read_config(cfg)
 
   ! Check that optics is enabled
   if (.not. cfg%optics%enabled) then
@@ -87,12 +80,15 @@ program opticalProperties
   ! BULK (confinement=0)
   ! ==================================================================
   case (0)
-    N = 8  ! 8x8 bulk Hamiltonian
-
-    ! For bulk: 6 VB-like + 2 CB-like states
-    il = 1
-    iuu = N
+    call simulation_setup_init(cfg, setup)
+    N = setup%N   ! 8 for bulk
+    il = setup%il
+    iuu = setup%iuu
     print '(a)', ' Bulk optics: 8x8 Hamiltonian, all 8 states'
+
+    ! Build velocity matrices via simulation_setup
+    call setup_build_velocity_matrices(setup, cfg)
+    print '(a)', ' Bulk velocity matrices built successfully'
 
     ! LAPACK workspace query parameters
     vl = 0.0_dp
@@ -139,51 +135,6 @@ program opticalProperties
     lwork = int(real(work(1)))
     deallocate(work)
     allocate(work(lwork))
-
-    ! ================================================================
-    ! Build velocity matrices at unit wavevector (k-independent)
-    ! ================================================================
-    ! For bulk, ZB8bandBulk(g='g') zeros gamma and A, keeping only
-    ! the Kane P term. The resulting matrix is dH/dk_alpha which is
-    ! k-independent (linear in k-derivative).
-
-    ! vel(1): x-direction
-    pert_kx%kx = 1.0_dp
-    pert_kx%ky = 0.0_dp
-    pert_kx%kz = 0.0_dp
-    allocate(H_k0(N, N))
-    H_k0 = (0.0_dp, 0.0_dp)
-    call ZB8bandBulk(H_k0, pert_kx, cfg%params(1:1), cfg=cfg, g='g')
-    nzmax_tmp = N * N
-    call dnscsr_z_mkl(nzmax_tmp, N, H_k0, vel_opt(1))
-    deallocate(H_k0)
-
-    ! vel(2): y-direction
-    pert_ky%kx = 0.0_dp
-    pert_ky%ky = 1.0_dp
-    pert_ky%kz = 0.0_dp
-    allocate(H_k0(N, N))
-    H_k0 = (0.0_dp, 0.0_dp)
-    call ZB8bandBulk(H_k0, pert_ky, cfg%params(1:1), cfg=cfg, g='g')
-    nzmax_tmp = N * N
-    call dnscsr_z_mkl(nzmax_tmp, N, H_k0, vel_opt(2))
-    deallocate(H_k0)
-
-    ! vel(3): z-direction
-    block
-      type(wavevector) :: pert_kz
-      pert_kz%kx = 0.0_dp
-      pert_kz%ky = 0.0_dp
-      pert_kz%kz = 1.0_dp
-      allocate(H_k0(N, N))
-      H_k0 = (0.0_dp, 0.0_dp)
-      call ZB8bandBulk(H_k0, pert_kz, cfg%params(1:1), cfg=cfg, g='g')
-      nzmax_tmp = N * N
-      call dnscsr_z_mkl(nzmax_tmp, N, H_k0, vel_opt(3))
-      deallocate(H_k0)
-    end block
-
-    print '(a)', ' Bulk velocity matrices built successfully'
 
     ! ================================================================
     ! Initialize optics accumulation
@@ -268,30 +219,30 @@ program opticalProperties
       !$omp end parallel
     end block
 
-    ! Accumulate optical spectra (serial, uses shared vel_opt)
+    ! Accumulate optical spectra (serial, uses setup%vel)
     print '(a)', ' Accumulating optical spectra...'
     do k = 1, npts
       call optics_accumulate(cfg%optics, &
         & eig(:, k), eigv(:, :, k), simpson_w(k), &
-        & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+        & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
 
       if (cfg%optics%spontaneous_enabled) then
         call optics_accumulate_spontaneous(cfg%optics, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
-          & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+          & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
       end if
 
       if (cfg%optics%gain_enabled) then
         call compute_gain_qw(cfg%optics, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
-          & vel_opt, cfg%numcb, cfg%numvb, &
+          & setup%vel, cfg%numcb, cfg%numvb, &
           & cfg%optics%gain_carrier_density)
       end if
 
       if (cfg%optics%isbt_enabled) then
         call compute_isbt_absorption(cfg%optics, &
           & eig(:, k), eigv(:, :, k), &
-          & vel_opt, cfg%numcb, cfg%numvb, &
+          & setup%vel, cfg%numcb, cfg%numvb, &
           & simpson_w(k), cfg%sc%fermi_level)
       end if
     end do
@@ -302,12 +253,8 @@ program opticalProperties
     call optics_finalize(cfg%optics)
     call optics_cleanup()
 
-    ! Free velocity matrices
-    do i = 1, 3
-      call csr_free(vel_opt(i))
-    end do
-
     deallocate(simpson_w)
+    call simulation_setup_free(setup)
     print '(a)', ' Bulk optical spectra written to output/'
 
   ! ==================================================================
@@ -319,12 +266,16 @@ program opticalProperties
       stop 1
     end if
 
-    N = cfg%fdStep * 8
-
-    ! Set eigenvalue range: highest numvb valence + lowest numcb conduction
+    call simulation_setup_init(cfg, setup)
+    N = setup%N
+    ! Compute eigenvalue range for optics: top numvb valence + bottom numcb conduction
     il = NUM_VB_STATES*cfg%fdStep - cfg%numvb + 1
     iuu = NUM_VB_STATES*cfg%fdStep + cfg%numcb
     print '(a,i0,a,i0)', ' Computing states from index ', il, ' to ', iuu
+
+    ! Build velocity matrices via simulation_setup
+    call setup_build_velocity_matrices(setup, cfg)
+    print '(a)', ' Velocity matrices built successfully'
 
     ! LAPACK workspace query parameters
     vl = 0.0_dp
@@ -361,14 +312,14 @@ program opticalProperties
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
     do i = 1, cfg%fdStep
-      write(iounit, *) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
+      write(iounit, *) cfg%z(i), setup%profile(i,1), setup%profile(i,2), setup%profile(i,3)
     end do
     close(iounit)
 
     ! ================================================================
     ! Workspace query (k=1)
     ! ================================================================
-    call ZB8bandQW(HT, smallk(1), profile, kpterms, cfg=cfg)
+    call ZB8bandQW(HT, smallk(1), setup%profile, setup%kpterms, cfg=cfg)
     allocate(work(1))
     lwork = -1
     call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, &
@@ -380,51 +331,6 @@ program opticalProperties
     lwork = int(real(work(1)))
     deallocate(work)
     allocate(work(lwork))
-
-    ! ================================================================
-    ! Build velocity matrices at k=0 (k-independent, built once)
-    ! ================================================================
-    ! vel(3): z-direction via commutator -i[r_z, H] on CSR
-    allocate(H_k0(N, N))
-    H_k0 = (0.0_dp, 0.0_dp)
-    call ZB8bandQW(H_k0, smallk(1), profile, kpterms, cfg=cfg)
-    nzmax_tmp = N * N
-    call dnscsr_z_mkl(nzmax_tmp, N, H_k0, H_csr_tmp)
-    deallocate(H_k0)
-
-    ! build_velocity_matrices dispatches to the 1D version for QW
-    call build_velocity_matrices(H_csr_tmp, cfg%grid, vel_opt)
-    call csr_free(H_csr_tmp)
-
-    ! vel(1): x-direction via dH/dk_x (Kane P matrix elements)
-    pert_kx%kx = 1.0_dp
-    pert_kx%ky = 0.0_dp
-    pert_kx%kz = 0.0_dp
-    allocate(H_k0(N, N))
-    H_k0 = (0.0_dp, 0.0_dp)
-    call ZB8bandQW(H_k0, pert_kx, profile, kpterms, cfg=cfg, g='g')
-    nzmax_tmp = N * N
-    call dnscsr_z_mkl(nzmax_tmp, N, H_k0, H_csr_tmp)
-    deallocate(H_k0)
-    call csr_clone_structure(H_csr_tmp, vel_opt(1))
-    vel_opt(1)%values = H_csr_tmp%values
-    call csr_free(H_csr_tmp)
-
-    ! vel(2): y-direction via dH/dk_y (Kane P matrix elements)
-    pert_ky%kx = 0.0_dp
-    pert_ky%ky = 1.0_dp
-    pert_ky%kz = 0.0_dp
-    allocate(H_k0(N, N))
-    H_k0 = (0.0_dp, 0.0_dp)
-    call ZB8bandQW(H_k0, pert_ky, profile, kpterms, cfg=cfg, g='g')
-    nzmax_tmp = N * N
-    call dnscsr_z_mkl(nzmax_tmp, N, H_k0, H_csr_tmp)
-    deallocate(H_k0)
-    call csr_clone_structure(H_csr_tmp, vel_opt(2))
-    vel_opt(2)%values = H_csr_tmp%values
-    call csr_free(H_csr_tmp)
-
-    print '(a)', ' Velocity matrices built successfully'
 
     ! ================================================================
     ! Initialize optics accumulation
@@ -482,7 +388,7 @@ program opticalProperties
       !$omp do schedule(static)
       do k = 1, npts
         ! Build Hamiltonian for this k_par
-        call ZB8bandQW(HT_loc, smallk(k), profile, kpterms, cfg=cfg)
+        call ZB8bandQW(HT_loc, smallk(k), setup%profile, setup%kpterms, cfg=cfg)
 
         ! Diagonalize
         call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
@@ -504,30 +410,30 @@ program opticalProperties
       !$omp end parallel
     end block
 
-    ! Accumulate optical spectra (serial, uses shared vel_opt)
+    ! Accumulate optical spectra (serial, uses setup%vel)
     print '(a)', ' Accumulating optical spectra...'
     do k = 1, npts
       call optics_accumulate(cfg%optics, &
         & eig(:, k), eigv(:, :, k), simpson_w(k), &
-        & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+        & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
 
       if (cfg%optics%spontaneous_enabled) then
         call optics_accumulate_spontaneous(cfg%optics, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
-          & vel_opt, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+          & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
       end if
 
       if (cfg%optics%gain_enabled) then
         call compute_gain_qw(cfg%optics, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
-          & vel_opt, cfg%numcb, cfg%numvb, &
+          & setup%vel, cfg%numcb, cfg%numvb, &
           & cfg%optics%gain_carrier_density)
       end if
 
       if (cfg%optics%isbt_enabled) then
         call compute_isbt_absorption(cfg%optics, &
           & eig(:, k), eigv(:, :, k), &
-          & vel_opt, cfg%numcb, cfg%numvb, &
+          & setup%vel, cfg%numcb, cfg%numvb, &
           & simpson_w(k), cfg%sc%fermi_level)
       end if
     end do
@@ -584,12 +490,8 @@ program opticalProperties
 
     call optics_cleanup()
 
-    ! Free velocity matrices
-    do i = 1, 3
-      call csr_free(vel_opt(i))
-    end do
-
     deallocate(simpson_w)
+    call simulation_setup_free(setup)
     print '(a)', ' Optical spectra written to output/'
 
   ! ==================================================================
@@ -815,8 +717,6 @@ program opticalProperties
   ! Cleanup
   ! ================================================================
   if (allocated(smallk))  deallocate(smallk)
-  if (allocated(profile)) deallocate(profile)
-  if (allocated(kpterms)) deallocate(kpterms)
   if (allocated(HT))      deallocate(HT)
   if (allocated(eig))     deallocate(eig)
   if (allocated(eigv))    deallocate(eigv)

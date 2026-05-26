@@ -17,6 +17,7 @@ program kpfdm
   use exciton_solver
   use scattering_solver
   use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch
+  use spin_projection, only: compute_band_parts
 
   implicit none
 
@@ -1011,10 +1012,10 @@ contains
     perm = 0
 
     do i = 1, n_prev
-      call compute_wire_band_parts(prev_evec(:, i), prev_parts(:, i))
+      call compute_band_parts(prev_evec(:, i), prev_parts(:, i))
     end do
     do j = 1, n_curr
-      call compute_wire_band_parts(curr_evec(:, j), curr_parts(:, j))
+      call compute_band_parts(curr_evec(:, j), curr_parts(:, j))
     end do
 
     do i = 1, n_match
@@ -1091,27 +1092,5 @@ contains
       end do
     end do
   end subroutine sort_perm_block_by_energy
-
-  subroutine compute_wire_band_parts(state_vec, parts)
-    complex(kind=dp), intent(in) :: state_vec(:)
-    real(kind=dp), intent(out) :: parts(8)
-
-    integer :: band, ngrid_local, start_idx, end_idx
-    real(kind=dp) :: total_weight
-
-    ngrid_local = size(state_vec) / 8
-    parts = 0.0_dp
-    if (ngrid_local <= 0) return
-
-    do band = 1, 8
-      start_idx = (band - 1) * ngrid_local + 1
-      end_idx = band * ngrid_local
-      parts(band) = real(sum(conjg(state_vec(start_idx:end_idx)) * &
-        & state_vec(start_idx:end_idx)), kind=dp)
-    end do
-
-    total_weight = sum(parts)
-    if (total_weight > 0.0_dp) parts = parts / total_weight
-  end subroutine compute_wire_band_parts
 
 end program kpfdm
