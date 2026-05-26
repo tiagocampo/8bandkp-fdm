@@ -414,6 +414,7 @@ contains
     setup%has_strain = .false.
     setup%sc_was_run = .false.
     setup%vel_built = .false.
+    setup%fermi_level = 0.0_dp
 
   end subroutine simulation_setup_free
 
