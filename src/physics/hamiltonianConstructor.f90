@@ -630,12 +630,20 @@ module hamiltonianConstructor
       kminus  = wv%kx - IU*wv%ky
 
       !kp parameters
-      if (present(g) .and. g == 'g') then
-        gamma1 = 0.0_dp
-        gamma2 = 0.0_dp
-        gamma3 = 0.0_dp
-        P = params(1)%P
-        A = 0.0_dp
+      if (present(g)) then
+        if (g == 'g') then
+          gamma1 = 0.0_dp
+          gamma2 = 0.0_dp
+          gamma3 = 0.0_dp
+          P = params(1)%P
+          A = 0.0_dp
+        else
+          gamma1 = params(1)%gamma1 * const
+          gamma2 = params(1)%gamma2 * const
+          gamma3 = params(1)%gamma3 * const
+          P = params(1)%P
+          A = params(1)%A * const
+        end if
       else
         ! Scale gamma and A by const = hbar^2/(2*m_0) so that k-dependent
         ! diagonal terms have energy units (eV). P already includes const

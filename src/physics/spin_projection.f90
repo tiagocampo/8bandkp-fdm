@@ -3,6 +3,7 @@ module spin_projection
   implicit none
   private
   public :: spin_weights
+  public :: compute_band_parts
 
 contains
 
@@ -42,5 +43,29 @@ contains
     end do
     w_dw = 1.0_dp - w_up
   end subroutine spin_weights
+
+  ! Compute the 8-band decomposition weights of a wire eigenstate.
+  ! parts(b) = sum_i |psi((b-1)*N + i)|^2, normalized to sum = 1.
+  subroutine compute_band_parts(state_vec, parts)
+    complex(kind=dp), intent(in) :: state_vec(:)
+    real(kind=dp), intent(out) :: parts(8)
+
+    integer :: band, ngrid_local, start_idx, end_idx
+    real(kind=dp) :: total_weight
+
+    ngrid_local = size(state_vec) / 8
+    parts = 0.0_dp
+    if (ngrid_local <= 0) return
+
+    do band = 1, 8
+      start_idx = (band - 1) * ngrid_local + 1
+      end_idx = band * ngrid_local
+      parts(band) = real(sum(conjg(state_vec(start_idx:end_idx)) * &
+        & state_vec(start_idx:end_idx)), kind=dp)
+    end do
+
+    total_weight = sum(parts)
+    if (total_weight > 0.0_dp) parts = parts / total_weight
+  end subroutine compute_band_parts
 
 end module spin_projection

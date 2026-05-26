@@ -3,7 +3,8 @@ module hamiltonian_wire
   use definitions
   use sparse_matrices
   use utils
-  use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar
+  use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar, &
+    & strain_entry, build_strain_table, get_strain_table
   use confinement_init, only: confinementInitialization_2d
   use finitedifferences
   use magnetic_field, only: compute_zeeman_vz
@@ -75,26 +76,9 @@ module hamiltonian_wire
     final :: wire_workspace_finalize
   end type wire_workspace
 
-  ! ------------------------------------------------------------------
-  ! Strain COO insertion table entry: describes one of the 32 block
-  ! patterns that map Bir-Pikus fields into the 8x8 band structure.
-  ! row_band/col_band are 0-based band offsets (0-7).
-  ! field_id selects which bp component to read:
-  !   1=delta_EHH, 2=delta_ELH, 3=delta_ESO, 4=delta_Ec,
-  !   5=S_eps, 6=R_eps, 7=QT2_eps
-  ! prefactor scales the value; use_conjg applies conjg() to the field.
-  ! ------------------------------------------------------------------
-  type :: strain_entry
-    integer               :: row_band, col_band  ! 0-based band offsets (0-7)
-    integer               :: field_id            ! 1=EHH,2=ELH,3=ESO,4=Ec,5=S,6=R,7=QT2
-    complex(kind=dp)      :: prefactor           ! complex scale (e.g. IU*RQS2)
-    logical               :: use_conjg           ! conjugate the field value?
-  end type strain_entry
-
   public :: wire_coo_cache, wire_coo_cache_free
   public :: wire_workspace, wire_workspace_free
   public :: build_velocity_matrices
-  public :: strain_entry, build_strain_table
   public :: ZB8bandGeneralized
   public :: insert_strain_coo
 
@@ -103,23 +87,13 @@ module hamiltonian_wire
     module procedure build_velocity_matrices_1d
   end interface build_velocity_matrices
 
-  ! ------------------------------------------------------------------
-  ! Module-level cache for the strain table (32-entry compile-time
-  ! constant).  Avoids rebuilding it on every kz-point.
-  ! ------------------------------------------------------------------
-  logical, save :: strain_table_cached = .false.
-  type(strain_entry), save :: strain_table_cache(32)
-
   contains
 
-    function get_strain_table() result(table)
-      type(strain_entry) :: table(32)
-      if (.not. strain_table_cached) then
-        strain_table_cache = build_strain_table()
-        strain_table_cached = .true.
-      end if
-      table = strain_table_cache
-    end function get_strain_table
+    logical function ws_initialized(ws)
+      type(wire_workspace), intent(in), optional :: ws
+      ws_initialized = .false.
+      if (present(ws)) ws_initialized = ws%initialized
+    end function ws_initialized
 
     ! ==================================================================
     ! Build a scatter map from a source CSR to a destination (union) CSR.
@@ -159,63 +133,6 @@ module hamiltonian_wire
       end do
     end subroutine build_scatter_map
 
-    ! ==================================================================
-    ! Build the 32-entry strain insertion table.
-    !
-    ! Each entry describes how one band-block of the strain Hamiltonian
-    ! is constructed from the Bir-Pikus fields.  The table encodes all
-    ! diagonal shifts, S_eps, R_eps, and VB-SO coupling terms.
-    !
-    ! Constants used (from definitions module):
-    !   IU    = cmplx(0,1,dp)
-    !   RQS2  = 1/sqrt(2)
-    !   SQR2  = sqrt(2)
-    !   SQR3o2 = sqrt(1.5_dp)
-    ! ==================================================================
-    function build_strain_table() result(table)
-      type(strain_entry) :: table(32)
-
-      ! --- Diagonal entries (1-8) ---
-      table( 1) = strain_entry(0, 0, 1, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 2) = strain_entry(1, 1, 2, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 3) = strain_entry(2, 2, 2, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 4) = strain_entry(3, 3, 1, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 5) = strain_entry(4, 4, 3, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 6) = strain_entry(5, 5, 3, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 7) = strain_entry(6, 6, 4, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 8) = strain_entry(7, 7, 4, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-
-      ! --- S_eps entries (9-12) ---
-      table( 9) = strain_entry(0, 1, 5, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
-      table(10) = strain_entry(1, 0, 5, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table(11) = strain_entry(2, 3, 5, cmplx(-1.0_dp, 0.0_dp, kind=dp), .true.)
-      table(12) = strain_entry(3, 2, 5, cmplx(-1.0_dp, 0.0_dp, kind=dp), .false.)
-
-      ! --- R_eps entries (13-16) ---
-      table(13) = strain_entry(0, 2, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
-      table(14) = strain_entry(2, 0, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table(15) = strain_entry(1, 3, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
-      table(16) = strain_entry(3, 1, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-
-      ! --- VB-SO coupling entries (17-32) ---
-      table(17) = strain_entry(0, 4, 5, -IU * RQS2,   .true.)
-      table(18) = strain_entry(4, 0, 5,  IU * RQS2,   .false.)
-      table(19) = strain_entry(0, 5, 6,  IU * SQR2,   .true.)
-      table(20) = strain_entry(5, 0, 6, -IU * SQR2,   .false.)
-      table(21) = strain_entry(1, 4, 7,  IU * RQS2,   .false.)
-      table(22) = strain_entry(4, 1, 7, -IU * RQS2,   .false.)
-      table(23) = strain_entry(1, 5, 5, -IU * SQR3o2, .true.)
-      table(24) = strain_entry(5, 1, 5,  IU * SQR3o2, .false.)
-      table(25) = strain_entry(2, 4, 5,  IU * SQR3o2, .false.)
-      table(26) = strain_entry(4, 2, 5, -IU * SQR3o2, .true.)
-      table(27) = strain_entry(2, 5, 7,  IU * RQS2,   .false.)
-      table(28) = strain_entry(5, 2, 7, -IU * RQS2,   .false.)
-      table(29) = strain_entry(3, 4, 6, -IU * SQR2,   .false.)
-      table(30) = strain_entry(4, 3, 6,  IU * SQR2,   .true.)
-      table(31) = strain_entry(3, 5, 5,  IU * RQS2,   .false.)
-      table(32) = strain_entry(5, 3, 5, -IU * RQS2,   .true.)
-
-    end function build_strain_table
     subroutine ZB8bandGeneralized(HT_csr, kz, profile_2d, kpterms_2d, cfg, coo_cache, ws, g)
 
       type(csr_matrix), intent(inout)         :: HT_csr
@@ -676,7 +593,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: kp7 and kp8 have operator sparsity (= result sparsity)
         blk%values = cmplx(0.25_dp, 0.0_dp, kind=dp) * kpterms_2d(7)%values &
                    + cmplx(0.75_dp, 0.0_dp, kind=dp) * kpterms_2d(8)%values
@@ -725,7 +642,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: kp7 and kp8 have operator sparsity (= result sparsity)
         blk%values = cmplx(0.75_dp, 0.0_dp, kind=dp) * kpterms_2d(7)%values &
                    + cmplx(0.25_dp, 0.0_dp, kind=dp) * kpterms_2d(8)%values
@@ -776,7 +693,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: scatter kp14 and kp15 into union-structure block
         blk%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
         blk%values(ws%scatter_S_14) = cmplx(-2.0_dp*SQR3*kz, 0.0_dp, kind=dp) &
@@ -830,7 +747,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: conjugate transpose the already-built blk_S
         call csr_conjugate_transpose_to_preallocated(ws%blk_S, blk)
       else
@@ -859,7 +776,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: scatter kp16 and kp11 into union-structure block
         blk%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
         blk%values(ws%scatter_R_16) = cmplx(-SQR3, 0.0_dp, kind=dp) &
@@ -914,7 +831,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: conjugate transpose the already-built blk_R
         call csr_conjugate_transpose_to_preallocated(ws%blk_R, blk)
       else
@@ -940,7 +857,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: kp4 is diagonal, result is diagonal
         blk%values = cmplx(kz, 0.0_dp, kind=dp) * kpterms_2d(4)%values
       else
@@ -963,7 +880,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: scatter kp12 and kp13 into union-structure block
         blk%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
         blk%values(ws%scatter_PP_12) = cmplx(0.0_dp, RQS2, kind=dp) &
@@ -1001,7 +918,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: conjugate transpose the already-built blk_PP
         call csr_conjugate_transpose_to_preallocated(ws%blk_PP, blk)
       else
@@ -1028,7 +945,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: kp5 has operator sparsity (= result sparsity)
         blk%values = kpterms_2d(5)%values
         ! Add diagonal contribution (kp10) at diagonal positions

@@ -386,27 +386,14 @@ contains
 
   ! ------------------------------------------------------------------
   ! Compute |Psi_s(y,z)|^2 summed over all 8 band components (wire)
+  ! Identical to compute_psi2 — same formula with different variable names.
   ! ------------------------------------------------------------------
   subroutine compute_psi2_wire(psi2, eigenvectors, s, Ngrid, nk, num_subbands)
-    ! For a wire, eigenvectors are (8*Ngrid, num_subbands, nk).
-    ! Component nu at flat grid point p is at index (nu-1)*Ngrid + p.
-
     integer, intent(in)          :: s, Ngrid, nk, num_subbands
     real(kind=dp), intent(out)   :: psi2(Ngrid, nk)
     complex(kind=dp), intent(in) :: eigenvectors(8*Ngrid, num_subbands, nk)
 
-    integer :: idx, band_start, p
-
-    psi2 = 0.0_dp
-    do idx = 1, nk
-      do band_start = 1, 8
-        do p = 1, Ngrid
-          psi2(p, idx) = psi2(p, idx) &
-            & + abs(eigenvectors((band_start - 1)*Ngrid + p, s, idx))**2
-        end do
-      end do
-    end do
-
+    call compute_psi2(psi2, eigenvectors, s, Ngrid, nk, num_subbands)
   end subroutine compute_psi2_wire
 
 

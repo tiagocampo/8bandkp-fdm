@@ -195,6 +195,7 @@ contains
     ! Contiguous local copies for FEAST (avoids allocatable component issues)
     complex(kind=dp), allocatable :: val_loc(:)
     integer, allocatable :: rowptr_loc(:), colind_loc(:)
+    logical :: fw_match
 
     N = H_csr%nrows
     if (N <= 0) then
@@ -226,7 +227,9 @@ contains
     res = 0.0_dp
 
     ! Extract upper triangle only (FEAST UPLO='U' requires col >= row).
-    if (present(fw) .and. feast_workspace_matches_pattern(H_csr, fw, N, M0)) then
+    fw_match = .false.
+    if (present(fw)) fw_match = feast_workspace_matches_pattern(H_csr, fw, N, M0)
+    if (fw_match) then
       ! Fast path: reuse cached upper-triangle structure, just update values
       allocate(val_loc(fw%nnz_upper))
       do i = 1, N
