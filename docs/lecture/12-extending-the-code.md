@@ -20,11 +20,19 @@ src/apps/
     |-> linalg             (zheevx wrapper, ILAENV, DLAMCH)
 
 src/physics/
+  hamiltonian_blocks.f90    (8x8 k.p block structure: 52-entry table, named constants KP_Q..KP_A)
+    |-> definitions         (kinds, constants only)
   hamiltonianConstructor.f90
     |-> finitedifferences  (FD stencil matrices)
+    |-> hamiltonian_blocks  (k.p block table for dense builders)
     |-> sparse_matrices    (CSR operations for wire mode)
-    |-> strain_solver      (Bir-Pikus strain blocks)
+    |-> strain_solver      (Bir-Pikus strain blocks via get_strain_table/get_zeeman_table)
     |-> utils              (dense-to-sparse conversion)
+  hamiltonian_wire.f90
+    |-> hamiltonian_blocks  (k.p block table for COO builder)
+    |-> hamiltonianConstructor
+    |-> sparse_matrices
+    |-> strain_solver
   gfactor_functions.f90
     |-> hamiltonianConstructor
     |-> sparse_matrices    (CSR SpMV for QW/wire perturbation)
@@ -38,7 +46,7 @@ src/physics/
     |-> charge_density
     |-> hamiltonianConstructor
   strain_solver.f90
-    |-> definitions        (types, constants only)
+    |-> definitions        (types, constants only; exports get_strain_table, get_zeeman_table)
 
 src/math/
   finitedifferences.f90
@@ -198,11 +206,14 @@ The profile is a 2D array with shape `(Ngrid, 3)` where column 1 is EV, column 2
 
 ### Level 2: Inside the Hamiltonian (modify k.p terms)
 
-If you need to change the kinetic terms or add new couplings, you must edit `hamiltonianConstructor.f90`. The relevant entry points are:
+If you need to change the kinetic terms or add new couplings, you must edit the block tables and/or `hamiltonianConstructor.f90`. The relevant entry points are:
 
-- **Bulk**: `ZB8bandBulk` -- 8x8 matrix, all terms are explicit scalars. Add new off-diagonal elements directly.
-- **QW**: `ZB8bandQW` -- 8N x 8N block matrix. The `kpterms(:,:,:)` array holds the precomputed position-dependent FD operators. Index 1-4 are diagonal (gamma1, gamma2, gamma3, P), 5 is A times d^2/dz^2, 6 is P times d/dz, 7 is (gamma1-2gamma2) times d^2/dz^2, 8 is (gamma1+2gamma2) times d^2/dz^2, 9 is gamma3 times d/dz, 10 is A (diagonal).
-- **Wire**: `ZB8bandGeneralized` -- 8*Ngrid x 8*Ngrid sparse CSR. The `kpterms_2d(:)` array holds 17 CSR matrices (indices 1-17). Indices 1-4 diagonal, 5 A*Laplacian, 6 P*gradient, 7-8 Q/T kinetic terms, 9 gamma3*gradient (legacy), 10 A diagonal, 11 cross-derivative, 12-13 P*x/y gradients for g-factor, 14-15 gamma3*x/y gradients for S/SC terms and g-factor, 16 gamma2*(D2x-D2y) anisotropic Laplacian for R term, 17 placeholder (unused).
+- **Block structure table**: `hamiltonian_blocks.f90` defines a 52-entry table (`get_kp_block_table()`) mapping each nonzero block in the 8x8 band space to its k.p term and complex prefactor. Both dense and COO builders consume this table. Named constants (KP_Q, KP_R, etc.) identify the k.p terms. To add a new coupling, add an entry to this table.
+- **Bulk**: `ZB8bandBulk` -- 8x8 matrix, reads from the k.p block table. Add new off-diagonal elements via the table.
+- **QW**: `ZB8bandQW` -- 8N x 8N block matrix, reads from the k.p block table. The `kpterms(:,:,:)` array holds the precomputed position-dependent FD operators. Index 1-4 are diagonal (gamma1, gamma2, gamma3, P), 5 is A times d^2/dz^2, 6 is P times d/dz, 7 is (gamma1-2gamma2) times d^2/dz^2, 8 is (gamma1+2gamma2) times d^2/dz^2, 9 is gamma3 times d/dz, 10 is A (diagonal).
+- **Wire**: `ZB8bandGeneralized` -- 8*Ngrid x 8*Ngrid sparse CSR, reads from the k.p block table. The `kpterms_2d(:)` array holds 17 CSR matrices (indices 1-17). Indices 1-4 diagonal, 5 A*Laplacian, 6 P*gradient, 7-8 Q/T kinetic terms, 9 gamma3*gradient (legacy), 10 A diagonal, 11 cross-derivative, 12-13 P*x/y gradients for g-factor, 14-15 gamma3*x/y gradients for S/SC terms and g-factor, 16 gamma2*(D2x-D2y) anisotropic Laplacian for R term, 17 placeholder (unused).
+- **Strain blocks**: `get_strain_table()` in `strain_solver.f90` defines which Bir-Pikus strain entries apply to which band pairs. Both dense and COO builders consume this table.
+- **Zeeman blocks**: `get_zeeman_table()` in `strain_solver.f90` defines which Zeeman magnetic entries apply to which band pairs. Both dense and COO builders consume this table.
 
 To add a new k.p term (say, a strain-induced coupling), you would:
 
@@ -352,7 +363,7 @@ The table below lists the major features needed to reproduce the full set of res
 | 8 | Unified WZ+ZB Hamiltonian | P6 | Medium |
 | 9 | Ab initio fitting pipeline | P7 | Out of scope |
 
-**Wurtzite 8-band k.p Hamiltonian** (Priority 1): The current code only implements the zincblende (ZB) 8-band Hamiltonian. Wurtzite requires a different basis and different coupling terms: the crystal field splitting replaces the cubic symmetry terms, and the Luttinger-like parameters have a different structure (gamma1_parallel, gamma1_perp, etc.). The implementation would follow the same pattern as `ZB8bandQW` but with a different 8x8 block topology. The `confinementInitialization` routine needs new k.p term indices for the additional anisotropy terms. A new subroutine `WZ8bandQW` in `hamiltonianConstructor.f90` is the natural home.
+**Wurtzite 8-band k.p Hamiltonian** (Priority 1): The current code only implements the zincblende (ZB) 8-band Hamiltonian. Wurtzite requires a different basis and different coupling terms: the crystal field splitting replaces the cubic symmetry terms, and the Luttinger-like parameters have a different structure (gamma1_parallel, gamma1_perp, etc.). The implementation would follow the table-driven pattern from `hamiltonian_blocks.f90`: create a new `get_wz_block_table()` with the wurtzite 8x8 topology (different block entries than ZB), add new k.p term indices for the additional anisotropy terms, and build `WZ8bandQW` in `hamiltonianConstructor.f90` that reads from the new table. The `confinementInitialization` routine needs new k.p term indices for the wurtzite-specific anisotropy terms.
 
 **WZ material parameters** (Priority 2): A wurtzite parameter database paralleling the existing `paramDatabase`. Sources: Vurgaftman (2001) for nitride parameters, Chuang's textbook for the wurtzite Hamiltonian structure. Add new `case` entries with names like "GaN_WZ", "AlN_WZ", "InN_WZ". The `paramStruct` type needs additional fields for the wurtzite-specific parameters (delta_cr, gamma1_par, gamma1_perp, gamma2_par, gamma2_perp, gamma3, etc.).
 
@@ -378,7 +389,7 @@ Before submitting any change, run through this checklist:
 2. `ctest --test-dir build` -- all tests pass (currently 38 tests: 15 unit + 23 regression).
 3. Check for stale `.mod` files in the project root: `rm -f *.mod` if you see type mismatch errors.
 4. Verify that `input.cfg` is not committed with personal test configs (use `tests/regression/configs/` instead).
-5. If you changed `defs.f90` derived types or `hamiltonianConstructor.f90` Hamiltonian construction, flag for review per project policy.
+5. If you changed `defs.f90` derived types, `hamiltonian_blocks.f90` k.p block table, or `hamiltonianConstructor.f90` Hamiltonian construction, flag for review per project policy.
 
 ---
 

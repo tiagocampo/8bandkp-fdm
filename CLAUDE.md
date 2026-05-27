@@ -116,7 +116,7 @@ src/
   core/       defs.f90, parameters.f90, utils.f90
   math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90, linalg.f90, sparse_matrices.f90, eigensolver.f90, geometry.f90
   io/         outputFunctions.f90, input_parser.f90
-  physics/    hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90, magnetic_field.f90, topological_analysis.f90, bdg_hamiltonian.f90, green_functions.f90
+  physics/    hamiltonian_blocks.f90, hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90, magnetic_field.f90, topological_analysis.f90, bdg_hamiltonian.f90, green_functions.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90, main_topology.f90
 tests/
   unit/       pFUnit .pf test files (31 tests: defs, FD, utils, parameters, Hamiltonian, CSR, eigensolver, Poisson, charge density, SC loop, geometry, optical, topology, magnetic field, BdG, Landau, Z2, strain_solver, green_functions)
@@ -147,8 +147,9 @@ defs.f90                      (kinds, constants, derived types — no deps)
   <- mkl_spblas.f90           (vendor: Intel MKL sparse BLAS interface)
        <- utils.f90           (dense-to-sparse conversion, Simpson integration)
             <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices, Vandermonde derivative and interpolation solvers)
-                 <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian, commutator velocity matrices)
-                      <- hamiltonian_wire.f90     (2D wire Hamiltonian, CSR assembly, wire geometry)
+                 <- hamiltonian_blocks.f90     (8x8 k.p block structure as data: 52-entry table, named constants KP_Q..KP_A)
+                 <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian, commutator velocity matrices; reads kp/strain/Zeeman tables)
+                      <- hamiltonian_wire.f90     (2D wire Hamiltonian, CSR assembly, wire geometry; reads kp block table)
                       <- gfactor_functions.f90  (Lowdin partitioning, spin/momentum matrix elements)
                       <- optical_spectra.f90    (absorption, gain, spontaneous emission, ISBT accumulation)
                       <- spin_projection.f90     (Clebsch-Gordan spin-up/down decomposition)
@@ -164,7 +165,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
 
 - **Basis ordering** (fixed throughout): bands 1-4 = valence (HH, LH, LH, HH), bands 5-6 = split-off, bands 7-8 = conduction
 - **Dual mode**: `confinement=0` → bulk (8x8), `confinement=1` → quantum well (8N x 8N, N = FDstep)
-- **QW Hamiltonian**: 8x8 block matrix, each block NxN. Blocks: k.p terms (Q, R, S, T, P) + band offsets
+- **QW Hamiltonian**: 8x8 block matrix, each block NxN. Block structure defined in `hamiltonian_blocks.f90` as a 52-entry table (`get_kp_block_table()`) with named constants (KP_Q, KP_R, etc.). Both dense (`hamiltonianConstructor.f90`) and COO (`hamiltonian_wire.f90`) builders read this table instead of hard-coding the block topology. Blocks: k.p terms (Q, R, S, T, P) + band offsets
 - **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it
 - **`confinementInitialization`** precomputes material parameters at each z-point into `kpterms(ny, ny, 10)`
 - **Last-layer-wins** in `confinement_init.f90`: later material layers overwrite earlier ones. Use 2-layer pattern (barrier covers full domain, well overwrites center). Avoid full-domain layers after a narrow well layer — they silently destroy the QW.
@@ -243,8 +244,10 @@ Always check for and follow applicable superpowers skills when working. In parti
 - **NEVER** modify material parameters in `parameters.f90` without verifying against published references (Vurgaftman 2001, Winkler 2003)
 - **NEVER** change the basis ordering (bands 1-4 valence, 5-6 split-off, 7-8 conduction) — it is hardcoded throughout
 - **NEVER** change the Bir-Pikus sign convention: `Q_eps = -(b_dp/2) * (eps_zz - 0.5*(eps_yy + eps_xx))` with the minus sign on b_dp matching the standard Chuang/Winkler convention. VB diagonal shifts are `delta_EHH = -P_eps + Q_eps`, `delta_ELH = -P_eps - Q_eps`, `delta_ESO = -P_eps` where `P_eps = -av * Tr(eps)`. Under compressive strain (Tr < 0, b < 0), HH shifts up and LH shifts down. Single source of truth: `compute_bp_scalar` in `strain_solver.f90`.
+- **NEVER** change the strain or Zeeman block tables: `get_strain_table()` and `get_zeeman_table()` in `strain_solver.f90` are the single source of truth for which Bir-Pikus strain blocks and Zeeman magnetic blocks apply to which band pairs. All dense and COO builders consume these tables.
+- **NEVER** change the k.p block table: `get_kp_block_table()` in `hamiltonian_blocks.f90` is the single source of truth for the 52-entry block topology (band pairs, k.p terms, complex prefactors). Both dense and COO builders consume this table.
 - **NEVER** commit `input.cfg` with personal test configs — use `tests/regression/configs/` for test configs
-- **Require approval** for: changes to `defs.f90` derived types, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`, Poisson solver in `poisson.f90`, SC loop convergence logic in `sc_loop.f90`
+- **Require approval** for: changes to `defs.f90` derived types, k.p block table in `hamiltonian_blocks.f90`, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`, Poisson solver in `poisson.f90`, SC loop convergence logic in `sc_loop.f90`
 
 ## Known Issues
 

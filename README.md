@@ -128,7 +128,8 @@ make test
 ## Architecture
 
 ```
-defs -> parameters -> utils -> finitedifferences -> hamiltonianConstructor -> gfactor_functions
+defs -> parameters -> utils -> finitedifferences -> hamiltonian_blocks -> hamiltonianConstructor -> gfactor_functions
+                                  finitedifferences -> hamiltonian_blocks -> hamiltonian_wire
                                   finitedifferences -> poisson
                                   finitedifferences -> charge_density -> sc_loop
                    input_parser    outputFunctions

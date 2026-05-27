@@ -115,7 +115,7 @@ The CB was unaffected because `delta_Ec = ac * Tr(eps)` has no Q_eps dependence,
 - **CLAUDE.md boundary rule**: The Bir-Pikus convention is documented as a NEVER-change boundary with the exact formula and expected physics (under compressive strain: HH up, LH down). Single source of truth: `compute_bp_scalar` in `strain_solver.f90`.
 - **Cross-code validation pipeline**: `validation/strain/test_strain_bandedge.py` compares strained eigenvalues against kdotpy, catching sign errors that unit tests miss when both encode the same wrong formula.
 - **Physical sign test**: Unit test `test_compute_bp_scalar_gaas_biaxial` verifies exact numerical values; `test_strain_sign_inas_on_gaas` verifies compressive eps_xx is negative.
-- **Six-file coordination**: Any change to `compute_bp_scalar` requires coordinated updates in: strain_solver.f90, test_strain_solver.pf, star_helpers.py, verify_strain_rung5_bulk.py, verify_star_inas_gaas_qw.py, and hamiltonianConstructor.f90 comments.
+- **Six-file coordination**: Any change to `compute_bp_scalar` requires coordinated updates in: strain_solver.f90 (including `get_strain_table()`), test_strain_solver.pf, star_helpers.py, verify_strain_rung5_bulk.py, verify_star_inas_gaas_qw.py, and hamiltonianConstructor.f90 comments. The strain table in `strain_solver.f90` (`get_strain_table()`) is now the single source of truth for which Bir-Pikus blocks apply to which band pairs; both dense and COO builders consume it.
 
 ## Related Issues
 

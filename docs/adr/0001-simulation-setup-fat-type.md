@@ -65,7 +65,7 @@ Each setup variant holds a strategy object for Hamiltonian construction, eigenso
 
 **Pros**: Open for extension — new strategies without changing the setup type.
 
-**Cons**: Fortran lacks first-class procedures and closures. Strategies must be passed as procedure pointers or polymorphic objects, adding complexity. Over-engineering for a codebase with exactly 3 geometries and no extensibility requirement beyond Candidate 4 (unified Hamiltonian block structure).
+**Cons**: Fortran lacks first-class procedures and closures. Strategies must be passed as procedure pointers or polymorphic objects, adding complexity. Over-engineering for a codebase with exactly 3 geometries and no extensibility requirement beyond the C4 Hamiltonian block table refactoring (now completed in `hamiltonian_blocks.f90`).
 
 ## Consequences
 
@@ -82,9 +82,9 @@ Each setup variant holds a strategy object for Hamiltonian construction, eigenso
 - **Wide type interface**: The type exposes fields for all three geometries. Callers must know which fields are valid for their confinement.
 - **Allocatable wrapper pattern**: Wire components like `HT_csr_ptr` are allocatable types wrapping allocatable components. Double indirection is verbose but necessary for lifetime control.
 
-### Dispatch seam for Candidate 4
+### Dispatch seam for C4 Hamiltonian block table (COMPLETED)
 
-The `select case` dispatch in `setup_build_H` provides a clean seam for future refactoring to a unified Hamiltonian block structure (Candidate 4). When all three geometries share a common CSR assembly path, the dispatch body changes but the API (`setup_build_H(setup, cfg, kvec, HT_out)`) remains the same. No polymorphic types needed.
+The `select case` dispatch in `setup_build_H` provided a clean seam for the C4 refactoring to a unified Hamiltonian block structure. This has been implemented: `hamiltonian_blocks.f90` defines a 52-entry k.p block table (`get_kp_block_table()`) consumed by both dense (`hamiltonianConstructor.f90`) and COO (`hamiltonian_wire.f90`) builders. Strain and Zeeman block tables (`get_strain_table()`, `get_zeeman_table()`) are defined in `strain_solver.f90`. The dispatch API (`setup_build_H(setup, cfg, kvec, HT_out)`) remains unchanged. No polymorphic types were needed.
 
 ### `read_config` split rationale
 

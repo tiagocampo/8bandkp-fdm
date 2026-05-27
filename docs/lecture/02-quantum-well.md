@@ -303,8 +303,11 @@ Hamiltonian:
    Notice that the code subtracts this term (via the outer minus sign), yielding
    the mathematically correct $+ (\gamma_1 - 2\gamma_2) d^2/dz^2$ behavior.
 
-2. **Populate the 8x8 block matrix:** The code fills the Hamiltonian using Fortran
-   array sections:
+2. **Populate the 8x8 block matrix:** The code fills the Hamiltonian by iterating
+   over the k.p block table from `hamiltonian_blocks.f90` (`get_kp_block_table()`),
+   which specifies each nonzero block's band pair, k.p term index, and complex
+   prefactor. The table-driven loop replaces the previous hard-coded array sections.
+   The equivalent assignments are:
    ```fortran
    HT(1 + 0*N : 1*N, 1 + 0*N : 1*N) = Q          ! (1,1)
    HT(1 + 0*N : 1*N, 1 + 1*N : 2*N) = SC         ! (1,2)

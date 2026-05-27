@@ -250,7 +250,7 @@ The assembly algorithm:
 
 1. **Build k.p term blocks:** Ten helper routines (`build_kp_term_Q`, `build_kp_term_T`, etc.) combine `kpterms_2d` with $k_z$-dependent scalars using `csr_add` and `csr_scale`. For example, `build_kp_term_A` computes $A = \text{kpterms\_2d}(5) + k_z^2 \cdot \text{kpterms\_2d}(10)$. The corrected S and SC terms use separate $x$/$y$ gradients: $S = 2\sqrt{3}\,k_z\,\gamma_3\,(\partial/\partial x - i\,\partial/\partial y)$ built from `kpterms_2d(14)` and `kpterms_2d(15)` with complex coefficients. The R term includes the anisotropic spatial derivative via `kpterms_2d(16)`: $R = -\sqrt{3}\,[\gamma_2(D^2_x - D^2_y) - 2i\gamma_3\,d^2/dx\,dy + \gamma_2 k_z^2]$. The PZ term is a pure diagonal: $PZ = -i\,k_z\,P(x,y)$ rather than a spatial gradient.
 
-2. **Insert into COO arrays:** Each nonzero block in the $8 \times 8$ topology is inserted with the appropriate global row/col offset and complex prefactor. The routine `insert_csr_block_scaled` handles the offset arithmetic. A total of about 50--60 block insertions cover all nonzero entries in the 8-band Hamiltonian topology.
+2. **Insert into COO arrays:** The 52 nonzero blocks in the $8 \times 8$ topology are inserted by iterating over the k.p block table from `hamiltonian_blocks.f90` (`get_kp_block_table()`). Each table entry specifies the band pair, k.p term index, and complex prefactor. The routine `insert_csr_block_scaled` handles the offset arithmetic. This table-driven approach replaced the previous hard-coded 50--60 individual `insert_csr_block_scaled` calls.
 
 3. **Add band-offset profile:** The diagonal entries receive the band-edge potentials from `profile_2d`.
 

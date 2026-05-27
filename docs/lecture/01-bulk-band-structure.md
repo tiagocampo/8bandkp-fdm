@@ -336,7 +336,8 @@ The bulk band structure calculation involves four key source files:
 |---|---|---|
 | `src/core/defs.f90` | `definitions` | Precision kinds (`dp`), physical constants, basis ordering, `paramStruct` with strain fields |
 | `src/core/parameters.f90` | `parameters` | Material database (`paramDatabase`), strain parameters ($a_c$, $a_v$, $b$, $d$, $C_{ij}$, $a_0$) |
-| `src/physics/hamiltonianConstructor.f90` | `hamiltonianConstructor` | `ZB8bandBulk`: builds 8x8 Hamiltonian including Bir-Pikus strain |
+| `src/physics/hamiltonian_blocks.f90` | `hamiltonian_blocks` | 8x8 k.p block structure: 52-entry table with named constants (KP_Q, KP_R, etc.) |
+| `src/physics/hamiltonianConstructor.f90` | `hamiltonianConstructor` | `ZB8bandBulk`: builds 8x8 Hamiltonian from block table, including Bir-Pikus strain via `get_strain_table()` |
 | `src/io/outputFunctions.f90` | `outputFunctions` | Eigenvalue/eigenfunction I/O, multi-block `parts.dat` format |
 
 The main program `src/apps/main.f90` (`program kpfdm`) orchestrates the
@@ -367,7 +368,9 @@ The algorithm proceeds as follows:
    matrix element.
 
 3. **Fill the 8x8 Hamiltonian** `HT` following the matrix layout shown in
-   Section 1.6.
+   Section 1.6. The code iterates over the k.p block table from
+   `hamiltonian_blocks.f90` (`get_kp_block_table()`) which specifies each
+   nonzero block's band pair, k.p term, and complex prefactor.
 
 4. **Add the spin-orbit splitting** and band gap:
 
@@ -378,7 +381,8 @@ HT(7,7) = HT(7,7) + params(1)%Eg
 HT(8,8) = HT(8,8) + params(1)%Eg
 ```
 
-5. **Add Bir-Pikus strain** if `params(1)%strainSubstrate > 0`:
+5. **Add Bir-Pikus strain** if `params(1)%strainSubstrate > 0`, using the strain
+   block table from `strain_solver.f90` (`get_strain_table()`):
 
 ```fortran
 ! Biaxial [001] strain tensor
@@ -387,7 +391,7 @@ eps_zz = -2.0 * C12/C11 * eps_xx
 ! CB: hydrostatic shift
 HT(7,7) += ac * Tr(eps)
 ! HH: P_eps + Q_eps;  LH: P_eps - Q_eps;  SO: P_eps
-! Plus full off-diagonal VB and VB-SO strain coupling
+! Plus full off-diagonal VB and VB-SO strain coupling via strain table
 ```
 
 Note that the valence band edge $E_V$ is **not** added in the bulk subroutine
