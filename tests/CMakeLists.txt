@@ -79,6 +79,12 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    add_pfunit_ctest(test_hamiltonian_blocks
+        TEST_SOURCES unit/test_hamiltonian_blocks.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_csr_spmv
         TEST_SOURCES unit/test_csr_spmv.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support

@@ -12,6 +12,7 @@ set(COMMON_SOURCES
     io/outputFunctions.f90
     io/input_parser.f90
     physics/confinement_init.f90
+    physics/hamiltonian_blocks.f90
     physics/hamiltonian_wire.f90
     physics/hamiltonianConstructor.f90
     physics/charge_density.f90
@@ -68,6 +69,7 @@ set_source_files_properties(
     io/outputFunctions.f90
     io/input_parser.f90
     physics/confinement_init.f90
+    physics/hamiltonian_blocks.f90
     physics/hamiltonian_wire.f90
     physics/hamiltonianConstructor.f90
     physics/charge_density.f90

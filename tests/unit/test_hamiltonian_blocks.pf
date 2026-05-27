@@ -1,0 +1,177 @@
+module test_hamiltonian_blocks
+  use funit
+  use definitions, only: dp, IU, SQR2, SQR3, RQS2, RQS3, SQR3o2
+  use hamiltonian_blocks
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! Entry count is exactly 52 (k.p terms only, no band-offset diagonal).
+  ! ==================================================================
+  @test
+  subroutine test_entry_count_is_52()
+    type(kp_entry), allocatable :: table(:)
+
+    table = get_kp_block_table()
+
+    @assertEqual(52, size(table))
+  end subroutine test_entry_count_is_52
+
+  ! ==================================================================
+  ! No duplicate (row_band, col_band) pairs in the table.
+  ! ==================================================================
+  @test
+  subroutine test_no_duplicate_band_pairs()
+    type(kp_entry), allocatable :: table(:)
+    integer :: i, j
+    logical :: is_dup
+
+    table = get_kp_block_table()
+
+    do i = 1, size(table)
+      do j = i + 1, size(table)
+        is_dup = (table(i)%row_band == table(j)%row_band) .and. &
+                 (table(i)%col_band == table(j)%col_band)
+        @assertFalse(is_dup)
+      end do
+    end do
+  end subroutine test_no_duplicate_band_pairs
+
+  ! ==================================================================
+  ! Hermitian symmetry: for every entry (i,j) with prefactor p,
+  ! there must be an entry (j,i) with prefactor conjg(p).
+  ! ==================================================================
+  @test
+  subroutine test_hermitian_symmetry()
+    type(kp_entry), allocatable :: table(:)
+    integer :: i, j
+    complex(kind=dp) :: expected
+    logical :: found
+
+    table = get_kp_block_table()
+
+    do i = 1, size(table)
+      if (table(i)%row_band == table(i)%col_band) cycle
+
+      found = .false.
+      do j = 1, size(table)
+        if (table(j)%row_band == table(i)%col_band .and. &
+            table(j)%col_band == table(i)%row_band) then
+          expected = conjg(table(j)%prefactor)
+          @assertEqual(expected, table(i)%prefactor, tolerance=1.0e-14_dp)
+          found = .true.
+          exit
+        end if
+      end do
+
+      @assertTrue(found)
+    end do
+  end subroutine test_hermitian_symmetry
+
+  ! ==================================================================
+  ! Verify that every named kp_term constant appears at least once.
+  ! ==================================================================
+  @test
+  subroutine test_all_kp_terms_used()
+    type(kp_entry), allocatable :: table(:)
+    integer :: i
+    logical :: used(KP_HALF_SUM)
+
+    table = get_kp_block_table()
+
+    used = .false.
+    do i = 1, size(table)
+      if (table(i)%kp_term >= 1 .and. table(i)%kp_term <= KP_HALF_SUM) then
+        used(table(i)%kp_term) = .true.
+      end if
+    end do
+
+    do i = 1, KP_HALF_SUM
+      @assertTrue(used(i))
+    end do
+  end subroutine test_all_kp_terms_used
+
+  ! ==================================================================
+  ! Band indices must be in range [0, 7].
+  ! ==================================================================
+  @test
+  subroutine test_band_indices_in_range()
+    type(kp_entry), allocatable :: table(:)
+    integer :: i
+    logical :: row_ok, col_ok
+
+    table = get_kp_block_table()
+
+    do i = 1, size(table)
+      row_ok = (table(i)%row_band >= 0 .and. table(i)%row_band <= 7)
+      col_ok = (table(i)%col_band >= 0 .and. table(i)%col_band <= 7)
+      @assertTrue(row_ok)
+      @assertTrue(col_ok)
+    end do
+  end subroutine test_band_indices_in_range
+
+  ! ==================================================================
+  ! Spot-check known entries against ZB8bandQW source.
+  ! ==================================================================
+  @test
+  subroutine test_known_entry_spot_checks()
+    type(kp_entry), allocatable :: table(:)
+    integer :: i
+    logical :: found_Q_00, found_PP_06, found_PM_60
+    complex(kind=dp) :: ref_one
+
+    table = get_kp_block_table()
+    ref_one = cmplx(1.0_dp, 0.0_dp, kind=dp)
+
+    found_Q_00 = .false.
+    found_PP_06 = .false.
+    found_PM_60 = .false.
+
+    do i = 1, size(table)
+      if (table(i)%row_band == 0 .and. table(i)%col_band == 0) then
+        @assertEqual(KP_Q, table(i)%kp_term)
+        @assertEqual(ref_one, table(i)%prefactor, tolerance=1.0e-14_dp)
+        found_Q_00 = .true.
+      end if
+
+      if (table(i)%row_band == 0 .and. table(i)%col_band == 6) then
+        @assertEqual(KP_PP, table(i)%kp_term)
+        @assertEqual(IU, table(i)%prefactor, tolerance=1.0e-14_dp)
+        found_PP_06 = .true.
+      end if
+
+      if (table(i)%row_band == 6 .and. table(i)%col_band == 0) then
+        @assertEqual(KP_PM, table(i)%kp_term)
+        @assertEqual(-IU, table(i)%prefactor, tolerance=1.0e-14_dp)
+        found_PM_60 = .true.
+      end if
+    end do
+
+    @assertTrue(found_Q_00)
+    @assertTrue(found_PP_06)
+    @assertTrue(found_PM_60)
+  end subroutine test_known_entry_spot_checks
+
+  ! ==================================================================
+  ! Caching: calling get_kp_block_table twice returns same entries.
+  ! ==================================================================
+  @test
+  subroutine test_caching_returns_same_table()
+    type(kp_entry), allocatable :: table1(:), table2(:)
+    integer :: i
+
+    table1 = get_kp_block_table()
+    table2 = get_kp_block_table()
+
+    @assertEqual(size(table1), size(table2))
+
+    do i = 1, size(table1)
+      @assertEqual(table1(i)%row_band, table2(i)%row_band)
+      @assertEqual(table1(i)%col_band, table2(i)%col_band)
+      @assertEqual(table1(i)%kp_term, table2(i)%kp_term)
+      @assertEqual(table1(i)%prefactor, table2(i)%prefactor, tolerance=1.0e-14_dp)
+    end do
+  end subroutine test_caching_returns_same_table
+
+end module test_hamiltonian_blocks
