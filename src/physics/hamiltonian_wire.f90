@@ -3,6 +3,9 @@ module hamiltonian_wire
   use definitions
   use sparse_matrices
   use utils
+  use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &
+    KP_Q, KP_T, KP_S, KP_SC, KP_R, KP_RC, &
+    KP_PP, KP_PM, KP_PZ, KP_A, KP_DIFF, KP_HALF_SUM
   use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar, &
     & strain_entry, build_strain_table, get_strain_table, &
     & zeeman_entry, get_zeeman_table
@@ -964,18 +967,6 @@ module hamiltonian_wire
         end block
       end if
     end subroutine build_kp_term_A
-    subroutine insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
-        alpha_off, beta_off, blk, N)
-      integer, intent(inout), contiguous :: coo_r(:), coo_c(:)
-      complex(kind=dp), intent(inout), contiguous :: coo_v(:)
-      integer, intent(in) :: coo_cap
-      integer, intent(inout) :: coo_idx
-      integer, intent(in) :: alpha_off, beta_off, N
-      type(csr_matrix), intent(in) :: blk
-
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
-        alpha_off, beta_off, blk, N, cmplx(1.0_dp, 0.0_dp, kind=dp))
-    end subroutine insert_csr_block
 
     ! ==================================================================
     ! Helper: Insert CSR block with complex scalar multiplier
@@ -1011,6 +1002,9 @@ module hamiltonian_wire
     ! ==================================================================
     ! Helper: Insert g3-mode blocks (dH/dkz) into COO arrays
     ! Shared between zb8_generalized_fast and zb8_generalized_slow
+    !
+    ! Uses the k.p block table filtered to kz-linear terms only (S, SC, PZ).
+    ! At kz=0, the derivative dH/dkz picks up only terms linear in kz.
     ! ==================================================================
     subroutine insert_g3_blocks(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
         blk_S, blk_SC, blk_PZ, N)
@@ -1018,42 +1012,64 @@ module hamiltonian_wire
       complex(kind=dp), intent(inout), contiguous :: coo_v(:)
       integer, intent(in) :: coo_cap
       integer, intent(inout) :: coo_idx
-      type(csr_matrix), intent(in) :: blk_S, blk_SC, blk_PZ
+      type(csr_matrix), intent(in), target :: blk_S, blk_SC, blk_PZ
       integer, intent(in) :: N
 
-      ! Row 1 (HH1)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 1, blk_SC, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 4, blk_SC, N, -IU*RQS2)
-      ! Row 2 (HH2)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 0, blk_S, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 5, blk_SC, N, -IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      ! Row 3 (LH1)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 4, blk_S, N, IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 7, blk_PZ, N, IU*SQR2*RQS3)
-      ! Row 4 (LH2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 5, blk_S, N, IU*RQS2)
-      ! Row 5 (SO1)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 0, blk_S, N, IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 2, blk_SC, N, -IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 6, blk_PZ, N, IU*RQS3)
-      ! Row 6 (SO2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 1, blk_S, N, IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 3, blk_SC, N, -IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-      ! Row 7 (CB1)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 4, blk_PZ, N, -IU*RQS3)
-      ! Row 8 (CB2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 2, blk_PZ, N, -IU*SQR2*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+      type(csr_matrix), target :: blks(12)
+      type(kp_entry), allocatable :: table(:)
+      type(csr_matrix), pointer :: blk
+      integer :: e
+
+      ! Map only kz-linear kp_term blocks; others remain uninitialized (unused)
+      blks(KP_S)  = blk_S
+      blks(KP_SC) = blk_SC
+      blks(KP_PZ) = blk_PZ
+
+      table = get_kp_block_table()
+
+      do e = 1, size(table)
+        ! Filter: only kz-linear terms contribute to dH/dkz at kz=0
+        select case (table(e)%kp_term)
+        case (KP_S, KP_SC, KP_PZ)
+          blk => kp_block_ptr(blks, table(e)%kp_term)
+          call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
+            table(e)%row_band, table(e)%col_band, blk, N, table(e)%prefactor)
+        end select
+      end do
+
     end subroutine insert_g3_blocks
 
     ! ==================================================================
+    ! Helper: Return pointer to the CSR block for a given kp_term constant,
+    ! given an array of 12 CSR blocks indexed by kp_term.
+    ! ==================================================================
+    function kp_block_ptr(blks, kp_term) result(ptr)
+      type(csr_matrix), target, intent(in) :: blks(12)
+      integer, intent(in) :: kp_term
+      type(csr_matrix), pointer :: ptr
+
+      select case (kp_term)
+      case (KP_Q);        ptr => blks(KP_Q)
+      case (KP_T);        ptr => blks(KP_T)
+      case (KP_S);        ptr => blks(KP_S)
+      case (KP_SC);       ptr => blks(KP_SC)
+      case (KP_R);        ptr => blks(KP_R)
+      case (KP_RC);       ptr => blks(KP_RC)
+      case (KP_PP);       ptr => blks(KP_PP)
+      case (KP_PM);       ptr => blks(KP_PM)
+      case (KP_PZ);       ptr => blks(KP_PZ)
+      case (KP_A);        ptr => blks(KP_A)
+      case (KP_DIFF);     ptr => blks(KP_DIFF)
+      case (KP_HALF_SUM); ptr => blks(KP_HALF_SUM)
+      case default
+        nullify(ptr)
+      end select
+    end function kp_block_ptr
+
+    ! ==================================================================
     ! Helper: Insert the main 8x8 blocks into COO arrays
-    ! Shared between zb8_generalized_fast and zb8_generalized_slow
+    ! Reads the 52-entry k.p block table from hamiltonian_blocks and
+    ! inserts each entry with its prefactor into the COO arrays.
     ! ==================================================================
     subroutine insert_main_blocks(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
         blk_Q, blk_T, blk_S, blk_SC, blk_R, blk_RC, blk_PZ, blk_PP, &
@@ -1062,71 +1078,38 @@ module hamiltonian_wire
       complex(kind=dp), intent(inout), contiguous :: coo_v(:)
       integer, intent(in) :: coo_cap
       integer, intent(inout) :: coo_idx
-      type(csr_matrix), intent(in) :: blk_Q, blk_T, blk_S, blk_SC
-      type(csr_matrix), intent(in) :: blk_R, blk_RC, blk_PZ, blk_PP
-      type(csr_matrix), intent(in) :: blk_PM, blk_A, blk_diff, blk_temp
+      type(csr_matrix), intent(in), target :: blk_Q, blk_T, blk_S, blk_SC
+      type(csr_matrix), intent(in), target :: blk_R, blk_RC, blk_PZ, blk_PP
+      type(csr_matrix), intent(in), target :: blk_PM, blk_A, blk_diff, blk_temp
       integer, intent(in) :: N
 
-      ! Row 1 (HH1)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 0, blk_Q, N)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 1, blk_SC, N)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 2, blk_RC, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 4, blk_SC, N, -IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 5, blk_RC, N, IU*SQR2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 6, blk_PP, N, IU)
-      ! Row 2 (HH2)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 0, blk_S, N)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 1, blk_T, N)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 3, blk_RC, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 4, blk_diff, N, IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 5, blk_SC, N, -IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 7, blk_PP, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-      ! Row 3 (LH1)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 0, blk_R, N)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 2, blk_T, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 4, blk_S, N, IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 5, blk_diff, N, IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 6, blk_PM, N, IU*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 7, blk_PZ, N, IU*SQR2*RQS3)
-      ! Row 4 (LH2)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 1, blk_R, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 3, blk_Q, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 4, blk_R, N, IU*SQR2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 5, blk_S, N, IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 7, blk_PM, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      ! Row 5 (SO1)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 0, blk_S, N, IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 1, blk_diff, N, -IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 2, blk_SC, N, -IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 3, blk_RC, N, -IU*SQR2)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 4, blk_temp, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 6, blk_PZ, N, IU*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 7, blk_PP, N, IU*SQR2*RQS3)
-      ! Row 6 (SO2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 0, blk_R, N, -IU*SQR2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 1, blk_S, N, IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 2, blk_diff, N, -IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 3, blk_SC, N, -IU*RQS2)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 5, blk_temp, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 6, blk_PM, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-      ! Row 7 (CB1)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 0, blk_PM, N, -IU)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 2, blk_PP, N, -IU*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 4, blk_PZ, N, -IU*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 5, blk_PP, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 6, blk_A, N)
-      ! Row 8 (CB2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 1, blk_PM, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 2, blk_PZ, N, -IU*SQR2*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 3, blk_PP, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 4, blk_PM, N, -IU*SQR2*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 7, blk_A, N)
+      type(csr_matrix), target :: blks(12)
+      type(kp_entry), allocatable :: table(:)
+      type(csr_matrix), pointer :: blk
+      integer :: e
+
+      ! Map kp_term constants to CSR blocks
+      blks(KP_Q)        = blk_Q
+      blks(KP_T)        = blk_T
+      blks(KP_S)        = blk_S
+      blks(KP_SC)       = blk_SC
+      blks(KP_R)        = blk_R
+      blks(KP_RC)       = blk_RC
+      blks(KP_PP)       = blk_PP
+      blks(KP_PM)       = blk_PM
+      blks(KP_PZ)       = blk_PZ
+      blks(KP_A)        = blk_A
+      blks(KP_DIFF)     = blk_diff
+      blks(KP_HALF_SUM) = blk_temp
+
+      table = get_kp_block_table()
+
+      do e = 1, size(table)
+        blk => kp_block_ptr(blks, table(e)%kp_term)
+        call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
+          table(e)%row_band, table(e)%col_band, blk, N, table(e)%prefactor)
+      end do
+
     end subroutine insert_main_blocks
 
     ! ==================================================================
