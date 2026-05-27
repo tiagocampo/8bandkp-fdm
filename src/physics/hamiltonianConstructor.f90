@@ -641,6 +641,8 @@ module hamiltonianConstructor
           case (5); field_val = bp%S_eps(ii)
           case (6); field_val = bp%R_eps(ii)
           case (7); field_val = cmplx(bp%QT2_eps(ii), 0.0_dp, kind=dp)
+          case default
+            error stop 'apply_strain_table_dense: unknown field_id'
           end select
 
           if (table(e)%use_conjg) field_val = conjg(field_val)
@@ -706,6 +708,8 @@ module hamiltonianConstructor
           HT(r1:r2, c1:c2) = table(e)%prefactor * (Q - T)
         case (KP_HALF_SUM)
           HT(r1:r2, c1:c2) = table(e)%prefactor * 0.5_dp * (Q + T)
+        case default
+          error stop 'apply_kp_table_dense: unknown kp_term'
         end select
       end do
     end subroutine apply_kp_table_dense
@@ -744,6 +748,8 @@ module hamiltonianConstructor
         case (KP_A);         val = A
         case (KP_DIFF);      val = Q - T
         case (KP_HALF_SUM);  val = 0.5_dp * (Q + T)
+        case default
+          error stop 'apply_kp_table_bulk: unknown kp_term'
         end select
 
         HT(row, col) = table(e)%prefactor * val
