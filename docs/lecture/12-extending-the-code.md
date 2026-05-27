@@ -30,9 +30,12 @@ src/physics/
     |-> utils              (dense-to-sparse conversion)
   hamiltonian_wire.f90
     |-> hamiltonian_blocks  (k.p block table for COO builder)
-    |-> hamiltonianConstructor
-    |-> sparse_matrices
-    |-> strain_solver
+    |-> sparse_matrices     (CSR type and operations)
+    |-> strain_solver       (Bir-Pikus via get_strain_table/get_zeeman_table)
+    |-> confinement_init    (2D confinement initialization)
+    |-> finitedifferences   (FD stencil matrices)
+    |-> definitions         (kinds, constants)
+    |-> utils               (dense-to-sparse conversion)
   gfactor_functions.f90
     |-> hamiltonianConstructor
     |-> sparse_matrices    (CSR SpMV for QW/wire perturbation)
@@ -386,7 +389,7 @@ The table below lists the major features needed to reproduce the full set of res
 Before submitting any change, run through this checklist:
 
 1. `cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl && cmake --build build` -- clean build.
-2. `ctest --test-dir build` -- all tests pass (currently 38 tests: 15 unit + 23 regression).
+2. `ctest --test-dir build` -- all tests pass (currently 34 unit + regression tests).
 3. Check for stale `.mod` files in the project root: `rm -f *.mod` if you see type mismatch errors.
 4. Verify that `input.cfg` is not committed with personal test configs (use `tests/regression/configs/` instead).
 5. If you changed `defs.f90` derived types, `hamiltonian_blocks.f90` k.p block table, or `hamiltonianConstructor.f90` Hamiltonian construction, flag for review per project policy.

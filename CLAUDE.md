@@ -119,7 +119,7 @@ src/
   physics/    hamiltonian_blocks.f90, hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90, magnetic_field.f90, topological_analysis.f90, bdg_hamiltonian.f90, green_functions.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90, main_topology.f90
 tests/
-  unit/       pFUnit .pf test files (31 tests: defs, FD, utils, parameters, Hamiltonian, CSR, eigensolver, Poisson, charge density, SC loop, geometry, optical, topology, magnetic field, BdG, Landau, Z2, strain_solver, green_functions)
+  unit/       pFUnit .pf test files (34 tests: defs, FD, utils, parameters, Hamiltonian, Hamiltonian blocks, CSR, eigensolver, Poisson, charge density, SC loop, geometry, optical, topology, magnetic field, BdG, Landau, Z2, strain_solver, green_functions)
   support/    shared test-support library (CSR helpers, Krylov infrastructure, reference data)
   integration/  shell scripts + Python verification scripts for full-executable tests
   regression/   configs/, data/, compare_output.py
@@ -244,7 +244,7 @@ Always check for and follow applicable superpowers skills when working. In parti
 - **NEVER** modify material parameters in `parameters.f90` without verifying against published references (Vurgaftman 2001, Winkler 2003)
 - **NEVER** change the basis ordering (bands 1-4 valence, 5-6 split-off, 7-8 conduction) — it is hardcoded throughout
 - **NEVER** change the Bir-Pikus sign convention: `Q_eps = -(b_dp/2) * (eps_zz - 0.5*(eps_yy + eps_xx))` with the minus sign on b_dp matching the standard Chuang/Winkler convention. VB diagonal shifts are `delta_EHH = -P_eps + Q_eps`, `delta_ELH = -P_eps - Q_eps`, `delta_ESO = -P_eps` where `P_eps = -av * Tr(eps)`. Under compressive strain (Tr < 0, b < 0), HH shifts up and LH shifts down. Single source of truth: `compute_bp_scalar` in `strain_solver.f90`.
-- **NEVER** change the strain or Zeeman block tables: `get_strain_table()` and `get_zeeman_table()` in `strain_solver.f90` are the single source of truth for which Bir-Pikus strain blocks and Zeeman magnetic blocks apply to which band pairs. All dense and COO builders consume these tables.
+- **NEVER** change the strain or Zeeman block tables: `get_strain_table()` and `get_zeeman_table()` in `strain_solver.f90` are the single source of truth for Bir-Pikus strain block topology (band pairs) and Zeeman diagonal g-multipliers (per band index), respectively. All dense and COO builders consume these tables.
 - **NEVER** change the k.p block table: `get_kp_block_table()` in `hamiltonian_blocks.f90` is the single source of truth for the 52-entry block topology (band pairs, k.p terms, complex prefactors). Both dense and COO builders consume this table.
 - **NEVER** commit `input.cfg` with personal test configs — use `tests/regression/configs/` for test configs
 - **Require approval** for: changes to `defs.f90` derived types, k.p block table in `hamiltonian_blocks.f90`, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`, Poisson solver in `poisson.f90`, SC loop convergence logic in `sc_loop.f90`
