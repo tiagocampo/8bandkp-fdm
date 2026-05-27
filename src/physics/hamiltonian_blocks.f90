@@ -12,7 +12,7 @@ module hamiltonian_blocks
   ! import this table instead of hard-coding the block structure.
   ! ==============================================================================
 
-  use definitions, only: dp, IU, SQR2, SQR3, RQS2, RQS3, SQR3o2
+  use definitions, only: dp, IU, SQR2, SQR3, RQS2, RQS3
   implicit none
 
   private
