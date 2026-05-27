@@ -4,10 +4,10 @@ module hamiltonian_wire
   use sparse_matrices
   use utils
   use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar, &
-    & strain_entry, build_strain_table, get_strain_table
+    & strain_entry, build_strain_table, get_strain_table, &
+    & zeeman_entry, get_zeeman_table
   use confinement_init, only: confinementInitialization_2d
   use finitedifferences
-  use magnetic_field, only: compute_zeeman_vz
 
   implicit none
 
@@ -1215,7 +1215,7 @@ module hamiltonian_wire
     ! ==================================================================
     ! Insert Zeeman splitting into COO diagonal entries.
     ! Each grid point contributes 8 diagonal entries (one per band).
-    ! g*mu_B*B . sigma_z eigenvalues: HH=-1.5, LH=+0.5, SO=-0.5, CB=+1.0
+    ! Uses the data-driven Zeeman table from strain_solver.
     ! ==================================================================
     subroutine insert_zeeman_coo(coo_r, coo_c, coo_v, coo_cap, &
         coo_idx, B_vec, g_factor, grid, N)
@@ -1227,25 +1227,28 @@ module hamiltonian_wire
       type(spatial_grid), intent(in) :: grid
       integer, intent(in) :: N
 
-      integer :: i, idx, n_grid
-      real(kind=dp) :: B_mag, Vz(8)
+      integer :: i, e, n_grid, band_idx
+      real(kind=dp) :: B_mag, E0
+      type(zeeman_entry) :: ztable(8)
 
       B_mag = sqrt(sum(B_vec**2))
+      E0 = g_factor * mu_B * B_mag
       n_grid = grid%npoints()
 
-      do i = 1, n_grid
-        call compute_zeeman_vz(g_factor, mu_B, B_mag, Vz)
+      ztable = get_zeeman_table()
 
-        do idx = 1, 8
+      do i = 1, n_grid
+        do e = 1, 8
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
             print *, "ERROR: COO capacity exceeded in insert_zeeman_coo"
             stop 1
           end if
-          ! band-major: row = (band-1)*N + site
-          coo_r(coo_idx) = (idx - 1) * N + i
-          coo_c(coo_idx) = (idx - 1) * N + i
-          coo_v(coo_idx) = cmplx(Vz(idx), 0.0_dp, kind=dp)
+          band_idx = ztable(e)%band_index
+          ! band-major: row = band_index * N + site
+          coo_r(coo_idx) = band_idx * N + i
+          coo_c(coo_idx) = band_idx * N + i
+          coo_v(coo_idx) = cmplx(ztable(e)%g_multiplier * E0, 0.0_dp, kind=dp)
         end do
       end do
     end subroutine insert_zeeman_coo

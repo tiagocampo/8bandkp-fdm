@@ -7,6 +7,7 @@ module test_hamiltonian
   use confinement_init, only: confinementInitialization_raw
   use hamiltonian_wire, only: build_velocity_matrices
   use magnetic_field, only: compute_zeeman_vz
+  use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar
   implicit none
 
 contains
@@ -528,5 +529,201 @@ contains
 
     deallocate(HT_noZ, HT_zeeman)
   end subroutine test_qw_zeeman_splitting
+
+  ! ==================================================================
+  ! Strain QW test: build InAs/GaAs strained QW and verify eigenvalues
+  ! are shifted correctly relative to unstrained.
+  !
+  ! This test establishes a baseline that must be preserved when the
+  ! dense Bir-Pikus strain codepaths are refactored to table-driven.
+  ! ==================================================================
+
+  @test
+  subroutine test_qw_strain_eigenvalues()
+    integer, parameter :: ngrid = 41
+    real(kind=dp), parameter :: dz_val = 2.5_dp
+    integer :: matSize, info, lwork, lrwork, liwork
+
+    real(kind=dp) :: z(ngrid)
+    integer, parameter :: nlayers = 2
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: intStartPos(nlayers), intEndPos(nlayers)
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:), work(:)
+    real(kind=dp), allocatable :: eig(:,:), rwork(:)
+    integer, allocatable :: iwork(:)
+    type(simulation_config) :: cfg
+    real(kind=dp) :: a0_ref
+    real(kind=dp) :: cb1_unstr, cb1_strained
+    real(kind=dp) :: vb1_unstr, vb1_strained
+    real(kind=dp) :: strain_shift_cb, strain_shift_vb
+    integer :: idx
+
+    matSize = ngrid * 8
+
+    do idx = 1, ngrid
+      z(idx) = -50.0_dp + dble(idx - 1) * dz_val
+    end do
+
+    intStartPos(1) = 1;   intEndPos(1) = 10
+    intStartPos(2) = 11;  intEndPos(2) = 41
+    material(1) = "GaAs"
+    material(2) = "InAs"
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Unstrained QW ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+    allocate(HT(matSize, matSize), eig(matSize, 1))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+    @assertTrue(info == 0, message="Unstrained diagonalization succeeded")
+    cb1_unstr = eig(matSize, 1)
+    vb1_unstr = eig(matSize - 8, 1)
+    deallocate(HT, eig, work, rwork, iwork, profile, kpterms)
+
+    ! ---- Strained QW ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    a0_ref = params(1)%a0
+    block
+      real(kind=dp) :: eps_xx, eps_zz, eps_yy
+      type(bp_scalar) :: s
+
+      allocate(cfg%strain_blocks%delta_Ec(ngrid))
+      allocate(cfg%strain_blocks%delta_EHH(ngrid))
+      allocate(cfg%strain_blocks%delta_ELH(ngrid))
+      allocate(cfg%strain_blocks%delta_ESO(ngrid))
+      allocate(cfg%strain_blocks%R_eps(ngrid))
+      allocate(cfg%strain_blocks%S_eps(ngrid))
+      allocate(cfg%strain_blocks%QT2_eps(ngrid))
+      cfg%strain_blocks%delta_Ec = 0.0_dp
+      cfg%strain_blocks%delta_EHH = 0.0_dp
+      cfg%strain_blocks%delta_ELH = 0.0_dp
+      cfg%strain_blocks%delta_ESO = 0.0_dp
+      cfg%strain_blocks%R_eps = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      cfg%strain_blocks%S_eps = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      cfg%strain_blocks%QT2_eps = 0.0_dp
+
+      do idx = 1, ngrid
+        if (idx <= 10) cycle
+        eps_xx = (a0_ref - params(2)%a0) / params(2)%a0
+        eps_yy = eps_xx
+        eps_zz = -2.0_dp * params(2)%C12 / params(2)%C11 * eps_xx
+        s = compute_bp_scalar(params(2), eps_xx, eps_yy, eps_zz, &
+                              0.0_dp, 0.0_dp, 0.0_dp)
+        cfg%strain_blocks%delta_Ec(idx)  = s%delta_Ec
+        cfg%strain_blocks%delta_EHH(idx) = s%delta_EHH
+        cfg%strain_blocks%delta_ELH(idx) = s%delta_ELH
+        cfg%strain_blocks%delta_ESO(idx) = s%delta_ESO
+        cfg%strain_blocks%R_eps(idx)     = s%R_eps
+        cfg%strain_blocks%S_eps(idx)     = s%S_eps
+        cfg%strain_blocks%QT2_eps(idx)   = s%QT2_eps
+      end do
+    end block
+
+    allocate(HT(matSize, matSize), eig(matSize, 1))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms, cfg=cfg)
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+    @assertTrue(info == 0, message="Strained diagonalization succeeded")
+    cb1_strained = eig(matSize, 1)
+    vb1_strained = eig(matSize - 8, 1)
+    deallocate(HT, eig, work, rwork, iwork, profile, kpterms)
+
+    strain_shift_cb = cb1_strained - cb1_unstr
+    strain_shift_vb = vb1_strained - vb1_unstr
+
+    @assertTrue(abs(strain_shift_cb) > 1.0e-4_dp, message="Strain produces non-trivial CB shift")
+    @assertTrue(abs(strain_shift_vb) > 1.0e-4_dp, message="Strain produces non-trivial VB shift")
+    @assertTrue(abs(strain_shift_cb) < 1.0_dp, message="CB strain shift magnitude reasonable")
+    @assertTrue(abs(strain_shift_vb) < 1.0_dp, message="VB strain shift magnitude reasonable")
+
+    call bir_pikus_blocks_free(cfg%strain_blocks)
+  end subroutine test_qw_strain_eigenvalues
+
+  ! ==================================================================
+  ! Test bulk strain: InAs with strainSubstrate set to GaAs lattice const
+  ! should produce known diagonal shifts.
+  ! ==================================================================
+
+  @test
+  subroutine test_bulk_strain_diagonal()
+    complex(kind=dp) :: HT_nostrain(8,8), HT_strain(8,8)
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+    type(wavevector) :: wv
+    real(kind=dp) :: delta_diag(8)
+    real(kind=dp) :: eps_par, eps_perp, Tr_eps, P_eps, Q_eps
+    real(kind=dp) :: expected_CB, expected_HH, expected_LH, expected_SO
+    integer :: i
+
+    material(1) = "InAs"
+    call paramDatabase(material, 1, params)
+
+    wv%kx = 0.0_dp; wv%ky = 0.0_dp; wv%kz = 0.0_dp
+
+    ! Build unstrained (strainSubstrate=0)
+    HT_nostrain = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandBulk(HT_nostrain, wv, params)
+
+    ! Build strained
+    params(1)%strainSubstrate = 5.6533_dp
+    HT_strain = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandBulk(HT_strain, wv, params)
+
+    eps_par = (params(1)%strainSubstrate - params(1)%a0) / params(1)%a0
+    eps_perp = -2.0_dp * params(1)%C12 / params(1)%C11 * eps_par
+    Tr_eps = 2.0_dp * eps_par + eps_perp
+    P_eps = -params(1)%av * Tr_eps
+    Q_eps = -params(1)%b_dp * 0.5_dp * (eps_perp - eps_par)
+
+    expected_CB  = params(1)%ac * Tr_eps
+    expected_HH  = -P_eps + Q_eps
+    expected_LH  = -P_eps - Q_eps
+    expected_SO  = -P_eps
+
+    delta_diag(1) = real(HT_strain(1,1)) - real(HT_nostrain(1,1))
+    delta_diag(2) = real(HT_strain(2,2)) - real(HT_nostrain(2,2))
+    delta_diag(3) = real(HT_strain(3,3)) - real(HT_nostrain(3,3))
+    delta_diag(4) = real(HT_strain(4,4)) - real(HT_nostrain(4,4))
+    delta_diag(5) = real(HT_strain(5,5)) - real(HT_nostrain(5,5))
+    delta_diag(6) = real(HT_strain(6,6)) - real(HT_nostrain(6,6))
+    delta_diag(7) = real(HT_strain(7,7)) - real(HT_nostrain(7,7))
+    delta_diag(8) = real(HT_strain(8,8)) - real(HT_nostrain(8,8))
+
+    ! HH bands (1,4)
+    @assertEqual(expected_HH, delta_diag(1), tolerance=1.0e-12_dp)
+    @assertEqual(expected_HH, delta_diag(4), tolerance=1.0e-12_dp)
+    ! LH bands (2,3)
+    @assertEqual(expected_LH, delta_diag(2), tolerance=1.0e-12_dp)
+    @assertEqual(expected_LH, delta_diag(3), tolerance=1.0e-12_dp)
+    ! SO bands (5,6)
+    @assertEqual(expected_SO, delta_diag(5), tolerance=1.0e-12_dp)
+    @assertEqual(expected_SO, delta_diag(6), tolerance=1.0e-12_dp)
+    ! CB bands (7,8)
+    @assertEqual(expected_CB, delta_diag(7), tolerance=1.0e-12_dp)
+    @assertEqual(expected_CB, delta_diag(8), tolerance=1.0e-12_dp)
+
+  end subroutine test_bulk_strain_diagonal
 
 end module test_hamiltonian

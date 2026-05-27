@@ -33,6 +33,8 @@ module strain_solver
   public :: strain_entry
   public :: build_strain_table
   public :: get_strain_table
+  public :: zeeman_entry
+  public :: get_zeeman_table
 
   ! ------------------------------------------------------------------
   ! Strain COO insertion table entry: describes one of the 32 block
@@ -53,6 +55,25 @@ module strain_solver
   ! Module-level cache for the strain table (32-entry compile-time constant)
   logical, save :: strain_table_cached = .false.
   type(strain_entry), save :: strain_table_cache(32)
+
+  ! ------------------------------------------------------------------
+  ! Zeeman diagonal table entry: describes the g_multiplier for one band.
+  ! band_index is 0-based (0-7). The Zeeman energy for band b is:
+  !   Vz(b) = g_factor * g_multiplier(b) * mu_B * B_mag
+  ! Coefficients from compute_zeeman_vz (magnetic_field.f90):
+  !   Band 0 (HH mJ=+3/2): -1.5,  Band 1 (LH mJ=+1/2): +0.5
+  !   Band 2 (LH mJ=-1/2): -0.5,  Band 3 (HH mJ=-3/2): +1.5
+  !   Band 4 (SO mJ=+1/2): -0.5,  Band 5 (SO mJ=-1/2): +0.5
+  !   Band 6 (CB mJ=-1/2): -1.0,  Band 7 (CB mJ=+1/2): +1.0
+  ! ------------------------------------------------------------------
+  type :: zeeman_entry
+    integer               :: band_index     ! 0-based band offset (0-7)
+    real(kind=dp)         :: g_multiplier   ! spin-dependent coefficient c_b
+  end type zeeman_entry
+
+  ! Module-level cache for the Zeeman table (8-entry compile-time constant)
+  logical, save :: zeeman_table_cached = .false.
+  type(zeeman_entry), save :: zeeman_table_cache(8)
 
   ! ------------------------------------------------------------------
   ! Strain tensor at each grid point.
@@ -130,6 +151,39 @@ contains
     end if
     table = strain_table_cache
   end function get_strain_table
+
+  ! ==================================================================
+  ! Build the 8-entry Zeeman diagonal table.
+  !
+  ! Each entry maps band_index to its g_multiplier coefficient c_b
+  ! such that the Zeeman energy for band b is:
+  !   Vz(b) = g_factor * c_b * mu_B * B_mag
+  !
+  ! Coefficients are g_J * m_J for each band in the Winkler basis
+  ! (must match compute_zeeman_vz in magnetic_field.f90).
+  ! ==================================================================
+  function build_zeeman_table() result(table)
+    type(zeeman_entry) :: table(8)
+
+    table(1) = zeeman_entry(0, -1.5_dp)  ! HH  (mJ = +3/2)
+    table(2) = zeeman_entry(1,  0.5_dp)  ! LH  (mJ = +1/2)
+    table(3) = zeeman_entry(2, -0.5_dp)  ! LH  (mJ = -1/2)
+    table(4) = zeeman_entry(3,  1.5_dp)  ! HH  (mJ = -3/2)
+    table(5) = zeeman_entry(4, -0.5_dp)  ! SO  (mJ = +1/2)
+    table(6) = zeeman_entry(5,  0.5_dp)  ! SO  (mJ = -1/2)
+    table(7) = zeeman_entry(6, -1.0_dp)  ! CB  (mJ = -1/2)
+    table(8) = zeeman_entry(7,  1.0_dp)  ! CB  (mJ = +1/2)
+
+  end function build_zeeman_table
+
+  function get_zeeman_table() result(table)
+    type(zeeman_entry) :: table(8)
+    if (.not. zeeman_table_cached) then
+      zeeman_table_cache = build_zeeman_table()
+      zeeman_table_cached = .true.
+    end if
+    table = zeeman_table_cache
+  end function get_zeeman_table
 
   ! ==================================================================
   ! Top-level strain computation dispatcher.
