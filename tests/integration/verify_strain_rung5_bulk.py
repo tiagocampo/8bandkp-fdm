@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rung 5 — Bulk Strain Verification (U1).
 
-Validates the full bulk strain chain: strainSubstrate -> apply_bp_strain_inline
+Validates the full bulk strain chain: strainSubstrate -> apply_strain_table_dense
 produces correct strained eigenvalues, HH-LH splitting, and additive modification.
 
 Requirements: R1, R2, R3, R11, R13, R14.
