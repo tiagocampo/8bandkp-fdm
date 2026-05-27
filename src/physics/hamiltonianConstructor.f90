@@ -9,6 +9,9 @@ module hamiltonianConstructor
   use confinement_init
   use hamiltonian_wire
   use magnetic_field, only: compute_gauge_shifts
+  use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &
+    KP_Q, KP_T, KP_S, KP_SC, KP_R, KP_RC, KP_PP, KP_PM, KP_PZ, &
+    KP_A, KP_DIFF, KP_HALF_SUM
 
   implicit none
 
@@ -133,80 +136,8 @@ module hamiltonianConstructor
 
       HT = 0
 
-      ! kp matrix
-      !col 1
-      HT(1 + 0*N : 1*N, 1 + 0*N : 1*N) =  Q
-      HT(1 + 0*N : 1*N, 1 + 1*N : 2*N) =  SC
-      HT(1 + 0*N : 1*N, 1 + 2*N : 3*N) =  RC
-      ! HT(1 + 0*N : 1*N, 1 + 3*N : 4*N) =  0.0_dp
-      HT(1 + 0*N : 1*N, 1 + 4*N : 5*N) = -IU * RQS2 * SC
-      HT(1 + 0*N : 1*N, 1 + 5*N : 6*N) =  IU * SQR2 * RC
-      HT(1 + 0*N : 1*N, 1 + 6*N : 7*N) =  IU * PP
-      ! HT(1 + 0*N : 1*N, 1 + 7*N : 8*N) =  0.0_dp
-
-      !col 2
-      HT(1 + 1*N : 2*N, 1 + 0*N : 1*N) =  (S)
-      HT(1 + 1*N : 2*N, 1 + 1*N : 2*N) =  T
-      ! HT(1 + 1*N : 2*N, 1 + 2*N : 3*N) =  0.0_dp
-      HT(1 + 1*N : 2*N, 1 + 3*N : 4*N) =  RC
-      HT(1 + 1*N : 2*N, 1 + 4*N : 5*N) =  IU * RQS2 * (Q - T)
-      HT(1 + 1*N : 2*N, 1 + 5*N : 6*N) = -IU * SQR3 * RQS2 * SC
-      HT(1 + 1*N : 2*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PZ
-      HT(1 + 1*N : 2*N, 1 + 7*N : 8*N) = -RQS3*PP
-
-      !col 3
-      HT(1 + 2*N : 3*N, 1 + 0*N : 1*N) =  R
-      HT(1 + 2*N : 3*N, 1 + 2*N : 3*N) =  T
-      HT(1 + 2*N : 3*N, 1 + 3*N : 4*N) = -SC
-      HT(1 + 2*N : 3*N, 1 + 4*N : 5*N) =  IU * SQR3 * RQS2 * S
-      HT(1 + 2*N : 3*N, 1 + 5*N : 6*N) =  IU * RQS2 * (Q - T)
-      HT(1 + 2*N : 3*N, 1 + 6*N : 7*N) =  IU * RQS3 * PM
-      HT(1 + 2*N : 3*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PZ
-
-      !col 4
-      HT(1 + 3*N : 4*N, 1 + 1*N : 2*N) =  R
-      HT(1 + 3*N : 4*N, 1 + 2*N : 3*N) = (-S)
-      HT(1 + 3*N : 4*N, 1 + 3*N : 4*N) =  Q
-      HT(1 + 3*N : 4*N, 1 + 4*N : 5*N) =  IU * SQR2 * R
-      HT(1 + 3*N : 4*N, 1 + 5*N : 6*N) =  IU * RQS2 * S
-      ! HT(1 + 3*N : 4*N, 1 + 6*N : 7*N) =  0.0_dp
-      HT(1 + 3*N : 4*N, 1 + 7*N : 8*N) = -PM
-
-      !col 5
-      HT(1 + 4*N : 5*N, 1 + 0*N : 1*N) =  IU * RQS2 * (S)
-      HT(1 + 4*N : 5*N, 1 + 1*N : 2*N) = -IU * RQS2 * (Q - T)
-      HT(1 + 4*N : 5*N, 1 + 2*N : 3*N) = -IU * SQR3 * RQS2 * (SC)
-      HT(1 + 4*N : 5*N, 1 + 3*N : 4*N) = -IU * SQR2 * RC
-      HT(1 + 4*N : 5*N, 1 + 4*N : 5*N) =  0.5_dp*(Q + T)
-      ! HT(1 + 4*N : 5*N, 1 + 5*N : 6*N) =  0.0_dp
-      HT(1 + 4*N : 5*N, 1 + 6*N : 7*N) =  IU * RQS3 * PZ
-      HT(1 + 4*N : 5*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PP
-
-      !col 6
-      HT(1 + 5*N : 6*N, 1 + 0*N : 1*N) = -IU * SQR2 * R
-      HT(1 + 5*N : 6*N, 1 + 1*N : 2*N) =  IU * SQR3 * RQS2 * (S)
-      HT(1 + 5*N : 6*N, 1 + 2*N : 3*N) = -IU * RQS2 * (Q- T)
-      HT(1 + 5*N : 6*N, 1 + 3*N : 4*N) = -IU * RQS2 * (SC)
-      HT(1 + 5*N : 6*N, 1 + 5*N : 6*N) =  0.5_dp*(Q + T)
-      HT(1 + 5*N : 6*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PM
-      HT(1 + 5*N : 6*N, 1 + 7*N : 8*N) = -RQS3 * PZ
-
-      !col 7
-      HT(1 + 6*N : 7*N, 1 + 0*N : 1*N) = -IU * PM
-      HT(1 + 6*N : 7*N, 1 + 1*N : 2*N) =  SQR2 * RQS3 * (PZ)
-      HT(1 + 6*N : 7*N, 1 + 2*N : 3*N) = -IU * RQS3 * PP
-      HT(1 + 6*N : 7*N, 1 + 4*N : 5*N) = -IU * RQS3 * (PZ)
-      HT(1 + 6*N : 7*N, 1 + 5*N : 6*N) =  SQR2 * RQS3 * PP
-      HT(1 + 6*N : 7*N, 1 + 6*N : 7*N) =  A
-      ! HT(7,8) =  0.0_dp
-
-      !col 8
-      HT(1 + 7*N : 8*N, 1 + 1*N : 2*N) = -RQS3 * PM
-      HT(1 + 7*N : 8*N, 1 + 2*N : 3*N) = -IU * SQR2 * RQS3 * (PZ)
-      HT(1 + 7*N : 8*N, 1 + 3*N : 4*N) = -PP
-      HT(1 + 7*N : 8*N, 1 + 4*N : 5*N) = -IU * SQR2 * RQS3 * PM
-      HT(1 + 7*N : 8*N, 1 + 5*N : 6*N) = -RQS3 * (PZ)
-      HT(1 + 7*N : 8*N, 1 + 7*N : 8*N) =  A
+      ! kp matrix — data-driven via block table
+      call apply_kp_table_dense(HT, N, Q, T, S, SC, R, RC, PP, PM, PZ, A)
 
 
       ! Profile
@@ -433,74 +364,8 @@ module hamiltonianConstructor
       ! Initialize HT
       HT = ZERO
 
-      ! Assemble 8Nx8N Hamiltonian (identical block structure to ZB8bandQW)
-      ! col 1
-      HT(1 + 0*N : 1*N, 1 + 0*N : 1*N) =  Q
-      HT(1 + 0*N : 1*N, 1 + 1*N : 2*N) =  SC
-      HT(1 + 0*N : 1*N, 1 + 2*N : 3*N) =  RC
-      HT(1 + 0*N : 1*N, 1 + 4*N : 5*N) = -IU * RQS2 * SC
-      HT(1 + 0*N : 1*N, 1 + 5*N : 6*N) =  IU * SQR2 * RC
-      HT(1 + 0*N : 1*N, 1 + 6*N : 7*N) =  IU * PP
-
-      ! col 2
-      HT(1 + 1*N : 2*N, 1 + 0*N : 1*N) =  S
-      HT(1 + 1*N : 2*N, 1 + 1*N : 2*N) =  T
-      HT(1 + 1*N : 2*N, 1 + 3*N : 4*N) =  RC
-      HT(1 + 1*N : 2*N, 1 + 4*N : 5*N) =  IU * RQS2 * (Q - T)
-      HT(1 + 1*N : 2*N, 1 + 5*N : 6*N) = -IU * SQR3 * RQS2 * SC
-      HT(1 + 1*N : 2*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PZ
-      HT(1 + 1*N : 2*N, 1 + 7*N : 8*N) = -RQS3 * PP
-
-      ! col 3
-      HT(1 + 2*N : 3*N, 1 + 0*N : 1*N) =  R
-      HT(1 + 2*N : 3*N, 1 + 2*N : 3*N) =  T
-      HT(1 + 2*N : 3*N, 1 + 3*N : 4*N) = -SC
-      HT(1 + 2*N : 3*N, 1 + 4*N : 5*N) =  IU * SQR3 * RQS2 * S
-      HT(1 + 2*N : 3*N, 1 + 5*N : 6*N) =  IU * RQS2 * (Q - T)
-      HT(1 + 2*N : 3*N, 1 + 6*N : 7*N) =  IU * RQS3 * PM
-      HT(1 + 2*N : 3*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PZ
-
-      ! col 4
-      HT(1 + 3*N : 4*N, 1 + 1*N : 2*N) =  R
-      HT(1 + 3*N : 4*N, 1 + 2*N : 3*N) = -S
-      HT(1 + 3*N : 4*N, 1 + 3*N : 4*N) =  Q
-      HT(1 + 3*N : 4*N, 1 + 4*N : 5*N) =  IU * SQR2 * R
-      HT(1 + 3*N : 4*N, 1 + 5*N : 6*N) =  IU * RQS2 * S
-      HT(1 + 3*N : 4*N, 1 + 7*N : 8*N) = -PM
-
-      ! col 5
-      HT(1 + 4*N : 5*N, 1 + 0*N : 1*N) =  IU * RQS2 * S
-      HT(1 + 4*N : 5*N, 1 + 1*N : 2*N) = -IU * RQS2 * (Q - T)
-      HT(1 + 4*N : 5*N, 1 + 2*N : 3*N) = -IU * SQR3 * RQS2 * SC
-      HT(1 + 4*N : 5*N, 1 + 3*N : 4*N) = -IU * SQR2 * RC
-      HT(1 + 4*N : 5*N, 1 + 4*N : 5*N) =  0.5_dp * (Q + T)
-      HT(1 + 4*N : 5*N, 1 + 6*N : 7*N) =  IU * RQS3 * PZ
-      HT(1 + 4*N : 5*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PP
-
-      ! col 6
-      HT(1 + 5*N : 6*N, 1 + 0*N : 1*N) = -IU * SQR2 * R
-      HT(1 + 5*N : 6*N, 1 + 1*N : 2*N) =  IU * SQR3 * RQS2 * S
-      HT(1 + 5*N : 6*N, 1 + 2*N : 3*N) = -IU * RQS2 * (Q - T)
-      HT(1 + 5*N : 6*N, 1 + 3*N : 4*N) = -IU * RQS2 * SC
-      HT(1 + 5*N : 6*N, 1 + 5*N : 6*N) =  0.5_dp * (Q + T)
-      HT(1 + 5*N : 6*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PM
-      HT(1 + 5*N : 6*N, 1 + 7*N : 8*N) = -RQS3 * PZ
-
-      ! col 7
-      HT(1 + 6*N : 7*N, 1 + 0*N : 1*N) = -IU * PM
-      HT(1 + 6*N : 7*N, 1 + 1*N : 2*N) =  SQR2 * RQS3 * PZ
-      HT(1 + 6*N : 7*N, 1 + 2*N : 3*N) = -IU * RQS3 * PP
-      HT(1 + 6*N : 7*N, 1 + 4*N : 5*N) = -IU * RQS3 * PZ
-      HT(1 + 6*N : 7*N, 1 + 5*N : 6*N) =  SQR2 * RQS3 * PP
-      HT(1 + 6*N : 7*N, 1 + 6*N : 7*N) =  Amat
-
-      ! col 8
-      HT(1 + 7*N : 8*N, 1 + 1*N : 2*N) = -RQS3 * PM
-      HT(1 + 7*N : 8*N, 1 + 2*N : 3*N) = -IU * SQR2 * RQS3 * PZ
-      HT(1 + 7*N : 8*N, 1 + 3*N : 4*N) = -PP
-      HT(1 + 7*N : 8*N, 1 + 4*N : 5*N) = -IU * SQR2 * RQS3 * PM
-      HT(1 + 7*N : 8*N, 1 + 5*N : 6*N) = -RQS3 * PZ
-      HT(1 + 7*N : 8*N, 1 + 7*N : 8*N) =  Amat
+      ! Assemble 8Nx8N Hamiltonian — data-driven via block table
+      call apply_kp_table_dense(HT, N, Q, T, S, SC, R, RC, PP, PM, PZ, Amat)
 
       ! Add profile (band edges)
       do ii = 1, N
@@ -627,80 +492,9 @@ module hamiltonianConstructor
 
       HT = 0
 
-      ! kp matrix
-      !col 1
-      HT(1,1) =  Q
-      HT(1,2) =  SC
-      HT(1,3) =  RC
-      HT(1,4) =  0.0_dp
-      HT(1,5) = -IU * RQS2 * SC
-      HT(1,6) =  IU * SQR2 * RC
-      HT(1,7) =  IU * PP
-      HT(1,8) =  0.0_dp
-
-      !col 2
-      HT(2,1) =  S
-      HT(2,2) =  T
-      HT(2,3) =  0.0_dp
-      HT(2,4) =  RC
-      HT(2,5) =  IU * RQS2 * (Q - T)
-      HT(2,6) = -IU * SQR3 * RQS2 * SC
-      HT(2,7) =  SQR2 * RQS3 * PZ
-      HT(2,8) = -RQS3*PP
-
-      !col 3
-      HT(3,1) =  R
-      HT(3,3) =  T
-      HT(3,4) = -SC
-      HT(3,5) =  IU * SQR3 * RQS2 * S
-      HT(3,6) =  IU * RQS2 * (Q - T)
-      HT(3,7) =  IU * RQS3 * PM
-      HT(3,8) =  IU * SQR2 * RQS3 * PZ
-
-      !col 4
-      HT(4,2) =  R
-      HT(4,3) = -S
-      HT(4,4) =  Q
-      HT(4,5) =  IU * SQR2 * R
-      HT(4,6) =  IU * RQS2 * S
-      HT(4,7) =  0.0_dp
-      HT(4,8) = -PM
-
-      !col 5
-      HT(5,1) =  IU * RQS2 * S
-      HT(5,2) = -IU * RQS2 * (Q - T)
-      HT(5,3) = -IU * SQR3 * RQS2 * SC
-      HT(5,4) = -IU * SQR2 * RC
-      HT(5,5) =  0.5_dp*(Q + T)
-      HT(5,6) =  0.0_dp
-      HT(5,7) =  IU * RQS3 * PZ
-      HT(5,8) =  IU * SQR2 * RQS3 * PP
-
-      !col 6
-      HT(6,1) = -IU * SQR2 * R
-      HT(6,2) =  IU * SQR3 * RQS2 * S
-      HT(6,3) = -IU * RQS2 * (Q - T)
-      HT(6,4) = -IU * RQS2 * SC
-      HT(6,6) =  0.5_dp*(Q + T)
-      HT(6,7) =  SQR2 * RQS3 * PM
-      HT(6,8) = -RQS3 * PZ
-
-      !col 7
-      HT(7,1) = -IU * PM
-      HT(7,2) =  SQR2 * RQS3 * PZ
-      HT(7,3) = -IU * RQS3 * PP
-      HT(7,5) = -IU * RQS3 * PZ
-      HT(7,6) =  SQR2 * RQS3 * PP
-      HT(7,7) =  A * k2
-      HT(7,8) =  0.0_dp
-
-      !col 8
-      HT(8,2) = -RQS3 * PM
-      HT(8,3) = -IU * SQR2 * RQS3 * PZ
-      HT(8,4) = -PP
-      HT(8,5) = -IU * SQR2 * RQS3 * PM
-      HT(8,6) = -RQS3 * PZ
-      HT(8,8) =  A * k2
+      ! kp matrix — data-driven via block table (scalar version for bulk)
+      ! A_for_table = A * k2 since bulk A already includes the k^2 weighting
+      call apply_kp_table_bulk(HT, Q, T, S, SC, R, RC, PP, PM, PZ, cmplx(A * k2, 0.0_dp, kind=dp))
 
 
       ! SOC
@@ -858,5 +652,102 @@ module hamiltonianConstructor
         end do
       end do
     end subroutine apply_strain_table_dense
+
+    ! ==================================================================
+    ! Table-driven k.p block insertion for dense Hamiltonian.
+    !
+    ! Reads the 52-entry k.p block table from get_kp_block_table() and
+    ! writes all k.p terms into the dense 8N x 8N Hamiltonian.  The kp
+    ! matrices (Q, T, S, SC, R, RC, PP, PM, PZ, A) must be precomputed;
+    ! derived terms KP_DIFF and KP_HALF_SUM are computed on the fly.
+    ! ==================================================================
+    subroutine apply_kp_table_dense(HT, N, Q, T, S, SC, R, RC, PP, PM, PZ, A)
+      complex(kind=dp), intent(inout), contiguous :: HT(:,:)
+      integer, intent(in) :: N
+      complex(kind=dp), intent(in), contiguous :: Q(:,:), T(:,:), S(:,:), SC(:,:)
+      complex(kind=dp), intent(in), contiguous :: R(:,:), RC(:,:)
+      complex(kind=dp), intent(in), contiguous :: PP(:,:), PM(:,:), PZ(:,:), A(:,:)
+
+      type(kp_entry) :: table(52)
+      integer :: e, rb, cb, r1, r2, c1, c2
+
+      table = get_kp_block_table()
+
+      do e = 1, 52
+        rb = table(e)%row_band
+        cb = table(e)%col_band
+        r1 = rb * N + 1
+        r2 = rb * N + N
+        c1 = cb * N + 1
+        c2 = cb * N + N
+
+        select case (table(e)%kp_term)
+        case (KP_Q)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * Q
+        case (KP_T)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * T
+        case (KP_S)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * S
+        case (KP_SC)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * SC
+        case (KP_R)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * R
+        case (KP_RC)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * RC
+        case (KP_PP)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * PP
+        case (KP_PM)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * PM
+        case (KP_PZ)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * PZ
+        case (KP_A)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * A
+        case (KP_DIFF)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * (Q - T)
+        case (KP_HALF_SUM)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * 0.5_dp * (Q + T)
+        end select
+      end do
+    end subroutine apply_kp_table_dense
+
+    ! ==================================================================
+    ! Table-driven k.p block insertion for bulk (8x8) Hamiltonian.
+    !
+    ! Scalar version of apply_kp_table_dense for the 8x8 bulk case.
+    ! The kp terms are complex scalars.  Band indices in the table are
+    ! 0-based, so row = row_band + 1, col = col_band + 1.
+    ! ==================================================================
+    subroutine apply_kp_table_bulk(HT, Q, T, S, SC, R, RC, PP, PM, PZ, A)
+      complex(kind=dp), intent(inout) :: HT(8,8)
+      complex(kind=dp), intent(in) :: Q, T, S, SC, R, RC, PP, PM, PZ, A
+
+      type(kp_entry) :: table(52)
+      integer :: e, row, col
+      complex(kind=dp) :: val
+
+      table = get_kp_block_table()
+
+      do e = 1, 52
+        row = table(e)%row_band + 1
+        col = table(e)%col_band + 1
+
+        select case (table(e)%kp_term)
+        case (KP_Q);         val = Q
+        case (KP_T);         val = T
+        case (KP_S);         val = S
+        case (KP_SC);        val = SC
+        case (KP_R);         val = R
+        case (KP_RC);        val = RC
+        case (KP_PP);        val = PP
+        case (KP_PM);        val = PM
+        case (KP_PZ);        val = PZ
+        case (KP_A);         val = A
+        case (KP_DIFF);      val = Q - T
+        case (KP_HALF_SUM);  val = 0.5_dp * (Q + T)
+        end select
+
+        HT(row, col) = table(e)%prefactor * val
+      end do
+    end subroutine apply_kp_table_bulk
 
 end module hamiltonianConstructor
