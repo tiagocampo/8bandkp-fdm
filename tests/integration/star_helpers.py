@@ -101,7 +101,7 @@ def run_exe(build_dir, name, config_path, work_dir, timeout=300):
     Raises:
         FileNotFoundError: if executable not found
     """
-    exe_path = os.path.join(build_dir, "src", name)
+    exe_path = os.path.abspath(os.path.join(build_dir, "src", name))
     if not os.path.isfile(exe_path):
         raise FileNotFoundError(f"Executable not found: {exe_path}")
     return run_executable(exe_path, config_path, work_dir, timeout)
