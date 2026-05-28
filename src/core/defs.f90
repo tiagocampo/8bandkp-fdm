@@ -621,9 +621,28 @@ module definitions
           .and. cfg%confinement /= 'wire' .and. cfg%confinement /= 'landau') then
         error stop 'validate_simulation_config: confinement must be bulk, qw, wire, or landau'
       end if
+      if (cfg%confinement == 'qw') then
+        if (cfg%fd_step < 3) then
+          error stop 'validate_simulation_config: QW fd_step must be >= 3'
+        end if
+        if (cfg%fd_step < cfg%FDorder + 1) then
+          error stop 'validate_simulation_config: QW fd_step must be >= FDorder + 1'
+        end if
+      end if
+      if (cfg%confinement == 'wire') then
+        if (cfg%wire%nx < cfg%FDorder + 1) then
+          error stop 'validate_simulation_config: wire nx must be >= FDorder + 1'
+        end if
+        if (cfg%wire%ny < cfg%FDorder + 1) then
+          error stop 'validate_simulation_config: wire ny must be >= FDorder + 1'
+        end if
+      end if
       if (cfg%confinement == 'landau') then
         if (cfg%landau%nx < 3) then
           error stop 'validate_simulation_config: landau nx must be >= 3'
+        end if
+        if (cfg%landau%nx < cfg%FDorder + 1) then
+          error stop 'validate_simulation_config: landau nx must be >= FDorder + 1'
         end if
         if (cfg%landau%width <= 0.0_dp) then
           error stop 'validate_simulation_config: landau width must be > 0'

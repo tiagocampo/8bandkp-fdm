@@ -167,8 +167,8 @@ module outputFunctions
       ! Write metadata header for wire mode
       if (present(cfg)) then
         if (cfg%confinement == 'wire') then
-          write(iounit, '(A,I0,A,I0)', advance='no') &
-            & '# confinement: ', cfg%confinement, &
+          write(iounit, '(A,A,A,I0)', advance='no') &
+            & '# confinement: ', trim(cfg%confinement), &
             & ' nx: ', cfg%grid%nx
           write(iounit, '(A,I0,A,g14.6)', advance='no') &
             & ' ny: ', cfg%grid%ny, ' dx: ', cfg%grid%dx

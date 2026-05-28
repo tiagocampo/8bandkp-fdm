@@ -249,6 +249,19 @@ contains
       cfg%endPos(i) = cfg%z_max(i)
     end do
 
+    ! Validate fd_step minimum for QW mode
+    if (cfg%fd_step < 3) then
+      print *, 'Error: QW mode requires fd_step >= 3, got ', cfg%fd_step
+      stop 1
+    end if
+
+    ! Validate fd_step >= FDorder + 1 for QW mode
+    if (cfg%fd_step < cfg%FDorder + 1) then
+      print *, 'Error: QW fd_step must be >= FDorder + 1, got fd_step=', cfg%fd_step, &
+        ' FDorder=', cfg%FDorder
+      stop 1
+    end if
+
     ! Grid computation
     cfg%ngrid = cfg%fd_step
     cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
@@ -372,6 +385,16 @@ contains
       print *, 'Error: wire ny must be >= 3'
       stop 1
     end if
+    if (cfg%wire%nx < cfg%FDorder + 1) then
+      print *, 'Error: wire nx must be >= FDorder + 1, got nx=', cfg%wire%nx, &
+        ' FDorder=', cfg%FDorder
+      stop 1
+    end if
+    if (cfg%wire%ny < cfg%FDorder + 1) then
+      print *, 'Error: wire ny must be >= FDorder + 1, got ny=', cfg%wire%ny, &
+        ' FDorder=', cfg%FDorder
+      stop 1
+    end if
 
     ! Computed grid size
     cfg%ngrid = cfg%wire%ny
@@ -444,6 +467,11 @@ contains
       print *, 'Error: landau width must be > 0'
       stop 1
     end if
+    if (cfg%landau%nx < cfg%FDorder + 1) then
+      print *, 'Error: landau nx must be >= FDorder + 1, got nx=', cfg%landau%nx, &
+        ' FDorder=', cfg%FDorder
+      stop 1
+    end if
 
     ! Computed fields
     cfg%ngrid = cfg%landau%nx
@@ -512,7 +540,7 @@ contains
     ! Copy to bdg%B_vec for legacy compat
     cfg%bdg%B_vec = cfg%b_field%components
     cfg%bdg%g_factor = cfg%b_field%g_factor
-    if (any(cfg%b_field%components /= 0.0_dp)) then
+    if (any(cfg%b_field%components /= 0.0_dp) .and. trim(cfg%confinement) /= 'landau') then
       cfg%bdg%enabled = .true.
     end if
   end subroutine parse_b_field
@@ -567,8 +595,9 @@ contains
     call get_value(table, 'doping', doping_arr, stat=stat)
     if (associated(doping_arr)) then
       ndop = tomlf_len(doping_arr)
-      allocate(cfg%doping(ndop))
-      do i = 1, ndop
+      ! Allocate by num_layers (not ndop) to match layer indexing
+      allocate(cfg%doping(cfg%num_layers))
+      do i = 1, min(ndop, cfg%num_layers)
         call get_value(doping_arr, i, dop, stat=stat)
         if (.not. associated(dop)) cycle
         call get_value(dop, 'ND', cfg%doping(i)%ND, 0.0_dp, stat=stat)
@@ -675,13 +704,13 @@ contains
 
     type(toml_table), pointer :: bdg_tbl => null()
     type(toml_array), pointer :: b_sweep_arr => null()
+    type(toml_array), pointer :: bvec_arr => null()
     character(len=:), allocatable :: gauge_val
-    integer :: stat
+    integer :: stat, i
 
     call get_value(table, 'bdg', bdg_tbl, stat=stat)
     if (.not. associated(bdg_tbl)) return
 
-    cfg%bdg%enabled = .true.
     call get_value(bdg_tbl, 'mu', cfg%bdg%mu, 0.0_dp, stat=stat)
     call get_value(bdg_tbl, 'delta_0', cfg%bdg%delta_0, 0.0_dp, stat=stat)
     call get_value(bdg_tbl, 'g_factor', cfg%bdg%g_factor, 2.0_dp, stat=stat)
@@ -690,6 +719,19 @@ contains
       cfg%bdg%gauge = trim(gauge_val)
     end if
     call get_value(bdg_tbl, 'kz', cfg%bdg%kz, 0.0_dp, stat=stat)
+
+    ! Read B_vec from [bdg] if present (overrides b_field copy)
+    call get_value(bdg_tbl, 'B_vec', bvec_arr, stat=stat)
+    if (associated(bvec_arr)) then
+      do i = 1, min(3, tomlf_len(bvec_arr))
+        call get_value(bvec_arr, i, cfg%bdg%B_vec(i), stat=stat)
+      end do
+    end if
+
+    ! Only enable BdG if pairing gap is nonzero
+    if (cfg%bdg%delta_0 > 0.0_dp) then
+      cfg%bdg%enabled = .true.
+    end if
 
     ! B sweep
     call get_value(bdg_tbl, 'B_sweep', b_sweep_arr, stat=stat)
