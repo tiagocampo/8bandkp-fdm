@@ -88,7 +88,7 @@ contains
     select case(trim(cfg%confinement))
     case('bulk')
       if (cfg%sc%enabled == 1) then
-        print *, 'Warning: SC with bulk mode requires confinement=1, confDir=z.'
+        print *, 'Warning: SC with bulk mode requires confinement=qw.'
       end if
       setup%N = 8
       setup%il = 1

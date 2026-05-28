@@ -287,12 +287,12 @@ contains
       ! New path: use spatial_grid coordinates
       call confinementInitialization_raw(cfg%grid%z, cfg%int_start_pos, &
         & cfg%int_end_pos, cfg%material_names, cfg%num_layers, cfg%params, &
-        & cfg%conf_dir, profile, kpterms, cfg%FDorder)
+        & conf_direction(cfg%confinement), profile, kpterms, cfg%FDorder)
     else
       ! Legacy path: use cfg%z (backward compat before init_grid_from_config)
       call confinementInitialization_raw(cfg%z, cfg%int_start_pos, &
         & cfg%int_end_pos, cfg%material_names, cfg%num_layers, cfg%params, &
-        & cfg%conf_dir, profile, kpterms, cfg%FDorder)
+        & conf_direction(cfg%confinement), profile, kpterms, cfg%FDorder)
     end if
 
     ! Populate cfg%dz from the grid when available

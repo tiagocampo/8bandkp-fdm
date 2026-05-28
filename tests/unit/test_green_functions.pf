@@ -158,7 +158,6 @@ contains
     cfg%ngrid = N
     cfg%FDorder = 2
     cfg%num_layers = 1
-    cfg%conf_dir = 'z'
     cfg%totalSize = 50.0_dp
     cfg%delta = 10.0_dp
     cfg%dz = 10.0_dp
@@ -299,7 +298,6 @@ contains
     cfg%ngrid = ngrid
     cfg%FDorder = 2
     cfg%num_layers = 2
-    cfg%conf_dir = 'z'
     cfg%totalSize = real(ngrid, kind=dp) * dz_val
     cfg%delta = dz_val
     cfg%dz = dz_val

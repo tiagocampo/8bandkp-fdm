@@ -74,7 +74,7 @@ program topologicalAnalysis
   ! does not run the self-consistent loop.
   block
     type(simulation_setup) :: topo_setup
-    if (cfg%conf_dir == 'z' .and. cfg%confinement == 'qw') then
+    if (cfg%confinement == 'qw') then
       call simulation_setup_init(cfg, topo_setup, skip_sc=.true.)
       ! Extract profile and kpterms for use by topology subroutines
       call move_alloc(topo_setup%profile, profile)

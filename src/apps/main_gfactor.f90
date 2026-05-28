@@ -291,7 +291,7 @@ program gfactor
       call simulation_setup_init(cfg, setup)
 
       ! Print profile for QW mode
-      if (cfg%conf_dir == 'z') then
+      if (conf_direction(cfg%confinement) == 'z') then
         call ensure_output_dir()
         call get_unit(iounit)
         open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
@@ -336,7 +336,7 @@ program gfactor
       & cfg%z_min(1), cfg%z_max(1), profile=setup%profile, kpterms=setup%kpterms, dz=cfg%dz)
 
       ! QW optical transitions (must be before setup_free so profile/kpterms are alive)
-      if (cfg%optics%enabled .and. cfg%conf_dir == 'z' .and. cfg%num_layers > 1) then
+      if (cfg%optics%enabled .and. conf_direction(cfg%confinement) == 'z' .and. cfg%num_layers > 1) then
         block
           type(optical_transition), allocatable :: transitions(:)
           integer :: num_trans, it

@@ -50,4 +50,24 @@ contains
     @assertEqual(1.0_dp/SQR2, RQS2, tolerance=1.0e-14_dp)
   end subroutine test_sqrt_constants
 
+  @test
+  subroutine test_conf_direction_bulk()
+    @assertEqual('n', conf_direction('bulk'))
+  end subroutine test_conf_direction_bulk
+
+  @test
+  subroutine test_conf_direction_qw()
+    @assertEqual('z', conf_direction('qw'))
+  end subroutine test_conf_direction_qw
+
+  @test
+  subroutine test_conf_direction_wire()
+    @assertEqual('z', conf_direction('wire'))
+  end subroutine test_conf_direction_wire
+
+  @test
+  subroutine test_conf_direction_landau()
+    @assertEqual('x', conf_direction('landau'))
+  end subroutine test_conf_direction_landau
+
 end module test_defs

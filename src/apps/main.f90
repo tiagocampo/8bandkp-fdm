@@ -410,7 +410,7 @@ program kpfdm
 
   ! Set matrix dimensions and eigenvalue range
   N = cfg%ngrid * 8
-  if (cfg%conf_dir == 'n') then
+  if (conf_direction(cfg%confinement) == 'n') then
     N = 8  ! For bulk, we only need 8x8
     if (cfg%evnum > 8) then
       print *, "Warning: requesting more bands than available in bulk (8). Using all 8 bands."
@@ -421,7 +421,7 @@ program kpfdm
   end if
 
   ! For quantum well, check if requested bands are within limits
-  if (cfg%conf_dir == 'z') then
+  if (conf_direction(cfg%confinement) == 'z') then
     if (cfg%bands%num_cb > NUM_CB_STATES*cfg%ngrid) then
       print *, "Warning: requesting more conduction bands than available. Limiting to ", NUM_CB_STATES*cfg%ngrid
       cfg%bands%num_cb = NUM_CB_STATES*cfg%ngrid
@@ -459,7 +459,7 @@ program kpfdm
   if (allocated(eig)) deallocate(eig)
   allocate(eig(iuu-il+1,cfg%wave_vector%nsteps))  ! Only store the states we want
   if (allocated(eigv)) deallocate(eigv)
-  if (cfg%conf_dir == 'n') then
+  if (conf_direction(cfg%confinement) == 'n') then
     allocate(eigv(8,cfg%evnum,cfg%wave_vector%nsteps))  ! 8x8 for bulk
   else
     allocate(eigv(N,iuu-il+1,cfg%wave_vector%nsteps))  ! Only store the states we want
@@ -478,7 +478,7 @@ program kpfdm
   allocate(work(N))  ! Will be resized after workspace query
 
   ! Print profile for QW and Landau modes
-  if (cfg%conf_dir == 'z') then
+  if (conf_direction(cfg%confinement) == 'z') then
     call ensure_output_dir()
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
@@ -486,7 +486,7 @@ program kpfdm
       write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
     end do
     close(iounit)
-  else if (cfg%conf_dir == 'x') then
+  else if (conf_direction(cfg%confinement) == 'x') then
     ! Landau mode: print profile along x
     call ensure_output_dir()
     call get_unit(iounit)
@@ -498,7 +498,7 @@ program kpfdm
   end if
 
   ! --- Self-consistent loop (QW only, after wave vector setup) ---
-  if (cfg%conf_dir == 'z' .and. cfg%sc%enabled == 1) then
+  if (conf_direction(cfg%confinement) == 'z' .and. cfg%sc%enabled == 1) then
     print *, ''
     print *, '=== Running self-consistent Schrodinger-Poisson loop ==='
     call self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv, &
@@ -542,7 +542,7 @@ program kpfdm
   ! ====================================================================
   ! Workspace query (serial, k=1) — determines lwork for zheevx
   ! ====================================================================
-  if (cfg%conf_dir == 'n') then
+  if (conf_direction(cfg%confinement) == 'n') then
     ! BULK: 8x8 workspace query
     call ZB8bandBulk(HT, smallk(1), cfg%params(1), cfg=cfg)
     HTmp = HT(1:8,1:8)
@@ -558,7 +558,7 @@ program kpfdm
     lwork = int(real(work(1)))
     if (allocated(work)) deallocate(work)
     allocate(work(lwork))
-  else if (cfg%conf_dir == 'z') then
+  else if (conf_direction(cfg%confinement) == 'z') then
     ! QW: NxN workspace query
     call ZB8bandQW(HT, smallk(1), profile, kpterms, cfg=cfg)
     if (allocated(work)) deallocate(work)
@@ -573,7 +573,7 @@ program kpfdm
     lwork = int(real(work(1)))
     if (allocated(work)) deallocate(work)
     allocate(work(lwork))
-  else if (cfg%conf_dir == 'x') then
+  else if (conf_direction(cfg%confinement) == 'x') then
     ! LANDAU: NxN workspace query
     call ZB8bandLandau(HT, smallk(1), profile, kpterms, cfg%grid%x, cfg=cfg)
     if (allocated(work)) deallocate(work)
@@ -593,7 +593,7 @@ program kpfdm
   ! ====================================================================
   ! k-vector sweep: sequential for bulk, OpenMP parallel for QW/Landau
   ! ====================================================================
-  if (cfg%conf_dir == 'n') then
+  if (conf_direction(cfg%confinement) == 'n') then
     ! --- BULK (8x8, trivially fast — no parallelization needed) ---
     do k = 1, cfg%wave_vector%nsteps
       call ZB8bandBulk(HT, smallk(k), cfg%params(1), cfg=cfg)
@@ -619,7 +619,7 @@ program kpfdm
       end if
     end do
 
-  else if (cfg%conf_dir == 'z') then
+  else if (conf_direction(cfg%confinement) == 'z') then
     ! --- QUANTUM WELL (NxN, OpenMP parallel) ---
     ! Disable MKL internal threading so each OpenMP thread calls
     ! zheevx in serial — avoids oversubscription with intel_thread MKL.
@@ -678,7 +678,7 @@ program kpfdm
       end if
     end do
 
-  else if (cfg%conf_dir == 'x') then
+  else if (conf_direction(cfg%confinement) == 'x') then
     ! --- LANDAU (8NxN, OpenMP parallel) ---
     ! Disable MKL internal threading so each OpenMP thread calls
     ! zheevx in serial — avoids oversubscription.
@@ -834,7 +834,7 @@ program kpfdm
   ! ====================================================================
   ! Exciton binding energy (standalone)
   ! ====================================================================
-  if (cfg%exciton%enabled .and. cfg%conf_dir == 'z') then
+  if (cfg%exciton%enabled .and. conf_direction(cfg%confinement) == 'z') then
     block
       real(kind=dp) :: E_binding_sa, lambda_opt_sa
       call compute_exciton_binding(eig(:, 1), eigv(:, :, 1), &
@@ -849,7 +849,7 @@ program kpfdm
   ! ====================================================================
   ! LO-phonon scattering rates (QW only, k=0)
   ! ====================================================================
-  if (cfg%scattering%enabled .and. cfg%conf_dir == 'z') then
+  if (cfg%scattering%enabled .and. conf_direction(cfg%confinement) == 'z') then
     call compute_phonon_scattering(cfg, eig(:, 1), eigv(:, :, 1), &
       & cfg%z, cfg%params, cfg%dz, cfg%bands%num_cb, cfg%bands%num_vb, cfg%ngrid)
     print '(A)', ' Scattering rates written to output/scattering_rates.dat'

@@ -28,6 +28,7 @@ module definitions
   public :: simulation_config, group
 
   ! Functions and subroutines
+  public :: conf_direction
   public :: kronij, grid_ngrid, init_grid_from_config
   public :: validate_semantic
 
@@ -458,7 +459,6 @@ module definitions
     ! ---- Computed fields (derived from inputs) ----
     integer            :: ngrid = 1            ! computed grid size (was fdStep)
     integer            :: evnum = 8            ! bands%num_cb + bands%num_vb
-    character(len=1)   :: conf_dir = 'n'       ! 'n'=bulk, 'z'=QW/wire, 'x'=Landau
     real(kind=dp)      :: totalSize = 0.0_dp
     real(kind=dp)      :: delta = 0.0_dp
     real(kind=dp)      :: dz = 0.0_dp
@@ -575,11 +575,6 @@ module definitions
     class(simulation_config), intent(in) :: self
 
     associate(cfg => self)
-      ! conf_dir: set internally ('n'=bulk, 'z'=QW/wire, 'x'=Landau)
-      if (cfg%conf_dir /= 'z' .and. cfg%conf_dir /= 'n' .and. cfg%conf_dir /= 'x') then
-        error stop 'validate_simulation_config: invalid conf_dir'
-      end if
-
       ! ngrid: must be positive
       if (cfg%ngrid <= 0) then
         error stop 'validate_simulation_config: ngrid must be positive'
@@ -699,6 +694,26 @@ module definitions
     end select
 
   end subroutine validate_semantic
+
+  ! ------------------------------------------------------------------
+  ! Map confinement string to direction character.
+  !   'bulk'   -> 'n' (no confinement direction)
+  !   'qw'     -> 'z' (confinement along z)
+  !   'wire'   -> 'z' (confinement along z)
+  !   'landau' -> 'x' (confinement along x)
+  ! ------------------------------------------------------------------
+  pure function conf_direction(conf) result(d)
+    character(len=*), intent(in) :: conf
+    character(len=1) :: d
+
+    d = 'n'
+    select case(trim(conf))
+    case('qw','wire')
+      d = 'z'
+    case('landau')
+      d = 'x'
+    end select
+  end function conf_direction
 
   elemental pure function kronij(i,j)
     integer, intent(in) :: i,j

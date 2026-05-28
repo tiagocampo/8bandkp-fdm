@@ -525,7 +525,6 @@ contains
     cfg%ngrid = N
     cfg%FDorder = 2
     cfg%num_layers = 1
-    cfg%conf_dir = 'z'
     cfg%totalSize = 50.0_dp  ! 50 AA
     cfg%delta = 10.0_dp      ! step size
     cfg%dz = 10.0_dp
@@ -565,7 +564,6 @@ contains
     cfg%ngrid = N
     cfg%FDorder = 2
     cfg%num_layers = 1
-    cfg%conf_dir = 'z'
     cfg%totalSize = 50.0_dp
     cfg%delta = 10.0_dp
     cfg%dz = 10.0_dp

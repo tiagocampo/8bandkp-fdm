@@ -117,7 +117,6 @@ contains
     cfg%bands%num_cb = 2
     cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%conf_dir = 'z'
     cfg%wave_vector%mode = 'k0'
     cfg%wave_vector%max = 0.0_dp
     cfg%wave_vector%nsteps = 100
@@ -264,7 +263,6 @@ contains
     cfg%bands%num_cb = 2
     cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%conf_dir = 'n'
     cfg%wave_vector%mode = 'k0'
     cfg%wave_vector%max = 0.0_dp
     cfg%wave_vector%nsteps = 100
@@ -305,7 +303,6 @@ contains
     cfg%bands%num_cb = 2
     cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%conf_dir = 'z'
     cfg%wave_vector%mode = 'k0'
     cfg%wave_vector%max = 0.0_dp
     cfg%wave_vector%nsteps = 100
@@ -514,7 +511,6 @@ contains
     cfg%bands%num_cb = 2
     cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%conf_dir = 'z'
     cfg%wave_vector%mode = 'kz'
     cfg%wave_vector%max = 0.1_dp
     cfg%wave_vector%nsteps = 2
@@ -576,7 +572,6 @@ contains
     cfg%bands%num_cb = 2
     cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%conf_dir = 'z'
     cfg%wave_vector%mode = 'k0'
     cfg%wave_vector%max = 0.0_dp
     cfg%wave_vector%nsteps = 100
@@ -673,7 +668,6 @@ contains
     cfg%bands%num_cb = 2
     cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%conf_dir = 'z'
     cfg%wave_vector%mode = 'k0'
     cfg%wave_vector%max = 0.0_dp
     cfg%wave_vector%nsteps = 100
@@ -761,7 +755,6 @@ contains
     cfg%bands%num_cb = 2
     cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%conf_dir = 'z'
     cfg%wave_vector%mode = 'k0'
     cfg%wave_vector%max = 0.0_dp
     cfg%wave_vector%nsteps = 100

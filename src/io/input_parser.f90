@@ -87,7 +87,6 @@ contains
 
     case ('bulk')
       call parse_materials_bulk(table, cfg)
-      cfg%conf_dir = 'n'
       cfg%ngrid = 1
       cfg%totalSize = 0.0_dp
       cfg%delta = 0.0_dp
@@ -95,15 +94,12 @@ contains
 
     case ('qw')
       call parse_materials_qw(table, cfg)
-      cfg%conf_dir = 'z'
 
     case ('wire')
       call parse_wire(table, cfg)
-      cfg%conf_dir = 'z'
 
     case ('landau')
       call parse_landau(table, cfg)
-      cfg%conf_dir = 'x'
 
     case default
       print *, 'Error: Unknown confinement: ', trim(cfg%confinement)

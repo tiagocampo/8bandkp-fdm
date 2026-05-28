@@ -247,10 +247,6 @@ program opticalProperties
   ! QUANTUM WELL (confinement=1)
   ! ==================================================================
   case ('qw')
-    if (cfg%conf_dir /= 'z') then
-      print '(a)', 'ERROR: opticalProperties requires confDir=z for QW'
-      stop 1
-    end if
 
     call simulation_setup_init(cfg, setup)
     N = setup%N
