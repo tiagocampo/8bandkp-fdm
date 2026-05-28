@@ -71,7 +71,7 @@ if [ $RC -ne 0 ]; then
     exit 1
 fi
 
-if ! grep -q "compute_spectral: F" test_default_method_output.log; then
+if ! grep -q "compute_spectral= F" test_default_method_output.log; then
     echo "FAIL: compute_spectral was not preserved for subsequent parsing"
     cat test_default_method_output.log
     exit 1

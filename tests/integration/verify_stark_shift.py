@@ -12,14 +12,27 @@ import sys
 
 
 def parse_config_scalar(filepath, key):
-    """Read a scalar config value from TOML `key = value` or old `key: value` line."""
+    """Read a scalar config value from TOML `key = value` or old `key: value` line.
+
+    For TOML configs, the external field value lives under [external_field] value = ...
+    and is looked up by the section-qualified key 'value' when key is 'EFParams'.
+    """
+    # Map legacy key names to TOML equivalents
+    toml_key = "value" if key == "EFParams" else key
+    in_section = None
     with open(filepath) as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            # TOML: key = value
-            if line.startswith(f'{key} =') or line.startswith(f'{key}='):
+            # Track current TOML section
+            if line.startswith("[") and not line.startswith("[["):
+                in_section = line.strip("[]").strip()
+                continue
+            # TOML: key = value (match inside [external_field] for EFParams)
+            if line.startswith(f'{toml_key} =') or line.startswith(f'{toml_key}='):
+                if key == "EFParams" and in_section != "external_field":
+                    continue
                 val = line.split('=', 1)[1].strip()
                 return float(val.split()[0])
             # Old format: key: value

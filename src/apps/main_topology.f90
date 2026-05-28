@@ -97,6 +97,7 @@ program topologicalAnalysis
   print *, '  compute_chern=', cfg%topo%compute_chern
   print *, '  compute_z2=', cfg%topo%compute_z2
   print *, '  extract_edge_states=', cfg%topo%extract_edge_states
+  print *, '  compute_spectral=', cfg%topo%compute_spectral
   print *, '  bdg enabled=', cfg%bdg%enabled
   print *, ''
 
@@ -1034,6 +1035,9 @@ contains
     real(kind=dp) :: sigma_xy, T
 
     print *, '--- Conductance analysis ---'
+    print *, '  conductance_method: ', trim(cfg_in%topo%conductance_method)
+    print *, '  berry_nk: ', cfg_in%topo%berry_nk
+    print *, '  landauer_energy: ', cfg_in%topo%landauer_energy
 
     select case(trim(adjustl(cfg_in%topo%conductance_method)))
     case('kubo_chern', 'kubo')
