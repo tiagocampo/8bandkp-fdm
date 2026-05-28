@@ -936,7 +936,7 @@ contains
   end subroutine require_real
 
   ! ==================================================================
-  ! Helper: warn on type-mismatch for optional field lookups
+  ! Helper: error stop on type-mismatch for optional field lookups
   ! ==================================================================
   subroutine check_optional_stat(stat, key, section)
     integer, intent(in) :: stat
