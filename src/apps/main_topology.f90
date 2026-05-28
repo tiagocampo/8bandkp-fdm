@@ -1006,7 +1006,7 @@ contains
       stop 1
     end if
     write(iounit_loc, '(A)') '# Spectral function A(k, E)'
-    write(iounit_loc, '(A,I0)') '# confinement=', cfg_in%confinement
+    write(iounit_loc, '(A,A)') '# confinement=', trim(cfg_in%confinement)
     write(iounit_loc, '(A,I0,A,I0)') '# nk=', nk, '  nE=', nE
     write(iounit_loc, '(A,ES12.4)') '# eta (eV) = ', cfg_in%topo%spectral_eta
     write(iounit_loc, '(A,2ES16.8)') '# k_grid_min_max (1/A) = ', k_arr(1), k_arr(nk)
