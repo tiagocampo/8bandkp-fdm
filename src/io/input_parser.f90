@@ -55,7 +55,7 @@ contains
     end if
 
     ! ---- [wave_vector] ----
-    call get_value(table, 'wave_vector', child, stat=stat)
+    call get_value(table, 'wave_vector', child, requested=.false., stat=stat)
     if (stat == 0 .and. associated(child)) then
       call require_string(child, 'mode', str_val, 'wave_vector')
       cfg%wave_vector%mode = trim(str_val)
@@ -74,7 +74,7 @@ contains
     end if
 
     ! ---- [bands] ----
-    call get_value(table, 'bands', child, stat=stat)
+    call get_value(table, 'bands', child, requested=.false., stat=stat)
     if (stat == 0 .and. associated(child)) then
       call get_value(child, 'num_cb', cfg%bands%num_cb, stat=stat)
       if (stat /= 0) cfg%bands%num_cb = 2
@@ -161,7 +161,7 @@ contains
     character(len=:), allocatable :: name_val
     integer :: stat, nmat
 
-    call get_value(table, 'material', materials, stat=stat)
+    call get_value(table, 'material', materials, requested=.false., stat=stat)
     if (.not. associated(materials)) then
       print *, 'Error: [[material]] section required for bulk mode'
       stop 1
@@ -208,7 +208,7 @@ contains
     character(len=:), allocatable :: name_val
     integer :: stat, nmat, i
 
-    call get_value(table, 'material', materials, stat=stat)
+    call get_value(table, 'material', materials, requested=.false., stat=stat)
     if (.not. associated(materials)) then
       print *, 'Error: [[material]] section required for QW mode'
       stop 1
@@ -291,7 +291,7 @@ contains
     character(len=:), allocatable :: str_val, mat_name
     integer :: stat, i, nverts, nreg
 
-    call get_value(table, 'wire', wire_tbl, stat=stat)
+    call get_value(table, 'wire', wire_tbl, requested=.false., stat=stat)
     if (.not. associated(wire_tbl)) then
       print *, 'Error: [wire] section required for wire mode'
       stop 1
@@ -303,7 +303,7 @@ contains
     call require_real(wire_tbl, 'dy', cfg%wire%dy, 'wire')
 
     ! Wire geometry
-    call get_value(wire_tbl, 'geometry', geom_tbl, stat=stat)
+    call get_value(wire_tbl, 'geometry', geom_tbl, requested=.false., stat=stat)
     if (associated(geom_tbl)) then
       call require_string(geom_tbl, 'shape', str_val, 'wire.geometry')
       cfg%wire%geom%shape = trim(str_val)
@@ -315,7 +315,7 @@ contains
         call require_real(geom_tbl, 'width', cfg%wire%geom%width, 'wire.geometry')
         call require_real(geom_tbl, 'height', cfg%wire%geom%height, 'wire.geometry')
       case ('polygon')
-        call get_value(geom_tbl, 'vertices', verts_arr, stat=stat)
+        call get_value(geom_tbl, 'vertices', verts_arr, requested=.false., stat=stat)
         if (.not. associated(verts_arr)) then
           print *, 'Error: polygon shape requires vertices array'
           stop 1
@@ -341,7 +341,7 @@ contains
     end if
 
     ! Regions
-    call get_value(table, 'region', regions_arr, stat=stat)
+    call get_value(table, 'region', regions_arr, requested=.false., stat=stat)
     if (associated(regions_arr)) then
       nreg = tomlf_len(regions_arr)
       cfg%wire%num_regions = nreg
@@ -411,7 +411,7 @@ contains
     character(len=:), allocatable :: name_val, sweep_val
     integer :: stat, i
 
-    call get_value(table, 'landau', landau_tbl, stat=stat)
+    call get_value(table, 'landau', landau_tbl, requested=.false., stat=stat)
     if (.not. associated(landau_tbl)) then
       print *, 'Error: [landau] section required for landau mode'
       stop 1
@@ -427,7 +427,7 @@ contains
     end if
 
     ! Material
-    call get_value(table, 'material', materials, stat=stat)
+    call get_value(table, 'material', materials, requested=.false., stat=stat)
     if (.not. associated(materials)) then
       print *, 'Error: [[material]] section required for landau mode'
       stop 1
@@ -497,7 +497,7 @@ contains
     character(len=:), allocatable :: type_val
     integer :: stat
 
-    call get_value(table, 'external_field', ef_tbl, stat=stat)
+    call get_value(table, 'external_field', ef_tbl, requested=.false., stat=stat)
     if (.not. associated(ef_tbl)) return
 
     cfg%external_field%enabled = .true.
@@ -519,11 +519,11 @@ contains
     type(toml_array), pointer :: comp_arr => null()
     integer :: stat
 
-    call get_value(table, 'b_field', bf_tbl, stat=stat)
+    call get_value(table, 'b_field', bf_tbl, requested=.false., stat=stat)
     if (.not. associated(bf_tbl)) return
 
     ! Parse components array
-    call get_value(bf_tbl, 'components', comp_arr, stat=stat)
+    call get_value(bf_tbl, 'components', comp_arr, requested=.false., stat=stat)
     if (associated(comp_arr)) then
       call get_value(comp_arr, 1, cfg%b_field%components(1), stat=stat)
       if (stat /= 0) cfg%b_field%components(1) = 0.0_dp
@@ -552,7 +552,7 @@ contains
     character(len=:), allocatable :: fermi_mode_str, bc_str
     integer :: stat, i, ndop
 
-    call get_value(table, 'sc', sc_tbl, stat=stat)
+    call get_value(table, 'sc', sc_tbl, requested=.false., stat=stat)
     if (.not. associated(sc_tbl)) return
 
     cfg%sc%enabled = 1
@@ -586,7 +586,7 @@ contains
     call get_value(sc_tbl, 'bc_right', cfg%sc%bc_right, 0.0_dp, stat=stat)
 
     ! Doping
-    call get_value(table, 'doping', doping_arr, stat=stat)
+    call get_value(table, 'doping', doping_arr, requested=.false., stat=stat)
     if (associated(doping_arr)) then
       ndop = tomlf_len(doping_arr)
       ! Allocate by num_layers (not ndop) to match layer indexing
@@ -623,7 +623,7 @@ contains
     character(len=:), allocatable :: mode_val
     integer :: stat
 
-    call get_value(table, 'topology', topo_tbl, stat=stat)
+    call get_value(table, 'topology', topo_tbl, requested=.false., stat=stat)
     if (.not. associated(topo_tbl)) return
 
     cfg%topo%enabled = .true.
@@ -650,7 +650,7 @@ contains
     call get_value(topo_tbl, 'ldos_num_E', cfg%topo%ldos_num_E, 200, stat=stat)
 
     ! LDOS E range
-    call get_value(topo_tbl, 'ldos_E_range', range_arr, stat=stat)
+    call get_value(topo_tbl, 'ldos_E_range', range_arr, requested=.false., stat=stat)
     if (associated(range_arr)) then
       call get_value(range_arr, 1, cfg%topo%ldos_E_range(1), stat=stat)
       if (stat /= 0) cfg%topo%ldos_E_range(1) = -0.1_dp
@@ -710,7 +710,7 @@ contains
     character(len=:), allocatable :: gauge_val
     integer :: stat, i
 
-    call get_value(table, 'bdg', bdg_tbl, stat=stat)
+    call get_value(table, 'bdg', bdg_tbl, requested=.false., stat=stat)
     if (.not. associated(bdg_tbl)) return
 
     call get_value(bdg_tbl, 'mu', cfg%bdg%mu, 0.0_dp, stat=stat)
@@ -723,7 +723,7 @@ contains
     call get_value(bdg_tbl, 'kz', cfg%bdg%kz, 0.0_dp, stat=stat)
 
     ! Read B_vec from [bdg] if present (overrides b_field copy)
-    call get_value(bdg_tbl, 'B_vec', bvec_arr, stat=stat)
+    call get_value(bdg_tbl, 'B_vec', bvec_arr, requested=.false., stat=stat)
     if (associated(bvec_arr)) then
       do i = 1, min(3, tomlf_len(bvec_arr))
         call get_value(bvec_arr, i, cfg%bdg%B_vec(i), stat=stat)
@@ -734,7 +734,7 @@ contains
     cfg%bdg%enabled = .true.
 
     ! B sweep
-    call get_value(bdg_tbl, 'B_sweep', b_sweep_arr, stat=stat)
+    call get_value(bdg_tbl, 'B_sweep', b_sweep_arr, requested=.false., stat=stat)
     if (associated(b_sweep_arr)) then
       call get_value(b_sweep_arr, 1, cfg%bdg%B_sweep(1), stat=stat)
       if (stat /= 0) cfg%bdg%B_sweep(1) = 0.0_dp
@@ -756,7 +756,7 @@ contains
     type(toml_array), pointer :: e_range_arr => null()
     integer :: stat
 
-    call get_value(table, 'optics', opt_tbl, stat=stat)
+    call get_value(table, 'optics', opt_tbl, requested=.false., stat=stat)
     if (.not. associated(opt_tbl)) return
 
     cfg%optics%enabled = .true.
@@ -786,7 +786,7 @@ contains
     character(len=:), allocatable :: method_val
     integer :: stat
 
-    call get_value(table, 'exciton', exc_tbl, stat=stat)
+    call get_value(table, 'exciton', exc_tbl, requested=.false., stat=stat)
     if (.not. associated(exc_tbl)) return
 
     cfg%exciton%enabled = .true.
@@ -806,7 +806,7 @@ contains
     type(toml_table), pointer :: scat_tbl => null()
     integer :: stat
 
-    call get_value(table, 'scattering', scat_tbl, stat=stat)
+    call get_value(table, 'scattering', scat_tbl, requested=.false., stat=stat)
     if (.not. associated(scat_tbl)) return
 
     cfg%scattering%enabled = .true.
@@ -825,7 +825,7 @@ contains
     type(toml_table), pointer :: feast_tbl => null()
     integer :: stat
 
-    call get_value(table, 'feast', feast_tbl, stat=stat)
+    call get_value(table, 'feast', feast_tbl, requested=.false., stat=stat)
     if (.not. associated(feast_tbl)) return
 
     call get_value(feast_tbl, 'emin', cfg%feast%emin, 0.0_dp, stat=stat)
@@ -844,7 +844,7 @@ contains
     character(len=:), allocatable :: ref_val, solver_val
     integer :: stat
 
-    call get_value(table, 'strain', strain_tbl, stat=stat)
+    call get_value(table, 'strain', strain_tbl, requested=.false., stat=stat)
     if (.not. associated(strain_tbl)) return
 
     cfg%strain%enabled = .true.
