@@ -266,7 +266,7 @@ def section1_exciton_binding():
 
         with tempfile.TemporaryDirectory() as work:
             # Write config
-            input_cfg = os.path.join(work, "input.cfg")
+            input_cfg = os.path.join(work, "input.toml")
             with open(input_cfg, "w") as f:
                 f.write(config)
 
@@ -462,7 +462,7 @@ def section2_phonon_scattering():
 
     with tempfile.TemporaryDirectory() as work:
         # Write config
-        input_cfg = os.path.join(work, "input.cfg")
+        input_cfg = os.path.join(work, "input.toml")
         with open(input_cfg, "w") as f:
             f.write(_SCATTERING_CONFIG)
 

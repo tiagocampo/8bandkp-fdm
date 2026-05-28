@@ -14,7 +14,7 @@ WORKDIR=$(mktemp -d)
 trap "rm -rf $WORKDIR" EXIT
 
 # Setup
-/bin/cp "$CONFIG" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG" "$WORKDIR/input.toml"
 mkdir -p "$WORKDIR/output"
 
 # Run

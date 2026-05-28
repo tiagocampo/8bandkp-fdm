@@ -48,7 +48,7 @@ HBAR2_OVER_2M0 = 3.80998  # eV * Angstrom^2 (hbar^2 / (2*m0))
 # ---------------------------------------------------------------------------
 MATERIALS = {
     "GaAs": {
-        "config": "bulk_gaas_kx_dispersion.cfg",
+        "config": "bulk_gaas_kx_dispersion.toml",
         "Eg": 1.519,
         "EP": 28.8,
         "m_star_8band": 0.0317,
@@ -56,7 +56,7 @@ MATERIALS = {
         "m_star_vurgaftman": 0.067,
     },
     "InAs": {
-        "config": "bulk_inas_kx_dispersion.cfg",
+        "config": "bulk_inas_kx_dispersion.toml",
         "Eg": 0.417,
         "EP": 21.5,
         "m_star_8band": 0.0123,
@@ -64,7 +64,7 @@ MATERIALS = {
         "m_star_vurgaftman": 0.026,
     },
     "InSb": {
-        "config": "bulk_insb_kx_dispersion.cfg",
+        "config": "bulk_insb_kx_dispersion.toml",
         "Eg": 0.235,
         "EP": 23.3,
         "m_star_8band": 0.0069,
@@ -72,7 +72,7 @@ MATERIALS = {
         "m_star_vurgaftman": 0.0135,
     },
     "GaSb": {
-        "config": "bulk_gasb_kx_dispersion.cfg",
+        "config": "bulk_gasb_kx_dispersion.toml",
         "Eg": 0.812,
         "EP": 27.0,
         "m_star_8band": 0.0187,
@@ -231,10 +231,10 @@ def extract_mass_numerical_derivative(k_vals, e_vals):
 def run_bandstructure(exe_path, config_path, work_dir):
     """Run bandStructure executable and return path to eigenvalues.dat.
 
-    Copies config to work_dir/input.cfg, runs executable, checks for
+    Copies config to work_dir/input.toml, runs executable, checks for
     output/eigenvalues.dat.
     """
-    input_cfg = os.path.join(work_dir, "input.cfg")
+    input_cfg = os.path.join(work_dir, "input.toml")
     shutil.copy2(config_path, input_cfg)
 
     output_dir = os.path.join(work_dir, "output")

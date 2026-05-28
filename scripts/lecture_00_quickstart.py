@@ -154,13 +154,13 @@ def main():
     # --- Part 1: k=0 spectrum ---
     print("\n[1/3] Running bandStructure at k=0 (Gamma point)...")
     with tempfile.TemporaryDirectory() as tmpdir:
-        k0_data = run_and_parse("bulk_gaas_k0.cfg", tmpdir)
+        k0_data = run_and_parse("bulk_gaas_k0.toml", tmpdir)
     print_k0_spectrum(k0_data)
 
     # --- Part 2: kx dispersion ---
     print("[2/3] Running bandStructure kx dispersion (0 to 0.05 A^-1)...")
     with tempfile.TemporaryDirectory() as tmpdir:
-        dispersion_data = run_and_parse("bulk_gaas_kx_dispersion.cfg", tmpdir)
+        dispersion_data = run_and_parse("bulk_gaas_kx_dispersion.toml", tmpdir)
     nk = len(dispersion_data)
     print(f"  Parsed {nk} k-points with {len(dispersion_data[0][1])} bands each")
 

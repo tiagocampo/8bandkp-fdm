@@ -17,6 +17,11 @@ def parse_config_int(filepath, key):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
+            # TOML: key = value
+            if line.startswith(f'{key} =') or line.startswith(f'{key}='):
+                val = line.split('=', 1)[1].strip()
+                return int(float(val.split()[0]))
+            # Old format: key: value
             if line.startswith(f"{key}:"):
                 return int(float(line.split(":", 1)[1].strip().split()[0]))
     raise RuntimeError(f"{key} not found in {filepath}")

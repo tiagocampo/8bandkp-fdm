@@ -27,59 +27,94 @@ from convergence_helpers import (
 # ---------------------------------------------------------------------------
 
 WIRE_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 1\n"
-    "confinement: 2\n"
-    "FDstep: 1\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 1\n"
-    "wire_nx: {nx}\n"
-    "wire_ny: {ny}\n"
-    "wire_dx: {dx}\n"
-    "wire_dy: {dy}\n"
-    "wire_shape: rectangle\n"
-    "wire_width: 55.0\n"
-    "wire_height: 55.0\n"
-    "numRegions: 2\n"
-    "region: InAs  0.0  50.0\n"
-    "region: GaAs  50.0  100.0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
-    "feast_emin: -1.0\n"
-    "feast_emax: 2.0\n"
-    "feast_m0: -1\n"
+    'confinement = "wire"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = 1\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "InAs"\n'
+    "\n"
+    "[wire]\n"
+    "nx = {nx}\n"
+    "ny = {ny}\n"
+    "dx = {dx}\n"
+    "dy = {dy}\n"
+    "\n"
+    "[wire.geometry]\n"
+    'shape = "rectangle"\n'
+    "width = 55.0\n"
+    "height = 55.0\n"
+    "\n"
+    "[[region]]\n"
+    'material = "InAs"\n'
+    "inner = 0.0\n"
+    "outer = 50.0\n"
+    "\n"
+    "[[region]]\n"
+    'material = "GaAs"\n'
+    "inner = 50.0\n"
+    "outer = 100.0\n"
+    "\n"
+    "[feast]\n"
+    "emin = -1.0\n"
+    "emax = 2.0\n"
+    "m0 = -1\n"
 )
 
 WIRE_GF_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 0\n"
-    "confinement: 2\n"
-    "FDstep: 1\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 1\n"
-    "wire_nx: {nx}\n"
-    "wire_ny: {ny}\n"
-    "wire_dx: {dx}\n"
-    "wire_dy: {dy}\n"
-    "wire_shape: rectangle\n"
-    "wire_width: 55.0\n"
-    "wire_height: 55.0\n"
-    "numRegions: 2\n"
-    "region: InAs  0.0  50.0\n"
-    "region: GaAs  50.0  100.0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0005\n"
-    "whichBand: 0\n"
-    "bandIdx: 1\n"
-    "feast_emin: -1.0\n"
-    "feast_emax: 2.0\n"
-    "feast_m0: -1\n"
+    'confinement = "wire"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = 1\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "InAs"\n'
+    "\n"
+    "[wire]\n"
+    "nx = {nx}\n"
+    "ny = {ny}\n"
+    "dx = {dx}\n"
+    "dy = {dy}\n"
+    "\n"
+    "[wire.geometry]\n"
+    'shape = "rectangle"\n'
+    "width = 55.0\n"
+    "height = 55.0\n"
+    "\n"
+    "[[region]]\n"
+    'material = "InAs"\n'
+    "inner = 0.0\n"
+    "outer = 50.0\n"
+    "\n"
+    "[[region]]\n"
+    'material = "GaAs"\n'
+    "inner = 50.0\n"
+    "outer = 100.0\n"
+    "\n"
+    "which_band = 0\n"
+    "band_idx = 1\n"
+    "\n"
+    "[feast]\n"
+    "emin = -1.0\n"
+    "emax = 2.0\n"
+    "m0 = -1\n"
 )
 
 # Grid levels: fixed wire 55x55 nm, varying grid spacing
@@ -134,7 +169,7 @@ def main():
             nx=nx, ny=ny, dx=dx, dy=dy, fdorder=fdorder
         )
         with tempfile.TemporaryDirectory() as work:
-            cfg_path = os.path.join(work, "staged.cfg")
+            cfg_path = os.path.join(work, "staged.toml")
             with open(cfg_path, 'w') as f:
                 f.write(cfg_content)
             rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work, timeout=600)
@@ -174,7 +209,7 @@ def main():
             nx=nx, ny=ny, dx=dx, dy=dy, fdorder=fdorder
         )
         with tempfile.TemporaryDirectory() as work:
-            cfg_path = os.path.join(work, "staged.cfg")
+            cfg_path = os.path.join(work, "staged.toml")
             with open(cfg_path, 'w') as f:
                 f.write(cfg_content)
             rc, output_dir = run_exe(build_dir, "gfactorCalculation", cfg_path, work, timeout=600)

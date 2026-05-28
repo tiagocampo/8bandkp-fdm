@@ -123,9 +123,9 @@ def main():
 
     configs_dir = os.path.join(source_dir, "tests", "regression", "configs")
 
-    config_k0 = os.path.join(configs_dir, "bulk_insb_k0.cfg")
-    config_disp = os.path.join(configs_dir, "bulk_insb_kx_dispersion.cfg")
-    config_gf = os.path.join(configs_dir, "gfactor_bulk_insb_cb.cfg")
+    config_k0 = os.path.join(configs_dir, "bulk_insb_k0.toml")
+    config_disp = os.path.join(configs_dir, "bulk_insb_kx_dispersion.toml")
+    config_gf = os.path.join(configs_dir, "gfactor_bulk_insb_cb.toml")
 
     for cfg in [config_k0, config_disp, config_gf]:
         if not os.path.isfile(cfg):

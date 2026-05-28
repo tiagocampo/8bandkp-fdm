@@ -49,7 +49,7 @@ def run_with_stdout(build_dir, name, config_path, work_dir, timeout=300):
     if not os.path.isfile(exe_path):
         raise FileNotFoundError(f"Executable not found: {exe_path}")
 
-    dst_cfg = os.path.join(work_dir, "input.cfg")
+    dst_cfg = os.path.join(work_dir, "input.toml")
     shutil.copy2(config_path, dst_cfg)
     output_dir = os.path.join(work_dir, "output")
     os.makedirs(output_dir, exist_ok=True)
@@ -238,7 +238,7 @@ def main():
     # Test 1: Bulk doped GaAs SC convergence
     # ------------------------------------------------------------------
     print("\n[1/4] Running bulk doped GaAs with SC loop...")
-    bulk_cfg = CONFIGS_DIR / "sc_bulk_gaas_doped.cfg"
+    bulk_cfg = CONFIGS_DIR / "sc_bulk_gaas_doped.toml"
     with tempfile.TemporaryDirectory(prefix="lecture07_bulk_") as bulk_work:
         rc, bulk_outdir, bulk_stdout = run_with_stdout(
             str(BUILD_DIR), "bandStructure", str(bulk_cfg), bulk_work,
@@ -292,13 +292,13 @@ def main():
     # ------------------------------------------------------------------
     # Test 2: GaAs/AlAs QW SC convergence with DIIS
     # ------------------------------------------------------------------
-    # The canonical sc_gaas_alas_qw.cfg uses 101 FD points and 41 k-points,
+    # The canonical sc_gaas_alas_qw.toml uses 101 FD points and 41 k-points,
     # which is too slow for a lecture demo. We write a lighter QW config with
     # fewer grid points and k-points to keep runtime manageable while still
     # exercising the DIIS convergence path.
     print("\n[2/4] Running GaAs/AlAs QW with SC loop (DIIS)...")
     with tempfile.TemporaryDirectory(prefix="lecture07_qw_") as qw_work:
-        qw_cfg = os.path.join(qw_work, "qw_sc_light.cfg")
+        qw_cfg = os.path.join(qw_work, "qw_sc_light.toml")
         with open(qw_cfg, 'w') as f:
             f.write(
                 "waveVector: k0\n"

@@ -32,36 +32,57 @@ from convergence_helpers import (
 # ---------------------------------------------------------------------------
 
 SC_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0.0\n"
-    "waveVectorStep: 1\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: 2\n"
-    "numLayers: 2\n"
-    "material1: AlAs -150 150 0\n"
-    "material2: GaAs -50 50 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0005\n"
-    "whichBand: 0\n"
-    "bandIdx: 1\n"
-    "SC: 1\n"
-    "max_iter: 100\n"
-    "tolerance: 1.0e-8\n"
-    "mixing_alpha: 0.3\n"
-    "diis_history: 7\n"
-    "temperature: 300.0\n"
-    "fermi_mode: 0\n"
-    "fermi_level: 0.0\n"
-    "num_kpar: 41\n"
-    "kpar_max: 0.2\n"
-    "bc_type: DD\n"
-    "bc_left: 0.0\n"
-    "bc_right: 0.0\n"
-    "doping1: 0.0 0.0\n"
-    "doping2: 5.0e18 0.0\n"
+    'confinement = "qw"\n'
+    "FDorder = 2\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0.0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "AlAs"\n'
+    "z_min = -150\n"
+    "z_max = 150\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaAs"\n'
+    "z_min = -50\n"
+    "z_max = 50\n"
+    "\n"
+    "which_band = 0\n"
+    "band_idx = 1\n"
+    "\n"
+    "{sc_section}"
+    "\n"
+    "[[doping]]\n"
+    "ND = 0.0\n"
+    "NA = 0.0\n"
+    "\n"
+    "[[doping]]\n"
+    "ND = 5.0e18\n"
+    "NA = 0.0\n"
+)
+
+SC_SECTION = (
+    "[sc]\n"
+    "max_iterations = 100\n"
+    "tolerance = 1.0e-8\n"
+    "mixing_alpha = 0.3\n"
+    "diis_history = 7\n"
+    "temperature = 300.0\n"
+    'fermi_mode = "charge_neutrality"\n'
+    "fermi_level = 0.0\n"
+    "num_kpar = 41\n"
+    "kpar_max = 0.2\n"
+    'bc_type = "DD"\n'
+    "bc_left = 0.0\n"
+    "bc_right = 0.0\n"
 )
 
 DOMAIN_WIDTH = 300.0  # Angstrom
@@ -149,9 +170,9 @@ def main():
 
     # First run: get flat-band CB1 (no SC)
     print("\n  Running flat-band reference (no SC)...")
-    fb_cfg = SC_TEMPLATE.format(fdstep=101).replace("SC: 1", "SC: 0")
+    fb_cfg = SC_TEMPLATE.format(fdstep=101, sc_section="")
     with tempfile.TemporaryDirectory() as work:
-        cfg_path = os.path.join(work, "staged.cfg")
+        cfg_path = os.path.join(work, "staged.toml")
         with open(cfg_path, 'w') as f:
             f.write(fb_cfg)
         rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work, timeout=300)
@@ -165,9 +186,9 @@ def main():
     print(f"\n  SC convergence sweep (tolerance=1e-8):")
     for fdstep in FDSTEPS:
         h = DOMAIN_WIDTH / (fdstep - 1)
-        cfg_content = SC_TEMPLATE.format(fdstep=fdstep)
+        cfg_content = SC_TEMPLATE.format(fdstep=fdstep, sc_section=SC_SECTION)
         with tempfile.TemporaryDirectory() as work:
-            cfg_path = os.path.join(work, "staged.cfg")
+            cfg_path = os.path.join(work, "staged.toml")
             with open(cfg_path, 'w') as f:
                 f.write(cfg_content)
             rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work, timeout=600)

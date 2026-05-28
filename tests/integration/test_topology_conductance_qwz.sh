@@ -10,7 +10,7 @@ CONFIG="$2"
 WORKDIR=$(mktemp -d)
 trap "rm -rf $WORKDIR" EXIT
 
-/bin/cp "$CONFIG" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG" "$WORKDIR/input.toml"
 mkdir -p "$WORKDIR/output"
 
 cd "$WORKDIR"
@@ -54,8 +54,13 @@ awk -v sigma="$CONDUCTANCE_XY" 'BEGIN { target = 1.0; tol = 1.0e-6; exit !(sigma
 echo "PASS: QWZ conductance regression"
 cat "$WORKDIR/output/topology_result.dat"
 
-awk '/conductance_method:|berry_nk:|landauer_energy:/ {next} {print} END {print "compute_spectral: F"}' \
-    "$CONFIG" > "$WORKDIR/input.cfg"
+# Remove conductance_method, berry_nk, landauer_energy lines from the
+# TOML config and ensure compute_spectral = false is present
+sed -e '/^conductance_method/d' -e '/^berry_nk/d' -e '/^landauer_energy/d' \
+    "$CONFIG" > "$WORKDIR/input.toml"
+if ! grep -q 'compute_spectral' "$WORKDIR/input.toml"; then
+    echo 'compute_spectral = false' >> "$WORKDIR/input.toml"
+fi
 rm -rf "$WORKDIR/output"
 mkdir -p "$WORKDIR/output"
 "$EXE" > test_default_method_output.log 2>&1

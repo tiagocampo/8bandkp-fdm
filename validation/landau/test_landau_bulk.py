@@ -32,8 +32,8 @@ M0_KG = 9.1093837015e-31
 
 # Material database: m_star from 8-band model, EC = EV + Eg
 MATERIALS = {
-    "GaAs": {"m_star": 0.0317, "EV": -0.80, "Eg": 1.519, "config": "landau_bulk_GaAs.cfg"},
-    "InAs": {"m_star": 0.0123, "EV": -0.59, "Eg": 0.417, "config": "landau_bulk_InAs.cfg"},
+    "GaAs": {"m_star": 0.0317, "EV": -0.80, "Eg": 1.519, "config": "landau_bulk_GaAs.toml"},
+    "InAs": {"m_star": 0.0123, "EV": -0.59, "Eg": 0.417, "config": "landau_bulk_InAs.toml"},
 }
 
 
@@ -53,7 +53,7 @@ def run_fortran_landau(config_name, build_dir, project_root):
 
     workdir = tempfile.mkdtemp(prefix="landau_")
     try:
-        shutil.copy2(config_path, os.path.join(workdir, "input.cfg"))
+        shutil.copy2(config_path, os.path.join(workdir, "input.toml"))
         os.makedirs(os.path.join(workdir, "output"), exist_ok=True)
         result = subprocess.run(
             [exe], cwd=workdir, capture_output=True, text=True, timeout=120

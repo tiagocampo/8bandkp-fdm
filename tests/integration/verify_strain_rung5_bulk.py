@@ -81,7 +81,7 @@ def run_with_config(build_dir, config_str, label):
     """Run bandStructure with an inline config string. Returns eigenvalues."""
     work = tempfile.mkdtemp(prefix=f"rung5_{label}_")
     try:
-        cfg_path = os.path.join(work, "strain.cfg")
+        cfg_path = os.path.join(work, "strain.toml")
         with open(cfg_path, "w") as f:
             f.write(config_str)
         rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work)

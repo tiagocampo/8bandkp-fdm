@@ -1,0 +1,27 @@
+confinement = "qw"
+FDorder = 2
+fd_step = 51
+
+[wave_vector]
+mode = "kx"
+max = 0.02
+nsteps = 5
+
+[bands]
+num_cb = 2
+num_vb = 2
+
+[[material]]
+name = "AlSb"
+z_min = -250
+z_max = 250
+
+[[material]]
+name = "GaSb"
+z_min = -135
+z_max = 135
+
+[[material]]
+name = "InAs"
+z_min = -35
+z_max = 35

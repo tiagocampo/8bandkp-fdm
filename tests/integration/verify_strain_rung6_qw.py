@@ -71,7 +71,7 @@ def run_qw(build_dir, fdstep, label):
     config = make_qw_config(fdstep)
     work = tempfile.mkdtemp(prefix=f"rung6_{label}_")
     try:
-        cfg_path = os.path.join(work, "qw.cfg")
+        cfg_path = os.path.join(work, "qw.toml")
         with open(cfg_path, "w") as f:
             f.write(config)
         rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work,

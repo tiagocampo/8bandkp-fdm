@@ -73,9 +73,9 @@ G_ROTH = roth_gfactor(INASW_EP, INASW_EG, INASW_DELTA_SO)
 # ---------------------------------------------------------------------------
 # Config paths (relative to tests/regression/configs/)
 # ---------------------------------------------------------------------------
-CONFIG_EG = "bulk_inas_k0.cfg"
-CONFIG_DISPERSION = "bulk_inas_kx_dispersion.cfg"
-CONFIG_GFACTOR = "gfactor_bulk_inasw_cb.cfg"
+CONFIG_EG = "bulk_inas_k0.toml"
+CONFIG_DISPERSION = "bulk_inas_kx_dispersion.toml"
+CONFIG_GFACTOR = "gfactor_bulk_inasw_cb.toml"
 
 # ---------------------------------------------------------------------------
 # Tolerances (KD6)

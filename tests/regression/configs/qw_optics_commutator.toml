@@ -1,0 +1,41 @@
+confinement = "qw"
+FDorder = 2
+fd_step = 41
+
+[wave_vector]
+mode = "kx"
+max = 0.1
+nsteps = 11
+
+[bands]
+num_cb = 2
+num_vb = 4
+
+[[material]]
+name = "Al30Ga70As"
+z_min = -100
+z_max = 100
+
+[[material]]
+name = "GaAs"
+z_min = -20
+z_max = 20
+
+
+[optics]
+linewidth_lorentzian = 0.030
+linewidth_gaussian = 0.005
+refractive_index = 3.3
+E_min = 1.0
+E_max = 2.5
+num_energy_points = 200
+temperature = 300.0
+carrier_density = 0.0
+gain_enabled = false
+gain_carrier_density = 3.0e12
+ISBT = false
+spontaneous = false
+spin_resolved = false
+
+which_band = 0
+band_idx = 1

@@ -53,9 +53,9 @@ MATERIAL_DB = {
 # Section 1 -- QWZ Chern numbers
 # ---------------------------------------------------------------------------
 QWZ_CONFIGS = [
-    ("topology_qwz_chern_u-0.8.cfg", -0.8, +1),
-    ("topology_qwz_chern_u0.5.cfg",   0.5, -1),
-    ("topology_qwz_chern_u2.5.cfg",   2.5,  0),
+    ("topology_qwz_chern_u-0.8.toml", -0.8, +1),
+    ("topology_qwz_chern_u0.5.toml",   0.5, -1),
+    ("topology_qwz_chern_u2.5.toml",   2.5,  0),
 ]
 
 
@@ -233,12 +233,12 @@ def run_bhz_z2(exe, width_angstrom, work_dir):
 
     Modifies the trivial config template with new wire_width.
     """
-    config_path = CONFIGS_DIR / "topology_bhz_z2_trivial.cfg"
+    config_path = CONFIGS_DIR / "topology_bhz_z2_trivial.toml"
     config = config_path.read_text()
     config = config.replace("wire_width: 58.0", f"wire_width: {width_angstrom:.1f}")
     config = config.replace("wire_height: 58.0", f"wire_height: {width_angstrom:.1f}")
 
-    input_cfg = os.path.join(work_dir, "input.cfg")
+    input_cfg = os.path.join(work_dir, "input.toml")
     with open(input_cfg, "w") as f:
         f.write(config)
 
@@ -424,7 +424,7 @@ def _run_bdg_qw(kz_val, B_val, work_dir, mu=-0.1413, delta_0=0.0002,
     config = _BDG_QW_CONFIG.format(mu=mu, delta_0=delta_0, g_factor=g_factor,
                                    B=B_val, kz=kz_val)
 
-    input_cfg = os.path.join(work_dir, "input.cfg")
+    input_cfg = os.path.join(work_dir, "input.toml")
     with open(input_cfg, "w") as f:
         f.write(config)
 
@@ -770,7 +770,7 @@ def run_landau(config_name, work_dir):
 
 
 def run_landau_bsweep(work_dir):
-    """Run bandStructure with landau_bulk_InAs_Bsweep.cfg for Zeeman fan.
+    """Run bandStructure with landau_bulk_InAs_Bsweep.toml for Zeeman fan.
 
     The Fortran code writes B-sweep data to output/landau_fan.dat (not
     eigenvalues.dat).  Format: comment header starting with '#', then
@@ -779,7 +779,7 @@ def run_landau_bsweep(work_dir):
     Returns:
         list of (B, eigenvalues_meV) tuples, or None on failure.
     """
-    config_path = CONFIGS_DIR / "landau_bulk_InAs_Bsweep.cfg"
+    config_path = CONFIGS_DIR / "landau_bulk_InAs_Bsweep.toml"
     rc, output_dir = run_exe(str(BUILD_DIR), "bandStructure",
                              str(config_path), work_dir, timeout=300)
     if rc != 0:
@@ -825,14 +825,14 @@ def section4_landau():
     # Run single-B Landau config
     eigenvalues = None
     with tempfile.TemporaryDirectory() as tmpdir:
-        eigenvalues = run_landau("landau_bulk_InAs.cfg", tmpdir)
+        eigenvalues = run_landau("landau_bulk_InAs.toml", tmpdir)
 
     if eigenvalues is not None:
         print(f"  Parsed {len(eigenvalues)} eigenvalues (meV):")
         for i, ev in enumerate(eigenvalues[:8]):
             print(f"    {i:2d}: {ev:10.3f} meV")
     else:
-        print("  WARNING: No eigenvalues parsed from landau_bulk_InAs.cfg")
+        print("  WARNING: No eigenvalues parsed from landau_bulk_InAs.toml")
 
     # Analytical Landau levels (absolute energy reference matching Fortran output)
     N_MAX = 6
@@ -1090,7 +1090,7 @@ def section5_spectral():
 
     # Run topologicalAnalysis
     with tempfile.TemporaryDirectory() as tmpdir:
-        input_cfg = os.path.join(tmpdir, "input.cfg")
+        input_cfg = os.path.join(tmpdir, "input.toml")
         with open(input_cfg, "w") as f:
             f.write(_SPECTRAL_BULK_CONFIG)
 
@@ -1320,7 +1320,7 @@ def section6_phase_diagram():
 
     # Run topologicalAnalysis
     with tempfile.TemporaryDirectory() as tmpdir:
-        input_cfg = os.path.join(tmpdir, "input.cfg")
+        input_cfg = os.path.join(tmpdir, "input.toml")
         with open(input_cfg, "w") as f:
             f.write(_SWEEP_BHZ_CONFIG)
 
@@ -1490,7 +1490,7 @@ def _run_conductance(u_val, work_dir):
     exe = BUILD_DIR / "src" / "topologicalAnalysis"
     config = _CONDUCTANCE_CONFIG_TEMPLATE.format(u=u_val)
 
-    input_cfg = os.path.join(work_dir, "input.cfg")
+    input_cfg = os.path.join(work_dir, "input.toml")
     with open(input_cfg, "w") as f:
         f.write(config)
 

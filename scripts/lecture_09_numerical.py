@@ -63,37 +63,48 @@ GAAS_DELTA_SO = 0.341  # eV
 def make_bulk_k0_config(fdorder):
     """Return config content for bulk GaAs k=0 at given FD order."""
     return (
-        f"waveVector: k0\n"
-        f"waveVectorMax: 0.1\n"
-        f"waveVectorStep: 1\n"
-        f"confinement:  0\n"
-        f"FDstep: 1\n"
-        f"FDorder: {fdorder}\n"
-        f"numLayers:  1\n"
-        f"material1: GaAs\n"
-        f"numcb: 2\n"
-        f"numvb: 6\n"
-        f"ExternalField: 0  EF\n"
-        f"EFParams: 0.0\n"
+        f'confinement = "bulk"\n'
+        f"FDorder = {fdorder}\n"
+        f"\n"
+        f"[wave_vector]\n"
+        f'mode = "k0"\n'
+        f"max = 0.1\n"
+        f"nsteps = 1\n"
+        f"\n"
+        f"[bands]\n"
+        f"num_cb = 2\n"
+        f"num_vb = 6\n"
+        f"\n"
+        f"[[material]]\n"
+        f'name = "GaAs"\n'
     )
 
 
 def make_qw_config(fdorder, fdstep=QW_FDSTEP):
     """Return config content for GaAs/AlGaAs QW kx dispersion."""
     return (
-        f"waveVector: kx\n"
-        f"waveVectorMax: 0.1\n"
-        f"waveVectorStep: 21\n"
-        f"confinement:  1\n"
-        f"FDstep: {fdstep}\n"
-        f"FDorder: {fdorder}\n"
-        f"numLayers:  2\n"
-        f"material1: Al30Ga70As -200 200 0\n"
-        f"material2: GaAs -50 50 0\n"
-        f"numcb: 4\n"
-        f"numvb: 8\n"
-        f"ExternalField: 0  EF\n"
-        f"EFParams: 0.0\n"
+        f'confinement = "qw"\n'
+        f"FDorder = {fdorder}\n"
+        f"fd_step = {fdstep}\n"
+        f"\n"
+        f"[wave_vector]\n"
+        f'mode = "kx"\n'
+        f"max = 0.1\n"
+        f"nsteps = 21\n"
+        f"\n"
+        f"[bands]\n"
+        f"num_cb = 4\n"
+        f"num_vb = 8\n"
+        f"\n"
+        f"[[material]]\n"
+        f'name = "Al30Ga70As"\n'
+        f"z_min = -200\n"
+        f"z_max = 200\n"
+        f"\n"
+        f"[[material]]\n"
+        f'name = "GaAs"\n'
+        f"z_min = -50\n"
+        f"z_max = 50\n"
     )
 
 
@@ -103,7 +114,7 @@ def run_with_config(config_content):
     Returns list of (k, [eigenvalues]) from parse_eigenvalues.
     """
     with tempfile.TemporaryDirectory() as work:
-        cfg_path = os.path.join(work, "test.cfg")
+        cfg_path = os.path.join(work, "test.toml")
         with open(cfg_path, "w") as f:
             f.write(config_content)
         rc, outdir = run_exe(str(BUILD_DIR), "bandStructure", cfg_path, work)

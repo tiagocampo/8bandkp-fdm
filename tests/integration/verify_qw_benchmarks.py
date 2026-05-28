@@ -27,12 +27,19 @@ def parse_eigenvalues(filepath):
 
 
 def parse_config_value(filepath, key):
-    """Read a scalar config value."""
+    """Read a scalar config value (TOML or old format)."""
     with open(filepath) as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith('#') or line.startswith('!'):
                 continue
+            # TOML: key = value
+            if line.startswith(f'{key} =') or line.startswith(f'{key}='):
+                val = line.split('=', 1)[1].strip()
+                if val.startswith('"') and val.endswith('"'):
+                    val = val[1:-1]
+                return val
+            # Old format: key: value
             if line.startswith(f"{key}:"):
                 return line.split(":", 1)[1].strip()
     return None

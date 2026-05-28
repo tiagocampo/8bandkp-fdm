@@ -20,8 +20,7 @@ contains
 
   ! ==================================================================
   ! Top-level parser: reads input.toml and populates simulation_config.
-  ! For this slice, only bulk mode is fully functional.
-  ! QW/wire/landau modes will throw "not yet implemented" errors.
+  ! Supports bulk, QW, wire, and landau confinement modes.
   ! ==================================================================
   subroutine read_config(cfg)
     type(simulation_config), intent(out) :: cfg

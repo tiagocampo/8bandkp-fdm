@@ -29,22 +29,31 @@ from convergence_helpers import (
 # ---------------------------------------------------------------------------
 
 EXCITON_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0.0\n"
-    "waveVectorStep: 1\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: 2\n"
-    "numLayers: 2\n"
-    "material1: Al30Ga70As -200 200 0\n"
-    "material2: GaAs -{half_w} {half_w} 0\n"
-    "numcb: 2\n"
-    "numvb: 6\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
-    "SC: 0\n"
-    "exciton: T\n"
-    "method: variational\n"
+    'confinement = "qw"\n'
+    "FDorder = 2\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0.0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 2\n"
+    "num_vb = 6\n"
+    "\n"
+    "[[material]]\n"
+    'name = "Al30Ga70As"\n'
+    "z_min = -200\n"
+    "z_max = 200\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaAs"\n'
+    "z_min = -{half_w}\n"
+    "z_max = {half_w}\n"
+    "\n"
+    "[exciton]\n"
+    'method = "variational"\n'
 )
 
 DOMAIN_WIDTH = 400.0  # Angstrom
@@ -81,7 +90,7 @@ def main():
         h = DOMAIN_WIDTH / (fdstep - 1)
         cfg_content = EXCITON_TEMPLATE.format(fdstep=fdstep, half_w=HALF_WELL)
         with tempfile.TemporaryDirectory() as work:
-            cfg_path = os.path.join(work, "staged.cfg")
+            cfg_path = os.path.join(work, "staged.toml")
             with open(cfg_path, 'w') as f:
                 f.write(cfg_content)
             rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work, timeout=120)

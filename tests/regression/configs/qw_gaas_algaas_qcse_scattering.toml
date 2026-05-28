@@ -1,0 +1,35 @@
+confinement = "qw"
+FDorder = 4
+fd_step = 201
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "Al30Ga70As"
+z_min = -200
+z_max = 200
+
+[[material]]
+name = "GaAs"
+z_min = -40
+z_max = 40
+
+
+[external_field]
+type = "EF"
+value = 0.0
+
+[scattering]
+phonon_energy = 0.036
+eps_inf = 10.9
+eps_0 = 12.9
+
+which_band = 0
+band_idx = 1

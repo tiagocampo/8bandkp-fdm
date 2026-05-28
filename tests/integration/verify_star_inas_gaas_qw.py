@@ -105,8 +105,8 @@ CB_INDEX = NUM_VB      # 0-based: CB starts at index 8 (= num_vb)
 # ---------------------------------------------------------------------------
 # Config paths (relative to tests/regression/configs/)
 # ---------------------------------------------------------------------------
-CONFIG_QW = "qw_inas_gaas_strained.cfg"
-CONFIG_GFACTOR = "gfactor_qw_inas_gaas_strained.cfg"
+CONFIG_QW = "qw_inas_gaas_strained.toml"
+CONFIG_GFACTOR = "gfactor_qw_inas_gaas_strained.toml"
 
 # ---------------------------------------------------------------------------
 # Tolerances (KD6)

@@ -103,10 +103,10 @@ def run_bandstructure(config_name, work_dir, config_overrides=None):
             content = f.read()
         for old, new in config_overrides.items():
             content = content.replace(old, new)
-        # Write modified config to a staging path (NOT input.cfg yet,
-        # since run_exe copies src -> work_dir/input.cfg and would
+        # Write modified config to a staging path (NOT input.toml yet,
+        # since run_exe copies src -> work_dir/input.toml and would
         # hit SameFileError if they were the same).
-        modified_path = os.path.join(work_dir, "modified.cfg")
+        modified_path = os.path.join(work_dir, "modified.toml")
         with open(modified_path, "w") as f:
             f.write(content)
         config_path = modified_path
@@ -133,7 +133,7 @@ def test_unstrained_reference():
     print("=" * 60)
 
     with tempfile.TemporaryDirectory() as work:
-        data, _ = run_bandstructure("bulk_gaas_k0.cfg", work)
+        data, _ = run_bandstructure("bulk_gaas_k0.toml", work)
 
     if not data:
         sys.exit("ERROR: no eigenvalue data for unstrained GaAs k=0")
@@ -212,28 +212,33 @@ def test_strained_bir_pikus():
     # For bulk mode, strain is controlled by strainSubstrate > 0 in the
     # material parameters (checked in ZB8bandBulk). We write a minimal
     # config with just the fields the parser expects, including
-    # strainSubstrate at the end. We cannot use bulk_gaas_strained.cfg
+    # strainSubstrate at the end. We cannot use bulk_gaas_strained.toml
     # because it has extra fields (gWhichBand, gBandIdx, SC, feast_*)
     # that confuse the sequential parser and prevent strainSubstrate from
     # being read correctly.
     strained_config = (
-        "waveVector: k0\n"
-        "waveVectorMax: 0\n"
-        "waveVectorStep: 1\n"
-        "confinement:  0\n"
-        "FDstep: 101\n"
-        "FDorder: 2\n"
-        "numLayers:  1\n"
-        "material1: GaAs\n"
-        "numcb: 2\n"
-        "numvb: 6\n"
-        "ExternalField: 0  EF\n"
-        f"EFParams: 0.0\n"
-        f"strainSubstrate: {A_SUBSTRATE}\n"
+        'confinement = "bulk"\n'
+        "FDorder = 2\n"
+        "fd_step = 101\n"
+        "\n"
+        "[wave_vector]\n"
+        'mode = "k0"\n'
+        "max = 0\n"
+        "nsteps = 1\n"
+        "\n"
+        "[bands]\n"
+        "num_cb = 2\n"
+        "num_vb = 6\n"
+        "\n"
+        "[[material]]\n"
+        'name = "GaAs"\n'
+        "\n"
+        "[strain]\n"
+        f"substrate_value = {A_SUBSTRATE}\n"
     )
     with tempfile.TemporaryDirectory() as work_strained:
         # Write config directly and run executable
-        cfg_path = os.path.join(work_strained, "strained.cfg")
+        cfg_path = os.path.join(work_strained, "strained.toml")
         with open(cfg_path, "w") as f:
             f.write(strained_config)
 
@@ -257,7 +262,7 @@ def test_strained_bir_pikus():
 
     # Run unstrained reference in the same context
     with tempfile.TemporaryDirectory() as work_unref:
-        data_ref, _ = run_bandstructure("bulk_gaas_k0.cfg", work_unref)
+        data_ref, _ = run_bandstructure("bulk_gaas_k0.toml", work_unref)
     _, evals_unref = data_ref[0]
 
     # Expected strained energies (eigenvalues sorted ascending):
@@ -334,7 +339,7 @@ def test_strained_qw():
     print("=" * 60)
 
     with tempfile.TemporaryDirectory() as work_s:
-        data, _ = run_bandstructure("qw_inas_gaas_strained.cfg", work_s)
+        data, _ = run_bandstructure("qw_inas_gaas_strained.toml", work_s)
 
     if not data:
         sys.exit("ERROR: no eigenvalue data for strained InAs/GaAs QW")
@@ -372,7 +377,7 @@ def test_strained_qw():
     # Also run unstrained QW for comparison (disable strain)
     overrides_qw = {"strain: T": "strain: F"}
     with tempfile.TemporaryDirectory() as work_u:
-        data_unref, _ = run_bandstructure("qw_inas_gaas_strained.cfg", work_u,
+        data_unref, _ = run_bandstructure("qw_inas_gaas_strained.toml", work_u,
                                           config_overrides=overrides_qw)
 
     _, evals_unref = data_unref[0]

@@ -1,0 +1,61 @@
+confinement = "qw"
+FDorder = 2
+fd_step = 101
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "AlAs"
+z_min = -150
+z_max = 150
+
+[[material]]
+name = "GaAs"
+z_min = -50
+z_max = 50
+
+[[material]]
+name = "AlAs"
+z_min = -150
+z_max = 150
+
+
+[external_field]
+type = "EF"
+value = 0.001
+
+[sc]
+max_iterations = 50
+tolerance = 1.0e-6
+mixing_alpha = 0.3
+diis_history = 7
+temperature = 300.0
+fermi_mode = "fixed"
+fermi_level = 1.5
+num_kpar = 21
+kpar_max = 0.1
+bc_type = "DD"
+bc_left = 0.0
+bc_right = 0.0
+
+[[doping]]
+ND = 0.0
+NA = 0.0
+
+[[doping]]
+ND = 1.0e18
+NA = 0.0
+
+[[doping]]
+ND = 0.0
+NA = 0.0
+
+which_band = 0
+band_idx = 1

@@ -15,7 +15,7 @@ Structure A (subband spacing + absorption):
 
 Structure B (Stark shift):
   Al20Ga80As(460A) / GaAs(60A) / Al20Ga80As(460A), FDstep=461, FDorder=2
-  Config: tests/regression/configs/sc_qcse_gaas_algaas_ef.cfg
+  Config: tests/regression/configs/sc_qcse_gaas_algaas_ef.toml
   No-field reference: tests/regression/data/sc_qcse_gaas_algaas/eigenvalues.dat
 
 Cross-reference with verification ladder: subband spacing covered by rung 3
@@ -77,11 +77,11 @@ ONSET_REF = 1.538796            # eV (8-band QW regression)
 # Config paths
 # ---------------------------------------------------------------------------
 # Structure A: subband spacing (2-layer barrier/well)
-CONFIG_SUBBAND = os.path.join("tests", "regression", "configs", "qw_gaas_algaas.cfg")
+CONFIG_SUBBAND = os.path.join("tests", "regression", "configs", "qw_gaas_algaas.toml")
 
 # Structure B: QCSE with electric field
 CONFIG_QCSE_EF = os.path.join("tests", "regression", "configs",
-                               "sc_qcse_gaas_algaas_ef.cfg")
+                               "sc_qcse_gaas_algaas_ef.toml")
 
 # No-field QCSE reference data
 REF_QCSE_NOFIELD = os.path.join("tests", "regression", "data",
@@ -89,7 +89,7 @@ REF_QCSE_NOFIELD = os.path.join("tests", "regression", "data",
 
 # Structure A: absorption (opticalProperties)
 CONFIG_ABSORPTION = os.path.join("tests", "regression", "configs",
-                                  "qw_gaas_algaas_absorption.cfg")
+                                  "qw_gaas_algaas_absorption.toml")
 
 # ---------------------------------------------------------------------------
 # Eigenvalue indices (0-based, after stripping k from parsed data)

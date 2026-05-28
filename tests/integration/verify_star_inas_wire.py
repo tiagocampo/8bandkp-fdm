@@ -66,8 +66,8 @@ G_ROTH = roth_gfactor(INAS_EP, INAS_EG, INAS_DELTA_SO)
 # ---------------------------------------------------------------------------
 # Config paths (relative to tests/regression/configs/)
 # ---------------------------------------------------------------------------
-CONFIG_WIRE = "wire_inas_rectangle.cfg"
-CONFIG_GFACTOR = "wire_inas_gfactor.cfg"
+CONFIG_WIRE = "wire_inas_rectangle.toml"
+CONFIG_GFACTOR = "wire_inas_gfactor.toml"
 
 # ---------------------------------------------------------------------------
 # Tolerances

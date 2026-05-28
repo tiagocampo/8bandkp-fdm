@@ -33,122 +33,182 @@ from convergence_helpers import (
 # ---------------------------------------------------------------------------
 
 S4_TEMPLATE = (
-    "waveVector: kx\n"
-    "waveVectorMax: 0.1\n"
-    "waveVectorStep: 21\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 2\n"
-    "material1: Al30Ga70As -200 200 0\n"
-    "material2: GaAs -50 50 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
+    'confinement = "qw"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "kx"\n'
+    "max = 0.1\n"
+    "nsteps = 21\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "Al30Ga70As"\n'
+    "z_min = -200\n"
+    "z_max = 200\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaAs"\n'
+    "z_min = -50\n"
+    "z_max = 50\n"
 )
 
 S4_GF_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 0\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 2\n"
-    "material1: Al30Ga70As -200 200 0\n"
-    "material2: GaAs -50 50 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0005\n"
-    "whichBand: 0\n"
-    "bandIdx: 1\n"
+    'confinement = "qw"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "Al30Ga70As"\n'
+    "z_min = -200\n"
+    "z_max = 200\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaAs"\n'
+    "z_min = -50\n"
+    "z_max = 50\n"
+    "\n"
+    "which_band = 0\n"
+    "band_idx = 1\n"
 )
 
 S4_OPTICS_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0.0\n"
-    "waveVectorStep: 0\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 2\n"
-    "material1: Al30Ga70As -200 200 0\n"
-    "material2: GaAs -50 50 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
-    "whichBand: 0\n"
-    "bandIdx: 1\n"
-    "SC: 0\n"
-    "Optics: T\n"
-    "LinewidthLorentzian: 0.030\n"
-    "LinewidthGaussian: 0.005\n"
-    "RefractiveIndex: 3.3\n"
-    "Emin: 1.3\n"
-    "Emax: 2.0\n"
-    "NEnergyPoints: 300\n"
-    "Temperature: 300.0\n"
-    "CarrierDensity: 0.0\n"
-    "Gain: F\n"
-    "GainCarrierDensity: 0.0\n"
-    "ISBT: F\n"
-    "SpontaneousEnabled: F\n"
-    "SpinResolved: F\n"
-    "Exciton: F\n"
+    'confinement = "qw"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0.0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "Al30Ga70As"\n'
+    "z_min = -200\n"
+    "z_max = 200\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaAs"\n'
+    "z_min = -50\n"
+    "z_max = 50\n"
+    "\n"
+    "which_band = 0\n"
+    "band_idx = 1\n"
+    "\n"
+    "[optics]\n"
+    "linewidth_lorentzian = 0.030\n"
+    "linewidth_gaussian = 0.005\n"
+    "refractive_index = 3.3\n"
+    "E_min = 1.3\n"
+    "E_max = 2.0\n"
+    "num_energy_points = 300\n"
+    "temperature = 300.0\n"
+    "carrier_density = 0.0\n"
+    "gain_enabled = false\n"
+    "gain_carrier_density = 0.0\n"
+    "ISBT = false\n"
+    "spontaneous = false\n"
+    "spin_resolved = false\n"
 )
 
 S5_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 1\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 3\n"
-    "material1: AlSbW -150 150 0\n"
-    "material2: InAsW -15 0 0\n"
-    "material3: GaSbW 0 10 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0005\n"
+    'confinement = "qw"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "AlSbW"\n'
+    "z_min = -150\n"
+    "z_max = 150\n"
+    "\n"
+    "[[material]]\n"
+    'name = "InAsW"\n'
+    "z_min = -15\n"
+    "z_max = 0\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaSbW"\n'
+    "z_min = 0\n"
+    "z_max = 10\n"
 )
 
 S6_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 1\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 2\n"
-    "material1: GaAs -200 200 0\n"
-    "material2: InAs -50 50 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
-    "strain: T\n"
-    "a_substrate: 5.6533\n"
+    'confinement = "qw"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaAs"\n'
+    "z_min = -200\n"
+    "z_max = 200\n"
+    "\n"
+    "[[material]]\n"
+    'name = "InAs"\n'
+    "z_min = -50\n"
+    "z_max = 50\n"
+    "\n"
+    "[strain]\n"
+    "substrate_value = 5.6533\n"
 )
 
 S4_K0_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 1\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 2\n"
-    "material1: Al30Ga70As -200 200 0\n"
-    "material2: GaAs -50 50 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
+    'confinement = "qw"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "Al30Ga70As"\n'
+    "z_min = -200\n"
+    "z_max = 200\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaAs"\n'
+    "z_min = -50\n"
+    "z_max = 50\n"
 )
 
 
@@ -269,7 +329,7 @@ def run_system_convergence(build_dir, source_dir, sys_key):
             h = domain_width / (fdstep - 1)
             cfg_content = k0_template.format(fdstep=fdstep, fdorder=fdorder)
             with tempfile.TemporaryDirectory() as work:
-                cfg_path = os.path.join(work, "staged.cfg")
+                cfg_path = os.path.join(work, "staged.toml")
                 with open(cfg_path, 'w') as f:
                     f.write(cfg_content)
                 rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work, timeout=300)
@@ -319,7 +379,7 @@ def run_system_convergence(build_dir, source_dir, sys_key):
             h = domain_width / (fdstep - 1)
             cfg_content = S4_TEMPLATE.format(fdstep=fdstep, fdorder=fdorder)
             with tempfile.TemporaryDirectory() as work:
-                cfg_path = os.path.join(work, "staged.cfg")
+                cfg_path = os.path.join(work, "staged.toml")
                 with open(cfg_path, 'w') as f:
                     f.write(cfg_content)
                 rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work, timeout=300)
@@ -346,7 +406,7 @@ def run_system_convergence(build_dir, source_dir, sys_key):
             h = domain_width / (fdstep - 1)
             cfg_content = S4_GF_TEMPLATE.format(fdstep=fdstep, fdorder=fdorder)
             with tempfile.TemporaryDirectory() as work:
-                cfg_path = os.path.join(work, "staged.cfg")
+                cfg_path = os.path.join(work, "staged.toml")
                 with open(cfg_path, 'w') as f:
                     f.write(cfg_content)
                 rc, output_dir = run_exe(build_dir, "gfactorCalculation", cfg_path, work, timeout=300)
@@ -373,7 +433,7 @@ def run_system_convergence(build_dir, source_dir, sys_key):
             h = domain_width / (fdstep - 1)
             cfg_content = S4_OPTICS_TEMPLATE.format(fdstep=fdstep, fdorder=fdorder)
             with tempfile.TemporaryDirectory() as work:
-                cfg_path = os.path.join(work, "staged.cfg")
+                cfg_path = os.path.join(work, "staged.toml")
                 with open(cfg_path, 'w') as f:
                     f.write(cfg_content)
                 rc, output_dir = run_exe(build_dir, "opticalProperties", cfg_path, work, timeout=300)

@@ -81,8 +81,8 @@ def run_bandstructure(exe_path, config_path, workdir):
 
     Returns the path to output/eigenvalues.dat.
     """
-    # Copy config to workdir as input.cfg
-    dst_cfg = os.path.join(workdir, 'input.cfg')
+    # Copy config to workdir as input.toml
+    dst_cfg = os.path.join(workdir, 'input.toml')
     shutil.copy2(config_path, dst_cfg)
     outdir = os.path.join(workdir, 'output')
     os.makedirs(outdir, exist_ok=True)
@@ -122,7 +122,7 @@ def make_sparse_config(dense_config_path, tmpdir):
             sparse_lines.append('feast_m0: 64\n')
         else:
             sparse_lines.append(line)
-    sparse_path = os.path.join(tmpdir, 'sparse_config.cfg')
+    sparse_path = os.path.join(tmpdir, 'sparse_config.toml')
     with open(sparse_path, 'w') as f:
         f.writelines(sparse_lines)
     return sparse_path
@@ -144,8 +144,8 @@ def check_r14_convergence(exe_path, configs_dir):
     # sufficient to verify the monotonic convergence trend while keeping the
     # total wall-clock under 5 minutes.
     wire_configs = [
-        ('wire_gaas_21x21.cfg', 21, 21, 63.0),
-        ('wire_gaas_26x26.cfg', 26, 26, 78.0),
+        ('wire_gaas_21x21.toml', 21, 21, 63.0),
+        ('wire_gaas_26x26.toml', 26, 26, 78.0),
     ]
 
     cb_grounds = []
@@ -230,11 +230,11 @@ def check_r15_dense_sparse(exe_path, configs_dir):
 
     # Use the 11x11 grid from existing dense-sparse configs for a fast test
     # (21x21 dense is very slow; 11x11 is the standard dense-sparse test size)
-    dense_cfg = os.path.join(configs_dir, 'wire_gaas_dense_sparse_dense.cfg')
+    dense_cfg = os.path.join(configs_dir, 'wire_gaas_dense_sparse_dense.toml')
     if not os.path.exists(dense_cfg):
         return ["R15: Dense config not found: " + dense_cfg]
 
-    sparse_cfg = os.path.join(configs_dir, 'wire_gaas_dense_sparse_sparse.cfg')
+    sparse_cfg = os.path.join(configs_dir, 'wire_gaas_dense_sparse_sparse.toml')
     if not os.path.exists(sparse_cfg):
         return ["R15: Sparse config not found: " + sparse_cfg]
 
@@ -319,7 +319,7 @@ def check_r16_eigenvalue_count(exe_path, configs_dir):
     # Only test eigenvalue count for the smallest grid (21x21) to avoid
     # redundant runs -- R14 already exercises all three grid sizes.
     wire_configs = [
-        ('wire_gaas_21x21.cfg', 21, 21),
+        ('wire_gaas_21x21.toml', 21, 21),
     ]
 
     failures = []

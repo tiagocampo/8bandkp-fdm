@@ -26,54 +26,86 @@ from convergence_helpers import (
 # ---------------------------------------------------------------------------
 
 S4_K0_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 1\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 2\n"
-    "material1: Al30Ga70As -200 200 0\n"
-    "material2: GaAs -50 50 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
+    'confinement = "qw"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "Al30Ga70As"\n'
+    "z_min = -200\n"
+    "z_max = 200\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaAs"\n'
+    "z_min = -50\n"
+    "z_max = 50\n"
 )
 
 S5_K0_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 1\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 3\n"
-    "material1: AlSbW -150 150 0\n"
-    "material2: InAsW -15 0 0\n"
-    "material3: GaSbW 0 10 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0005\n"
+    'confinement = "qw"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "AlSbW"\n'
+    "z_min = -150\n"
+    "z_max = 150\n"
+    "\n"
+    "[[material]]\n"
+    'name = "InAsW"\n'
+    "z_min = -15\n"
+    "z_max = 0\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaSbW"\n'
+    "z_min = 0\n"
+    "z_max = 10\n"
 )
 
 S6_K0_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 1\n"
-    "confinement: 1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: {fdorder}\n"
-    "numLayers: 2\n"
-    "material1: GaAs -200 200 0\n"
-    "material2: InAs -50 50 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
-    "strain: T\n"
-    "a_substrate: 5.6533\n"
+    'confinement = "qw"\n'
+    "FDorder = {fdorder}\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaAs"\n'
+    "z_min = -200\n"
+    "z_max = 200\n"
+    "\n"
+    "[[material]]\n"
+    'name = "InAs"\n'
+    "z_min = -50\n"
+    "z_max = 50\n"
+    "\n"
+    "[strain]\n"
+    "substrate_value = 5.6533\n"
 )
 
 
@@ -127,7 +159,7 @@ def main():
         for order in FD_ORDERS:
             cfg_content = template.format(fdstep=fdstep, fdorder=order)
             with tempfile.TemporaryDirectory() as work:
-                cfg_path = os.path.join(work, "staged.cfg")
+                cfg_path = os.path.join(work, "staged.toml")
                 with open(cfg_path, 'w') as f:
                     f.write(cfg_content)
                 rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work, timeout=300)

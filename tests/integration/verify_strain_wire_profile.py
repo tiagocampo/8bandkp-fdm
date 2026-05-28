@@ -333,7 +333,7 @@ def main():
                                        strain=True)
     work = tempfile.mkdtemp(prefix="wire_strain_")
     try:
-        cfg_path = os.path.join(work, "wire.cfg")
+        cfg_path = os.path.join(work, "wire.toml")
         with open(cfg_path, "w") as f:
             f.write(config_strained)
         rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work,
@@ -367,7 +367,7 @@ def main():
                                          strain=False)
     work_u = tempfile.mkdtemp(prefix="wire_unstrain_")
     try:
-        cfg_u = os.path.join(work_u, "wire.cfg")
+        cfg_u = os.path.join(work_u, "wire.toml")
         with open(cfg_u, "w") as f:
             f.write(config_unstrained)
         rc_u, output_dir_u = run_exe(build_dir, "bandStructure", cfg_u, work_u,

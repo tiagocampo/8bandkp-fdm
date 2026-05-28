@@ -1,0 +1,55 @@
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+
+[wave_vector]
+mode = "kz"
+max = 0.01
+nsteps = 3
+
+[bands]
+num_cb = 4
+num_vb = 4
+
+[wire]
+nx = 5
+ny = 5
+dx = 5.0
+dy = 5.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 25.0
+height = 25.0
+
+[[region]]
+material = "GaAs"
+inner = 0.0
+outer = 100.0
+
+
+[topology]
+mode = "spectral"
+compute_chern = false
+compute_hall = false
+qwz_u = 0.0
+compute_z2 = false
+extract_edge_states = false
+edge_E_window = 0.01
+compute_ldos = false
+ldos_eta = 0.001
+ldos_E_range = [-0.1, 0.1]
+ldos_num_E = 20
+compute_spectral = true
+spectral_k_min = -0.01
+spectral_k_max = 0.01
+spectral_nk = 3
+spectral_E_min = -2.0
+spectral_E_max = 2.0
+spectral_nE = 101
+spectral_eta = 0.01
+
+[feast]
+emin = -2.0
+emax = 2.0
+m0 = 64

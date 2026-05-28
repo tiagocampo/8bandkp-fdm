@@ -115,7 +115,7 @@ def test_single_qw_subbands():
     print("=" * 60)
 
     with tempfile.TemporaryDirectory() as work:
-        data = run_bandstructure("qw_gaas_algaas.cfg", work)
+        data = run_bandstructure("qw_gaas_algaas.toml", work)
 
     k0, evals = data[0]
     print(f"  k = {k0:.6f},  {len(evals)} eigenvalues")
@@ -183,7 +183,7 @@ def test_double_qw_anticrossing():
     print("=" * 60)
 
     with tempfile.TemporaryDirectory() as work:
-        data = run_bandstructure("qw_gaas_algaas_double_qw.cfg", work,
+        data = run_bandstructure("qw_gaas_algaas_double_qw.toml", work,
                                  timeout=600)
 
     k0, evals = data[0]
@@ -336,7 +336,7 @@ def main():
 
     # Re-run single QW to get data for plotting (tempdir from s1 is gone)
     with tempfile.TemporaryDirectory() as work:
-        plot_data = run_bandstructure("qw_gaas_algaas.cfg", work)
+        plot_data = run_bandstructure("qw_gaas_algaas.toml", work)
     plot_subband_structure(plot_data)
 
     # Summary

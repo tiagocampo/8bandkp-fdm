@@ -1,0 +1,48 @@
+confinement = "qw"
+FDorder = 2
+fd_step = 101
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "AlSbW"
+z_min = -100
+z_max = 100
+
+[[material]]
+name = "InAsW"
+z_min = -25
+z_max = 25
+
+
+[sc]
+max_iterations = 100
+tolerance = 1.0e-6
+mixing_alpha = 0.2
+diis_history = 5
+temperature = 77.0
+fermi_mode = "charge_neutrality"
+fermi_level = 0.0
+num_kpar = 30
+kpar_max = 0.2
+bc_type = "DD"
+bc_left = 0.0
+bc_right = 0.0
+
+[[doping]]
+ND = 0.0
+NA = 0.0
+
+[[doping]]
+ND = 5.0e17
+NA = 0.0
+
+which_band = 0
+band_idx = 1

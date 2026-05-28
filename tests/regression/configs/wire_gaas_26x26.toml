@@ -1,0 +1,37 @@
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+
+[wave_vector]
+mode = "kz"
+max = 0.1
+nsteps = 3
+
+[bands]
+num_cb = 8
+num_vb = 16
+
+[wire]
+nx = 26
+ny = 26
+dx = 3.0
+dy = 3.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 78.0
+height = 78.0
+
+[[region]]
+material = "GaAs"
+inner = 0.0
+outer = 100.0
+
+
+[feast]
+emin = -1.5
+emax = 2.0
+m0 = 96
+
+which_band = 0
+band_idx = 1

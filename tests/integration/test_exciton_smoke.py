@@ -31,7 +31,7 @@ def main():
     build_dir = sys.argv[1]
     source_dir = sys.argv[2]
     config_path = os.path.join(
-        source_dir, "tests", "regression", "configs", "exciton_gaas_algaas.cfg"
+        source_dir, "tests", "regression", "configs", "exciton_gaas_algaas.toml"
     )
 
     if not os.path.isfile(config_path):

@@ -1,0 +1,37 @@
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+
+[wave_vector]
+mode = "k0"
+max = 0.1
+nsteps = 0
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[wire]
+nx = 11
+ny = 11
+dx = 5.0
+dy = 5.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 55.0
+height = 55.0
+
+[[region]]
+material = "InSbW"
+inner = 0.0
+outer = 100.0
+
+
+[feast]
+emin = -3.0
+emax = 6.0
+m0 = 768
+
+which_band = 0
+band_idx = 1

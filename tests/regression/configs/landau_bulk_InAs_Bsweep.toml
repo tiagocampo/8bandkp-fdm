@@ -1,0 +1,27 @@
+confinement = "landau"
+FDorder = 2
+fd_step = 100
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 4
+num_vb = 4
+
+[[material]]
+name = "InAs"
+
+[landau]
+nx = 100
+width = 2000.0
+sweep = "B"
+
+[b_field]
+components = [0.0, 0.0, 0.5]
+g_factor = 2.0
+
+[bdg]
+B_sweep = [0.5, 10.0, 0.5]

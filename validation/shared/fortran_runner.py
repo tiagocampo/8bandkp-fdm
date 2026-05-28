@@ -13,7 +13,7 @@ import tempfile
 def run_bulk(build_dir, material, k_points, work_dir=None, timeout=120):
     """Run bandStructure executable for bulk calculation.
 
-    Generates input.cfg, runs the executable, parses eigenvalues.
+    Generates input.toml, runs the executable, parses eigenvalues.
 
     Args:
         build_dir: path to build/ directory containing src/bandStructure
@@ -39,9 +39,9 @@ def run_bulk(build_dir, material, k_points, work_dir=None, timeout=120):
         k_mag = (kx**2 + ky**2 + kz**2) ** 0.5
         k_mags.append(k_mag)
 
-    # Generate input.cfg for bulk
+    # Generate input.toml for bulk
     cfg_content = _build_bulk_config(material, k_points)
-    cfg_path = os.path.join(work_dir, "input.cfg")
+    cfg_path = os.path.join(work_dir, "input.toml")
     with open(cfg_path, "w") as f:
         f.write(cfg_content)
 
@@ -158,22 +158,31 @@ def run_qw(build_dir, barrier_material, well_material,
     well_end = l_well_ang / 2.0
 
     cfg_content = "\n".join([
-        f"waveVector: {direction}",
-        f"waveVectorMax: {k_max:.10f}",
-        f"waveVectorStep: {n_steps}",
-        "confinement: 1",
-        f"FDstep: {fdstep}",
-        f"FDorder: {fdorder}",
-        "numLayers: 2",
-        f"material1: {barrier_material} {z_min:.1f} {z_max:.1f} 0",
-        f"material2: {well_material} {well_start:.1f} {well_end:.1f} 0",
-        f"numcb: {numcb}",
-        f"numvb: {numvb}",
-        "ExternalField: 0  EF",
-        "EFParams: 0.0",
+        'confinement = "qw"',
+        f"FDorder = {fdorder}",
+        f"fd_step = {fdstep}",
+        "",
+        "[wave_vector]",
+        f'mode = "{direction}"',
+        f"max = {k_max:.10f}",
+        f"nsteps = {n_steps}",
+        "",
+        "[bands]",
+        f"num_cb = {numcb}",
+        f"num_vb = {numvb}",
+        "",
+        "[[material]]",
+        f'name = "{barrier_material}"',
+        f"z_min = {z_min:.1f}",
+        f"z_max = {z_max:.1f}",
+        "",
+        "[[material]]",
+        f'name = "{well_material}"',
+        f"z_min = {well_start:.1f}",
+        f"z_max = {well_end:.1f}",
     ]) + "\n"
 
-    cfg_path = os.path.join(work_dir, "input.cfg")
+    cfg_path = os.path.join(work_dir, "input.toml")
     with open(cfg_path, "w") as f:
         f.write(cfg_content)
 
@@ -208,9 +217,9 @@ def run_qw(build_dir, barrier_material, well_material,
 
 
 def _build_bulk_config(material, k_points):
-    """Build input.cfg content for bulk band structure.
+    """Build input.toml content for bulk band structure.
 
-    Uses our input.cfg format: waveVector: <direction>, waveVectorMax: <kmax>,
+    Uses our input.toml format: waveVector: <direction>, waveVectorMax: <kmax>,
     waveVectorStep: <nsteps>. kmax in 1/Angstrom, nsteps is integer count.
     """
     if len(k_points) == 1:
@@ -258,18 +267,21 @@ def _build_bulk_config(material, k_points):
             )
 
     lines = [
-        f"waveVector: {direction}",
-        f"waveVectorMax: {k_max:.10f}",
-        f"waveVectorStep: {n_steps}",
-        "confinement: 0",
-        "FDstep: 101",
-        "FDorder: 2",
-        "numLayers: 1",
-        f"material1: {material}",
-        "numcb: 2",
-        "numvb: 6",
-        "ExternalField: 0  EF",
-        "EFParams: 0.0",
+        'confinement = "bulk"',
+        "FDorder = 2",
+        "fd_step = 101",
+        "",
+        "[wave_vector]",
+        f'mode = "{direction}"',
+        f"max = {k_max:.10f}",
+        f"nsteps = {n_steps}",
+        "",
+        "[bands]",
+        "num_cb = 2",
+        "num_vb = 6",
+        "",
+        "[[material]]",
+        f'name = "{material}"',
     ]
 
     return "\n".join(lines) + "\n"

@@ -1,0 +1,15 @@
+confinement = "bulk"
+FDorder = 2
+fd_step = 101
+
+[wave_vector]
+mode = "k0"
+max = 0
+nsteps = 1
+
+[bands]
+num_cb = 2
+num_vb = 6
+
+[[material]]
+name = "InAs"

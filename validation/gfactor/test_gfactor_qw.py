@@ -36,7 +36,7 @@ GFACTOR_REFS = {
 }
 
 GFACTOR_CONFIGS = {
-    "GaAs": "gfactor_bulk_gaas_cb.cfg",
+    "GaAs": "gfactor_bulk_gaas_cb.toml",
 }
 
 
@@ -51,7 +51,7 @@ def run_gfactor(config_name, build_dir, project_root):
 
     workdir = tempfile.mkdtemp(prefix="gfactor_")
     try:
-        shutil.copy2(config_path, os.path.join(workdir, "input.cfg"))
+        shutil.copy2(config_path, os.path.join(workdir, "input.toml"))
         os.makedirs(os.path.join(workdir, "output"), exist_ok=True)
         result = subprocess.run(
             [exe], cwd=workdir, capture_output=True, text=True, timeout=120

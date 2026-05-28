@@ -11,8 +11,8 @@ configurations and validates:
      broadening tails below the band gap.
   2. QW GaAs/AlGaAs interband absorption: TE polarization dominant over TM
      for interband transitions (TE/TM ratio > 1 at peak absorption).
-     Uses qw_optics_commutator.cfg which has a proper kx sweep with pure
-     interband absorption (qw_gaas_algaas_optics.cfg is k0-only).
+     Uses qw_optics_commutator.toml which has a proper kx sweep with pure
+     interband absorption (qw_gaas_algaas_optics.toml is k0-only).
   3. QW intersubband (ISBT) absorption peak position validation.
   4. Overlay plot: absorption spectra with band-gap onset annotated and
      TE vs TM comparison, saved to docs/lecture/figures/.
@@ -51,44 +51,53 @@ from star_helpers import (run_exe, parse_eigenvalues, parse_absorption,
 def _write_qw_optics_cfg(work_dir, *, gain=False, gain_carrier_density=3.0e12,
                          spontaneous=False, spin_resolved=False,
                          e_min=1.5, e_max=1.8, num_energy=200):
-    """Write a GaAs/AlGaAs QW optics config to work_dir/input.cfg.
+    """Write a GaAs/AlGaAs QW optics config to work_dir/input.toml.
 
     Returns the path to the written config file.
     """
     cfg_text = f"""\
-waveVector: kx
-waveVectorMax: 0.05
-waveVectorStep: 50
-confinement:  1
-FDstep: 51
-FDorder: 2
-numLayers:  2
-material1: Al30Ga70As -200 200 0
-material2: GaAs -50 50 0
-numcb: 4
-numvb: 8
-ExternalField: 0  EF
-EFParams: 0.0
-whichBand: 0
-bandIdx: 1
-SC: 0
-Optics: T
-LinewidthLorentzian: 0.030
-LinewidthGaussian: 0.005
-RefractiveIndex: 3.3
-Emin: {e_min}
-Emax: {e_max}
-NEnergyPoints: {num_energy}
-Temperature: 300.0
-CarrierDensity: 0.0
-Gain: {'T' if gain else 'F'}
-GainCarrierDensity: {gain_carrier_density:.1e}
-ISBT: F
-SpontaneousEnabled: {'T' if spontaneous else 'F'}
-SpinResolved: {'T' if spin_resolved else 'F'}
-Exciton: F
+confinement = "qw"
+FDorder = 2
+fd_step = 51
+
+[wave_vector]
+mode = "kx"
+max = 0.05
+step = 50
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "Al30Ga70As"
+z_min = -200
+z_max = 200
+
+[[material]]
+name = "GaAs"
+z_min = -50
+z_max = 50
+
+which_band = 0
+band_idx = 1
+
+[optics]
+linewidth_lorentzian = 0.030
+linewidth_gaussian = 0.005
+refractive_index = 3.3
+E_min = {e_min}
+E_max = {e_max}
+num_energy_points = {num_energy}
+temperature = 300.0
+carrier_density = 0.0
+gain_enabled = {'true' if gain else 'false'}
+gain_carrier_density = {gain_carrier_density:.1e}
+ISBT = false
+spontaneous = {'true' if spontaneous else 'false'}
+spin_resolved = {'true' if spin_resolved else 'false'}
 """
-    cfg_path = os.path.join(work_dir, "optics.cfg")
+    cfg_path = os.path.join(work_dir, "optics.toml")
     with open(cfg_path, "w") as f:
         f.write(cfg_text)
     return cfg_path
@@ -162,7 +171,7 @@ def test_bulk_absorption_onset():
     print("Lecture 06 -- Section 1: Bulk GaAs absorption onset")
     print("=" * 60)
 
-    cfg = CONFIGS_DIR / "bulk_gaas_optics.cfg"
+    cfg = CONFIGS_DIR / "bulk_gaas_optics.toml"
     with tempfile.TemporaryDirectory() as work:
         rc, outdir = run_exe(str(BUILD_DIR), "opticalProperties",
                              str(cfg), work)
@@ -225,12 +234,12 @@ def test_qw_te_tm_polarization():
     print("Lecture 06 -- Section 2: QW TE vs TM polarization")
     print("=" * 60)
 
-    # qw_gaas_algaas_optics.cfg is k0-only (waveVectorStep=0) and produces
+    # qw_gaas_algaas_optics.toml is k0-only (waveVectorStep=0) and produces
     # zero absorption for QW interband transitions. The _full variant has a
     # k-sweep but enables gain+ISBT which distorts the TE/TM ratio.
-    # Use qw_optics_commutator.cfg which has a proper kx sweep with pure
+    # Use qw_optics_commutator.toml which has a proper kx sweep with pure
     # interband absorption (no gain, no ISBT) for a clean TE vs TM comparison.
-    cfg = CONFIGS_DIR / "qw_optics_commutator.cfg"
+    cfg = CONFIGS_DIR / "qw_optics_commutator.toml"
     with tempfile.TemporaryDirectory() as work:
         rc, outdir = run_exe(str(BUILD_DIR), "opticalProperties",
                              str(cfg), work)
@@ -292,7 +301,7 @@ def test_isbt_peak():
     print("Lecture 06 -- Section 3: ISBT absorption peak")
     print("=" * 60)
 
-    cfg = CONFIGS_DIR / "qw_gaas_algaas_isbt.cfg"
+    cfg = CONFIGS_DIR / "qw_gaas_algaas_isbt.toml"
     with tempfile.TemporaryDirectory() as work:
         rc, outdir = run_exe(str(BUILD_DIR), "opticalProperties",
                              str(cfg), work)

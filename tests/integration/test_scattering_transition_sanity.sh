@@ -8,9 +8,9 @@ verify=${3:?missing verifier}
 workdir=$(mktemp -d)
 trap 'rm -rf "$workdir"' EXIT
 
-cp "$cfg" "$workdir/input.cfg"
+cp "$cfg" "$workdir/input.toml"
 
 pushd "$workdir" >/dev/null
-"$exe" < input.cfg >/dev/null
+"$exe" < input.toml >/dev/null
 python3 "$verify" output/scattering_rates.dat
 popd >/dev/null

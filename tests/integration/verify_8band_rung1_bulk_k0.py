@@ -13,7 +13,7 @@ Usage:
     build_dir  — path to the build directory (contains src/bandStructure)
     test_dir   — path to the repo root (contains tests/regression/configs/)
 
-The script discovers configs named bulk_<material>_k0.cfg in
+The script discovers configs named bulk_<material>_k0.toml in
 <test_dir>/tests/regression/configs/ and runs bandStructure for each one
 in a temporary directory.
 """
@@ -109,11 +109,11 @@ def parse_parts(filepath):
 def run_bandstructure(exe_path, config_path, work_dir):
     """Run bandStructure executable in work_dir with the given config.
 
-    Copies config to <work_dir>/input.cfg, runs the executable,
+    Copies config to <work_dir>/input.toml, runs the executable,
     returns (returncode, eigenvalues_path, parts_path).
     """
-    # Copy config to input.cfg in the work directory
-    dst_cfg = os.path.join(work_dir, "input.cfg")
+    # Copy config to input.toml in the work directory
+    dst_cfg = os.path.join(work_dir, "input.toml")
     shutil.copy2(config_path, dst_cfg)
 
     # Ensure output directory exists
@@ -437,7 +437,7 @@ def main():
     total = 0
 
     for material in MATERIALS:
-        config_name = f"bulk_{material.lower()}_k0.cfg"
+        config_name = f"bulk_{material.lower()}_k0.toml"
         config_path = os.path.join(config_dir, config_name)
 
         if not os.path.isfile(config_path):

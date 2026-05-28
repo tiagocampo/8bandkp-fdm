@@ -60,7 +60,7 @@ def test_gaas_k0_eigenvalues():
     print("Lecture 01 -- Section 1: GaAs k=0 eigenvalue self-check")
     print("=" * 60)
 
-    cfg = CONFIGS_DIR / "bulk_gaas_k0.cfg"
+    cfg = CONFIGS_DIR / "bulk_gaas_k0.toml"
     with tempfile.TemporaryDirectory() as work:
         rc, outdir = run_exe(str(BUILD_DIR), "bandStructure",
                              str(cfg), work)
@@ -116,7 +116,7 @@ def test_gaas_effective_mass():
     print("Lecture 01 -- Section 2: GaAs CB effective mass")
     print("=" * 60)
 
-    cfg = CONFIGS_DIR / "bulk_gaas_kx_dispersion.cfg"
+    cfg = CONFIGS_DIR / "bulk_gaas_kx_dispersion.toml"
     with tempfile.TemporaryDirectory() as work:
         rc, outdir = run_exe(str(BUILD_DIR), "bandStructure",
                              str(cfg), work)
@@ -162,7 +162,7 @@ def test_inas_band_gap():
     print("Lecture 01 -- Section 3: InAs band gap")
     print("=" * 60)
 
-    cfg = CONFIGS_DIR / "bulk_inas_kx_dispersion.cfg"
+    cfg = CONFIGS_DIR / "bulk_inas_kx_dispersion.toml"
     with tempfile.TemporaryDirectory() as work:
         rc, outdir = run_exe(str(BUILD_DIR), "bandStructure",
                              str(cfg), work)
@@ -278,7 +278,7 @@ def main():
 
     # The GaAs eig_path from Section 2 is from a tempdir that no longer
     # exists. Re-run GaAs dispersion to get a fresh path for plotting.
-    cfg = CONFIGS_DIR / "bulk_gaas_kx_dispersion.cfg"
+    cfg = CONFIGS_DIR / "bulk_gaas_kx_dispersion.toml"
     with tempfile.TemporaryDirectory() as work:
         rc, outdir = run_exe(str(BUILD_DIR), "bandStructure",
                              str(cfg), work)

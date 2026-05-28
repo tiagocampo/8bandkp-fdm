@@ -15,10 +15,10 @@ run_case() {
     local cfg="$1"
     local workdir
     workdir=$(mktemp -d)
-    /bin/cp "$cfg" "$workdir/input.cfg"
-    sed -i 's/^waveVectorStep:.*/waveVectorStep: 1/' "$workdir/input.cfg"
-    sed -i 's/^wire_nx:.*/wire_nx: 7/' "$workdir/input.cfg"
-    sed -i 's/^wire_ny:.*/wire_ny: 7/' "$workdir/input.cfg"
+    /bin/cp "$cfg" "$workdir/input.toml"
+    sed -i 's/^nsteps = .*/nsteps = 1/' "$workdir/input.toml"
+    sed -i 's/^nx = .*/nx = 7/' "$workdir/input.toml"
+    sed -i 's/^ny = .*/ny = 7/' "$workdir/input.toml"
     mkdir -p "$workdir/output"
     (
         cd "$workdir"

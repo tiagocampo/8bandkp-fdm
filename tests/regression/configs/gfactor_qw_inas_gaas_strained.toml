@@ -1,0 +1,31 @@
+confinement = "qw"
+FDorder = 2
+fd_step = 201
+
+[wave_vector]
+mode = "k0"
+max = 0.1
+nsteps = 1
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "GaAs"
+z_min = -60
+z_max = 60
+
+[[material]]
+name = "InAs"
+z_min = -10
+z_max = 10
+
+
+[strain]
+reference = "GaAs"
+solver = "pardiso"
+piezoelectric = false
+
+which_band = 0
+band_idx = 1

@@ -3,7 +3,7 @@
 Compares Bir-Pikus strain shifts between our Fortran code and kdotpy
 for InAs on GaAs substrate (compressive) and GaAs on InP substrate (tensile).
 
-Our code uses the strain: block in input.cfg with strainSubstrate for
+Our code uses the strain: block in input.toml with strainSubstrate for
 the substrate lattice constant. kdotpy uses substrate_material in PhysParams.
 
 Both should produce identical strain shifts for matched parameters.
@@ -51,23 +51,26 @@ def _run_fortran_bulk(material, build_dir, substrate_a0=None):
     workdir = tempfile.mkdtemp(prefix="strain_" if substrate_a0 else "unstr_")
     try:
         lines = [
-            "waveVector: k0",
-            "waveVectorMax: 0",
-            "waveVectorStep: 1",
-            "confinement:  0",
-            "FDstep: 1",
-            "FDorder: 2",
-            "numLayers:  1",
-            f"material1: {material}",
-            "numcb: 4",
-            "numvb: 4",
-            "ExternalField: 0  EF",
-            "EFParams: 0.0",
+            'confinement = "bulk"',
+            "FDorder = 2",
+            "fd_step = 1",
+            "",
+            "[wave_vector]",
+            'mode = "k0"',
+            "max = 0",
+            "nsteps = 1",
+            "",
+            "[bands]",
+            "num_cb = 4",
+            "num_vb = 4",
+            "",
+            "[[material]]",
+            f'name = "{material}"',
         ]
         if substrate_a0 is not None:
-            lines.append(f"strainSubstrate: {substrate_a0}")
+            lines.extend(["", "[strain]", f"substrate_value = {substrate_a0}"])
 
-        with open(os.path.join(workdir, "input.cfg"), 'w') as f:
+        with open(os.path.join(workdir, "input.toml"), 'w') as f:
             f.write('\n'.join(lines) + '\n')
         os.makedirs(os.path.join(workdir, "output"), exist_ok=True)
 

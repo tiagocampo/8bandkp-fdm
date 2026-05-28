@@ -12,12 +12,17 @@ import sys
 
 
 def parse_config_scalar(filepath, key):
-    """Read a scalar config value from a `key: value` line."""
+    """Read a scalar config value from TOML `key = value` or old `key: value` line."""
     with open(filepath) as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
+            # TOML: key = value
+            if line.startswith(f'{key} =') or line.startswith(f'{key}='):
+                val = line.split('=', 1)[1].strip()
+                return float(val.split()[0])
+            # Old format: key: value
             if line.startswith(f"{key}:"):
                 return float(line.split(":", 1)[1].strip().split()[0])
     raise RuntimeError(f"{key} not found in {filepath}")

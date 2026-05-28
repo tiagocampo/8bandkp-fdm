@@ -24,7 +24,7 @@ echo ""
 
 # Test 1: u=-0.8 -> C=+1
 echo "Test 1: u=-0.8 (expected C=+1)"
-/bin/cp "$CONFIG_U1" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG_U1" "$WORKDIR/input.toml"
 cd "$WORKDIR"
 "$EXE" > test_output.log 2>&1
 RC=$?
@@ -52,7 +52,7 @@ echo "  PASS"
 # Test 2: u=0.5 -> C=-1
 echo ""
 echo "Test 2: u=0.5 (expected C=-1)"
-/bin/cp "$CONFIG_U2" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG_U2" "$WORKDIR/input.toml"
 cd "$WORKDIR"
 "$EXE" > test_output.log 2>&1
 RC=$?
@@ -74,7 +74,7 @@ echo "  PASS"
 # Test 3: u=2.5 -> C=0
 echo ""
 echo "Test 3: u=2.5 (expected C=0)"
-/bin/cp "$CONFIG_U3" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG_U3" "$WORKDIR/input.toml"
 cd "$WORKDIR"
 "$EXE" > test_output.log 2>&1
 RC=$?

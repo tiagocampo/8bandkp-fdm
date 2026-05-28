@@ -45,22 +45,26 @@ def run_gfactor(material, build_dir):
 
     workdir = tempfile.mkdtemp(prefix="gfactor_")
     try:
-        config = f"""waveVector: k0
-waveVectorMax: 0
-waveVectorStep: 0
-confinement: 0
-FDstep: 1
-FDorder: 2
-numLayers: 1
-material1: {material}
-numcb: 2
-numvb: 6
-ExternalField: 0  EF
-EFParams: 0.0005
-whichBand: 0
-bandIdx: 1
+        config = f"""confinement = "bulk"
+FDorder = 2
+fd_step = 1
+
+[wave_vector]
+mode = "k0"
+max = 0
+nsteps = 1
+
+[bands]
+num_cb = 2
+num_vb = 6
+
+[[material]]
+name = "{material}"
+
+which_band = 0
+band_idx = 1
 """
-        cfg_path = os.path.join(workdir, "input.cfg")
+        cfg_path = os.path.join(workdir, "input.toml")
         with open(cfg_path, 'w') as f:
             f.write(config)
         os.makedirs(os.path.join(workdir, "output"), exist_ok=True)

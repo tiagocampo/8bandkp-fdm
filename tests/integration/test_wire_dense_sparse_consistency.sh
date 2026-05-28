@@ -13,8 +13,8 @@ DENSE_DIR=$(mktemp -d)
 SPARSE_DIR=$(mktemp -d)
 trap "rm -rf $DENSE_DIR $SPARSE_DIR" EXIT
 
-/bin/cp "$DENSE_CFG" "$DENSE_DIR/input.cfg"
-/bin/cp "$SPARSE_CFG" "$SPARSE_DIR/input.cfg"
+/bin/cp "$DENSE_CFG" "$DENSE_DIR/input.toml"
+/bin/cp "$SPARSE_CFG" "$SPARSE_DIR/input.toml"
 mkdir -p "$DENSE_DIR/output" "$SPARSE_DIR/output"
 
 (cd "$DENSE_DIR" && "$EXE" > test_output.log 2>&1)

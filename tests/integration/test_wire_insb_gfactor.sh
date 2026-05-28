@@ -12,7 +12,7 @@ REF_DIR="$3"
 WORKDIR=$(mktemp -d)
 trap "rm -rf $WORKDIR" EXIT
 
-/bin/cp "$CONFIG" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG" "$WORKDIR/input.toml"
 mkdir -p "$WORKDIR/output"
 
 cd "$WORKDIR"
