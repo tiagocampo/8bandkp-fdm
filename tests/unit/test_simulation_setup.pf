@@ -128,18 +128,18 @@ contains
     cfg%band_idx = 1
 
     ! Two layers: AlGaAs barrier (full domain) + GaAs well (center)
-    allocate(cfg%materialN(2))
-    cfg%materialN(1) = 'Al20Ga80As'
-    cfg%materialN(2) = 'GaAs'
+    allocate(cfg%material_names(2))
+    cfg%material_names(1) = 'Al20Ga80As'
+    cfg%material_names(2) = 'GaAs'
 
-    allocate(cfg%startPos(2))
-    allocate(cfg%endPos(2))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = 200.0_dp    ! barrier covers full domain
-    cfg%startPos(2) = 80.0_dp
-    cfg%endPos(2) = 120.0_dp    ! well in center
+    allocate(cfg%z_min(2))
+    allocate(cfg%z_max(2))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 200.0_dp    ! barrier covers full domain
+    cfg%z_min(2) = 80.0_dp
+    cfg%z_max(2) = 120.0_dp    ! well in center
 
-    cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
     cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
     cfg%dz = cfg%delta
 
@@ -147,7 +147,7 @@ contains
     block
       integer :: i
       do i = 1, fdStep
-        cfg%z(i) = cfg%startPos(1) + (i-1)*cfg%delta
+        cfg%z(i) = cfg%z_min(1) + (i-1)*cfg%delta
       end do
     end block
 
@@ -155,8 +155,8 @@ contains
     allocate(cfg%int_end_pos(2))
     cfg%int_start_pos(1) = 1
     cfg%int_end_pos(1) = fdStep
-    cfg%int_start_pos(2) = nint((cfg%startPos(2) - cfg%startPos(1)) / cfg%delta) + 1
-    cfg%int_end_pos(2) = nint((cfg%endPos(2) - cfg%startPos(1)) / cfg%delta) + 1
+    cfg%int_start_pos(2) = nint((cfg%z_min(2) - cfg%z_min(1)) / cfg%delta) + 1
+    cfg%int_end_pos(2) = nint((cfg%z_max(2) - cfg%z_min(1)) / cfg%delta) + 1
 
     ! Material parameters
     allocate(cfg%params(2))
@@ -277,12 +277,12 @@ contains
     cfg%which_band = 0
     cfg%band_idx = 1
 
-    allocate(cfg%materialN(1))
-    cfg%materialN(1) = 'GaAs'
-    allocate(cfg%startPos(1))
-    allocate(cfg%endPos(1))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = 1.0_dp
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+    allocate(cfg%z_min(1))
+    allocate(cfg%z_max(1))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 1.0_dp
 
     allocate(cfg%params(1))
     materials(1) = 'GaAs'
@@ -316,18 +316,18 @@ contains
     cfg%band_idx = 1
 
     ! Two layers: AlGaAs barrier (full domain) + GaAs well (center)
-    allocate(cfg%materialN(2))
-    cfg%materialN(1) = 'Al20Ga80As'
-    cfg%materialN(2) = 'GaAs'
+    allocate(cfg%material_names(2))
+    cfg%material_names(1) = 'Al20Ga80As'
+    cfg%material_names(2) = 'GaAs'
 
-    allocate(cfg%startPos(2))
-    allocate(cfg%endPos(2))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = 200.0_dp    ! barrier covers full domain
-    cfg%startPos(2) = 80.0_dp
-    cfg%endPos(2) = 120.0_dp    ! well in center
+    allocate(cfg%z_min(2))
+    allocate(cfg%z_max(2))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 200.0_dp    ! barrier covers full domain
+    cfg%z_min(2) = 80.0_dp
+    cfg%z_max(2) = 120.0_dp    ! well in center
 
-    cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
     cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
     cfg%dz = cfg%delta
 
@@ -335,7 +335,7 @@ contains
     block
       integer :: i
       do i = 1, fdStep
-        cfg%z(i) = cfg%startPos(1) + (i-1)*cfg%delta
+        cfg%z(i) = cfg%z_min(1) + (i-1)*cfg%delta
       end do
     end block
 
@@ -343,8 +343,8 @@ contains
     allocate(cfg%int_end_pos(2))
     cfg%int_start_pos(1) = 1
     cfg%int_end_pos(1) = fdStep
-    cfg%int_start_pos(2) = nint((cfg%startPos(2) - cfg%startPos(1)) / cfg%delta) + 1
-    cfg%int_end_pos(2) = nint((cfg%endPos(2) - cfg%startPos(1)) / cfg%delta) + 1
+    cfg%int_start_pos(2) = nint((cfg%z_min(2) - cfg%z_min(1)) / cfg%delta) + 1
+    cfg%int_end_pos(2) = nint((cfg%z_max(2) - cfg%z_min(1)) / cfg%delta) + 1
 
     ! Material parameters
     allocate(cfg%params(2))
@@ -533,13 +533,13 @@ contains
     cfg%wire%geom%shape = 'rectangle'
 
     ! Single material: GaAs everywhere
-    allocate(cfg%materialN(1))
-    cfg%materialN(1) = 'GaAs'
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
 
-    allocate(cfg%startPos(1))
-    allocate(cfg%endPos(1))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = real(nx, kind=dp) * cfg%wire%dx
+    allocate(cfg%z_min(1))
+    allocate(cfg%z_max(1))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = real(nx, kind=dp) * cfg%wire%dx
 
     ! One region: full domain
     cfg%wire%num_regions = 1
@@ -587,32 +587,32 @@ contains
     cfg%band_idx = 1
 
     ! Two layers: GaAs barrier (full domain) + InAs well (center)
-    allocate(cfg%materialN(2))
-    cfg%materialN(1) = 'GaAs'
-    cfg%materialN(2) = 'InAs'
+    allocate(cfg%material_names(2))
+    cfg%material_names(1) = 'GaAs'
+    cfg%material_names(2) = 'InAs'
 
-    allocate(cfg%startPos(2))
-    allocate(cfg%endPos(2))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = 200.0_dp     ! barrier covers full domain
-    cfg%startPos(2) = 80.0_dp
-    cfg%endPos(2) = 120.0_dp     ! well in center
+    allocate(cfg%z_min(2))
+    allocate(cfg%z_max(2))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 200.0_dp     ! barrier covers full domain
+    cfg%z_min(2) = 80.0_dp
+    cfg%z_max(2) = 120.0_dp     ! well in center
 
-    cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
     cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
     cfg%dz = cfg%delta
 
     allocate(cfg%z(fdStep))
     do i = 1, fdStep
-      cfg%z(i) = cfg%startPos(1) + (i-1)*cfg%delta
+      cfg%z(i) = cfg%z_min(1) + (i-1)*cfg%delta
     end do
 
     ! Compute layer index bounds from positions
     allocate(cfg%int_start_pos(2))
     allocate(cfg%int_end_pos(2))
     do i = 1, cfg%num_layers
-      cfg%int_start_pos(i) = max(1, nint((cfg%startPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
-      cfg%int_end_pos(i) = min(fdStep, nint((cfg%endPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
+      cfg%int_start_pos(i) = max(1, nint((cfg%z_min(i) - cfg%z_min(1)) / cfg%delta) + 1)
+      cfg%int_end_pos(i) = min(fdStep, nint((cfg%z_max(i) - cfg%z_min(1)) / cfg%delta) + 1)
     end do
 
     ! Material parameters
@@ -684,32 +684,32 @@ contains
     cfg%band_idx = 1
 
     ! Two layers: Al20Ga80As barrier (full domain) + GaAs well (center)
-    allocate(cfg%materialN(2))
-    cfg%materialN(1) = 'Al20Ga80As'
-    cfg%materialN(2) = 'GaAs'
+    allocate(cfg%material_names(2))
+    cfg%material_names(1) = 'Al20Ga80As'
+    cfg%material_names(2) = 'GaAs'
 
-    allocate(cfg%startPos(2))
-    allocate(cfg%endPos(2))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = 200.0_dp
-    cfg%startPos(2) = 80.0_dp
-    cfg%endPos(2) = 120.0_dp
+    allocate(cfg%z_min(2))
+    allocate(cfg%z_max(2))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 200.0_dp
+    cfg%z_min(2) = 80.0_dp
+    cfg%z_max(2) = 120.0_dp
 
-    cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
     cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
     cfg%dz = cfg%delta
 
     allocate(cfg%z(fdStep))
     do i = 1, fdStep
-      cfg%z(i) = cfg%startPos(1) + (i-1)*cfg%delta
+      cfg%z(i) = cfg%z_min(1) + (i-1)*cfg%delta
     end do
 
     ! Compute layer index bounds from positions (clamped to grid)
     allocate(cfg%int_start_pos(2))
     allocate(cfg%int_end_pos(2))
     do i = 1, cfg%num_layers
-      cfg%int_start_pos(i) = max(1, nint((cfg%startPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
-      cfg%int_end_pos(i) = min(fdStep, nint((cfg%endPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
+      cfg%int_start_pos(i) = max(1, nint((cfg%z_min(i) - cfg%z_min(1)) / cfg%delta) + 1)
+      cfg%int_end_pos(i) = min(fdStep, nint((cfg%z_max(i) - cfg%z_min(1)) / cfg%delta) + 1)
     end do
 
     ! Material parameters
@@ -741,6 +741,95 @@ contains
 
     call simulation_setup_free(setup)
   end subroutine test_sc_setup
+
+
+  ! Vertical slice 13: skip_sc=.true. prevents SC iteration even when cfg%sc%enabled=1.
+  ! This verifies the optional skip_sc argument to simulation_setup_init.
+  @test
+  subroutine test_skip_sc_flag()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    character(len=255) :: materials(2)
+    integer :: fdStep, i
+
+    ! Build QW config identical to test_sc_setup
+    fdStep = 11
+    cfg%confinement = 'qw'
+    cfg%ngrid = fdStep
+    cfg%FDorder = 2
+    cfg%num_layers = 2
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum = 8
+    cfg%conf_dir = 'z'
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
+
+    allocate(cfg%material_names(2))
+    cfg%material_names(1) = 'Al20Ga80As'
+    cfg%material_names(2) = 'GaAs'
+
+    allocate(cfg%z_min(2))
+    allocate(cfg%z_max(2))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 200.0_dp
+    cfg%z_min(2) = 80.0_dp
+    cfg%z_max(2) = 120.0_dp
+
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
+    cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
+    cfg%dz = cfg%delta
+
+    allocate(cfg%z(fdStep))
+    do i = 1, fdStep
+      cfg%z(i) = cfg%z_min(1) + (i-1)*cfg%delta
+    end do
+
+    allocate(cfg%int_start_pos(2))
+    allocate(cfg%int_end_pos(2))
+    do i = 1, cfg%num_layers
+      cfg%int_start_pos(i) = max(1, nint((cfg%z_min(i) - cfg%z_min(1)) / cfg%delta) + 1)
+      cfg%int_end_pos(i) = min(fdStep, nint((cfg%z_max(i) - cfg%z_min(1)) / cfg%delta) + 1)
+    end do
+
+    allocate(cfg%params(2))
+    materials(1) = 'Al20Ga80As'
+    materials(2) = 'GaAs'
+    call paramDatabase(materials, 2, cfg%params)
+    call init_grid_from_config(cfg)
+
+    ! Enable SC (same as test_sc_setup) but pass skip_sc=.true.
+    cfg%sc%enabled = 1
+    cfg%sc%temperature = 300.0_dp
+    cfg%sc%max_iterations = 3
+    cfg%sc%tolerance = 1.0e-6_dp
+    cfg%sc%mixing_alpha = 0.3_dp
+    cfg%sc%num_kpar = 5
+    cfg%sc%kpar_max = 0.3_dp
+    cfg%sc%bc_type = 'DD'
+    cfg%sc%fermi_mode = 1
+    cfg%sc%fermi_level = 1.0_dp
+
+    ! Call with skip_sc=.true. — SC should NOT run
+    call simulation_setup_init(cfg, setup, skip_sc=.true.)
+
+    ! Assert: SC was NOT run despite cfg%sc%enabled=1
+    @assertFalse(setup%sc_was_run)
+
+    ! Assert: Fermi level remains at default (not adjusted by SC)
+    @assertEqual(0.0_dp, setup%fermi_level)
+
+    ! Assert: cfg%sc%enabled is still 1 (not mutated by skip_sc)
+    @assertEqual(1, cfg%sc%enabled)
+
+    call simulation_setup_free(setup)
+  end subroutine test_skip_sc_flag
 
 
 end module test_simulation_setup
