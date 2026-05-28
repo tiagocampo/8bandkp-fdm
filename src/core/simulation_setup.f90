@@ -65,14 +65,19 @@ module simulation_setup_mod
 
 contains
 
-  subroutine simulation_setup_init(cfg, setup, strain_out, sc_phi_out, sc_ne_out, sc_nh_out)
+  subroutine simulation_setup_init(cfg, setup, strain_out, sc_phi_out, sc_ne_out, sc_nh_out, skip_sc)
     type(simulation_config), intent(inout) :: cfg
     type(simulation_setup), intent(inout) :: setup
     type(strain_result), intent(out), optional, allocatable :: strain_out
     real(kind=dp), allocatable, intent(out), optional :: sc_phi_out(:,:), sc_ne_out(:,:), sc_nh_out(:,:)
+    logical, intent(in), optional :: skip_sc
 
     integer :: info, lrwork, liwork, Ngrid_local, Ntot_local, nev
     real(kind=dp), allocatable :: eig_tmp(:,:)
+    logical :: do_skip_sc
+
+    do_skip_sc = .false.
+    if (present(skip_sc)) do_skip_sc = skip_sc
 
     setup%confinement = cfg%confinement
     setup%has_strain = .false.
@@ -123,7 +128,7 @@ contains
           setup%has_strain = .true.
         end block
       end if
-      if (cfg%sc%enabled == 1) then
+      if (cfg%sc%enabled == 1 .and. .not. do_skip_sc) then
         block
           complex(kind=dp), allocatable :: eigv_sc(:,:,:)
           real(kind=dp), allocatable :: sc_ne_local(:), sc_nh_local(:)
@@ -246,7 +251,7 @@ contains
       ! Free CSR data but preserve COO cache for fast rebuild by apps
       call csr_free(setup%HT_csr_ptr)
       setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
-      if (cfg%sc%enabled == 1) then
+      if (cfg%sc%enabled == 1 .and. .not. do_skip_sc) then
         block
           integer :: nk_sc, nev_sc
           real(kind=dp), allocatable :: eig_sc(:,:)

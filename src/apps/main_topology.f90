@@ -20,6 +20,7 @@ program topologicalAnalysis
   use green_functions, only: compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
   use linalg, only: mkl_set_num_threads_local, zheev
+  use simulation_setup_mod, only: simulation_setup, simulation_setup_init, simulation_setup_free
 
   implicit none
 
@@ -64,31 +65,23 @@ program topologicalAnalysis
 
   call read_config(cfg)
 
-  ! Confinement initialization for QW mode
-  if (cfg%conf_dir == 'z' .and. cfg%confinement == 'qw') then
-    allocate(kpterms(grid_ngrid(cfg%grid), grid_ngrid(cfg%grid), 10))
-    kpterms = 0.0_dp
-    call confinementInitialization(cfg, profile, kpterms)
-    if (cfg%external_field%enabled .and. cfg%external_field%type == "EF") then
-      if (abs(cfg%z(1)) < tolerance) then
-        print *, 'Error: Electric field requires z(1) /= 0.'
-        print *, '  Adjust startPos/endPos so grid does not start at z=0.'
-        stop 1
-      end if
-      call externalFieldSetup_electricField(profile, cfg%external_field%value, cfg%totalSize, cfg%z)
-    end if
-  end if
+  ! Semantic validation (topology block must be enabled with mode set)
+  call validate_semantic(cfg, 'topologicalAnalysis')
 
-  ! Validate topology mode is set
-  if (.not. cfg%topo%enabled) then
-    print *, 'Error: topology analysis requires [topology] block with enabled = true in input.toml'
-    stop 1
-  end if
-  if (len_trim(cfg%topo%mode) == 0) then
-    print *, 'Error: topology analysis requires [topology] block with mode set in input.toml'
-    print *, '  cfg%topo%mode is empty'
-    stop 1
-  end if
+  ! Confinement initialization for QW mode via shared simulation_setup pipeline.
+  ! This handles confinementInitialization, electric field setup, and (if enabled)
+  ! strain — all through simulation_setup_init with skip_sc=.true. since topology
+  ! does not run the self-consistent loop.
+  block
+    type(simulation_setup) :: topo_setup
+    if (cfg%conf_dir == 'z' .and. cfg%confinement == 'qw') then
+      call simulation_setup_init(cfg, topo_setup, skip_sc=.true.)
+      ! Extract profile and kpterms for use by topology subroutines
+      call move_alloc(topo_setup%profile, profile)
+      call move_alloc(topo_setup%kpterms, kpterms)
+    end if
+    call simulation_setup_free(topo_setup)
+  end block
 
   print *, ''
   print *, '=== Topological Analysis (mode=', trim(cfg%topo%mode), ') ==='

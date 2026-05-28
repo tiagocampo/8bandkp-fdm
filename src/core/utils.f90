@@ -7,6 +7,7 @@ implicit none
 private
 public :: dnscsr_z_mkl, simpson, simpson_real
 public :: insertCOO_cmplx, finalizeCOO_cmplx
+public :: tick, tock
 
 contains
 
@@ -242,6 +243,23 @@ real(kind=dp) function simpson_real(f, a, b)
   simpson_real = h * weighted_sum
 
 end function simpson_real
+
+
+  subroutine tick(t)
+      integer, intent(out) :: t
+
+      call system_clock(t)
+  end subroutine tick
+
+  ! returns time in seconds from now to time described by t
+  real function tock(t)
+      integer, intent(in) :: t
+      integer :: now, clock_rate
+
+      call system_clock(now,clock_rate)
+
+      tock = real(now - t)/real(clock_rate)
+  end function tock
 
 
 end module utils

@@ -29,6 +29,7 @@ module definitions
 
   ! Functions and subroutines
   public :: kronij, grid_ngrid, init_grid_from_config
+  public :: validate_semantic
 
   integer, parameter :: sp   = real32
   integer, parameter :: dp   = real64
@@ -472,15 +473,6 @@ module definitions
     integer :: which_band = 0    ! 0=CB, 1=VB
     integer :: band_idx = 1      ! which doublet
 
-    ! ---- Legacy aliases (computed from new fields for backward compat) ----
-    ! These are set in the parser post-processing for gradual migration.
-    ! Consumers should use the new field names above.
-    real(kind=dp), allocatable :: startPos(:)
-    real(kind=dp), allocatable :: endPos(:)
-    integer, allocatable :: intStartPos(:)
-    integer, allocatable :: intEndPos(:)
-    character(len=255), allocatable :: materialN(:)
-
   contains
     final :: simulation_config_finalize
     procedure :: validate => simulation_config_validate
@@ -542,17 +534,12 @@ module definitions
   subroutine simulation_config_finalize(cfg)
     type(simulation_config), intent(inout) :: cfg
 
-    if (allocated(cfg%startPos))       deallocate(cfg%startPos)
-    if (allocated(cfg%endPos))         deallocate(cfg%endPos)
+    if (allocated(cfg%z_min))          deallocate(cfg%z_min)
+    if (allocated(cfg%z_max))          deallocate(cfg%z_max)
     if (allocated(cfg%z))              deallocate(cfg%z)
     if (allocated(cfg%int_start_pos))  deallocate(cfg%int_start_pos)
     if (allocated(cfg%int_end_pos))    deallocate(cfg%int_end_pos)
-    if (allocated(cfg%intStartPos))    deallocate(cfg%intStartPos)
-    if (allocated(cfg%intEndPos))      deallocate(cfg%intEndPos)
     if (allocated(cfg%material_names)) deallocate(cfg%material_names)
-    if (allocated(cfg%materialN))      deallocate(cfg%materialN)
-    if (allocated(cfg%z_min))          deallocate(cfg%z_min)
-    if (allocated(cfg%z_max))          deallocate(cfg%z_max)
     if (allocated(cfg%params))         deallocate(cfg%params)
     if (allocated(cfg%doping))         deallocate(cfg%doping)
     if (allocated(cfg%strain_blocks%delta_Ec))  deallocate(cfg%strain_blocks%delta_Ec)
@@ -655,12 +642,12 @@ module definitions
         error stop 'validate_simulation_config: FDorder must be 2, 4, 6, 8, or 10'
       end if
 
-      ! materialN must be allocated with num_layers entries
-      if (.not. allocated(cfg%materialN)) then
-        error stop 'validate_simulation_config: materialN not allocated'
+      ! material_names must be allocated with num_layers entries
+      if (.not. allocated(cfg%material_names)) then
+        error stop 'validate_simulation_config: material_names not allocated'
       end if
-      if (size(cfg%materialN) < cfg%num_layers) then
-        error stop 'validate_simulation_config: materialN too small for num_layers'
+      if (size(cfg%material_names) < cfg%num_layers) then
+        error stop 'validate_simulation_config: material_names too small for num_layers'
       end if
 
       ! params must be allocated with num_layers entries
@@ -673,6 +660,45 @@ module definitions
     end associate
 
   end subroutine simulation_config_validate
+
+  ! ==================================================================
+  ! Semantic validation: app-specific constraints dispatched on app_name.
+  ! Called by each main*.f90 executable after read_config().
+  ! Calls error stop on failure (F2008).
+  ! ==================================================================
+  subroutine validate_semantic(cfg, app_name)
+    type(simulation_config), intent(in) :: cfg
+    character(len=*), intent(in)        :: app_name
+
+    select case (trim(app_name))
+
+    case ('bandStructure')
+      ! No additional semantic constraints for bandStructure.
+
+    case ('gfactor')
+      if (cfg%wave_vector%nsteps /= 0 .and. cfg%wave_vector%mode /= 'k0') then
+        error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
+      end if
+
+    case ('opticalProperties')
+      if (.not. cfg%optics%enabled) then
+        error stop 'validate_semantic: opticalProperties requires [optics] block with enabled = true'
+      end if
+
+    case ('topologicalAnalysis')
+      if (.not. cfg%topo%enabled) then
+        error stop 'validate_semantic: topologicalAnalysis requires [topology] block in input.toml'
+      end if
+      if (len_trim(cfg%topo%mode) == 0) then
+        error stop 'validate_semantic: topologicalAnalysis requires topology mode to be set'
+      end if
+
+    case default
+      error stop 'validate_semantic: unknown app_name ''' // trim(app_name) // ''''
+
+    end select
+
+  end subroutine validate_semantic
 
   elemental pure function kronij(i,j)
     integer, intent(in) :: i,j
@@ -784,22 +810,6 @@ module definitions
     end select
 
   end subroutine init_grid_from_config
-
-  subroutine tick(t)
-      integer, intent(OUT) :: t
-
-      call system_clock(t)
-  end subroutine tick
-
-  ! returns time in seconds from now to time described by t
-  real function tock(t)
-      integer, intent(in) :: t
-      integer :: now, clock_rate
-
-      call system_clock(now,clock_rate)
-
-      tock = real(now - t)/real(clock_rate)
-  end function tock
 
 
 end module

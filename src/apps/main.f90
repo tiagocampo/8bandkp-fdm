@@ -53,6 +53,9 @@ program kpfdm
   ! Shared setup: read input, initialize materials, confinement, external field
   call read_config(cfg)
 
+  ! Semantic validation (no additional constraints for bandStructure)
+  call validate_semantic(cfg, 'bandStructure')
+
   ! Bulk/QW initialization via simulation_setup (confinement, strain).
   ! SC is deferred until after wave vector setup — bandStructure needs the
   ! full k-point array for SC charge integration, while simulation_setup_init
@@ -60,11 +63,7 @@ program kpfdm
   if (cfg%confinement == 'bulk' .or. cfg%confinement == 'qw') then
     block
       type(simulation_setup) :: setup
-      integer :: sc_save
-      sc_save = cfg%sc%enabled
-      cfg%sc%enabled = 0  ! temporarily disable SC
-      call simulation_setup_init(cfg, setup)
-      cfg%sc%enabled = sc_save  ! restore
+      call simulation_setup_init(cfg, setup, skip_sc=.true.)
       if (cfg%confinement == 'qw') then
         call move_alloc(setup%profile, profile)
         call move_alloc(setup%kpterms, kpterms)
@@ -392,7 +391,7 @@ program kpfdm
       character(len=255) :: lmat(1)
       type(paramStruct) :: lparams(1)
 
-      lmat(1) = cfg%materialN(1)
+      lmat(1) = cfg%material_names(1)
       lparams(1) = cfg%params(1)
 
       N = cfg%landau%nx * 8

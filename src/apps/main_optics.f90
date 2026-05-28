@@ -52,12 +52,8 @@ program opticalProperties
   ! ================================================================
   call read_config(cfg)
 
-  ! Check that optics is enabled
-  if (.not. cfg%optics%enabled) then
-    print '(a)', 'ERROR: optics block not enabled in input.toml'
-    print '(a)', '  Add an [optics] block with enabled = true to compute optical properties'
-    stop 1
-  end if
+  ! Semantic validation (optics block must be enabled)
+  call validate_semantic(cfg, 'opticalProperties')
 
   ! ================================================================
   ! Branch by confinement type

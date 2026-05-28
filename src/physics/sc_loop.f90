@@ -1008,7 +1008,7 @@ contains
     allocate(layer_index(nz))
     layer_index = 0
     do ilayer = 1, cfg%num_layers
-      do iz = cfg%intStartPos(ilayer), cfg%intEndPos(ilayer)
+      do iz = cfg%int_start_pos(ilayer), cfg%int_end_pos(ilayer)
         if (iz >= 1 .and. iz <= nz) then
           layer_index(iz) = ilayer
         end if

@@ -58,8 +58,8 @@ program gfactor
   ! Shared setup: read input, initialize materials
   call read_config(cfg)
 
-  ! g-factor specific validation
-  if (cfg%wave_vector%nsteps /= 0 .and. cfg%wave_vector%mode /= 'k0') stop 'g-factor calculation requires only k=0'
+  ! Semantic validation (gfactor requires k0 mode)
+  call validate_semantic(cfg, 'gfactor')
 
   ! Initialize k for workspace query
   k = 1
@@ -330,10 +330,10 @@ program gfactor
 
       if (cfg%num_layers == 1) call gfactorCalculation(tensor, g_eff, whichBand, bandIdx, cfg%bands%num_cb, &
       & cfg%bands%num_vb, cb_state, vb_state, cb_value, vb_value, cfg%num_layers, cfg%params, &
-      & cfg%startPos(1), cfg%endPos(1), dz=cfg%dz)
+      & cfg%z_min(1), cfg%z_max(1), dz=cfg%dz)
       if (cfg%num_layers > 1)  call gfactorCalculation(tensor, g_eff, whichBand, bandIdx, cfg%bands%num_cb, &
       & cfg%bands%num_vb, cb_state, vb_state, cb_value, vb_value, cfg%num_layers, cfg%params, &
-      & cfg%startPos(1), cfg%endPos(1), profile=setup%profile, kpterms=setup%kpterms, dz=cfg%dz)
+      & cfg%z_min(1), cfg%z_max(1), profile=setup%profile, kpterms=setup%kpterms, dz=cfg%dz)
 
       ! QW optical transitions (must be before setup_free so profile/kpterms are alive)
       if (cfg%optics%enabled .and. cfg%conf_dir == 'z' .and. cfg%num_layers > 1) then
@@ -344,7 +344,7 @@ program gfactor
           call compute_optical_matrix_qw(transitions, num_trans, &
             cb_state, vb_state, cb_value, vb_value, cfg%bands%num_cb, cfg%bands%num_vb, &
             cfg%num_layers, cfg%params, setup%profile, setup%kpterms, &
-            cfg%startPos(1), cfg%endPos(1), cfg%dz)
+            cfg%z_min(1), cfg%z_max(1), cfg%dz)
 
           call ensure_output_dir()
           call get_unit(iounit)
