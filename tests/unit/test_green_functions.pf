@@ -287,7 +287,7 @@ contains
     real(kind=dp), allocatable :: z(:)
     character(len=255) :: material(2)
     type(paramStruct) :: params(2)
-    integer :: intStartPos(2), intEndPos(2)
+    integer :: int_start_pos(2), int_end_pos(2)
 
     ! Grid: 20 nm QW region, dz=1 nm
     dz_val = 10.0_dp
@@ -314,15 +314,15 @@ contains
     end do
 
     ! 2-layer: AlGaAs barrier | GaAs well
-    intStartPos(1) = 1;  intEndPos(1) = 3
-    intStartPos(2) = 4;  intEndPos(2) = ngrid
+    int_start_pos(1) = 1;  int_end_pos(1) = 3
+    int_start_pos(2) = 4;  int_end_pos(2) = ngrid
     material(1) = "Al30Ga70As"
     material(2) = "GaAs"
     call paramDatabase(material, 2, params)
 
     allocate(kpterms(ngrid, ngrid, 10))
     kpterms = 0.0_dp
-    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
       2, params, 'z', profile, kpterms, FDorder=2)
 
     ! Small k range near Gamma

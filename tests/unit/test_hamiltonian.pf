@@ -145,7 +145,7 @@ contains
     integer, parameter :: nlayers = 2
     character(len=255) :: material(nlayers)
     type(paramStruct) :: params(nlayers)
-    integer :: intStartPos(nlayers), intEndPos(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
 
     ! Confinement
     real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
@@ -169,8 +169,8 @@ contains
 
     ! 2-layer: AlGaAs(-50,-25) | GaAs(-25,50)
     ! AlGaAs is points 1-10, GaAs is points 11-41
-    intStartPos(1) = 1;   intEndPos(1) = 10
-    intStartPos(2) = 11;  intEndPos(2) = 41
+    int_start_pos(1) = 1;   int_end_pos(1) = 10
+    int_start_pos(2) = 11;  int_end_pos(2) = 41
     material(1) = "Al30Ga70As"
     material(2) = "GaAs"
     call paramDatabase(material, nlayers, params)
@@ -178,7 +178,7 @@ contains
     ! ---- Run with FDorder=2 ----
     allocate(kpterms(ngrid, ngrid, 10))
     kpterms = 0.0_dp
-    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
       & nlayers, params, 'z', profile, kpterms, FDorder=2)
 
     allocate(HT(matSize, matSize), eig(matSize, 1))
@@ -203,7 +203,7 @@ contains
     ! ---- Run with FDorder=4 ----
     allocate(kpterms(ngrid, ngrid, 10))
     kpterms = 0.0_dp
-    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
       & nlayers, params, 'z', profile, kpterms, FDorder=4)
 
     allocate(HT(matSize, matSize), eig(matSize, 1))
@@ -443,7 +443,7 @@ contains
     integer, parameter :: nlayers = 1
     character(len=255) :: material(nlayers)
     type(paramStruct) :: params(nlayers)
-    integer :: intStartPos(nlayers), intEndPos(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
 
     ! Confinement
     real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
@@ -468,14 +468,14 @@ contains
     end do
 
     ! Single-layer GaAs
-    intStartPos(1) = 1;  intEndPos(1) = ngrid
+    int_start_pos(1) = 1;  int_end_pos(1) = ngrid
     material(1) = "GaAs"
     call paramDatabase(material, nlayers, params)
 
     ! ---- Build kpterms (shared by both runs) ----
     allocate(kpterms(ngrid, ngrid, 10))
     kpterms = 0.0_dp
-    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
       & nlayers, params, 'z', profile, kpterms, FDorder=2)
 
     ! ---- Run 1: Without Zeeman ----
@@ -488,7 +488,7 @@ contains
     ! Rebuild kpterms
     allocate(kpterms(ngrid, ngrid, 10))
     kpterms = 0.0_dp
-    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
       & nlayers, params, 'z', profile, kpterms, FDorder=2)
 
     ! Configure Zeeman: cfg%bdg%enabled = .true. triggers Zeeman in ZB8bandQW
@@ -548,7 +548,7 @@ contains
     integer, parameter :: nlayers = 2
     character(len=255) :: material(nlayers)
     type(paramStruct) :: params(nlayers)
-    integer :: intStartPos(nlayers), intEndPos(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
     real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
     complex(kind=dp), allocatable :: HT(:,:), work(:)
     real(kind=dp), allocatable :: eig(:,:), rwork(:)
@@ -566,8 +566,8 @@ contains
       z(idx) = -50.0_dp + dble(idx - 1) * dz_val
     end do
 
-    intStartPos(1) = 1;   intEndPos(1) = 10
-    intStartPos(2) = 11;  intEndPos(2) = 41
+    int_start_pos(1) = 1;   int_end_pos(1) = 10
+    int_start_pos(2) = 11;  int_end_pos(2) = 41
     material(1) = "GaAs"
     material(2) = "InAs"
     call paramDatabase(material, nlayers, params)
@@ -575,7 +575,7 @@ contains
     ! ---- Unstrained QW ----
     allocate(kpterms(ngrid, ngrid, 10))
     kpterms = 0.0_dp
-    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
       & nlayers, params, 'z', profile, kpterms, FDorder=2)
     allocate(HT(matSize, matSize), eig(matSize, 1))
     HT = cmplx(0.0_dp, kind=dp)
@@ -595,7 +595,7 @@ contains
     ! ---- Strained QW ----
     allocate(kpterms(ngrid, ngrid, 10))
     kpterms = 0.0_dp
-    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
       & nlayers, params, 'z', profile, kpterms, FDorder=2)
 
     a0_ref = params(1)%a0

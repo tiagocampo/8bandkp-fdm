@@ -27,16 +27,16 @@ contains
     integer, parameter :: nlayers = 3
     character(len=255) :: material(nlayers)
     type(paramStruct) :: local_params(nlayers)
-    integer :: intStartPos(nlayers), intEndPos(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
     integer :: it
 
     do it = 1, ngrid
       z(it) = -50.0_dp + real(it - 1, kind=dp) * dz_val
     end do
 
-    intStartPos(1) = 1;   intEndPos(1) = 15
-    intStartPos(2) = 16;  intEndPos(2) = 36
-    intStartPos(3) = 37;  intEndPos(3) = 51
+    int_start_pos(1) = 1;   int_end_pos(1) = 15
+    int_start_pos(2) = 16;  int_end_pos(2) = 36
+    int_start_pos(3) = 37;  int_end_pos(3) = 51
 
     material(1) = "Al30Ga70As"
     material(2) = "GaAs"
@@ -46,7 +46,7 @@ contains
 
     allocate(kpterms(ngrid, ngrid, 10))
     kpterms = 0.0_dp
-    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
       & nlayers, local_params, 'z', profile, kpterms, FDorder=2)
 
     if (present(params)) params = local_params

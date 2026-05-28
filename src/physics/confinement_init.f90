@@ -62,11 +62,11 @@ contains
 
   end subroutine build_kpterm_block
 
-  subroutine confinementInitialization_raw(z, startPos, endPos, material, nlayers,&
+  subroutine confinementInitialization_raw(z, int_start_pos, int_end_pos, material, nlayers,&
     & params, confDir, profile, kpterms, FDorder)
 
     real(kind = dp), intent(in), contiguous, dimension(:) :: z
-    integer, intent(in), contiguous, dimension(:) :: startPos, endPos
+    integer, intent(in), contiguous, dimension(:) :: int_start_pos, int_end_pos
     integer, intent(in) :: nlayers
     character(len = 255), intent(in) :: material(nlayers)
     type(paramStruct), intent(in) :: params(nlayers)
@@ -118,7 +118,7 @@ contains
       ! This allows 2-layer configs where barrier covers the full domain
       ! and the well layer overwrites the central region.
       do i = 1, nlayers, 1
-        do j = startPos(i), endPos(i)
+        do j = int_start_pos(i), int_end_pos(i)
           profile(j, 1) = params(i)%EV
           profile(j, 2) = params(i)%EV - params(i)%DeltaSO
           profile(j, 3) = params(i)%EC
@@ -257,8 +257,8 @@ contains
   !>
   !> For QW (ndim=1), uses cfg%grid%z(:) for coordinates and
   !> grid_ngrid(cfg%grid) for the spatial DOF count.  Falls back to the
-  !> legacy cfg fields (z, intStartPos, intEndPos) when the grid has not
-  !> been initialised yet (grid%ndim == 0 and confinement == 'qw').
+  !> cfg%z field when the grid has not been initialised yet
+  !> (grid%ndim == 0 and confinement == 'qw').
   !---------------------------------------------------------------------------
   subroutine confinementInitialization_cfg(cfg, profile, kpterms)
 
@@ -283,24 +283,15 @@ contains
     end if
 
     ! Dispatch to the raw routine using the appropriate coordinate source
-    ! Prefer new int_start_pos/int_end_pos fields; fall back to legacy aliases
-    if (allocated(cfg%int_start_pos) .and. .not. allocated(cfg%intStartPos)) then
-      allocate(cfg%intStartPos(size(cfg%int_start_pos)))
-      cfg%intStartPos = cfg%int_start_pos
-    end if
-    if (allocated(cfg%int_end_pos) .and. .not. allocated(cfg%intEndPos)) then
-      allocate(cfg%intEndPos(size(cfg%int_end_pos)))
-      cfg%intEndPos = cfg%int_end_pos
-    end if
     if (cfg%grid%ndim >= 1 .and. allocated(cfg%grid%z)) then
       ! New path: use spatial_grid coordinates
-      call confinementInitialization_raw(cfg%grid%z, cfg%intStartPos, &
-        & cfg%intEndPos, cfg%materialN, cfg%num_layers, cfg%params, &
+      call confinementInitialization_raw(cfg%grid%z, cfg%int_start_pos, &
+        & cfg%int_end_pos, cfg%material_names, cfg%num_layers, cfg%params, &
         & cfg%conf_dir, profile, kpterms, cfg%FDorder)
     else
       ! Legacy path: use cfg%z (backward compat before init_grid_from_config)
-      call confinementInitialization_raw(cfg%z, cfg%intStartPos, &
-        & cfg%intEndPos, cfg%materialN, cfg%num_layers, cfg%params, &
+      call confinementInitialization_raw(cfg%z, cfg%int_start_pos, &
+        & cfg%int_end_pos, cfg%material_names, cfg%num_layers, cfg%params, &
         & cfg%conf_dir, profile, kpterms, cfg%FDorder)
     end if
 
