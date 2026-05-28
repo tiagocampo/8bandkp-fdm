@@ -252,8 +252,8 @@ program opticalProperties
     N = setup%N
     if (setup%sc_was_run) cfg%sc%fermi_level = setup%fermi_level
     ! Compute eigenvalue range for optics: top numvb valence + bottom numcb conduction
-    il = NUM_VB_STATES*cfg%ngrid - cfg%bands%num_vb + 1
-    iuu = NUM_VB_STATES*cfg%ngrid + cfg%bands%num_cb
+    il = NUM_VB_STATES*cfg%grid%npoints() - cfg%bands%num_vb + 1
+    iuu = NUM_VB_STATES*cfg%grid%npoints() + cfg%bands%num_cb
     print '(a,i0,a,i0)', ' Computing states from index ', il, ' to ', iuu
 
     ! Build velocity matrices via simulation_setup
@@ -294,7 +294,7 @@ program opticalProperties
     call ensure_output_dir()
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
-    do i = 1, cfg%ngrid
+    do i = 1, cfg%grid%npoints()
       write(iounit, *) cfg%z(i), setup%profile(i,1), setup%profile(i,2), setup%profile(i,3)
     end do
     close(iounit)
@@ -424,7 +424,7 @@ program opticalProperties
     ! ISBT dipole transition table (zone-center only)
     if (cfg%optics%isbt_enabled) then
       call compute_intersubband_transitions(eig(:, 1), eigv(:, :, 1), &
-        & cfg%z, cfg%dz, cfg%bands%num_cb, cfg%bands%num_vb, cfg%ngrid, &
+        & cfg%z, cfg%dz, cfg%bands%num_cb, cfg%bands%num_vb, cfg%grid%npoints(), &
         & "output/isbt_transitions.dat")
     end if
 
@@ -443,7 +443,7 @@ program opticalProperties
         E_gap_ex = eig(cb_st, 1) - eig(vb_st, 1)
         call compute_exciton_binding(eig(:, 1), eigv(:, :, 1), &
           & cfg%z, cfg%dz, cfg%num_layers, cfg%params, &
-          & cfg%bands%num_cb, cfg%bands%num_vb, cfg%ngrid, E_binding_ex, lambda_opt_ex, &
+          & cfg%bands%num_cb, cfg%bands%num_vb, cfg%grid%npoints(), E_binding_ex, lambda_opt_ex, &
           & cfg%grid%material_id)
         print '(a,f8.3,a)', ' Exciton binding energy: ', E_binding_ex, ' meV'
         call apply_excitonic_corrections(oe%E_grid, oe%alpha_te, oe%alpha_tm, &

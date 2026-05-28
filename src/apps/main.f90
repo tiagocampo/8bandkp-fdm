@@ -409,7 +409,7 @@ program kpfdm
   ! ====================================================================
 
   ! Set matrix dimensions and eigenvalue range
-  N = cfg%ngrid * 8
+  N = cfg%grid%npoints() * 8
   if (conf_direction(cfg%confinement) == 'n') then
     N = 8  ! For bulk, we only need 8x8
     if (cfg%evnum > 8) then
@@ -422,13 +422,13 @@ program kpfdm
 
   ! For quantum well, check if requested bands are within limits
   if (conf_direction(cfg%confinement) == 'z') then
-    if (cfg%bands%num_cb > NUM_CB_STATES*cfg%ngrid) then
-      print *, "Warning: requesting more conduction bands than available. Limiting to ", NUM_CB_STATES*cfg%ngrid
-      cfg%bands%num_cb = NUM_CB_STATES*cfg%ngrid
+    if (cfg%bands%num_cb > NUM_CB_STATES*cfg%grid%npoints()) then
+      print *, "Warning: requesting more conduction bands than available. Limiting to ", NUM_CB_STATES*cfg%grid%npoints()
+      cfg%bands%num_cb = NUM_CB_STATES*cfg%grid%npoints()
     end if
-    if (cfg%bands%num_vb > NUM_VB_STATES*cfg%ngrid) then
-      print *, "Warning: requesting more valence bands than available. Limiting to ", NUM_VB_STATES*cfg%ngrid
-      cfg%bands%num_vb = NUM_VB_STATES*cfg%ngrid
+    if (cfg%bands%num_vb > NUM_VB_STATES*cfg%grid%npoints()) then
+      print *, "Warning: requesting more valence bands than available. Limiting to ", NUM_VB_STATES*cfg%grid%npoints()
+      cfg%bands%num_vb = NUM_VB_STATES*cfg%grid%npoints()
     end if
     cfg%evnum = cfg%bands%num_cb + cfg%bands%num_vb
   end if
@@ -441,8 +441,8 @@ program kpfdm
   else
     ! For quantum well, select the right range of states
     ! We want the highest numvb valence states and lowest numcb conduction states
-    il = NUM_VB_STATES*cfg%ngrid - cfg%bands%num_vb + 1  ! Start from highest valence band
-    iuu = NUM_VB_STATES*cfg%ngrid + cfg%bands%num_cb     ! Up to highest conduction band
+    il = NUM_VB_STATES*cfg%grid%npoints() - cfg%bands%num_vb + 1  ! Start from highest valence band
+    iuu = NUM_VB_STATES*cfg%grid%npoints() + cfg%bands%num_cb     ! Up to highest conduction band
     print *, "Computing states from index", il, "to", iuu
   end if
 
@@ -482,7 +482,7 @@ program kpfdm
     call ensure_output_dir()
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
-    do i = 1, cfg%ngrid, 1
+    do i = 1, cfg%grid%npoints(), 1
       write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
     end do
     close(iounit)
@@ -509,7 +509,7 @@ program kpfdm
     ! Write updated profile after SC convergence
     call get_unit(iounit)
     open(unit=iounit, file='output/sc_potential_profile.dat', status="replace", action="write")
-    do i = 1, cfg%ngrid, 1
+    do i = 1, cfg%grid%npoints(), 1
       write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
     end do
     close(iounit)
@@ -530,7 +530,7 @@ program kpfdm
       call get_unit(iounit)
       open(unit=iounit, file='output/sc_charge.dat', status="replace", action="write")
       write(iounit, '(A)') '# z(A) n_e(cm^-3) n_h(cm^-3)'
-      do i = 1, cfg%ngrid, 1
+      do i = 1, cfg%grid%npoints(), 1
         write(iounit, '(3(g14.6,1x))') cfg%z(i), sc_ne_qw(i), sc_nh_qw(i)
       end do
       close(iounit)
@@ -614,7 +614,7 @@ program kpfdm
     do k = 1, cfg%wave_vector%nsteps
       if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
         call writeEigenfunctions(8, min(cfg%evnum,8), eigv(:,1:min(cfg%evnum,8),k), &
-          & k, cfg%ngrid, cfg%z, .true., &
+          & k, cfg%grid%npoints(), cfg%z, .true., &
           & k_magnitude=sqrt(smallk(k)%kx**2 + smallk(k)%ky**2 + smallk(k)%kz**2))
       end if
     end do
@@ -674,7 +674,7 @@ program kpfdm
     do k = 1, cfg%wave_vector%nsteps
       if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
         call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
-          & k, cfg%ngrid, cfg%z, .false.)
+          & k, cfg%grid%npoints(), cfg%z, .false.)
       end if
     end do
 
@@ -839,7 +839,7 @@ program kpfdm
       real(kind=dp) :: E_binding_sa, lambda_opt_sa
       call compute_exciton_binding(eig(:, 1), eigv(:, :, 1), &
         & cfg%z, cfg%dz, cfg%num_layers, cfg%params, &
-        & cfg%bands%num_cb, cfg%bands%num_vb, cfg%ngrid, E_binding_sa, lambda_opt_sa, &
+        & cfg%bands%num_cb, cfg%bands%num_vb, cfg%grid%npoints(), E_binding_sa, lambda_opt_sa, &
         & cfg%grid%material_id)
       print '(A,F8.3,A)', ' Exciton binding energy: ', E_binding_sa, ' meV'
       print '(A,F8.2,A)', ' Variational parameter: ', lambda_opt_sa, ' AA'
@@ -851,7 +851,7 @@ program kpfdm
   ! ====================================================================
   if (cfg%scattering%enabled .and. conf_direction(cfg%confinement) == 'z') then
     call compute_phonon_scattering(cfg, eig(:, 1), eigv(:, :, 1), &
-      & cfg%z, cfg%params, cfg%dz, cfg%bands%num_cb, cfg%bands%num_vb, cfg%ngrid)
+      & cfg%z, cfg%params, cfg%dz, cfg%bands%num_cb, cfg%bands%num_vb, cfg%grid%npoints())
     print '(A)', ' Scattering rates written to output/scattering_rates.dat'
   end if
 

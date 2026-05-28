@@ -275,12 +275,12 @@ program gfactor
     ! ----------------------------------------------------------------
 
     print *, 'adjusting numcb and numvb to get all states'
-    cfg%bands%num_cb = NUM_CB_STATES*cfg%ngrid
-    cfg%bands%num_vb = NUM_VB_STATES*cfg%ngrid
+    cfg%bands%num_cb = NUM_CB_STATES*cfg%grid%npoints()
+    cfg%bands%num_vb = NUM_VB_STATES*cfg%grid%npoints()
 
     cfg%evnum = cfg%bands%num_cb + cfg%bands%num_vb
 
-    N = cfg%ngrid*8
+    N = cfg%grid%npoints()*8
 
     if (cfg%evnum /= N) stop 'evnum not equal to total matrix size'
 
@@ -295,7 +295,7 @@ program gfactor
         call ensure_output_dir()
         call get_unit(iounit)
         open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
-        do i = 1, cfg%ngrid
+        do i = 1, cfg%grid%npoints()
           write(iounit, *) cfg%z(i), setup%profile(i,1), setup%profile(i,2), setup%profile(i,3)
         end do
         close(iounit)
@@ -310,7 +310,7 @@ program gfactor
       call setup_solve_kpoint_serial(setup, cfg, smallk(1), eig(:,1), HT)
 
       ! Write eigenfunctions for multi-layer QW
-      if (cfg%num_layers > 1) call writeEigenfunctions(N, N, HT, 1, cfg%ngrid, cfg%z, cfg%num_layers==1)
+      if (cfg%num_layers > 1) call writeEigenfunctions(N, N, HT, 1, cfg%grid%npoints(), cfg%z, cfg%num_layers==1)
 
       allocate(cb_state(N,cfg%bands%num_cb))
       allocate(vb_state(N,cfg%bands%num_vb))

@@ -140,7 +140,6 @@ contains
     kpar_grid(3) = 0.2_dp
 
     ! Minimal config
-    cfg%ngrid = N
     cfg%dz = dz
     cfg%bands%num_cb = 1
     cfg%sc%temperature = 300.0_dp
@@ -267,7 +266,6 @@ contains
     kpar_grid(2) = 0.1_dp
     kpar_grid(3) = 0.2_dp
 
-    cfg%ngrid = N
     cfg%dz = dz
     cfg%bands%num_cb = 1
     cfg%sc%temperature = 300.0_dp
@@ -821,7 +819,6 @@ contains
       z(iz) = (iz - 51) * dz
     end do
 
-    cfg%ngrid = nz
     cfg%dz = dz
     allocate(cfg%z(nz))
     cfg%z = z

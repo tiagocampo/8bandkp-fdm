@@ -111,7 +111,7 @@ contains
     logical :: sc_converged
     type(wavevector) :: wv
 
-    nz = cfg%ngrid
+    nz = cfg%grid%npoints()
     dz_val = cfg%dz
     num_subbands = iuu - il + 1
     niter = cfg%sc%max_iterations

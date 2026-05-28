@@ -723,7 +723,7 @@ contains
 
     print *, '--- BdG QW mode: dense Majorana modes ---'
 
-    N_local = cfg_in%ngrid
+    N_local = cfg_in%grid%npoints()
     Ntot_local = 8 * N_local
     Nbdg_local = 16 * N_local
     zero_tol = max(1.0e-10_dp, 0.001_dp * abs(cfg_in%bdg%delta_0))

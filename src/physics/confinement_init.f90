@@ -268,13 +268,8 @@ contains
 
     integer :: ny
 
-    ! Determine spatial DOF count from the grid when available,
-    ! otherwise from the legacy fdStep field.
-    if (cfg%grid%ndim >= 1) then
-      ny = grid_ngrid(cfg%grid)
-    else
-      ny = cfg%ngrid
-    end if
+    ! Determine spatial DOF count from the grid.
+    ny = grid_ngrid(cfg%grid)
 
     ! Allocate kpterms if not already allocated (caller may pre-allocate)
     if (.not. allocated(kpterms)) then

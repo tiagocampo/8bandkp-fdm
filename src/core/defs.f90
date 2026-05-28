@@ -457,7 +457,6 @@ module definitions
     type(scattering_config)   :: scattering
 
     ! ---- Computed fields (derived from inputs) ----
-    integer            :: ngrid = 1            ! computed grid size (was fdStep)
     integer            :: evnum = 8            ! bands%num_cb + bands%num_vb
     real(kind=dp)      :: totalSize = 0.0_dp
     real(kind=dp)      :: delta = 0.0_dp
@@ -575,9 +574,9 @@ module definitions
     class(simulation_config), intent(in) :: self
 
     associate(cfg => self)
-      ! ngrid: must be positive
-      if (cfg%ngrid <= 0) then
-        error stop 'validate_simulation_config: ngrid must be positive'
+      ! grid: must have at least one point
+      if (cfg%grid%npoints() <= 0) then
+        error stop 'validate_simulation_config: grid must have at least one point'
       end if
 
       ! bands: must be non-negative
@@ -756,7 +755,7 @@ module definitions
   subroutine init_grid_from_config(cfg)
     type(simulation_config), intent(inout) :: cfg
 
-    integer :: i, j, ngrid
+    integer :: i, j
 
     select case (trim(cfg%confinement))
     case ('bulk')
@@ -772,7 +771,7 @@ module definitions
       ! QW: 1D confinement along z
       cfg%grid%ndim = 1
       cfg%grid%nx   = 1
-      cfg%grid%ny   = cfg%ngrid
+      cfg%grid%ny   = cfg%fd_step
       cfg%grid%dx   = 0.0_dp
       cfg%grid%dy   = cfg%dz
 
@@ -783,7 +782,7 @@ module definitions
 
       ! Build material_id from int_start_pos/int_end_pos
       if (allocated(cfg%int_start_pos) .and. allocated(cfg%int_end_pos)) then
-        allocate(cfg%grid%material_id(cfg%ngrid))
+        allocate(cfg%grid%material_id(cfg%fd_step))
         cfg%grid%material_id = 0
         do i = 1, cfg%num_layers
           cfg%grid%material_id(cfg%int_start_pos(i):cfg%int_end_pos(i)) = i

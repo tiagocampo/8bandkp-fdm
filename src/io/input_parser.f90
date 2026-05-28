@@ -87,7 +87,6 @@ contains
 
     case ('bulk')
       call parse_materials_bulk(table, cfg)
-      cfg%ngrid = 1
       cfg%totalSize = 0.0_dp
       cfg%delta = 0.0_dp
       cfg%dz = 0.0_dp
@@ -230,10 +229,9 @@ contains
     end do
 
     ! Grid computation
-    cfg%ngrid = cfg%fd_step
     cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
-    cfg%delta = cfg%totalSize / real(cfg%ngrid - 1, kind=dp)
-    cfg%z = [ (cfg%z_min(1) + (i-1)*cfg%delta, i=1, cfg%ngrid) ]
+    cfg%delta = cfg%totalSize / real(cfg%fd_step - 1, kind=dp)
+    cfg%z = [ (cfg%z_min(1) + (i-1)*cfg%delta, i=1, cfg%fd_step) ]
     cfg%dz = cfg%delta
 
     do i = 1, cfg%num_layers
@@ -339,7 +337,6 @@ contains
     end if
 
     ! Computed grid size
-    cfg%ngrid = cfg%wire%ny
     cfg%dz = cfg%wire%dy
   end subroutine parse_wire
 
@@ -396,7 +393,6 @@ contains
     cfg%material_names(1) = trim(name_val)
 
     ! Computed fields
-    cfg%ngrid = cfg%landau%nx
     cfg%dz = cfg%landau%width / real(cfg%landau%nx - 1, kind=dp)
     cfg%totalSize = cfg%landau%width
     cfg%z = [ ((i - 1) * cfg%dz - 0.5_dp * cfg%landau%width, i=1, cfg%landau%nx) ]

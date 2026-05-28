@@ -111,7 +111,7 @@ contains
     ! Build a minimal QW GaAs/AlGaAs config
     fdStep = 51
     cfg%confinement = 'qw'
-    cfg%ngrid = fdStep
+    cfg%fd_step = fdStep
     cfg%FDorder = 2
     cfg%num_layers = 2
     cfg%bands%num_cb = 2
@@ -224,7 +224,7 @@ contains
     call simulation_setup_init(cfg, setup)
     call setup_build_velocity_matrices(setup, cfg)
 
-    expected_N = cfg%ngrid * 8
+    expected_N = cfg%grid%npoints() * 8
 
     @assertTrue(setup%vel_built)
 
@@ -257,7 +257,6 @@ contains
     character(len=255) :: materials(1)
 
     cfg%confinement = 'bulk'
-    cfg%ngrid = 1
     cfg%FDorder = 2
     cfg%num_layers = 1
     cfg%bands%num_cb = 2
@@ -297,7 +296,7 @@ contains
 
     fdStep = 11
     cfg%confinement = 'qw'
-    cfg%ngrid = fdStep
+    cfg%fd_step = fdStep
     cfg%FDorder = 2
     cfg%num_layers = 2
     cfg%bands%num_cb = 2
@@ -505,7 +504,6 @@ contains
     ny = 5
 
     cfg%confinement = 'wire'
-    cfg%ngrid = nx * ny
     cfg%FDorder = 2
     cfg%num_layers = 1
     cfg%bands%num_cb = 2
@@ -566,7 +564,7 @@ contains
     ! Build QW with InAs well in GaAs barrier (lattice mismatch ~7%)
     fdStep = 51
     cfg%confinement = 'qw'
-    cfg%ngrid = fdStep
+    cfg%fd_step = fdStep
     cfg%FDorder = 2
     cfg%num_layers = 2
     cfg%bands%num_cb = 2
@@ -662,7 +660,7 @@ contains
     ! (make_qw_gaas_config uses 'AlGaAs' which is not in the parameter DB)
     fdStep = 11
     cfg%confinement = 'qw'
-    cfg%ngrid = fdStep
+    cfg%fd_step = fdStep
     cfg%FDorder = 2
     cfg%num_layers = 2
     cfg%bands%num_cb = 2
@@ -749,7 +747,7 @@ contains
     ! Build QW config identical to test_sc_setup
     fdStep = 11
     cfg%confinement = 'qw'
-    cfg%ngrid = fdStep
+    cfg%fd_step = fdStep
     cfg%FDorder = 2
     cfg%num_layers = 2
     cfg%bands%num_cb = 2

@@ -354,7 +354,7 @@ contains
 
     N = 3
     cfg%confinement = 'qw'
-    cfg%ngrid = N
+    cfg%fd_step = N
     cfg%FDorder = 2
     cfg%num_layers = 1
     cfg%bands%num_cb = 2
@@ -375,6 +375,7 @@ contains
       kpterms(i,i,4) = 0.2_dp
       kpterms(i,i,9) = 0.3_dp
     end do
+    call init_grid_from_config(cfg)
   end subroutine setup_minimal_qw_bdg_fixture
 
   @test
@@ -522,7 +523,7 @@ contains
 
     N = 5
     cfg%confinement = 'qw'
-    cfg%ngrid = N
+    cfg%fd_step = N
     cfg%FDorder = 2
     cfg%num_layers = 1
     cfg%totalSize = 50.0_dp  ! 50 AA
@@ -531,6 +532,7 @@ contains
     cfg%bands%num_cb = 2
     cfg%bands%num_vb = 6
     cfg%evnum = 8
+    call init_grid_from_config(cfg)
 
     ! Minimal single-material profile
     allocate(profile(N, 3))
@@ -561,7 +563,7 @@ contains
 
     N = 5
     cfg%confinement = 'qw'
-    cfg%ngrid = N
+    cfg%fd_step = N
     cfg%FDorder = 2
     cfg%num_layers = 1
     cfg%totalSize = 50.0_dp
@@ -570,6 +572,7 @@ contains
     cfg%bands%num_cb = 2
     cfg%bands%num_vb = 6
     cfg%evnum = 8
+    call init_grid_from_config(cfg)
 
     allocate(profile(N, 3))
     profile(:, 1) = 0.0_dp
@@ -669,9 +672,9 @@ contains
 
     call compute_zeeman_vz(cfg_field%bdg%g_factor, mu_B, sqrt(sum(B_vec**2)), Vz)
 
-    n8 = 8 * cfg_field%ngrid
+    n8 = 8 * cfg_field%grid%npoints()
     do ib = 1, 8
-      row = (ib - 1) * cfg_field%ngrid + 1
+      row = (ib - 1) * cfg_field%grid%npoints() + 1
       diag_delta = real(H_field(row, row) - H_zero(row, row), kind=dp)
       hole_delta = real(H_field(n8 + row, n8 + row) - H_zero(n8 + row, n8 + row), kind=dp)
       @assertEqual(Vz(ib), diag_delta, tolerance=1.0e-12_dp)

@@ -96,7 +96,7 @@ contains
       setup%lwork = 0
 
     case('qw')
-      setup%N = cfg%ngrid * 8
+      setup%N = cfg%grid%npoints() * 8
       setup%il = cfg%bands%num_vb + 1
       setup%iuu = setup%N
       allocate(setup%kpterms(grid_ngrid(cfg%grid), grid_ngrid(cfg%grid), 10))
