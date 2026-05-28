@@ -218,4 +218,54 @@ contains
     @assertEqual(5.65482_dp, params(1)%a0, tolerance=1.0e-10_dp)
   end subroutine test_alloy_strain_interpolation
 
+  ! ==================================================================
+  ! validate_semantic tests — passing cases only.
+  ! error stop cannot be caught by pFUnit 4.x, so failure cases
+  ! are tested manually.
+  ! ==================================================================
+
+  @test
+  subroutine test_validate_semantic_bandStructure_ok()
+    ! bandStructure has no additional semantic constraints — always passes.
+    type(simulation_config) :: cfg
+    ! cfg is default-initialized; no fields need setting.
+    call validate_semantic(cfg, 'bandStructure')
+    ! If we reach here, the test passes (no error stop).
+  end subroutine test_validate_semantic_bandStructure_ok
+
+  @test
+  subroutine test_validate_semantic_gfactor_nsteps0_ok()
+    ! gfactor with nsteps=0 should pass regardless of mode.
+    type(simulation_config) :: cfg
+    cfg%wave_vector%nsteps = 0
+    cfg%wave_vector%mode = 'sweep'
+    call validate_semantic(cfg, 'gfactor')
+  end subroutine test_validate_semantic_gfactor_nsteps0_ok
+
+  @test
+  subroutine test_validate_semantic_gfactor_mode_k0_ok()
+    ! gfactor with mode='k0' should pass even if nsteps /= 0.
+    type(simulation_config) :: cfg
+    cfg%wave_vector%nsteps = 100
+    cfg%wave_vector%mode = 'k0'
+    call validate_semantic(cfg, 'gfactor')
+  end subroutine test_validate_semantic_gfactor_mode_k0_ok
+
+  @test
+  subroutine test_validate_semantic_optics_enabled_ok()
+    ! opticalProperties with optics%enabled=.true. passes.
+    type(simulation_config) :: cfg
+    cfg%optics%enabled = .true.
+    call validate_semantic(cfg, 'opticalProperties')
+  end subroutine test_validate_semantic_optics_enabled_ok
+
+  @test
+  subroutine test_validate_semantic_topology_enabled_ok()
+    ! topologicalAnalysis with topo%enabled=.true. and mode set passes.
+    type(simulation_config) :: cfg
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qhe'
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_enabled_ok
+
 end module test_parameters
