@@ -44,27 +44,23 @@ contains
     call require_string(table, 'confinement', str_val, 'top-level')
     cfg%confinement = trim(str_val)
 
-    call get_value(table, 'FDorder', cfg%FDorder, stat=stat)
-    if (stat /= 0) then
-      cfg%FDorder = 2  ! default
-    end if
+    call get_value(table, 'FDorder', cfg%FDorder, 2, stat=stat)
+    call check_optional_stat(stat, 'FDorder', 'top-level')
 
-    call get_value(table, 'fd_step', cfg%fd_step, stat=stat)
-    if (stat /= 0) then
-      cfg%fd_step = 1  ! default
-    end if
+    call get_value(table, 'fd_step', cfg%fd_step, 1, stat=stat)
+    call check_optional_stat(stat, 'fd_step', 'top-level')
 
     ! ---- [wave_vector] ----
     call get_value(table, 'wave_vector', child, requested=.false., stat=stat)
     if (stat == 0 .and. associated(child)) then
       call require_string(child, 'mode', str_val, 'wave_vector')
       cfg%wave_vector%mode = trim(str_val)
-      call get_value(child, 'max', cfg%wave_vector%max, stat=stat)
-      if (stat /= 0) cfg%wave_vector%max = 0.0_dp
-      call get_value(child, 'step', cfg%wave_vector%step, stat=stat)
-      if (stat /= 0) cfg%wave_vector%step = 0.01_dp
-      call get_value(child, 'nsteps', cfg%wave_vector%nsteps, stat=stat)
-      if (stat /= 0) cfg%wave_vector%nsteps = 100
+      call get_value(child, 'max', cfg%wave_vector%max, 0.0_dp, stat=stat)
+      call check_optional_stat(stat, 'max', 'wave_vector')
+      call get_value(child, 'step', cfg%wave_vector%step, 0.01_dp, stat=stat)
+      call check_optional_stat(stat, 'step', 'wave_vector')
+      call get_value(child, 'nsteps', cfg%wave_vector%nsteps, 100, stat=stat)
+      call check_optional_stat(stat, 'nsteps', 'wave_vector')
     else
       ! Defaults if section missing
       cfg%wave_vector%mode = 'k0'
@@ -76,10 +72,10 @@ contains
     ! ---- [bands] ----
     call get_value(table, 'bands', child, requested=.false., stat=stat)
     if (stat == 0 .and. associated(child)) then
-      call get_value(child, 'num_cb', cfg%bands%num_cb, stat=stat)
-      if (stat /= 0) cfg%bands%num_cb = 2
-      call get_value(child, 'num_vb', cfg%bands%num_vb, stat=stat)
-      if (stat /= 0) cfg%bands%num_vb = 6
+      call get_value(child, 'num_cb', cfg%bands%num_cb, 2, stat=stat)
+      call check_optional_stat(stat, 'num_cb', 'bands')
+      call get_value(child, 'num_vb', cfg%bands%num_vb, 6, stat=stat)
+      call check_optional_stat(stat, 'num_vb', 'bands')
     else
       cfg%bands%num_cb = 2
       cfg%bands%num_vb = 6
@@ -130,11 +126,12 @@ contains
     call parse_gfactor(table, cfg)
 
     ! ---- Material parameter database ----
-    call paramDatabase(cfg%materialN, cfg%num_layers, cfg%params)
+    call paramDatabase(cfg%material_names, cfg%num_layers, cfg%params)
 
     ! ---- Bulk strain substrate (optional) ----
     call get_value(table, 'strain_substrate', cfg%params(1)%strainSubstrate, &
       0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'strain_substrate', 'top-level')
 
     ! ---- Initialize spatial grid ----
     call init_grid_from_config(cfg)
@@ -174,15 +171,10 @@ contains
     end if
 
     cfg%num_layers = 1
-    allocate(cfg%materialN(1))
     allocate(cfg%material_names(1))
     allocate(cfg%params(1))
-    allocate(cfg%startPos(1))
-    allocate(cfg%endPos(1))
     allocate(cfg%z_min(1))
     allocate(cfg%z_max(1))
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = 1.0_dp
     cfg%z_min(1) = 0.0_dp
     cfg%z_max(1) = 1.0_dp
 
@@ -192,7 +184,6 @@ contains
       stop 1
     end if
     call require_string(mat, 'name', name_val, 'material')
-    cfg%materialN(1) = trim(name_val)
     cfg%material_names(1) = trim(name_val)
   end subroutine parse_materials_bulk
 
@@ -221,17 +212,12 @@ contains
     end if
 
     cfg%num_layers = nmat
-    allocate(cfg%materialN(nmat))
     allocate(cfg%material_names(nmat))
     allocate(cfg%params(nmat))
-    allocate(cfg%startPos(nmat))
-    allocate(cfg%endPos(nmat))
     allocate(cfg%z_min(nmat))
     allocate(cfg%z_max(nmat))
     allocate(cfg%int_start_pos(nmat))
     allocate(cfg%int_end_pos(nmat))
-    allocate(cfg%intStartPos(nmat))
-    allocate(cfg%intEndPos(nmat))
 
     do i = 1, nmat
       call get_value(materials, i, mat, stat=stat)
@@ -240,40 +226,24 @@ contains
         stop 1
       end if
       call require_string(mat, 'name', name_val, 'material')
-      cfg%materialN(i) = trim(name_val)
       cfg%material_names(i) = trim(name_val)
       call get_value(mat, 'z_min', cfg%z_min(i), 0.0_dp, stat=stat)
+      call check_optional_stat(stat, 'z_min', 'material')
       call get_value(mat, 'z_max', cfg%z_max(i), 0.0_dp, stat=stat)
-      cfg%startPos(i) = cfg%z_min(i)
-      cfg%endPos(i) = cfg%z_max(i)
+      call check_optional_stat(stat, 'z_max', 'material')
     end do
-
-    ! Validate fd_step minimum for QW mode
-    if (cfg%fd_step < 3) then
-      print *, 'Error: QW mode requires fd_step >= 3, got ', cfg%fd_step
-      stop 1
-    end if
-
-    ! Validate fd_step >= FDorder + 1 for QW mode
-    if (cfg%fd_step < cfg%FDorder + 1) then
-      print *, 'Error: QW fd_step must be >= FDorder + 1, got fd_step=', cfg%fd_step, &
-        ' FDorder=', cfg%FDorder
-      stop 1
-    end if
 
     ! Grid computation
     cfg%ngrid = cfg%fd_step
-    cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
     cfg%delta = cfg%totalSize / real(cfg%ngrid - 1, kind=dp)
-    cfg%z = [ (cfg%startPos(1) + (i-1)*cfg%delta, i=1, cfg%ngrid) ]
+    cfg%z = [ (cfg%z_min(1) + (i-1)*cfg%delta, i=1, cfg%ngrid) ]
     cfg%dz = cfg%delta
 
     do i = 1, cfg%num_layers
-      cfg%int_start_pos(i) = nint((cfg%startPos(i) - cfg%startPos(1)) / cfg%delta) + 1
-      cfg%int_end_pos(i) = nint((cfg%endPos(i) - cfg%startPos(1)) / cfg%delta) + 1
+      cfg%int_start_pos(i) = nint((cfg%z_min(i) - cfg%z_min(1)) / cfg%delta) + 1
+      cfg%int_end_pos(i) = nint((cfg%z_max(i) - cfg%z_min(1)) / cfg%delta) + 1
     end do
-    cfg%intStartPos = cfg%int_start_pos
-    cfg%intEndPos = cfg%int_end_pos
   end subroutine parse_materials_qw
 
   ! ==================================================================
@@ -347,11 +317,8 @@ contains
       cfg%wire%num_regions = nreg
       cfg%num_layers = nreg
       allocate(cfg%wire%regions(nreg))
-      allocate(cfg%materialN(nreg))
       allocate(cfg%material_names(nreg))
       allocate(cfg%params(nreg))
-      allocate(cfg%startPos(1))
-      allocate(cfg%endPos(1))
       allocate(cfg%z_min(nreg))
       allocate(cfg%z_max(nreg))
       do i = 1, nreg
@@ -363,33 +330,15 @@ contains
         call require_string(reg, 'material', mat_name, 'region')
         cfg%wire%regions(i)%material = trim(mat_name)
         call get_value(reg, 'inner', cfg%wire%regions(i)%inner, 0.0_dp, stat=stat)
+        call check_optional_stat(stat, 'inner', 'region')
         call get_value(reg, 'outer', cfg%wire%regions(i)%outer, 0.0_dp, stat=stat)
-        cfg%materialN(i) = trim(mat_name)
+        call check_optional_stat(stat, 'outer', 'region')
         cfg%material_names(i) = trim(mat_name)
         cfg%z_min(i) = cfg%wire%regions(i)%inner
         cfg%z_max(i) = cfg%wire%regions(i)%outer
       end do
-      cfg%startPos(1) = 0.0_dp
-      cfg%endPos(1) = real(cfg%wire%ny - 1, kind=dp) * cfg%wire%dy
-    end if
-
-    ! Validation
-    if (cfg%wire%nx < 3) then
-      print *, 'Error: wire nx must be >= 3'
-      stop 1
-    end if
-    if (cfg%wire%ny < 3) then
-      print *, 'Error: wire ny must be >= 3'
-      stop 1
-    end if
-    if (cfg%wire%nx < cfg%FDorder + 1) then
-      print *, 'Error: wire nx must be >= FDorder + 1, got nx=', cfg%wire%nx, &
-        ' FDorder=', cfg%FDorder
-      stop 1
-    end if
-    if (cfg%wire%ny < cfg%FDorder + 1) then
-      print *, 'Error: wire ny must be >= FDorder + 1, got ny=', cfg%wire%ny, &
-        ' FDorder=', cfg%FDorder
+    else
+      print *, 'Error: wire mode requires at least one [[region]] entry'
       stop 1
     end if
 
@@ -420,6 +369,7 @@ contains
     call require_int(landau_tbl, 'nx', cfg%landau%nx, 'landau')
     call require_real(landau_tbl, 'width', cfg%landau%width, 'landau')
     call get_value(landau_tbl, 'sweep', sweep_val, 'ky', stat=stat)
+    call check_optional_stat(stat, 'sweep', 'landau')
     if (allocated(sweep_val)) then
       cfg%landau%sweep = trim(sweep_val)
     else
@@ -434,17 +384,12 @@ contains
     end if
 
     cfg%num_layers = 1
-    allocate(cfg%materialN(1))
     allocate(cfg%material_names(1))
     allocate(cfg%params(1))
-    allocate(cfg%startPos(1))
-    allocate(cfg%endPos(1))
     allocate(cfg%z_min(1))
     allocate(cfg%z_max(1))
     allocate(cfg%int_start_pos(1))
     allocate(cfg%int_end_pos(1))
-    allocate(cfg%intStartPos(1))
-    allocate(cfg%intEndPos(1))
 
     call get_value(materials, 1, mat, stat=stat)
     if (.not. associated(mat)) then
@@ -452,23 +397,7 @@ contains
       stop 1
     end if
     call require_string(mat, 'name', name_val, 'material')
-    cfg%materialN(1) = trim(name_val)
     cfg%material_names(1) = trim(name_val)
-
-    ! Validation
-    if (cfg%landau%nx < 3) then
-      print *, 'Error: landau nx must be >= 3'
-      stop 1
-    end if
-    if (cfg%landau%width <= 0.0_dp) then
-      print *, 'Error: landau width must be > 0'
-      stop 1
-    end if
-    if (cfg%landau%nx < cfg%FDorder + 1) then
-      print *, 'Error: landau nx must be >= FDorder + 1, got nx=', cfg%landau%nx, &
-        ' FDorder=', cfg%FDorder
-      stop 1
-    end if
 
     ! Computed fields
     cfg%ngrid = cfg%landau%nx
@@ -478,10 +407,6 @@ contains
 
     cfg%int_start_pos(1) = 1
     cfg%int_end_pos(1) = cfg%landau%nx
-    cfg%intStartPos(1) = 1
-    cfg%intEndPos(1) = cfg%landau%nx
-    cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = cfg%landau%width
     cfg%z_min(1) = 0.0_dp
     cfg%z_max(1) = cfg%landau%width
   end subroutine parse_landau
@@ -502,10 +427,12 @@ contains
 
     cfg%external_field%enabled = .true.
     call get_value(ef_tbl, 'type', type_val, 'EF', stat=stat)
+    call check_optional_stat(stat, 'type', 'external_field')
     if (allocated(type_val)) then
       cfg%external_field%type = trim(type_val)
     end if
     call get_value(ef_tbl, 'value', cfg%external_field%value, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'value', 'external_field')
   end subroutine parse_external_field
 
   ! ==================================================================
@@ -533,10 +460,7 @@ contains
       if (stat /= 0) cfg%b_field%components(3) = 0.0_dp
     end if
     call get_value(bf_tbl, 'g_factor', cfg%b_field%g_factor, 2.0_dp, stat=stat)
-
-    ! Copy to bdg%B_vec for legacy compat (used when BdG IS enabled)
-    cfg%bdg%B_vec = cfg%b_field%components
-    cfg%bdg%g_factor = cfg%b_field%g_factor
+    call check_optional_stat(stat, 'g_factor', 'b_field')
   end subroutine parse_b_field
 
   ! ==================================================================
@@ -557,15 +481,24 @@ contains
 
     cfg%sc%enabled = 1
     call get_value(sc_tbl, 'max_iterations', cfg%sc%max_iterations, 100, stat=stat)
+    call check_optional_stat(stat, 'max_iterations', 'sc')
     call get_value(sc_tbl, 'tolerance', cfg%sc%tolerance, 1.0e-6_dp, stat=stat)
+    call check_optional_stat(stat, 'tolerance', 'sc')
     call get_value(sc_tbl, 'mixing_alpha', cfg%sc%mixing_alpha, 0.3_dp, stat=stat)
+    call check_optional_stat(stat, 'mixing_alpha', 'sc')
     call get_value(sc_tbl, 'diis_history', cfg%sc%diis_history, 7, stat=stat)
+    call check_optional_stat(stat, 'diis_history', 'sc')
     call get_value(sc_tbl, 'temperature', cfg%sc%temperature, 300.0_dp, stat=stat)
+    call check_optional_stat(stat, 'temperature', 'sc')
     call get_value(sc_tbl, 'fermi_level', cfg%sc%fermi_level, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'fermi_level', 'sc')
     call get_value(sc_tbl, 'num_kpar', cfg%sc%num_kpar, 201, stat=stat)
+    call check_optional_stat(stat, 'num_kpar', 'sc')
     call get_value(sc_tbl, 'kpar_max', cfg%sc%kpar_max, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'kpar_max', 'sc')
 
     call get_value(sc_tbl, 'fermi_mode', fermi_mode_str, 'charge_neutrality', stat=stat)
+    call check_optional_stat(stat, 'fermi_mode', 'sc')
     if (allocated(fermi_mode_str)) then
       select case (trim(fermi_mode_str))
       case ('charge_neutrality')
@@ -578,12 +511,15 @@ contains
     end if
 
     call get_value(sc_tbl, 'bc_type', bc_str, 'DD', stat=stat)
+    call check_optional_stat(stat, 'bc_type', 'sc')
     if (allocated(bc_str)) then
       cfg%sc%bc_type = trim(bc_str)
     end if
 
     call get_value(sc_tbl, 'bc_left', cfg%sc%bc_left, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'bc_left', 'sc')
     call get_value(sc_tbl, 'bc_right', cfg%sc%bc_right, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'bc_right', 'sc')
 
     ! Doping
     call get_value(table, 'doping', doping_arr, requested=.false., stat=stat)
@@ -595,13 +531,19 @@ contains
         call get_value(doping_arr, i, dop, stat=stat)
         if (.not. associated(dop)) cycle
         call get_value(dop, 'ND', cfg%doping(i)%ND, 0.0_dp, stat=stat)
+        call check_optional_stat(stat, 'ND', 'doping')
         call get_value(dop, 'NA', cfg%doping(i)%NA, 0.0_dp, stat=stat)
+        call check_optional_stat(stat, 'NA', 'doping')
         call get_value(dop, 'NS', cfg%doping(i)%NS, 0.0_dp, stat=stat)
+        call check_optional_stat(stat, 'NS', 'doping')
         call get_value(dop, 'fwhm', cfg%doping(i)%delta_fwhm, 10.0_dp, stat=stat)
+        call check_optional_stat(stat, 'fwhm', 'doping')
         call get_value(dop, 'pos', cfg%doping(i)%delta_pos, 0.0_dp, stat=stat)
+        call check_optional_stat(stat, 'pos', 'doping')
         block
           character(len=:), allocatable :: dtype_str
           call get_value(dop, 'type', dtype_str, 'uniform', stat=stat)
+          call check_optional_stat(stat, 'type', 'doping')
           if (allocated(dtype_str)) then
             cfg%doping(i)%dtype = trim(dtype_str)
           end if
@@ -628,26 +570,38 @@ contains
 
     cfg%topo%enabled = .true.
     call get_value(topo_tbl, 'mode', mode_val, 'qhe', stat=stat)
+    call check_optional_stat(stat, 'mode', 'topology')
     if (allocated(mode_val)) then
       cfg%topo%mode = trim(mode_val)
     end if
     call get_value(topo_tbl, 'compute_chern', cfg%topo%compute_chern, .false., stat=stat)
+    call check_optional_stat(stat, 'compute_chern', 'topology')
     call get_value(topo_tbl, 'compute_hall', cfg%topo%compute_hall, .false., stat=stat)
+    call check_optional_stat(stat, 'compute_hall', 'topology')
     call get_value(topo_tbl, 'qwz_u', cfg%topo%qwz_u, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'qwz_u', 'topology')
     call get_value(topo_tbl, 'compute_z2', cfg%topo%compute_z2, .false., stat=stat)
+    call check_optional_stat(stat, 'compute_z2', 'topology')
     block
       character(len=:), allocatable :: z2_method_val
       call get_value(topo_tbl, 'z2_method', z2_method_val, 'auto', stat=stat)
+      call check_optional_stat(stat, 'z2_method', 'topology')
       if (allocated(z2_method_val)) then
         cfg%topo%z2_method = trim(z2_method_val)
       end if
     end block
     call get_value(topo_tbl, 'bhz_M', cfg%topo%bhz_M, 10.0_dp, stat=stat)
+    call check_optional_stat(stat, 'bhz_M', 'topology')
     call get_value(topo_tbl, 'extract_edge_states', cfg%topo%extract_edge_states, .false., stat=stat)
+    call check_optional_stat(stat, 'extract_edge_states', 'topology')
     call get_value(topo_tbl, 'edge_E_window', cfg%topo%edge_E_window, 0.01_dp, stat=stat)
+    call check_optional_stat(stat, 'edge_E_window', 'topology')
     call get_value(topo_tbl, 'compute_ldos', cfg%topo%compute_ldos, .false., stat=stat)
+    call check_optional_stat(stat, 'compute_ldos', 'topology')
     call get_value(topo_tbl, 'ldos_eta', cfg%topo%ldos_eta, 0.001_dp, stat=stat)
+    call check_optional_stat(stat, 'ldos_eta', 'topology')
     call get_value(topo_tbl, 'ldos_num_E', cfg%topo%ldos_num_E, 200, stat=stat)
+    call check_optional_stat(stat, 'ldos_num_E', 'topology')
 
     ! LDOS E range
     call get_value(topo_tbl, 'ldos_E_range', range_arr, requested=.false., stat=stat)
@@ -660,15 +614,23 @@ contains
 
     ! Gap sweep
     call get_value(topo_tbl, 'compute_gap_sweep', cfg%topo%compute_gap_sweep, .false., stat=stat)
+    call check_optional_stat(stat, 'compute_gap_sweep', 'topology')
     call get_value(topo_tbl, 'gap_sweep_B_min', cfg%topo%gap_sweep_B_min, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'gap_sweep_B_min', 'topology')
     call get_value(topo_tbl, 'gap_sweep_B_max', cfg%topo%gap_sweep_B_max, 1.0_dp, stat=stat)
+    call check_optional_stat(stat, 'gap_sweep_B_max', 'topology')
     call get_value(topo_tbl, 'gap_sweep_nB', cfg%topo%gap_sweep_nB, 20, stat=stat)
+    call check_optional_stat(stat, 'gap_sweep_nB', 'topology')
     call get_value(topo_tbl, 'gap_sweep_mu_min', cfg%topo%gap_sweep_mu_min, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'gap_sweep_mu_min', 'topology')
     call get_value(topo_tbl, 'gap_sweep_mu_max', cfg%topo%gap_sweep_mu_max, 0.01_dp, stat=stat)
+    call check_optional_stat(stat, 'gap_sweep_mu_max', 'topology')
     call get_value(topo_tbl, 'gap_sweep_nMu', cfg%topo%gap_sweep_nMu, 20, stat=stat)
+    call check_optional_stat(stat, 'gap_sweep_nMu', 'topology')
     block
       character(len=:), allocatable :: sweep_model_val
       call get_value(topo_tbl, 'sweep_model', sweep_model_val, 'bhz_analytic', stat=stat)
+      call check_optional_stat(stat, 'sweep_model', 'topology')
       if (allocated(sweep_model_val)) then
         cfg%topo%sweep_model = trim(sweep_model_val)
       end if
@@ -676,25 +638,37 @@ contains
 
     ! Conductance
     call get_value(topo_tbl, 'compute_conductance', cfg%topo%compute_conductance, .false., stat=stat)
+    call check_optional_stat(stat, 'compute_conductance', 'topology')
     block
       character(len=:), allocatable :: cond_method_val
       call get_value(topo_tbl, 'conductance_method', cond_method_val, 'kubo_chern', stat=stat)
+      call check_optional_stat(stat, 'conductance_method', 'topology')
       if (allocated(cond_method_val)) then
         cfg%topo%conductance_method = trim(cond_method_val)
       end if
     end block
     call get_value(topo_tbl, 'berry_nk', cfg%topo%berry_nk, 50, stat=stat)
+    call check_optional_stat(stat, 'berry_nk', 'topology')
     call get_value(topo_tbl, 'landauer_energy', cfg%topo%landauer_energy, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'landauer_energy', 'topology')
 
     ! Spectral function
     call get_value(topo_tbl, 'compute_spectral', cfg%topo%compute_spectral, .false., stat=stat)
+    call check_optional_stat(stat, 'compute_spectral', 'topology')
     call get_value(topo_tbl, 'spectral_k_min', cfg%topo%spectral_k_min, -0.1_dp, stat=stat)
+    call check_optional_stat(stat, 'spectral_k_min', 'topology')
     call get_value(topo_tbl, 'spectral_k_max', cfg%topo%spectral_k_max, 0.1_dp, stat=stat)
+    call check_optional_stat(stat, 'spectral_k_max', 'topology')
     call get_value(topo_tbl, 'spectral_nk', cfg%topo%spectral_nk, 100, stat=stat)
+    call check_optional_stat(stat, 'spectral_nk', 'topology')
     call get_value(topo_tbl, 'spectral_E_min', cfg%topo%spectral_E_min, -0.05_dp, stat=stat)
+    call check_optional_stat(stat, 'spectral_E_min', 'topology')
     call get_value(topo_tbl, 'spectral_E_max', cfg%topo%spectral_E_max, 0.05_dp, stat=stat)
+    call check_optional_stat(stat, 'spectral_E_max', 'topology')
     call get_value(topo_tbl, 'spectral_nE', cfg%topo%spectral_nE, 200, stat=stat)
+    call check_optional_stat(stat, 'spectral_nE', 'topology')
     call get_value(topo_tbl, 'spectral_eta', cfg%topo%spectral_eta, 0.001_dp, stat=stat)
+    call check_optional_stat(stat, 'spectral_eta', 'topology')
   end subroutine parse_topology
 
   ! ==================================================================
@@ -713,14 +687,28 @@ contains
     call get_value(table, 'bdg', bdg_tbl, requested=.false., stat=stat)
     if (.not. associated(bdg_tbl)) return
 
+    ! Default B_vec and g_factor from [b_field] section, then override below
+    ! Only override with TOML values when explicitly present in [bdg].
+    cfg%bdg%B_vec = cfg%b_field%components
+    cfg%bdg%g_factor = cfg%b_field%g_factor
+
     call get_value(bdg_tbl, 'mu', cfg%bdg%mu, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'mu', 'bdg')
     call get_value(bdg_tbl, 'delta_0', cfg%bdg%delta_0, 0.0_dp, stat=stat)
-    call get_value(bdg_tbl, 'g_factor', cfg%bdg%g_factor, 2.0_dp, stat=stat)
+    call check_optional_stat(stat, 'delta_0', 'bdg')
+    ! g_factor: only override if key exists in [bdg], otherwise keep b_field default
+    block
+      real(kind=dp) :: gf_tmp
+      call get_value(bdg_tbl, 'g_factor', gf_tmp, stat=stat)
+      if (stat == 0) cfg%bdg%g_factor = gf_tmp
+    end block
     call get_value(bdg_tbl, 'gauge', gauge_val, 'landau_x', stat=stat)
+    call check_optional_stat(stat, 'gauge', 'bdg')
     if (allocated(gauge_val)) then
       cfg%bdg%gauge = trim(gauge_val)
     end if
     call get_value(bdg_tbl, 'kz', cfg%bdg%kz, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'kz', 'bdg')
 
     ! Read B_vec from [bdg] if present (overrides b_field copy)
     call get_value(bdg_tbl, 'B_vec', bvec_arr, requested=.false., stat=stat)
@@ -761,18 +749,31 @@ contains
 
     cfg%optics%enabled = .true.
     call get_value(opt_tbl, 'linewidth_lorentzian', cfg%optics%linewidth_lorentzian, 0.030_dp, stat=stat)
+    call check_optional_stat(stat, 'linewidth_lorentzian', 'optics')
     call get_value(opt_tbl, 'linewidth_gaussian', cfg%optics%linewidth_gaussian, 0.005_dp, stat=stat)
+    call check_optional_stat(stat, 'linewidth_gaussian', 'optics')
     call get_value(opt_tbl, 'refractive_index', cfg%optics%refractive_index, 3.3_dp, stat=stat)
+    call check_optional_stat(stat, 'refractive_index', 'optics')
     call get_value(opt_tbl, 'temperature', cfg%optics%temperature, 300.0_dp, stat=stat)
+    call check_optional_stat(stat, 'temperature', 'optics')
     call get_value(opt_tbl, 'num_energy_points', cfg%optics%num_energy_points, 200, stat=stat)
+    call check_optional_stat(stat, 'num_energy_points', 'optics')
     call get_value(opt_tbl, 'E_min', cfg%optics%E_min, 0.5_dp, stat=stat)
+    call check_optional_stat(stat, 'E_min', 'optics')
     call get_value(opt_tbl, 'E_max', cfg%optics%E_max, 2.0_dp, stat=stat)
+    call check_optional_stat(stat, 'E_max', 'optics')
     call get_value(opt_tbl, 'carrier_density', cfg%optics%carrier_density, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'carrier_density', 'optics')
     call get_value(opt_tbl, 'gain_enabled', cfg%optics%gain_enabled, .false., stat=stat)
+    call check_optional_stat(stat, 'gain_enabled', 'optics')
     call get_value(opt_tbl, 'gain_carrier_density', cfg%optics%gain_carrier_density, 3.0e12_dp, stat=stat)
+    call check_optional_stat(stat, 'gain_carrier_density', 'optics')
     call get_value(opt_tbl, 'ISBT', cfg%optics%isbt_enabled, .false., stat=stat)
+    call check_optional_stat(stat, 'ISBT', 'optics')
     call get_value(opt_tbl, 'spontaneous', cfg%optics%spontaneous_enabled, .false., stat=stat)
+    call check_optional_stat(stat, 'spontaneous', 'optics')
     call get_value(opt_tbl, 'spin_resolved', cfg%optics%spin_resolved, .false., stat=stat)
+    call check_optional_stat(stat, 'spin_resolved', 'optics')
   end subroutine parse_optics
 
   ! ==================================================================
@@ -791,6 +792,7 @@ contains
 
     cfg%exciton%enabled = .true.
     call get_value(exc_tbl, 'method', method_val, 'variational', stat=stat)
+    call check_optional_stat(stat, 'method', 'exciton')
     if (allocated(method_val)) then
       cfg%exciton%method = trim(method_val)
     end if
@@ -811,8 +813,11 @@ contains
 
     cfg%scattering%enabled = .true.
     call get_value(scat_tbl, 'phonon_energy', cfg%scattering%phonon_energy, 0.036_dp, stat=stat)
+    call check_optional_stat(stat, 'phonon_energy', 'scattering')
     call get_value(scat_tbl, 'eps_inf', cfg%scattering%eps_inf, 10.9_dp, stat=stat)
+    call check_optional_stat(stat, 'eps_inf', 'scattering')
     call get_value(scat_tbl, 'eps_0', cfg%scattering%eps_0, 12.9_dp, stat=stat)
+    call check_optional_stat(stat, 'eps_0', 'scattering')
   end subroutine parse_scattering
 
   ! ==================================================================
@@ -829,8 +834,11 @@ contains
     if (.not. associated(feast_tbl)) return
 
     call get_value(feast_tbl, 'emin', cfg%feast%emin, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'emin', 'feast')
     call get_value(feast_tbl, 'emax', cfg%feast%emax, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'emax', 'feast')
     call get_value(feast_tbl, 'm0', cfg%feast%m0, 0, stat=stat)
+    call check_optional_stat(stat, 'm0', 'feast')
   end subroutine parse_feast
 
   ! ==================================================================
@@ -849,14 +857,17 @@ contains
 
     cfg%strain%enabled = .true.
     call get_value(strain_tbl, 'reference', ref_val, 'substrate', stat=stat)
+    call check_optional_stat(stat, 'reference', 'strain')
     if (allocated(ref_val)) then
       cfg%strain%reference = trim(ref_val)
     end if
     call get_value(strain_tbl, 'solver', solver_val, 'pardiso', stat=stat)
+    call check_optional_stat(stat, 'solver', 'strain')
     if (allocated(solver_val)) then
       cfg%strain%solver = trim(solver_val)
     end if
     call get_value(strain_tbl, 'piezoelectric', cfg%strain%piezoelectric, .false., stat=stat)
+    call check_optional_stat(stat, 'piezoelectric', 'strain')
   end subroutine parse_strain
 
   ! ==================================================================
@@ -868,7 +879,9 @@ contains
     integer :: stat
 
     call get_value(table, 'which_band', cfg%which_band, 0, stat=stat)
+    call check_optional_stat(stat, 'which_band', 'top-level')
     call get_value(table, 'band_idx', cfg%band_idx, 1, stat=stat)
+    call check_optional_stat(stat, 'band_idx', 'top-level')
   end subroutine parse_gfactor
 
   ! ==================================================================
@@ -921,5 +934,19 @@ contains
       stop 1
     end if
   end subroutine require_real
+
+  ! ==================================================================
+  ! Helper: warn on type-mismatch for optional field lookups
+  ! ==================================================================
+  subroutine check_optional_stat(stat, key, section)
+    integer, intent(in) :: stat
+    character(len=*), intent(in) :: key, section
+
+    if (stat /= 0) then
+      print *, 'Error: [', trim(section), '] key ''', trim(key), &
+        & ''' has wrong type'
+      stop 1
+    end if
+  end subroutine check_optional_stat
 
 end module input_parser
