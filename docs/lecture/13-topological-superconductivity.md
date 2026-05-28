@@ -351,27 +351,28 @@ The `topologicalAnalysis` executable (`main_topology.f90`) provides three modes:
 
 ## 13.10 Input Configuration
 
-Example `input.cfg` for topological analysis:
+Example `input.toml` for topological analysis:
 
-```fortran
-! Topological analysis block
-topology: T
-mode: qhe
-compute_chern: T
-qwz_u: -0.8
+```toml
+# Topological analysis section
+[topology]
+mode = "qhe"
+compute_chern = true
+qwz_u = -0.8
 
-! Or for QSHE mode:
-! mode: qshe
-! compute_z2: T
-! z2_method: gap
+# Or for QSHE mode:
+# mode = "qshe"
+# compute_z2 = true
+# z2_method = "gap"
 
-! Or for BdG mode:
-mode: bdg
-bdg: T
-mu: 0.0005
-delta_0: 0.0003
-g_factor: 2.0
-b_field: 5 0 0  ! Bx By Bz in Tesla
+# Or for BdG mode:
+# mode = "bdg"
+
+[bdg]
+mu = 0.0005
+delta_0 = 0.0003
+g_factor = 2.0
+B_vec = [5.0, 0.0, 0.0]   # Bx By Bz in Tesla
 ```
 
 The `topologicalAnalysis` executable reads the config file and dispatches to
@@ -454,13 +455,13 @@ Status: PENDING
 
 Reason: Peierls substitution not yet integrated into bulk Hamiltonian
         The computed E_0 = 0.417 meV (no Landau quantization yet)
-        Requires: add_peierls_coo call in ZB8bandBulk (confinement=0)
+        Requires: add_peierls_coo call in ZB8bandBulk (confinement = "bulk")
 ```
 
 **Analysis:**
 - The Landau level regression test requires Peierls substitution integration
 - The `add_peierls_coo` function exists in magnetic_field.f90 but is not called
-  from ZB8bandBulk (confinement=0 mode)
+  from ZB8bandBulk (confinement = "bulk" mode)
 - Expected values from analytical formula: E_0 = 11.13 meV, E_1 = 33.40 meV
 - Current computed: E_0 = 0.417 meV (no Landau quantization)
 
@@ -583,7 +584,7 @@ python3 scripts/lecture_13_topological.py
 
 ### Code-Output Anchors
 
-Running `topology_qwz.cfg` produces:
+Running `topology_qwz.toml` produces:
 - **QWZ Chern**: C=+1 (u=-0.8), C=-1 (u=0.5), C=0 (u=2.5)
 - **BHZ Z2**: 0 (trivial) and 1 (topological)
 - **BdG Majorana**: InAs/GaAs QW, B_crit ~ 0.25 T (mu=-0.1413 eV, Delta=0.2 meV, g=15)

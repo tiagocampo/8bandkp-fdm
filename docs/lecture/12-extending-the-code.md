@@ -10,7 +10,7 @@ Every module lives under `src/` in one of four subdirectories. The dependency gr
 src/apps/
   main.f90 (program kpfdm)
   main_gfactor.f90 (program gfactor)
-    |-> input_parser       (reads input.cfg, calls paramDatabase, init_grid)
+    |-> input_parser       (reads input.toml, calls paramDatabase, init_grid)
     |-> hamiltonianConstructor  (builds H for each k-point)
     |-> outputFunctions    (writes eigenvalues, eigenfunctions)
     |-> sc_loop            (self-consistent SP, only main.f90)
@@ -87,11 +87,11 @@ The key takeaway: `defs.f90` is the root. Every other module depends on it, dire
 Understanding the data flow is the most important thing for extending the code. Everything passes through a single pipeline:
 
 ```
-input.cfg
+input.toml
   |
   v
-input_parser.f90 :: read_and_setup(cfg, profile, kpterms)
-  |   reads label-value pairs
+input_parser.f90 :: read_config(cfg)
+  |   reads TOML sections
   |   calls paramDatabase() to fill cfg%params(:)
   |   calls init_grid_from_config() to build cfg%grid
   |   calls confinementInitialization() for QW mode
@@ -189,7 +189,7 @@ case ("InP")
 
 5. Verify your parameters against Vurgaftman (2001) or Winkler (2003). The project policy requires a published reference for every parameter set.
 
-6. Test with a bulk calculation. Create an `input.cfg` with `confinement 0`, `materialN InP`, and check that the band gap, effective masses, and Luttinger parameters reproduce published values.
+6. Test with a bulk calculation. Create an `input.toml` with `confinement = "bulk"`, material name `InP`, and check that the band gap, effective masses, and Luttinger parameters reproduce published values.
 
 For alloy materials (e.g., AlGaAs with specific Al fraction), add a dedicated case with Vegard-interpolated parameters. The existing `Al20Ga80As` and `Al15Ga85As` entries show the pattern.
 
@@ -309,15 +309,15 @@ Regression tests are shell scripts in `tests/integration/` that run the full exe
 set -euo pipefail
 
 EXE="$1"           # Path to bandStructure or gfactorCalculation
-CONFIG="$2"        # Path to .cfg file in tests/regression/configs/
+CONFIG="$2"        # Path to file in tests/regression/configs/
 REF_DIR="$3"       # Path to reference data in tests/regression/data/
 COMPARE="$4"       # Path to compare_output.py
 
 WORKDIR=$(mktemp -d)
 trap "rm -rf $WORKDIR" EXIT
 
-# Setup: copy config as input.cfg
-/bin/cp "$CONFIG" "$WORKDIR/input.cfg"
+# Setup: copy config as input.toml
+/bin/cp "$CONFIG" "$WORKDIR/input.toml"
 mkdir -p "$WORKDIR/output"
 
 # Run
@@ -336,7 +336,7 @@ python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" 
 
 To add a new regression test:
 
-1. Create a config file in `tests/regression/configs/` (e.g., `bulk_inp_kx.cfg`).
+1. Create a config file in `tests/regression/configs/` (e.g., `bulk_inp_kx.toml`).
 2. Run the executable with this config to generate reference output.
 3. Copy the reference output to `tests/regression/data/<test_name>/`.
 4. Create the shell script in `tests/integration/`.
@@ -391,7 +391,7 @@ Before submitting any change, run through this checklist:
 1. `cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl && cmake --build build` -- clean build.
 2. `ctest --test-dir build` -- all tests pass (currently 34 unit + regression tests).
 3. Check for stale `.mod` files in the project root: `rm -f *.mod` if you see type mismatch errors.
-4. Verify that `input.cfg` is not committed with personal test configs (use `tests/regression/configs/` instead).
+4. Verify that `input.toml` is not committed with personal test configs (use `tests/regression/configs/` instead).
 5. If you changed `defs.f90` derived types, `hamiltonian_blocks.f90` k.p block table, or `hamiltonianConstructor.f90` Hamiltonian construction, flag for review per project policy.
 
 ---

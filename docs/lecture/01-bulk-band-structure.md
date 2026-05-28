@@ -400,7 +400,7 @@ where $E_V = 0$.
 
 ### 2.3 Wave Vector Sweep Directions
 
-The `waveVector` field in `input.cfg` supports seven sweep modes:
+The `[wave_vector] mode` field in `input.toml` supports seven sweep modes:
 
 | Value | Direction | Description |
 |---|---|---|
@@ -417,10 +417,11 @@ valence band warping (see Section 3.3).
 
 ### 2.4 Strain Input
 
-Bulk strain is activated by adding a `strainSubstrate` line to `input.cfg`:
+Bulk strain is activated by adding a `[strain]` section to `input.toml`:
 
-```
-strainSubstrate: 5.869
+```toml
+[strain]
+substrate_value = 5.869
 ```
 
 This specifies the substrate lattice constant in Angstroms. When nonzero, the
@@ -430,7 +431,7 @@ no strain is applied.
 
 ### 2.5 Diagonalization Flow
 
-For bulk mode (`confinement=0`), the main program:
+For bulk mode (`confinement = "bulk"`), the main program:
 
 1. Allocates an 8x8 complex matrix `HT` and workspace `HTmp`.
 2. For each $\mathbf{k}$ point in the sweep:
@@ -447,22 +448,25 @@ For bulk mode (`confinement=0`), the main program:
 
 ### 3.1 Unstrained GaAs along [100]
 
-The following `input.cfg` computes the bulk GaAs band structure along the [100]
+The following `input.toml` computes the bulk GaAs band structure along the [100]
 direction ($k_x$) from 0 to 0.1 \AA$^{-1}$:
 
-```
-waveVector: kx
-waveVectorMax: 0.1
-waveVectorStep: 11
-confinement:  0
-FDstep: 101
-FDorder: 2
-numLayers:  1
-material1: GaAs
-numcb: 2
-numvb: 6
-ExternalField: 0  EF
-EFParams: 0.0005
+```toml
+confinement = "bulk"
+FDorder = 2
+fd_step = 101
+
+[wave_vector]
+mode = "kx"
+max = 0.1
+nsteps = 11
+
+[bands]
+num_cb = 2
+num_vb = 6
+
+[[material]]
+name = "GaAs"
 ```
 
 **Eigenvalues at representative k-points** (energies in eV, $E_V = 0$):
@@ -485,13 +489,13 @@ At $\Gamma$, the full set of 8 eigenvalues is:
 ![Bulk GaAs 8-band E(k) dispersion](../figures/bulk_gaas_bands.png)
 
 *Figure 1: Bulk GaAs 8-band E(k) dispersion along [100], computed with
-`bulk_gaas_kx.cfg`. Left panel: full energy range. Right panel: zoom near
+`bulk_gaas_kx.toml`. Left panel: full energy range. Right panel: zoom near
 $\Gamma$ showing the band gap $E_g = 1.519$ eV and spin-orbit splitting
 $\Delta_{\mathrm{SO}} = 0.341$ eV.*
 
 ### 3.2 GaAs along [110]: Diagonal Sweep
 
-Changing the sweep direction to [110] (`waveVector: kxky`) reveals important
+Changing the sweep direction to [110] (`mode = "kxky"`) reveals important
 differences in the valence band dispersion. Along [110], the wave vector has
 $k_x = k_y = k$, $k_z = 0$, which activates different combinations of the
 Luttinger parameters:
@@ -589,23 +593,27 @@ couples LH and SO bands through the $(Q_\epsilon - T_\epsilon)$ terms.
 
 **Configuration for strained bulk GaAs:**
 
-```
-waveVector: kxky
-waveVectorMax: 0.1
-waveVectorStep: 11
-confinement:  0
-FDstep: 101
-FDorder: 2
-numLayers:  1
-material1: GaAs
-numcb: 2
-numvb: 6
-ExternalField: 0  EF
-EFParams: 0.0005
-whichBand: 0
-bandIdx: 1
-SC: 0
-strainSubstrate: 5.869
+```toml
+confinement = "bulk"
+FDorder = 2
+fd_step = 101
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "kxky"
+max = 0.1
+nsteps = 11
+
+[bands]
+num_cb = 2
+num_vb = 6
+
+[[material]]
+name = "GaAs"
+
+[strain]
+substrate_value = 5.869
 ```
 
 ![Strained GaAs bands](../figures/bulk_gaas_strained_bands.png)
@@ -806,7 +814,7 @@ R4: $T_d$ symmetry — exactly 3 distinct eigenvalue levels.
 R5: eigenfunction normalization (unit sum of squares, $10^{-10}$).
 
 **Test:** `verification_rung1_bulk_k0`
-**Config:** `tests/regression/configs/bulk_<material>_k0.cfg`
+**Config:** `tests/regression/configs/bulk_<material>_k0.toml`
 
 #### Rung 2: Bulk dispersion — effective mass (R6--R9)
 
@@ -838,7 +846,7 @@ confirms the implementation is self-consistent; the Vurgaftman deviation
 quantifies the model limitation.
 
 **Test:** `verification_rung2_dispersion`
-**Config:** `tests/regression/configs/bulk_<material>_kx_dispersion.cfg`
+**Config:** `tests/regression/configs/bulk_<material>_kx_dispersion.toml`
 
 ---
 
@@ -898,7 +906,7 @@ python3 scripts/lecture_01_bulk.py
 
 ### Code-Output Anchors
 
-Running `bulk_gaas_k0.cfg` produces:
+Running `bulk_gaas_k0.toml` produces:
 - **GaAs k=0 eigenvalues**: match [-DeltaSO, -DeltaSO, 0, 0, 0, 0, Eg, Eg] within TOL_EXACT
 - **CB effective mass**: 0.050 m_e (Kane formula within 10%); **InAs band gap**: 0.417 eV
 

@@ -300,23 +300,29 @@ Defined in `src/physics/gfactor_functions.f90`, this routine follows the same Lo
 
 ### 2.9 Input parsing for wire mode
 
-When `confinement = 2`, the input parser (`src/io/input_parser.f90`) reads the following wire-specific fields after the common parameters:
+When `confinement = "wire"`, the input parser (`src/io/input_parser.f90`) reads the following wire-specific TOML sections:
 
+```toml
+[wire]
+nx = <integer>       # grid points in x (>= 3)
+ny = <integer>       # grid points in y (>= 3)
+dx = <real>          # grid spacing in x (AA)
+dy = <real>          # grid spacing in y (AA)
+
+[wire.geometry]
+shape = <string>     # "rectangle", "circle", "hexagon", or "polygon"
+width = <real>       # (rectangle) x-extent (AA)
+height = <real>      # (rectangle) y-extent (AA)
+
+[[region]]
+material = <string>  # material name
+inner = <real>       # inner radius/distance (AA)
+outer = <real>       # outer radius/distance (AA)
 ```
-wire_nx:       <integer>      ! grid points in x (>= 3)
-wire_ny:       <integer>      ! grid points in y (>= 3)
-wire_dx:       <real>         ! grid spacing in x (AA)
-wire_dy:       <real>         ! grid spacing in y (AA)
-wire_shape:    <string>       ! rectangle, circle, hexagon, or polygon
-wire_width:    <real>         ! (rectangle) x-extent (AA)
-wire_height:   <real>         ! (rectangle) y-extent (AA)
-numRegions:    <integer>      ! number of material regions
-region:        <material> <inner> <outer>   ! one line per region
-```
 
-For circle and hexagon shapes, `wire_radius` replaces `wire_width`/`wire_height`. For polygon, `wire_polygon` specifies the vertex count followed by `wire_vertex` lines with $x, y$ coordinates.
+For circle and hexagon shapes, `radius` replaces `width`/`height`. For polygon, `vertices` specifies the vertex coordinates as `[[x1, y1], [x2, y2], ...]`.
 
-The parser validates that `wire_nx >= FDorder + 1` and `wire_ny >= FDorder + 1`, builds the `regions` array, and sets up backward-compatible fields (`fdStep`, `dz`) for routines shared between QW and wire modes.
+The parser validates that `wire.nx >= FDorder + 1` and `wire.ny >= FDorder + 1`, builds the `regions` array, and sets up backward-compatible fields (`fdStep`, `dz`) for routines shared between QW and wire modes.
 
 ---
 
@@ -324,49 +330,58 @@ The parser validates that `wire_nx >= FDorder + 1` and `wire_ny >= FDorder + 1`,
 
 ### 3.1 Input configuration
 
-The following example is taken from the regression test config `tests/regression/configs/wire_gaas_rectangle.cfg`:
+The following example is taken from the regression test config `tests/regression/configs/wire_gaas_rectangle.toml`:
 
-```
-waveVector: kz
-waveVectorMax: 0.1
-waveVectorStep: 21
-confinement:  2
-FDstep: 1
-FDorder: 2
-numLayers:  1
-wire_nx: 21
-wire_ny: 21
-wire_dx: 3.0
-wire_dy: 3.0
-wire_shape: rectangle
-wire_width: 63.0
-wire_height: 63.0
-numRegions: 1
-region: GaAs  0.0  100.0
-numcb: 8
-numvb: 16
-ExternalField: 0  EF
-EFParams: 0.0005
-whichBand: 0
-bandIdx: 1
-SC: 0
-feast_emin: -1.5
-feast_emax: 2.0
-feast_m0: -1
+```toml
+confinement = "wire"
+FDorder = 2
+
+[wave_vector]
+mode = "kz"
+max = 0.1
+nsteps = 21
+
+[wire]
+nx = 21
+ny = 21
+dx = 3.0
+dy = 3.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 63.0
+height = 63.0
+
+[[region]]
+material = "GaAs"
+inner = 0.0
+outer = 100.0
+
+[bands]
+num_cb = 8
+num_vb = 16
+
+which_band = 0
+band_idx = 1
+
+[feast]
+emin = -1.5
+emax = 2.0
+m0 = -1
 ```
 
 ### 3.2 Structure walkthrough
 
-This input defines a single-material GaAs rectangular wire with cross-section $63 \times 63$ A, discretized on a $21 \times 21$ grid with $\Delta x = \Delta y = 3$ A. The wire axis is along $z$ (set by `waveVector: kz`), and the dispersion is computed for 21 equally spaced $k_z$ points from 0 to 0.1 A$^{-1}$.
+This input defines a single-material GaAs rectangular wire with cross-section $63 \times 63$ A, discretized on a $21 \times 21$ grid with $\Delta x = \Delta y = 3$ A. The wire axis is along $z$ (set by `mode = "kz"`), and the dispersion is computed for 21 equally spaced $k_z$ points from 0 to 0.1 A$^{-1}$.
 
 The single region `GaAs 0.0 100.0` means all grid points within distance 100 A from the grid center receive GaAs parameters. Since the grid extends only to $(10.5 \times 3) = 31.5$ A from center, all 441 points are GaAs. This is a homogeneous wire: there is no potential confinement from band offsets, only the hard-wall boundary at the grid edges. The confinement energy arises entirely from the Dirichlet boundary conditions at the wire perimeter.
 
-The Hamiltonian dimension is $8 \times 441 = 3528$. The FEAST parameters (`feast_emin: -1.5`, `feast_emax: 2.0`) specify the energy search window, and `feast_m0: -1` triggers automatic subspace dimension estimation. With 8 CB and 16 VB states requested, the code returns 24 eigenvalues per $k_z$ point. The dense LAPACK fallback is used for this small matrix.
+The Hamiltonian dimension is $8 \times 441 = 3528$. The FEAST parameters (`[feast] emin = -1.5`, `emax = 2.0`) specify the energy search window, and `m0 = -1` triggers automatic subspace dimension estimation. With 8 CB and 16 VB states requested, the code returns 24 eigenvalues per $k_z$ point. The dense LAPACK fallback is used for this small matrix.
 
 ### 3.3 Running the example
 
 ```bash
-cat tests/regression/configs/wire_gaas_rectangle.cfg > input.cfg
+cp tests/regression/configs/wire_gaas_rectangle.toml input.toml
 ./build/src/bandStructure
 ```
 
@@ -504,29 +519,40 @@ The anisotropy $g_{\perp} \neq g_{\parallel}$ (transverse vs. axial components) 
 
 ### 5.4 What this code currently supports
 
-The zinc-blende InSb nanowire portion is supported by the current wire mode (`confinement=2`) with the corrected Hamiltonian:
+The zinc-blende InSb nanowire portion is supported by the current wire mode (`confinement = "wire"`) with the corrected Hamiltonian:
 
 - **Subband structure:** Rectangular and circular wire geometries, sparse wire assembly, and confined 1D subbands are implemented and regression-tested. The corrected off-diagonal terms (S, SC, R, RC, PZ) produce qualitatively reasonable subband dispersions. The GaAs rectangular-wire gap scale and Kramers degeneracy are already supported by the current validation suite, while the InAs/GaAs core-shell example remains qualitative until the external wire benchmark suite is completed.
 - **g-factor machinery:** The `gfactorCalculation_wire` routine computes a wire g-tensor from band-edge states using band-character-aware state selection. For the InSb rectangular wire (55x55 A, 11x11 grid), the corrected regression gives $g_x \approx -49.94$, $g_y \approx -50.05$, $g_z \approx -49.97$. This is close to the bulk InSb scale and remains provisional because the grid is very coarse and no radius sweep has been reproduced against Faria Junior et al.'s Figure 2.
-- **Electric field effects:** External fields can be applied through `ExternalField` and `EFParams`, so symmetry-breaking studies are possible in principle. At present these runs should be treated as exploratory until the field-dependent wire trends are benchmarked against the literature.
+- **Electric field effects:** External fields can be applied through the `[external_field]` section, so symmetry-breaking studies are possible in principle. At present these runs should be treated as exploratory until the field-dependent wire trends are benchmarked against the literature.
 
 Example configuration for a circular InSb wire:
 
-```
-confinement:  2
-wire_nx: 41
-wire_ny: 41
-wire_dx: 1.0
-wire_dy: 1.0
-wire_shape: circle
-wire_radius: 20.0
-numRegions: 1
-region: InSb  0.0  100.0
-numcb: 2
-numvb: 4
-waveVector: kz
-waveVectorMax: 0.05
-waveVectorStep: 11
+```toml
+confinement = "wire"
+
+[wave_vector]
+mode = "kz"
+max = 0.05
+nsteps = 11
+
+[wire]
+nx = 41
+ny = 41
+dx = 1.0
+dy = 1.0
+
+[wire.geometry]
+shape = "circle"
+radius = 20.0
+
+[[region]]
+material = "InSb"
+inner = 0.0
+outer = 100.0
+
+[bands]
+num_cb = 2
+num_vb = 4
 ```
 
 ### 5.5 What is missing for full reproduction
@@ -564,7 +590,7 @@ The wire solver was corrected in two stages: first the off-diagonal 8-band terms
 | InSb wire (55x55 A, 11x11) | $g_y$ | $\approx -50.05$ | Coarse-grid provisional |
 | InSb wire (55x55 A, 11x11) | $g_z$ | $\approx -49.97$ | Close to bulk InSb scale |
 
-The InSb wire g-factors are regression-tested in `tests/regression/configs/wire_insb_gfactor.cfg` and verified against the expected strong enhancement relative to the free-electron value ($g_{\rm free} = 2$). The rectangular cross-section breaks rotational symmetry, producing distinct $g_x$, $g_y$, and $g_z$ components. The GaAs wire band structure is regression-tested in `tests/regression/configs/wire_gaas_rectangle.cfg`.
+The InSb wire g-factors are regression-tested in `tests/regression/configs/wire_insb_gfactor.toml` and verified against the expected strong enhancement relative to the free-electron value ($g_{\rm free} = 2$). The rectangular cross-section breaks rotational symmetry, producing distinct $g_x$, $g_y$, and $g_z$ components. The GaAs wire band structure is regression-tested in `tests/regression/configs/wire_gaas_rectangle.toml`.
 
 ---
 
@@ -631,32 +657,46 @@ The GaAs rectangular wire studied in Section 3 was a single-material system with
 
 The following config defines a rectangular $150 \times 150$ A simulation domain with a $30 \times 30$ grid ($\Delta x = \Delta y = 5$ A). The inner region (0--40 A from center) is InAs; the outer region (40--150 A) is GaAs. Strain is computed using the continuum elasticity solver with GaAs as the reference substrate:
 
-```
-waveVector: kz
-waveVectorMax: 0.01
-waveVectorStep: 2
-confinement:  2
-FDstep: 1
-FDorder: 2
-numLayers:  2
-wire_nx: 30
-wire_ny: 30
-wire_dx: 5.0
-wire_dy: 5.0
-wire_shape: rectangle
-wire_width: 150.0
-wire_height: 150.0
-numRegions: 2
-region: GaAs  40.0  150.0
-region: InAs  0.0  40.0
-numcb: 4
-numvb: 8
-strain: T
-strain_ref: GaAs
-strain_solver: pardiso
+```toml
+confinement = "wire"
+FDorder = 2
+
+[wave_vector]
+mode = "kz"
+max = 0.01
+nsteps = 2
+
+[wire]
+nx = 30
+ny = 30
+dx = 5.0
+dy = 5.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 150.0
+height = 150.0
+
+[[region]]
+material = "GaAs"
+inner = 40.0
+outer = 150.0
+
+[[region]]
+material = "InAs"
+inner = 0.0
+outer = 40.0
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[strain]
+reference = "GaAs"
+solver = "pardiso"
 ```
 
-The `strain: T` flag activates the continuum elasticity solver, which computes the full strain tensor $\varepsilon_{ij}(x,y)$ on the wire cross-section. The Bir-Pikus deformation potentials then shift the band edges at each grid point before the Hamiltonian is assembled.
+The `[strain]` section activates the continuum elasticity solver, which computes the full strain tensor $\varepsilon_{ij}(x,y)$ on the wire cross-section. The Bir-Pikus deformation potentials then shift the band edges at each grid point before the Hamiltonian is assembled.
 
 ![Wire geometry and confinement potential for the rectangular InAs/GaAs core-shell wire. The InAs core forms a deep potential well for electrons within the GaAs barrier.](../figures/wire_geometry_potential.png){ width=80% }
 
@@ -759,7 +799,7 @@ python3 scripts/lecture_08_wire.py
 
 ### Code-Output Anchors
 
-Running `wire_gaas_rectangle.cfg` produces:
+Running `wire_gaas_rectangle.toml` produces:
 - **Wire subbands**: computed for 21x21 grid; dense-sparse eigenvalue agreement
 - **Fundamental gap**: CB1 - VB1 = 1.522 eV (within 3 meV of bulk Eg)
 

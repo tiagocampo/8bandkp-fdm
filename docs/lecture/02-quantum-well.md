@@ -258,7 +258,7 @@ correct multi-band coupling.
 
 ### 2.1 Initialization: `confinementInitialization`
 
-When `confinement = 1` (QW mode), the input parser triggers
+When `confinement = "qw"` (QW mode), the input parser triggers
 `confinementInitialization` (in `hamiltonianConstructor.f90`). This routine:
 
 1. **Builds the z-grid:** From `startPos` and `endPos` of the first layer, the total
@@ -278,7 +278,7 @@ When `confinement = 1` (QW mode), the input parser triggers
    `finitedifferences.f90`, then applies `applyVariableCoeff` to multiply each FD
    matrix by the position-dependent parameter profile.
 
-4. **Applies electric field:** If `ExternalField = 1` with type `EF`, the routine
+4. **Applies electric field:** If the `[external_field]` section is present with a nonzero `value`, the routine
    `externalFieldSetup_electricField` adds a linear tilt to the profile:
    `profile(i,:) -= (Evalue * totalSize) * (z(i) + z(1)) / (2 * z(1))`.
 
@@ -325,7 +325,7 @@ Hamiltonian:
    ```
 
 4. **Diagonalize:** The band structure executable calls LAPACK's `zheevx` to find
-   the requested number of eigenvalues (`numcb` conduction + `numvb` valence) at
+   the requested number of eigenvalues (`num_cb` conduction + `num_vb` valence) at
    each k-point.
 
 ### 2.3 Step-by-step kpterms construction for a 3-layer system
@@ -388,9 +388,9 @@ form the linear combinations of these precomputed blocks.
 
 ### 2.4 Input parsing for QW mode
 
-The input parser (`input_parser.f90`) handles QW setup when `confinement = 1`:
+The input parser (`input_parser.f90`) handles QW setup when `confinement = "qw"`:
 
-- Reads `numLayers` material specifications, each with a name, start position, and
+- Reads `[[material]]` entries, each with a name, `z_min`, and `z_max`.
   end position (in Angstroms)
 - Computes integer grid indices `intStartPos(i)` and `intEndPos(i)` that map each
   material to a contiguous range of FD grid points
@@ -410,22 +410,31 @@ GaAs/AlGaAs quantum well and a type-III broken-gap AlSbW/GaSbW/InAsW system.
 
 #### A.1 Configuration
 
-This example is taken from `docs/benchmarks/qw_gaas_algaas.cfg`:
+This example is taken from `tests/regression/configs/qw_gaas_algaas.toml`:
 
-```
-waveVector: kx
-waveVectorMax: 0.1
-waveVectorStep: 21
-confinement:  1
-FDstep: 401
-FDorder: 4
-numLayers:  2
-material1: Al30Ga70As -200 200 0
-material2: GaAs -50 50 0
-numcb: 4
-numvb: 8
-ExternalField: 0  EF
-EFParams: 0.0
+```toml
+confinement = "qw"
+FDorder = 4
+fd_step = 401
+
+[wave_vector]
+mode = "kx"
+max = 0.1
+nsteps = 21
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "Al30Ga70As"
+z_min = -200
+z_max = 200
+
+[[material]]
+name = "GaAs"
+z_min = -50
+z_max = 50
 ```
 
 #### A.2 Structure walkthrough
@@ -522,7 +531,7 @@ $k_\parallel$.*
 #### A.5 Dispersion and HH/LH mixing
 
 The dispersion plot above was generated using
-`tests/regression/configs/qw_gaas_algaas_kpar.cfg`, which uses a finer spatial grid
+`tests/regression/configs/qw_gaas_algaas_kpar.toml`, which uses a finer spatial grid
 (FDstep=401, FDorder=4, 101 k-points) with a two-layer mask-based assignment
 (AlGaAs barrier covers the full domain, GaAs well overwrites the central region).
 The fine grid and dense k-sampling ensure that the subband curvatures -- and hence
@@ -581,7 +590,7 @@ The strongest interband transitions at $k_\parallel = 0$, sorted by oscillator s
 | CB7-VB25 | 1.996 | 40.85 | 40.85 | ~0 | 10.74 | TE |
 | CB8-VB26 | 1.996 | 40.85 | 40.85 | ~0 | 10.74 | TE |
 
-*Table: Computed optical transition strengths from `qw_gaas_algaas_optics.cfg` (FDstep=101, FDorder=4).*
+*Table: Computed optical transition strengths from `qw_gaas_algaas_optics.toml` (fd_step=101, FDorder=4).*
 
 The key selection rules for a GaAs quantum well at the zone center arise from the
 angular momentum symmetry of the Bloch states:
@@ -644,23 +653,36 @@ over a few monolayers, slightly modifying the confinement energies and wavefunct
 #### B.1 Configuration
 
 This example is taken from the regression test config
-`tests/regression/configs/qw_alsbw_gasbw_inasw.cfg`:
+`tests/regression/configs/qw_alsbw_gasbw_inasw.toml`:
 
-```
-waveVector: kx
-waveVectorMax: 0.1
-waveVectorStep: 11
-confinement:  1
-FDstep: 101
-FDorder: 2
-numLayers: 3
-material1: AlSbW -250  250 0
-material2: GaSbW -135  135 0.2414
-material3: InAsW  -35   35 -0.0914
-numcb: 32
-numvb: 32
-ExternalField: 0  EF
-EFParams: 0.0005
+```toml
+confinement = "qw"
+FDorder = 2
+fd_step = 101
+
+[wave_vector]
+mode = "kx"
+max = 0.1
+nsteps = 11
+
+[bands]
+num_cb = 32
+num_vb = 32
+
+[[material]]
+name = "AlSbW"
+z_min = -250
+z_max = 250
+
+[[material]]
+name = "GaSbW"
+z_min = -135
+z_max = 135
+
+[[material]]
+name = "InAsW"
+z_min = -35
+z_max = 35
 ```
 
 #### B.2 Structure walkthrough
@@ -944,8 +966,8 @@ physically correct: all CB states above all VB states for the standard QW,
 with broken-gap alignment reported as informational for the InAs/GaSb system.
 
 **Test:** `verification_rung3_qw`
-**Configs:** `docs/benchmarks/qw_gaas_algaas.cfg` (R10),
-`tests/regression/configs/qw_inasw_gasbw_broken_gap.cfg` (R12)
+**Configs:** `docs/benchmarks/qw_gaas_algaas.toml` (R10),
+`tests/regression/configs/qw_inasw_gasbw_broken_gap.toml` (R12)
 
 ### 4.4 Convergence considerations
 
@@ -1023,7 +1045,7 @@ The standard QW mode assumes:
 
 - Growth along $z$ (enforced by `confDir = 'z'`)
 - Uniform grid spacing across the entire domain
-- No strain applied by default in this example (strain is supported via the `strain:` input block; see Chapter 04 for strained QW calculations)
+- No strain applied by default in this example (strain is supported via the `[strain]` section; see Chapter 04 for strained QW calculations)
 - No self-consistent charge treatment (the SC loop is a separate module; see
   Chapter 07)
 - Hard-wall boundary conditions (the wavefunction vanishes at the domain edges)
@@ -1077,7 +1099,7 @@ treatment at the cost of additional complexity.
 The quantum well mode shares the same 8-band basis and block topology as the bulk
 Hamiltonian (Chapter 01). The key differences are:
 
-| Aspect | Bulk (`confinement=0`) | QW (`confinement=1`) |
+| Aspect | Bulk (`confinement = "bulk"`) | QW (`confinement = "qw"`) |
 |--------|----------------------|---------------------|
 | Matrix size | $8 \times 8$ | $8N \times 8N$ |
 | $k_z$ | scalar wavevector | $-i\,d/dz$ discretized |
@@ -1105,7 +1127,7 @@ python3 scripts/lecture_02_qw.py
 
 ### Code-Output Anchors
 
-Running `qw_gaas_algaas_kpar.cfg` produces:
+Running `qw_gaas_algaas_kpar.toml` produces:
 - **GaAs/AlGaAs QW**: 2 CB subbands at k=0 (CB1 at +0.761 eV, CB2 at +0.875 eV)
 - **Double QW**: anticrossing splitting = 41.6 meV (symmetric-antisymmetric gap)
 

@@ -25,7 +25,7 @@ Aestimo, Snider's 1D Poson solver).
 Bulk GaAs, 8-band zinc-blende k.p, k=0 (Gamma point).
 Parameters: Vurgaftman 2001 (GaAs, non-W variant).
 
-**Config:** `tests/regression/configs/bulk_gaas_kx.cfg`
+**Config:** `tests/regression/configs/bulk_gaas_kx.toml`
 
 ### Results at k = 0
 
@@ -56,7 +56,7 @@ The 8-band k.p gives the exact Gamma-point eigenvalues from the parameter set by
 
 The CB dispersion gives an effective mass m*/m0 = Eg/(EP + Eg') ≈ 1.519/28.8 ≈ 0.053 from the Kane model, approaching the GaAs value of 0.067 when non-parabolic corrections are included.
 
-**Config:** `tests/regression/configs/bulk_gaas_kx.cfg`
+**Config:** `tests/regression/configs/bulk_gaas_kx.toml`
 
 ---
 
@@ -107,7 +107,7 @@ because VB-CB coupling effectively increases the carrier mass in the well,
 reducing confinement energy. This is the well-known non-parabolicity correction
 in the multi-band k.p treatment.
 
-**Config:** `docs/benchmarks/qw_gaas_algaas.cfg`
+**Config:** `tests/regression/configs/qw_gaas_algaas.toml`
 
 ---
 
@@ -161,8 +161,8 @@ The InAs electron confinement and GaSb hole confinement energies are consistent
 with the narrow well widths (15A InAs, 10A GaSb) and large effective masses
 from the 8-band coupling.
 
-**Config:** `docs/benchmarks/qw_inasw_gasbw_broken_gap.cfg`
-**Config (k-sweep):** `tests/regression/configs/qw_alsbw_gasbw_inasw.cfg`
+**Config:** `tests/regression/configs/qw_inasw_gasbw_broken_gap.toml`
+**Config (k-sweep):** `tests/regression/configs/qw_alsbw_gasbw_inasw.toml`
 
 ---
 
@@ -175,7 +175,7 @@ from the 8-band coupling.
 Bulk GaAs, conduction band (CB) g-factor via Lowdin (2nd-order) partitioning.
 Parameters: Vurgaftman 2001, EP=28.8 eV, Eg=1.519 eV, DeltaSO=0.341 eV.
 
-**Config:** `tests/regression/configs/gfactor_bulk_gaas_cb.cfg`
+**Config:** `tests/regression/configs/gfactor_bulk_gaas_cb.toml`
 
 ### Results
 
@@ -214,7 +214,7 @@ understood:
    g-factor agreement. The 8-band value is systematically too small in
    magnitude by 20-30%.
 
-**Config:** `tests/regression/configs/gfactor_bulk_gaas_cb.cfg`
+**Config:** `tests/regression/configs/gfactor_bulk_gaas_cb.toml`
 
 ---
 
@@ -225,7 +225,7 @@ understood:
 ### 5a. GaAs/AlAs QW with uniform doping
 
 **System:** AlAs(150A) / GaAs(100A) / AlAs(150A), ND = 1e18 cm-3 in GaAs.
-**Config:** `tests/regression/configs/sc_gaas_alas_qw.cfg`
+**Config:** `tests/regression/configs/sc_gaas_alas_qw.toml`
 
 | Quantity | Value |
 |----------|-------|
@@ -239,7 +239,7 @@ Comparison with Bastard (PRB 24, 4714, 1981): CB spacing ~9 meV for 100A GaAs/Al
 ### 5b. Modulation-doped GaAs/AlAs QW
 
 **System:** AlAs(150A) / GaAs(100A) / AlAs(150A), ND = 5e17 cm-3 in barriers.
-**Config:** `tests/regression/configs/sc_mod_doped_gaas_algaas.cfg`
+**Config:** `tests/regression/configs/sc_mod_doped_gaas_algaas.toml`
 
 | Quantity | Value |
 |----------|-------|
@@ -278,8 +278,8 @@ Note: Published results use single-band effective mass. 8-band k.p gives
 
 Undoped GaAs/AlGaAs QW: Al0.2Ga0.8As(20nm) / GaAs(6nm) / Al0.2Ga0.8As(20nm).
 
-**Config (no field):** `tests/regression/configs/sc_qcse_gaas_algaas.cfg`
-**Config (E=-70 kV/cm):** `tests/regression/configs/sc_qcse_gaas_algaas_ef.cfg`
+**Config (no field):** `tests/regression/configs/sc_qcse_gaas_algaas.toml`
+**Config (E=-70 kV/cm):** `tests/regression/configs/sc_qcse_gaas_algaas_ef.toml`
 
 ### Results
 
@@ -329,7 +329,7 @@ Requirements: R1-R5. Machine-precision eigenvalue comparison at k=0 for 5 materi
 
 Checks: eigenvalue accuracy (1e-12), degeneracies (SO 2x, HH/LH 4x, CB 2x), basis ordering via eigenfunction weights, T_d symmetry (3 distinct levels), eigenfunction normalization.
 
-**Config:** `tests/regression/configs/bulk_<material>_k0.cfg`
+**Config:** `tests/regression/configs/bulk_<material>_k0.toml`
 
 ### Rung 2: Bulk Dispersion Effective Mass
 
@@ -345,35 +345,35 @@ Requirements: R6-R9 (revised v2). Parabolic mass extraction near Gamma, self-con
 | GaSb | 0.0289 | 0.0292 | 1.2% | 29.6% |
 
 Kane model: m* = Eg/(EP + Eg). Tolerance: 10% (accounts for higher-order band-mixing).
-Vurgaftman deviation is informational — the 8-band model's non-parabolic CB dispersion is a known feature, not a bug.
+Vurgaftman deviation is informational -- the 8-band model's non-parabolic CB dispersion is a known feature, not a bug.
 
-**Config:** `tests/regression/configs/bulk_<material>_kx_dispersion.cfg`
+**Config:** `tests/regression/configs/bulk_<material>_kx_dispersion.toml`
 
 ### Rung 3: QW Subband Energy Validation
 
-Requirements: R10, R12, R13 (R11 dropped — Bastard formula invalid for 8-band).
+Requirements: R10, R12, R13 (R11 dropped -- Bastard formula invalid for 8-band).
 
 **Test:** `verification_rung3_qw`
 
-**R10 — GaAs/AlGaAs QW CB spacing:**
+**R10 -- GaAs/AlGaAs QW CB spacing:**
 - CB1 = 1.02133 eV, CB2 = 1.03125 eV
 - CB spacing = 9.92 meV (tolerance: 0.1 meV)
-- **Config:** `docs/benchmarks/qw_gaas_algaas.cfg`
+- **Config:** `tests/regression/configs/qw_gaas_algaas.toml`
 
-**R12 — InAs/GaSbW broken-gap overlap:**
+**R12 -- InAs/GaSbW broken-gap overlap:**
 - Material overlap: EV(GaSbW) - EC(InAsW) = 142 meV (matches benchmarks.md)
 - VB top above InAs CB edge: confirmed (broken-gap character)
-- **Config:** `tests/regression/configs/qw_inasw_gasbw_broken_gap.cfg`
+- **Config:** `tests/regression/configs/qw_inasw_gasbw_broken_gap.toml`
 
-**R13 — Kramers degeneracy at k=0:** all eigenvalue pairs < 1e-6 eV splitting.
+**R13 -- Kramers degeneracy at k=0:** all eigenvalue pairs < 1e-6 eV splitting.
 
 ### Rung 4: Wire Internal Consistency
 
-Requirements: R14-R16. No external wire references — internal consistency only.
+Requirements: R14-R16. No external wire references -- internal consistency only.
 
 **Test:** `verification_rung4_wire`
 
-**R14 — Wire convergence (constant dx=dy=3 A):**
+**R14 -- Wire convergence (constant dx=dy=3 A):**
 
 | Grid | Size (A) | CB ground state (eV) |
 |------|----------|---------------------|
@@ -383,9 +383,9 @@ Requirements: R14-R16. No external wire references — internal consistency only
 
 Check: CB ground state decreases monotonically as wire dimensions increase.
 
-**R15 — Dense vs FEAST solver agreement:** 11x11 grid eigenvalues agree within 1e-8.
+**R15 -- Dense vs FEAST solver agreement:** 11x11 grid eigenvalues agree within 1e-8.
 
-**R16 — Eigenvalue count:** numcb + numvb = 24 eigenvalues per k-point, count consistent with matrix dimension 8*nx*ny.
+**R16 -- Eigenvalue count:** num_cb + num_vb = 24 eigenvalues per k-point, count consistent with matrix dimension 8*nx*ny.
 
 ---
 
@@ -393,17 +393,17 @@ Check: CB ground state decreases monotonically as wire dimensions increase.
 
 | Benchmark | Config | Key Result | Reference |
 |-----------|--------|------------|-----------|
-| Bulk GaAs Gamma | `bulk_gaas_kx.cfg` | Eg=1.519, Delta_SO=0.341 | Vurgaftman 2001 |
-| GaAs/AlGaAs QW | `docs/benchmarks/qw_gaas_algaas.cfg` | CB spacing=9.92 meV | Bastard 1981 |
-| InAs/GaSb broken gap | `docs/benchmarks/qw_inasw_gasbw_broken_gap.cfg` | EC<EV overlap=142 meV | Campos 2019 |
-| g-factor GaAs CB | `gfactor_bulk_gaas_cb.cfg` | g*=-0.315 (8-band) | Winkler 2003 |
-| SC GaAs/AlAs | `sc_gaas_alas_qw.cfg` | CB spacing=9.29 meV | Bastard 1981 |
-| SC mod-doped | `sc_mod_doped_gaas_algaas.cfg` | Fermi=1.727 eV, 64 iter | Tan/Snider 1990 |
-| QCSE | `sc_qcse_gaas_algaas*.cfg` | Stark shift=-1.79 meV | Harrison 2016 |
-| **Verification Ladder R1** | `bulk_*_k0.cfg` (5 materials) | Eigenvalues exact at k=0 | Machine precision |
-| **Verification Ladder R2** | `bulk_*_kx_dispersion.cfg` (4 materials) | m* within 10% of Kane model | This work |
-| **Verification Ladder R3** | `docs/benchmarks/qw_gaas_algaas.cfg` | CB spacing=9.92 meV | benchmarks.md |
-| **Verification Ladder R4** | `wire_gaas_*.cfg` (3 sizes) | Wire convergence + dense=sparse | Internal consistency |
+| Bulk GaAs Gamma | `bulk_gaas_kx.toml` | Eg=1.519, Delta_SO=0.341 | Vurgaftman 2001 |
+| GaAs/AlGaAs QW | `qw_gaas_algaas.toml` | CB spacing=9.92 meV | Bastard 1981 |
+| InAs/GaSb broken gap | `qw_inasw_gasbw_broken_gap.toml` | EC<EV overlap=142 meV | Campos 2019 |
+| g-factor GaAs CB | `gfactor_bulk_gaas_cb.toml` | g*=-0.315 (8-band) | Winkler 2003 |
+| SC GaAs/AlAs | `sc_gaas_alas_qw.toml` | CB spacing=9.29 meV | Bastard 1981 |
+| SC mod-doped | `sc_mod_doped_gaas_algaas.toml` | Fermi=1.727 eV, 64 iter | Tan/Snider 1990 |
+| QCSE | `sc_qcse_gaas_algaas*.toml` | Stark shift=-1.79 meV | Harrison 2016 |
+| **Verification Ladder R1** | `bulk_*_k0.toml` (5 materials) | Eigenvalues exact at k=0 | Machine precision |
+| **Verification Ladder R2** | `bulk_*_kx_dispersion.toml` (4 materials) | m* within 10% of Kane model | This work |
+| **Verification Ladder R3** | `qw_gaas_algaas.toml` | CB spacing=9.92 meV | benchmarks.md |
+| **Verification Ladder R4** | `wire_gaas_*.toml` (3 sizes) | Wire convergence + dense=sparse | Internal consistency |
 
 ## References
 

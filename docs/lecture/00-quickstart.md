@@ -63,48 +63,47 @@ build/src/bandStructure        # band-structure sweeps
 build/src/gfactorCalculation   # Landau g-factor at Gamma
 ```
 
-Both read the same `input.cfg` format. We will use `bandStructure` in
-Section 3 and `gfactorCalculation` in Section 4. For the full input format and
-canonical block order, see [`docs/reference/input-reference.md`](../reference/input-reference.md).
+Both read the same `input.toml` format (TOML). We will use `bandStructure` in
+Section 3 and `gfactorCalculation` in Section 4. For the full input schema, see [`docs/reference/input-reference.md`](../reference/input-reference.md).
 
 ---
 
 ## 3. First Run: Bulk GaAs
 
-The program reads its input from a file called `input.cfg` in the project root.
+The program reads its input from a file called `input.toml` in the project root.
 Create it with the following contents:
 
-```
-waveVector: kx
-waveVectorMax: 0.1
-waveVectorStep: 11
-confinement:  0
-FDstep: 101
-FDorder: 2
-numLayers:  1
-material1: GaAs
-numcb: 2
-numvb: 6
-ExternalField: 0  EF
-EFParams: 0.0005
+```toml
+confinement = "bulk"
+FDorder = 2
+fd_step = 101
+
+[wave_vector]
+mode = "kx"
+max = 0.1
+nsteps = 11
+
+[bands]
+num_cb = 2
+num_vb = 6
+
+[[material]]
+name = "GaAs"
 ```
 
 **What this input means:**
 
 | Parameter | Value | Meaning |
 |---|---|---|
-| `waveVector` | `kx` | Sweep along the [100] direction |
-| `waveVectorMax` | `0.1` | Maximum k in 1/Angstrom |
-| `waveVectorStep` | `11` | Number of k-points (including k=0) |
-| `confinement` | `0` | Bulk mode: 8x8 Hamiltonian |
-| `FDstep` | `101` | Ignored in bulk; code forces it to 1 |
+| `confinement` | `"bulk"` | Bulk mode: 8x8 Hamiltonian |
+| `fd_step` | `101` | Ignored in bulk; code forces it to 1 |
 | `FDorder` | `2` | Finite-difference order (irrelevant for bulk) |
-| `numLayers` | `1` | Single material layer |
-| `material1` | `GaAs` | Gallium arsenide from the built-in database |
-| `numcb` | `2` | Request 2 conduction-band eigenvalues |
-| `numvb` | `6` | Request 6 valence-band eigenvalues |
-| `ExternalField` | `0 EF` | No external electric field |
-| `EFParams` | `0.0005` | Field strength (unused when field is off) |
+| `[wave_vector] mode` | `"kx"` | Sweep along the [100] direction |
+| `[wave_vector] max` | `0.1` | Maximum k in 1/Angstrom |
+| `[wave_vector] nsteps` | `11` | Number of k-points (including k=0) |
+| `[bands] num_cb` | `2` | Request 2 conduction-band eigenvalues |
+| `[bands] num_vb` | `6` | Request 6 valence-band eigenvalues |
+| `[[material]] name` | `"GaAs"` | Gallium arsenide from the built-in database |
 
 Now run the program:
 
@@ -115,43 +114,14 @@ Now run the program:
 ### 3.1 Standard output
 
 The program prints a summary of parsed parameters followed by the material
-database entry for GaAs:
-
-```
- waveVector:kx
- waveVectorMax:  0.10000000000000001
- waveVectorStep:          11
- confinement:           0
- FDstep:         101
- FDorder:           2
- numLayers:           1
- Warning: bulk mode requires fdStep=1. Forcing fdStep=1.
- material1:GaAs
- numcb:           2
- numvb:           6
- ExternalField:           0 EF
- EFParams:   5.0000000000000001E-004
-
- Material: GaAs
- Parameters
- EP :   28.800000000000001
- P  :   10.475088634541221
- A  :   14.925373134328357
- gamma1 :   6.9800000000000004
- gamma2 :   2.0600000000000001
- gamma3 :   2.9300000000000002
-```
-
-The "Warning" about `fdStep` is harmless: bulk mode solves an 8x8 matrix at
-each k-point and does not use finite differences, so the code overrides the
-value to 1.
-
-The material parameters block shows the Kane energy $E_P = 28.8$ eV, the
-interband momentum matrix element $P = \sqrt{E_P \cdot \hbar^2/(2m_0)}
+database entry for GaAs. The material parameters block shows the Kane energy
+$E_P = 28.8$ eV, the interband momentum matrix element $P = \sqrt{E_P \cdot \hbar^2/(2m_0)}
 \approx 10.48$ eV-Angstrom, and the Luttinger parameters $\gamma_1$, $\gamma_2$,
 $\gamma_3$. These are the Vurgaftman 2001 values for GaAs.
 
-### 3.2 Output file: `output/eigenvalues.dat`
+The "Warning" about `fdStep` is harmless: bulk mode solves an 8x8 matrix at
+each k-point and does not use finite differences, so the code overrides the
+value to 1. Output file: `output/eigenvalues.dat`
 
 The program writes eigenvalues to `output/eigenvalues.dat`. The first few lines
 look like this:
@@ -179,35 +149,38 @@ The file has 12 rows: a header line (`#k, values`) plus 11 k-points (the
 
 The second executable, `gfactorCalculation`, computes Landau g-factors at the
 Gamma point ($\mathbf{k} = 0$) using second-order Lowdin partitioning. It reads
-the same `input.cfg` format with two extra parameters.
+the same `input.toml` format with two extra parameters.
 
-Replace the contents of `input.cfg` with:
+Replace the contents of `input.toml` with:
 
-```
-waveVector: k0
-waveVectorMax: 0.1
-waveVectorStep: 0
-confinement:  0
-FDstep: 1
-FDorder: 2
-numLayers:  1
-material1: GaAs
-numcb: 2
-numvb: 6
-ExternalField: 0  EF
-EFParams: 0.0005
-whichBand: 0
-bandIdx: 1
+```toml
+confinement = "bulk"
+FDorder = 2
+fd_step = 1
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 2
+num_vb = 6
+
+[[material]]
+name = "GaAs"
 ```
 
 **New parameters:**
 
 | Parameter | Value | Meaning |
 |---|---|---|
-| `waveVector` | `k0` | Fixed at the Gamma point |
-| `waveVectorStep` | `0` | No sweep — single-point calculation |
-| `whichBand` | `0` | Conduction band (1 = valence) |
-| `bandIdx` | `1` | First conduction subband |
+| `[wave_vector] mode` | `"k0"` | Fixed at the Gamma point |
+| `[wave_vector] nsteps` | `1` | No sweep -- single-point calculation |
+| `which_band` | `0` | Conduction band (1 = valence) |
+| `band_idx` | `1` | First conduction subband |
 
 Run:
 
@@ -318,7 +291,7 @@ explore further:
 
 The remaining input files in `tests/regression/configs/` are ready-to-run
 examples for quantum wells, quantum wires, g-factors, self-consistent calculations, and more.
-Copy any of them to `input.cfg` and re-run `./build/src/bandStructure`.
+Copy any of them to `input.toml` and re-run `./build/src/bandStructure`.
 
 ---
 
@@ -385,9 +358,9 @@ cmake --build build
 
 ### Wrong number of eigenvalues
 
-The code returns `numcb + numvb` eigenvalues. For bulk (8-band), the maximum
-is 8. Requesting `numcb=2, numvb=6` gives all eight bands. Requesting fewer
-(e.g., `numcb=1, numvb=3`) returns only the four lowest eigenvalues. If you
+The code returns `num_cb + num_vb` eigenvalues. For bulk (8-band), the maximum
+is 8. Requesting `num_cb = 2, num_vb = 6` gives all eight bands. Requesting fewer
+(e.g., `num_cb = 1, num_vb = 3`) returns only the four lowest eigenvalues. If you
 need all bands, keep the sum at 8.
 
 ### No `output/` directory
@@ -417,7 +390,7 @@ python3 scripts/lecture_00_quickstart.py
 
 ### Code-Output Anchors
 
-Running `bulk_gaas_k0.cfg` produces:
+Running `bulk_gaas_k0.toml` produces:
 - **8 eigenvalues**: 2x SO at -0.341 eV, 4x HH/LH at 0 eV, 2x CB at 1.519 eV (matches Vurgaftman parameters exactly)
 - **Band gap**: Eg = 1.519 eV; **Spin-orbit splitting**: Delta_SO = 0.341 eV
 

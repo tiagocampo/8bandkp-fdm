@@ -29,7 +29,7 @@ make test           # Configure with BUILD_TESTING=ON, build, run ctest
 
 **Gotcha — stale `.mod` files:** Old `.mod` in project root shadow fresh ones in `build/`. Run `rm -f *.mod` if you get type mismatch errors.
 
-**Gotcha — `cp -i` alias:** The shell has `cp -i` alias. Use the Write tool (not `cp`) when creating `input.cfg`.
+**Gotcha — `cp -i` alias:** The shell has `cp -i` alias. Use the Write tool (not `cp`) when creating `input.toml`.
 
 ## Testing
 
@@ -61,10 +61,10 @@ Regression tests use shell scripts + Python (`tests/regression/compare_output.py
 ## Running
 
 ```bash
-./build/src/bandStructure       # Reads input.cfg, outputs to output/
-./build/src/gfactorCalculation  # Reads input.cfg, outputs to output/ (requires k=0)
-./build/src/opticalProperties   # Reads input.cfg with optics: block, outputs to output/
-./build/src/topologicalAnalysis # Reads input.cfg with topology: block, outputs to output/
+./build/src/bandStructure       # Reads input.toml, outputs to output/
+./build/src/gfactorCalculation  # Reads input.toml, outputs to output/ (requires k=0)
+./build/src/opticalProperties   # Reads input.toml with [optics] section, outputs to output/
+./build/src/topologicalAnalysis # Reads input.toml with [topology] section, outputs to output/
 ```
 
 **Parallelism:** OpenMP distributes the QW k-point sweep across threads (`main.f90:691-723`). MKL runs sequential internally to avoid oversubscription. Control thread count with `OMP_NUM_THREADS`:
@@ -80,7 +80,7 @@ Without `OMP_NUM_THREADS`, OpenMP defaults to all cores. For test runs, set it b
 OMP_NUM_THREADS=12 ctest --test-dir build --output-on-failure
 ```
 
-Write a config from `tests/regression/configs/` to `input.cfg`. Keep committed examples in the canonical order documented in `docs/reference/input-reference.md`; optional block entry labels are name-aware (`optics:`, `exciton:`, `scattering:`, `feast_emin:`, `strain:`), but parameters inside each block still follow the documented sequence.
+Write a config from `tests/regression/configs/` to `input.toml`. Configs use TOML format with sections organized as documented in `docs/reference/input-reference.md`. Sections are order-independent; optional physics blocks are enabled by their presence in the file (no separate enable flags).
 
 **Lecture-test pair scripts:** 15 Python scripts in `scripts/` (`lecture_00_quickstart.py` through `lecture_14_excitons_scattering.py`) serve dual roles as pedagogical companions and integration tests. Each runs a Fortran executable, validates physics results, generates overlay plots, and prints PASS/FAIL per section. Run individually: `python3 scripts/lecture_01_bulk.py`. Shared infrastructure: `tests/integration/star_helpers.py` (physical constants, `run_exe`, parse helpers).
 
@@ -158,34 +158,32 @@ defs.f90                      (kinds, constants, derived types — no deps)
                       <- sc_loop.f90           (self-consistent SP loop, linear + DIIS mixing)
   <- scattering.f90          (phonon scattering rates, used by main.f90)
   <- outputFunctions.f90      (eigenvalue/eigenfunction file I/O)
-  <- input_parser.f90         (shared input.cfg parser → simulation_config type)
+  <- input_parser.f90         (TOML-based input.toml parser → simulation_config type, uses toml-f library)
 ```
 
 ### Key design concepts
 
 - **Basis ordering** (fixed throughout): bands 1-4 = valence (HH, LH, LH, HH), bands 5-6 = split-off, bands 7-8 = conduction
-- **Dual mode**: `confinement=0` → bulk (8x8), `confinement=1` → quantum well (8N x 8N, N = FDstep)
+- **Dual mode**: `confinement = "bulk"` → bulk (8x8), `confinement = "qw"` → quantum well (8N x 8N, N = ngrid)
 - **QW Hamiltonian**: 8x8 block matrix, each block NxN. Block structure defined in `hamiltonian_blocks.f90` as a 52-entry table (`get_kp_block_table()`) with named constants (KP_Q, KP_R, etc.). Both dense (`hamiltonianConstructor.f90`) and COO (`hamiltonian_wire.f90`) builders read this table instead of hard-coding the block topology. Blocks: k.p terms (Q, R, S, T, P) + band offsets
-- **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it
+- **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it from `input.toml` using sub-types mirroring TOML sections (`wave_vector_config`, `bands_config`, `external_field_config`, `b_field_config`, `wire_config`, `landau_config`, `feast_config`)
 - **`confinementInitialization`** precomputes material parameters at each z-point into `kpterms(ny, ny, 10)`
 - **Last-layer-wins** in `confinement_init.f90`: later material layers overwrite earlier ones. Use 2-layer pattern (barrier covers full domain, well overwrites center). Avoid full-domain layers after a narrow well layer — they silently destroy the QW.
 - **Sparse vs dense**: g-factor uses MKL SpBLAS for large QW; band structure uses dense LAPACK (`zheevx`)
 - **Wire g-factor velocity operator**: commutator-based `build_velocity_matrices` computes $v_\alpha = -i [r_\alpha, H]$ element-wise on CSR. Generic interface dispatches to `_2d` (wire, 4 scalar CSR args) or `_1d` (QW, 3-element CSR array). For QW: z-velocity from commutator, in-plane from `ZB8bandQW(g='g')`. g='g3' still used for z-direction in wire. Old g='g1'/'g2' modes are dead code.
 - **Optical properties**: standalone `opticalProperties` executable computes absorption, gain, spontaneous emission, and ISBT spectra for bulk (8x8, spherical 3D k-integration), QW (dense, 2D cylindrical), and wire (CSR/FEAST, 1D kz-sweep). All use commutator-based velocity matrices via CSR SpMV + zdotc pattern. Unified accumulation framework in `optical_spectra.f90` shares velocity matrices across all quantities; only the occupation factor differs. Spin-resolved spectra via Clebsch-Gordan projection in `spin_projection.f90`.
 - **Foreman renormalization**: disabled by default (`renormalization = .False.` in defs.f90)
-- **Topological analysis**: standalone `topologicalAnalysis` executable supports QHE (Chern number via QWZ model), QSHE (Z2 invariant via BHZ wire or Fu-Kane), and BdG (Majorana modes in superconducting wire). Uses `topology:` and `bdg:` input blocks. Chern number via Fukui-Hatsugai-Suzuki algorithm; Z2 via gap criterion in 1D or parity method in 2D. BdG builds 16N x 16N Nambu-space Hamiltonian with s-wave pairing and Zeeman splitting. LDOS computed via complex PARDISO. Design doc: `docs/plans/archive/2026-04-27-bdg-topological-superconductivity-design.md`
+- **Topological analysis**: standalone `topologicalAnalysis` executable supports QHE (Chern number via QWZ model), QSHE (Z2 invariant via BHZ wire or Fu-Kane), and BdG (Majorana modes in superconducting wire). Uses `[topology]` and `[bdg]` TOML sections. Chern number via Fukui-Hatsugai-Suzuki algorithm; Z2 via gap criterion in 1D or parity method in 2D. BdG builds 16N x 16N Nambu-space Hamiltonian with s-wave pairing and Zeeman splitting. LDOS computed via complex PARDISO. Design doc: `docs/plans/archive/2026-04-27-bdg-topological-superconductivity-design.md`
 - **W-variant materials** (GaAsW, InAsW, etc.): use Winkler's parameter set with InSb as EV reference. Non-W materials use Vurgaftman parameters. EC = EV + Eg convention for all materials with EV defined
 - **Self-consistent SP**: iterative Schrödinger-Poisson loop wraps the eigenvalue solve. Modifies `profile` array before Hamiltonian construction (same interface as `externalFieldSetup_electricField`). Linear mixing warm-up + DIIS/Pulay acceleration. Works for bulk (Fermi level finder) and QW (full SP). Per-layer doping (`doping_spec`), charge neutrality or fixed Fermi level, box-integration Poisson with variable dielectric. Design doc: `docs/plans/archive/2026-03-29-self-consistent-sp-design.md`
 
-### Input file (`input.cfg`)
+### Input file (`input.toml`)
 
-Label-value format with comments (`!`). Key fields: `waveVector` (kx/ky/kz/k0), `waveVectorMax`, `waveVectorStep`, `confinement` (0/1), `FDstep`, `FDorder` (default 2), `numLayers`, `materialN` (name + z-range), `numcb`/`numvb`, `ExternalField` + `EFParams`.
+TOML format parsed by `toml-f` library. Sections are order-independent. Key top-level fields: `confinement` (`"bulk"`, `"qw"`, `"wire"`, `"landau"`), `FDorder` (default 2), `fd_step` (grid points for QW).
 
-SC additional fields: `SC` (enable flag), `SC_max_iter`, `SC_tolerance`, `SC_mixing`, `SC_diis`, `SC_temperature`, `SC_fermi_mode` (0=charge_neutrality, 1=fixed), `SC_fermi_level`, `SC_num_kpar`, `SC_kpar_max`, `SC_bc` (DD/DN), `SC_bc_left`, `SC_bc_right`. Per-layer `doping: ND NA` lines.
+Sections: `[wave_vector]` (mode, max, nsteps), `[bands]` (num_cb, num_vb), `[[material]]` (name, z_min, z_max), `[wire]` + `[wire.geometry]` + `[[region]]` (wire mode), `[landau]` (Landau mode), `[external_field]` (type, value), `[b_field]` (components, g_factor), `[strain]` (reference), `[sc]` (self-consistent parameters), `[[doping]]` (ND, NA or delta doping), `[topology]` (topological analysis), `[bdg]` (BdG parameters), `[optics]` (optical spectra), `[exciton]`, `[scattering]`, `[feast]`.
 
-g-factor additional fields: `whichBand` (0=CB, 1=VB) and `bandIdx` (subband index, default 1).
-
-Optics block fields: `optics:` block with `T/F` enable flag, `linewidth_lorentzian`, `linewidth_gaussian`, `refractive_index`, `E_min E_max num_energy_points`, `temperature`, `carrier_density`, `gain_enabled`, `gain_carrier_density`, `ISBT`, `SpontaneousEnabled`, `SpinResolved`. See `docs/reference/input-reference.md` for full format.
+Optional sections are enabled by presence -- no separate enable flags. G-factor uses top-level `which_band` and `band_idx`. See `docs/reference/input-reference.md` for the complete schema.
 
 ## Code Conventions
 
@@ -246,7 +244,7 @@ Always check for and follow applicable superpowers skills when working. In parti
 - **NEVER** change the Bir-Pikus sign convention: `Q_eps = -(b_dp/2) * (eps_zz - 0.5*(eps_yy + eps_xx))` with the minus sign on b_dp matching the standard Chuang/Winkler convention. VB diagonal shifts are `delta_EHH = -P_eps + Q_eps`, `delta_ELH = -P_eps - Q_eps`, `delta_ESO = -P_eps` where `P_eps = -av * Tr(eps)`. Under compressive strain (Tr < 0, b < 0), HH shifts up and LH shifts down. Single source of truth: `compute_bp_scalar` in `strain_solver.f90`.
 - **NEVER** change the strain or Zeeman block tables: `get_strain_table()` and `get_zeeman_table()` in `strain_solver.f90` are the single source of truth for Bir-Pikus strain block topology (band pairs) and Zeeman diagonal g-multipliers (per band index), respectively. All dense and COO builders consume these tables.
 - **NEVER** change the k.p block table: `get_kp_block_table()` in `hamiltonian_blocks.f90` is the single source of truth for the 52-entry block topology (band pairs, k.p terms, complex prefactors). Both dense and COO builders consume this table.
-- **NEVER** commit `input.cfg` with personal test configs — use `tests/regression/configs/` for test configs
+- **NEVER** commit `input.toml` with personal test configs — use `tests/regression/configs/` for test configs
 - **Require approval** for: changes to `defs.f90` derived types, k.p block table in `hamiltonian_blocks.f90`, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`, Poisson solver in `poisson.f90`, SC loop convergence logic in `sc_loop.f90`
 
 ## Known Issues

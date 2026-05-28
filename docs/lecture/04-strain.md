@@ -524,7 +524,7 @@ stored in `parameters.f90`.
 
 The type-II broken-gap AlSb/GaSb/InAs system is a near-lattice-matched
 heterostructure used for mid-infrared devices.  The quantum well configuration
-(from `tests/regression/configs/qw_alsb_gasb_inas.cfg`) consists of:
+(from `tests/regression/configs/qw_alsb_gasb_inas.toml`) consists of:
 
 | Layer | Material | Range (A) | $a_0$ (A) |
 |---|---|---|---|
@@ -919,7 +919,7 @@ python3 scripts/lecture_04_strain.py
 
 ### Code-Output Anchors
 
-Running `bulk_gaas_strained.cfg` produces:
+Running `bulk_gaas_strained.toml` produces:
 - **Bir-Pikus HH-LH splitting**: matches analytical formula within 1%
 - **Strained QW**: VB splitting confirmed; CB shift = -294 meV (GaAs on InP)
 

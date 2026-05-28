@@ -197,7 +197,7 @@ $$
 
 which involves subband spacings rather than the band gap. In quantum wells and wires with strong confinement, these spacings can be comparable to $E_g$ for narrow structures, making intra-band corrections significant.
 
-The code explicitly separates these two sums (see the two nested loops over `numvb` and `numcb` in `gfactorCalculation`), computing four momentum matrix elements per intermediate state:
+The code explicitly separates these two sums (see the two nested loops over `num_vb` and `num_cb` in `gfactorCalculation`), computing four momentum matrix elements per intermediate state:
 
 $$
 P_1(n,l),\; P_2(l,m),\; P_2(n,l),\; P_1(l,m).
@@ -253,7 +253,7 @@ Key subroutines:
 The g-factor calculation is driven by program `gfactor`. The workflow is:
 
 1. **Read input** via `read_and_setup` (shared `input_parser` module).
-2. **Validate**: g-factor requires $k=0$ only (`waveVector: k0`, `waveVectorStep: 0`).
+2. **Validate**: g-factor requires $k=0$ only (`[wave_vector] mode = "k0"`, `nsteps = 0`).
 3. **Build Hamiltonian** at $\mathbf{k} = 0$ and diagonalize fully:
    - Bulk/QW: dense LAPACK (`zheev`/`zheevd`)
    - Wire: sparse FEAST eigensolver (`solve_sparse_evp`)
@@ -286,7 +286,7 @@ These couple the CB ($s$-like, bands 7--8) to the VB and SO bands ($p$-like, ban
 
 #### Wire mode: commutator-based velocity operator
 
-For quantum wires (`confinement=2`), the velocity operator is computed via the Heisenberg equation of motion:
+For quantum wires (`confinement = "wire"`), the velocity operator is computed via the Heisenberg equation of motion:
 
 $$
 v_\alpha = \frac{[r_\alpha, H]}{i\hbar}, \qquad \frac{dH}{dk_\alpha} = -i [r_\alpha, H]
@@ -321,7 +321,7 @@ For multi-layer QW structures, the Hamiltonian is large ($8N \times 8N$ with $N 
 
 ### 5.2.6 Wire mode g-factor
 
-For wire mode (`confinement=2`), the program follows a different branch in `main_gfactor.f90`:
+For wire mode (`confinement = "wire"`), the program follows a different branch in `main_gfactor.f90`:
 
 1. Build the 2D sparse k.p terms via `confinementInitialization_2d`.
 2. Optionally compute and apply strain via `compute_strain` + `compute_bir_pikus_blocks`.
@@ -365,36 +365,39 @@ Understanding the memory layout is essential for following the code:
 
 ### 5.3.1 Bulk GaAs conduction band g-factor
 
-The simplest case is a bulk semiconductor. The input configuration (`gfactor_bulk_gaas_cb.cfg`) is:
+The simplest case is a bulk semiconductor. The input configuration (`gfactor_bulk_gaas_cb.toml`) is:
 
-```ini
-waveVector: k0
-waveVectorMax: 0.1
-waveVectorStep: 0
-confinement:  0
-FDstep: 1
-FDorder: 2
-numLayers:  1
-material1: GaAs
-numcb: 2
-numvb: 6
-ExternalField: 0  EF
-EFParams: 0.0005
-whichBand: 0
-bandIdx: 1
+```toml
+confinement = "bulk"
+FDorder = 2
+fd_step = 1
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 2
+num_vb = 6
+
+[[material]]
+name = "GaAs"
 ```
 
 Key observations:
-- `confinement: 0` selects bulk mode (8x8 Hamiltonian).
-- `FDstep: 1` gives a single spatial point.
-- `numcb: 2` and `numvb: 6` give the full 8-band basis.
-- `whichBand: 0` selects the conduction band.
-- `bandIdx: 1` selects the ground-state Kramers doublet (CB bands 7--8).
+- `confinement = "bulk"` selects bulk mode (8x8 Hamiltonian).
+- `fd_step = 1` gives a single spatial point.
+- `num_cb = 2` and `num_vb = 6` give the full 8-band basis.
+- `which_band = 0` selects the conduction band.
+- `band_idx = 1` selects the ground-state Kramers doublet (CB bands 7--8).
 
 Run the calculation:
 
 ```bash
-cat tests/regression/configs/gfactor_bulk_gaas_cb.cfg > input.cfg
+cp tests/regression/configs/gfactor_bulk_gaas_cb.toml input.toml
 ./build/src/gfactorCalculation
 ```
 
@@ -420,7 +423,7 @@ The inter-band contribution dominates and is negative, reflecting the strong cou
 **Bulk InAsW for comparison.** Using the InAsW config:
 
 ```bash
-cat tests/regression/configs/gfactor_bulk_inasw_cb.cfg > input.cfg
+cp tests/regression/configs/gfactor_bulk_inasw_cb.toml input.toml
 ./build/src/gfactorCalculation
 ```
 
@@ -428,37 +431,49 @@ The result is $g_x = g_y = g_z = -14.858$, a dramatically larger value due to th
 
 ### 5.3.2 QW conduction band g-factor: InAs/GaSb/AlSb type-II system
 
-A more interesting case is the quantum well configuration (`gfactor_qw_cb.cfg`):
+A more interesting case is the quantum well configuration (`gfactor_qw_cb.toml`):
 
-```ini
-waveVector: k0
-waveVectorMax: 0.1
-waveVectorStep: 0
-confinement:  1
-FDstep: 101
-FDorder: 2
-numLayers:  3
-material1: AlSbW -250  250 0
-material2: GaSbW -135  135 0.2414
-material3: InAsW  -35   35 -0.0914
-numcb: 32
-numvb: 32
-ExternalField: 0  EF
-EFParams: 0.0005
-whichBand: 0
-bandIdx: 1
+```toml
+confinement = "qw"
+FDorder = 2
+fd_step = 101
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 32
+num_vb = 32
+
+[[material]]
+name = "AlSbW"
+z_min = -250
+z_max = 250
+
+[[material]]
+name = "GaSbW"
+z_min = -135
+z_max = 135
+
+[[material]]
+name = "InAsW"
+z_min = -35
+z_max = 35
 ```
 
 This defines an InAs/GaSb broken-gap quantum well with AlSb barriers:
 - 101 FD grid points, second-order finite differences.
 - Three material layers with Winkler parameters (the `W` suffix selects the Winkler parameter set).
-- The band offsets are specified as the third parameter on each `material` line.
-- `numcb: 32` and `numvb: 32` are multiplied by `fdStep` internally to give 202 CB and 606 VB states for the full $808 \times 808$ QW Hamiltonian.
+- `num_cb = 32` and `num_vb = 32` are multiplied by `ngrid` internally to give 202 CB and 606 VB states for the full $808 \times 808$ QW Hamiltonian.
 
 Run:
 
 ```bash
-cat tests/regression/configs/gfactor_qw_cb.cfg > input.cfg
+cp tests/regression/configs/gfactor_qw_cb.toml input.toml
 ./build/src/gfactorCalculation
 ```
 
@@ -487,7 +502,7 @@ The terminal output also shows the intermediate quantities:
 
 ### 5.3.3 QW g-factor vs well width
 
-The dependence of $g^*$ on the quantum well width $L_w$ provides direct insight into how confinement modifies the effective g-factor. For the InAsW/GaSbW/AlSbW broken-gap system, we sweep the InAsW well half-width from 10 to 40 Å (total widths 20 to 80 Å) while keeping the GaSbW layer wide enough to always surround the well by at least 50 Å. The `bandIdx: 1` parameter selects the ground-state CB Kramers doublet.
+The dependence of $g^*$ on the quantum well width $L_w$ provides direct insight into how confinement modifies the effective g-factor. For the InAsW/GaSbW/AlSbW broken-gap system, we sweep the InAsW well half-width from 10 to 40 A (total widths 20 to 80 A) while keeping the GaSbW layer wide enough to always surround the well by at least 50 A. The `band_idx = 1` parameter selects the ground-state CB Kramers doublet.
 
 ![QW g-factor vs well width](../figures/qw_gfactor_vs_width.png)
 
@@ -566,7 +581,7 @@ The Vurgaftman and Winkler parameter sets can give slightly different g-factors 
 
 - **Always start from bulk.** Verify that your bulk g-factor matches the Roth formula prediction before moving to confined structures. This validates the material parameters.
 - **Use enough grid points.** The g-factor is sensitive to the wave function shape. For QW calculations, at least 80--100 FD points across the well is recommended.
-- **Check convergence in `numcb`/`numvb`.** Double the number of subbands and verify that $g$ changes by less than 1%.
+- **Check convergence in `num_cb`/`num_vb`.** Double the number of subbands and verify that $g$ changes by less than 1%.
 - **Monitor warnings.** More than a few "near-zero denominator" warnings suggests that the Lowdin partitioning is not well-separated and results may be unreliable.
 - **For wires, use sufficient grid resolution** in both $x$ and $y$. The g-factor anisotropy $g_x - g_y$ is sensitive to the wire cross-section shape, which is resolved by the 2D grid.
 - **The `g_free` constant** in `defs.f90` is set to the CODATA value 2.00231. If comparing with older literature that uses $g_0 = 2.0$, the difference of 0.0023 may be significant for materials with $|g| \approx 0$.
@@ -617,7 +632,7 @@ python3 scripts/lecture_05_gfactor.py
 
 ### Code-Output Anchors
 
-Running `gfactor_bulk_gaas_cb.cfg` produces:
+Running `gfactor_bulk_gaas_cb.toml` produces:
 - **GaAs CB g**: -0.315 (Roth formula within 1%); **InSb |g|** > 40
 - **GaAs Landau levels**: spacing 10.90 meV vs Kane-mass hbar*omega_c=11.55 meV (6% error)
 

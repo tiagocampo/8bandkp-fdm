@@ -90,7 +90,7 @@ than the true discretization error.
 ### 11.3.1 Setup
 
 We use the broken-gap AlSbW/GaSbW/InAsW quantum well from
-`tests/regression/configs/qw_alsbw_gasbw_inasw.cfg` with a fixed grid
+`tests/regression/configs/qw_alsbw_gasbw_inasw.toml` with a fixed grid
 (FDstep = 101, $\Delta z = 5$ A) and vary the FD order from 2 to 8.
 The eigenvalues are computed at $k_\parallel = 0$ (Gamma point). Order 8 serves
 as the reference.
@@ -457,7 +457,7 @@ Before reporting numerical results from this code, verify the following:
    calculations, start with order 2 and increase to 4 if grid refinement is
    prohibitively expensive.
 
-4. **Number of eigenvalues:** Request enough states (`numcb`, `numvb`) to
+4. **Number of eigenvalues:** Request enough states (`num_cb`, `num_vb`) to
    include all states in the energy range of interest, plus a safety margin.
    Missing eigenvalues corrupt the g-factor calculation via the Lowdin sum.
 
@@ -478,7 +478,7 @@ Before reporting numerical results from this code, verify the following:
 | $\Delta z$ | Primary accuracy control | 0.5--2 A for QW, 1--2 A per direction for wire |
 | FD order | Accuracy per grid point | 2 for exploration, 4 for production, 6--8 for reference |
 | Domain size | Boundary modeling error | Extend 3--5 decay lengths beyond confinement |
-| `numcb`/`numvb` | Completeness of eigenvalue spectrum | Include 2--4 extra states beyond the target |
+| `num_cb`/`num_vb` | Completeness of eigenvalue spectrum | Include 2--4 extra states beyond the target |
 | Wire $N_x \times N_y$ | 2D memory and time | Minimize by using higher FD order instead of finer grid |
 
 The convergence behavior of the 8-band k.p method is more complex than the
@@ -506,7 +506,7 @@ python3 scripts/lecture_11_convergence.py
 
 ### Code-Output Anchors
 
-Running `convergence_qw_gaas.cfg` produces:
+Running `convergence_qw_gaas.toml` produces:
 - **QW grid convergence rate**: 1.66 (within 0.5 of theoretical order 2)
 - **Richardson extrapolation**: agrees with FD-8 result
 
