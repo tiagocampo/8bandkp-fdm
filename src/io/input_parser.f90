@@ -4,6 +4,12 @@ module input_parser
   use parameters
   use geometry
   use outputFunctions
+  use tomlf, only : get_value, set_value, toml_path, toml_parse, toml_load, &
+    & toml_loads, toml_context, toml_parser_config, toml_level, &
+    & toml_error, toml_stat, toml_serializer, toml_serialize, toml_dump, &
+    & toml_dumps, toml_terminal, toml_table, toml_array, toml_keyval, &
+    & toml_key, toml_value, is_array_of_tables, new_table, add_table, &
+    & add_array, add_keyval, tomlf_len => len
 
   implicit none
 
@@ -12,1358 +18,866 @@ module input_parser
 
 contains
 
-  pure function to_lower_ascii(text) result(lowered)
-    character(len=*), intent(in) :: text
-    character(len=len(text)) :: lowered
-    integer :: i, code
-
-    lowered = text
-    do i = 1, len(text)
-      code = iachar(text(i:i))
-      if (code >= iachar('A') .and. code <= iachar('Z')) then
-        lowered(i:i) = achar(code + 32)
-      end if
-    end do
-  end function to_lower_ascii
-
-  subroutine read_next_data_line(data_unit, line, status)
-    integer(kind=4), intent(in) :: data_unit
-    character(len=*), intent(out) :: line
-    integer, intent(out) :: status
-
-    do
-      read(data_unit, '(A)', iostat=status) line
-      if (status /= 0) return
-      if (len_trim(line) == 0) cycle
-      if (line(1:1) == '!') cycle
-      return
-    end do
-  end subroutine read_next_data_line
-
-  subroutine read_optional_logical_flag(data_unit, expected_label, value, found, label)
-    integer(kind=4), intent(in) :: data_unit
-    character(len=*), intent(in) :: expected_label
-    logical, intent(inout) :: value
-    logical, intent(out) :: found
-    character(len=*), intent(out) :: label
-
-    integer :: status
-    character(len=512) :: line
-    character(len=255) :: label_part, value_str
-    integer :: colon_pos
-
-    found = .false.
-    call read_next_data_line(data_unit, line, status)
-    if (status /= 0) return
-
-    ! Extract label (before colon) and value (after colon)
-    colon_pos = index(line, ':')
-    if (colon_pos <= 0) then
-      backspace(data_unit)
-      return
-    end if
-
-    label_part = adjustl(line(:colon_pos-1))
-    if (trim(to_lower_ascii(label_part)) /= trim(to_lower_ascii(expected_label))) then
-      backspace(data_unit)
-      return
-    end if
-
-    ! Extract value after colon
-    value_str = adjustl(line(colon_pos+1:))
-
-    ! Check .true. or .false. first (with dots)
-    if (index(value_str, '.true.') > 0 .or. index(value_str, '.TRUE.') > 0 .or. &
-        index(value_str, '.True.') > 0) then
-      value = .true.
-      found = .true.
-      label = trim(label_part) // ':'
-    else if (index(value_str, '.false.') > 0 .or. index(value_str, '.FALSE.') > 0 .or. &
-             index(value_str, '.False.') > 0) then
-      value = .false.
-      found = .true.
-      label = trim(label_part) // ':'
-    ! Single letter T/F without dots (check length to avoid empty string)
-    else if (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't')) then
-      value = .true.
-      found = .true.
-      label = trim(label_part) // ':'
-    else if (len_trim(value_str) > 0 .and. (value_str(1:1) == 'F' .or. value_str(1:1) == 'f')) then
-      value = .false.
-      found = .true.
-      label = trim(label_part) // ':'
-    else
-      backspace(data_unit)
-      return
-    end if
-  end subroutine read_optional_logical_flag
-
-  subroutine read_optional_real_flag(data_unit, expected_label, value, found, label)
-    integer(kind=4), intent(in) :: data_unit
-    character(len=*), intent(in) :: expected_label
-    real(kind=dp), intent(inout) :: value
-    logical, intent(out) :: found
-    character(len=*), intent(out) :: label
-
-    integer :: status
-    character(len=512) :: line
-    character(len=255) :: label_read
-    real(kind=dp) :: value_read
-
-    found = .false.
-    call read_next_data_line(data_unit, line, status)
-    if (status /= 0) return
-
-    read(line, *, iostat=status) label_read
-    if (status /= 0) then
-      backspace(data_unit)
-      return
-    end if
-
-    if (trim(to_lower_ascii(label_read)) /= trim(to_lower_ascii(expected_label))) then
-      backspace(data_unit)
-      return
-    end if
-
-    read(line, *, iostat=status) label_read, value_read
-    if (status /= 0) then
-      backspace(data_unit)
-      return
-    end if
-
-    label = label_read
-    value = value_read
-    found = .true.
-  end subroutine read_optional_real_flag
-
+  ! ==================================================================
+  ! Top-level parser: reads input.toml and populates simulation_config.
+  ! For this slice, only bulk mode is fully functional.
+  ! QW/wire/landau modes will throw "not yet implemented" errors.
+  ! ==================================================================
   subroutine read_config(cfg)
     type(simulation_config), intent(out) :: cfg
 
-    ! Local variables for file handling
-    integer(kind=4) :: data_unit
-    integer :: status
-    character(len=255) :: data_filename, label
-    character(len=512) :: line
-    character(len=255) :: label_part, value_str
-    integer :: colon_pos
-    logical :: found_optional
+    type(toml_table), allocatable :: table
+    type(toml_table), pointer     :: child => null()
+    type(toml_array), pointer     :: arr => null()
+    type(toml_error), allocatable :: parse_error
+    character(len=:), allocatable :: str_val
+    integer :: stat, i
 
-    ! Local iteration
-    integer :: i
-
-    ! reading input/configuration file
-    call get_unit(data_unit)
-    data_filename = 'input.cfg'
-    open(data_unit, file=data_filename, status="old", iostat=status)
-    if (status /= 0) then
-      print *, 'Error: Cannot open input file: ', trim(data_filename)
+    ! Load TOML file
+    call toml_load(table, 'input.toml', error=parse_error)
+    if (allocated(parse_error)) then
+      print *, 'Error: Failed to parse input.toml'
+      print *, '  ', trim(parse_error%message)
       stop 1
     end if
 
-    read(data_unit, *, iostat=status) label, cfg%waveVector
-    if (status /= 0) then
-      print *, 'Error: Failed to read waveVector from input.cfg'
-      stop 1
-    end if
-    print *, trim(label), cfg%waveVector
-    read(data_unit, *, iostat=status) label, cfg%waveVectorMax
-    if (status /= 0) then
-      print *, 'Error: Failed to read waveVectorMax from input.cfg'
-      stop 1
-    end if
-    print *, trim(label), cfg%waveVectorMax
-    read(data_unit, *, iostat=status) label, cfg%waveVectorStep
-    if (status /= 0) then
-      print *, 'Error: Failed to read waveVectorStep from input.cfg'
-      stop 1
-    end if
-    print *, trim(label), cfg%waveVectorStep
-    read(data_unit, *, iostat=status) label, cfg%confinement
-    if (status /= 0) then
-      print *, 'Error: Failed to read confinement from input.cfg'
-      stop 1
-    end if
-    print *, trim(label), cfg%confinement
-    read(data_unit, *, iostat=status) label, cfg%fdStep
-    if (status /= 0) then
-      print *, 'Error: Failed to read fdStep from input.cfg'
-      stop 1
-    end if
-    print *, trim(label), cfg%fdStep
-    read(data_unit, *, iostat=status) label, cfg%FDorder
-    if (status /= 0) then
-      print *, 'Error: Failed to read FDorder from input.cfg'
-      stop 1
-    end if
-    print *, trim(label), cfg%FDorder
-    read(data_unit, *, iostat=status) label, cfg%numLayers
-    if (status /= 0) then
-      print *, 'Error: Failed to read numLayers from input.cfg'
-      stop 1
-    end if
-    print *, trim(label), cfg%numLayers
+    ! ---- Required top-level fields ----
+    call require_string(table, 'confinement', str_val, 'top-level')
+    cfg%confinement = trim(str_val)
 
-    ! Validate confinement value
-    if (cfg%confinement < 0 .or. cfg%confinement > 3) then
-      print *, 'Error: confinement must be 0, 1, 2, or 3, got:', cfg%confinement
-      stop 1
+    call get_value(table, 'FDorder', cfg%FDorder, stat=stat)
+    if (stat /= 0) then
+      cfg%FDorder = 2  ! default
     end if
 
-    ! QW fdStep guard: ensure enough grid points for finite differences
-    if (cfg%confinement == 1 .and. cfg%fdStep < 3) then
-      print *, 'Error: QW mode requires fdStep >= 3, got:', cfg%fdStep
-      stop 1
+    call get_value(table, 'fd_step', cfg%fd_step, stat=stat)
+    if (stat /= 0) then
+      cfg%fd_step = 1  ! default
     end if
 
-    ! Bulk fdStep guard: force fdStep=1 for bulk mode
-    if (cfg%confinement == 0 .and. cfg%fdStep /= 1) then
-      print *, 'Warning: bulk mode requires fdStep=1. Forcing fdStep=1.'
-      cfg%fdStep = 1
-    end if
-
-    ! Validate FDorder
-    if (cfg%FDorder /= 2 .and. cfg%FDorder /= 4 .and. cfg%FDorder /= 6 &
-        .and. cfg%FDorder /= 8 .and. cfg%FDorder /= 10) then
-      print *, 'Error: FDorder must be 2, 4, 6, 8, or 10, got:', cfg%FDorder
-      stop 1
-    end if
-
-    ! Ensure fdStep is large enough for the requested FD order
-    if (cfg%confinement == 1 .and. cfg%fdStep < cfg%FDorder + 1) then
-      print *, 'Error: fdStep must be >= FDorder + 1 for QW simulations'
-      print *, '  fdStep=', cfg%fdStep, ' FDorder=', cfg%FDorder
-      print *, '  (FDorder requires at least ', cfg%FDorder+1, ' grid points)'
-      stop 1
-    end if
-
-    ! Validate input combinations
-    if (cfg%confinement == 0 .and. cfg%numLayers /= 1) then
-      print *, 'Error: bulk mode (confinement=0) requires nlayers=1'
-      stop 1
-    end if
-
-    ! --- Mode-specific material/geometry parsing ---
-
-    allocate(cfg%params(cfg%numLayers))
-    allocate(cfg%materialN(cfg%numLayers))
-
-    if (cfg%confinement == 0) then
-      ! ---- Bulk mode ----
-      read(data_unit, *, iostat=status) label, cfg%materialN(1)
-      if (status /= 0) then
-        print *, 'Error: Failed to read material name from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%materialN(1)
-      cfg%materialN(1) = trim(cfg%materialN(1))
-      cfg%confDir = 'n'
-      ! Allocate startPos/endPos with dummy values for bulk mode
-      allocate(cfg%startPos(1))
-      allocate(cfg%endPos(1))
-      cfg%startPos(1) = 0.0_dp
-      cfg%endPos(1) = 1.0_dp
-
-    else if (cfg%confinement == 1) then
-      ! ---- QW mode (1D confinement along z) ----
-      allocate(cfg%startPos(cfg%numLayers))
-      allocate(cfg%endPos(cfg%numLayers))
-      allocate(cfg%intStartPos(cfg%numLayers))
-      allocate(cfg%intEndPos(cfg%numLayers))
-
-      do i = 1, cfg%numLayers, 1
-        read(data_unit, *, iostat=status) label, cfg%materialN(i), cfg%startPos(i), cfg%endPos(i)
-        if (status /= 0) then
-          print *, 'Error: Failed to read layer', i, 'material/positions from input.cfg'
-          stop 1
-        end if
-        print *, trim(label), trim(cfg%materialN(i)), cfg%startPos(i), cfg%endPos(i)
-      end do
-
-      cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
-      cfg%delta = cfg%totalSize / real(cfg%fdStep - 1, kind=dp)
-
-      cfg%z = [ (cfg%startPos(1) + (i-1)*cfg%delta, i=1, cfg%fdStep) ]
-
-      cfg%dz = cfg%delta
-      cfg%confDir = 'z'
-
-      do i = 1, cfg%numLayers, 1
-        cfg%intStartPos(i) = int(abs( (cfg%startPos(1)-cfg%startPos(i)) / (cfg%totalSize/(cfg%fdStep-1))) )
-        cfg%intEndPos(i) = int( cfg%intStartPos(1) + ((cfg%endPos(1)+cfg%endPos(i))/cfg%delta) )
-      end do
-      cfg%intStartPos = cfg%intStartPos + 1
-      cfg%intEndPos = cfg%intEndPos + 1
-
-    else if (cfg%confinement == 2) then
-      ! ---- Wire mode (2D confinement in x-y plane) ----
-      cfg%confDir = 'z'  ! wire axis along z, confinement in x and y
-
-
-
-      ! Wire grid parameters
-      read(data_unit, *, iostat=status) label, cfg%wire_nx
-      if (status /= 0) then
-        print *, 'Error: Failed to read wire_nx from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%wire_nx
-      read(data_unit, *, iostat=status) label, cfg%wire_ny
-      if (status /= 0) then
-        print *, 'Error: Failed to read wire_ny from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%wire_ny
-
-      read(data_unit, *, iostat=status) label, cfg%wire_dx
-      if (status /= 0) then
-        print *, 'Error: Failed to read wire_dx from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%wire_dx
-
-      read(data_unit, *, iostat=status) label, cfg%wire_dy
-      if (status /= 0) then
-        print *, 'Error: Failed to read wire_dy from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%wire_dy
-
-      ! Wire shape
-      read(data_unit, *, iostat=status) label, cfg%wire_geom%shape
-      if (status /= 0) then
-        print *, 'Error: Failed to read wire_shape from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), trim(cfg%wire_geom%shape)
-
-      ! Shape-dependent dimensions
-      select case (trim(cfg%wire_geom%shape))
-      case ('circle', 'hexagon')
-        read(data_unit, *, iostat=status) label, cfg%wire_geom%radius
-        if (status /= 0) then
-          print *, 'Error: Failed to read wire_radius from input.cfg'
-          stop 1
-        end if
-        print *, trim(label), cfg%wire_geom%radius
-
-      case ('rectangle')
-        read(data_unit, *, iostat=status) label, cfg%wire_geom%width
-        if (status /= 0) then
-          print *, 'Error: Failed to read wire_width from input.cfg'
-          stop 1
-        end if
-        print *, trim(label), cfg%wire_geom%width
-
-        read(data_unit, *, iostat=status) label, cfg%wire_geom%height
-        if (status /= 0) then
-          print *, 'Error: Failed to read wire_height from input.cfg'
-          stop 1
-        end if
-        print *, trim(label), cfg%wire_geom%height
-
-      case ('polygon')
-        read(data_unit, *, iostat=status) label, cfg%wire_geom%nverts
-        if (status /= 0) then
-          print *, 'Error: Failed to read wire_polygon from input.cfg'
-          stop 1
-        end if
-        print *, trim(label), cfg%wire_geom%nverts
-
-        allocate(cfg%wire_geom%verts(2, cfg%wire_geom%nverts))
-        do i = 1, cfg%wire_geom%nverts
-          read(data_unit, *, iostat=status) label, &
-            & cfg%wire_geom%verts(1, i), cfg%wire_geom%verts(2, i)
-          if (status /= 0) then
-            print *, 'Error: Failed to read wire_vertex', i, 'from input.cfg'
-            stop 1
-          end if
-          print *, trim(label), cfg%wire_geom%verts(1, i), cfg%wire_geom%verts(2, i)
-        end do
-
-      case default
-        print *, 'Error: Unknown wire shape: ', trim(cfg%wire_geom%shape)
-        print *, '  Supported shapes: rectangle, circle, hexagon, polygon'
-        stop 1
-      end select
-
-      ! Number of material regions
-      read(data_unit, *, iostat=status) label, cfg%numRegions
-      if (status /= 0) then
-        print *, 'Error: Failed to read numRegions from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%numRegions
-
-      if (cfg%numRegions < 1) then
-        print *, 'Error: numRegions must be >= 1 for wire mode'
-        stop 1
-      end if
-
-      allocate(cfg%regions(cfg%numRegions))
-
-      ! Read region specifications: region = materialName inner outer
-      do i = 1, cfg%numRegions
-        read(data_unit, *, iostat=status) label, cfg%regions(i)%material, &
-          & cfg%regions(i)%inner, cfg%regions(i)%outer
-        if (status /= 0) then
-          print *, 'Error: Failed to read region', i, 'from input.cfg'
-          stop 1
-        end if
-        print *, trim(label), trim(cfg%regions(i)%material), &
-          & cfg%regions(i)%inner, cfg%regions(i)%outer
-        cfg%regions(i)%material = trim(cfg%regions(i)%material)
-      end do
-
-      ! Build materialN and params from regions for backward compat
-      ! (the paramDatabase call expects materialN array)
-      if (cfg%numLayers /= cfg%numRegions) then
-        ! Reallocate to match regions if numLayers was set differently
-        deallocate(cfg%params)
-        deallocate(cfg%materialN)
-        cfg%numLayers = cfg%numRegions
-        allocate(cfg%params(cfg%numRegions))
-        allocate(cfg%materialN(cfg%numRegions))
-      end if
-      do i = 1, cfg%numRegions
-        cfg%materialN(i) = cfg%regions(i)%material
-      end do
-
-      ! Wire mode grid validation
-      if (cfg%wire_nx < 3) then
-        print *, 'Error: wire_nx must be >= 3, got:', cfg%wire_nx
-        stop 1
-      end if
-      if (cfg%wire_ny < 3) then
-        print *, 'Error: wire_ny must be >= 3, got:', cfg%wire_ny
-        stop 1
-      end if
-      if (cfg%wire_dx <= 0.0_dp) then
-        print *, 'Error: wire_dx must be > 0, got:', cfg%wire_dx
-        stop 1
-      end if
-      if (cfg%wire_dy <= 0.0_dp) then
-        print *, 'Error: wire_dy must be > 0, got:', cfg%wire_dy
-        stop 1
-      end if
-      ! FD order validation for wire grid
-      if (cfg%wire_nx < cfg%FDorder + 1) then
-        print *, 'Error: wire_nx must be >= FDorder + 1'
-        print *, '  wire_nx=', cfg%wire_nx, ' FDorder=', cfg%FDorder
-        stop 1
-      end if
-      if (cfg%wire_ny < cfg%FDorder + 1) then
-        print *, 'Error: wire_ny must be >= FDorder + 1'
-        print *, '  wire_ny=', cfg%wire_ny, ' FDorder=', cfg%FDorder
-        stop 1
-      end if
-
-      ! Set fdStep to wire_ny for backward compat (used by array sizing in callers)
-      cfg%fdStep = cfg%wire_ny
-      cfg%dz = cfg%wire_dy
-
-      ! Allocate dummy startPos/endPos for routines that expect them
-      allocate(cfg%startPos(1))
-      allocate(cfg%endPos(1))
-      cfg%startPos(1) = 0.0_dp
-      cfg%endPos(1) = real(cfg%wire_ny - 1, kind=dp) * cfg%wire_dy
-
-    else if (cfg%confinement == 3) then
-      ! ---- Landau mode (1D x-discretization for orbital quantization) ----
-      cfg%confDir = 'x'
-
-      ! Single material (like bulk)
-      read(data_unit, *, iostat=status) label, cfg%materialN(1)
-      if (status /= 0) then
-        print *, 'Error: Failed to read material name from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%materialN(1)
-      cfg%materialN(1) = trim(cfg%materialN(1))
-
-      ! Grid parameters
-      read(data_unit, *, iostat=status) label, cfg%landau_nx
-      if (status /= 0) then
-        print *, 'Error: Failed to read landau_nx from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%landau_nx
-
-      read(data_unit, *, iostat=status) label, cfg%landau_width
-      if (status /= 0) then
-        print *, 'Error: Failed to read landau_width from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%landau_width
-
-      ! Optional: landau_sweep (ky, kz, or B)
-      call read_next_data_line(data_unit, line, status)
-      if (status == 0) then
-        colon_pos = index(line, ':')
-        if (colon_pos > 0) then
-          label_part = adjustl(line(:colon_pos-1))
-          if (trim(to_lower_ascii(label_part)) == 'landau_sweep') then
-            read(line(colon_pos+1:), *, iostat=status) cfg%landau_sweep
-            if (status == 0) then
-              print *, trim(label_part) // ':', trim(cfg%landau_sweep)
-            else
-              cfg%landau_sweep = 'ky'
-              status = 0
-            end if
-          else
-            ! Not landau_sweep — put line back for next reader
-            backspace(data_unit)
-          end if
-        else
-          ! No colon — put back
-          backspace(data_unit)
-        end if
-      end if
-
-      ! Validate Landau grid parameters
-      if (cfg%landau_nx < 3) then
-        print *, 'Error: landau_nx must be >= 3, got:', cfg%landau_nx
-        stop 1
-      end if
-      if (cfg%landau_width <= 0.0_dp) then
-        print *, 'Error: landau_width must be > 0, got:', cfg%landau_width
-        stop 1
-      end if
-      if (cfg%landau_nx < cfg%FDorder + 1) then
-        print *, 'Error: landau_nx must be >= FDorder + 1'
-        print *, '  landau_nx=', cfg%landau_nx, ' FDorder=', cfg%FDorder
-        stop 1
-      end if
-
-      ! Set grid compatibility fields
-      cfg%fdStep = cfg%landau_nx
-      cfg%dz = cfg%landau_width / real(cfg%landau_nx - 1, kind=dp)
-      cfg%totalSize = cfg%landau_width
-      cfg%z = [ ((i - 1) * cfg%dz - 0.5_dp * cfg%landau_width, i=1, cfg%landau_nx) ]
-
-      ! Allocate intStartPos/intEndPos for single material
-      allocate(cfg%intStartPos(1))
-      allocate(cfg%intEndPos(1))
-      cfg%intStartPos(1) = 1
-      cfg%intEndPos(1) = cfg%landau_nx
-
-      ! Allocate dummy startPos/endPos for routines that expect them
-      allocate(cfg%startPos(1))
-      allocate(cfg%endPos(1))
-      cfg%startPos(1) = 0.0_dp
-      cfg%endPos(1) = cfg%landau_width
-
-    end if
-
-    ! --- Common fields: numcb, numvb, external field, gfactor, SC ---
-
-    read(data_unit, *, iostat=status) label, cfg%numcb
-    if (status /= 0) then
-      print *, 'Error: Failed to read numcb from input.cfg'
-      stop 1
-    end if
-    print *, trim(label), cfg%numcb
-    read(data_unit, *, iostat=status) label, cfg%numvb
-    if (status /= 0) then
-      print *, 'Error: Failed to read numvb from input.cfg'
-      stop 1
-    end if
-    print *, trim(label), cfg%numvb
-    cfg%evnum = cfg%numcb + cfg%numvb
-
-    read(data_unit, *, iostat=status) label, cfg%ExternalField, cfg%EFtype
-    if (status /= 0) then
-      print *, 'Error: Failed to read ExternalField from input.cfg'
-      stop 1
-    end if
-    print *, trim(label), cfg%ExternalField, cfg%EFtype
-    if (cfg%EFtype == "EF") then
-      read(data_unit, *, iostat=status) label, cfg%Evalue
-      if (status /= 0) then
-        print *, 'Error: Failed to read Evalue from input.cfg'
-        stop 1
-      end if
-      print *, trim(label), cfg%Evalue
-      ! Check if the "label" we read is actually the b_field line
-      ! (happens when b_field follows EFParams with no newline between)
-      if (trim(label) == 'b_field:') then
-        cfg%b_field(1) = cfg%Evalue
-        cfg%Evalue = 0.0_dp
-        read(data_unit, *, iostat=status) cfg%b_field(2), cfg%b_field(3)
-        if (status == 0 .or. status == -1) then
-          cfg%bdg%B_vec = cfg%b_field
-          if (cfg%confinement /= 3) cfg%bdg%enabled = .true.
-        else
-          cfg%b_field = 0.0_dp
-          cfg%bdg%B_vec = 0.0_dp
-          cfg%bdg%enabled = .false.
-          status = 0
-        end if
-        label = ''
-      end if
+    ! ---- [wave_vector] ----
+    call get_value(table, 'wave_vector', child, stat=stat)
+    if (stat == 0 .and. associated(child)) then
+      call require_string(child, 'mode', str_val, 'wave_vector')
+      cfg%wave_vector%mode = trim(str_val)
+      call get_value(child, 'max', cfg%wave_vector%max, stat=stat)
+      if (stat /= 0) cfg%wave_vector%max = 0.0_dp
+      call get_value(child, 'step', cfg%wave_vector%step, stat=stat)
+      if (stat /= 0) cfg%wave_vector%step = 0.01_dp
+      call get_value(child, 'nsteps', cfg%wave_vector%nsteps, stat=stat)
+      if (stat /= 0) cfg%wave_vector%nsteps = 100
     else
-      stop "Type of external field not implemented"
+      ! Defaults if section missing
+      cfg%wave_vector%mode = 'k0'
+      cfg%wave_vector%max = 0.0_dp
+      cfg%wave_vector%step = 0.01_dp
+      cfg%wave_vector%nsteps = 100
     end if
 
-    ! --- Bulk Landau level magnetic field (b_field: Bx By Bz in Tesla) ---
-    ! For bulk (confinement=0) with B field, sets cfg%bdg%B_vec and enables Zeeman.
-    ! Skip if already parsed via Evalue path above (when label=='')
-    if (cfg%bdg%enabled .and. label == '') then
-      ! b_field was already parsed via Evalue path - skip redundant parsing
-    elseif (.not. cfg%bdg%enabled) then
-      ! b_field not yet parsed - peek at next line
-      call read_next_data_line(data_unit, line, status)
-      if (status == 0) then
-        colon_pos = index(line, ':')
-        if (colon_pos > 0) then
-          label = adjustl(line(:colon_pos-1))
-          if (trim(to_lower_ascii(label)) == 'b_field') then
-            read(line(colon_pos+1:), *, iostat=status) &
-                cfg%b_field(1), cfg%b_field(2), cfg%b_field(3)
-            if (status == 0) then
-              cfg%bdg%B_vec = cfg%b_field
-              if (cfg%confinement /= 3) cfg%bdg%enabled = .true.
-            else
-              cfg%b_field = 0.0_dp
-              status = 0
-            end if
-          else
-            ! Not b_field — put line back for gfactor parsing
-            backspace(data_unit)
-          end if
-        else
-          ! No colon — not a labeled parameter, put back
-          backspace(data_unit)
-        end if
-      end if
-    end if
-
-      ! Optional: g_factor for Landau mode Zeeman splitting
-      call read_next_data_line(data_unit, line, status)
-      if (status == 0) then
-        colon_pos = index(line, ':')
-        if (colon_pos > 0) then
-          label_part = adjustl(line(:colon_pos-1))
-          if (trim(to_lower_ascii(label_part)) == 'g_factor') then
-            read(line(colon_pos+1:), *, iostat=status) cfg%bdg%g_factor
-            if (status == 0) then
-              print *, trim(label_part) // ':', cfg%bdg%g_factor
-            else
-              cfg%bdg%g_factor = 2.0_dp
-              status = 0
-            end if
-          else
-            ! Not g_factor — put line back for next reader
-            backspace(data_unit)
-          end if
-        else
-          ! No colon — put back
-          backspace(data_unit)
-        end if
-      end if
-
-      ! Optional: b_sweep for Landau B-sweep fan diagrams
-      call read_next_data_line(data_unit, line, status)
-      if (status == 0) then
-        colon_pos = index(line, ':')
-        if (colon_pos > 0) then
-          label_part = adjustl(line(:colon_pos-1))
-          if (trim(to_lower_ascii(label_part)) == 'b_sweep') then
-            read(line(colon_pos+1:), *, iostat=status) &
-              cfg%bdg%B_sweep(1), cfg%bdg%B_sweep(2), cfg%bdg%B_sweep(3)
-            if (status == 0) then
-              print *, trim(label_part) // ':', cfg%bdg%B_sweep
-            else
-              cfg%bdg%B_sweep = 0.0_dp
-              status = 0
-            end if
-          else
-            ! Not b_sweep — put line back for next reader
-            backspace(data_unit)
-          end if
-        else
-          ! No colon — put back
-          backspace(data_unit)
-        end if
-      end if
-
-      ! Try reading gfactor params; use defaults if missing (backward compatible)
-      ! Peek at the next line to check if it's a whichBand line
-      call read_next_data_line(data_unit, line, status)
-      if (status == 0) then
-        colon_pos = index(line, ':')
-        if (colon_pos > 0) then
-          label_part = adjustl(line(:colon_pos-1))
-          if (trim(to_lower_ascii(label_part)) == 'whichband') then
-            ! It's a whichBand line - read it and the bandIdx line
-            read(line(colon_pos+1:), *, iostat=status) cfg%whichBand
-            if (status == 0) then
-              print *, trim(label_part), cfg%whichBand
-              ! Read bandIdx on next line
-              call read_next_data_line(data_unit, line, status)
-              if (status == 0) then
-                colon_pos = index(line, ':')
-                if (colon_pos > 0) then
-                  label_part = adjustl(line(:colon_pos-1))
-                  read(line(colon_pos+1:), *, iostat=status) cfg%bandIdx
-                  if (status == 0) print *, trim(label_part), cfg%bandIdx
-                end if
-              end if
-              if (status /= 0) then
-                cfg%bandIdx = 1
-                status = 0
-              end if
-            else
-              status = 0
-              cfg%whichBand = 0
-              cfg%bandIdx = 1
-              backspace(data_unit)
-            end if
-          else
-            ! Not a whichBand line - back up and let next read handle it
-            backspace(data_unit)
-            cfg%whichBand = 0
-            cfg%bandIdx = 1
-          end if
-        else
-          ! No colon - back up
-          backspace(data_unit)
-          cfg%whichBand = 0
-          cfg%bandIdx = 1
-        end if
-      else
-        cfg%whichBand = 0
-        cfg%bandIdx = 1
-      end if
-
-    ! --- SC parameters (backward compatible: uses defaults if missing) ---
-    ! Peek at the next line to check if it's an SC line
-    call read_next_data_line(data_unit, line, status)
-    if (status == 0) then
-      colon_pos = index(line, ':')
-      if (colon_pos > 0) then
-        label_part = adjustl(line(:colon_pos-1))
-        if (trim(to_lower_ascii(label_part)) == 'sc') then
-          ! It's an SC line - read the enabled flag
-          read(line(colon_pos+1:), *, iostat=status) cfg%sc%enabled
-          if (status /= 0) then
-            cfg%sc%enabled = 0
-            status = 0
-          end if
-        else
-          ! Not an SC line - back up
-          backspace(data_unit)
-          cfg%sc%enabled = 0
-        end if
-      else
-        ! No colon - back up
-        backspace(data_unit)
-        cfg%sc%enabled = 0
-      end if
+    ! ---- [bands] ----
+    call get_value(table, 'bands', child, stat=stat)
+    if (stat == 0 .and. associated(child)) then
+      call get_value(child, 'num_cb', cfg%bands%num_cb, stat=stat)
+      if (stat /= 0) cfg%bands%num_cb = 2
+      call get_value(child, 'num_vb', cfg%bands%num_vb, stat=stat)
+      if (stat /= 0) cfg%bands%num_vb = 6
     else
-      cfg%sc%enabled = 0
+      cfg%bands%num_cb = 2
+      cfg%bands%num_vb = 6
     end if
-
-    sc_block: do
-      if (cfg%sc%enabled == 1) then
-        print *, trim(label_part), cfg%sc%enabled
-
-        read(data_unit, *, iostat=status) label, cfg%sc%max_iterations
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%max_iterations
-
-        read(data_unit, *, iostat=status) label, cfg%sc%tolerance
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%tolerance
-
-        read(data_unit, *, iostat=status) label, cfg%sc%mixing_alpha
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%mixing_alpha
-
-        read(data_unit, *, iostat=status) label, cfg%sc%diis_history
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%diis_history
-
-        read(data_unit, *, iostat=status) label, cfg%sc%temperature
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%temperature
-
-        read(data_unit, *, iostat=status) label, cfg%sc%fermi_mode
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%fermi_mode
-
-        read(data_unit, *, iostat=status) label, cfg%sc%fermi_level
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%fermi_level
-
-        read(data_unit, *, iostat=status) label, cfg%sc%num_kpar
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%num_kpar
-
-        read(data_unit, *, iostat=status) label, cfg%sc%kpar_max
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%kpar_max
-
-        read(data_unit, *, iostat=status) label, cfg%sc%bc_type
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%bc_type
-
-        read(data_unit, *, iostat=status) label, cfg%sc%bc_left
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%bc_left
-
-        read(data_unit, *, iostat=status) label, cfg%sc%bc_right
-        if (status /= 0) then; status = 0; exit sc_block; end if
-        print *, trim(label), cfg%sc%bc_right
-
-        ! Read doping per layer: uniform (ND NA) or delta (NS FWHM POS)
-        allocate(cfg%doping(cfg%numLayers))
-        do i = 1, cfg%numLayers
-          read(data_unit, '(A)', iostat=status) label
-          if (status /= 0) then
-            cfg%doping(i)%ND = 0.0_dp
-            cfg%doping(i)%NA = 0.0_dp
-            status = 0
-            exit
-          end if
-          label = adjustl(label)
-          if (label(1:5) == 'delta') then
-            ! delta<N>: NS FWHM POS
-            cfg%doping(i)%dtype = 'delta'
-            backspace(data_unit)
-            read(data_unit, *, iostat=status) label, cfg%doping(i)%NS, &
-              & cfg%doping(i)%delta_fwhm, cfg%doping(i)%delta_pos
-            if (status /= 0) then
-              status = 0
-              cfg%doping(i)%NS = 0.0_dp
-              exit
-            end if
-            print *, trim(label), cfg%doping(i)%NS, cfg%doping(i)%delta_fwhm, cfg%doping(i)%delta_pos
-          else
-            ! doping<N>: ND NA (existing uniform format)
-            backspace(data_unit)
-            read(data_unit, *, iostat=status) label, cfg%doping(i)%ND, cfg%doping(i)%NA
-            if (status /= 0) then
-              cfg%doping(i)%ND = 0.0_dp
-              cfg%doping(i)%NA = 0.0_dp
-              status = 0
-              exit
-            end if
-            print *, trim(label), cfg%doping(i)%ND, cfg%doping(i)%NA
-          end if
-        end do
-
-      else
-        ! SC disabled or not found - skip remaining SC lines
-        print *, trim(label_part), cfg%sc%enabled
-      end if
-      exit sc_block
-    end do sc_block
-
-    ! --- Topology analysis parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'topology', cfg%topo%enabled, found_optional, label)
-    topology_block: do
-      if (found_optional .and. cfg%topo%enabled) then
-        print *, trim(label), cfg%topo%enabled
-
-        read(data_unit, *, iostat=status) label, cfg%topo%mode
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        print *, trim(label), trim(cfg%topo%mode)
-
-        read(data_unit, '(A)', iostat=status) line
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        colon_pos = index(line, ':')
-        if (colon_pos > 0) then
-          value_str = adjustl(line(colon_pos+1:))
-          cfg%topo%compute_chern = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
-          label = adjustl(line(:colon_pos-1)) // ':'
-        else
-          print *, 'Warning: topology block line has no colon: ', trim(line)
-          exit topology_block
-        end if
-        print *, trim(label), cfg%topo%compute_chern
-
-        read(data_unit, '(A)', iostat=status) line
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        colon_pos = index(line, ':')
-        if (colon_pos > 0) then
-          value_str = adjustl(line(colon_pos+1:))
-          cfg%topo%compute_hall = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
-          label = adjustl(line(:colon_pos-1)) // ':'
-        else
-          print *, 'Warning: topology block line has no colon: ', trim(line)
-          exit topology_block
-        end if
-        print *, trim(label), cfg%topo%compute_hall
-
-        read(data_unit, *, iostat=status) label, cfg%topo%qwz_u
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        print *, trim(label), cfg%topo%qwz_u
-
-        read(data_unit, '(A)', iostat=status) line
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        colon_pos = index(line, ':')
-        if (colon_pos > 0) then
-          value_str = adjustl(line(colon_pos+1:))
-          cfg%topo%compute_z2 = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
-          label = adjustl(line(:colon_pos-1)) // ':'
-        else
-          print *, 'Warning: topology block line has no colon: ', trim(line)
-          exit topology_block
-        end if
-        print *, trim(label), cfg%topo%compute_z2
-
-        read(data_unit, '(A)', iostat=status) line
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        colon_pos = index(line, ':')
-        if (colon_pos > 0) then
-          value_str = adjustl(line(colon_pos+1:))
-          cfg%topo%extract_edge_states = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
-          label = adjustl(line(:colon_pos-1)) // ':'
-        else
-          print *, 'Warning: topology block line has no colon: ', trim(line)
-          exit topology_block
-        end if
-        print *, trim(label), cfg%topo%extract_edge_states
-
-        read(data_unit, *, iostat=status) label, cfg%topo%edge_E_window
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        print *, trim(label), cfg%topo%edge_E_window
-
-        read(data_unit, '(A)', iostat=status) line
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        colon_pos = index(line, ':')
-        if (colon_pos > 0) then
-          value_str = adjustl(line(colon_pos+1:))
-          cfg%topo%compute_ldos = (len_trim(value_str) > 0 .and. (value_str(1:1) == 'T' .or. value_str(1:1) == 't'))
-          label = adjustl(line(:colon_pos-1)) // ':'
-        else
-          print *, 'Warning: topology block line has no colon: ', trim(line)
-          exit topology_block
-        end if
-        print *, trim(label), cfg%topo%compute_ldos
-
-        read(data_unit, *, iostat=status) label, cfg%topo%ldos_eta
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        print *, trim(label), cfg%topo%ldos_eta
-
-        read(data_unit, *, iostat=status) label, cfg%topo%ldos_E_range(1)
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        print *, trim(label), cfg%topo%ldos_E_range(1)
-
-        read(data_unit, *, iostat=status) label, cfg%topo%ldos_E_range(2)
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        print *, trim(label), cfg%topo%ldos_E_range(2)
-
-        read(data_unit, *, iostat=status) label, cfg%topo%ldos_num_E
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        print *, trim(label), cfg%topo%ldos_num_E
-
-        ! --- Optional new fields (backward compatible) ---
-        ! Peek at next line; if it's not the expected label, backspace and skip.
-        ! This allows configs without these fields to still reach the bdg: block.
-
-        ! Gap sweep / phase diagram
-        read(data_unit, '(A)', iostat=status) line
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        if (index(to_lower_ascii(adjustl(line)), 'compute_gap_sweep') > 0) then
-          read(line, *, iostat=status) label, cfg%topo%compute_gap_sweep
-          if (status /= 0) then; status = 0; exit topology_block; end if
-          print *, trim(label), cfg%topo%compute_gap_sweep
-          if (cfg%topo%compute_gap_sweep) then
-            read(data_unit, *, iostat=status) label, cfg%topo%gap_sweep_B_min, &
-              cfg%topo%gap_sweep_B_max, cfg%topo%gap_sweep_nB
-            if (status /= 0) then; status = 0; exit topology_block; end if
-            print *, trim(label), cfg%topo%gap_sweep_B_min, &
-              cfg%topo%gap_sweep_B_max, cfg%topo%gap_sweep_nB
-
-            read(data_unit, *, iostat=status) label, cfg%topo%gap_sweep_mu_min, &
-              cfg%topo%gap_sweep_mu_max, cfg%topo%gap_sweep_nMu
-            if (status /= 0) then; status = 0; exit topology_block; end if
-            print *, trim(label), cfg%topo%gap_sweep_mu_min, &
-              cfg%topo%gap_sweep_mu_max, cfg%topo%gap_sweep_nMu
-
-            read(data_unit, '(A)', iostat=status) line
-            if (status == 0) then
-              if (index(to_lower_ascii(adjustl(line)), 'sweep_model') > 0) then
-                read(line, *, iostat=status) label, cfg%topo%sweep_model
-                if (status /= 0) then; status = 0; exit topology_block; end if
-                print *, trim(label), trim(cfg%topo%sweep_model)
-              else
-                backspace(data_unit)
-              end if
-            else
-              status = 0
-            end if
-          end if
-        else
-          backspace(data_unit)
-        end if
-
-        ! Conductance
-        read(data_unit, '(A)', iostat=status) line
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        if (index(to_lower_ascii(adjustl(line)), 'compute_conductance') > 0) then
-          read(line, *, iostat=status) label, cfg%topo%compute_conductance
-          if (status /= 0) then; status = 0; exit topology_block; end if
-          print *, trim(label), cfg%topo%compute_conductance
-          if (cfg%topo%compute_conductance) then
-            read(data_unit, '(A)', iostat=status) line
-            if (status /= 0) then; status = 0; exit topology_block; end if
-            colon_pos = index(line, ':')
-            if (colon_pos > 0) then
-              label_part = adjustl(line(:colon_pos-1))
-              if (trim(to_lower_ascii(label_part)) == 'conductance_method') then
-                read(line(colon_pos+1:), '(A)', iostat=status) cfg%topo%conductance_method
-                label = trim(label_part) // ':'
-                if (status /= 0) then; status = 0; exit topology_block; end if
-                print *, trim(label), trim(cfg%topo%conductance_method)
-              else
-                backspace(data_unit)
-              end if
-            else
-              backspace(data_unit)
-            end if
-
-            read(data_unit, '(A)', iostat=status) line
-            if (status /= 0) then; status = 0; exit topology_block; end if
-            if (index(to_lower_ascii(adjustl(line)), 'berry_nk') > 0) then
-              read(line, *, iostat=status) label, cfg%topo%berry_nk
-              if (status /= 0) then; status = 0; exit topology_block; end if
-              print *, trim(label), cfg%topo%berry_nk
-            else
-              backspace(data_unit)
-            end if
-
-            read(data_unit, '(A)', iostat=status) line
-            if (status /= 0) then; status = 0; exit topology_block; end if
-            if (index(to_lower_ascii(adjustl(line)), 'landauer_energy') > 0) then
-              read(line, *, iostat=status) label, cfg%topo%landauer_energy
-              if (status /= 0) then; status = 0; exit topology_block; end if
-              print *, trim(label), cfg%topo%landauer_energy
-            else
-              backspace(data_unit)
-            end if
-          end if
-        else
-          backspace(data_unit)
-        end if
-
-        ! Spectral function
-        read(data_unit, '(A)', iostat=status) line
-        if (status /= 0) then; status = 0; exit topology_block; end if
-        if (index(to_lower_ascii(adjustl(line)), 'compute_spectral') > 0) then
-          read(line, *, iostat=status) label, cfg%topo%compute_spectral
-          if (status /= 0) then; status = 0; exit topology_block; end if
-          print *, trim(label), cfg%topo%compute_spectral
-          if (cfg%topo%compute_spectral) then
-            read(data_unit, *, iostat=status) label, cfg%topo%spectral_k_min, &
-              cfg%topo%spectral_k_max, cfg%topo%spectral_nk
-            if (status /= 0) then; status = 0; exit topology_block; end if
-            print *, trim(label), cfg%topo%spectral_k_min, &
-              cfg%topo%spectral_k_max, cfg%topo%spectral_nk
-
-            read(data_unit, *, iostat=status) label, cfg%topo%spectral_E_min, &
-              cfg%topo%spectral_E_max, cfg%topo%spectral_nE, cfg%topo%spectral_eta
-            if (status /= 0) then; status = 0; exit topology_block; end if
-            print *, trim(label), cfg%topo%spectral_E_min, &
-              cfg%topo%spectral_E_max, cfg%topo%spectral_nE, cfg%topo%spectral_eta
-          end if
-        else
-          backspace(data_unit)
-        end if
-
-      else if (found_optional) then
-        ! topology=F, skip remaining topology lines
-        print *, trim(label), cfg%topo%enabled
-      end if
-      exit topology_block
-    end do topology_block
-
-    ! --- BdG parameters (backward compatible: uses defaults if missing) ---
-    ! IMPORTANT: After topology_block, the file position may be corrupted due to
-    ! backspace unreliability after failed list-directed reads. The file position
-    ! may be at edge_E_window or later. We need to skip lines until we find bdg.
-    bdg_search: do
-      call read_next_data_line(data_unit, line, status)
-      if (status /= 0) then
-        found_optional = .false.
-        exit bdg_search
-      end if
-      colon_pos = index(line, ':')
-      if (colon_pos > 0) then
-        label_part = adjustl(line(:colon_pos-1))
-        select case(trim(to_lower_ascii(label_part)))
-        case('bdg')
-          ! Found bdg line - extract enabled flag
-          block
-            character(len=255) :: bdg_value_str
-            bdg_value_str = adjustl(line(colon_pos+1:))
-            if (len_trim(bdg_value_str) > 0 .and. (bdg_value_str(1:1) == 'T' .or. bdg_value_str(1:1) == 't')) then
-              cfg%bdg%enabled = .true.
-            else if (len_trim(bdg_value_str) > 0 .and. (bdg_value_str(1:1) == 'F' .or. bdg_value_str(1:1) == 'f')) then
-              cfg%bdg%enabled = .false.
-            else
-              cfg%bdg%enabled = .false.
-            end if
-            found_optional = .true.
-            label = trim(label_part) // ':'
-          end block
-          exit bdg_search
-        case('b_field')
-          ! b_field was already parsed above - skip it
-          cycle bdg_search
-        case default
-          ! Known optional block or unknown label - stop and push back
-          backspace(data_unit)
-          found_optional = .false.
-          exit bdg_search
-        end select
-      end if
-      ! No colon - skip this line
-    end do bdg_search
-    bdg_block: do
-      if (found_optional .and. cfg%bdg%enabled) then
-        print *, trim(label), cfg%bdg%enabled
-
-        read(data_unit, *, iostat=status) label, cfg%bdg%mu
-        if (status /= 0) then; status = 0; exit bdg_block; end if
-        print *, trim(label), cfg%bdg%mu
-
-        read(data_unit, *, iostat=status) label, cfg%bdg%delta_0
-        if (status /= 0) then; status = 0; exit bdg_block; end if
-        print *, trim(label), cfg%bdg%delta_0
-
-        read(data_unit, *, iostat=status) label, cfg%bdg%g_factor
-        if (status /= 0) then; status = 0; exit bdg_block; end if
-        print *, trim(label), cfg%bdg%g_factor
-
-        ! Read B_vec before gauge to avoid gauge read consuming b_field: label
-        read(data_unit, *, iostat=status) label, cfg%bdg%B_vec(1), cfg%bdg%B_vec(2), cfg%bdg%B_vec(3)
-        if (status /= 0) then; status = 0; end if
-        print *, trim(label), cfg%bdg%B_vec
-
-        read(data_unit, *, iostat=status) label, cfg%bdg%gauge
-        if (status /= 0) then; status = 0; exit bdg_block; end if
-        print *, trim(label), trim(cfg%bdg%gauge)
-
-        read(data_unit, *, iostat=status) label, cfg%bdg%kz
-        if (status /= 0) then; cfg%bdg%kz = 0.0_dp; status = 0; exit bdg_block; end if
-        print *, trim(label), cfg%bdg%kz
-
-      else if (found_optional) then
-        ! bdg=F, skip remaining bdg lines
-        print *, trim(label), cfg%bdg%enabled
-      end if
-      exit bdg_block
-    end do bdg_block
-
-    ! --- Optical spectra parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'optics', cfg%optics%enabled, found_optional, label)
-    optics_block: do
-      if (found_optional .and. cfg%optics%enabled) then
-        print *, trim(label), cfg%optics%enabled
-
-        read(data_unit, *, iostat=status) label, cfg%optics%linewidth_lorentzian
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%linewidth_lorentzian
-
-        read(data_unit, *, iostat=status) label, cfg%optics%linewidth_gaussian
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%linewidth_gaussian
-
-        read(data_unit, *, iostat=status) label, cfg%optics%refractive_index
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%refractive_index
-
-        read(data_unit, *, iostat=status) label, cfg%optics%E_min
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%E_min
-
-        read(data_unit, *, iostat=status) label, cfg%optics%E_max
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%E_max
-
-        read(data_unit, *, iostat=status) label, cfg%optics%num_energy_points
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%num_energy_points
-
-        read(data_unit, *, iostat=status) label, cfg%optics%temperature
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%temperature
-
-        read(data_unit, *, iostat=status) label, cfg%optics%carrier_density
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%carrier_density
-
-        ! Gain parameters
-        read(data_unit, *, iostat=status) label, cfg%optics%gain_enabled
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%gain_enabled
-
-        read(data_unit, *, iostat=status) label, cfg%optics%gain_carrier_density
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%gain_carrier_density
-
-        ! ISBT
-        read(data_unit, *, iostat=status) label, cfg%optics%isbt_enabled
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        print *, trim(label), cfg%optics%isbt_enabled
-
-        ! Spontaneous emission (optional — backward compatible with configs
-        ! that omit these lines).  Peek at the label; if it doesn't match
-        ! the expected field name, push the line back with BACKSPACE.
-        read(data_unit, *, iostat=status) label
-        if (status /= 0) then; status = 0; exit optics_block; end if
-        if (trim(adjustl(label)) == 'SpontaneousEnabled:') then
-          backspace(data_unit)
-          read(data_unit, *, iostat=status) label, cfg%optics%spontaneous_enabled
-          if (status /= 0) then; status = 0; exit optics_block; end if
-          print *, trim(label), cfg%optics%spontaneous_enabled
-
-          ! Spin resolution (also optional)
-          read(data_unit, *, iostat=status) label
-          if (status /= 0) then; status = 0; exit optics_block; end if
-          if (trim(adjustl(label)) == 'SpinResolved:') then
-            backspace(data_unit)
-            read(data_unit, *, iostat=status) label, cfg%optics%spin_resolved
-            if (status /= 0) then; status = 0; exit optics_block; end if
-            print *, trim(label), cfg%optics%spin_resolved
-          else
-            backspace(data_unit)
-          end if
-        else
-          backspace(data_unit)
-        end if
-
-      else if (found_optional) then
-        ! Optics=F, skip remaining optics lines
-        print *, trim(label), cfg%optics%enabled
-      end if
-      exit optics_block
-    end do optics_block
-
-    ! --- Exciton parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'exciton', cfg%exciton%enabled, found_optional, label)
-    exciton_block: do
-      if (found_optional .and. cfg%exciton%enabled) then
-        print *, trim(label), cfg%exciton%enabled
-
-        read(data_unit, *, iostat=status) label, cfg%exciton%method
-        if (status /= 0) then; status = 0; exit exciton_block; end if
-        print *, trim(label), trim(cfg%exciton%method)
-
-      else if (found_optional) then
-        print *, trim(label), cfg%exciton%enabled
-      end if
-      exit exciton_block
-    end do exciton_block
-
-    ! --- Scattering parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'scattering', cfg%scattering%enabled, found_optional, label)
-    scattering_block: do
-      if (found_optional .and. cfg%scattering%enabled) then
-        print *, trim(label), cfg%scattering%enabled
-
-        read(data_unit, *, iostat=status) label, cfg%scattering%phonon_energy
-        if (status /= 0) then; status = 0; exit scattering_block; end if
-        print *, trim(label), cfg%scattering%phonon_energy
-
-        read(data_unit, *, iostat=status) label, cfg%scattering%eps_inf
-        if (status /= 0) then; status = 0; exit scattering_block; end if
-        print *, trim(label), cfg%scattering%eps_inf
-
-        read(data_unit, *, iostat=status) label, cfg%scattering%eps_0
-        if (status /= 0) then; status = 0; exit scattering_block; end if
-        print *, trim(label), cfg%scattering%eps_0
-
-      else if (found_optional) then
-        print *, trim(label), cfg%scattering%enabled
-      end if
-      exit scattering_block
-    end do scattering_block
-
-    ! --- FEAST eigensolver tuning (backward compatible: uses defaults if missing) ---
-    call read_optional_real_flag(data_unit, 'feast_emin:', cfg%feast_emin, found_optional, label)
-    if (found_optional) then
-      print *, trim(label), cfg%feast_emin
-      read(data_unit, *, iostat=status) label, cfg%feast_emax
-      if (status == 0) then
-        print *, trim(label), cfg%feast_emax
-        read(data_unit, *, iostat=status) label, cfg%feast_m0
-        if (status == 0) then
-          print *, trim(label), cfg%feast_m0
-        else
-          cfg%feast_m0 = 0
-          status = 0
-        end if
-      else
-        cfg%feast_emax = 0.0_dp
-        cfg%feast_m0 = 0
-        status = 0
-      end if
-    else
-      ! feast_emin not found -- use auto window
-      cfg%feast_emin = 0.0_dp
-      cfg%feast_emax = 0.0_dp
-      cfg%feast_m0 = 0
-    end if
-
-    ! --- Strain parameters (backward compatible: uses defaults if missing) ---
-    call read_optional_logical_flag(data_unit, 'strain', cfg%strain%enabled, found_optional, label)
-    strain_block: do
-      if (found_optional .and. cfg%strain%enabled) then
-        print *, trim(label), cfg%strain%enabled
-
-        read(data_unit, *, iostat=status) label, cfg%strain%reference
-        if (status /= 0) then; status = 0; exit strain_block; end if
-        print *, trim(label), trim(cfg%strain%reference)
-
-        read(data_unit, *, iostat=status) label, cfg%strain%solver
-        if (status /= 0) then; status = 0; exit strain_block; end if
-        print *, trim(label), trim(cfg%strain%solver)
-
-        read(data_unit, *, iostat=status) label, cfg%strain%piezoelectric
-        if (status /= 0) then; status = 0; exit strain_block; end if
-        print *, trim(label), cfg%strain%piezoelectric
-
-      else if (found_optional) then
-        ! strain=.false., skip remaining strain lines
-        print *, trim(label), cfg%strain%enabled
-      end if
-      exit strain_block
-    end do strain_block
-
-    print *, ' '
-
-    !----------------------------------------------------------------------------
-    ! Material parameter setup
-    call paramDatabase(cfg%materialN, cfg%numLayers, cfg%params)
-
-    ! --- Bulk strain substrate (backward compatible: 0 = no strain) ---
-    ! Must come AFTER paramDatabase so the value is not overwritten.
-    read(data_unit, *, iostat=status) label, cfg%params(1)%strainSubstrate
-    if (status /= 0) then
-      ! Not found -- default to 0 (no bulk strain), reset status
-      cfg%params(1)%strainSubstrate = 0.0_dp
-      status = 0
-    else
-      print *, trim(label), cfg%params(1)%strainSubstrate
-    end if
-
-    ! Initialize the unified spatial grid from config fields
+    cfg%evnum = cfg%bands%num_cb + cfg%bands%num_vb
+
+    ! ---- Mode-specific geometry ----
+    select case (trim(cfg%confinement))
+
+    case ('bulk')
+      call parse_materials_bulk(table, cfg)
+      cfg%conf_dir = 'n'
+      cfg%ngrid = 1
+      cfg%totalSize = 0.0_dp
+      cfg%delta = 0.0_dp
+      cfg%dz = 0.0_dp
+
+    case ('qw')
+      call parse_materials_qw(table, cfg)
+      cfg%conf_dir = 'z'
+
+    case ('wire')
+      call parse_wire(table, cfg)
+      cfg%conf_dir = 'z'
+
+    case ('landau')
+      call parse_landau(table, cfg)
+      cfg%conf_dir = 'x'
+
+    case default
+      print *, 'Error: Unknown confinement: ', trim(cfg%confinement)
+      print *, '  Supported: bulk, qw, wire, landau'
+      stop 1
+
+    end select
+
+    ! ---- Optional physics sections ----
+    call parse_external_field(table, cfg)
+    call parse_b_field(table, cfg)
+    call parse_sc(table, cfg)
+    call parse_topology(table, cfg)
+    call parse_bdg(table, cfg)
+    call parse_optics(table, cfg)
+    call parse_exciton(table, cfg)
+    call parse_scattering(table, cfg)
+    call parse_feast(table, cfg)
+    call parse_strain(table, cfg)
+    call parse_gfactor(table, cfg)
+
+    ! ---- Material parameter database ----
+    call paramDatabase(cfg%materialN, cfg%num_layers, cfg%params)
+
+    ! ---- Bulk strain substrate (optional) ----
+    call get_value(table, 'strain_substrate', cfg%params(1)%strainSubstrate, &
+      0.0_dp, stat=stat)
+
+    ! ---- Initialize spatial grid ----
     call init_grid_from_config(cfg)
 
-    ! For wire mode, initialize geometry (cut-cells, ghost map, material_id)
-    if (cfg%confinement == 2) then
+    ! Wire geometry initialization (2D cut-cells)
+    if (cfg%confinement == 'wire') then
       call init_wire_from_config(cfg)
     end if
 
-    ! Close input file
-    close(data_unit)
-
-    ! Final validation pass: catch any inconsistent state
+    ! ---- Final validation ----
     call cfg%validate()
 
   end subroutine read_config
+
+  ! ==================================================================
+  ! Bulk material parsing: single [[material]] entry
+  ! ==================================================================
+  subroutine parse_materials_bulk(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_array), pointer :: materials => null()
+    type(toml_table), pointer :: mat => null()
+    character(len=:), allocatable :: name_val
+    integer :: stat, nmat
+
+    call get_value(table, 'material', materials, stat=stat)
+    if (.not. associated(materials)) then
+      print *, 'Error: [[material]] section required for bulk mode'
+      stop 1
+    end if
+
+    nmat = tomlf_len(materials)
+    if (nmat < 1) then
+      print *, 'Error: bulk mode requires at least 1 [[material]] entry'
+      stop 1
+    end if
+
+    cfg%num_layers = 1
+    allocate(cfg%materialN(1))
+    allocate(cfg%material_names(1))
+    allocate(cfg%params(1))
+    allocate(cfg%startPos(1))
+    allocate(cfg%endPos(1))
+    allocate(cfg%z_min(1))
+    allocate(cfg%z_max(1))
+    cfg%startPos(1) = 0.0_dp
+    cfg%endPos(1) = 1.0_dp
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 1.0_dp
+
+    call get_value(materials, 1, mat, stat=stat)
+    if (.not. associated(mat)) then
+      print *, 'Error: Failed to read [[material]] entry 1'
+      stop 1
+    end if
+    call require_string(mat, 'name', name_val, 'material')
+    cfg%materialN(1) = trim(name_val)
+    cfg%material_names(1) = trim(name_val)
+  end subroutine parse_materials_bulk
+
+  ! ==================================================================
+  ! QW material parsing: [[material]] with z_min/z_max + grid computation
+  ! ==================================================================
+  subroutine parse_materials_qw(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_array), pointer :: materials => null()
+    type(toml_table), pointer :: mat => null()
+    character(len=:), allocatable :: name_val
+    integer :: stat, nmat, i
+
+    call get_value(table, 'material', materials, stat=stat)
+    if (.not. associated(materials)) then
+      print *, 'Error: [[material]] section required for QW mode'
+      stop 1
+    end if
+
+    nmat = tomlf_len(materials)
+    if (nmat < 1) then
+      print *, 'Error: QW mode requires at least 1 [[material]] entry'
+      stop 1
+    end if
+
+    cfg%num_layers = nmat
+    allocate(cfg%materialN(nmat))
+    allocate(cfg%material_names(nmat))
+    allocate(cfg%params(nmat))
+    allocate(cfg%startPos(nmat))
+    allocate(cfg%endPos(nmat))
+    allocate(cfg%z_min(nmat))
+    allocate(cfg%z_max(nmat))
+    allocate(cfg%int_start_pos(nmat))
+    allocate(cfg%int_end_pos(nmat))
+    allocate(cfg%intStartPos(nmat))
+    allocate(cfg%intEndPos(nmat))
+
+    do i = 1, nmat
+      call get_value(materials, i, mat, stat=stat)
+      if (.not. associated(mat)) then
+        print *, 'Error: Failed to read [[material]] entry', i
+        stop 1
+      end if
+      call require_string(mat, 'name', name_val, 'material')
+      cfg%materialN(i) = trim(name_val)
+      cfg%material_names(i) = trim(name_val)
+      call get_value(mat, 'z_min', cfg%z_min(i), 0.0_dp, stat=stat)
+      call get_value(mat, 'z_max', cfg%z_max(i), 0.0_dp, stat=stat)
+      cfg%startPos(i) = cfg%z_min(i)
+      cfg%endPos(i) = cfg%z_max(i)
+    end do
+
+    ! Grid computation
+    cfg%ngrid = cfg%fd_step
+    cfg%totalSize = cfg%endPos(1) - cfg%startPos(1)
+    cfg%delta = cfg%totalSize / real(cfg%ngrid - 1, kind=dp)
+    cfg%z = [ (cfg%startPos(1) + (i-1)*cfg%delta, i=1, cfg%ngrid) ]
+    cfg%dz = cfg%delta
+
+    do i = 1, cfg%num_layers
+      cfg%int_start_pos(i) = int(abs((cfg%startPos(1) - cfg%startPos(i)) / (cfg%totalSize/(cfg%ngrid-1))))
+      cfg%int_end_pos(i) = int(cfg%int_start_pos(1) + ((cfg%endPos(1) + cfg%endPos(i)) / cfg%delta))
+    end do
+    cfg%int_start_pos = cfg%int_start_pos + 1
+    cfg%int_end_pos = cfg%int_end_pos + 1
+    cfg%intStartPos = cfg%int_start_pos
+    cfg%intEndPos = cfg%int_end_pos
+  end subroutine parse_materials_qw
+
+  ! ==================================================================
+  ! Wire mode parsing
+  ! ==================================================================
+  subroutine parse_wire(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: wire_tbl => null()
+    type(toml_table), pointer :: geom_tbl => null()
+    type(toml_array), pointer :: regions_arr => null()
+    type(toml_table), pointer :: reg => null()
+    type(toml_array), pointer :: verts_arr => null()
+    character(len=:), allocatable :: str_val, mat_name
+    integer :: stat, i, nverts, nreg
+
+    call get_value(table, 'wire', wire_tbl, stat=stat)
+    if (.not. associated(wire_tbl)) then
+      print *, 'Error: [wire] section required for wire mode'
+      stop 1
+    end if
+
+    call require_int(wire_tbl, 'nx', cfg%wire%nx, 'wire')
+    call require_int(wire_tbl, 'ny', cfg%wire%ny, 'wire')
+    call require_real(wire_tbl, 'dx', cfg%wire%dx, 'wire')
+    call require_real(wire_tbl, 'dy', cfg%wire%dy, 'wire')
+
+    ! Wire geometry
+    call get_value(wire_tbl, 'geometry', geom_tbl, stat=stat)
+    if (associated(geom_tbl)) then
+      call require_string(geom_tbl, 'shape', str_val, 'wire.geometry')
+      cfg%wire%geom%shape = trim(str_val)
+
+      select case (trim(cfg%wire%geom%shape))
+      case ('circle', 'hexagon')
+        call require_real(geom_tbl, 'radius', cfg%wire%geom%radius, 'wire.geometry')
+      case ('rectangle')
+        call require_real(geom_tbl, 'width', cfg%wire%geom%width, 'wire.geometry')
+        call require_real(geom_tbl, 'height', cfg%wire%geom%height, 'wire.geometry')
+      case ('polygon')
+        call get_value(geom_tbl, 'vertices', verts_arr, stat=stat)
+        if (.not. associated(verts_arr)) then
+          print *, 'Error: polygon shape requires vertices array'
+          stop 1
+        end if
+        nverts = tomlf_len(verts_arr)
+        cfg%wire%geom%nverts = nverts
+        allocate(cfg%wire%geom%verts(2, nverts))
+        do i = 1, nverts
+          ! Parse each vertex as a 2-element array
+          block
+            type(toml_array), pointer :: vert => null()
+            call get_value(verts_arr, i, vert, stat=stat)
+            if (associated(vert)) then
+              call get_value(vert, 1, cfg%wire%geom%verts(1, i), stat=stat)
+              call get_value(vert, 2, cfg%wire%geom%verts(2, i), stat=stat)
+            end if
+          end block
+        end do
+      case default
+        print *, 'Error: Unknown wire shape: ', trim(cfg%wire%geom%shape)
+        stop 1
+      end select
+    end if
+
+    ! Regions
+    call get_value(table, 'region', regions_arr, stat=stat)
+    if (associated(regions_arr)) then
+      nreg = tomlf_len(regions_arr)
+      cfg%wire%num_regions = nreg
+      cfg%num_layers = nreg
+      allocate(cfg%wire%regions(nreg))
+      allocate(cfg%materialN(nreg))
+      allocate(cfg%material_names(nreg))
+      allocate(cfg%params(nreg))
+      allocate(cfg%startPos(1))
+      allocate(cfg%endPos(1))
+      allocate(cfg%z_min(nreg))
+      allocate(cfg%z_max(nreg))
+      do i = 1, nreg
+        call get_value(regions_arr, i, reg, stat=stat)
+        if (.not. associated(reg)) then
+          print *, 'Error: Failed to read [[region]] entry', i
+          stop 1
+        end if
+        call require_string(reg, 'material', mat_name, 'region')
+        cfg%wire%regions(i)%material = trim(mat_name)
+        call get_value(reg, 'inner', cfg%wire%regions(i)%inner, 0.0_dp, stat=stat)
+        call get_value(reg, 'outer', cfg%wire%regions(i)%outer, 0.0_dp, stat=stat)
+        cfg%materialN(i) = trim(mat_name)
+        cfg%material_names(i) = trim(mat_name)
+        cfg%z_min(i) = cfg%wire%regions(i)%inner
+        cfg%z_max(i) = cfg%wire%regions(i)%outer
+      end do
+      cfg%startPos(1) = 0.0_dp
+      cfg%endPos(1) = real(cfg%wire%ny - 1, kind=dp) * cfg%wire%dy
+    end if
+
+    ! Validation
+    if (cfg%wire%nx < 3) then
+      print *, 'Error: wire nx must be >= 3'
+      stop 1
+    end if
+    if (cfg%wire%ny < 3) then
+      print *, 'Error: wire ny must be >= 3'
+      stop 1
+    end if
+
+    ! Computed grid size
+    cfg%ngrid = cfg%wire%ny
+    cfg%dz = cfg%wire%dy
+  end subroutine parse_wire
+
+  ! ==================================================================
+  ! Landau mode parsing
+  ! ==================================================================
+  subroutine parse_landau(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: landau_tbl => null()
+    type(toml_array), pointer :: materials => null()
+    type(toml_table), pointer :: mat => null()
+    character(len=:), allocatable :: name_val, sweep_val
+    integer :: stat, i
+
+    call get_value(table, 'landau', landau_tbl, stat=stat)
+    if (.not. associated(landau_tbl)) then
+      print *, 'Error: [landau] section required for landau mode'
+      stop 1
+    end if
+
+    call require_int(landau_tbl, 'nx', cfg%landau%nx, 'landau')
+    call require_real(landau_tbl, 'width', cfg%landau%width, 'landau')
+    call get_value(landau_tbl, 'sweep', sweep_val, 'ky', stat=stat)
+    if (allocated(sweep_val)) then
+      cfg%landau%sweep = trim(sweep_val)
+    else
+      cfg%landau%sweep = 'ky'
+    end if
+
+    ! Material
+    call get_value(table, 'material', materials, stat=stat)
+    if (.not. associated(materials)) then
+      print *, 'Error: [[material]] section required for landau mode'
+      stop 1
+    end if
+
+    cfg%num_layers = 1
+    allocate(cfg%materialN(1))
+    allocate(cfg%material_names(1))
+    allocate(cfg%params(1))
+    allocate(cfg%startPos(1))
+    allocate(cfg%endPos(1))
+    allocate(cfg%z_min(1))
+    allocate(cfg%z_max(1))
+    allocate(cfg%int_start_pos(1))
+    allocate(cfg%int_end_pos(1))
+    allocate(cfg%intStartPos(1))
+    allocate(cfg%intEndPos(1))
+
+    call get_value(materials, 1, mat, stat=stat)
+    if (.not. associated(mat)) then
+      print *, 'Error: Failed to read [[material]] entry for landau'
+      stop 1
+    end if
+    call require_string(mat, 'name', name_val, 'material')
+    cfg%materialN(1) = trim(name_val)
+    cfg%material_names(1) = trim(name_val)
+
+    ! Validation
+    if (cfg%landau%nx < 3) then
+      print *, 'Error: landau nx must be >= 3'
+      stop 1
+    end if
+    if (cfg%landau%width <= 0.0_dp) then
+      print *, 'Error: landau width must be > 0'
+      stop 1
+    end if
+
+    ! Computed fields
+    cfg%ngrid = cfg%landau%nx
+    cfg%dz = cfg%landau%width / real(cfg%landau%nx - 1, kind=dp)
+    cfg%totalSize = cfg%landau%width
+    cfg%z = [ ((i - 1) * cfg%dz - 0.5_dp * cfg%landau%width, i=1, cfg%landau%nx) ]
+
+    cfg%int_start_pos(1) = 1
+    cfg%int_end_pos(1) = cfg%landau%nx
+    cfg%intStartPos(1) = 1
+    cfg%intEndPos(1) = cfg%landau%nx
+    cfg%startPos(1) = 0.0_dp
+    cfg%endPos(1) = cfg%landau%width
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = cfg%landau%width
+  end subroutine parse_landau
+
+  ! ==================================================================
+  ! [external_field] section
+  ! ==================================================================
+  subroutine parse_external_field(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: ef_tbl => null()
+    character(len=:), allocatable :: type_val
+    integer :: stat
+
+    call get_value(table, 'external_field', ef_tbl, stat=stat)
+    if (.not. associated(ef_tbl)) return
+
+    cfg%external_field%enabled = .true.
+    call get_value(ef_tbl, 'type', type_val, 'EF', stat=stat)
+    if (allocated(type_val)) then
+      cfg%external_field%type = trim(type_val)
+    end if
+    call get_value(ef_tbl, 'value', cfg%external_field%value, 0.0_dp, stat=stat)
+  end subroutine parse_external_field
+
+  ! ==================================================================
+  ! [b_field] section
+  ! ==================================================================
+  subroutine parse_b_field(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: bf_tbl => null()
+    type(toml_array), pointer :: comp_arr => null()
+    integer :: stat
+
+    call get_value(table, 'b_field', bf_tbl, stat=stat)
+    if (.not. associated(bf_tbl)) return
+
+    ! Parse components array
+    call get_value(bf_tbl, 'components', comp_arr, stat=stat)
+    if (associated(comp_arr)) then
+      call get_value(comp_arr, 1, cfg%b_field%components(1), stat=stat)
+      if (stat /= 0) cfg%b_field%components(1) = 0.0_dp
+      call get_value(comp_arr, 2, cfg%b_field%components(2), stat=stat)
+      if (stat /= 0) cfg%b_field%components(2) = 0.0_dp
+      call get_value(comp_arr, 3, cfg%b_field%components(3), stat=stat)
+      if (stat /= 0) cfg%b_field%components(3) = 0.0_dp
+    end if
+    call get_value(bf_tbl, 'g_factor', cfg%b_field%g_factor, 2.0_dp, stat=stat)
+
+    ! Copy to bdg%B_vec for legacy compat
+    cfg%bdg%B_vec = cfg%b_field%components
+    cfg%bdg%g_factor = cfg%b_field%g_factor
+    if (any(cfg%b_field%components /= 0.0_dp)) then
+      cfg%bdg%enabled = .true.
+    end if
+  end subroutine parse_b_field
+
+  ! ==================================================================
+  ! [sc] section
+  ! ==================================================================
+  subroutine parse_sc(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: sc_tbl => null()
+    type(toml_array), pointer :: doping_arr => null()
+    type(toml_table), pointer :: dop => null()
+    character(len=:), allocatable :: fermi_mode_str, bc_str
+    integer :: stat, i, ndop
+
+    call get_value(table, 'sc', sc_tbl, stat=stat)
+    if (.not. associated(sc_tbl)) return
+
+    cfg%sc%enabled = 1
+    call get_value(sc_tbl, 'max_iterations', cfg%sc%max_iterations, 100, stat=stat)
+    call get_value(sc_tbl, 'tolerance', cfg%sc%tolerance, 1.0e-6_dp, stat=stat)
+    call get_value(sc_tbl, 'mixing_alpha', cfg%sc%mixing_alpha, 0.3_dp, stat=stat)
+    call get_value(sc_tbl, 'diis_history', cfg%sc%diis_history, 7, stat=stat)
+    call get_value(sc_tbl, 'temperature', cfg%sc%temperature, 300.0_dp, stat=stat)
+    call get_value(sc_tbl, 'fermi_level', cfg%sc%fermi_level, 0.0_dp, stat=stat)
+    call get_value(sc_tbl, 'num_kpar', cfg%sc%num_kpar, 201, stat=stat)
+    call get_value(sc_tbl, 'kpar_max', cfg%sc%kpar_max, 0.0_dp, stat=stat)
+
+    call get_value(sc_tbl, 'fermi_mode', fermi_mode_str, 'charge_neutrality', stat=stat)
+    if (allocated(fermi_mode_str)) then
+      select case (trim(fermi_mode_str))
+      case ('charge_neutrality')
+        cfg%sc%fermi_mode = 0
+      case ('fixed')
+        cfg%sc%fermi_mode = 1
+      case default
+        cfg%sc%fermi_mode = 0
+      end select
+    end if
+
+    call get_value(sc_tbl, 'bc_type', bc_str, 'DD', stat=stat)
+    if (allocated(bc_str)) then
+      cfg%sc%bc_type = trim(bc_str)
+    end if
+
+    call get_value(sc_tbl, 'bc_left', cfg%sc%bc_left, 0.0_dp, stat=stat)
+    call get_value(sc_tbl, 'bc_right', cfg%sc%bc_right, 0.0_dp, stat=stat)
+
+    ! Doping
+    call get_value(table, 'doping', doping_arr, stat=stat)
+    if (associated(doping_arr)) then
+      ndop = tomlf_len(doping_arr)
+      allocate(cfg%doping(ndop))
+      do i = 1, ndop
+        call get_value(doping_arr, i, dop, stat=stat)
+        if (.not. associated(dop)) cycle
+        call get_value(dop, 'ND', cfg%doping(i)%ND, 0.0_dp, stat=stat)
+        call get_value(dop, 'NA', cfg%doping(i)%NA, 0.0_dp, stat=stat)
+        call get_value(dop, 'NS', cfg%doping(i)%NS, 0.0_dp, stat=stat)
+        call get_value(dop, 'fwhm', cfg%doping(i)%delta_fwhm, 10.0_dp, stat=stat)
+        call get_value(dop, 'pos', cfg%doping(i)%delta_pos, 0.0_dp, stat=stat)
+        block
+          character(len=:), allocatable :: dtype_str
+          call get_value(dop, 'type', dtype_str, 'uniform', stat=stat)
+          if (allocated(dtype_str)) then
+            cfg%doping(i)%dtype = trim(dtype_str)
+          end if
+        end block
+      end do
+    end if
+  end subroutine parse_sc
+
+  ! ==================================================================
+  ! [topology] section
+  ! ==================================================================
+  subroutine parse_topology(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: topo_tbl => null()
+    type(toml_table), pointer :: sub_tbl => null()
+    type(toml_array), pointer :: range_arr => null()
+    character(len=:), allocatable :: mode_val
+    integer :: stat
+
+    call get_value(table, 'topology', topo_tbl, stat=stat)
+    if (.not. associated(topo_tbl)) return
+
+    cfg%topo%enabled = .true.
+    call get_value(topo_tbl, 'mode', mode_val, 'qhe', stat=stat)
+    if (allocated(mode_val)) then
+      cfg%topo%mode = trim(mode_val)
+    end if
+    call get_value(topo_tbl, 'compute_chern', cfg%topo%compute_chern, .false., stat=stat)
+    call get_value(topo_tbl, 'compute_hall', cfg%topo%compute_hall, .false., stat=stat)
+    call get_value(topo_tbl, 'qwz_u', cfg%topo%qwz_u, 0.0_dp, stat=stat)
+    call get_value(topo_tbl, 'compute_z2', cfg%topo%compute_z2, .false., stat=stat)
+    call get_value(topo_tbl, 'extract_edge_states', cfg%topo%extract_edge_states, .false., stat=stat)
+    call get_value(topo_tbl, 'edge_E_window', cfg%topo%edge_E_window, 0.01_dp, stat=stat)
+    call get_value(topo_tbl, 'compute_ldos', cfg%topo%compute_ldos, .false., stat=stat)
+    call get_value(topo_tbl, 'ldos_eta', cfg%topo%ldos_eta, 0.001_dp, stat=stat)
+    call get_value(topo_tbl, 'ldos_num_E', cfg%topo%ldos_num_E, 200, stat=stat)
+
+    ! LDOS E range
+    call get_value(topo_tbl, 'ldos_E_range', range_arr, stat=stat)
+    if (associated(range_arr)) then
+      call get_value(range_arr, 1, cfg%topo%ldos_E_range(1), stat=stat)
+      if (stat /= 0) cfg%topo%ldos_E_range(1) = -0.1_dp
+      call get_value(range_arr, 2, cfg%topo%ldos_E_range(2), stat=stat)
+      if (stat /= 0) cfg%topo%ldos_E_range(2) = 0.1_dp
+    end if
+
+    ! Gap sweep
+    call get_value(topo_tbl, 'compute_gap_sweep', cfg%topo%compute_gap_sweep, .false., stat=stat)
+    call get_value(topo_tbl, 'gap_sweep_B_min', cfg%topo%gap_sweep_B_min, 0.0_dp, stat=stat)
+    call get_value(topo_tbl, 'gap_sweep_B_max', cfg%topo%gap_sweep_B_max, 1.0_dp, stat=stat)
+    call get_value(topo_tbl, 'gap_sweep_nB', cfg%topo%gap_sweep_nB, 20, stat=stat)
+    call get_value(topo_tbl, 'gap_sweep_mu_min', cfg%topo%gap_sweep_mu_min, 0.0_dp, stat=stat)
+    call get_value(topo_tbl, 'gap_sweep_mu_max', cfg%topo%gap_sweep_mu_max, 0.01_dp, stat=stat)
+    call get_value(topo_tbl, 'gap_sweep_nMu', cfg%topo%gap_sweep_nMu, 20, stat=stat)
+    block
+      character(len=:), allocatable :: sweep_model_val
+      call get_value(topo_tbl, 'sweep_model', sweep_model_val, 'bhz_analytic', stat=stat)
+      if (allocated(sweep_model_val)) then
+        cfg%topo%sweep_model = trim(sweep_model_val)
+      end if
+    end block
+
+    ! Conductance
+    call get_value(topo_tbl, 'compute_conductance', cfg%topo%compute_conductance, .false., stat=stat)
+    block
+      character(len=:), allocatable :: cond_method_val
+      call get_value(topo_tbl, 'conductance_method', cond_method_val, 'kubo_chern', stat=stat)
+      if (allocated(cond_method_val)) then
+        cfg%topo%conductance_method = trim(cond_method_val)
+      end if
+    end block
+    call get_value(topo_tbl, 'berry_nk', cfg%topo%berry_nk, 50, stat=stat)
+    call get_value(topo_tbl, 'landauer_energy', cfg%topo%landauer_energy, 0.0_dp, stat=stat)
+
+    ! Spectral function
+    call get_value(topo_tbl, 'compute_spectral', cfg%topo%compute_spectral, .false., stat=stat)
+    call get_value(topo_tbl, 'spectral_k_min', cfg%topo%spectral_k_min, -0.1_dp, stat=stat)
+    call get_value(topo_tbl, 'spectral_k_max', cfg%topo%spectral_k_max, 0.1_dp, stat=stat)
+    call get_value(topo_tbl, 'spectral_nk', cfg%topo%spectral_nk, 100, stat=stat)
+    call get_value(topo_tbl, 'spectral_E_min', cfg%topo%spectral_E_min, -0.05_dp, stat=stat)
+    call get_value(topo_tbl, 'spectral_E_max', cfg%topo%spectral_E_max, 0.05_dp, stat=stat)
+    call get_value(topo_tbl, 'spectral_nE', cfg%topo%spectral_nE, 200, stat=stat)
+    call get_value(topo_tbl, 'spectral_eta', cfg%topo%spectral_eta, 0.001_dp, stat=stat)
+  end subroutine parse_topology
+
+  ! ==================================================================
+  ! [bdg] section
+  ! ==================================================================
+  subroutine parse_bdg(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: bdg_tbl => null()
+    type(toml_array), pointer :: b_sweep_arr => null()
+    character(len=:), allocatable :: gauge_val
+    integer :: stat
+
+    call get_value(table, 'bdg', bdg_tbl, stat=stat)
+    if (.not. associated(bdg_tbl)) return
+
+    cfg%bdg%enabled = .true.
+    call get_value(bdg_tbl, 'mu', cfg%bdg%mu, 0.0_dp, stat=stat)
+    call get_value(bdg_tbl, 'delta_0', cfg%bdg%delta_0, 0.0_dp, stat=stat)
+    call get_value(bdg_tbl, 'g_factor', cfg%bdg%g_factor, 2.0_dp, stat=stat)
+    call get_value(bdg_tbl, 'gauge', gauge_val, 'landau_x', stat=stat)
+    if (allocated(gauge_val)) then
+      cfg%bdg%gauge = trim(gauge_val)
+    end if
+    call get_value(bdg_tbl, 'kz', cfg%bdg%kz, 0.0_dp, stat=stat)
+
+    ! B sweep
+    call get_value(bdg_tbl, 'B_sweep', b_sweep_arr, stat=stat)
+    if (associated(b_sweep_arr)) then
+      call get_value(b_sweep_arr, 1, cfg%bdg%B_sweep(1), stat=stat)
+      if (stat /= 0) cfg%bdg%B_sweep(1) = 0.0_dp
+      call get_value(b_sweep_arr, 2, cfg%bdg%B_sweep(2), stat=stat)
+      if (stat /= 0) cfg%bdg%B_sweep(2) = 0.0_dp
+      call get_value(b_sweep_arr, 3, cfg%bdg%B_sweep(3), stat=stat)
+      if (stat /= 0) cfg%bdg%B_sweep(3) = 0.0_dp
+    end if
+  end subroutine parse_bdg
+
+  ! ==================================================================
+  ! [optics] section
+  ! ==================================================================
+  subroutine parse_optics(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: opt_tbl => null()
+    type(toml_array), pointer :: e_range_arr => null()
+    integer :: stat
+
+    call get_value(table, 'optics', opt_tbl, stat=stat)
+    if (.not. associated(opt_tbl)) return
+
+    cfg%optics%enabled = .true.
+    call get_value(opt_tbl, 'linewidth_lorentzian', cfg%optics%linewidth_lorentzian, 0.030_dp, stat=stat)
+    call get_value(opt_tbl, 'linewidth_gaussian', cfg%optics%linewidth_gaussian, 0.005_dp, stat=stat)
+    call get_value(opt_tbl, 'refractive_index', cfg%optics%refractive_index, 3.3_dp, stat=stat)
+    call get_value(opt_tbl, 'temperature', cfg%optics%temperature, 300.0_dp, stat=stat)
+    call get_value(opt_tbl, 'num_energy_points', cfg%optics%num_energy_points, 200, stat=stat)
+    call get_value(opt_tbl, 'E_min', cfg%optics%E_min, 0.5_dp, stat=stat)
+    call get_value(opt_tbl, 'E_max', cfg%optics%E_max, 2.0_dp, stat=stat)
+    call get_value(opt_tbl, 'carrier_density', cfg%optics%carrier_density, 0.0_dp, stat=stat)
+    call get_value(opt_tbl, 'gain_enabled', cfg%optics%gain_enabled, .false., stat=stat)
+    call get_value(opt_tbl, 'gain_carrier_density', cfg%optics%gain_carrier_density, 3.0e12_dp, stat=stat)
+    call get_value(opt_tbl, 'ISBT', cfg%optics%isbt_enabled, .false., stat=stat)
+    call get_value(opt_tbl, 'spontaneous', cfg%optics%spontaneous_enabled, .false., stat=stat)
+    call get_value(opt_tbl, 'spin_resolved', cfg%optics%spin_resolved, .false., stat=stat)
+  end subroutine parse_optics
+
+  ! ==================================================================
+  ! [exciton] section
+  ! ==================================================================
+  subroutine parse_exciton(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: exc_tbl => null()
+    character(len=:), allocatable :: method_val
+    integer :: stat
+
+    call get_value(table, 'exciton', exc_tbl, stat=stat)
+    if (.not. associated(exc_tbl)) return
+
+    cfg%exciton%enabled = .true.
+    call get_value(exc_tbl, 'method', method_val, 'variational', stat=stat)
+    if (allocated(method_val)) then
+      cfg%exciton%method = trim(method_val)
+    end if
+  end subroutine parse_exciton
+
+  ! ==================================================================
+  ! [scattering] section
+  ! ==================================================================
+  subroutine parse_scattering(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: scat_tbl => null()
+    integer :: stat
+
+    call get_value(table, 'scattering', scat_tbl, stat=stat)
+    if (.not. associated(scat_tbl)) return
+
+    cfg%scattering%enabled = .true.
+    call get_value(scat_tbl, 'phonon_energy', cfg%scattering%phonon_energy, 0.036_dp, stat=stat)
+    call get_value(scat_tbl, 'eps_inf', cfg%scattering%eps_inf, 10.9_dp, stat=stat)
+    call get_value(scat_tbl, 'eps_0', cfg%scattering%eps_0, 12.9_dp, stat=stat)
+  end subroutine parse_scattering
+
+  ! ==================================================================
+  ! [feast] section
+  ! ==================================================================
+  subroutine parse_feast(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: feast_tbl => null()
+    integer :: stat
+
+    call get_value(table, 'feast', feast_tbl, stat=stat)
+    if (.not. associated(feast_tbl)) return
+
+    call get_value(feast_tbl, 'emin', cfg%feast%emin, 0.0_dp, stat=stat)
+    call get_value(feast_tbl, 'emax', cfg%feast%emax, 0.0_dp, stat=stat)
+    call get_value(feast_tbl, 'm0', cfg%feast%m0, 0, stat=stat)
+  end subroutine parse_feast
+
+  ! ==================================================================
+  ! [strain] section
+  ! ==================================================================
+  subroutine parse_strain(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: strain_tbl => null()
+    character(len=:), allocatable :: ref_val, solver_val
+    integer :: stat
+
+    call get_value(table, 'strain', strain_tbl, stat=stat)
+    if (.not. associated(strain_tbl)) return
+
+    cfg%strain%enabled = .true.
+    call get_value(strain_tbl, 'reference', ref_val, 'substrate', stat=stat)
+    if (allocated(ref_val)) then
+      cfg%strain%reference = trim(ref_val)
+    end if
+    call get_value(strain_tbl, 'solver', solver_val, 'pardiso', stat=stat)
+    if (allocated(solver_val)) then
+      cfg%strain%solver = trim(solver_val)
+    end if
+    call get_value(strain_tbl, 'piezoelectric', cfg%strain%piezoelectric, .false., stat=stat)
+  end subroutine parse_strain
+
+  ! ==================================================================
+  ! G-factor fields (top-level)
+  ! ==================================================================
+  subroutine parse_gfactor(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+    integer :: stat
+
+    call get_value(table, 'which_band', cfg%which_band, 0, stat=stat)
+    call get_value(table, 'band_idx', cfg%band_idx, 1, stat=stat)
+  end subroutine parse_gfactor
+
+  ! ==================================================================
+  ! Helper: require a string value (fail-fast)
+  ! ==================================================================
+  subroutine require_string(table, key, val, section)
+    type(toml_table), intent(inout) :: table
+    character(len=*), intent(in) :: key
+    character(len=:), allocatable, intent(out) :: val
+    character(len=*), intent(in) :: section
+    integer :: stat
+
+    call get_value(table, key, val, stat=stat)
+    if (stat /= 0 .or. .not. allocated(val)) then
+      print *, 'Error: [', trim(section), '] requires key ''', trim(key), ''''
+      stop 1
+    end if
+  end subroutine require_string
+
+  ! ==================================================================
+  ! Helper: require an integer value (fail-fast)
+  ! ==================================================================
+  subroutine require_int(table, key, val, section)
+    type(toml_table), intent(inout) :: table
+    character(len=*), intent(in) :: key
+    integer, intent(out) :: val
+    character(len=*), intent(in) :: section
+    integer :: stat
+
+    call get_value(table, key, val, stat=stat)
+    if (stat /= 0) then
+      print *, 'Error: [', trim(section), '] requires key ''', trim(key), ''''
+      stop 1
+    end if
+  end subroutine require_int
+
+  ! ==================================================================
+  ! Helper: require a real value (fail-fast)
+  ! ==================================================================
+  subroutine require_real(table, key, val, section)
+    type(toml_table), intent(inout) :: table
+    character(len=*), intent(in) :: key
+    real(kind=dp), intent(out) :: val
+    character(len=*), intent(in) :: section
+    integer :: stat
+
+    call get_value(table, key, val, stat=stat)
+    if (stat /= 0) then
+      print *, 'Error: [', trim(section), '] requires key ''', trim(key), ''''
+      stop 1
+    end if
+  end subroutine require_real
 
 end module input_parser

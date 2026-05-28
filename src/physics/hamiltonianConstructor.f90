@@ -506,9 +506,9 @@ module hamiltonianConstructor
 
       ! External potential shifts (EF + SC)
       if (present(cfg)) then
-        if (cfg%ExternalField == 1 .and. cfg%EFtype == 'EF') then
+        if (cfg%external_field%enabled .and. cfg%external_field%type == 'EF') then
           do i = 1, 8
-            HT(i,i) = HT(i,i) + cmplx(cfg%Evalue, 0.0_dp, kind=dp)
+            HT(i,i) = HT(i,i) + cmplx(cfg%external_field%value, 0.0_dp, kind=dp)
           end do
         end if
         if (cfg%sc_potential_shift /= 0.0_dp) then

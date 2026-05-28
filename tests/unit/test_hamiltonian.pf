@@ -406,9 +406,9 @@ contains
 
     ! Build with EF = 0.1 eV via cfg
     V_EF = 0.1_dp
-    cfg%ExternalField = 1
-    cfg%EFtype = 'EF'
-    cfg%Evalue = V_EF
+    cfg%external_field%enabled = .true.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = V_EF
     cfg%sc_potential_shift = 0.0_dp
     HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
     call ZB8bandBulk(HT, wv, params, cfg=cfg)

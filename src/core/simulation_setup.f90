@@ -27,7 +27,7 @@ module simulation_setup_mod
   public :: thread_workspace, setup_alloc_sweep
 
   type :: simulation_setup
-    integer :: confinement = -1
+    character(len=8) :: confinement = 'none'
     logical :: has_strain = .false.
     logical :: sc_was_run = .false.
     real(kind=dp) :: fermi_level = 0.0_dp
@@ -80,8 +80,8 @@ contains
     setup%fermi_level = 0.0_dp
     setup%vel_built = .false.
 
-    select case(cfg%confinement)
-    case(0)
+    select case(trim(cfg%confinement))
+    case('bulk')
       if (cfg%sc%enabled == 1) then
         print *, 'Warning: SC with bulk mode requires confinement=1, confDir=z.'
       end if
@@ -90,19 +90,19 @@ contains
       setup%iuu = 8
       setup%lwork = 0
 
-    case(1)
-      setup%N = cfg%fdStep * 8
-      setup%il = cfg%numvb + 1
+    case('qw')
+      setup%N = cfg%ngrid * 8
+      setup%il = cfg%bands%num_vb + 1
       setup%iuu = setup%N
       allocate(setup%kpterms(grid_ngrid(cfg%grid), grid_ngrid(cfg%grid), 10))
       setup%kpterms = 0.0_dp
       call confinementInitialization(cfg, setup%profile, setup%kpterms)
-      if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
+      if (cfg%external_field%enabled .and. cfg%external_field%type == "EF") then
         if (abs(cfg%z(1)) < tolerance) then
           print *, 'Error: Electric field requires z(1) /= 0.'
           stop 1
         end if
-        call externalFieldSetup_electricField(setup%profile, cfg%Evalue, &
+        call externalFieldSetup_electricField(setup%profile, cfg%external_field%value, &
           cfg%totalSize, cfg%z)
       end if
       if (cfg%strain%enabled) then
@@ -157,7 +157,7 @@ contains
       setup%HT = 0.0_dp
       allocate(eig_tmp(setup%N, 1))
       eig_tmp = 0.0_dp
-      if (cfg%numLayers == 1) then
+      if (cfg%num_layers == 1) then
         call zheev('V', 'L', setup%N, setup%HT, setup%N, eig_tmp(:,1), &
           setup%work, -1, setup%rwork, info)
         if (info /= 0) then
@@ -188,9 +188,9 @@ contains
       end if
       deallocate(eig_tmp)
 
-    case(2)
+    case('wire')
       if (.not. allocated(cfg%grid%x)) call init_wire_from_config(cfg)
-      call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+      call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
         setup%profile_2d, setup%kpterms_2d, cfg%FDorder)
       if (cfg%strain%enabled) then
         block
@@ -217,10 +217,10 @@ contains
       setup%N = Ntot_local
       setup%il = 1
       setup%iuu = Ntot_local
-      nev = cfg%numcb + cfg%numvb
+      nev = cfg%bands%num_cb + cfg%bands%num_vb
       if (nev > Ntot_local) nev = Ntot_local
       setup%nev_wire = nev
-      if (cfg%feast_m0 < 0) then
+      if (cfg%feast%m0 < 0) then
         setup%eigen_cfg%method = 'DENSE'
       else
         setup%eigen_cfg%method = 'FEAST'
@@ -228,16 +228,16 @@ contains
       setup%eigen_cfg%nev = nev
       setup%eigen_cfg%max_iter = 100
       setup%eigen_cfg%tol = 1.0e-10_dp
-      setup%eigen_cfg%feast_m0 = cfg%feast_m0
+      setup%eigen_cfg%feast_m0 = cfg%feast%m0
       allocate(setup%HT_csr_ptr)
       allocate(setup%coo_cache_ptr)
       allocate(setup%wire_ws_ptr)
       ! Build preliminary Hamiltonian at kz=0 to estimate FEAST energy window
       call ZB8bandGeneralized(setup%HT_csr_ptr, 0.0_dp, setup%profile_2d, &
         setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
-      if (cfg%feast_emin /= 0.0_dp .or. cfg%feast_emax /= 0.0_dp) then
-        setup%eigen_cfg%emin = cfg%feast_emin
-        setup%eigen_cfg%emax = cfg%feast_emax
+      if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
+        setup%eigen_cfg%emin = cfg%feast%emin
+        setup%eigen_cfg%emax = cfg%feast%emax
       else
         call auto_compute_energy_window(setup%HT_csr_ptr, &
           setup%eigen_cfg%emin, setup%eigen_cfg%emax)
@@ -298,19 +298,19 @@ contains
     complex(kind=dp), intent(inout), contiguous, optional :: HT_out(:,:)
 
     select case(setup%confinement)
-    case(0)
+    case('bulk')
       if (.not. present(HT_out)) then
         print *, 'Error: setup_build_H bulk requires HT_out'
         stop 1
       end if
       call ZB8bandBulk(HT_out, kvec, cfg%params(1), cfg=cfg)
-    case(1)
+    case('qw')
       if (.not. present(HT_out)) then
         print *, 'Error: setup_build_H QW requires HT_out'
         stop 1
       end if
       call ZB8bandQW(HT_out, kvec, setup%profile, setup%kpterms, cfg=cfg)
-    case(2)
+    case('wire')
       call ZB8bandGeneralized(setup%HT_csr_ptr, kvec%kz, &
         setup%profile_2d, setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
     case default
@@ -329,7 +329,7 @@ contains
     real(kind=dp), allocatable :: rwork_local(:)
 
     select case(setup%confinement)
-    case(0)
+    case('bulk')
       if (.not. allocated(setup%HT)) allocate(setup%HT(8, 8))
       setup%HT = 0.0_dp
       call ZB8bandBulk(setup%HT, kvec, cfg%params(1), cfg=cfg)
@@ -355,10 +355,10 @@ contains
         stop 1
       end if
       evecs = setup%HT
-    case(1)
+    case('qw')
       setup%HT = 0.0_dp
       call ZB8bandQW(setup%HT, kvec, setup%profile, setup%kpterms, cfg=cfg)
-      if (cfg%numLayers == 1) then
+      if (cfg%num_layers == 1) then
         call zheev('V', 'L', setup%N, setup%HT, setup%N, evals, setup%work, setup%lwork, setup%rwork, info)
         if (info /= 0) then
           print *, 'Error: zheev failed in setup_solve_kpoint_serial, info =', info
@@ -385,7 +385,7 @@ contains
     type(csr_matrix) :: H_csr_tmp
     type(wavevector) :: kv_g
 
-    if (setup%confinement == 2) then
+    if (setup%confinement == 'wire') then
       if (.not. allocated(setup%HT_csr_ptr%rowptr)) then
         print *, 'Error: call setup_build_H before setup_build_velocity_matrices for wire'
         stop 1
@@ -393,7 +393,7 @@ contains
     end if
 
     select case(setup%confinement)
-    case(0)
+    case('bulk')
       allocate(vel_dense(8, 8))
       vel_dense = 0.0_dp; kv_g%kx = 1.0_dp; kv_g%ky = 0.0_dp; kv_g%kz = 0.0_dp
       call ZB8bandBulk(vel_dense, kv_g, cfg%params(1), cfg=cfg, g='g')
@@ -405,7 +405,7 @@ contains
       call ZB8bandBulk(vel_dense, kv_g, cfg%params(1), cfg=cfg, g='g')
       call dense_to_csr_8(vel_dense, setup%vel(3))
       deallocate(vel_dense)
-    case(1)
+    case('qw')
       ! vel(3): commutator -i[r_z, H] via build_velocity_matrices (1D QW)
       ! vel(1), vel(2): overwritten with k-derivative dH/dkx, dH/dky
       allocate(vel_dense(setup%N, setup%N))
@@ -428,7 +428,7 @@ contains
       call csr_free(setup%vel(2))
       call dense_to_csr_N(vel_dense, setup%vel(2))
       deallocate(vel_dense)
-    case(2)
+    case('wire')
       call build_velocity_matrices(setup%HT_csr_ptr, cfg%grid, setup%vel(1), setup%vel(2))
       call ZB8bandGeneralized(setup%vel(3), 1.0_dp, setup%profile_2d, &
         setup%kpterms_2d, cfg, g='g3')
@@ -474,7 +474,7 @@ contains
       end do
     end if
     setup%N = 0
-    setup%confinement = -1
+    setup%confinement = 'none'
     setup%lwork = 0
     setup%il = 0
     setup%iuu = 0
@@ -498,7 +498,7 @@ contains
     integer, intent(in) :: nthreads
     type(thread_workspace), allocatable, intent(out) :: tws(:)
     integer :: t
-    if (setup%confinement /= 2) then
+    if (setup%confinement /= 'wire') then
       print *, 'Error: setup_alloc_sweep requires confinement=2 (wire)'
       stop 1
     end if

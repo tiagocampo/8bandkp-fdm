@@ -554,7 +554,7 @@ contains
         end do
 
         ! Broaden and accumulate onto the energy grid
-        if (oe%config%confinement == 0) then
+        if (oe%config%confinement == 'bulk') then
           ! Bulk: TE = TM = (px+py+pz)/2
           do ie = 1, oe%nE
             oe%alpha_te(ie) = oe%alpha_te(ie) + occ_factor * (px + py + pz) * 0.5_dp &

@@ -273,7 +273,7 @@ contains
     if (cfg%grid%ndim >= 1) then
       ny = grid_ngrid(cfg%grid)
     else
-      ny = cfg%fdStep
+      ny = cfg%ngrid
     end if
 
     ! Allocate kpterms if not already allocated (caller may pre-allocate)
@@ -283,16 +283,25 @@ contains
     end if
 
     ! Dispatch to the raw routine using the appropriate coordinate source
+    ! Prefer new int_start_pos/int_end_pos fields; fall back to legacy aliases
+    if (allocated(cfg%int_start_pos) .and. .not. allocated(cfg%intStartPos)) then
+      allocate(cfg%intStartPos(size(cfg%int_start_pos)))
+      cfg%intStartPos = cfg%int_start_pos
+    end if
+    if (allocated(cfg%int_end_pos) .and. .not. allocated(cfg%intEndPos)) then
+      allocate(cfg%intEndPos(size(cfg%int_end_pos)))
+      cfg%intEndPos = cfg%int_end_pos
+    end if
     if (cfg%grid%ndim >= 1 .and. allocated(cfg%grid%z)) then
       ! New path: use spatial_grid coordinates
       call confinementInitialization_raw(cfg%grid%z, cfg%intStartPos, &
-        & cfg%intEndPos, cfg%materialN, cfg%numLayers, cfg%params, &
-        & cfg%confDir, profile, kpterms, cfg%FDorder)
+        & cfg%intEndPos, cfg%materialN, cfg%num_layers, cfg%params, &
+        & cfg%conf_dir, profile, kpterms, cfg%FDorder)
     else
       ! Legacy path: use cfg%z (backward compat before init_grid_from_config)
       call confinementInitialization_raw(cfg%z, cfg%intStartPos, &
-        & cfg%intEndPos, cfg%materialN, cfg%numLayers, cfg%params, &
-        & cfg%confDir, profile, kpterms, cfg%FDorder)
+        & cfg%intEndPos, cfg%materialN, cfg%num_layers, cfg%params, &
+        & cfg%conf_dir, profile, kpterms, cfg%FDorder)
     end if
 
     ! Populate cfg%dz from the grid when available

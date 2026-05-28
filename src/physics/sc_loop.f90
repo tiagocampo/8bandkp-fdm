@@ -111,7 +111,7 @@ contains
     logical :: sc_converged
     type(wavevector) :: wv
 
-    nz = cfg%fdStep
+    nz = cfg%ngrid
     dz_val = cfg%dz
     num_subbands = iuu - il + 1
     niter = cfg%sc%max_iterations
@@ -123,7 +123,7 @@ contains
     ! Auto-determine kpar_max if not set
     kpar_max_val = cfg%sc%kpar_max
     if (kpar_max_val < tolerance) then
-      kpar_max_val = cfg%waveVectorMax
+      kpar_max_val = cfg%wave_vector%max
       if (kpar_max_val < tolerance) kpar_max_val = 0.5_dp
     end if
 
@@ -241,7 +241,7 @@ contains
       ! Step 4: Compute charge density
       call compute_charge_density_qw(n_electron, n_hole, eigv_kpar, &
         & eig_kpar, kpar_grid, fermi_level, cfg%sc%temperature, &
-        & nz, num_subbands, nk_actual, cfg%numcb)
+        & nz, num_subbands, nk_actual, cfg%bands%num_cb)
 
       ! Step 5: Build total charge and solve Poisson
       ! Convert density from cm^-3 to C/nm^3: rho = e * n * 1e-21 (1 cm^3 = 10^21 nm^3)
@@ -503,7 +503,7 @@ contains
 
       call compute_charge_density_qw(n_elec, n_hole, eigv_kpar, &
         & eig_kpar, kpar_grid, mu_mid, cfg%sc%temperature, &
-        & nz, num_subbands, nk_actual, cfg%numcb)
+        & nz, num_subbands, nk_actual, cfg%bands%num_cb)
 
       charge_excess = 0.0_dp
       do iz = 1, nz
@@ -640,7 +640,7 @@ contains
     ! Auto-determine kpar_max if not set
     kpar_max_val = cfg%sc%kpar_max
     if (kpar_max_val < tolerance) then
-      kpar_max_val = cfg%waveVectorMax
+      kpar_max_val = cfg%wave_vector%max
       if (kpar_max_val < tolerance) kpar_max_val = 0.5_dp
     end if
 
@@ -767,7 +767,7 @@ contains
       ! Step 4: Compute charge density
       call compute_charge_density_wire(n_electron, n_hole, eigv_wire, &
         & eig_wire, kx_grid, fermi_level, cfg%sc%temperature, &
-        & ny, nx, nev_sc, nk_actual, cfg%numcb)
+        & ny, nx, nev_sc, nk_actual, cfg%bands%num_cb)
       ! Note: compute_charge_density_wire takes (Ny, Nz) but for our wire
       ! grid it's (ny, nx). The flattened array is the same size.
 
@@ -918,7 +918,7 @@ contains
 
       call compute_charge_density_wire(work_ne, work_nh, eigv_kx, &
         & eig_kx, kx_grid, mu_mid, cfg%sc%temperature, &
-        & ny, nx, num_subbands, nk_actual, cfg%numcb)
+        & ny, nx, num_subbands, nk_actual, cfg%bands%num_cb)
 
       charge_excess = 0.0_dp
       do p = 1, Ngrid
@@ -1007,7 +1007,7 @@ contains
     integer :: iz, ilayer
     allocate(layer_index(nz))
     layer_index = 0
-    do ilayer = 1, cfg%numLayers
+    do ilayer = 1, cfg%num_layers
       do iz = cfg%intStartPos(ilayer), cfg%intEndPos(ilayer)
         if (iz >= 1 .and. iz <= nz) then
           layer_index(iz) = ilayer

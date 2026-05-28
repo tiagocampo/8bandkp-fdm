@@ -18,7 +18,7 @@ contains
     call simulation_setup_init(cfg, setup)
 
     ! Assertions
-    @assertEqual(0, setup%confinement)
+    @assertTrue(setup%confinement == 'bulk')
     @assertEqual(8, setup%N)
     @assertEqual(1, setup%il)
     @assertEqual(8, setup%iuu)
@@ -110,22 +110,22 @@ contains
 
     ! Build a minimal QW GaAs/AlGaAs config
     fdStep = 51
-    cfg%confinement = 1
-    cfg%fdStep = fdStep
+    cfg%confinement = 'qw'
+    cfg%ngrid = fdStep
     cfg%FDorder = 2
-    cfg%numLayers = 2
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%num_layers = 2
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%confDir = 'z'
-    cfg%waveVector = 'k0'
-    cfg%waveVectorMax = 0.0_dp
-    cfg%waveVectorStep = 100
-    cfg%ExternalField = 0
-    cfg%EFtype = 'EF'
-    cfg%Evalue = 0.0_dp
-    cfg%whichBand = 0
-    cfg%bandIdx = 1
+    cfg%conf_dir = 'z'
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
 
     ! Two layers: AlGaAs barrier (full domain) + GaAs well (center)
     allocate(cfg%materialN(2))
@@ -151,12 +151,12 @@ contains
       end do
     end block
 
-    allocate(cfg%intStartPos(2))
-    allocate(cfg%intEndPos(2))
-    cfg%intStartPos(1) = 1
-    cfg%intEndPos(1) = fdStep
-    cfg%intStartPos(2) = nint((cfg%startPos(2) - cfg%startPos(1)) / cfg%delta) + 1
-    cfg%intEndPos(2) = nint((cfg%endPos(2) - cfg%startPos(1)) / cfg%delta) + 1
+    allocate(cfg%int_start_pos(2))
+    allocate(cfg%int_end_pos(2))
+    cfg%int_start_pos(1) = 1
+    cfg%int_end_pos(1) = fdStep
+    cfg%int_start_pos(2) = nint((cfg%startPos(2) - cfg%startPos(1)) / cfg%delta) + 1
+    cfg%int_end_pos(2) = nint((cfg%endPos(2) - cfg%startPos(1)) / cfg%delta) + 1
 
     ! Material parameters
     allocate(cfg%params(2))
@@ -169,7 +169,7 @@ contains
 
     expected_N = fdStep * 8
 
-    @assertEqual(1, setup%confinement)
+    @assertTrue(setup%confinement == 'qw')
     @assertEqual(expected_N, setup%N)
     @assertTrue(allocated(setup%profile))
     @assertTrue(allocated(setup%kpterms))
@@ -225,7 +225,7 @@ contains
     call simulation_setup_init(cfg, setup)
     call setup_build_velocity_matrices(setup, cfg)
 
-    expected_N = cfg%fdStep * 8
+    expected_N = cfg%ngrid * 8
 
     @assertTrue(setup%vel_built)
 
@@ -257,25 +257,25 @@ contains
     type(simulation_config), intent(out) :: cfg
     character(len=255) :: materials(1)
 
-    cfg%confinement = 0
-    cfg%fdStep = 1
+    cfg%confinement = 'bulk'
+    cfg%ngrid = 1
     cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%num_layers = 1
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%confDir = 'n'
-    cfg%waveVector = 'k0'
-    cfg%waveVectorMax = 0.0_dp
-    cfg%waveVectorStep = 100
-    cfg%ExternalField = 0
-    cfg%EFtype = 'EF'
-    cfg%Evalue = 0.0_dp
+    cfg%conf_dir = 'n'
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
     cfg%totalSize = 0.0_dp
     cfg%delta = 0.0_dp
     cfg%dz = 0.0_dp
-    cfg%whichBand = 0
-    cfg%bandIdx = 1
+    cfg%which_band = 0
+    cfg%band_idx = 1
 
     allocate(cfg%materialN(1))
     cfg%materialN(1) = 'GaAs'
@@ -298,22 +298,22 @@ contains
     integer :: fdStep
 
     fdStep = 11
-    cfg%confinement = 1
-    cfg%fdStep = fdStep
+    cfg%confinement = 'qw'
+    cfg%ngrid = fdStep
     cfg%FDorder = 2
-    cfg%numLayers = 2
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%num_layers = 2
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%confDir = 'z'
-    cfg%waveVector = 'k0'
-    cfg%waveVectorMax = 0.0_dp
-    cfg%waveVectorStep = 100
-    cfg%ExternalField = 0
-    cfg%EFtype = 'EF'
-    cfg%Evalue = 0.0_dp
-    cfg%whichBand = 0
-    cfg%bandIdx = 1
+    cfg%conf_dir = 'z'
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
 
     ! Two layers: AlGaAs barrier (full domain) + GaAs well (center)
     allocate(cfg%materialN(2))
@@ -339,12 +339,12 @@ contains
       end do
     end block
 
-    allocate(cfg%intStartPos(2))
-    allocate(cfg%intEndPos(2))
-    cfg%intStartPos(1) = 1
-    cfg%intEndPos(1) = fdStep
-    cfg%intStartPos(2) = nint((cfg%startPos(2) - cfg%startPos(1)) / cfg%delta) + 1
-    cfg%intEndPos(2) = nint((cfg%endPos(2) - cfg%startPos(1)) / cfg%delta) + 1
+    allocate(cfg%int_start_pos(2))
+    allocate(cfg%int_end_pos(2))
+    cfg%int_start_pos(1) = 1
+    cfg%int_end_pos(1) = fdStep
+    cfg%int_start_pos(2) = nint((cfg%startPos(2) - cfg%startPos(1)) / cfg%delta) + 1
+    cfg%int_end_pos(2) = nint((cfg%endPos(2) - cfg%startPos(1)) / cfg%delta) + 1
 
     ! Material parameters
     allocate(cfg%params(2))
@@ -368,7 +368,7 @@ contains
     expected_Ngrid = 5 * 5
     expected_Ntot = 8 * expected_Ngrid
 
-    @assertEqual(2, setup%confinement)
+    @assertTrue(setup%confinement == 'wire')
     @assertEqual(expected_Ngrid, setup%Ngrid)
     @assertEqual(expected_Ntot, setup%Ntot)
     @assertEqual(expected_Ntot, setup%N)
@@ -466,7 +466,7 @@ contains
 
     ! Step 1: Initialize setup (bulk path)
     call simulation_setup_init(cfg, setup)
-    @assertEqual(0, setup%confinement)
+    @assertTrue(setup%confinement == 'bulk')
     @assertEqual(8, setup%N)
 
     ! Step 2: Build H at k=0 via setup_build_H
@@ -507,30 +507,30 @@ contains
     nx = 5
     ny = 5
 
-    cfg%confinement = 2
-    cfg%fdStep = nx * ny
+    cfg%confinement = 'wire'
+    cfg%ngrid = nx * ny
     cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%num_layers = 1
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%confDir = 'z'
-    cfg%waveVector = 'kz'
-    cfg%waveVectorMax = 0.1_dp
-    cfg%waveVectorStep = 2
-    cfg%ExternalField = 0
-    cfg%EFtype = 'EF'
-    cfg%Evalue = 0.0_dp
-    cfg%whichBand = 0
-    cfg%bandIdx = 1
-    cfg%feast_m0 = -1
+    cfg%conf_dir = 'z'
+    cfg%wave_vector%mode = 'kz'
+    cfg%wave_vector%max = 0.1_dp
+    cfg%wave_vector%nsteps = 2
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
+    cfg%feast%m0 = -1
 
     ! Wire grid dimensions
-    cfg%wire_nx = nx
-    cfg%wire_ny = ny
-    cfg%wire_dx = 4.0_dp
-    cfg%wire_dy = 4.0_dp
-    cfg%wire_geom%shape = 'rectangle'
+    cfg%wire%nx = nx
+    cfg%wire%ny = ny
+    cfg%wire%dx = 4.0_dp
+    cfg%wire%dy = 4.0_dp
+    cfg%wire%geom%shape = 'rectangle'
 
     ! Single material: GaAs everywhere
     allocate(cfg%materialN(1))
@@ -539,15 +539,15 @@ contains
     allocate(cfg%startPos(1))
     allocate(cfg%endPos(1))
     cfg%startPos(1) = 0.0_dp
-    cfg%endPos(1) = real(nx, kind=dp) * cfg%wire_dx
+    cfg%endPos(1) = real(nx, kind=dp) * cfg%wire%dx
 
     ! One region: full domain
-    cfg%numRegions = 1
-    allocate(cfg%regions(1))
-    cfg%regions(1)%material = 'GaAs'
-    cfg%regions(1)%inner = 0.0_dp
-    cfg%regions(1)%outer = sqrt((real(nx, kind=dp) * cfg%wire_dx)**2 + &
-      (real(ny, kind=dp) * cfg%wire_dy)**2)
+    cfg%wire%num_regions = 1
+    allocate(cfg%wire%regions(1))
+    cfg%wire%regions(1)%material = 'GaAs'
+    cfg%wire%regions(1)%inner = 0.0_dp
+    cfg%wire%regions(1)%outer = sqrt((real(nx, kind=dp) * cfg%wire%dx)**2 + &
+      (real(ny, kind=dp) * cfg%wire%dy)**2)
 
     ! Material parameters
     allocate(cfg%params(1))
@@ -569,22 +569,22 @@ contains
 
     ! Build QW with InAs well in GaAs barrier (lattice mismatch ~7%)
     fdStep = 51
-    cfg%confinement = 1
-    cfg%fdStep = fdStep
+    cfg%confinement = 'qw'
+    cfg%ngrid = fdStep
     cfg%FDorder = 2
-    cfg%numLayers = 2
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%num_layers = 2
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%confDir = 'z'
-    cfg%waveVector = 'k0'
-    cfg%waveVectorMax = 0.0_dp
-    cfg%waveVectorStep = 100
-    cfg%ExternalField = 0
-    cfg%EFtype = 'EF'
-    cfg%Evalue = 0.0_dp
-    cfg%whichBand = 0
-    cfg%bandIdx = 1
+    cfg%conf_dir = 'z'
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
 
     ! Two layers: GaAs barrier (full domain) + InAs well (center)
     allocate(cfg%materialN(2))
@@ -608,11 +608,11 @@ contains
     end do
 
     ! Compute layer index bounds from positions
-    allocate(cfg%intStartPos(2))
-    allocate(cfg%intEndPos(2))
-    do i = 1, cfg%numLayers
-      cfg%intStartPos(i) = max(1, nint((cfg%startPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
-      cfg%intEndPos(i) = min(fdStep, nint((cfg%endPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
+    allocate(cfg%int_start_pos(2))
+    allocate(cfg%int_end_pos(2))
+    do i = 1, cfg%num_layers
+      cfg%int_start_pos(i) = max(1, nint((cfg%startPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
+      cfg%int_end_pos(i) = min(fdStep, nint((cfg%endPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
     end do
 
     ! Material parameters
@@ -666,22 +666,22 @@ contains
     ! Build QW config inline with valid material names
     ! (make_qw_gaas_config uses 'AlGaAs' which is not in the parameter DB)
     fdStep = 11
-    cfg%confinement = 1
-    cfg%fdStep = fdStep
+    cfg%confinement = 'qw'
+    cfg%ngrid = fdStep
     cfg%FDorder = 2
-    cfg%numLayers = 2
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%num_layers = 2
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
-    cfg%confDir = 'z'
-    cfg%waveVector = 'k0'
-    cfg%waveVectorMax = 0.0_dp
-    cfg%waveVectorStep = 100
-    cfg%ExternalField = 0
-    cfg%EFtype = 'EF'
-    cfg%Evalue = 0.0_dp
-    cfg%whichBand = 0
-    cfg%bandIdx = 1
+    cfg%conf_dir = 'z'
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
 
     ! Two layers: Al20Ga80As barrier (full domain) + GaAs well (center)
     allocate(cfg%materialN(2))
@@ -705,11 +705,11 @@ contains
     end do
 
     ! Compute layer index bounds from positions (clamped to grid)
-    allocate(cfg%intStartPos(2))
-    allocate(cfg%intEndPos(2))
-    do i = 1, cfg%numLayers
-      cfg%intStartPos(i) = max(1, nint((cfg%startPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
-      cfg%intEndPos(i) = min(fdStep, nint((cfg%endPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
+    allocate(cfg%int_start_pos(2))
+    allocate(cfg%int_end_pos(2))
+    do i = 1, cfg%num_layers
+      cfg%int_start_pos(i) = max(1, nint((cfg%startPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
+      cfg%int_end_pos(i) = min(fdStep, nint((cfg%endPos(i) - cfg%startPos(1)) / cfg%delta) + 1)
     end do
 
     ! Material parameters

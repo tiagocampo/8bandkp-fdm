@@ -23,6 +23,8 @@ module definitions
   public :: spatial_grid, strain_config
   public :: optical_transition, optics_config
   public :: exciton_config, scattering_config, bdg_config, topology_config, topological_result
+  public :: wave_vector_config, bands_config, external_field_config
+  public :: b_field_config, feast_config, landau_config, wire_config
   public :: simulation_config, group
 
   ! Functions and subroutines
@@ -257,7 +259,7 @@ module definitions
     ! Spin resolution
     logical          :: spin_resolved = .false.
     ! Geometry context (set from cfg%confinement before k-sweep)
-    integer          :: confinement = 0
+    character(len=8) :: confinement = 'bulk'
   end type optics_config
 
   ! ------------------------------------------------------------------
@@ -365,69 +367,120 @@ module definitions
     final :: topological_result_finalize
   end type
 
+  ! ---- New sub-types mirroring TOML sections ----
+
+  ! Replaces flat waveVector/waveVectorMax/waveVectorStep
+  type :: wave_vector_config
+    character(len=8) :: mode = 'k0'
+    real(kind=dp)    :: max = 0.0_dp
+    real(kind=dp)    :: step = 0.01_dp
+    integer          :: nsteps = 100       ! number of k-points in sweep
+  end type
+
+  ! Replaces flat numcb/numvb
+  type :: bands_config
+    integer :: num_cb = 2
+    integer :: num_vb = 6
+  end type
+
+  ! Replaces flat ExternalField/EFtype/Evalue
+  type :: external_field_config
+    logical          :: enabled = .false.   ! true if [external_field] section present
+    character(len=2) :: type = 'EF'        ! "EF" for electric field
+    real(kind=dp)    :: value = 0.0_dp
+  end type
+
+  ! Replaces flat b_field(3) and bdg%g_factor for bulk Zeeman
+  type :: b_field_config
+    real(kind=dp) :: components(3) = 0.0_dp  ! Bx, By, Bz (Tesla)
+    real(kind=dp) :: g_factor = 2.0_dp
+  end type
+
+  ! Replaces flat feast_emin/feast_emax/feast_m0
+  type :: feast_config
+    real(kind=dp) :: emin = 0.0_dp   ! 0 = auto
+    real(kind=dp) :: emax = 0.0_dp   ! 0 = auto
+    integer       :: m0 = 0          ! 0 = auto (2*nev)
+  end type
+
+  ! Replaces scattered landau_* fields
+  type :: landau_config
+    integer            :: nx = 100
+    real(kind=dp)      :: width = 2000.0_dp
+    character(len=4)   :: sweep = 'ky'
+    character(len=255) :: material = ''
+  end type
+
+  ! Replaces scattered wire_* fields
+  type :: wire_config
+    integer            :: nx = 0
+    integer            :: ny = 0
+    real(kind=dp)      :: dx = 0.0_dp
+    real(kind=dp)      :: dy = 0.0_dp
+    type(wire_geometry) :: geom
+    type(region_spec), allocatable :: regions(:)
+    integer            :: num_regions = 0
+  contains
+    final :: wire_config_finalize
+  end type
+
   type simulation_config
-    integer :: confinement = 0
-    integer :: fdStep = 1
-    integer :: FDorder = 2
-    integer :: numLayers = 1
-    integer :: numcb = 2
-    integer :: numvb = 6
-    integer :: evnum = 8
-    integer :: waveVectorStep = 100
-    integer :: ExternalField = 0
-    character(len=4) :: waveVector = 'k0'
-    character(len=1) :: confDir = 'n'
-    character(len=2) :: EFtype = '  '
-    real(kind=dp) :: waveVectorMax = 0.0_dp
-    real(kind=dp) :: Evalue = 0.0_dp
-    real(kind=dp) :: sc_potential_shift = 0.0_dp  ! converged SC potential for bulk
-    ! b_field: bulk Landau level magnetic field Bx, By, Bz (Tesla)
-    ! Copied to cfg%bdg%B_vec when cfg%bdg%enabled would be set
-    real(kind=dp) :: b_field(3) = 0.0_dp
-    real(kind=dp) :: totalSize = 0.0_dp
-    real(kind=dp) :: delta = 0.0_dp
-    real(kind=dp) :: dz = 0.0_dp
-    integer :: whichBand = 0     ! 0=CB g-factor, 1=VB g-factor
-    integer :: bandIdx = 1       ! which doublet (1=ground, 2=first excited, ...)
+    ! ---- User inputs (from TOML) ----
+    character(len=8)   :: confinement = 'bulk'   ! "bulk"|"qw"|"wire"|"landau"
+    integer            :: FDorder = 2
+    integer            :: fd_step = 1             ! user-specified grid points (QW)
+    type(wave_vector_config)   :: wave_vector
+    type(bands_config)         :: bands
+    type(external_field_config) :: external_field
+    type(b_field_config)       :: b_field
+    type(strain_config)        :: strain
+    type(feast_config)         :: feast
+
+    ! Mode-specific geometry
+    type(wire_config)          :: wire              ! confinement = "wire"
+    type(landau_config)        :: landau            ! confinement = "landau"
+
+    ! Material layers (QW/bulk)
+    character(len=255), allocatable :: material_names(:)
+    real(dp), allocatable :: z_min(:), z_max(:)
+    integer               :: num_layers = 1
+
+    ! Physics subsystems (section presence = enabled)
+    type(sc_config)           :: sc
+    type(doping_spec), allocatable :: doping(:)
+    type(topology_config)     :: topo
+    type(bdg_config)          :: bdg
+    type(optics_config)       :: optics
+    type(exciton_config)      :: exciton
+    type(scattering_config)   :: scattering
+
+    ! ---- Computed fields (derived from inputs) ----
+    integer            :: ngrid = 1            ! computed grid size (was fdStep)
+    integer            :: evnum = 8            ! bands%num_cb + bands%num_vb
+    character(len=1)   :: conf_dir = 'n'       ! 'n'=bulk, 'z'=QW/wire, 'x'=Landau
+    real(kind=dp)      :: totalSize = 0.0_dp
+    real(kind=dp)      :: delta = 0.0_dp
+    real(kind=dp)      :: dz = 0.0_dp
+    real(kind=dp), allocatable :: z(:)
+    integer, allocatable   :: int_start_pos(:), int_end_pos(:)
+    type(paramStruct), allocatable :: params(:)
+    type(bir_pikus_blocks) :: strain_blocks
+    type(spatial_grid)     :: grid
+    real(kind=dp)          :: sc_potential_shift = 0.0_dp
+
+    ! G-factor
+    integer :: which_band = 0    ! 0=CB, 1=VB
+    integer :: band_idx = 1      ! which doublet
+
+    ! ---- Legacy aliases (computed from new fields for backward compat) ----
+    ! These are set in the parser post-processing for gradual migration.
+    ! Consumers should use the new field names above.
     real(kind=dp), allocatable :: startPos(:)
     real(kind=dp), allocatable :: endPos(:)
-    real(kind=dp), allocatable :: z(:)
     integer, allocatable :: intStartPos(:)
     integer, allocatable :: intEndPos(:)
     character(len=255), allocatable :: materialN(:)
-    type(paramStruct), allocatable :: params(:)
-    type(doping_spec), allocatable :: doping(:)   ! per-layer doping
-    type(sc_config)                :: sc           ! SC parameters
-    type(spatial_grid)             :: grid         ! unified spatial grid
-    type(strain_config)            :: strain       ! strain solver parameters
 
-    ! ---- Wire-specific fields (confinement=2) ----
-    integer            :: wire_nx = 0            ! grid points in x
-    integer            :: wire_ny = 0            ! grid points in y
-    real(kind=dp)      :: wire_dx = 0.0_dp      ! grid spacing x (AA)
-    real(kind=dp)      :: wire_dy = 0.0_dp      ! grid spacing y (AA)
-    type(wire_geometry) :: wire_geom             ! shape + dimensions
-    integer            :: numRegions = 0         ! number of material regions
-    type(region_spec), allocatable :: regions(:) ! region specifications
-
-    ! ---- Landau level fields (confinement=3) ----
-    integer            :: landau_nx = 100          ! grid points in x-direction
-    real(kind=dp)      :: landau_width = 2000.0_dp ! domain width in Angstrom
-    character(len=4)   :: landau_sweep = 'ky'      ! sweep mode: ky, kz, or B
-
-    ! ---- FEAST eigensolver tuning ----
-    real(kind=dp)      :: feast_emin = 0.0_dp   ! manual energy window (0=auto)
-    real(kind=dp)      :: feast_emax = 0.0_dp   ! manual energy window (0=auto)
-    integer            :: feast_m0 = 0           ! manual subspace size (0=auto: 2*nev)
-
-    type(bir_pikus_blocks)     :: strain_blocks    ! precomputed strain data
-
-    ! ---- Optical spectra / gain / exciton / scattering ----
-    type(optics_config)      :: optics       ! optical spectra parameters
-    type(exciton_config)     :: exciton      ! exciton solver parameters
-    type(scattering_config)  :: scattering   ! phonon scattering parameters
-    type(bdg_config)        :: bdg          ! BdG / topological SC parameters
-    type(topology_config)    :: topo         ! topological analysis parameters
   contains
     final :: simulation_config_finalize
     procedure :: validate => simulation_config_validate
@@ -471,23 +524,37 @@ module definitions
   end subroutine spatial_grid_finalize
 
   ! ==================================================================
+  ! Finalizer: automatically called when a wire_config goes out of scope.
+  ! ==================================================================
+  subroutine wire_config_finalize(wc)
+    type(wire_config), intent(inout) :: wc
+
+    if (allocated(wc%regions)) deallocate(wc%regions)
+    ! wire_geom has its own finalizer
+  end subroutine wire_config_finalize
+
+  ! ==================================================================
   ! Finalizer: automatically called when a simulation_config goes out
   ! of scope.  Deallocates all allocatable components.
-  ! Note: cfg%grid and cfg%wire_geom have their own finalizers which
+  ! Note: cfg%grid, cfg%wire%geom have their own finalizers which
   ! will fire automatically when this type is destroyed.
   ! ==================================================================
   subroutine simulation_config_finalize(cfg)
     type(simulation_config), intent(inout) :: cfg
 
-    if (allocated(cfg%startPos))    deallocate(cfg%startPos)
-    if (allocated(cfg%endPos))      deallocate(cfg%endPos)
-    if (allocated(cfg%z))           deallocate(cfg%z)
-    if (allocated(cfg%intStartPos)) deallocate(cfg%intStartPos)
-    if (allocated(cfg%intEndPos))   deallocate(cfg%intEndPos)
-    if (allocated(cfg%materialN))   deallocate(cfg%materialN)
-    if (allocated(cfg%params))      deallocate(cfg%params)
-    if (allocated(cfg%doping))      deallocate(cfg%doping)
-    if (allocated(cfg%regions))     deallocate(cfg%regions)
+    if (allocated(cfg%startPos))       deallocate(cfg%startPos)
+    if (allocated(cfg%endPos))         deallocate(cfg%endPos)
+    if (allocated(cfg%z))              deallocate(cfg%z)
+    if (allocated(cfg%int_start_pos))  deallocate(cfg%int_start_pos)
+    if (allocated(cfg%int_end_pos))    deallocate(cfg%int_end_pos)
+    if (allocated(cfg%intStartPos))    deallocate(cfg%intStartPos)
+    if (allocated(cfg%intEndPos))      deallocate(cfg%intEndPos)
+    if (allocated(cfg%material_names)) deallocate(cfg%material_names)
+    if (allocated(cfg%materialN))      deallocate(cfg%materialN)
+    if (allocated(cfg%z_min))          deallocate(cfg%z_min)
+    if (allocated(cfg%z_max))          deallocate(cfg%z_max)
+    if (allocated(cfg%params))         deallocate(cfg%params)
+    if (allocated(cfg%doping))         deallocate(cfg%doping)
     if (allocated(cfg%strain_blocks%delta_Ec))  deallocate(cfg%strain_blocks%delta_Ec)
     if (allocated(cfg%strain_blocks%delta_EHH)) deallocate(cfg%strain_blocks%delta_EHH)
     if (allocated(cfg%strain_blocks%delta_ELH)) deallocate(cfg%strain_blocks%delta_ELH)
@@ -521,44 +588,45 @@ module definitions
     class(simulation_config), intent(in) :: self
 
     associate(cfg => self)
-      ! confDir: set internally ('n'=bulk, 'z'=QW/wire, 'x'=Landau)
-      if (cfg%confDir /= 'z' .and. cfg%confDir /= 'n' .and. cfg%confDir /= 'x') then
-        error stop 'validate_simulation_config: invalid confDir'
+      ! conf_dir: set internally ('n'=bulk, 'z'=QW/wire, 'x'=Landau)
+      if (cfg%conf_dir /= 'z' .and. cfg%conf_dir /= 'n' .and. cfg%conf_dir /= 'x') then
+        error stop 'validate_simulation_config: invalid conf_dir'
       end if
 
-      ! fdStep: must be positive
-      if (cfg%fdStep <= 0) then
-        error stop 'validate_simulation_config: fdStep must be positive'
+      ! ngrid: must be positive
+      if (cfg%ngrid <= 0) then
+        error stop 'validate_simulation_config: ngrid must be positive'
       end if
 
-      ! numcb/numvb: must be non-negative
-      if (cfg%numcb < 0) then
-        error stop 'validate_simulation_config: numcb must be non-negative'
+      ! bands: must be non-negative
+      if (cfg%bands%num_cb < 0) then
+        error stop 'validate_simulation_config: num_cb must be non-negative'
       end if
-      if (cfg%numvb < 0) then
-        error stop 'validate_simulation_config: numvb must be non-negative'
-      end if
-
-      ! evnum must equal numcb + numvb (set by parser)
-      if (cfg%evnum /= cfg%numcb + cfg%numvb) then
-        error stop 'validate_simulation_config: evnum must equal numcb + numvb'
+      if (cfg%bands%num_vb < 0) then
+        error stop 'validate_simulation_config: num_vb must be non-negative'
       end if
 
-      ! numLayers: must be positive
-      if (cfg%numLayers < 1) then
-        error stop 'validate_simulation_config: numLayers must be >= 1'
+      ! evnum must equal num_cb + num_vb (set by parser)
+      if (cfg%evnum /= cfg%bands%num_cb + cfg%bands%num_vb) then
+        error stop 'validate_simulation_config: evnum must equal num_cb + num_vb'
       end if
 
-      ! confinement: must be 0, 1, 2, or 3
-      if (cfg%confinement < 0 .or. cfg%confinement > 3) then
-        error stop 'validate_simulation_config: confinement must be 0, 1, 2, or 3'
+      ! num_layers: must be positive
+      if (cfg%num_layers < 1) then
+        error stop 'validate_simulation_config: num_layers must be >= 1'
       end if
-      if (cfg%confinement == 3) then
-        if (cfg%landau_nx < 3) then
-          error stop 'validate_simulation_config: landau_nx must be >= 3'
+
+      ! confinement: must be one of the valid strings
+      if (cfg%confinement /= 'bulk' .and. cfg%confinement /= 'qw' &
+          .and. cfg%confinement /= 'wire' .and. cfg%confinement /= 'landau') then
+        error stop 'validate_simulation_config: confinement must be bulk, qw, wire, or landau'
+      end if
+      if (cfg%confinement == 'landau') then
+        if (cfg%landau%nx < 3) then
+          error stop 'validate_simulation_config: landau nx must be >= 3'
         end if
-        if (cfg%landau_width <= 0.0_dp) then
-          error stop 'validate_simulation_config: landau_width must be > 0'
+        if (cfg%landau%width <= 0.0_dp) then
+          error stop 'validate_simulation_config: landau width must be > 0'
         end if
       end if
 
@@ -568,20 +636,20 @@ module definitions
         error stop 'validate_simulation_config: FDorder must be 2, 4, 6, 8, or 10'
       end if
 
-      ! materialN must be allocated with numLayers entries
+      ! materialN must be allocated with num_layers entries
       if (.not. allocated(cfg%materialN)) then
         error stop 'validate_simulation_config: materialN not allocated'
       end if
-      if (size(cfg%materialN) < cfg%numLayers) then
-        error stop 'validate_simulation_config: materialN too small for numLayers'
+      if (size(cfg%materialN) < cfg%num_layers) then
+        error stop 'validate_simulation_config: materialN too small for num_layers'
       end if
 
-      ! params must be allocated with numLayers entries
+      ! params must be allocated with num_layers entries
       if (.not. allocated(cfg%params)) then
         error stop 'validate_simulation_config: params not allocated'
       end if
-      if (size(cfg%params) < cfg%numLayers) then
-        error stop 'validate_simulation_config: params too small for numLayers'
+      if (size(cfg%params) < cfg%num_layers) then
+        error stop 'validate_simulation_config: params too small for num_layers'
       end if
     end associate
 
@@ -630,8 +698,8 @@ module definitions
 
     integer :: i, j, ngrid
 
-    select case (cfg%confinement)
-    case (0)
+    select case (trim(cfg%confinement))
+    case ('bulk')
       ! Bulk: single point, no spatial extent
       cfg%grid%ndim = 0
       cfg%grid%nx   = 1
@@ -640,11 +708,11 @@ module definitions
       cfg%grid%dy   = 0.0_dp
       ! No coordinate arrays allocated for bulk
 
-    case (1)
+    case ('qw')
       ! QW: 1D confinement along z
       cfg%grid%ndim = 1
       cfg%grid%nx   = 1
-      cfg%grid%ny   = cfg%fdStep
+      cfg%grid%ny   = cfg%ngrid
       cfg%grid%dx   = 0.0_dp
       cfg%grid%dy   = cfg%dz
 
@@ -653,44 +721,44 @@ module definitions
         cfg%grid%z = cfg%z
       end if
 
-      ! Build material_id from intStartPos/intEndPos
-      if (allocated(cfg%intStartPos) .and. allocated(cfg%intEndPos)) then
-        allocate(cfg%grid%material_id(cfg%fdStep))
+      ! Build material_id from int_start_pos/int_end_pos
+      if (allocated(cfg%int_start_pos) .and. allocated(cfg%int_end_pos)) then
+        allocate(cfg%grid%material_id(cfg%ngrid))
         cfg%grid%material_id = 0
-        do i = 1, cfg%numLayers
-          cfg%grid%material_id(cfg%intStartPos(i):cfg%intEndPos(i)) = i
+        do i = 1, cfg%num_layers
+          cfg%grid%material_id(cfg%int_start_pos(i):cfg%int_end_pos(i)) = i
         end do
       end if
 
       ! No cut-cell fields for QW
       ! No coords(:,:) or x(:) for QW (nx=1)
 
-    case (2)
+    case ('wire')
       ! Wire: 2D confinement in x-y plane.
       ! Set grid dimensions only; coordinate arrays, material_id,
       ! cut-cell fields, and ghost_map are populated by
       ! init_wire_from_config() in the geometry module.
       cfg%grid%ndim = 2
-      cfg%grid%nx   = cfg%wire_nx
-      cfg%grid%ny   = cfg%wire_ny
-      cfg%grid%dx   = cfg%wire_dx
-      cfg%grid%dy   = cfg%wire_dy
+      cfg%grid%nx   = cfg%wire%nx
+      cfg%grid%ny   = cfg%wire%ny
+      cfg%grid%dx   = cfg%wire%dx
+      cfg%grid%dy   = cfg%wire%dy
 
-    case (3)
+    case ('landau')
       ! Landau: 1D x-discretization for orbital Landau quantization
       ! Grid centered at x=0 so that ky=0 places the oscillator at the
       ! center of the domain, maximising flatness of Landau levels vs ky.
       cfg%grid%ndim = 1
-      cfg%grid%nx   = cfg%landau_nx
+      cfg%grid%nx   = cfg%landau%nx
       cfg%grid%ny   = 1
-      cfg%grid%dx   = cfg%landau_width / real(cfg%landau_nx - 1, kind=dp)
+      cfg%grid%dx   = cfg%landau%width / real(cfg%landau%nx - 1, kind=dp)
       cfg%grid%dy   = 0.0_dp
 
       ! Build x-coordinate array centered at origin [-W/2, +W/2]
       if (.not. allocated(cfg%grid%x)) then
-        allocate(cfg%grid%x(cfg%landau_nx))
-        do i = 1, cfg%landau_nx
-          cfg%grid%x(i) = (i - 1) * cfg%grid%dx - 0.5_dp * cfg%landau_width
+        allocate(cfg%grid%x(cfg%landau%nx))
+        do i = 1, cfg%landau%nx
+          cfg%grid%x(i) = (i - 1) * cfg%grid%dx - 0.5_dp * cfg%landau%width
         end do
       end if
 

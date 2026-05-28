@@ -53,7 +53,7 @@ contains
     wv%kx = 0.0_dp
     wv%ky = 0.0_dp
     wv%kz = 0.0_dp
-    select case (trim(cfg%waveVector))
+    select case (trim(cfg%wave_vector%mode))
     case ('ky')
       wv%ky = kval
     case ('kz')
@@ -263,16 +263,16 @@ contains
     allocate(A_kE(nk, nE))
     A_kE = 0.0_dp
 
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
       & profile_2d, kpterms_2d, cfg%FDorder)
 
     ngrid = grid_ngrid(cfg%grid)
     matrix_dim = 8 * ngrid
     eigen_cfg%method = 'FEAST'
-    eigen_cfg%nev = max(1, min(matrix_dim, cfg%numcb + cfg%numvb))
+    eigen_cfg%nev = max(1, min(matrix_dim, cfg%bands%num_cb + cfg%bands%num_vb))
     eigen_cfg%max_iter = 200
     eigen_cfg%tol = 1.0e-10_dp
-    eigen_cfg%feast_m0 = min(matrix_dim, max(cfg%feast_m0, &
+    eigen_cfg%feast_m0 = min(matrix_dim, max(cfg%feast%m0, &
       & min(matrix_dim, max(4 * eigen_cfg%nev, 128))))
     solver = make_eigensolver(eigen_cfg)
 
@@ -281,9 +281,9 @@ contains
       call auto_compute_energy_window(H_csr, emin_auto, emax_auto)
       eigen_cfg%emin = minval(E_arr) - 5.0_dp * eta
       eigen_cfg%emax = maxval(E_arr) + 5.0_dp * eta
-      if (cfg%feast_emin /= 0.0_dp .or. cfg%feast_emax /= 0.0_dp) then
-        eigen_cfg%emin = cfg%feast_emin
-        eigen_cfg%emax = cfg%feast_emax
+      if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
+        eigen_cfg%emin = cfg%feast%emin
+        eigen_cfg%emax = cfg%feast%emax
       else if (eigen_cfg%emin >= eigen_cfg%emax) then
         eigen_cfg%emin = emin_auto
         eigen_cfg%emax = emax_auto

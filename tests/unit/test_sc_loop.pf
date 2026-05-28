@@ -140,9 +140,9 @@ contains
     kpar_grid(3) = 0.2_dp
 
     ! Minimal config
-    cfg%fdStep = N
+    cfg%ngrid = N
     cfg%dz = dz
-    cfg%numcb = 1
+    cfg%bands%num_cb = 1
     cfg%sc%temperature = 300.0_dp
     cfg%sc%fermi_mode = 0
 
@@ -167,7 +167,7 @@ contains
     integer :: iz
 
     ! 2 layers: layer 1 z=1..5, layer 2 z=6..10
-    cfg%numLayers = 2
+    cfg%num_layers = 2
     allocate(cfg%intStartPos(2), cfg%intEndPos(2))
     allocate(cfg%params(2))
 
@@ -203,7 +203,7 @@ contains
     type(simulation_config) :: cfg
     integer :: iz
 
-    cfg%numLayers = 2
+    cfg%num_layers = 2
     allocate(cfg%intStartPos(2), cfg%intEndPos(2))
     allocate(cfg%doping(2))
 
@@ -267,9 +267,9 @@ contains
     kpar_grid(2) = 0.1_dp
     kpar_grid(3) = 0.2_dp
 
-    cfg%fdStep = N
+    cfg%ngrid = N
     cfg%dz = dz
-    cfg%numcb = 1
+    cfg%bands%num_cb = 1
     cfg%sc%temperature = 300.0_dp
     cfg%sc%fermi_mode = 0
 
@@ -324,7 +324,7 @@ contains
     type(simulation_config) :: cfg
     integer :: iz
 
-    cfg%numLayers = 3
+    cfg%num_layers = 3
     allocate(cfg%intStartPos(3), cfg%intEndPos(3))
     cfg%intStartPos(1) = 1;  cfg%intEndPos(1) = 4
     cfg%intStartPos(2) = 5;  cfg%intEndPos(2) = 7
@@ -558,7 +558,7 @@ contains
     kx_grid(3) = 0.1_dp
 
     ! Config: numcb=3, T=4K (step-like), charge-neutrality mode
-    cfg%numcb = 3
+    cfg%bands%num_cb = 3
     cfg%sc%temperature = 4.0_dp
     cfg%sc%fermi_mode = 0
 
@@ -582,7 +582,7 @@ contains
     ! that total electron charge equals total hole charge (no doping).
     call compute_charge_density_wire(work_ne, work_nh, eigv_kx, &
       & eig_kx, kx_grid, mu, cfg%sc%temperature, &
-      & ny, nx, num_subbands, nk, cfg%numcb)
+      & ny, nx, num_subbands, nk, cfg%bands%num_cb)
 
     charge_excess = 0.0_dp
     do p = 1, Ngrid
@@ -632,7 +632,7 @@ contains
     kx_grid(2) = 0.05_dp
     kx_grid(3) = 0.1_dp
 
-    cfg%numcb = 3
+    cfg%bands%num_cb = 3
     cfg%sc%temperature = 300.0_dp
     cfg%sc%fermi_mode = 0
 
@@ -717,11 +717,11 @@ contains
     profile_2d_init = profile_2d
 
     ! ---- Step 4: Configure simulation ----
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     cfg%grid = grid
-    cfg%numcb = 2
-    cfg%numvb = 6
-    cfg%waveVectorMax = 0.5_dp
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%wave_vector%max = 0.5_dp
 
     ! Material parameters and doping
     allocate(cfg%params(1))
@@ -749,7 +749,7 @@ contains
 
     ! ---- Step 5: Eigensolver config ----
     ! ARPACK falls back to dense LAPACK when FEAST is not compiled in
-    num_subbands = cfg%numcb + cfg%numvb  ! 8
+    num_subbands = cfg%bands%num_cb + cfg%bands%num_vb  ! 8
     eigen_cfg%method = 'ARPACK'
     eigen_cfg%nev = num_subbands
     eigen_cfg%emin = -5.0_dp
@@ -821,7 +821,7 @@ contains
       z(iz) = (iz - 51) * dz
     end do
 
-    cfg%fdStep = nz
+    cfg%ngrid = nz
     cfg%dz = dz
     allocate(cfg%z(nz))
     cfg%z = z
@@ -832,7 +832,7 @@ contains
     cfg%doping(1)%delta_pos = 0.0_dp     ! center
 
     ! Layer mapping: all points in layer 1
-    cfg%numLayers = 1
+    cfg%num_layers = 1
     allocate(cfg%intStartPos(1), cfg%intEndPos(1))
     cfg%intStartPos(1) = 1
     cfg%intEndPos(1) = nz

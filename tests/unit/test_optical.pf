@@ -75,7 +75,7 @@ contains
 
     ! Minimal config for ZB8bandGeneralized
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
 
     ! Build full Hamiltonian at kz=0
     call ZB8bandGeneralized(H_csr, 0.0_dp, profile_2d, kpterms_2d, cfg, coo_cache)

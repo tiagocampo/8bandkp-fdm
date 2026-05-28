@@ -329,11 +329,11 @@ contains
     integer :: ij, ngrid
     real(kind=dp) :: xval, yval
 
-    cfg%confinement = 2
-    cfg%wire_nx = 5
-    cfg%wire_ny = 5
-    cfg%wire_dx = 2.0_dp
-    cfg%wire_dy = 2.0_dp
+    cfg%confinement = 'wire'
+    cfg%wire%nx = 5
+    cfg%wire%ny = 5
+    cfg%wire%dx = 2.0_dp
+    cfg%wire%dy = 2.0_dp
     cfg%FDorder = 2
 
     ! Set grid dimensions (as init_grid_from_config would do)
@@ -343,14 +343,14 @@ contains
     cfg%grid%dx   = 2.0_dp
     cfg%grid%dy   = 2.0_dp
 
-    cfg%wire_geom%shape = 'rectangle'
+    cfg%wire%geom%shape = 'rectangle'
 
     ! Single region covering entire wire
-    cfg%numRegions = 1
-    allocate(cfg%regions(1))
-    cfg%regions(1)%material = 'GaAs'
-    cfg%regions(1)%inner = 0.0_dp
-    cfg%regions(1)%outer = 100.0_dp  ! larger than any distance
+    cfg%wire%num_regions = 1
+    allocate(cfg%wire%regions(1))
+    cfg%wire%regions(1)%material = 'GaAs'
+    cfg%wire%regions(1)%inner = 0.0_dp
+    cfg%wire%regions(1)%outer = 100.0_dp  ! larger than any distance
 
     call init_wire_from_config(cfg)
 
@@ -378,7 +378,7 @@ contains
     @assertEqual(1.0_dp, yval, tolerance=1.0e-14_dp)
 
     call grid_free(cfg%grid)
-    deallocate(cfg%regions)
+    deallocate(cfg%wire%regions)
   end subroutine test_wire_rect_single_material
 
   @test
@@ -389,11 +389,11 @@ contains
     integer :: ix, iy, ij
     real(kind=dp) :: cx, cy, dist
 
-    cfg%confinement = 2
-    cfg%wire_nx = 10
-    cfg%wire_ny = 10
-    cfg%wire_dx = 1.0_dp
-    cfg%wire_dy = 1.0_dp
+    cfg%confinement = 'wire'
+    cfg%wire%nx = 10
+    cfg%wire%ny = 10
+    cfg%wire%dx = 1.0_dp
+    cfg%wire%dy = 1.0_dp
     cfg%FDorder = 2
 
     cfg%grid%ndim = 2
@@ -402,17 +402,17 @@ contains
     cfg%grid%dx   = 1.0_dp
     cfg%grid%dy   = 1.0_dp
 
-    cfg%wire_geom%shape = 'rectangle'
+    cfg%wire%geom%shape = 'rectangle'
 
     ! Two concentric regions
-    cfg%numRegions = 2
-    allocate(cfg%regions(2))
-    cfg%regions(1)%material = 'InAs'
-    cfg%regions(1)%inner = 0.0_dp
-    cfg%regions(1)%outer = 4.0_dp    ! core: r <= 4
-    cfg%regions(2)%material = 'GaSb'
-    cfg%regions(2)%inner = 4.0_dp
-    cfg%regions(2)%outer = 100.0_dp  ! shell: r > 4
+    cfg%wire%num_regions = 2
+    allocate(cfg%wire%regions(2))
+    cfg%wire%regions(1)%material = 'InAs'
+    cfg%wire%regions(1)%inner = 0.0_dp
+    cfg%wire%regions(1)%outer = 4.0_dp    ! core: r <= 4
+    cfg%wire%regions(2)%material = 'GaSb'
+    cfg%wire%regions(2)%inner = 4.0_dp
+    cfg%wire%regions(2)%outer = 100.0_dp  ! shell: r > 4
 
     call init_wire_from_config(cfg)
 
@@ -440,7 +440,7 @@ contains
     end do
 
     call grid_free(cfg%grid)
-    deallocate(cfg%regions)
+    deallocate(cfg%wire%regions)
   end subroutine test_wire_rect_two_regions
 
 end module test_geometry

@@ -272,7 +272,7 @@ contains
 
     ! Minimal config
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
 
     mu = 0.0_dp
     delta_0 = 0.25e-3_dp  ! 0.25 meV pairing gap
@@ -353,12 +353,12 @@ contains
     integer :: N, i
 
     N = 3
-    cfg%confinement = 1
-    cfg%fdStep = N
+    cfg%confinement = 'qw'
+    cfg%ngrid = N
     cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%num_layers = 1
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%bdg%enabled = .true.
     cfg%bdg%delta_0 = 0.001_dp
     cfg%bdg%mu = 0.0_dp
@@ -409,7 +409,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     cfg%bdg%enabled = .false.
 
     call build_bdg_hamiltonian_1d(H_noB, cfg, profile_2d, kpterms_2d, &
@@ -473,7 +473,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     cfg%bdg%enabled = .false.
 
     call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
@@ -521,16 +521,16 @@ contains
     integer :: N
 
     N = 5
-    cfg%confinement = 1
-    cfg%fdStep = N
+    cfg%confinement = 'qw'
+    cfg%ngrid = N
     cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%confDir = 'z'
+    cfg%num_layers = 1
+    cfg%conf_dir = 'z'
     cfg%totalSize = 50.0_dp  ! 50 AA
     cfg%delta = 10.0_dp      ! step size
     cfg%dz = 10.0_dp
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
 
     ! Minimal single-material profile
@@ -561,16 +561,16 @@ contains
     real(kind=dp) :: hermiticity_err
 
     N = 5
-    cfg%confinement = 1
-    cfg%fdStep = N
+    cfg%confinement = 'qw'
+    cfg%ngrid = N
     cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%confDir = 'z'
+    cfg%num_layers = 1
+    cfg%conf_dir = 'z'
     cfg%totalSize = 50.0_dp
     cfg%delta = 10.0_dp
     cfg%dz = 10.0_dp
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
 
     allocate(profile(N, 3))
@@ -671,9 +671,9 @@ contains
 
     call compute_zeeman_vz(cfg_field%bdg%g_factor, mu_B, sqrt(sum(B_vec**2)), Vz)
 
-    n8 = 8 * cfg_field%fdStep
+    n8 = 8 * cfg_field%ngrid
     do ib = 1, 8
-      row = (ib - 1) * cfg_field%fdStep + 1
+      row = (ib - 1) * cfg_field%ngrid + 1
       diag_delta = real(H_field(row, row) - H_zero(row, row), kind=dp)
       hole_delta = real(H_field(n8 + row, n8 + row) - H_zero(n8 + row, n8 + row), kind=dp)
       @assertEqual(Vz(ib), diag_delta, tolerance=1.0e-12_dp)
@@ -751,7 +751,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     cfg%bdg%enabled = .false.
 
     ! Build BdG with Bx = 0.5 T (triggers Peierls phases on multi-column wire)
@@ -818,7 +818,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     cfg%bdg%enabled = .false.
 
     ! Build BdG with no magnetic field
@@ -886,7 +886,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     cfg%bdg%enabled = .false.
 
     ! Build with no B field

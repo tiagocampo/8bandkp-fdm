@@ -1259,7 +1259,7 @@ contains
     if (.not. allocated(cfg%params)) return
     if (size(cfg%params) < 1) return
 
-    layer = max(1, (cfg%numLayers + 1) / 2)
+    layer = max(1, (cfg%num_layers + 1) / 2)
     if (layer <= size(cfg%params)) a_lat = cfg%params(layer)%a0
     if (a_lat > 0.0_dp) return
 

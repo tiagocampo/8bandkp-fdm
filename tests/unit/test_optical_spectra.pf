@@ -260,7 +260,7 @@ contains
     optcfg%isbt_enabled = .false.
     optcfg%spontaneous_enabled = .false.
     optcfg%spin_resolved = .false.
-    optcfg%confinement = 0
+    optcfg%confinement = 'bulk'
   end subroutine make_default_config
 
 
@@ -345,7 +345,7 @@ contains
     optcfg%num_energy_points = 5
     optcfg%E_min = 0.5_dp
     optcfg%E_max = 2.0_dp
-    optcfg%confinement = 0   ! bulk mode
+    optcfg%confinement = 'bulk'   ! bulk mode
     call optics_init(oe, optcfg)
 
     ! Eigenvalues: VB states low, CB states high
@@ -406,7 +406,7 @@ contains
     optcfg%num_energy_points = 5
     optcfg%E_min = 0.5_dp
     optcfg%E_max = 2.0_dp
-    optcfg%confinement = 0   ! bulk: TE == TM
+    optcfg%confinement = 'bulk'   ! bulk: TE == TM
     call optics_init(oe, optcfg)
 
     eigvals(1:6) = [-1.0_dp, -0.9_dp, -0.8_dp, -0.7_dp, -0.6_dp, -0.5_dp]
@@ -635,7 +635,7 @@ contains
     optcfg%num_energy_points = 5
     optcfg%E_min = 0.01_dp
     optcfg%E_max = 0.5_dp
-    optcfg%confinement = 1   ! QW for ISBT
+    optcfg%confinement = 'qw'   ! QW for ISBT
     call optics_init(oe, optcfg)
 
     ! For ISBT, we need two CB subbands at different energies.
@@ -695,7 +695,7 @@ contains
     optcfg%num_energy_points = 5
     optcfg%E_min = 0.5_dp
     optcfg%E_max = 2.0_dp
-    optcfg%confinement = 1   ! QW for TE = px+py, TM = pz
+    optcfg%confinement = 'qw'   ! QW for TE = px+py, TM = pz
     optcfg%spontaneous_enabled = .true.
     call optics_init(oe, optcfg)
 

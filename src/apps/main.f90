@@ -57,7 +57,7 @@ program kpfdm
   ! SC is deferred until after wave vector setup — bandStructure needs the
   ! full k-point array for SC charge integration, while simulation_setup_init
   ! only uses a single k-point (designed for gfactor/optics executables).
-  if (cfg%confinement == 0 .or. cfg%confinement == 1) then
+  if (cfg%confinement == 'bulk' .or. cfg%confinement == 'qw') then
     block
       type(simulation_setup) :: setup
       integer :: sc_save
@@ -65,7 +65,7 @@ program kpfdm
       cfg%sc%enabled = 0  ! temporarily disable SC
       call simulation_setup_init(cfg, setup)
       cfg%sc%enabled = sc_save  ! restore
-      if (cfg%confinement == 1) then
+      if (cfg%confinement == 'qw') then
         call move_alloc(setup%profile, profile)
         call move_alloc(setup%kpterms, kpterms)
       end if
@@ -74,39 +74,39 @@ program kpfdm
   end if
 
   ! Build wave vector array
-  allocate(smallk(cfg%waveVectorStep))
+  allocate(smallk(cfg%wave_vector%nsteps))
   smallk%kx = 0
   smallk%ky = 0
   smallk%kz = 0
-  select case(cfg%waveVector)
+  select case(cfg%wave_vector%mode)
 
     case ("kx")
-      smallk%kx = [ ((i-1)*cfg%waveVectorMax/(cfg%waveVectorStep-1), i=1,cfg%waveVectorStep) ]
+      smallk%kx = [ ((i-1)*cfg%wave_vector%max/(cfg%wave_vector%nsteps-1), i=1,cfg%wave_vector%nsteps) ]
 
     case ("ky")
-      smallk%ky = [ ((i-1)*cfg%waveVectorMax/(cfg%waveVectorStep-1), i=1,cfg%waveVectorStep) ]
+      smallk%ky = [ ((i-1)*cfg%wave_vector%max/(cfg%wave_vector%nsteps-1), i=1,cfg%wave_vector%nsteps) ]
 
     case ("kz")
-      smallk%kz = [ ((i-1)*cfg%waveVectorMax/(cfg%waveVectorStep-1), i=1,cfg%waveVectorStep) ]
+      smallk%kz = [ ((i-1)*cfg%wave_vector%max/(cfg%wave_vector%nsteps-1), i=1,cfg%wave_vector%nsteps) ]
 
     case ("kxky")
       ! [110] direction: kx = ky = k, kz = 0
-      do i = 1, cfg%waveVectorStep
-        smallk(i)%kx = (i-1) * cfg%waveVectorMax / (cfg%waveVectorStep - 1)
+      do i = 1, cfg%wave_vector%nsteps
+        smallk(i)%kx = (i-1) * cfg%wave_vector%max / (cfg%wave_vector%nsteps - 1)
         smallk(i)%ky = smallk(i)%kx
       end do
 
     case ("kxkz")
       ! [101] direction: kx = kz = k, ky = 0
-      do i = 1, cfg%waveVectorStep
-        smallk(i)%kx = (i-1) * cfg%waveVectorMax / (cfg%waveVectorStep - 1)
+      do i = 1, cfg%wave_vector%nsteps
+        smallk(i)%kx = (i-1) * cfg%wave_vector%max / (cfg%wave_vector%nsteps - 1)
         smallk(i)%kz = smallk(i)%kx
       end do
 
     case ("kykz")
       ! [011] direction: ky = kz = k, kx = 0
-      do i = 1, cfg%waveVectorStep
-        smallk(i)%ky = (i-1) * cfg%waveVectorMax / (cfg%waveVectorStep - 1)
+      do i = 1, cfg%wave_vector%nsteps
+        smallk(i)%ky = (i-1) * cfg%wave_vector%max / (cfg%wave_vector%nsteps - 1)
         smallk(i)%kz = smallk(i)%ky
       end do
 
@@ -121,7 +121,7 @@ program kpfdm
   ! ====================================================================
   ! Wire mode (confinement=2): sparse path via simulation_setup
   ! ====================================================================
-  if (cfg%confinement == 2) then
+  if (cfg%confinement == 'wire') then
     block
       type(simulation_setup) :: setup
       type(eigensolver_result) :: eigen_res
@@ -216,7 +216,7 @@ program kpfdm
       print *, '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, ' Ngrid=', Ngrid
       print *, '  Matrix size: ', Ntot, 'x', Ntot
       print *, '  Requesting ', nev_wire, ' eigenvalues per k-point'
-      print *, '  kz sweep: ', cfg%waveVectorStep, ' points, kz_max=', cfg%waveVectorMax
+      print *, '  kz sweep: ', cfg%wave_vector%nsteps, ' points, kz_max=', cfg%wave_vector%max
       print *, ''
 
       if (setup%has_strain) print *, '  Wire strain calculation complete'
@@ -225,7 +225,7 @@ program kpfdm
       end if
 
       ! Allocate storage for eigenvalues across k-points
-      allocate(eig_wire(Ntot, cfg%waveVectorStep))
+      allocate(eig_wire(Ntot, cfg%wave_vector%nsteps))
       eig_wire = 0.0_dp
       max_nev_found = 0
 
@@ -264,11 +264,11 @@ program kpfdm
       ! ================================================================
 
       ! --- Serial k=1: build CSR, solve ---
-      print *, 'k-point 1/', cfg%waveVectorStep, ' kz=', smallk(1)%kz
+      print *, 'k-point 1/', cfg%wave_vector%nsteps, ' kz=', smallk(1)%kz
 
       call setup_build_H(setup, cfg, smallk(1))
 
-      if (cfg%feast_emin /= 0.0_dp .or. cfg%feast_emax /= 0.0_dp) then
+      if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
         print *, '  Manual energy window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
       else
         print *, '  Auto energy window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
@@ -311,14 +311,14 @@ program kpfdm
       call eigensolver_result_free(eigen_res)
 
       ! --- Serial k=2..N with branch tracking against the previous k-point ---
-      if (cfg%waveVectorStep > 1) then
+      if (cfg%wave_vector%nsteps > 1) then
         info = mkl_set_num_threads_local(1)
 
-        print '(A,I0,A)', ' Wire kz-sweep: k=2..', cfg%waveVectorStep, &
+        print '(A,I0,A)', ' Wire kz-sweep: k=2..', cfg%wave_vector%nsteps, &
           & ' (serial branch tracking)'
 
-        do k = 2, cfg%waveVectorStep
-          print *, 'k-point ', k, '/', cfg%waveVectorStep, ' kz=', smallk(k)%kz
+        do k = 2, cfg%wave_vector%nsteps
+          print *, 'k-point ', k, '/', cfg%wave_vector%nsteps, ' kz=', smallk(k)%kz
 
           call setup_build_H(setup, cfg, smallk(k))
           call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
@@ -344,7 +344,7 @@ program kpfdm
             prev_wire_eval = eigen_res%eigenvalues
             prev_wire_evec = eigen_res%eigenvectors
 
-            if (k == cfg%waveVectorStep/2 .or. k == cfg%waveVectorStep) then
+            if (k == cfg%wave_vector%nsteps/2 .or. k == cfg%wave_vector%nsteps) then
               call writeEigenfunctions2d(cfg%grid, eigen_res%eigenvalues, &
                 & eigen_res%eigenvectors, k, eigen_res%nev_found, write_parts=.false.)
               print *, '  Wrote ', eigen_res%nev_found, &
@@ -358,9 +358,9 @@ program kpfdm
 
       ! Write eigenvalues to file
       if (max_nev_found > 0) then
-        call writeEigenvalues(smallk, eig_wire(1:max_nev_found, :), cfg%waveVectorStep, cfg)
+        call writeEigenvalues(smallk, eig_wire(1:max_nev_found, :), cfg%wave_vector%nsteps, cfg)
       else
-        call writeEigenvalues(smallk, eig_wire(1:nev_wire, :), cfg%waveVectorStep, cfg)
+        call writeEigenvalues(smallk, eig_wire(1:nev_wire, :), cfg%wave_vector%nsteps, cfg)
       end if
       print *, ''
       print *, 'Wire band structure written to output/eigenvalues.dat'
@@ -387,7 +387,7 @@ program kpfdm
   ! ====================================================================
   ! Landau mode initialization (confinement=3)
   ! ====================================================================
-  if (cfg%confinement == 3) then
+  if (cfg%confinement == 'landau') then
     block
       character(len=255) :: lmat(1)
       type(paramStruct) :: lparams(1)
@@ -395,8 +395,8 @@ program kpfdm
       lmat(1) = cfg%materialN(1)
       lparams(1) = cfg%params(1)
 
-      N = cfg%landau_nx * 8
-      allocate(kpterms(cfg%landau_nx, cfg%landau_nx, 10))
+      N = cfg%landau%nx * 8
+      allocate(kpterms(cfg%landau%nx, cfg%landau%nx, 10))
       kpterms = 0.0_dp
       call confinementInitialization_landau(cfg%grid%x, lmat, lparams, &
         & profile, kpterms, cfg%FDorder)
@@ -410,40 +410,40 @@ program kpfdm
   ! ====================================================================
 
   ! Set matrix dimensions and eigenvalue range
-  N = cfg%fdStep * 8
-  if (cfg%confDir == 'n') then
+  N = cfg%ngrid * 8
+  if (cfg%conf_dir == 'n') then
     N = 8  ! For bulk, we only need 8x8
     if (cfg%evnum > 8) then
       print *, "Warning: requesting more bands than available in bulk (8). Using all 8 bands."
       cfg%evnum = 8
-      cfg%numcb = 2
-      cfg%numvb = 6
+      cfg%bands%num_cb = 2
+      cfg%bands%num_vb = 6
     end if
   end if
 
   ! For quantum well, check if requested bands are within limits
-  if (cfg%confDir == 'z') then
-    if (cfg%numcb > NUM_CB_STATES*cfg%fdStep) then
-      print *, "Warning: requesting more conduction bands than available. Limiting to ", NUM_CB_STATES*cfg%fdStep
-      cfg%numcb = NUM_CB_STATES*cfg%fdStep
+  if (cfg%conf_dir == 'z') then
+    if (cfg%bands%num_cb > NUM_CB_STATES*cfg%ngrid) then
+      print *, "Warning: requesting more conduction bands than available. Limiting to ", NUM_CB_STATES*cfg%ngrid
+      cfg%bands%num_cb = NUM_CB_STATES*cfg%ngrid
     end if
-    if (cfg%numvb > NUM_VB_STATES*cfg%fdStep) then
-      print *, "Warning: requesting more valence bands than available. Limiting to ", NUM_VB_STATES*cfg%fdStep
-      cfg%numvb = NUM_VB_STATES*cfg%fdStep
+    if (cfg%bands%num_vb > NUM_VB_STATES*cfg%ngrid) then
+      print *, "Warning: requesting more valence bands than available. Limiting to ", NUM_VB_STATES*cfg%ngrid
+      cfg%bands%num_vb = NUM_VB_STATES*cfg%ngrid
     end if
-    cfg%evnum = cfg%numcb + cfg%numvb
+    cfg%evnum = cfg%bands%num_cb + cfg%bands%num_vb
   end if
 
   vl = 0.0_dp
   vu = 0.0_dp
-  if (cfg%confinement == 0) then
+  if (cfg%confinement == 'bulk') then
     il = 1
     iuu = cfg%evnum
   else
     ! For quantum well, select the right range of states
     ! We want the highest numvb valence states and lowest numcb conduction states
-    il = NUM_VB_STATES*cfg%fdStep - cfg%numvb + 1  ! Start from highest valence band
-    iuu = NUM_VB_STATES*cfg%fdStep + cfg%numcb     ! Up to highest conduction band
+    il = NUM_VB_STATES*cfg%ngrid - cfg%bands%num_vb + 1  ! Start from highest valence band
+    iuu = NUM_VB_STATES*cfg%ngrid + cfg%bands%num_cb     ! Up to highest conduction band
     print *, "Computing states from index", il, "to", iuu
   end if
 
@@ -458,12 +458,12 @@ program kpfdm
   if (allocated(ifail)) deallocate(ifail)
   allocate(ifail(N))
   if (allocated(eig)) deallocate(eig)
-  allocate(eig(iuu-il+1,cfg%waveVectorStep))  ! Only store the states we want
+  allocate(eig(iuu-il+1,cfg%wave_vector%nsteps))  ! Only store the states we want
   if (allocated(eigv)) deallocate(eigv)
-  if (cfg%confDir == 'n') then
-    allocate(eigv(8,cfg%evnum,cfg%waveVectorStep))  ! 8x8 for bulk
+  if (cfg%conf_dir == 'n') then
+    allocate(eigv(8,cfg%evnum,cfg%wave_vector%nsteps))  ! 8x8 for bulk
   else
-    allocate(eigv(N,iuu-il+1,cfg%waveVectorStep))  ! Only store the states we want
+    allocate(eigv(N,iuu-il+1,cfg%wave_vector%nsteps))  ! Only store the states we want
   end if
 
   eig(:,:) = 0_dp
@@ -479,27 +479,27 @@ program kpfdm
   allocate(work(N))  ! Will be resized after workspace query
 
   ! Print profile for QW and Landau modes
-  if (cfg%confDir == 'z') then
+  if (cfg%conf_dir == 'z') then
     call ensure_output_dir()
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
-    do i = 1, cfg%fdStep, 1
+    do i = 1, cfg%ngrid, 1
       write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
     end do
     close(iounit)
-  else if (cfg%confDir == 'x') then
+  else if (cfg%conf_dir == 'x') then
     ! Landau mode: print profile along x
     call ensure_output_dir()
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
-    do i = 1, cfg%landau_nx, 1
+    do i = 1, cfg%landau%nx, 1
       write(iounit,*) cfg%grid%x(i), profile(i,1), profile(i,2), profile(i,3)
     end do
     close(iounit)
   end if
 
   ! --- Self-consistent loop (QW only, after wave vector setup) ---
-  if (cfg%confDir == 'z' .and. cfg%sc%enabled == 1) then
+  if (cfg%conf_dir == 'z' .and. cfg%sc%enabled == 1) then
     print *, ''
     print *, '=== Running self-consistent Schrodinger-Poisson loop ==='
     call self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv, &
@@ -510,7 +510,7 @@ program kpfdm
     ! Write updated profile after SC convergence
     call get_unit(iounit)
     open(unit=iounit, file='output/sc_potential_profile.dat', status="replace", action="write")
-    do i = 1, cfg%fdStep, 1
+    do i = 1, cfg%ngrid, 1
       write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
     end do
     close(iounit)
@@ -531,7 +531,7 @@ program kpfdm
       call get_unit(iounit)
       open(unit=iounit, file='output/sc_charge.dat', status="replace", action="write")
       write(iounit, '(A)') '# z(A) n_e(cm^-3) n_h(cm^-3)'
-      do i = 1, cfg%fdStep, 1
+      do i = 1, cfg%ngrid, 1
         write(iounit, '(3(g14.6,1x))') cfg%z(i), sc_ne_qw(i), sc_nh_qw(i)
       end do
       close(iounit)
@@ -543,7 +543,7 @@ program kpfdm
   ! ====================================================================
   ! Workspace query (serial, k=1) — determines lwork for zheevx
   ! ====================================================================
-  if (cfg%confDir == 'n') then
+  if (cfg%conf_dir == 'n') then
     ! BULK: 8x8 workspace query
     call ZB8bandBulk(HT, smallk(1), cfg%params(1), cfg=cfg)
     HTmp = HT(1:8,1:8)
@@ -559,7 +559,7 @@ program kpfdm
     lwork = int(real(work(1)))
     if (allocated(work)) deallocate(work)
     allocate(work(lwork))
-  else if (cfg%confDir == 'z') then
+  else if (cfg%conf_dir == 'z') then
     ! QW: NxN workspace query
     call ZB8bandQW(HT, smallk(1), profile, kpterms, cfg=cfg)
     if (allocated(work)) deallocate(work)
@@ -574,7 +574,7 @@ program kpfdm
     lwork = int(real(work(1)))
     if (allocated(work)) deallocate(work)
     allocate(work(lwork))
-  else if (cfg%confDir == 'x') then
+  else if (cfg%conf_dir == 'x') then
     ! LANDAU: NxN workspace query
     call ZB8bandLandau(HT, smallk(1), profile, kpterms, cfg%grid%x, cfg=cfg)
     if (allocated(work)) deallocate(work)
@@ -594,9 +594,9 @@ program kpfdm
   ! ====================================================================
   ! k-vector sweep: sequential for bulk, OpenMP parallel for QW/Landau
   ! ====================================================================
-  if (cfg%confDir == 'n') then
+  if (cfg%conf_dir == 'n') then
     ! --- BULK (8x8, trivially fast — no parallelization needed) ---
-    do k = 1, cfg%waveVectorStep
+    do k = 1, cfg%wave_vector%nsteps
       call ZB8bandBulk(HT, smallk(k), cfg%params(1), cfg=cfg)
       HTmp = HT(1:8,1:8)
 
@@ -612,22 +612,22 @@ program kpfdm
     end do
 
     ! Write bulk eigenfunctions at start, middle, end k-points
-    do k = 1, cfg%waveVectorStep
-      if (k == 1 .or. k == int(cfg%waveVectorStep/2) .or. k == cfg%waveVectorStep) then
+    do k = 1, cfg%wave_vector%nsteps
+      if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
         call writeEigenfunctions(8, min(cfg%evnum,8), eigv(:,1:min(cfg%evnum,8),k), &
-          & k, cfg%fdstep, cfg%z, .true., &
+          & k, cfg%ngrid, cfg%z, .true., &
           & k_magnitude=sqrt(smallk(k)%kx**2 + smallk(k)%ky**2 + smallk(k)%kz**2))
       end if
     end do
 
-  else if (cfg%confDir == 'z') then
+  else if (cfg%conf_dir == 'z') then
     ! --- QUANTUM WELL (NxN, OpenMP parallel) ---
     ! Disable MKL internal threading so each OpenMP thread calls
     ! zheevx in serial — avoids oversubscription with intel_thread MKL.
     ! mkl_set_num_threads_local returns previous setting (discarded).
     info = mkl_set_num_threads_local(1)
 
-    print '(A,I0,A)', ' QW k-sweep: ', cfg%waveVectorStep, ' k-points (OpenMP parallel)'
+    print '(A,I0,A)', ' QW k-sweep: ', cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
 
     block
       ! Thread-private temporaries for the parallel region
@@ -646,7 +646,7 @@ program kpfdm
       HT_loc = (0.0_dp, 0.0_dp)
 
       !$omp do schedule(static)
-      do k = 1, cfg%waveVectorStep
+      do k = 1, cfg%wave_vector%nsteps
         ! Build Hamiltonian for this k-point
         call ZB8bandQW(HT_loc, smallk(k), profile, kpterms, cfg=cfg)
 
@@ -672,21 +672,21 @@ program kpfdm
     end block
 
     ! Write QW eigenfunctions at start, middle, end k-points (serial)
-    do k = 1, cfg%waveVectorStep
-      if (k == 1 .or. k == int(cfg%waveVectorStep/2) .or. k == cfg%waveVectorStep) then
+    do k = 1, cfg%wave_vector%nsteps
+      if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
         call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
-          & k, cfg%fdstep, cfg%z, .false.)
+          & k, cfg%ngrid, cfg%z, .false.)
       end if
     end do
 
-  else if (cfg%confDir == 'x') then
+  else if (cfg%conf_dir == 'x') then
     ! --- LANDAU (8NxN, OpenMP parallel) ---
     ! Disable MKL internal threading so each OpenMP thread calls
     ! zheevx in serial — avoids oversubscription.
     info = mkl_set_num_threads_local(1)
 
-    print '(A,I0,A,I0,A)', ' Landau: N=', cfg%landau_nx, ', ', &
-      & cfg%waveVectorStep, ' k-points (OpenMP parallel)'
+    print '(A,I0,A,I0,A)', ' Landau: N=', cfg%landau%nx, ', ', &
+      & cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
 
     block
       ! Thread-private temporaries for the parallel region
@@ -705,7 +705,7 @@ program kpfdm
       HT_loc = (0.0_dp, 0.0_dp)
 
       !$omp do schedule(static)
-      do k = 1, cfg%waveVectorStep
+      do k = 1, cfg%wave_vector%nsteps
         ! Build Landau Hamiltonian for this k-point
         call ZB8bandLandau(HT_loc, smallk(k), profile, kpterms, cfg%grid%x, cfg=cfg)
 
@@ -731,17 +731,17 @@ program kpfdm
     end block
 
     ! Write Landau eigenfunctions at start, middle, end k-points (serial)
-    do k = 1, cfg%waveVectorStep
-      if (k == 1 .or. k == int(cfg%waveVectorStep/2) .or. k == cfg%waveVectorStep) then
+    do k = 1, cfg%wave_vector%nsteps
+      if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
         call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
-          & k, cfg%landau_nx, cfg%grid%x, .false.)
+          & k, cfg%landau%nx, cfg%grid%x, .false.)
       end if
     end do
 
     ! ==================================================================
     ! B-sweep fan diagram for Landau mode (landau_sweep='B')
     ! ==================================================================
-    if (trim(cfg%landau_sweep) == 'B') then
+    if (trim(cfg%landau%sweep) == 'B') then
       block
         real(kind=dp) :: B_min, B_max, B_step, B_val
         integer :: nB, iB, nL
@@ -829,18 +829,18 @@ program kpfdm
     end if
 
   end if
-  call writeEigenvalues(smallk, eig(:,:), cfg%waveVectorStep)
+  call writeEigenvalues(smallk, eig(:,:), cfg%wave_vector%nsteps)
 
 
   ! ====================================================================
   ! Exciton binding energy (standalone)
   ! ====================================================================
-  if (cfg%exciton%enabled .and. cfg%confDir == 'z') then
+  if (cfg%exciton%enabled .and. cfg%conf_dir == 'z') then
     block
       real(kind=dp) :: E_binding_sa, lambda_opt_sa
       call compute_exciton_binding(eig(:, 1), eigv(:, :, 1), &
-        & cfg%z, cfg%dz, cfg%numLayers, cfg%params, &
-        & cfg%numcb, cfg%numvb, cfg%fdstep, E_binding_sa, lambda_opt_sa, &
+        & cfg%z, cfg%dz, cfg%num_layers, cfg%params, &
+        & cfg%bands%num_cb, cfg%bands%num_vb, cfg%ngrid, E_binding_sa, lambda_opt_sa, &
         & cfg%grid%material_id)
       print '(A,F8.3,A)', ' Exciton binding energy: ', E_binding_sa, ' meV'
       print '(A,F8.2,A)', ' Variational parameter: ', lambda_opt_sa, ' AA'
@@ -850,9 +850,9 @@ program kpfdm
   ! ====================================================================
   ! LO-phonon scattering rates (QW only, k=0)
   ! ====================================================================
-  if (cfg%scattering%enabled .and. cfg%confDir == 'z') then
+  if (cfg%scattering%enabled .and. cfg%conf_dir == 'z') then
     call compute_phonon_scattering(cfg, eig(:, 1), eigv(:, :, 1), &
-      & cfg%z, cfg%params, cfg%dz, cfg%numcb, cfg%numvb, cfg%fdstep)
+      & cfg%z, cfg%params, cfg%dz, cfg%bands%num_cb, cfg%bands%num_vb, cfg%ngrid)
     print '(A)', ' Scattering rates written to output/scattering_rates.dat'
   end if
 

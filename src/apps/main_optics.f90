@@ -62,12 +62,12 @@ program opticalProperties
   ! ================================================================
   ! Branch by confinement type
   ! ================================================================
-  select case (cfg%confinement)
+  select case (trim(cfg%confinement))
 
   ! ==================================================================
   ! BULK (confinement=0)
   ! ==================================================================
-  case (0)
+  case ('bulk')
     call simulation_setup_init(cfg, setup)
     N = setup%N   ! 8 for bulk
     il = setup%il
@@ -90,8 +90,8 @@ program opticalProperties
     allocate(rwork(7*N))
     allocate(iwork(5*N))
     allocate(ifail(N))
-    allocate(eig(iuu - il + 1, cfg%waveVectorStep))
-    allocate(eigv(N, iuu - il + 1, cfg%waveVectorStep))
+    allocate(eig(iuu - il + 1, cfg%wave_vector%nsteps))
+    allocate(eigv(N, iuu - il + 1, cfg%wave_vector%nsteps))
     eig(:,:) = 0.0_dp
     eigv(:,:,:) = (0.0_dp, 0.0_dp)
 
@@ -99,13 +99,13 @@ program opticalProperties
     HT = (0.0_dp, 0.0_dp)
 
     ! Build k-sweep array: 1D sweep from 0 to waveVectorMax
-    npts = cfg%waveVectorStep
+    npts = cfg%wave_vector%nsteps
     allocate(smallk(npts))
     smallk%kx = 0.0_dp
     smallk%ky = 0.0_dp
     smallk%kz = 0.0_dp
     do k = 1, npts
-      smallk(k)%kz = real(k - 1, kind=dp) * cfg%waveVectorMax &
+      smallk(k)%kz = real(k - 1, kind=dp) * cfg%wave_vector%max &
         & / real(npts - 1, kind=dp)
     end do
 
@@ -147,7 +147,7 @@ program opticalProperties
         & ' k-points (Simpson requires odd count)'
     end if
     allocate(simpson_w(npts))
-    dk = cfg%waveVectorMax / real(cfg%waveVectorStep - 1, kind=dp)
+    dk = cfg%wave_vector%max / real(cfg%wave_vector%nsteps - 1, kind=dp)
     do i = 1, npts
       ! Base Simpson 1/3 rule weight
       if (i == 1 .or. i == npts) then
@@ -213,25 +213,25 @@ program opticalProperties
     do k = 1, npts
       call optics_accumulate(oe, &
         & eig(:, k), eigv(:, :, k), simpson_w(k), &
-        & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+        & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, cfg%sc%fermi_level)
 
       if (cfg%optics%spontaneous_enabled) then
         call optics_accumulate_spontaneous(oe, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
-          & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+          & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, cfg%sc%fermi_level)
       end if
 
       if (cfg%optics%gain_enabled) then
         call compute_gain_qw(oe, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
-          & setup%vel, cfg%numcb, cfg%numvb, &
+          & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, &
           & cfg%optics%gain_carrier_density)
       end if
 
       if (cfg%optics%isbt_enabled) then
         call compute_isbt_absorption(oe, &
           & eig(:, k), eigv(:, :, k), &
-          & setup%vel, cfg%numcb, cfg%numvb, &
+          & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, &
           & simpson_w(k), cfg%sc%fermi_level)
       end if
     end do
@@ -250,8 +250,8 @@ program opticalProperties
   ! ==================================================================
   ! QUANTUM WELL (confinement=1)
   ! ==================================================================
-  case (1)
-    if (cfg%confDir /= 'z') then
+  case ('qw')
+    if (cfg%conf_dir /= 'z') then
       print '(a)', 'ERROR: opticalProperties requires confDir=z for QW'
       stop 1
     end if
@@ -260,8 +260,8 @@ program opticalProperties
     N = setup%N
     if (setup%sc_was_run) cfg%sc%fermi_level = setup%fermi_level
     ! Compute eigenvalue range for optics: top numvb valence + bottom numcb conduction
-    il = NUM_VB_STATES*cfg%fdStep - cfg%numvb + 1
-    iuu = NUM_VB_STATES*cfg%fdStep + cfg%numcb
+    il = NUM_VB_STATES*cfg%ngrid - cfg%bands%num_vb + 1
+    iuu = NUM_VB_STATES*cfg%ngrid + cfg%bands%num_cb
     print '(a,i0,a,i0)', ' Computing states from index ', il, ' to ', iuu
 
     ! Build velocity matrices via simulation_setup
@@ -279,8 +279,8 @@ program opticalProperties
     allocate(rwork(7*N))
     allocate(iwork(5*N))
     allocate(ifail(N))
-    allocate(eig(iuu-il+1, cfg%waveVectorStep))
-    allocate(eigv(N, iuu-il+1, cfg%waveVectorStep))
+    allocate(eig(iuu-il+1, cfg%wave_vector%nsteps))
+    allocate(eigv(N, iuu-il+1, cfg%wave_vector%nsteps))
     eig(:,:) = 0.0_dp
     eigv(:,:,:) = (0.0_dp, 0.0_dp)
 
@@ -288,13 +288,13 @@ program opticalProperties
     HT = (0.0_dp, 0.0_dp)
 
     ! Build k_par array: uniform sweep from 0 to waveVectorMax
-    npts = cfg%waveVectorStep
+    npts = cfg%wave_vector%nsteps
     allocate(smallk(npts))
     smallk%kx = 0.0_dp
     smallk%ky = 0.0_dp
     smallk%kz = 0.0_dp
     do k = 1, npts
-      smallk(k)%kx = real(k - 1, kind=dp) * cfg%waveVectorMax &
+      smallk(k)%kx = real(k - 1, kind=dp) * cfg%wave_vector%max &
         & / real(npts - 1, kind=dp)
     end do
 
@@ -302,7 +302,7 @@ program opticalProperties
     call ensure_output_dir()
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
-    do i = 1, cfg%fdStep
+    do i = 1, cfg%ngrid
       write(iounit, *) cfg%z(i), setup%profile(i,1), setup%profile(i,2), setup%profile(i,3)
     end do
     close(iounit)
@@ -339,7 +339,7 @@ program opticalProperties
         & ' k-points (Simpson requires odd count)'
     end if
     allocate(simpson_w(npts))
-    dk = cfg%waveVectorMax / real(cfg%waveVectorStep - 1, kind=dp)
+    dk = cfg%wave_vector%max / real(cfg%wave_vector%nsteps - 1, kind=dp)
     do i = 1, npts
       ! Base Simpson 1/3 rule weight
       if (i == 1 .or. i == npts) then
@@ -406,25 +406,25 @@ program opticalProperties
     do k = 1, npts
       call optics_accumulate(oe, &
         & eig(:, k), eigv(:, :, k), simpson_w(k), &
-        & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+        & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, cfg%sc%fermi_level)
 
       if (cfg%optics%spontaneous_enabled) then
         call optics_accumulate_spontaneous(oe, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
-          & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+          & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, cfg%sc%fermi_level)
       end if
 
       if (cfg%optics%gain_enabled) then
         call compute_gain_qw(oe, &
           & eig(:, k), eigv(:, :, k), simpson_w(k), &
-          & setup%vel, cfg%numcb, cfg%numvb, &
+          & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, &
           & cfg%optics%gain_carrier_density)
       end if
 
       if (cfg%optics%isbt_enabled) then
         call compute_isbt_absorption(oe, &
           & eig(:, k), eigv(:, :, k), &
-          & setup%vel, cfg%numcb, cfg%numvb, &
+          & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, &
           & simpson_w(k), cfg%sc%fermi_level)
       end if
     end do
@@ -432,7 +432,7 @@ program opticalProperties
     ! ISBT dipole transition table (zone-center only)
     if (cfg%optics%isbt_enabled) then
       call compute_intersubband_transitions(eig(:, 1), eigv(:, :, 1), &
-        & cfg%z, cfg%dz, cfg%numcb, cfg%numvb, cfg%fdstep, &
+        & cfg%z, cfg%dz, cfg%bands%num_cb, cfg%bands%num_vb, cfg%ngrid, &
         & "output/isbt_transitions.dat")
     end if
 
@@ -446,12 +446,12 @@ program opticalProperties
       block
         real(kind=dp) :: E_binding_ex, lambda_opt_ex, E_gap_ex
         integer :: cb_st, vb_st
-        cb_st = cfg%numvb + 1
-        vb_st = cfg%numvb
+        cb_st = cfg%bands%num_vb + 1
+        vb_st = cfg%bands%num_vb
         E_gap_ex = eig(cb_st, 1) - eig(vb_st, 1)
         call compute_exciton_binding(eig(:, 1), eigv(:, :, 1), &
-          & cfg%z, cfg%dz, cfg%numLayers, cfg%params, &
-          & cfg%numcb, cfg%numvb, cfg%fdstep, E_binding_ex, lambda_opt_ex, &
+          & cfg%z, cfg%dz, cfg%num_layers, cfg%params, &
+          & cfg%bands%num_cb, cfg%bands%num_vb, cfg%ngrid, E_binding_ex, lambda_opt_ex, &
           & cfg%grid%material_id)
         print '(a,f8.3,a)', ' Exciton binding energy: ', E_binding_ex, ' meV'
         call apply_excitonic_corrections(oe%E_grid, oe%alpha_te, oe%alpha_tm, &
@@ -470,7 +470,7 @@ program opticalProperties
   ! ==================================================================
   ! WIRE (confinement=2)
   ! ==================================================================
-  case (2)
+  case ('wire')
 
     ! ----------------------------------------------------------------
     ! Initialize via simulation_setup (2D confinement, strain, SC, eigensolver)
@@ -487,7 +487,7 @@ program opticalProperties
     print '(a,i0,a,i0,a,i0)', '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, &
       & ' Ngrid=', Ngrid
     print '(a,i0,a,i0)', '  Matrix size: ', Ntot, 'x', Ntot
-    print '(a,i0,a,i0)', '  numcb=', cfg%numcb, ' numvb=', cfg%numvb
+    print '(a,i0,a,i0)', '  numcb=', cfg%bands%num_cb, ' numvb=', cfg%bands%num_vb
     print '(a)', ''
 
     ! ----------------------------------------------------------------
@@ -515,14 +515,14 @@ program opticalProperties
     ! Simpson integration weights for 1D kz integration
     ! int dkz  =>  weight = Simpson * 1 / (2*pi)
     ! ----------------------------------------------------------------
-    npts = cfg%waveVectorStep
+    npts = cfg%wave_vector%nsteps
     if (mod(npts, 2) == 0) then
       npts = npts - 1  ! Simpson requires odd number of points
       print '(a,i0,a)', ' Warning: optics integration uses ', npts, &
         & ' k-points (Simpson requires odd count)'
     end if
     allocate(simpson_w(npts))
-    dk = cfg%waveVectorMax / real(cfg%waveVectorStep - 1, kind=dp)
+    dk = cfg%wave_vector%max / real(cfg%wave_vector%nsteps - 1, kind=dp)
     do i = 1, npts
       ! Base Simpson 1/3 rule weight
       if (i == 1 .or. i == npts) then
@@ -564,10 +564,10 @@ program opticalProperties
           cycle
         end if
 
-        if (eigen_res%nev_found < cfg%numcb + cfg%numvb) then
+        if (eigen_res%nev_found < cfg%bands%num_cb + cfg%bands%num_vb) then
           print '(a,i0,a,i0,a,i0)', ' WARNING: FEAST found only ', &
             eigen_res%nev_found, ' eigenvalues at kz-point ', k, &
-            ' (need ', cfg%numcb + cfg%numvb, ')'
+            ' (need ', cfg%bands%num_cb + cfg%bands%num_vb, ')'
           call eigensolver_result_free(eigen_res)
           cycle
         end if
@@ -577,14 +577,14 @@ program opticalProperties
           & eigen_res%eigenvalues(1:nev_wire), &
           & eigen_res%eigenvectors(:, 1:nev_wire), &
           & simpson_w(k), &
-          & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+          & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, cfg%sc%fermi_level)
 
         if (cfg%optics%spontaneous_enabled) then
           call optics_accumulate_spontaneous(oe, &
             & eigen_res%eigenvalues(1:nev_wire), &
             & eigen_res%eigenvectors(:, 1:nev_wire), &
             & simpson_w(k), &
-            & setup%vel, cfg%numcb, cfg%numvb, cfg%sc%fermi_level)
+            & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, cfg%sc%fermi_level)
         end if
 
         if (cfg%optics%gain_enabled) then
@@ -592,7 +592,7 @@ program opticalProperties
             & eigen_res%eigenvalues(1:nev_wire), &
             & eigen_res%eigenvectors(:, 1:nev_wire), &
             & simpson_w(k), &
-            & setup%vel, cfg%numcb, cfg%numvb, &
+            & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, &
             & cfg%optics%gain_carrier_density)
         end if
 
@@ -600,7 +600,7 @@ program opticalProperties
           call compute_isbt_absorption(oe, &
             & eigen_res%eigenvalues(1:nev_wire), &
             & eigen_res%eigenvectors(:, 1:nev_wire), &
-            & setup%vel, cfg%numcb, cfg%numvb, &
+            & setup%vel, cfg%bands%num_cb, cfg%bands%num_vb, &
             & simpson_w(k), cfg%sc%fermi_level)
         end if
 

@@ -350,7 +350,7 @@ contains
     end if
 
     ! --- Dimension setup ---
-    N = cfg%fdStep
+    N = cfg%ngrid
     if (N <= 0) then
       print *, 'ERROR: build_bdg_hamiltonian_qw: invalid fdStep=', N
       stop 1

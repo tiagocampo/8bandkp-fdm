@@ -65,17 +65,17 @@ program topologicalAnalysis
   call read_config(cfg)
 
   ! Confinement initialization for QW mode
-  if (cfg%confDir == 'z' .and. cfg%confinement == 1) then
+  if (cfg%conf_dir == 'z' .and. cfg%confinement == 'qw') then
     allocate(kpterms(grid_ngrid(cfg%grid), grid_ngrid(cfg%grid), 10))
     kpterms = 0.0_dp
     call confinementInitialization(cfg, profile, kpterms)
-    if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
+    if (cfg%external_field%enabled .and. cfg%external_field%type == "EF") then
       if (abs(cfg%z(1)) < tolerance) then
         print *, 'Error: Electric field requires z(1) /= 0.'
         print *, '  Adjust startPos/endPos so grid does not start at z=0.'
         stop 1
       end if
-      call externalFieldSetup_electricField(profile, cfg%Evalue, cfg%totalSize, cfg%z)
+      call externalFieldSetup_electricField(profile, cfg%external_field%value, cfg%totalSize, cfg%z)
     end if
   end if
 
@@ -145,10 +145,10 @@ program topologicalAnalysis
     ! Quantum Spin Hall Effect: compute Z2 invariant via Fu-Kane
     ! ==================================================================
       if (cfg%topo%compute_z2) then
-        if (cfg%confinement == 2) then
+        if (cfg%confinement == 'wire') then
           ! --- Wire mode: compute Z2 from 1D edge states ---
           call run_qshe_wire(cfg, topo_result)
-        else if (cfg%confinement == 1) then
+        else if (cfg%confinement == 'qw') then
           ! --- QW mode: Fu-Kane parity invariant at the four 2D TRIM points ---
           block
             integer :: z2_status, n_occ
@@ -189,9 +189,9 @@ program topologicalAnalysis
         stop 1
       end if
 
-      if (cfg%confinement == 2) then
+      if (cfg%confinement == 'wire') then
         call run_bdg_wire(cfg, topo_result)
-      else if (cfg%confinement == 1) then
+      else if (cfg%confinement == 'qw') then
         call run_bdg_qw(cfg, profile, kpterms, topo_result)
       else
         print *, 'Error: BdG mode requires confinement=1 (QW) or confinement=2 (wire)'
@@ -204,8 +204,8 @@ program topologicalAnalysis
     case('spectral')
     ! Spectral function A(k, E) for QW systems
     ! ==================================================================
-      select case (cfg%confinement)
-      case (1)
+      select case (trim(cfg%confinement))
+      case ('qw')
         call run_spectral(cfg, topo_result, profile, kpterms)
       case default
         call run_spectral(cfg, topo_result)
@@ -223,7 +223,7 @@ program topologicalAnalysis
     case('sweep')
     ! Z2 phase diagram via gap sweep over (B, mu) parameter space
     ! ==================================================================
-      if (cfg%confinement == 1) then
+      if (cfg%confinement == 'qw') then
         call run_gap_sweep(cfg, topo_result, profile, kpterms)
       else
         call run_gap_sweep(cfg, topo_result)
@@ -322,12 +322,12 @@ contains
     cfg = cfg_in
 
     ! Initialize 2D confinement
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
       & profile_2d_local, kpterms_2d_local, cfg%FDorder)
 
     Ngrid_local = grid_ngrid(cfg%grid)
     Ntot_local = 8 * Ngrid_local
-    nev_local = cfg%numcb + cfg%numvb
+    nev_local = cfg%bands%num_cb + cfg%bands%num_vb
 
     print *, '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, ' Ngrid=', Ngrid_local
     print *, '  Matrix size: ', Ntot_local, 'x', Ntot_local
@@ -350,20 +350,20 @@ contains
       real(kind=dp) :: d_ratio
 
       ! Width-dependent effective mass from confinement physics
-      d_ratio = d_critical / cfg%wire_geom%width
+      d_ratio = d_critical / cfg%wire%geom%width
       bhz_M_eff = bhz_M_bulk * (1.0_dp - d_ratio**2)
 
       bhz_p%A = 364.5_dp
       bhz_p%B = -686.0_dp
       bhz_p%D = -512.0_dp
       bhz_p%M = bhz_M_eff
-      bhz_p%d_wire = cfg%wire_geom%width
+      bhz_p%d_wire = cfg%wire%geom%width
       bhz_p%N = bhz_N_fixed
-      bhz_p%dz = cfg%wire_geom%width / real(bhz_N_fixed, kind=dp)
+      bhz_p%dz = cfg%wire%geom%width / real(bhz_N_fixed, kind=dp)
       bhz_N_grid = bhz_p%N
       bhz_dz_grid = bhz_p%dz
       print *, '  BHZ: M_eff=', bhz_M_eff, ' meV (bulk=', bhz_M_bulk, &
-        & ', d/d_c=', cfg%wire_geom%width/d_critical, '), d=', bhz_p%d_wire, ' AA'
+        & ', d/d_c=', cfg%wire%geom%width/d_critical, '), d=', bhz_p%d_wire, ' AA'
       print *, '  Building BHZ Hamiltonian...'
       call build_bhz_wire_hamiltonian(H_csr_local, bhz_p)
       print *, '  BHZ Hamiltonian built, Nrows=', H_csr_local%nrows, 'nnz=', H_csr_local%nnz
@@ -514,7 +514,7 @@ contains
     kz_val = cfg%bdg%kz
 
     ! Initialize 2D confinement
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
       & profile_2d_local, kpterms_2d_local, cfg%FDorder)
 
     Ngrid_local = grid_ngrid(cfg%grid)
@@ -534,7 +534,7 @@ contains
       & cfg%bdg%B_vec, cfg%bdg%g_factor)
 
     ! Configure FEAST for BdG (search around zero energy for Majoranas)
-    nev_local = cfg%numcb + cfg%numvb
+    nev_local = cfg%bands%num_cb + cfg%bands%num_vb
     eigen_cfg_local%method = 'FEAST'
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
@@ -544,9 +544,9 @@ contains
     ! Search near zero energy for Majorana modes.
     ! Use feast_emin/emax from config when set (for kz sweeps at finite kz),
     ! otherwise use the default ±10 meV window.
-    if (cfg%feast_emin /= 0.0_dp .or. cfg%feast_emax /= 0.0_dp) then
-      emin_local = cfg%feast_emin
-      emax_local = cfg%feast_emax
+    if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
+      emin_local = cfg%feast%emin
+      emax_local = cfg%feast%emax
     else
       emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
       emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
@@ -729,7 +729,7 @@ contains
 
     print *, '--- BdG QW mode: dense Majorana modes ---'
 
-    N_local = cfg_in%fdStep
+    N_local = cfg_in%ngrid
     Ntot_local = 8 * N_local
     Nbdg_local = 16 * N_local
     zero_tol = max(1.0e-10_dp, 0.001_dp * abs(cfg_in%bdg%delta_0))
@@ -968,18 +968,18 @@ contains
     print *, '  k range: [', k_arr(1), ',', k_arr(nk), '] 1/A'
     print *, '  E range: [', E_arr(1), ',', E_arr(nE), '] eV'
 
-    select case (cfg_in%confinement)
-    case (0)
+    select case (trim(cfg_in%confinement))
+    case ('bulk')
       call compute_spectral_function_bulk(cfg_in, k_arr, E_arr, &
         & cfg_in%topo%spectral_eta, A_kE)
-    case (1)
+    case ('qw')
       if (.not. present(profile_in) .or. .not. present(kpterms_in)) then
         print *, 'Error: QW spectral mode requires allocated profile and kpterms'
         stop 1
       end if
       call compute_spectral_function_qw(cfg_in, profile_in, kpterms_in, &
         & k_arr, E_arr, cfg_in%topo%spectral_eta, A_kE)
-    case (2)
+    case ('wire')
       call compute_spectral_function_wire(cfg_in, k_arr, E_arr, &
         & cfg_in%topo%spectral_eta, A_kE)
     case default
@@ -1137,14 +1137,14 @@ contains
         & cfg_in%topo%gap_sweep_mu_min, cfg_in%topo%gap_sweep_mu_max, nMu, &
         & gap_threshold, z2_map_int, gap_map_real, transitions)
     case ('qw_fukane')
-      if (cfg_in%confinement /= 1 .or. .not. present(profile_in) .or. .not. present(kpterms_in)) then
+      if (cfg_in%confinement /= 'qw' .or. .not. present(profile_in) .or. .not. present(kpterms_in)) then
         print *, 'ERROR: sweep_model=qw_fukane requires confinement=1 with QW profile/kpterms'
         stop 1
       end if
       call compute_qw_fukane_gap_sweep(cfg_in, profile_in, kpterms_in, gap_threshold, &
         & z2_map_int, gap_map_real, transitions)
     case ('wire_bdg')
-      if (cfg_in%confinement /= 2) then
+      if (cfg_in%confinement /= 'wire') then
         print *, 'ERROR: sweep_model=wire_bdg requires confinement=2'
         stop 1
       end if
@@ -1335,7 +1335,7 @@ contains
     cfg%bdg%mu = mu_val
     cfg%bdg%B_vec = [0.0_dp, 0.0_dp, B_val]
 
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
       & profile_2d_local, kpterms_2d_local, cfg%FDorder)
 
     Ngrid_local = grid_ngrid(cfg%grid)
@@ -1345,7 +1345,7 @@ contains
       & 0.0_dp, cfg%bdg%mu, cfg%bdg%delta_0, wire_ws_local, &
       & cfg%bdg%B_vec, cfg%bdg%g_factor)
 
-    nev_local = max(2, cfg%numcb + cfg%numvb)
+    nev_local = max(2, cfg%bands%num_cb + cfg%bands%num_vb)
     eigen_cfg_local%method = 'FEAST'
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200

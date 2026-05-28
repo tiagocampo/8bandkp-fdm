@@ -154,16 +154,16 @@ contains
     nE = 801
     nk = 10
 
-    cfg%confinement = 1
-    cfg%fdStep = N
+    cfg%confinement = 'qw'
+    cfg%ngrid = N
     cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%confDir = 'z'
+    cfg%num_layers = 1
+    cfg%conf_dir = 'z'
     cfg%totalSize = 50.0_dp
     cfg%delta = 10.0_dp
     cfg%dz = 10.0_dp
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
 
     allocate(profile(N, 3))
@@ -196,7 +196,7 @@ contains
 
     dE = E_arr(2) - E_arr(1)
     integral = sum(A_kE(1,:)) * dE
-    @assertTrue(abs(integral - real(8 * cfg%fdStep, kind=dp)) < 1.0_dp, message="spectral integral should recover the number of states")
+    @assertTrue(abs(integral - real(8 * cfg%ngrid, kind=dp)) < 1.0_dp, message="spectral integral should recover the number of states")
 
     deallocate(profile, kpterms, k_arr, E_arr, A_kE)
   end subroutine test_spectral_function_qw_sum_rule
@@ -233,8 +233,8 @@ contains
     type(simulation_config) :: cfg
     real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:), k_arr(:), E_arr(:), A(:,:)
 
-    cfg%confinement = 1
-    cfg%fdStep = 3
+    cfg%confinement = 'qw'
+    cfg%ngrid = 3
     allocate(profile(3,3), kpterms(3,3,10), k_arr(1), E_arr(3))
     profile = 0.0_dp
     kpterms = 0.0_dp
@@ -295,16 +295,16 @@ contains
     nk = 3
     nE = 100
 
-    cfg%confinement = 1
-    cfg%fdStep = ngrid
+    cfg%confinement = 'qw'
+    cfg%ngrid = ngrid
     cfg%FDorder = 2
-    cfg%numLayers = 2
-    cfg%confDir = 'z'
+    cfg%num_layers = 2
+    cfg%conf_dir = 'z'
     cfg%totalSize = real(ngrid, kind=dp) * dz_val
     cfg%delta = dz_val
     cfg%dz = dz_val
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
 
     ! Grid points
