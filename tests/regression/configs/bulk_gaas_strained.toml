@@ -16,4 +16,4 @@ name = "GaAs"
 
 
 [strain]
-substrate_value = 5.869
+strain_substrate = 5.869

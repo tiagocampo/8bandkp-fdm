@@ -269,11 +269,9 @@ contains
     cfg%dz = cfg%delta
 
     do i = 1, cfg%num_layers
-      cfg%int_start_pos(i) = int(abs((cfg%startPos(1) - cfg%startPos(i)) / (cfg%totalSize/(cfg%ngrid-1))))
-      cfg%int_end_pos(i) = int(cfg%int_start_pos(1) + ((cfg%endPos(1) + cfg%endPos(i)) / cfg%delta))
+      cfg%int_start_pos(i) = nint((cfg%startPos(i) - cfg%startPos(1)) / cfg%delta) + 1
+      cfg%int_end_pos(i) = nint((cfg%endPos(i) - cfg%startPos(1)) / cfg%delta) + 1
     end do
-    cfg%int_start_pos = cfg%int_start_pos + 1
-    cfg%int_end_pos = cfg%int_end_pos + 1
     cfg%intStartPos = cfg%int_start_pos
     cfg%intEndPos = cfg%int_end_pos
   end subroutine parse_materials_qw
@@ -536,12 +534,9 @@ contains
     end if
     call get_value(bf_tbl, 'g_factor', cfg%b_field%g_factor, 2.0_dp, stat=stat)
 
-    ! Copy to bdg%B_vec for legacy compat
+    ! Copy to bdg%B_vec for legacy compat (used when BdG IS enabled)
     cfg%bdg%B_vec = cfg%b_field%components
     cfg%bdg%g_factor = cfg%b_field%g_factor
-    if (any(cfg%b_field%components /= 0.0_dp) .and. trim(cfg%confinement) /= 'landau') then
-      cfg%bdg%enabled = .true.
-    end if
   end subroutine parse_b_field
 
   ! ==================================================================
@@ -640,6 +635,14 @@ contains
     call get_value(topo_tbl, 'compute_hall', cfg%topo%compute_hall, .false., stat=stat)
     call get_value(topo_tbl, 'qwz_u', cfg%topo%qwz_u, 0.0_dp, stat=stat)
     call get_value(topo_tbl, 'compute_z2', cfg%topo%compute_z2, .false., stat=stat)
+    block
+      character(len=:), allocatable :: z2_method_val
+      call get_value(topo_tbl, 'z2_method', z2_method_val, 'auto', stat=stat)
+      if (allocated(z2_method_val)) then
+        cfg%topo%z2_method = trim(z2_method_val)
+      end if
+    end block
+    call get_value(topo_tbl, 'bhz_M', cfg%topo%bhz_M, 10.0_dp, stat=stat)
     call get_value(topo_tbl, 'extract_edge_states', cfg%topo%extract_edge_states, .false., stat=stat)
     call get_value(topo_tbl, 'edge_E_window', cfg%topo%edge_E_window, 0.01_dp, stat=stat)
     call get_value(topo_tbl, 'compute_ldos', cfg%topo%compute_ldos, .false., stat=stat)
@@ -727,10 +730,8 @@ contains
       end do
     end if
 
-    ! Only enable BdG if pairing gap is nonzero
-    if (cfg%bdg%delta_0 > 0.0_dp) then
-      cfg%bdg%enabled = .true.
-    end if
+    ! Section presence enables BdG
+    cfg%bdg%enabled = .true.
 
     ! B sweep
     call get_value(bdg_tbl, 'B_sweep', b_sweep_arr, stat=stat)

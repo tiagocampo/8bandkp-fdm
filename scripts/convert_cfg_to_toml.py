@@ -613,7 +613,7 @@ def convert_cfg_to_toml(cfg_path, toml_path=None):
             out.append(f'piezoelectric = {to_toml_value(piezo)}')
         if strain_substrate_val is not None:
             # numeric substrate value (used for bulk strained)
-            out.append(f'substrate_value = {strain_substrate_val}')
+            out.append(f'strain_substrate = {strain_substrate_val}')
 
     # SC section
     sc_enabled_flag = False
