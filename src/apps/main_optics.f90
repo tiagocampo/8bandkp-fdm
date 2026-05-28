@@ -54,8 +54,8 @@ program opticalProperties
 
   ! Check that optics is enabled
   if (.not. cfg%optics%enabled) then
-    print '(a)', 'ERROR: optics block not enabled in input.cfg'
-    print '(a)', '  Add an optics: block with enabled = T to compute optical properties'
+    print '(a)', 'ERROR: optics block not enabled in input.toml'
+    print '(a)', '  Add an [optics] block with enabled = true to compute optical properties'
     stop 1
   end if
 

@@ -258,7 +258,7 @@ contains
   !> For QW (ndim=1), uses cfg%grid%z(:) for coordinates and
   !> grid_ngrid(cfg%grid) for the spatial DOF count.  Falls back to the
   !> legacy cfg fields (z, intStartPos, intEndPos) when the grid has not
-  !> been initialised yet (grid%ndim == 0 and confinement == 1).
+  !> been initialised yet (grid%ndim == 0 and confinement == 'qw').
   !---------------------------------------------------------------------------
   subroutine confinementInitialization_cfg(cfg, profile, kpterms)
 

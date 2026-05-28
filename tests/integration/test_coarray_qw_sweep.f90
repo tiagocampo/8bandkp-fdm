@@ -22,7 +22,7 @@ program test_coarray_qw_sweep
 
   integer, parameter :: dp = real64
 
-  ! --- Simulation parameters (hardcoded; normally from input.cfg) ---
+  ! --- Simulation parameters (hardcoded; normally from input.toml) ---
   integer, parameter :: nk_total    = 100     ! total k-points in sweep
   integer, parameter :: n_bands     = 8       ! bands per k-point (8-band k.p)
   integer, parameter :: n_fd        = 40      ! FD grid points (FDstep)

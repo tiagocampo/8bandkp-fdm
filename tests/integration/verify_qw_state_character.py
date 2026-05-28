@@ -50,7 +50,7 @@ def main():
         sys.exit(1)
 
     config_path, eigenvalues_path, parts_path = sys.argv[1:]
-    numvb = parse_config_int(config_path, "numvb")
+    numvb = parse_config_int(config_path, "num_vb")
     eig = load_first_k_eigenvalues(eigenvalues_path)
     parts = np.loadtxt(parts_path)
 

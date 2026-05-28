@@ -81,11 +81,11 @@ program topologicalAnalysis
 
   ! Validate topology mode is set
   if (.not. cfg%topo%enabled) then
-    print *, 'Error: topology analysis requires topology: T in input.cfg'
+    print *, 'Error: topology analysis requires [topology] block with enabled = true in input.toml'
     stop 1
   end if
   if (len_trim(cfg%topo%mode) == 0) then
-    print *, 'Error: topology analysis requires topology: block with mode set in input.cfg'
+    print *, 'Error: topology analysis requires [topology] block with mode set in input.toml'
     print *, '  cfg%topo%mode is empty'
     stop 1
   end if
@@ -185,7 +185,7 @@ program topologicalAnalysis
     ! Bogoliubov-de Gennes: topological SC with Majorana modes
     ! ==================================================================
       if (.not. cfg%bdg%enabled) then
-        print *, 'Error: bdg mode requires bdg: block with enabled=true in input.cfg'
+        print *, 'Error: bdg mode requires [bdg] block with enabled = true in input.toml'
         stop 1
       end if
 
