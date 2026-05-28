@@ -1,6 +1,8 @@
 confinement = "qw"
 FDorder = 4
 fd_step = 201
+which_band = 0
+band_idx = 1
 
 [wave_vector]
 mode = "kx"
@@ -36,6 +38,3 @@ gain_carrier_density = 3.0e12
 ISBT = true
 spontaneous = false
 spin_resolved = false
-
-which_band = 0
-band_idx = 1

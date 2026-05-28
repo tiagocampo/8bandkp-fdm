@@ -1,6 +1,8 @@
 confinement = "qw"
 FDorder = 2
 fd_step = 101
+which_band = 0
+band_idx = 1
 
 [wave_vector]
 mode = "k0"
@@ -52,6 +54,3 @@ NA = 0.0
 [[doping]]
 ND = 5.0e17
 NA = 0.0
-
-which_band = 0
-band_idx = 1

@@ -1,6 +1,8 @@
 confinement = "qw"
 FDorder = 4
 fd_step = 201
+which_band = 0
+band_idx = 1
 
 [wave_vector]
 mode = "kx"
@@ -44,6 +46,3 @@ method = "variational"
 phonon_energy = 0.036
 eps_inf = 10.9
 eps_0 = 12.9
-
-which_band = 0
-band_idx = 1

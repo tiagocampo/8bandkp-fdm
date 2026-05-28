@@ -1,6 +1,8 @@
 confinement = "bulk"
 FDorder = 2
 fd_step = 1
+which_band = 1
+band_idx = 1
 
 [wave_vector]
 mode = "k0"
@@ -13,7 +15,3 @@ num_vb = 6
 
 [[material]]
 name = "GaAs"
-
-
-which_band = 1
-band_idx = 1

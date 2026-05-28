@@ -1,6 +1,8 @@
 confinement = "wire"
 FDorder = 2
 fd_step = 1
+which_band = 0
+band_idx = 1
 
 [wave_vector]
 mode = "kz"
@@ -48,6 +50,3 @@ g_factor = 2.0
 B_vec = [0.0, 0.0, 6.0]
 gauge = "landau"
 kz = 0.0
-
-which_band = 0
-band_idx = 1

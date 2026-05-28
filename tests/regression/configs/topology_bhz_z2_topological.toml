@@ -1,6 +1,8 @@
 confinement = "wire"
 FDorder = 2
 fd_step = 1
+which_band = 0
+band_idx = 1
 
 [wave_vector]
 mode = "kz"
@@ -40,6 +42,3 @@ compute_ldos = false
 ldos_eta = 0.001
 ldos_E_range = [-0.1, 0.1]
 ldos_num_E = 200
-
-which_band = 0
-band_idx = 1

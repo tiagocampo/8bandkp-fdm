@@ -504,6 +504,12 @@ def convert_cfg_to_toml(cfg_path, toml_path=None):
     if fdstep is not None:
         out.append(f'fd_step = {fdstep}')
 
+    # G-factor (top-level — must come BEFORE any [section] or [[array]] headers)
+    if which_band is not None:
+        out.append(f'which_band = {which_band}')
+    if band_idx is not None:
+        out.append(f'band_idx = {band_idx}')
+
     # Wave vector
     out.append('')
     out.append('[wave_vector]')
@@ -844,13 +850,6 @@ def convert_cfg_to_toml(cfg_path, toml_path=None):
             out.append(f'emax = {feast_emax}')
         if feast_m0 is not None:
             out.append(f'm0 = {feast_m0}')
-
-    # G-factor (top-level)
-    if which_band is not None:
-        out.append('')
-        out.append(f'which_band = {which_band}')
-    if band_idx is not None:
-        out.append(f'band_idx = {band_idx}')
 
     # Clean up trailing blank lines
     while out and out[-1] == '':
