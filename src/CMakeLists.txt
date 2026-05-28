@@ -33,8 +33,8 @@ set(COMMON_SOURCES
 # Create library of common code
 add_library(8bandkp_common STATIC ${COMMON_SOURCES})
 
-# Link MKL and FFTW3
-target_link_libraries(8bandkp_common PUBLIC MKL::MKL FFTW3::FFTW3)
+# Link MKL, FFTW3, and toml-f
+target_link_libraries(8bandkp_common PUBLIC MKL::MKL FFTW3::FFTW3 toml-f-lib)
 
 # Module include directory for consumers
 target_include_directories(8bandkp_common PUBLIC
