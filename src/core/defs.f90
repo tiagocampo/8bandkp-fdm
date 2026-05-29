@@ -642,7 +642,8 @@ module definitions
         error stop 'validate_simulation_config: FDorder must be 2, 4, 6, 8, or 10'
       end if
 
-      ! material_names must be allocated with num_layers entries
+      ! material_names must be allocated with at least num_layers entries
+      ! (wire mode: sized by wire%num_regions, which may exceed num_layers)
       if (.not. allocated(cfg%material_names)) then
         error stop 'validate_simulation_config: material_names not allocated'
       end if
@@ -650,7 +651,8 @@ module definitions
         error stop 'validate_simulation_config: material_names too small for num_layers'
       end if
 
-      ! params must be allocated with num_layers entries
+      ! params must be allocated with at least num_layers entries
+      ! (wire mode: sized by wire%num_regions, which may exceed num_layers)
       if (.not. allocated(cfg%params)) then
         error stop 'validate_simulation_config: params not allocated'
       end if
@@ -706,6 +708,8 @@ module definitions
   !   'qw'     -> 'z' (confinement along z)
   !   'wire'   -> 'z' (confinement along z)
   !   'landau' -> 'x' (confinement along x)
+  !   other    -> 'n' (default; validator is the primary gatekeeper for
+  !                     invalid confinement values)
   ! ------------------------------------------------------------------
   pure function conf_direction(conf) result(d)
     character(len=*), intent(in) :: conf

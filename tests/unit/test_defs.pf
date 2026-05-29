@@ -153,4 +153,60 @@ contains
     @assertEqual(1, cfg%num_layers)
   end subroutine test_landau_num_layers_is_one
 
+  ! ------------------------------------------------------------------
+  ! conf_direction with unrecognized confinement string returns 'n'.
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_conf_direction_unknown()
+    @assertEqual('n', conf_direction('unknown'))
+    @assertEqual('n', conf_direction(''))
+    @assertEqual('n', conf_direction('QW'))
+  end subroutine test_conf_direction_unknown
+
+  ! ------------------------------------------------------------------
+  ! validate_semantic: wire config with num_layers=1 and multiple regions
+  ! should pass validation (material arrays sized by region count, not
+  ! num_layers).  This tests the acceptance criterion for Issue 03.
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_wire_multi_region()
+    type(simulation_config) :: cfg
+
+    ! Confinement and geometry
+    cfg%confinement = 'wire'
+    cfg%FDorder     = 2
+
+    ! Wire geometry: 3 regions, grid large enough for FDorder=2
+    cfg%wire%nx           = 5
+    cfg%wire%ny           = 5
+    cfg%wire%num_regions  = 3
+
+    ! Grid must be consistent with wire dimensions
+    cfg%grid%ndim = 2
+    cfg%grid%nx   = 5
+    cfg%grid%ny   = 5
+
+    ! Bands
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum        = 8
+
+    ! Material layers: num_layers=1, but arrays sized by region count (3)
+    cfg%num_layers = 1
+    allocate(cfg%material_names(3))
+    cfg%material_names(1) = 'InAs'
+    cfg%material_names(2) = 'GaAs'
+    cfg%material_names(3) = 'InAs'
+    allocate(cfg%params(3))
+    cfg%params(:)%Eg = 0.0_dp
+
+    ! Call validate — should not error stop
+    call cfg%validate()
+
+    ! If we reach here, validation passed
+    @assertTrue(.true.)
+  end subroutine test_validate_wire_multi_region
+
 end module test_defs
