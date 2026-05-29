@@ -77,7 +77,7 @@ program gfactor
   ! ====================================================================
   ! Branch: wire (confinement='wire') vs bulk/QW (confinement='bulk','qw')
   ! ====================================================================
-  if (cfg%confinement == 'wire') then
+  if (trim(cfg%confinement) == 'wire') then
 
     ! ----------------------------------------------------------------
     ! Wire mode: sparse Hamiltonian + FEAST eigensolver via setup

@@ -602,11 +602,11 @@ module definitions
       end if
 
       ! confinement: must be one of the valid strings
-      if (cfg%confinement /= 'bulk' .and. cfg%confinement /= 'qw' &
-          .and. cfg%confinement /= 'wire' .and. cfg%confinement /= 'landau') then
+      if (trim(cfg%confinement) /= 'bulk' .and. trim(cfg%confinement) /= 'qw' &
+          .and. trim(cfg%confinement) /= 'wire' .and. trim(cfg%confinement) /= 'landau') then
         error stop 'validate_simulation_config: confinement must be bulk, qw, wire, or landau'
       end if
-      if (cfg%confinement == 'qw') then
+      if (trim(cfg%confinement) == 'qw') then
         if (cfg%fd_step < 3) then
           error stop 'validate_simulation_config: QW fd_step must be >= 3'
         end if
@@ -614,7 +614,7 @@ module definitions
           error stop 'validate_simulation_config: QW fd_step must be >= FDorder + 1'
         end if
       end if
-      if (cfg%confinement == 'wire') then
+      if (trim(cfg%confinement) == 'wire') then
         if (cfg%wire%nx < cfg%FDorder + 1) then
           error stop 'validate_simulation_config: wire nx must be >= FDorder + 1'
         end if
@@ -625,7 +625,7 @@ module definitions
           error stop 'validate_simulation_config: wire num_regions must be >= 1'
         end if
       end if
-      if (cfg%confinement == 'landau') then
+      if (trim(cfg%confinement) == 'landau') then
         if (cfg%landau%nx < 3) then
           error stop 'validate_simulation_config: landau nx must be >= 3'
         end if

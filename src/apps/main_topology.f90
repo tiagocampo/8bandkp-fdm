@@ -74,7 +74,7 @@ program topologicalAnalysis
   ! does not run the self-consistent loop.
   block
     type(simulation_setup) :: topo_setup
-    if (cfg%confinement == 'qw') then
+    if (trim(cfg%confinement) == 'qw') then
       call simulation_setup_init(cfg, topo_setup, skip_sc=.true.)
       ! Extract profile and kpterms for use by topology subroutines
       call move_alloc(topo_setup%profile, profile)
@@ -139,10 +139,10 @@ program topologicalAnalysis
     ! Quantum Spin Hall Effect: compute Z2 invariant via Fu-Kane
     ! ==================================================================
       if (cfg%topo%compute_z2) then
-        if (cfg%confinement == 'wire') then
+        if (trim(cfg%confinement) == 'wire') then
           ! --- Wire mode: compute Z2 from 1D edge states ---
           call run_qshe_wire(cfg, topo_result)
-        else if (cfg%confinement == 'qw') then
+        else if (trim(cfg%confinement) == 'qw') then
           ! --- QW mode: Fu-Kane parity invariant at the four 2D TRIM points ---
           block
             integer :: z2_status, n_occ
@@ -175,9 +175,9 @@ program topologicalAnalysis
     case('bdg')
     ! Bogoliubov-de Gennes: topological SC with Majorana modes
     ! ==================================================================
-      if (cfg%confinement == 'wire') then
+      if (trim(cfg%confinement) == 'wire') then
         call run_bdg_wire(cfg, topo_result)
-      else if (cfg%confinement == 'qw') then
+      else if (trim(cfg%confinement) == 'qw') then
         call run_bdg_qw(cfg, profile, kpterms, topo_result)
       end if
 
@@ -206,7 +206,7 @@ program topologicalAnalysis
     case('sweep')
     ! Z2 phase diagram via gap sweep over (B, mu) parameter space
     ! ==================================================================
-      if (cfg%confinement == 'qw') then
+      if (trim(cfg%confinement) == 'qw') then
         call run_gap_sweep(cfg, topo_result, profile, kpterms)
       else
         call run_gap_sweep(cfg, topo_result)

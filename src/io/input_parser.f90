@@ -128,7 +128,7 @@ contains
     call init_grid_from_config(cfg)
 
     ! Wire geometry initialization (2D cut-cells)
-    if (cfg%confinement == 'wire') then
+    if (trim(cfg%confinement) == 'wire') then
       call init_wire_from_config(cfg)
     end if
 

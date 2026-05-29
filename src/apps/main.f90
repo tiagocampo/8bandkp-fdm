@@ -60,11 +60,11 @@ program kpfdm
   ! SC is deferred until after wave vector setup — bandStructure needs the
   ! full k-point array for SC charge integration, while simulation_setup_init
   ! only uses a single k-point (designed for gfactor/optics executables).
-  if (cfg%confinement == 'bulk' .or. cfg%confinement == 'qw') then
+  if (trim(cfg%confinement) == 'bulk' .or. trim(cfg%confinement) == 'qw') then
     block
       type(simulation_setup) :: setup
       call simulation_setup_init(cfg, setup, skip_sc=.true.)
-      if (cfg%confinement == 'qw') then
+      if (trim(cfg%confinement) == 'qw') then
         call move_alloc(setup%profile, profile)
         call move_alloc(setup%kpterms, kpterms)
       end if
@@ -117,7 +117,7 @@ program kpfdm
   ! ====================================================================
   ! Wire mode (confinement='wire'): sparse path via simulation_setup
   ! ====================================================================
-  if (cfg%confinement == 'wire') then
+  if (trim(cfg%confinement) == 'wire') then
     block
       type(simulation_setup) :: setup
       type(eigensolver_result) :: eigen_res
@@ -383,7 +383,7 @@ program kpfdm
   ! ====================================================================
   ! Landau mode initialization (confinement='landau')
   ! ====================================================================
-  if (cfg%confinement == 'landau') then
+  if (trim(cfg%confinement) == 'landau') then
     block
       character(len=255) :: lmat(1)
       type(paramStruct) :: lparams(1)
@@ -413,7 +413,7 @@ program kpfdm
 
   vl = 0.0_dp
   vu = 0.0_dp
-  if (cfg%confinement == 'bulk') then
+  if (trim(cfg%confinement) == 'bulk') then
     il = 1
     iuu = cfg%evnum
   else
