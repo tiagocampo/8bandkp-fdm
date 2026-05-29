@@ -659,6 +659,98 @@ module definitions
       if (size(cfg%params) < cfg%num_layers) then
         error stop 'validate_simulation_config: params too small for num_layers'
       end if
+
+      ! ---- V1: bulk evnum must not exceed 8 (8x8 Hamiltonian) ----
+      if (trim(cfg%confinement) == 'bulk') then
+        if (cfg%evnum > 8) then
+          block
+            character(len=16) :: buf
+            write(buf, '(I0)') cfg%evnum
+            error stop 'validate_simulation_config: evnum (=' // trim(buf) // &
+              ') exceeds 8 for bulk confinement (8x8 Hamiltonian)'
+          end block
+        end if
+      end if
+
+      ! ---- V2: QW num_cb must not exceed NUM_CB_STATES * npoints ----
+      if (trim(cfg%confinement) == 'qw') then
+        if (cfg%bands%num_cb > NUM_CB_STATES * cfg%grid%npoints()) then
+          block
+            character(len=16) :: buf_cb, buf_max
+            write(buf_cb, '(I0)') cfg%bands%num_cb
+            write(buf_max, '(I0)') NUM_CB_STATES * cfg%grid%npoints()
+            error stop 'validate_simulation_config: num_cb (=' // trim(buf_cb) // &
+              ') exceeds maximum (' // trim(buf_max) // ') for QW confinement'
+          end block
+        end if
+      end if
+
+      ! ---- V3: QW num_vb must not exceed NUM_VB_STATES * npoints ----
+      if (trim(cfg%confinement) == 'qw') then
+        if (cfg%bands%num_vb > NUM_VB_STATES * cfg%grid%npoints()) then
+          block
+            character(len=16) :: buf_vb, buf_max
+            write(buf_vb, '(I0)') cfg%bands%num_vb
+            write(buf_max, '(I0)') NUM_VB_STATES * cfg%grid%npoints()
+            error stop 'validate_simulation_config: num_vb (=' // trim(buf_vb) // &
+              ') exceeds maximum (' // trim(buf_max) // ') for QW confinement'
+          end block
+        end if
+      end if
+
+      ! ---- V4: wave_vector mode must be recognized ----
+      select case (trim(cfg%wave_vector%mode))
+      case ('kx', 'ky', 'kz', 'kxky', 'kxkz', 'kykz', 'k0')
+        ! valid
+      case default
+        error stop 'validate_simulation_config: wave_vector mode ''' // &
+          trim(cfg%wave_vector%mode) // ''' not recognized (expected one of: ' // &
+          'kx, ky, kz, kxky, kxkz, kykz, k0)'
+      end select
+
+      ! ---- V5: B-sweep step must be positive when configured ----
+      if (any(cfg%bdg%B_sweep /= 0.0_dp)) then
+        if (cfg%bdg%B_sweep(3) <= 0.0_dp) then
+          block
+            character(len=32) :: buf
+            write(buf, '(ES12.4)') cfg%bdg%B_sweep(3)
+            error stop 'validate_simulation_config: B_sweep step must be positive, got ' // &
+              trim(buf)
+          end block
+        end if
+      end if
+
+      ! ---- V6: z_min < z_max for all material layers ----
+      if (allocated(cfg%z_min) .and. allocated(cfg%z_max)) then
+        block
+          integer :: il
+          character(len=16) :: buf_i, buf_zmin, buf_zmax
+          do il = 1, cfg%num_layers
+            if (cfg%z_min(il) >= cfg%z_max(il)) then
+              write(buf_i, '(I0)') il
+              write(buf_zmin, '(ES12.4)') cfg%z_min(il)
+              write(buf_zmax, '(ES12.4)') cfg%z_max(il)
+              error stop 'validate_simulation_config: material layer ' // trim(buf_i) // &
+                ': z_min (' // trim(buf_zmin) // ') >= z_max (' // trim(buf_zmax) // ')'
+            end if
+          end do
+        end block
+      end if
+
+      ! ---- V7: SC + bulk confinement is invalid ----
+      if (cfg%sc%enabled == 1 .and. trim(cfg%confinement) == 'bulk') then
+        error stop 'validate_simulation_config: SC loop requires confinement=''qw'', got ''bulk'''
+      end if
+
+      ! ---- V8: electric field requires z(1) /= 0 ----
+      if (cfg%external_field%enabled .and. allocated(cfg%z)) then
+        if (cfg%external_field%type == 'EF') then
+          if (cfg%z(1) == 0.0_dp) then
+            error stop 'validate_simulation_config: electric field requires z(1) /= 0'
+          end if
+        end if
+      end if
+
     end associate
 
   end subroutine simulation_config_validate
@@ -681,6 +773,18 @@ module definitions
       if (cfg%wave_vector%nsteps /= 0 .and. cfg%wave_vector%mode /= 'k0') then
         error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
       end if
+      ! S1: bandIdx in range for wire gfactor
+      if (trim(cfg%confinement) == 'wire') then
+        if (cfg%band_idx < 1 .or. cfg%band_idx > cfg%bands%num_cb) then
+          block
+            character(len=16) :: buf_idx, buf_max
+            write(buf_idx, '(I0)') cfg%band_idx
+            write(buf_max, '(I0)') cfg%bands%num_cb
+            error stop 'validate_semantic: bandIdx (=' // trim(buf_idx) // &
+              ') out of range [1, ' // trim(buf_max) // '] for wire gfactor'
+          end block
+        end if
+      end if
 
     case ('opticalProperties')
       if (.not. cfg%optics%enabled) then
@@ -693,6 +797,84 @@ module definitions
       end if
       if (len_trim(cfg%topo%mode) == 0) then
         error stop 'validate_semantic: topologicalAnalysis requires topology mode to be set'
+      end if
+
+      ! S10: topology mode must be a recognized enum
+      if (trim(cfg%topo%mode) /= 'qhe' .and. &
+          trim(cfg%topo%mode) /= 'qshe' .and. &
+          trim(cfg%topo%mode) /= 'bdg') then
+        error stop 'validate_semantic: topology mode ''' // trim(cfg%topo%mode) // &
+          ''' not recognized (expected: qhe, qshe, bdg)'
+      end if
+
+      ! S2: QSHE Z2 requires QW or wire confinement
+      if (trim(cfg%topo%mode) == 'qshe') then
+        if (trim(cfg%confinement) /= 'qw' .and. trim(cfg%confinement) /= 'wire') then
+          error stop 'validate_semantic: QSHE Z2 requires QW or wire confinement, got ''' // &
+            trim(cfg%confinement) // ''''
+        end if
+      end if
+
+      ! S3: BdG mode requires [bdg] section enabled
+      if (trim(cfg%topo%mode) == 'bdg') then
+        if (.not. cfg%bdg%enabled) then
+          error stop 'validate_semantic: topology mode ''bdg'' requires [bdg] section'
+        end if
+        ! S4: BdG confinement must be QW or wire
+        if (trim(cfg%confinement) /= 'qw' .and. trim(cfg%confinement) /= 'wire') then
+          error stop 'validate_semantic: BdG requires QW or wire confinement, got ''' // &
+            trim(cfg%confinement) // ''''
+        end if
+      end if
+
+      ! S5–S7: spectral function parameters
+      if (cfg%topo%compute_spectral) then
+        if (cfg%topo%spectral_eta <= 0.0_dp) then
+          block
+            character(len=32) :: buf_eta
+            write(buf_eta, '(ES12.4)') cfg%topo%spectral_eta
+            error stop 'validate_semantic: spectral_eta must be positive, got ' // trim(buf_eta)
+          end block
+        end if
+        if (cfg%topo%spectral_nk < 1) then
+          block
+            character(len=16) :: buf_nk
+            write(buf_nk, '(I0)') cfg%topo%spectral_nk
+            error stop 'validate_semantic: spectral_nk must be >= 1, got ' // trim(buf_nk)
+          end block
+        end if
+        if (cfg%topo%spectral_nE < 1) then
+          block
+            character(len=16) :: buf_nE
+            write(buf_nE, '(I0)') cfg%topo%spectral_nE
+            error stop 'validate_semantic: spectral_nE must be >= 1, got ' // trim(buf_nE)
+          end block
+        end if
+      end if
+
+      ! S8: sweep_model must match confinement
+      if (trim(cfg%topo%sweep_model) == 'bhz_analytic' .or. &
+          trim(cfg%topo%sweep_model) == 'qw_fukane') then
+        if (trim(cfg%confinement) /= 'qw') then
+          error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
+            ''' requires confinement=''qw'', got ''' // trim(cfg%confinement) // ''''
+        end if
+      else if (trim(cfg%topo%sweep_model) == 'wire_bdg') then
+        if (trim(cfg%confinement) /= 'wire') then
+          error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
+            ''' requires confinement=''wire'', got ''' // trim(cfg%confinement) // ''''
+        end if
+      end if
+
+      ! S9: conductance_method must be a recognized enum
+      if (cfg%topo%compute_conductance) then
+        if (trim(cfg%topo%conductance_method) /= 'kubo_chern' .and. &
+            trim(cfg%topo%conductance_method) /= 'kubo_berry' .and. &
+            trim(cfg%topo%conductance_method) /= 'landauer') then
+          error stop 'validate_semantic: conductance_method ''' // &
+            trim(cfg%topo%conductance_method) // &
+            ''' not recognized (expected: kubo_chern, kubo_berry, landauer)'
+        end if
       end if
 
     case default
