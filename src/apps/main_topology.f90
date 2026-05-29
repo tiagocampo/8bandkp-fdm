@@ -45,7 +45,7 @@ program topologicalAnalysis
   ! file handling
   integer(kind=4) :: iounit, status
 
-  ! --- Wire mode (confinement=2) variables ---
+  ! --- Wire mode (confinement='wire') variables ---
   real(kind=dp), allocatable       :: profile_2d(:,:)
   type(csr_matrix), allocatable    :: kpterms_2d(:)
   type(csr_matrix)                 :: HT_csr
@@ -129,7 +129,7 @@ program topologicalAnalysis
       end if
 
       if (cfg%topo%extract_edge_states) then
-        print *, '  Note: edge state extraction requires confinement=2 (wire mode)'
+        print *, "  Note: edge state extraction requires confinement='wire' (wire mode)"
       end if
 
       print *, '=== QHE analysis complete ==='

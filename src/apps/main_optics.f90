@@ -40,7 +40,7 @@ program opticalProperties
   ! Simpson integration weights
   real(kind=dp), allocatable :: simpson_w(:)
 
-  ! Wire-specific variables (confinement=2)
+  ! Wire-specific variables (confinement='wire')
   type(eigensolver_result) :: eigen_res
   integer                  :: Ngrid, Ntot, nev_wire
 
@@ -61,7 +61,7 @@ program opticalProperties
   select case (trim(cfg%confinement))
 
   ! ==================================================================
-  ! BULK (confinement=0)
+  ! BULK (confinement='bulk')
   ! ==================================================================
   case ('bulk')
     call simulation_setup_init(cfg, setup)
@@ -244,7 +244,7 @@ program opticalProperties
     print '(a)', ' Bulk optical spectra written to output/'
 
   ! ==================================================================
-  ! QUANTUM WELL (confinement=1)
+  ! QUANTUM WELL (confinement='qw')
   ! ==================================================================
   case ('qw')
 
@@ -460,7 +460,7 @@ program opticalProperties
     print '(a)', ' Optical spectra written to output/'
 
   ! ==================================================================
-  ! WIRE (confinement=2)
+  ! WIRE (confinement='wire')
   ! ==================================================================
   case ('wire')
 

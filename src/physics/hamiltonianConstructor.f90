@@ -525,7 +525,7 @@ module hamiltonianConstructor
       ! requires Peierls substitution (kz -> kz - eBx*y/hbar) which needs
       ! spatial y-discretization. Bulk 8x8 at k=0 has no y information
       ! so only Zeeman (spin) is possible here. For orbital physics, use
-      ! wire mode (confinement=2) which has 2D grid and can do Peierls.
+      ! wire mode (confinement='wire') which has 2D grid and can do Peierls.
       ! Uses the data-driven Zeeman table from strain_solver.
       ! ---------------------------------------------------------------
       if (present(cfg)) then

@@ -41,7 +41,7 @@ program gfactor
   ! file handling
   integer(kind=4) :: iounit
 
-  ! --- Wire mode (confinement=2) g-factor extraction variables ---
+  ! --- Wire mode (confinement='wire') g-factor extraction variables ---
   type(eigensolver_result)         :: eigen_res
   integer                          :: gap_idx, cb_start, vb_start
   real(kind=dp), allocatable       :: gaps(:)
@@ -75,7 +75,7 @@ program gfactor
   bandIdx = cfg%band_idx
 
   ! ====================================================================
-  ! Branch: wire (confinement=2) vs bulk/QW (confinement=0,1)
+  ! Branch: wire (confinement='wire') vs bulk/QW (confinement='bulk','qw')
   ! ====================================================================
   if (cfg%confinement == 'wire') then
 

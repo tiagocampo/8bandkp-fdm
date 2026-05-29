@@ -115,7 +115,7 @@ program kpfdm
   end select
 
   ! ====================================================================
-  ! Wire mode (confinement=2): sparse path via simulation_setup
+  ! Wire mode (confinement='wire'): sparse path via simulation_setup
   ! ====================================================================
   if (cfg%confinement == 'wire') then
     block
@@ -381,7 +381,7 @@ program kpfdm
   end if
 
   ! ====================================================================
-  ! Landau mode initialization (confinement=3)
+  ! Landau mode initialization (confinement='landau')
   ! ====================================================================
   if (cfg%confinement == 'landau') then
     block
@@ -402,7 +402,7 @@ program kpfdm
   end if
 
   ! ====================================================================
-  ! Bulk / QW mode (confinement=0 or 1): dense LAPACK path
+  ! Bulk / QW mode (confinement='bulk' or 'qw'): dense LAPACK path
   ! ====================================================================
 
   ! Set matrix dimensions and eigenvalue range

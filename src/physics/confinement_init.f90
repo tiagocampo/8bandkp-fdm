@@ -723,7 +723,7 @@ contains
   end subroutine applyVariableCoeffStaggered
 
   !---------------------------------------------------------------------------
-  !> Confinement initialization for Landau mode (confinement=3).
+  !> Confinement initialization for Landau mode (confinement='landau').
   !>
   !> Sets up kpterms for a single homogeneous material using the same FD
   !> stencil machinery as the QW path.  No heterostructure interfaces are

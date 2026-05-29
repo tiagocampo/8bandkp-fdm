@@ -4,9 +4,9 @@ module strain_solver
   ! Strain solver for semiconductor heterostructures.
   !
   ! Supports two modes:
-  !   1. QW biaxial strain (confinement=1): simple algebraic calculation
+  !   1. QW biaxial strain (confinement='qw'): simple algebraic calculation
   !      using lattice mismatch and elastic constants.
-  !   2. Wire plane-strain PDE (confinement=2): solve Navier-Cauchy elasticity
+  !   2. Wire plane-strain PDE (confinement='wire'): solve Navier-Cauchy elasticity
   !      on 2D cross-section using MKL PARDISO.
   !
   ! After strain computation, apply Pikus-Bir deformation potentials to shift
@@ -249,7 +249,7 @@ contains
   end subroutine compute_strain
 
   ! ==================================================================
-  ! QW biaxial strain (confinement=1).
+  ! QW biaxial strain (confinement='qw').
   !
   ! For each layer with lattice constant a0, relative to reference a0_ref:
   !   eps_0 = (a0_ref - a0) / a0
@@ -305,7 +305,7 @@ contains
   end subroutine compute_strain_qw
 
   ! ==================================================================
-  ! Wire plane-strain PDE solver (confinement=2).
+  ! Wire plane-strain PDE solver (confinement='wire').
   !
   ! Solves the Navier-Cauchy elasticity equations on the 2D cross-section
   ! for displacements u_y, u_z given fixed axial strain eps_xx at each

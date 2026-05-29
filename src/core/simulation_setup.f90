@@ -497,7 +497,7 @@ contains
     type(thread_workspace), allocatable, intent(out) :: tws(:)
     integer :: t
     if (setup%confinement /= 'wire') then
-      print *, 'Error: setup_alloc_sweep requires confinement=2 (wire)'
+      print *, "Error: setup_alloc_sweep requires confinement='wire'"
       stop 1
     end if
     allocate(tws(nthreads))
