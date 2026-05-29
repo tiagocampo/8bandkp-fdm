@@ -776,8 +776,6 @@ def convert_cfg_to_toml(cfg_path, toml_path=None):
             out.append(f'gauge = {to_toml_string(bdg_gauge)}')
         if bdg_kz is not None:
             out.append(f'kz = {bdg_kz}')
-        if bdg_self_consistent is not None:
-            out.append(f'self_consistent = {to_toml_value(bdg_self_consistent)}')
         if b_sweep is not None:
             comps = ', '.join(b_sweep)
             out.append(f'B_sweep = [{comps}]')

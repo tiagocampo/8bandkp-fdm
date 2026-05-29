@@ -40,7 +40,7 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all tests (~91: 31 unit + 44 regression + 13 verification + 2 other)
+ctest --test-dir build                    # all tests (~106: 34 unit + 44 regression + 13 verification + 15 other)
 ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
@@ -113,8 +113,8 @@ The `validation/` directory contains 12 validation tests. Six are cross-code tes
 
 ```
 src/
-  core/       defs.f90, parameters.f90, utils.f90
-  math/       mkl_spblas.f90, mkl_sparse_handle.f90, finitedifferences.f90, linalg.f90, sparse_matrices.f90, eigensolver.f90, geometry.f90
+  core/       defs.f90, parameters.f90, simulation_setup.f90, utils.f90
+  math/       finitedifferences.f90, linalg.f90, sparse_matrices.f90, eigensolver.f90, geometry.f90
   io/         outputFunctions.f90, input_parser.f90
   physics/    hamiltonian_blocks.f90, hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90, magnetic_field.f90, topological_analysis.f90, bdg_hamiltonian.f90, green_functions.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90, main_topology.f90
@@ -144,7 +144,6 @@ docs/solutions/  documented solutions to past problems (bugs, best practices, pa
 ```
 defs.f90                      (kinds, constants, derived types — no deps)
   <- parameters.f90           (material parameter database for 25+ semiconductors)
-  <- mkl_spblas.f90           (vendor: Intel MKL sparse BLAS interface)
        <- utils.f90           (dense-to-sparse conversion, Simpson integration)
             <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices, Vandermonde derivative and interpolation solvers)
                  <- hamiltonian_blocks.f90     (8x8 k.p block structure as data: 52-entry table, named constants KP_Q..KP_A)
@@ -159,6 +158,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
   <- scattering.f90          (phonon scattering rates, used by main.f90)
   <- outputFunctions.f90      (eigenvalue/eigenfunction file I/O)
   <- input_parser.f90         (TOML-based input.toml parser → simulation_config type, uses toml-f library)
+  <- simulation_setup.f90     (simulation orchestration: H-build, eigensolve, k-point sweep; used by all four executables)
 ```
 
 ### Key design concepts
