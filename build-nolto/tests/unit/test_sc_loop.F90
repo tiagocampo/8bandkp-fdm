@@ -2,6 +2,14 @@ module test_sc_loop
   use funit
   use definitions
   use sc_loop
+  use charge_density
+  use parameters
+  use geometry
+  use hamiltonianConstructor
+  use confinement_init, only: confinementInitialization_2d
+  use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free
+  use eigensolver
+  use sparse_matrices
   implicit none
 
 contains
@@ -23,13 +31,13 @@ contains
     call linear_mix(phi_new, phi_old, phi_poisson, N, alpha)
 
     do i = 1, N
-#line 26 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 34 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(1.3_dp, phi_new(i), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 26) )
+ & 34) )
   if (anyExceptions()) return
-#line 27 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 35 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
     end do
   end subroutine test_linear_mix_uniform
 
@@ -46,27 +54,27 @@ contains
 
     call linear_mix(phi_new, phi_old, phi_poisson, N, 0.0_dp)
 
-#line 43 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 51 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(5.0_dp, phi_new(1), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 43) )
+ & 51) )
   if (anyExceptions()) return
-#line 44 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-#line 44 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 52 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 52 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(5.0_dp, phi_new(2), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 44) )
+ & 52) )
   if (anyExceptions()) return
-#line 45 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-#line 45 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 53 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 53 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(5.0_dp, phi_new(3), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 45) )
+ & 53) )
   if (anyExceptions()) return
-#line 46 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 54 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   end subroutine test_linear_mix_alpha_zero
 
 
@@ -82,27 +90,27 @@ contains
 
     call linear_mix(phi_new, phi_old, phi_poisson, N, 1.0_dp)
 
-#line 61 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 69 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(100.0_dp, phi_new(1), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 61) )
+ & 69) )
   if (anyExceptions()) return
-#line 62 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-#line 62 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 70 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 70 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(100.0_dp, phi_new(2), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 62) )
+ & 70) )
   if (anyExceptions()) return
-#line 63 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-#line 63 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 71 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 71 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(100.0_dp, phi_new(3), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 63) )
+ & 71) )
   if (anyExceptions()) return
-#line 64 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 72 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   end subroutine test_linear_mix_alpha_one
 
 
@@ -128,13 +136,13 @@ contains
 
     ! Linear: 0.5*1 + 0.5*3 = 2.0
     do i = 1, N
-#line 89 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 97 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(2.0_dp, phi_new(i), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 89) )
+ & 97) )
   if (anyExceptions()) return
-#line 90 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 98 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
     end do
   end subroutine test_diis_fallback_to_linear
 
@@ -180,9 +188,8 @@ contains
     kpar_grid(3) = 0.2_dp
 
     ! Minimal config
-    cfg%fdStep = N
     cfg%dz = dz
-    cfg%numcb = 1
+    cfg%bands%num_cb = 1
     cfg%sc%temperature = 300.0_dp
     cfg%sc%fermi_mode = 0
 
@@ -192,20 +199,20 @@ contains
       & cfg, 8*N, num_subbands, nk, nz, dz, rho_doping)
 
     ! Fermi level should be between VB (-0.5) and CB (0.5)
-#line 147 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 154 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertTrue(mu > -0.5_dp, message="Fermi above VB top", &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 147) )
+ & 154) )
   if (anyExceptions()) return
-#line 148 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-#line 148 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 155 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 155 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertTrue(mu < 0.5_dp, message="Fermi below CB bottom", &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 148) )
+ & 155) )
   if (anyExceptions()) return
-#line 149 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 156 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   end subroutine test_find_fermi_level_simple
 
 
@@ -219,12 +226,12 @@ contains
     integer :: iz
 
     ! 2 layers: layer 1 z=1..5, layer 2 z=6..10
-    cfg%numLayers = 2
-    allocate(cfg%intStartPos(2), cfg%intEndPos(2))
+    cfg%num_layers = 2
+    allocate(cfg%int_start_pos(2), cfg%int_end_pos(2))
     allocate(cfg%params(2))
 
-    cfg%intStartPos(1) = 1;  cfg%intEndPos(1) = 5
-    cfg%intStartPos(2) = 6;  cfg%intEndPos(2) = 10
+    cfg%int_start_pos(1) = 1;  cfg%int_end_pos(1) = 5
+    cfg%int_start_pos(2) = 6;  cfg%int_end_pos(2) = 10
 
     cfg%params(1)%eps0 = 12.90_dp  ! GaAs
     cfg%params(2)%eps0 = 10.06_dp  ! AlAs
@@ -233,27 +240,27 @@ contains
 
     ! Layer 1 should be GaAs epsilon
     do iz = 1, 5
-#line 176 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 183 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(12.90_dp, epsilon(iz), tolerance=1.0e-10_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 176) )
+ & 183) )
   if (anyExceptions()) return
-#line 177 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 184 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
     end do
 
     ! Layer 2 should be AlAs epsilon
     do iz = 6, 10
-#line 181 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 188 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(10.06_dp, epsilon(iz), tolerance=1.0e-10_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 181) )
+ & 188) )
   if (anyExceptions()) return
-#line 182 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 189 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
     end do
 
-    deallocate(cfg%intStartPos, cfg%intEndPos, cfg%params)
+    deallocate(cfg%int_start_pos, cfg%int_end_pos, cfg%params)
   end subroutine test_build_epsilon
 
 
@@ -267,12 +274,12 @@ contains
     type(simulation_config) :: cfg
     integer :: iz
 
-    cfg%numLayers = 2
-    allocate(cfg%intStartPos(2), cfg%intEndPos(2))
+    cfg%num_layers = 2
+    allocate(cfg%int_start_pos(2), cfg%int_end_pos(2))
     allocate(cfg%doping(2))
 
-    cfg%intStartPos(1) = 1;  cfg%intEndPos(1) = 5
-    cfg%intStartPos(2) = 6;  cfg%intEndPos(2) = 10
+    cfg%int_start_pos(1) = 1;  cfg%int_end_pos(1) = 5
+    cfg%int_start_pos(2) = 6;  cfg%int_end_pos(2) = 10
 
     cfg%doping(1)%ND = 1.0e18_dp
     cfg%doping(1)%NA = 0.0_dp
@@ -282,25 +289,25 @@ contains
     call build_doping_charge(rho_doping, cfg, nz)
 
     do iz = 1, 5
-#line 213 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 220 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(1.0e18_dp, rho_doping(iz), tolerance=1.0e-10_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 213) )
+ & 220) )
   if (anyExceptions()) return
-#line 214 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 221 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
     end do
     do iz = 6, 10
-#line 216 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 223 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(-5.0e17_dp, rho_doping(iz), tolerance=1.0e-10_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 216) )
+ & 223) )
   if (anyExceptions()) return
-#line 217 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 224 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
     end do
 
-    deallocate(cfg%intStartPos, cfg%intEndPos, cfg%doping)
+    deallocate(cfg%int_start_pos, cfg%int_end_pos, cfg%doping)
   end subroutine test_build_doping_charge
 
 
@@ -343,9 +350,8 @@ contains
     kpar_grid(2) = 0.1_dp
     kpar_grid(3) = 0.2_dp
 
-    cfg%fdStep = N
     cfg%dz = dz
-    cfg%numcb = 1
+    cfg%bands%num_cb = 1
     cfg%sc%temperature = 300.0_dp
     cfg%sc%fermi_mode = 0
 
@@ -362,28 +368,28 @@ contains
       & cfg, 8*N, num_subbands, nk, nz, dz, rho_doping)
 
     ! With donors, Fermi level should be higher than intrinsic
-#line 281 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 287 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertTrue(mu > mu_intrinsic, message="Doped Fermi above intrinsic Fermi", &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 281) )
+ & 287) )
   if (anyExceptions()) return
-#line 282 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 288 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
     ! Fermi should still be in gap
-#line 283 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 289 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertTrue(mu > -0.5_dp, message="Fermi above VB top", &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 283) )
+ & 289) )
   if (anyExceptions()) return
-#line 284 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-#line 284 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 290 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 290 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertTrue(mu < 0.5_dp, message="Fermi below CB bottom", &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 284) )
+ & 290) )
   if (anyExceptions()) return
-#line 285 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 291 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   end subroutine test_find_fermi_level_with_doping
 
   !@test
@@ -401,27 +407,27 @@ contains
     call apply_potential_to_profile(profile, profile_base, phi, nz)
 
     do iz = 1, nz
-#line 302 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 308 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(profile_base(iz, 1) - phi(iz), profile(iz, 1), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 302) )
+ & 308) )
   if (anyExceptions()) return
-#line 303 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-#line 303 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 309 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 309 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(profile_base(iz, 2) - phi(iz), profile(iz, 2), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 303) )
+ & 309) )
   if (anyExceptions()) return
-#line 304 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-#line 304 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 310 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 310 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
   call assertEqual(profile_base(iz, 3) - phi(iz), profile(iz, 3), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
- & 304) )
+ & 310) )
   if (anyExceptions()) return
-#line 305 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 311 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
     end do
   end subroutine test_apply_potential_to_profile
 
@@ -436,44 +442,694 @@ contains
     type(simulation_config) :: cfg
     integer :: iz
 
-    cfg%numLayers = 3
-    allocate(cfg%intStartPos(3), cfg%intEndPos(3))
-    cfg%intStartPos(1) = 1;  cfg%intEndPos(1) = 4
-    cfg%intStartPos(2) = 5;  cfg%intEndPos(2) = 7
-    cfg%intStartPos(3) = 8;  cfg%intEndPos(3) = 10
+    cfg%num_layers = 3
+    allocate(cfg%int_start_pos(3), cfg%int_end_pos(3))
+    cfg%int_start_pos(1) = 1;  cfg%int_end_pos(1) = 4
+    cfg%int_start_pos(2) = 5;  cfg%int_end_pos(2) = 7
+    cfg%int_start_pos(3) = 8;  cfg%int_end_pos(3) = 10
 
     call map_layer_to_grid(layer_index, cfg, nz)
 
     do iz = 1, 4
-#line 328 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-  call assertEqual(1, layer_index(iz), message="Layer 1 mapping", &
- & location=SourceLocation( &
- & 'test_sc_loop.pf', &
- & 328) )
-  if (anyExceptions()) return
-#line 329 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-    end do
-    do iz = 5, 7
-#line 331 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-  call assertEqual(2, layer_index(iz), message="Layer 2 mapping", &
- & location=SourceLocation( &
- & 'test_sc_loop.pf', &
- & 331) )
-  if (anyExceptions()) return
-#line 332 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-    end do
-    do iz = 8, 10
 #line 334 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
-  call assertEqual(3, layer_index(iz), message="Layer 3 mapping", &
+  call assertEqual(1, layer_index(iz), message="Layer 1 mapping", &
  & location=SourceLocation( &
  & 'test_sc_loop.pf', &
  & 334) )
   if (anyExceptions()) return
 #line 335 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
     end do
+    do iz = 5, 7
+#line 337 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(2, layer_index(iz), message="Layer 2 mapping", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 337) )
+  if (anyExceptions()) return
+#line 338 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+    end do
+    do iz = 8, 10
+#line 340 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(3, layer_index(iz), message="Layer 3 mapping", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 340) )
+  if (anyExceptions()) return
+#line 341 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+    end do
 
-    deallocate(cfg%intStartPos, cfg%intEndPos)
+    deallocate(cfg%int_start_pos, cfg%int_end_pos)
   end subroutine test_map_layer_to_grid
+
+
+  !@test
+  subroutine test_build_epsilon_2d()
+    ! 4x4 wire grid with 2 regions:
+    !   Region 1 (eps=12.90): material_id = 1 for left half (ix=1,2)
+    !   Region 2 (eps=10.06): material_id = 2 for right half (ix=3,4)
+
+    integer, parameter :: nx = 4, ny = 4
+    integer :: ngrid
+    type(spatial_grid) :: grid
+    type(paramStruct) :: params(2)
+    real(kind=dp), allocatable :: epsilon(:,:)
+    integer :: ix, iy, ij
+
+    ngrid = nx * ny
+
+    ! Set up grid dimensions
+    grid%ndim = 2
+    grid%nx = nx
+    grid%ny = ny
+    grid%dx = 1.0_dp
+    grid%dy = 1.0_dp
+
+    ! Set up material_id: left half = region 1, right half = region 2
+    allocate(grid%material_id(ngrid))
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        if (ix <= 2) then
+          grid%material_id(ij) = 1
+        else
+          grid%material_id(ij) = 2
+        end if
+      end do
+    end do
+
+    ! Set material parameters
+    params(1)%eps0 = 12.90_dp   ! GaAs-like
+    params(2)%eps0 = 10.06_dp   ! AlAs-like
+
+    call build_epsilon_2d(epsilon, grid, params)
+
+    ! Verify left half has region 1 epsilon
+    do iy = 1, ny
+      do ix = 1, 2
+#line 391 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(12.90_dp, epsilon(ix, iy), tolerance=1.0e-10_dp, &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 391) )
+  if (anyExceptions()) return
+#line 392 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+      end do
+    end do
+
+    ! Verify right half has region 2 epsilon
+    do iy = 1, ny
+      do ix = 3, 4
+#line 398 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(10.06_dp, epsilon(ix, iy), tolerance=1.0e-10_dp, &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 398) )
+  if (anyExceptions()) return
+#line 399 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+      end do
+    end do
+
+    deallocate(grid%material_id, epsilon)
+  end subroutine test_build_epsilon_2d
+
+
+  !@test
+  subroutine test_build_doping_charge_2d()
+    ! 4x4 wire grid with 2 regions:
+    !   Region 1: ND=1e18, NA=0 => net = +1e18 cm^-3
+    !   Region 2: ND=0, NA=5e17 => net = -5e17 cm^-3
+
+    integer, parameter :: nx = 4, ny = 4
+    integer :: ngrid
+    type(spatial_grid) :: grid
+    type(doping_spec) :: doping(2)
+    real(kind=dp), allocatable :: rho_doping(:,:)
+    integer :: ix, iy, ij
+
+    ngrid = nx * ny
+
+    ! Set up grid dimensions
+    grid%ndim = 2
+    grid%nx = nx
+    grid%ny = ny
+    grid%dx = 1.0_dp
+    grid%dy = 1.0_dp
+
+    ! Set up material_id: top half = region 1, bottom half = region 2
+    allocate(grid%material_id(ngrid))
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+        if (iy <= 2) then
+          grid%material_id(ij) = 1
+        else
+          grid%material_id(ij) = 2
+        end if
+      end do
+    end do
+
+    ! Set doping specs
+    doping(1)%ND = 1.0e18_dp
+    doping(1)%NA = 0.0_dp
+    doping(2)%ND = 0.0_dp
+    doping(2)%NA = 5.0e17_dp
+
+    call build_doping_charge_2d(rho_doping, grid, doping)
+
+    ! Verify top half (region 1) has positive net doping
+    do iy = 1, 2
+      do ix = 1, nx
+#line 452 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(1.0e18_dp, rho_doping(ix, iy), tolerance=1.0e-10_dp, &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 452) )
+  if (anyExceptions()) return
+#line 453 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+      end do
+    end do
+
+    ! Verify bottom half (region 2) has negative net doping
+    do iy = 3, 4
+      do ix = 1, nx
+#line 459 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(-5.0e17_dp, rho_doping(ix, iy), tolerance=1.0e-10_dp, &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 459) )
+  if (anyExceptions()) return
+#line 460 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+      end do
+    end do
+
+    deallocate(grid%material_id, rho_doping)
+  end subroutine test_build_doping_charge_2d
+
+
+  !@test
+  subroutine test_apply_potential_to_profile_2d()
+    integer, parameter :: nx = 3, ny = 3, ngrid = 9
+    real(kind=dp) :: profile_2d(ngrid, 3), profile_2d_base(ngrid, 3)
+    real(kind=dp) :: phi(nx, ny)
+    integer :: ix, iy, ij
+
+    ! Set base profile
+    do ij = 1, ngrid
+      profile_2d_base(ij, 1) = -5.0_dp
+      profile_2d_base(ij, 2) = -6.0_dp
+      profile_2d_base(ij, 3) = 1.0_dp
+    end do
+
+    ! Set phi to known values: phi(ix,iy) = ix + iy
+    do iy = 1, ny
+      do ix = 1, nx
+        phi(ix, iy) = real(ix + iy, kind=dp)
+      end do
+    end do
+
+    call apply_potential_to_profile_2d(profile_2d, profile_2d_base, phi, nx, ny)
+
+    ! Verify: profile_2d(ij, col) = base(ij, col) - phi(ix, iy)
+    do iy = 1, ny
+      do ix = 1, nx
+        ij = (iy - 1) * nx + ix
+#line 494 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(profile_2d_base(ij, 1) - phi(ix, iy), profile_2d(ij, 1), 1e-14_dp, &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 494) )
+  if (anyExceptions()) return
+#line 495 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 495 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(profile_2d_base(ij, 2) - phi(ix, iy), profile_2d(ij, 2), 1e-14_dp, &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 495) )
+  if (anyExceptions()) return
+#line 496 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 496 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(profile_2d_base(ij, 3) - phi(ix, iy), profile_2d(ij, 3), 1e-14_dp, &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 496) )
+  if (anyExceptions()) return
+#line 497 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+      end do
+    end do
+  end subroutine test_apply_potential_to_profile_2d
+
+
+  !@test
+  subroutine test_find_fermi_level_wire()
+    ! 5 eigenvalues at known energies, 3 kx-points, 3x3 grid.
+    ! CB at E=0.8, 1.0, 1.2 eV (numcb=3); VB at E=-0.5, -0.3 eV.
+    ! At T=4K the Fermi function is step-like.
+    ! With no doping, Fermi level should be in the gap between -0.3 and 0.8.
+    ! Charge neutrality should hold within tolerance.
+
+    integer, parameter :: nx = 3, ny = 3
+    integer, parameter :: Ngrid = nx * ny
+    integer, parameter :: N = 8 * Ngrid       ! Hamiltonian dimension
+    integer, parameter :: num_subbands = 5     ! 2 VB + 3 CB
+    integer, parameter :: nk = 3              ! kx-points (odd for Simpson)
+    real(kind=dp), parameter :: dx = 2.0_dp   ! Angstrom
+    real(kind=dp), parameter :: dy = 2.0_dp   ! Angstrom
+
+    real(kind=dp) :: eig_kx(num_subbands, nk)
+    complex(kind=dp) :: eigv_kx(N, num_subbands, nk)
+    real(kind=dp) :: kx_grid(nk)
+    type(simulation_config) :: cfg
+    real(kind=dp) :: rho_doping_2d(nx, ny)
+    real(kind=dp) :: work_ne(Ngrid), work_nh(Ngrid)
+    real(kind=dp) :: dA, mu
+    real(kind=dp) :: charge_excess
+    integer :: s, ik, p
+
+    ! Eigenvalues: subbands 1-2 = VB, 3-5 = CB (sorted descending at kx=0
+    ! by compute_charge_density_wire). Place them so the sort puts the
+    ! highest 3 as CB (numcb=3):
+    !   Subband 1: E = 1.2 eV  (CB)
+    !   Subband 2: E = 1.0 eV  (CB)
+    !   Subband 3: E = 0.8 eV  (CB)
+    !   Subband 4: E = -0.3 eV (VB)
+    !   Subband 5: E = -0.5 eV (VB)
+    ! All kx-points have the same eigenvalues (flat dispersion).
+    eig_kx(1, :) = 1.2_dp
+    eig_kx(2, :) = 1.0_dp
+    eig_kx(3, :) = 0.8_dp
+    eig_kx(4, :) = -0.3_dp
+    eig_kx(5, :) = -0.5_dp
+
+    ! Eigenvectors: uniform, properly normalised.
+    ! |Psi|^2 summed over 8 bands at each grid point = 1/Ngrid.
+    eigv_kx = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do s = 1, num_subbands
+      do ik = 1, nk
+        eigv_kx(1:N, s, ik) = cmplx(1.0_dp / sqrt(real(N, kind=dp)), &
+          & 0.0_dp, kind=dp)
+      end do
+    end do
+
+    ! kx grid: 0.0, 0.05, 0.1  (1/Angstrom)
+    kx_grid(1) = 0.0_dp
+    kx_grid(2) = 0.05_dp
+    kx_grid(3) = 0.1_dp
+
+    ! Config: numcb=3, T=4K (step-like), charge-neutrality mode
+    cfg%bands%num_cb = 3
+    cfg%sc%temperature = 4.0_dp
+    cfg%sc%fermi_mode = 0
+
+    ! Area element: AA^2 -> cm^2
+    dA = dx * dy * 1.0e-16_dp
+
+    ! No doping
+    rho_doping_2d = 0.0_dp
+    work_ne = 0.0_dp
+    work_nh = 0.0_dp
+
+    mu = find_fermi_level_wire(eig_kx, eigv_kx, kx_grid, &
+      & cfg, N, num_subbands, nk, Ngrid, dA, &
+      & rho_doping_2d, work_ne, work_nh, nx, ny)
+
+    ! Fermi level should be in the band gap
+#line 576 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(mu > -0.3_dp, message="Fermi above VB top (-0.3 eV)", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 576) )
+  if (anyExceptions()) return
+#line 577 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 577 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(mu < 0.8_dp, message="Fermi below CB bottom (0.8 eV)", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 577) )
+  if (anyExceptions()) return
+#line 578 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+
+    ! Charge neutrality: recompute densities at the returned mu and verify
+    ! that total electron charge equals total hole charge (no doping).
+    call compute_charge_density_wire(work_ne, work_nh, eigv_kx, &
+      & eig_kx, kx_grid, mu, cfg%sc%temperature, &
+      & ny, nx, num_subbands, nk, cfg%bands%num_cb)
+
+    charge_excess = 0.0_dp
+    do p = 1, Ngrid
+      charge_excess = charge_excess + (work_ne(p) - work_nh(p)) * dA
+    end do
+
+#line 590 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(abs(charge_excess) < 1.0e-6_dp, message="Charge neutrality holds", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 590) )
+  if (anyExceptions()) return
+#line 591 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+
+  end subroutine test_find_fermi_level_wire
+
+
+  !@test
+  subroutine test_find_fermi_level_wire_with_doping()
+    ! Same setup as test_find_fermi_level_wire but with n-type doping.
+    ! Positive rho_doping means net donors (ND - NA > 0).
+    ! With donors, Fermi level should shift toward CB (higher than intrinsic).
+
+    integer, parameter :: nx = 3, ny = 3
+    integer, parameter :: Ngrid = nx * ny
+    integer, parameter :: N = 8 * Ngrid
+    integer, parameter :: num_subbands = 5
+    integer, parameter :: nk = 3
+    real(kind=dp), parameter :: dx = 2.0_dp
+    real(kind=dp), parameter :: dy = 2.0_dp
+
+    real(kind=dp) :: eig_kx(num_subbands, nk)
+    complex(kind=dp) :: eigv_kx(N, num_subbands, nk)
+    real(kind=dp) :: kx_grid(nk)
+    type(simulation_config) :: cfg
+    real(kind=dp) :: rho_doping_2d(nx, ny)
+    real(kind=dp) :: work_ne(Ngrid), work_nh(Ngrid)
+    real(kind=dp) :: dA, mu_intrinsic, mu
+
+    ! Same eigenvalues as intrinsic test
+    eig_kx(1, :) = 1.2_dp
+    eig_kx(2, :) = 1.0_dp
+    eig_kx(3, :) = 0.8_dp
+    eig_kx(4, :) = -0.3_dp
+    eig_kx(5, :) = -0.5_dp
+
+    ! Uniform normalised eigenvectors
+    eigv_kx = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    eigv_kx(1:N, :, :) = cmplx(1.0_dp / sqrt(real(N, kind=dp)), &
+      & 0.0_dp, kind=dp)
+
+    kx_grid(1) = 0.0_dp
+    kx_grid(2) = 0.05_dp
+    kx_grid(3) = 0.1_dp
+
+    cfg%bands%num_cb = 3
+    cfg%sc%temperature = 300.0_dp
+    cfg%sc%fermi_mode = 0
+
+    dA = dx * dy * 1.0e-16_dp
+
+    ! First: intrinsic (no doping)
+    rho_doping_2d = 0.0_dp
+    work_ne = 0.0_dp
+    work_nh = 0.0_dp
+
+    mu_intrinsic = find_fermi_level_wire(eig_kx, eigv_kx, kx_grid, &
+      & cfg, N, num_subbands, nk, Ngrid, dA, &
+      & rho_doping_2d, work_ne, work_nh, nx, ny)
+
+    ! Now: with n-type doping
+    rho_doping_2d = 1.0e18_dp
+    work_ne = 0.0_dp
+    work_nh = 0.0_dp
+
+    mu = find_fermi_level_wire(eig_kx, eigv_kx, kx_grid, &
+      & cfg, N, num_subbands, nk, Ngrid, dA, &
+      & rho_doping_2d, work_ne, work_nh, nx, ny)
+
+    ! With donors, Fermi level should be higher than intrinsic
+#line 658 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(mu > mu_intrinsic, message="Doped Fermi above intrinsic Fermi", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 658) )
+  if (anyExceptions()) return
+#line 659 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+    ! Should still be in gap
+#line 660 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(mu > -0.3_dp, message="Fermi above VB top", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 660) )
+  if (anyExceptions()) return
+#line 661 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+#line 661 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(mu < 0.8_dp, message="Fermi below CB bottom", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 661) )
+  if (anyExceptions()) return
+#line 662 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+
+  end subroutine test_find_fermi_level_wire_with_doping
+
+
+  ! ==================================================================
+  ! Integration test: full wire SC loop convergence
+  !
+  ! 3x3 GaAs wire, uniform ND=1e18 cm^-3, 3 k-points, T=300K.
+  ! Exercises: grid -> kpterms -> Hamiltonian -> eigensolve ->
+  !            charge density -> Poisson -> mixing -> convergence.
+  ! ==================================================================
+  !@test
+  subroutine test_sc_loop_wire_convergence()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp  ! Angstrom
+
+    integer :: ngrid, ntot, ij, num_subbands, nk_sc
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:), profile_2d_init(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(wire_coo_cache) :: coo_cache
+    type(eigensolver_config) :: eigen_cfg
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+    real(kind=dp), allocatable :: eig_wire(:,:)
+    complex(kind=dp), allocatable :: eigv_wire(:,:,:)
+    real(kind=dp) :: max_diff
+    logical :: profile_changed, eigenvalues_ordered, sc_converged
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+
+    ! ---- Step 1: Build grid ----
+    mat2d = 1  ! single material (GaAs)
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    ! ---- Step 2: Material parameters ----
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    ! ---- Step 3: Build kpterms_2d and profile_2d ----
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    ! Save a copy of initial profile for comparison
+    allocate(profile_2d_init(ngrid, 3))
+    profile_2d_init = profile_2d
+
+    ! ---- Step 4: Configure simulation ----
+    cfg%confinement = 'wire'
+    cfg%grid = grid
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%wave_vector%max = 0.5_dp
+
+    ! Material parameters and doping
+    allocate(cfg%params(1))
+    cfg%params = params
+    allocate(cfg%doping(1))
+    cfg%doping(1)%ND = 1.0e18_dp
+    cfg%doping(1)%NA = 0.0_dp
+
+    ! Strain disabled
+    cfg%strain%enabled = .false.
+
+    ! SC parameters: loose tolerance, linear mixing.  The corrected wire
+    ! boundary operators need a few extra iterations on this tiny 3x3 harness.
+    cfg%sc%enabled = 1
+    cfg%sc%max_iterations = 20
+    cfg%sc%tolerance = 1.0e-4_dp
+    cfg%sc%mixing_alpha = 0.3_dp
+    cfg%sc%diis_history = 1   ! minimal DIIS history (linear mixing with diis_history < 2)
+    cfg%sc%temperature = 300.0_dp
+    cfg%sc%fermi_mode = 0    ! charge neutrality
+    cfg%sc%num_kpar = 3      ! 3 k-points (odd for Simpson)
+    cfg%sc%kpar_max = 0.1_dp  ! small k_max
+    cfg%sc%bc_left = 0.0_dp
+    cfg%sc%bc_right = 0.0_dp
+
+    ! ---- Step 5: Eigensolver config ----
+    ! ARPACK falls back to dense LAPACK when FEAST is not compiled in
+    num_subbands = cfg%bands%num_cb + cfg%bands%num_vb  ! 8
+    eigen_cfg%method = 'ARPACK'
+    eigen_cfg%nev = num_subbands
+    eigen_cfg%emin = -5.0_dp
+    eigen_cfg%emax = 5.0_dp
+    eigen_cfg%max_iter = 100
+    eigen_cfg%tol = 1.0e-10_dp
+
+    ! ---- Step 6: Allocate eigensolver output arrays ----
+    nk_sc = 3  ! matches cfg%sc%num_kpar
+    allocate(eig_wire(num_subbands, nk_sc))
+    allocate(eigv_wire(ntot, num_subbands, nk_sc))
+    eig_wire = 0.0_dp
+    eigv_wire = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! ---- Step 7: Run SC loop ----
+    call self_consistent_loop_wire(profile_2d, cfg, kpterms_2d, grid, &
+      & coo_cache, eigen_cfg, eig_wire, eigv_wire, &
+      & converged_out=sc_converged)
+
+    ! ---- Assertions ----
+
+    ! 0. SC loop converged
+#line 773 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(sc_converged, message='Wire SC loop should converge within max_iterations', &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 773) )
+  if (anyExceptions()) return
+#line 774 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+
+    ! 1. Eigenvalues at k=0 are non-zero and ordered (non-decreasing, allowing degeneracy)
+    do ij = 2, num_subbands
+      eigenvalues_ordered = (eig_wire(ij, 1) - eig_wire(ij-1, 1)) >= -1.0e-12_dp
+#line 778 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(eigenvalues_ordered, message="Eigenvalues ordered ascending at k=0", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 778) )
+  if (anyExceptions()) return
+#line 779 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+    end do
+#line 780 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(abs(eig_wire(1, 1)) > 0.0_dp, message="Eigenvalues are non-zero", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 780) )
+  if (anyExceptions()) return
+#line 781 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+
+    ! 2. profile_2d was modified from initial values (SC loop applied potential)
+    max_diff = maxval(abs(profile_2d - profile_2d_init))
+    ! For a uniform GaAs wire with doping, the potential should shift band edges.
+    ! Even if the change is tiny (no heterostructure), the Poisson solve
+    ! with uniform doping should produce some potential.
+    ! We check that profile_2d differs from initial (the loop ran).
+    profile_changed = (max_diff > 0.0_dp)
+#line 789 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(profile_changed, message="profile_2d was modified by SC loop", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 789) )
+  if (anyExceptions()) return
+#line 790 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+
+    ! ---- Cleanup ----
+    call wire_coo_cache_free(coo_cache)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, profile_2d_init)
+    deallocate(params, regions, material_names)
+    deallocate(eig_wire, eigv_wire)
+    deallocate(cfg%params, cfg%doping)
+    ! Do not call grid_free(grid): cfg%grid = grid created an independent
+    ! deep copy of the allocatable components.  Both grid and cfg%grid
+    ! will be auto-deallocated when they go out of scope.
+
+  end subroutine test_sc_loop_wire_convergence
+
+
+  !@test
+  subroutine test_delta_doping_gaussian()
+    ! Delta-doping produces a Gaussian charge profile centered at delta_pos
+    integer, parameter :: nz = 101
+    real(kind=dp) :: rho(nz)
+    type(simulation_config) :: cfg
+    integer :: iz, iz_peak
+    real(kind=dp) :: z(nz), dz, expected_peak, sigma
+
+    ! Setup: single layer GaAs, 101 points from -50 to 50 A
+    dz = 1.0_dp  ! Angstrom
+    do iz = 1, 101
+      z(iz) = (iz - 51) * dz
+    end do
+
+    cfg%dz = dz
+    allocate(cfg%z(nz))
+    cfg%z = z
+    allocate(cfg%doping(1))
+    cfg%doping(1)%dtype = 'delta'
+    cfg%doping(1)%NS = 5.0_dp            ! 5 x 10^11 cm^-2
+    cfg%doping(1)%delta_fwhm = 10.0_dp   ! 10 Angstrom
+    cfg%doping(1)%delta_pos = 0.0_dp     ! center
+
+    ! Layer mapping: all points in layer 1
+    cfg%num_layers = 1
+    allocate(cfg%int_start_pos(1), cfg%int_end_pos(1))
+    cfg%int_start_pos(1) = 1
+    cfg%int_end_pos(1) = nz
+
+    call build_doping_charge(rho, cfg, nz)
+
+    ! Peak should be at iz=51 (z=0), Gaussian should be symmetric
+    iz_peak = maxloc(rho, dim=1)
+#line 841 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(51, iz_peak, &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 841) )
+  if (anyExceptions()) return
+#line 842 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+
+    ! Peak value: NS / (sigma * sqrt(2*pi)) converted to cm^-3
+    ! sigma = FWHM / (2*sqrt(2*ln2)) = 10 / 2.3548 = 4.247 A
+    ! amplitude = NS * 1e11 / (sigma_cm * sqrt(2*pi))
+    ! sigma_cm = 4.247e-8 cm
+    sigma = 10.0_dp / (2.0_dp * sqrt(2.0_dp * log(2.0_dp)))
+    expected_peak = 5.0e11_dp / (sigma * 1.0e-8_dp * sqrt(2.0_dp * pi_dp))
+#line 849 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(expected_peak, rho(51), tolerance=expected_peak * 1.0e-6_dp, &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 849) )
+  if (anyExceptions()) return
+#line 850 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+
+    ! Check symmetry: rho(51-dz) == rho(51+dz)
+#line 852 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertEqual(rho(50), rho(52), tolerance=1.0e-10_dp * max(rho(50), 1.0_dp), &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 852) )
+  if (anyExceptions()) return
+#line 853 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+
+    ! Normalization check: integral of rho(z) * dz (in cm) should equal NS * 1e11 cm^-2.
+    ! rho is in cm^-3, dz is in Angstrom.  Integrate via Simpson's rule:
+    !   integral = sum(rho) * dz_cm  (trapezoidal for simplicity)
+    ! Expected: NS = 5.0 x 10^11 cm^-2
+    block
+      real(kind=dp) :: dz_cm, rho_integral, ns_expected
+      dz_cm = dz * 1.0e-8_dp  ! Angstrom -> cm
+      rho_integral = sum(rho) * dz_cm
+      ns_expected = cfg%doping(1)%NS * 1.0e11_dp  ! NS in cm^-2
+      ! The Gaussian integral over a discrete grid should match NS within ~0.1%
+#line 864 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+  call assertTrue(abs(rho_integral - ns_expected) / ns_expected < 1.0e-3_dp, message="Delta-doping integral matches NS", &
+ & location=SourceLocation( &
+ & 'test_sc_loop.pf', &
+ & 864) )
+  if (anyExceptions()) return
+#line 865 "/data/8bandkp-fdm/tests/unit/test_sc_loop.pf"
+    end block
+
+    deallocate(cfg%z, cfg%doping, cfg%int_start_pos, cfg%int_end_pos)
+  end subroutine test_delta_doping_gaussian
 
 end module test_sc_loop
 
@@ -547,6 +1203,41 @@ function test_sc_loop_suite() result(suite)
    if(allocated(t)) deallocate(t)
    allocate(t, source=TestMethod('test_map_layer_to_grid', &
       test_map_layer_to_grid))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_build_epsilon_2d', &
+      test_build_epsilon_2d))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_build_doping_charge_2d', &
+      test_build_doping_charge_2d))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_apply_potential_to_profile_2d', &
+      test_apply_potential_to_profile_2d))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_find_fermi_level_wire', &
+      test_find_fermi_level_wire))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_find_fermi_level_wire_with_doping', &
+      test_find_fermi_level_wire_with_doping))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_sc_loop_wire_convergence', &
+      test_sc_loop_wire_convergence))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_delta_doping_gaussian', &
+      test_delta_doping_gaussian))
    call suite%addTest(t)
 
 

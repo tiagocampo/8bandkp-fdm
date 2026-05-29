@@ -93,7 +93,7 @@ CONFIG_STRAINED = (
     "value = 0.0\n"
     "\n"
     "[strain]\n"
-    f"reference = {GAAS_A0_SUB}\n"
+    f"strain_substrate = {GAAS_A0_SUB}\n"
 )
 
 

@@ -47,7 +47,12 @@ def make_wire_config(nx=20, ny=20, dx=5.0, dy=5.0,
                      core_size=30.0, strain=True):
     """Build inline wire config (TOML format)."""
     shell_size = width  # shell extends to wire boundary
-    strain_enabled = "true" if strain else "false"
+    strain_section = (
+        '\n[strain]\n'
+        'reference = "GaAs"\n'
+        'solver = "pardiso"\n'
+        'piezoelectric = false\n'
+    ) if strain else ""
     return (
         'confinement = "wire"\n'
         "FDorder = 2\n"
@@ -72,15 +77,15 @@ def make_wire_config(nx=20, ny=20, dx=5.0, dy=5.0,
         f"width = {width}\n"
         f"height = {height}\n"
         "\n"
-        "[[wire.region]]\n"
-        'name = "GaAs"\n"
-        f"r_min = {core_size}\n"
-        f"r_max = {shell_size}\n"
+        "[[region]]\n"
+        f'material = "GaAs"\n'
+        f"inner = {core_size}\n"
+        f"outer = {shell_size}\n"
         "\n"
-        "[[wire.region]]\n"
-        'name = "InAs"\n"
-        "r_min = 0.0\n"
-        f"r_max = {core_size}\n"
+        "[[region]]\n"
+        f'material = "InAs"\n'
+        "inner = 0.0\n"
+        f"outer = {core_size}\n"
         "\n"
         "[external_field]\n"
         'type = "EF"\n'
@@ -93,12 +98,7 @@ def make_wire_config(nx=20, ny=20, dx=5.0, dy=5.0,
         "emin = -1.5\n"
         "emax = 2.0\n"
         "m0 = -1\n"
-        "\n"
-        f"[strain]\n"
-        f"enabled = {strain_enabled}\n"
-        'reference = "GaAs"\n'
-        'solver = "pardiso"\n'
-        "piezo = false\n"
+        f"{strain_section}"
     )
 
 

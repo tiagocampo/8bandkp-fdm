@@ -50,8 +50,8 @@ def make_qw_config(fdstep=201):
         "FDorder = 2\n"
         "\n"
         "[wave_vector]\n"
-        'mode = "kx"\n'
-        "max = 0.1\n"
+        'mode = "k0"\n'
+        "max = 0.0\n"
         "nsteps = 1\n"
         "\n"
         "[bands]\n"

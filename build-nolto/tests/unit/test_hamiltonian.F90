@@ -2,7 +2,12 @@ module test_hamiltonian
   use funit
   use definitions
   use parameters
+  use sparse_matrices
   use hamiltonianConstructor
+  use confinement_init, only: confinementInitialization_raw
+  use hamiltonian_wire, only: build_velocity_matrices
+  use magnetic_field, only: compute_zeeman_vz
+  use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar
   implicit none
 
 contains
@@ -34,13 +39,13 @@ contains
         max_err = max(max_err, abs(HT(i,j) - conjg(HT(j,i))))
       end do
     end do
-#line 37 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 42 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
   call assertTrue(max_err < 1.0e-12_dp, message="Bulk Hamiltonian is Hermitian", &
  & location=SourceLocation( &
  & 'test_hamiltonian.pf', &
- & 37) )
+ & 42) )
   if (anyExceptions()) return
-#line 38 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 43 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
   end subroutine test_bulk_hermitian
 
   !@test
@@ -64,66 +69,66 @@ contains
 
     ! At k=0: Q=T=0, so valence diagonal is 0, SO diagonal is -deltaSO, CB is +Eg
     ! Bands 1-4 (HH,LH,LH,HH): diagonal = 0
-#line 61 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 66 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
   call assertEqual(0.0_dp, real(HT(1,1), kind=dp), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_hamiltonian.pf', &
- & 61) )
+ & 66) )
   if (anyExceptions()) return
-#line 62 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-#line 62 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-  call assertEqual(0.0_dp, real(HT(2,2), kind=dp), tolerance=1.0e-12_dp, &
- & location=SourceLocation( &
- & 'test_hamiltonian.pf', &
- & 62) )
-  if (anyExceptions()) return
-#line 63 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-    ! Bands 5-6 (SO): diagonal = -deltaSO
-#line 64 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-  call assertEqual(-params(1)%deltaSO, real(HT(5,5), kind=dp), tolerance=1.0e-12_dp, &
- & location=SourceLocation( &
- & 'test_hamiltonian.pf', &
- & 64) )
-  if (anyExceptions()) return
-#line 65 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-#line 65 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-  call assertEqual(-params(1)%deltaSO, real(HT(6,6), kind=dp), tolerance=1.0e-12_dp, &
- & location=SourceLocation( &
- & 'test_hamiltonian.pf', &
- & 65) )
-  if (anyExceptions()) return
-#line 66 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-    ! Bands 7-8 (CB): diagonal = Eg
 #line 67 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-  call assertEqual(params(1)%Eg, real(HT(7,7), kind=dp), tolerance=1.0e-12_dp, &
+#line 67 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(0.0_dp, real(HT(2,2), kind=dp), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_hamiltonian.pf', &
  & 67) )
   if (anyExceptions()) return
 #line 68 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-#line 68 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-  call assertEqual(params(1)%Eg, real(HT(8,8), kind=dp), tolerance=1.0e-12_dp, &
- & location=SourceLocation( &
- & 'test_hamiltonian.pf', &
- & 68) )
-  if (anyExceptions()) return
+    ! Bands 5-6 (SO): diagonal = -deltaSO
 #line 69 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-
-    ! Off-diagonals should all be zero at k=0
-#line 71 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-  call assertEqual(0.0_dp, abs(HT(1,7)), tolerance=1.0e-12_dp, &
+  call assertEqual(-params(1)%deltaSO, real(HT(5,5), kind=dp), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_hamiltonian.pf', &
- & 71) )
+ & 69) )
   if (anyExceptions()) return
+#line 70 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 70 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(-params(1)%deltaSO, real(HT(6,6), kind=dp), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 70) )
+  if (anyExceptions()) return
+#line 71 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+    ! Bands 7-8 (CB): diagonal = Eg
 #line 72 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-#line 72 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
-  call assertEqual(0.0_dp, abs(HT(1,8)), tolerance=1.0e-12_dp, &
+  call assertEqual(params(1)%Eg, real(HT(7,7), kind=dp), tolerance=1.0e-12_dp, &
  & location=SourceLocation( &
  & 'test_hamiltonian.pf', &
  & 72) )
   if (anyExceptions()) return
 #line 73 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 73 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(params(1)%Eg, real(HT(8,8), kind=dp), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 73) )
+  if (anyExceptions()) return
+#line 74 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+
+    ! Off-diagonals should all be zero at k=0
+#line 76 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(0.0_dp, abs(HT(1,7)), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 76) )
+  if (anyExceptions()) return
+#line 77 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 77 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(0.0_dp, abs(HT(1,8)), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 77) )
+  if (anyExceptions()) return
+#line 78 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
   end subroutine test_bulk_gamma_point
 
   !@test
@@ -145,21 +150,21 @@ contains
     call ZB8bandBulk(HT, wv, params)
 
     ! PP = P * kx / sqrt(2) should give non-zero (1,7) and (7,1) elements
-#line 94 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 99 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
   call assertTrue(abs(HT(1,7)) > 1.0e-6_dp, message="kx produces off-diagonal CB-VB coupling", &
  & location=SourceLocation( &
  & 'test_hamiltonian.pf', &
- & 94) )
+ & 99) )
   if (anyExceptions()) return
-#line 95 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 100 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
     ! Check Hermiticity of off-diagonal
-#line 96 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 101 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
   call assertEqual(conjg(HT(1,7)), HT(7,1), tolerance=1.0e-14_dp, &
  & location=SourceLocation( &
  & 'test_hamiltonian.pf', &
- & 96) )
+ & 101) )
   if (anyExceptions()) return
-#line 97 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 102 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
   end subroutine test_bulk_kx_only
 
   !@test
@@ -188,14 +193,760 @@ contains
         max_err = max(max_err, abs(HT(i,j) - conjg(HT(j,i))))
       end do
     end do
-#line 125 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 130 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
   call assertTrue(max_err < 1.0e-12_dp, message="InAs bulk Hamiltonian is Hermitian", &
  & location=SourceLocation( &
  & 'test_hamiltonian.pf', &
- & 125) )
+ & 130) )
   if (anyExceptions()) return
-#line 126 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 131 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
   end subroutine test_bulk_hermitian_inas
+
+  !@test
+  subroutine test_qw_variable_coeff_order4()
+    ! FDorder=4 should give same eigenvalues as FDorder=2 for a QW
+    ! (both must correctly handle variable coefficients at interfaces)
+    integer, parameter :: ngrid = 41
+    real(kind=dp), parameter :: dz_val = 2.5_dp  ! Angstrom
+    integer :: matSize, info, lwork, lrwork, liwork
+
+    ! Grid
+    real(kind=dp) :: z(ngrid)
+
+    ! Materials: 2-layer AlGaAs/GaAs (non-overlapping)
+    integer, parameter :: nlayers = 2
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
+
+    ! Confinement
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    ! Hamiltonian and eigenvalues
+    complex(kind=dp), allocatable :: HT(:,:), work(:)
+    real(kind=dp), allocatable :: eig(:,:), rwork(:)
+    integer, allocatable :: iwork(:)
+
+    ! Results storage
+    real(kind=dp) :: cb1_order2, cb1_order4
+    real(kind=dp) :: vb1_order2, vb1_order4
+    integer :: idx
+
+    matSize = ngrid * 8
+
+    ! ---- Setup grid ----
+    do idx = 1, ngrid
+      z(idx) = -50.0_dp + dble(idx - 1) * dz_val
+    end do
+
+    ! 2-layer: AlGaAs(-50,-25) | GaAs(-25,50)
+    ! AlGaAs is points 1-10, GaAs is points 11-41
+    int_start_pos(1) = 1;   int_end_pos(1) = 10
+    int_start_pos(2) = 11;  int_end_pos(2) = 41
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Run with FDorder=2 ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    allocate(HT(matSize, matSize), eig(matSize, 1))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+    deallocate(profile, kpterms)
+
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+#line 196 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(info == 0, message="FDorder=2 diagonalization succeeded", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 196) )
+  if (anyExceptions()) return
+#line 197 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+
+    ! CB1 = highest eigenvalue, VB1 = next-to-top group
+    cb1_order2 = eig(matSize, 1)
+    vb1_order2 = eig(matSize - 8, 1)  ! top of VB block (8 bands per kpoint)
+    deallocate(HT, eig, work, rwork, iwork)
+
+    ! ---- Run with FDorder=4 ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=4)
+
+    allocate(HT(matSize, matSize), eig(matSize, 1))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+    deallocate(profile, kpterms)
+
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+#line 221 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(info == 0, message="FDorder=4 diagonalization succeeded", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 221) )
+  if (anyExceptions()) return
+#line 222 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+
+    cb1_order4 = eig(matSize, 1)
+    vb1_order4 = eig(matSize - 8, 1)
+    deallocate(HT, eig, work, rwork, iwork)
+
+    ! ---- Verify: FDorder=4 must match FDorder=2 within tolerance ----
+    ! FDorder=4 should be MORE accurate, not less. With bug, CB1 is ~1.8 eV off.
+    ! Tolerance is generous (50 meV) — the exact values differ due to different
+    ! truncation error, but they should agree much better than the current bug.
+#line 231 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(abs(cb1_order4 - cb1_order2) < 0.05_dp, message="FDorder=4 CB1 matches FDorder=2 within 50 meV", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 231) )
+  if (anyExceptions()) return
+#line 232 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 232 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(abs(vb1_order4 - vb1_order2) < 0.05_dp, message="FDorder=4 VB1 matches FDorder=2 within 50 meV", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 232) )
+  if (anyExceptions()) return
+#line 233 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+
+  end subroutine test_qw_variable_coeff_order4
+
+  !@test
+  subroutine test_build_velocity_1d_diagonal()
+    ! For a diagonal Hamiltonian (no off-diagonal couplings),
+    ! all spatial position differences are zero, so velocity must be zero.
+
+    type(csr_matrix) :: H_csr, vel(3)
+    type(spatial_grid) :: grid
+
+    integer, parameter :: Ngrid = 3
+    integer, parameter :: matSize = 8 * Ngrid  ! 24x24
+    integer :: i, nnz_count
+    integer, allocatable  :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    ! Setup 1D grid with non-zero z-coordinates
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = Ngrid
+    grid%dx = 0.0_dp
+    grid%dy = 0.0_dp
+    allocate(grid%z(Ngrid))
+    grid%z = [0.0_dp, 5.0_dp, 10.0_dp]
+
+    ! Build diagonal CSR matrix (identity * some energy)
+    nnz_count = matSize
+    allocate(rows(nnz_count), cols(nnz_count), vals(nnz_count))
+    do i = 1, matSize
+      rows(i) = i
+      cols(i) = i
+      vals(i) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    end do
+    call csr_build_from_coo(H_csr, matSize, matSize, nnz_count, rows, cols, vals)
+    deallocate(rows, cols, vals)
+
+    ! Build velocity matrices
+    call build_velocity_matrices(H_csr, grid, vel)
+
+    ! All velocity entries should be zero (diagonal: z_diff = 0)
+    block
+      real(kind=dp) :: maxvel
+      integer :: vi
+      do vi = 1, 3
+        maxvel = maxval(abs(vel(vi)%values))
+#line 279 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(maxvel < 1.0e-14_dp, message="velocity diagonal entries should be zero", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 279) )
+  if (anyExceptions()) return
+#line 280 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+      end do
+    end block
+
+    call csr_free(H_csr)
+    do i = 1, 3
+      call csr_free(vel(i))
+    end do
+  end subroutine test_build_velocity_1d_diagonal
+
+  !@test
+  subroutine test_build_velocity_1d_offdiag()
+    ! For off-diagonal entries connecting different z-points,
+    ! vel(3) (z-velocity) should be -i * dz * H(i,j).
+    ! vel(1) and vel(2) should remain zero (no x/y grid in QW).
+
+    type(csr_matrix) :: H_csr, vel(3)
+    type(spatial_grid) :: grid
+
+    integer, parameter :: Ngrid = 2
+    integer, parameter :: matSize = 8 * Ngrid  ! 16x16
+    integer :: nnz_count, idx
+    integer, allocatable  :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    ! Setup 1D grid
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = Ngrid
+    grid%dx = 0.0_dp
+    grid%dy = 0.0_dp
+    allocate(grid%z(Ngrid))
+    grid%z = [0.0_dp, 5.0_dp]  ! dz = 5 Angstrom
+
+    ! Build H with diagonal + one off-diagonal coupling between z-adjacent points.
+    ! QW basis ordering: idx = (band-1)*Ngrid + z_idx, sp_idx = mod(idx-1, Ngrid) + 1
+    ! So rows 1,2 are band-1 at z=0 and z=5 respectively.
+    nnz_count = matSize + 2  ! diagonal + one symmetric pair
+    allocate(rows(nnz_count), cols(nnz_count), vals(nnz_count))
+
+    ! Diagonal entries
+    do idx = 1, matSize
+      rows(idx) = idx
+      cols(idx) = idx
+      vals(idx) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    end do
+
+    ! Off-diagonal: (1,2) and (2,1) -- same band, adjacent z-points
+    rows(matSize + 1) = 1;  cols(matSize + 1) = 2
+    vals(matSize + 1) = cmplx(0.5_dp, 0.0_dp, kind=dp)
+    rows(matSize + 2) = 2;  cols(matSize + 2) = 1
+    vals(matSize + 2) = cmplx(0.5_dp, 0.0_dp, kind=dp)
+
+    call csr_build_from_coo(H_csr, matSize, matSize, nnz_count, rows, cols, vals)
+    deallocate(rows, cols, vals)
+
+    ! Build velocity matrices
+    call build_velocity_matrices(H_csr, grid, vel)
+
+    ! vel(1) and vel(2) should be entirely zero (no x/y in QW)
+    block
+      real(kind=dp) :: maxvel_x, maxvel_y
+      maxvel_x = maxval(abs(vel(1)%values))
+      maxvel_y = maxval(abs(vel(2)%values))
+#line 343 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(maxvel_x < 1.0e-14_dp, message="vel_x should be zero for 1D QW", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 343) )
+  if (anyExceptions()) return
+#line 344 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 344 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(maxvel_y < 1.0e-14_dp, message="vel_y should be zero for 1D QW", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 344) )
+  if (anyExceptions()) return
+#line 345 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+    end block
+
+    ! vel(3) should have non-zero off-diagonal entries:
+    ! For entry (1,2): sp_row=1 (z=0), sp_col=2 (z=5), z_diff = -5
+    !   vel(3) = -i * (-5) * 0.5 = i*2.5 = cmplx(0, 2.5)
+    ! For entry (2,1): sp_row=2 (z=5), sp_col=1 (z=0), z_diff = +5
+    !   vel(3) = -i * 5 * 0.5 = cmplx(0, -2.5)
+    ! Diagonal entries of vel(3) should be zero (z_diff = 0)
+
+    ! Check that at least some vel(3) entries are non-zero
+    block
+      real(kind=dp) :: maxvel_z
+      maxvel_z = maxval(abs(vel(3)%values))
+#line 358 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(maxvel_z > 0.1_dp, message="vel_z should have non-zero off-diagonal entries", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 358) )
+  if (anyExceptions()) return
+#line 359 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+    end block
+
+    ! Check diagonal vel(3) entries are zero (z_diff = 0 on diagonal)
+    block
+      integer :: k, row_d, col_d
+      real(kind=dp) :: diag_max
+      diag_max = 0.0_dp
+      do row_d = 1, H_csr%nrows
+        do k = H_csr%rowptr(row_d), H_csr%rowptr(row_d + 1) - 1
+          col_d = H_csr%colind(k)
+          if (row_d == col_d) then
+            diag_max = max(diag_max, abs(vel(3)%values(k)))
+          end if
+        end do
+      end do
+#line 374 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(diag_max < 1.0e-14_dp, message="diagonal vel_z entries should be zero", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 374) )
+  if (anyExceptions()) return
+#line 375 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+    end block
+
+    call csr_free(H_csr)
+    do idx = 1, 3
+      call csr_free(vel(idx))
+    end do
+  end subroutine test_build_velocity_1d_offdiag
+
+  !@test
+  subroutine test_bulk_ef_shift()
+    ! Bulk EF adds a uniform diagonal shift V_EF to all 8 eigenvalues
+    complex(kind=dp) :: HT(8,8), HT_noEF(8,8)
+    real(kind=dp) :: eig_ref(8), eig_ef(8)
+    type(wavevector) :: wv
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+    type(simulation_config) :: cfg
+    real(kind=dp) :: V_EF
+    integer :: info, i
+    real(kind=dp), allocatable :: rwork(:)
+    complex(kind=dp), allocatable :: work(:)
+
+    material(1) = "GaAs"
+    call paramDatabase(material, 1, params)
+    wv%kx = 0.0_dp; wv%ky = 0.0_dp; wv%kz = 0.0_dp
+
+    ! Build without EF
+    HT_noEF = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandBulk(HT_noEF, wv, params)
+    allocate(rwork(3*8-2), work(64*8))
+    call zheev('N', 'U', 8, HT_noEF, 8, eig_ref, work, 64*8, rwork, info)
+
+    ! Build with EF = 0.1 eV via cfg
+    V_EF = 0.1_dp
+    cfg%external_field%enabled = .true.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = V_EF
+    cfg%sc_potential_shift = 0.0_dp
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandBulk(HT, wv, params, cfg=cfg)
+    call zheev('N', 'U', 8, HT, 8, eig_ef, work, 64*8, rwork, info)
+
+    ! All eigenvalues should shift by V_EF
+    do i = 1, 8
+#line 419 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(eig_ref(i) + V_EF, eig_ef(i), tolerance=1.0e-10_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 419) )
+  if (anyExceptions()) return
+#line 420 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+    end do
+
+    deallocate(work, rwork)
+  end subroutine test_bulk_ef_shift
+
+  ! ==================================================================
+  ! T3: Zeeman QW test
+  ! Build QW Hamiltonian with B_z = 1T, g = 2.0 and verify that the
+  ! diagonal Zeeman splitting matches g_J * g * mu_B * B values.
+  ! The QW basis ordering is band-major: H(b*N+i, b*N+i) for band b,
+  ! spatial point i. Zeeman adds Vz(b) to each diagonal element of band b.
+  ! ==================================================================
+
+  !@test
+  subroutine test_qw_zeeman_splitting()
+    integer, parameter :: ngrid = 5
+    real(kind=dp), parameter :: dz_val = 5.0_dp  ! Angstrom
+    integer :: matSize, info, i, b
+
+    ! Grid
+    real(kind=dp) :: z(ngrid)
+
+    ! Materials: single-layer GaAs
+    integer, parameter :: nlayers = 1
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
+
+    ! Confinement
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    ! Hamiltonians: without and with Zeeman
+    complex(kind=dp), allocatable :: HT_noZ(:,:), HT_zeeman(:,:)
+
+    ! Config for Zeeman-enabled run
+    type(simulation_config) :: cfg
+
+    ! Expected Zeeman shifts
+    real(kind=dp) :: mu_B_val, B_mag, g_f, Vz(8)
+    real(kind=dp) :: expected_shift(8)
+    real(kind=dp) :: diag_noZ, diag_zeeman, actual_shift, max_err
+    real(kind=dp) :: tol
+
+    matSize = ngrid * 8
+
+    ! ---- Setup grid ----
+    do i = 1, ngrid
+      z(i) = real(i - 1, kind=dp) * dz_val
+    end do
+
+    ! Single-layer GaAs
+    int_start_pos(1) = 1;  int_end_pos(1) = ngrid
+    material(1) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Build kpterms (shared by both runs) ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    ! ---- Run 1: Without Zeeman ----
+    allocate(HT_noZ(matSize, matSize))
+    HT_noZ = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT_noZ, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+    deallocate(profile, kpterms)
+
+    ! ---- Run 2: With Zeeman (B_z = 1T, g = 2.0) ----
+    ! Rebuild kpterms
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    ! Configure Zeeman: cfg%bdg%enabled = .true. triggers Zeeman in ZB8bandQW
+    cfg%bdg%enabled = .true.
+    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 1.0_dp]  ! B_z = 1T
+    cfg%bdg%g_factor = 2.0_dp
+
+    allocate(HT_zeeman(matSize, matSize))
+    HT_zeeman = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT_zeeman, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms, cfg=cfg)
+    deallocate(profile, kpterms)
+
+    ! ---- Compute expected Zeeman shifts ----
+    mu_B_val = mu_B  ! Bohr magneton from defs.f90 (CODATA value in eV/T)
+    B_mag = 1.0_dp
+    g_f = 2.0_dp
+    call compute_zeeman_vz(g_f, mu_B_val, B_mag, Vz)
+    ! Vz(1:2) = HH: -1.5*g*mu_B*B
+    ! Vz(3:4) = LH: +0.5*g*mu_B*B
+    ! Vz(5:6) = SO: -0.5*g*mu_B*B
+    ! Vz(7)   = CB1: -1.0*g*mu_B*B
+    ! Vz(8)   = CB2: +1.0*g*mu_B*B
+
+    ! ---- Verify: diagonal of each band should differ by Vz(band) ----
+    ! QW basis ordering is band-major: band b occupies rows (b-1)*N+1 .. b*N
+    ! So diagonal of band b at spatial point i is HT((b-1)*N+i, (b-1)*N+i)
+    tol = 1.0e-12_dp
+    max_err = 0.0_dp
+    do b = 1, 8
+      do i = 1, ngrid
+        diag_noZ = real(HT_noZ((b-1)*ngrid + i, (b-1)*ngrid + i), kind=dp)
+        diag_zeeman = real(HT_zeeman((b-1)*ngrid + i, (b-1)*ngrid + i), kind=dp)
+        actual_shift = diag_zeeman - diag_noZ
+        max_err = max(max_err, abs(actual_shift - Vz(b)))
+      end do
+    end do
+#line 528 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(max_err < tol, message="QW Zeeman diagonal shift matches Vz(band)", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 528) )
+  if (anyExceptions()) return
+#line 529 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+
+    deallocate(HT_noZ, HT_zeeman)
+  end subroutine test_qw_zeeman_splitting
+
+  ! ==================================================================
+  ! Strain QW test: build InAs/GaAs strained QW and verify eigenvalues
+  ! are shifted correctly relative to unstrained.
+  !
+  ! This test establishes a baseline that must be preserved when the
+  ! dense Bir-Pikus strain codepaths are refactored to table-driven.
+  ! ==================================================================
+
+  !@test
+  subroutine test_qw_strain_eigenvalues()
+    integer, parameter :: ngrid = 41
+    real(kind=dp), parameter :: dz_val = 2.5_dp
+    integer :: matSize, info, lwork, lrwork, liwork
+
+    real(kind=dp) :: z(ngrid)
+    integer, parameter :: nlayers = 2
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:), work(:)
+    real(kind=dp), allocatable :: eig(:,:), rwork(:)
+    integer, allocatable :: iwork(:)
+    type(simulation_config) :: cfg
+    real(kind=dp) :: a0_ref
+    real(kind=dp) :: cb1_unstr, cb1_strained
+    real(kind=dp) :: vb1_unstr, vb1_strained
+    real(kind=dp) :: strain_shift_cb, strain_shift_vb
+    integer :: idx
+
+    matSize = ngrid * 8
+
+    do idx = 1, ngrid
+      z(idx) = -50.0_dp + dble(idx - 1) * dz_val
+    end do
+
+    int_start_pos(1) = 1;   int_end_pos(1) = 10
+    int_start_pos(2) = 11;  int_end_pos(2) = 41
+    material(1) = "GaAs"
+    material(2) = "InAs"
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Unstrained QW ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+    allocate(HT(matSize, matSize), eig(matSize, 1))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+#line 590 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(info == 0, message="Unstrained diagonalization succeeded", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 590) )
+  if (anyExceptions()) return
+#line 591 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+    cb1_unstr = eig(matSize, 1)
+    vb1_unstr = eig(matSize - 8, 1)
+    deallocate(HT, eig, work, rwork, iwork, profile, kpterms)
+
+    ! ---- Strained QW ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    a0_ref = params(1)%a0
+    block
+      real(kind=dp) :: eps_xx, eps_zz, eps_yy
+      type(bp_scalar) :: s
+
+      allocate(cfg%strain_blocks%delta_Ec(ngrid))
+      allocate(cfg%strain_blocks%delta_EHH(ngrid))
+      allocate(cfg%strain_blocks%delta_ELH(ngrid))
+      allocate(cfg%strain_blocks%delta_ESO(ngrid))
+      allocate(cfg%strain_blocks%R_eps(ngrid))
+      allocate(cfg%strain_blocks%S_eps(ngrid))
+      allocate(cfg%strain_blocks%QT2_eps(ngrid))
+      cfg%strain_blocks%delta_Ec = 0.0_dp
+      cfg%strain_blocks%delta_EHH = 0.0_dp
+      cfg%strain_blocks%delta_ELH = 0.0_dp
+      cfg%strain_blocks%delta_ESO = 0.0_dp
+      cfg%strain_blocks%R_eps = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      cfg%strain_blocks%S_eps = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      cfg%strain_blocks%QT2_eps = 0.0_dp
+
+      do idx = 1, ngrid
+        if (idx <= 10) cycle
+        eps_xx = (a0_ref - params(2)%a0) / params(2)%a0
+        eps_yy = eps_xx
+        eps_zz = -2.0_dp * params(2)%C12 / params(2)%C11 * eps_xx
+        s = compute_bp_scalar(params(2), eps_xx, eps_yy, eps_zz, &
+                              0.0_dp, 0.0_dp, 0.0_dp)
+        cfg%strain_blocks%delta_Ec(idx)  = s%delta_Ec
+        cfg%strain_blocks%delta_EHH(idx) = s%delta_EHH
+        cfg%strain_blocks%delta_ELH(idx) = s%delta_ELH
+        cfg%strain_blocks%delta_ESO(idx) = s%delta_ESO
+        cfg%strain_blocks%R_eps(idx)     = s%R_eps
+        cfg%strain_blocks%S_eps(idx)     = s%S_eps
+        cfg%strain_blocks%QT2_eps(idx)   = s%QT2_eps
+      end do
+    end block
+
+    allocate(HT(matSize, matSize), eig(matSize, 1))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms, cfg=cfg)
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', matSize, HT, matSize, eig(:,1), work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+#line 648 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(info == 0, message="Strained diagonalization succeeded", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 648) )
+  if (anyExceptions()) return
+#line 649 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+    cb1_strained = eig(matSize, 1)
+    vb1_strained = eig(matSize - 8, 1)
+    deallocate(HT, eig, work, rwork, iwork, profile, kpterms)
+
+    strain_shift_cb = cb1_strained - cb1_unstr
+    strain_shift_vb = vb1_strained - vb1_unstr
+
+#line 656 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(abs(strain_shift_cb) > 1.0e-4_dp, message="Strain produces non-trivial CB shift", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 656) )
+  if (anyExceptions()) return
+#line 657 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 657 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(abs(strain_shift_vb) > 1.0e-4_dp, message="Strain produces non-trivial VB shift", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 657) )
+  if (anyExceptions()) return
+#line 658 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 658 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(abs(strain_shift_cb) < 1.0_dp, message="CB strain shift magnitude reasonable", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 658) )
+  if (anyExceptions()) return
+#line 659 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 659 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertTrue(abs(strain_shift_vb) < 1.0_dp, message="VB strain shift magnitude reasonable", &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 659) )
+  if (anyExceptions()) return
+#line 660 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+
+    call bir_pikus_blocks_free(cfg%strain_blocks)
+  end subroutine test_qw_strain_eigenvalues
+
+  ! ==================================================================
+  ! Test bulk strain: InAs with strainSubstrate set to GaAs lattice const
+  ! should produce known diagonal shifts.
+  ! ==================================================================
+
+  !@test
+  subroutine test_bulk_strain_diagonal()
+    complex(kind=dp) :: HT_nostrain(8,8), HT_strain(8,8)
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+    type(wavevector) :: wv
+    real(kind=dp) :: delta_diag(8)
+    real(kind=dp) :: eps_par, eps_perp, Tr_eps, P_eps, Q_eps
+    real(kind=dp) :: expected_CB, expected_HH, expected_LH, expected_SO
+    integer :: i
+
+    material(1) = "InAs"
+    call paramDatabase(material, 1, params)
+
+    wv%kx = 0.0_dp; wv%ky = 0.0_dp; wv%kz = 0.0_dp
+
+    ! Build unstrained (strainSubstrate=0)
+    HT_nostrain = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandBulk(HT_nostrain, wv, params)
+
+    ! Build strained
+    params(1)%strainSubstrate = 5.6533_dp
+    HT_strain = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandBulk(HT_strain, wv, params)
+
+    eps_par = (params(1)%strainSubstrate - params(1)%a0) / params(1)%a0
+    eps_perp = -2.0_dp * params(1)%C12 / params(1)%C11 * eps_par
+    Tr_eps = 2.0_dp * eps_par + eps_perp
+    P_eps = -params(1)%av * Tr_eps
+    Q_eps = -params(1)%b_dp * 0.5_dp * (eps_perp - eps_par)
+
+    expected_CB  = params(1)%ac * Tr_eps
+    expected_HH  = -P_eps + Q_eps
+    expected_LH  = -P_eps - Q_eps
+    expected_SO  = -P_eps
+
+    delta_diag(1) = real(HT_strain(1,1)) - real(HT_nostrain(1,1))
+    delta_diag(2) = real(HT_strain(2,2)) - real(HT_nostrain(2,2))
+    delta_diag(3) = real(HT_strain(3,3)) - real(HT_nostrain(3,3))
+    delta_diag(4) = real(HT_strain(4,4)) - real(HT_nostrain(4,4))
+    delta_diag(5) = real(HT_strain(5,5)) - real(HT_nostrain(5,5))
+    delta_diag(6) = real(HT_strain(6,6)) - real(HT_nostrain(6,6))
+    delta_diag(7) = real(HT_strain(7,7)) - real(HT_nostrain(7,7))
+    delta_diag(8) = real(HT_strain(8,8)) - real(HT_nostrain(8,8))
+
+    ! HH bands (1,4)
+#line 715 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(expected_HH, delta_diag(1), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 715) )
+  if (anyExceptions()) return
+#line 716 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 716 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(expected_HH, delta_diag(4), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 716) )
+  if (anyExceptions()) return
+#line 717 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+    ! LH bands (2,3)
+#line 718 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(expected_LH, delta_diag(2), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 718) )
+  if (anyExceptions()) return
+#line 719 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 719 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(expected_LH, delta_diag(3), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 719) )
+  if (anyExceptions()) return
+#line 720 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+    ! SO bands (5,6)
+#line 721 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(expected_SO, delta_diag(5), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 721) )
+  if (anyExceptions()) return
+#line 722 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 722 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(expected_SO, delta_diag(6), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 722) )
+  if (anyExceptions()) return
+#line 723 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+    ! CB bands (7,8)
+#line 724 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(expected_CB, delta_diag(7), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 724) )
+  if (anyExceptions()) return
+#line 725 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+#line 725 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+  call assertEqual(expected_CB, delta_diag(8), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_hamiltonian.pf', &
+ & 725) )
+  if (anyExceptions()) return
+#line 726 "/data/8bandkp-fdm/tests/unit/test_hamiltonian.pf"
+
+  end subroutine test_bulk_strain_diagonal
 
 end module test_hamiltonian
 
@@ -239,6 +990,41 @@ function test_hamiltonian_suite() result(suite)
    if(allocated(t)) deallocate(t)
    allocate(t, source=TestMethod('test_bulk_hermitian_inas', &
       test_bulk_hermitian_inas))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_qw_variable_coeff_order4', &
+      test_qw_variable_coeff_order4))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_build_velocity_1d_diagonal', &
+      test_build_velocity_1d_diagonal))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_build_velocity_1d_offdiag', &
+      test_build_velocity_1d_offdiag))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_bulk_ef_shift', &
+      test_bulk_ef_shift))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_qw_zeeman_splitting', &
+      test_qw_zeeman_splitting))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_qw_strain_eigenvalues', &
+      test_qw_strain_eigenvalues))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_bulk_strain_diagonal', &
+      test_bulk_strain_diagonal))
    call suite%addTest(t)
 
 

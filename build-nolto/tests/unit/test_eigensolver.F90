@@ -131,7 +131,7 @@ contains
   subroutine test_feast_tridiagonal_laplacian()
     integer, parameter :: n = 20
     real(kind=dp), parameter :: grid_dx = 1.0_dp
-    real(kind=dp), parameter :: pi = 3.14159265358979323846264338327950288_dp
+    real(kind=dp), parameter :: pi = pi_dp  ! use module constant
     type(csr_matrix) :: Hmat
     type(eigensolver_config) :: cfg
     type(eigensolver_result) :: res
@@ -140,36 +140,38 @@ contains
 
     call build_tridiag_csr(2.0_dp/grid_dx**2, -1.0_dp/grid_dx**2, n, Hmat)
 
-    ! First verify with ARPACK dense solver that the matrix is correct
+    ! First verify with dense LAPACK that the matrix is correct
     cfg%method = 'ARPACK'
     cfg%nev = 3
-    call solve_arpack(Hmat, cfg, res)
+    cfg%emin = 0.0_dp
+    cfg%emax = 0.0_dp
+    call solve_dense_lapack(Hmat, cfg, res)
 
-#line 130 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 132 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertTrue(res%converged, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 130) )
+ & 132) )
   if (anyExceptions()) return
-#line 131 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-#line 131 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 133 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 133 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertEqual(3, res%nev_found, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 131) )
+ & 133) )
   if (anyExceptions()) return
-#line 132 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 134 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
 
     ! Check first 3 eigenvalues match analytical Laplacian values
     do k = 1, 3
       expected = 2.0_dp * (1.0_dp - cos(real(k, kind=dp) * pi / real(n+1, kind=dp))) / grid_dx**2
-#line 136 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 138 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertEqual(expected, res%eigenvalues(k), tolerance=1.0e-6_dp, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 136) )
+ & 138) )
   if (anyExceptions()) return
-#line 137 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 139 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
     end do
 
     call eigensolver_result_free(res)
@@ -185,31 +187,31 @@ contains
 
     call solve_feast(Hmat, cfg, res)
 
-#line 152 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 154 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertTrue(res%converged, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 152) )
+ & 154) )
   if (anyExceptions()) return
-#line 153 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-#line 153 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 155 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 155 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertTrue(res%nev_found >= 2, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 153) )
+ & 155) )
   if (anyExceptions()) return
-#line 154 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 156 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
 
     ! Check that FEAST eigenvalues match analytical values (sorted)
     do k = 1, min(res%nev_found, 3)
       expected = 2.0_dp * (1.0_dp - cos(real(k, kind=dp) * pi / real(n+1, kind=dp))) / grid_dx**2
-#line 158 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 160 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertEqual(expected, res%eigenvalues(k), tolerance=1.0e-6_dp, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 158) )
+ & 160) )
   if (anyExceptions()) return
-#line 159 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 161 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
     end do
 
     call eigensolver_result_free(res)
@@ -242,20 +244,20 @@ contains
 
     call solve_feast(H, cfg, res)
 
-#line 191 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 193 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertTrue(res%converged, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 191) )
+ & 193) )
   if (anyExceptions()) return
-#line 192 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-#line 192 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 194 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 194 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertTrue(res%nev_found >= 2, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 192) )
+ & 194) )
   if (anyExceptions()) return
-#line 193 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 195 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
 
     do i = 1, res%nev_found
       do j = 1, res%nev_found
@@ -265,13 +267,13 @@ contains
         else
           ortho_err = abs(dot_prod)
         end if
-#line 202 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 204 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertTrue(ortho_err < 1.0e-8_dp, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 202) )
+ & 204) )
   if (anyExceptions()) return
-#line 203 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 205 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
       end do
     end do
 
@@ -303,29 +305,29 @@ contains
 
     call solve_feast(H, cfg, res)
 
-#line 234 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 236 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertTrue(res%converged, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 234) )
+ & 236) )
   if (anyExceptions()) return
-#line 235 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-#line 235 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 237 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 237 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertEqual(10, res%nev_found, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 235) )
+ & 237) )
   if (anyExceptions()) return
-#line 236 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 238 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
 
     do i = 1, res%nev_found
-#line 238 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 240 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertEqual(1.0_dp, res%eigenvalues(i), tolerance=1.0e-8_dp, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 238) )
+ & 240) )
   if (anyExceptions()) return
-#line 239 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 241 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
     end do
 
     call eigensolver_result_free(res)
@@ -356,20 +358,20 @@ contains
 
     call solve_sparse_evp(H, cfg, res)
 
-#line 269 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 271 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertTrue(res%converged, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 269) )
+ & 271) )
   if (anyExceptions()) return
-#line 270 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-#line 270 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 272 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 272 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertEqual(3, res%nev_found, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 270) )
+ & 272) )
   if (anyExceptions()) return
-#line 271 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 273 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
 
     call eigensolver_result_free(res)
     call csr_free(H)
@@ -394,32 +396,34 @@ contains
 
     cfg%method = 'ARPACK'
     cfg%nev = 3
+    cfg%emin = 0.0_dp
+    cfg%emax = 0.0_dp
 
-    call solve_arpack(H, cfg, res)
+    call solve_dense_lapack(H, cfg, res)
 
-#line 298 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-  call assertTrue(res%converged, &
- & location=SourceLocation( &
- & 'test_eigensolver.pf', &
- & 298) )
-  if (anyExceptions()) return
-#line 299 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-#line 299 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-  call assertEqual(3, res%nev_found, &
- & location=SourceLocation( &
- & 'test_eigensolver.pf', &
- & 299) )
-  if (anyExceptions()) return
-#line 300 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-
-    do i = 1, res%nev_found
 #line 302 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-  call assertEqual(real(i, kind=dp), res%eigenvalues(i), tolerance=1.0e-8_dp, &
+  call assertTrue(res%converged, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
  & 302) )
   if (anyExceptions()) return
 #line 303 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 303 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertEqual(3, res%nev_found, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 303) )
+  if (anyExceptions()) return
+#line 304 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+
+    do i = 1, res%nev_found
+#line 306 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertEqual(real(i, kind=dp), res%eigenvalues(i), tolerance=1.0e-8_dp, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 306) )
+  if (anyExceptions()) return
+#line 307 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
     end do
 
     call eigensolver_result_free(res)
@@ -448,20 +452,20 @@ contains
 
     call solve_sparse_evp(H, cfg, res)
 
-#line 331 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 335 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertFalse(res%converged, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 331) )
+ & 335) )
   if (anyExceptions()) return
-#line 332 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-#line 332 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 336 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 336 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertEqual(0, res%nev_found, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 332) )
+ & 336) )
   if (anyExceptions()) return
-#line 333 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 337 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
 
     call csr_free(H)
   end subroutine test_unknown_method
@@ -484,20 +488,20 @@ contains
 
     call solve_feast(H, cfg, res)
 
-#line 355 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 359 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertFalse(res%converged, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 355) )
+ & 359) )
   if (anyExceptions()) return
-#line 356 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-#line 356 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 360 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 360 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertEqual(0, res%nev_found, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 356) )
+ & 360) )
   if (anyExceptions()) return
-#line 357 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 361 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
 
     call csr_free(H)
   end subroutine test_feast_empty_matrix
@@ -522,23 +526,199 @@ contains
 
     ! For diagonal matrix, Gershgorin bounds = exact diagonal values
     ! with 10% margin
-#line 381 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 385 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertTrue(emin < 1.0_dp, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 381) )
+ & 385) )
   if (anyExceptions()) return
-#line 382 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
-#line 382 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 386 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 386 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
   call assertTrue(emax > 10.0_dp, &
  & location=SourceLocation( &
  & 'test_eigensolver.pf', &
- & 382) )
+ & 386) )
   if (anyExceptions()) return
-#line 383 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 387 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
 
     call csr_free(H)
   end subroutine test_energy_window_gershgorin
+
+  ! ==================================================================
+  ! Test 10: feast_workspace caches upper-triangle structure.
+  ! ==================================================================
+  !@test
+  subroutine test_feast_workspace_cached_matches_uncached()
+    ! Solve the same eigenvalue problem with and without workspace.
+    ! Eigenvalues must be identical.
+    integer, parameter :: n = 20
+    real(kind=dp) :: diag(n)
+    type(csr_matrix) :: H
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: res1, res2
+    type(feast_workspace) :: fw
+    integer :: i, min_nev
+
+    do i = 1, n
+      diag(i) = real(i, kind=dp)
+    end do
+    call build_diagonal_csr(diag, n, H)
+
+    cfg%method = 'FEAST'
+    cfg%emin = 0.5_dp
+    cfg%emax = 5.5_dp
+    cfg%nev = 5
+
+    ! Solve without workspace
+    call solve_feast(H, cfg, res1)
+
+    ! Solve with workspace (first call = slow path, initializes cache)
+    call solve_feast(H, cfg, res2, fw)
+#line 421 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertTrue(fw%initialized, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 421) )
+  if (anyExceptions()) return
+#line 422 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+#line 422 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertEqual(res1%nev_found, res2%nev_found, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 422) )
+  if (anyExceptions()) return
+#line 423 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+    min_nev = min(res1%nev_found, res2%nev_found)
+    do i = 1, min_nev
+#line 425 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertEqual(res1%eigenvalues(i), res2%eigenvalues(i), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 425) )
+  if (anyExceptions()) return
+#line 426 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+    end do
+    call eigensolver_result_free(res1)
+    call eigensolver_result_free(res2)
+
+    ! Solve again with cached workspace (tests fast path)
+    call solve_feast(H, cfg, res2, fw)
+#line 432 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertTrue(fw%initialized, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 432) )
+  if (anyExceptions()) return
+#line 433 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+    call solve_feast(H, cfg, res1)
+#line 434 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertEqual(res1%nev_found, res2%nev_found, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 434) )
+  if (anyExceptions()) return
+#line 435 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+    min_nev = min(res1%nev_found, res2%nev_found)
+    do i = 1, min_nev
+#line 437 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertEqual(res1%eigenvalues(i), res2%eigenvalues(i), tolerance=1.0e-12_dp, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 437) )
+  if (anyExceptions()) return
+#line 438 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+    end do
+
+    call eigensolver_result_free(res1)
+    call eigensolver_result_free(res2)
+    call feast_workspace_free(fw)
+#line 443 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertFalse(fw%initialized, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 443) )
+  if (anyExceptions()) return
+#line 444 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+    call csr_free(H)
+  end subroutine test_feast_workspace_cached_matches_uncached
+
+  ! ==================================================================
+  ! Test 11: FEAST workspace rebuilds on sparsity pattern change.
+  !
+  ! Initializes cache with diagonal upper-triangle structure (N nonzeros),
+  ! then reuses workspace on same-size tridiagonal matrix with different
+  ! sparsity (2N-1 upper-triangle nonzeros).  The fast path at line 148 of
+  ! eigensolver.f90 only checks dimensions (N, M0) but NOT the sparsity
+  ! pattern (rowptr_loc, colind_loc).  This test catches that bug: cached
+  ! colind_loc has wrong entries and wrong count, producing wrong
+  ! eigenvalues or a crash.
+  ! ==================================================================
+  !@test
+  subroutine test_feast_workspace_rebuilds_on_pattern_change()
+    integer, parameter :: n = 20
+    real(kind=dp) :: diag(n)
+    type(csr_matrix) :: H_diag, H_tri
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: cached, uncached
+    type(feast_workspace) :: fw
+    integer :: i, min_nev
+
+    do i = 1, n
+      diag(i) = real(i, kind=dp)
+    end do
+    call build_diagonal_csr(diag, n, H_diag)
+
+    ! Tridiagonal with diagonal=3.0, off-diagonal=-0.1.  Eigenvalues cluster
+    ! around 3.0 +/- 0.2*cos(k*pi/(n+1)) ~ 2.8..3.2.  Use a narrow window
+    ! [2.82, 2.85] so only 1-2 eigenvalues fall inside, avoiding FEAST info=3
+    ! (subspace too small) when all 20 eigenvalues sit in a wider window.
+    call build_tridiag_csr(3.0_dp, -0.1_dp, n, H_tri)
+
+    cfg%method = 'FEAST'
+    cfg%emin = 2.82_dp
+    cfg%emax = 2.85_dp
+    cfg%nev = 3
+    cfg%feast_m0 = 8
+
+    ! Initialize cache with diagonal upper-triangle structure.
+    call solve_feast(H_diag, cfg, cached, fw)
+    call eigensolver_result_free(cached)
+#line 488 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertTrue(fw%initialized, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 488) )
+  if (anyExceptions()) return
+#line 489 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+
+    ! Reuse same workspace on same-size but different sparsity matrix.
+    call solve_feast(H_tri, cfg, cached, fw)
+    call solve_feast(H_tri, cfg, uncached)
+
+#line 494 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertEqual(uncached%nev_found, cached%nev_found, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 494) )
+  if (anyExceptions()) return
+#line 495 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+    min_nev = min(uncached%nev_found, cached%nev_found)
+    do i = 1, min_nev
+#line 497 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+  call assertEqual(uncached%eigenvalues(i), cached%eigenvalues(i), tolerance=1.0e-10_dp, &
+ & location=SourceLocation( &
+ & 'test_eigensolver.pf', &
+ & 497) )
+  if (anyExceptions()) return
+#line 498 "/data/8bandkp-fdm/tests/unit/test_eigensolver.pf"
+    end do
+
+    call eigensolver_result_free(cached)
+    call eigensolver_result_free(uncached)
+    call feast_workspace_free(fw)
+    call csr_free(H_diag)
+    call csr_free(H_tri)
+  end subroutine test_feast_workspace_rebuilds_on_pattern_change
 
 end module test_eigensolver
 
@@ -607,6 +787,16 @@ function test_eigensolver_suite() result(suite)
    if(allocated(t)) deallocate(t)
    allocate(t, source=TestMethod('test_energy_window_gershgorin', &
       test_energy_window_gershgorin))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_feast_workspace_cached_matches_uncached', &
+      test_feast_workspace_cached_matches_uncached))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_feast_workspace_rebuilds_on_pattern_change', &
+      test_feast_workspace_rebuilds_on_pattern_change))
    call suite%addTest(t)
 
 

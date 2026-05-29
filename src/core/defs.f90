@@ -774,9 +774,10 @@ module definitions
         end if
       end if
 
-      ! ---- I12: feast%m0 must be in [1, 1000] when nonzero ----
-      if (cfg%feast%m0 /= 0) then
-        if (cfg%feast%m0 < 1 .or. cfg%feast%m0 > 1000) then
+      ! ---- I12: feast%m0 must be in [1, 1000] when explicitly set (> 0) ----
+      ! m0 <= 0 is the "auto-detect" sentinel (eigensolver replaces with 2*nev).
+      if (cfg%feast%m0 > 0) then
+        if (cfg%feast%m0 > 1000) then
           block
             character(len=16) :: buf
             write(buf, '(I0)') cfg%feast%m0
