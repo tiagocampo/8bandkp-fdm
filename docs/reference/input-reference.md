@@ -33,6 +33,7 @@ Controls the k-space sweep direction and range.
 | `mode` | string | `"k0"` | `"k0"`, `"kx"`, `"ky"`, `"kz"`, `"kxky"`, `"kpar"` | B Q W G S | Wave-vector direction for the k-sweep. `"k0"` means single-point calculation at Gamma. |
 | `max` | float | `0.0` | >= 0 (1/A) | B Q W G S | Maximum wave-vector magnitude in inverse Angstroms. 0 for single-point. |
 | `nsteps` | integer | `100` | >= 0 | B Q W G S | Number of steps in the k-sweep. 0 or 1 for single-point. |
+| `step` | float | `0.01` | > 0 (1/A) | B Q W G S | Wave-vector step size in inverse Angstroms. |
 
 Example:
 ```toml
@@ -275,7 +276,7 @@ Optional. Enables strain calculation. If the section is absent, strain is not co
 | Key | Type | Default | Valid range | Modes | Description |
 |---|---|---|---|---|---|
 | `reference` | string | -- | material name | Q W | Reference material for strain. Uses the lattice constant of this material as the unstrained reference. |
-| `substrate_value` | float | -- | > 0 (A) | B | Bulk strain: explicit substrate lattice constant in Angstroms. |
+| `strain_substrate` | float | -- | > 0 (A) | B | Bulk strain: explicit substrate lattice constant in Angstroms. Must be specified inside the `[strain]` section. |
 | `solver` | string | `"pardiso"` | `"pardiso"` | Q W | Strain solver backend. Currently only PARDISO direct solver is supported. |
 | `piezoelectric` | boolean | `false` | `true`/`false` | Q W | Include piezoelectric polarization in the strain calculation. |
 
@@ -288,7 +289,7 @@ reference = "GaAs"
 Example -- bulk strain with explicit lattice constant:
 ```toml
 [strain]
-substrate_value = 5.869
+strain_substrate = 5.869
 ```
 
 ---
@@ -338,7 +339,6 @@ Optional. Per-layer doping specifications for self-consistent calculations. Each
 
 | Key | Type | Default | Valid range | Modes | Description |
 |---|---|---|---|---|---|
-| `layer` | integer | -- | >= 1 | S | 1-indexed layer number for this doping profile. |
 | `ND` | float | `0.0` | >= 0 (cm^-3) | S | Donor concentration (n-type). |
 | `NA` | float | `0.0` | >= 0 (cm^-3) | S | Acceptor concentration (p-type). |
 
@@ -383,6 +383,7 @@ Optional. Enables topological invariant computation. If the section is absent, n
 | `compute_chern` | boolean | `false` | `true`/`false` | all | Compute Chern number via Berry curvature integration. |
 | `compute_hall` | boolean | `false` | `true`/`false` | all | Compute Hall conductance. |
 | `qwz_u` | float | `0.0` | any (eV) | QHE | QWZ model mass parameter for Chern number computation. |
+| `bhz_M` | float | `10.0` | any (eV) | all | BHZ model mass parameter for Z2/gap sweep computation. |
 | `compute_z2` | boolean | `false` | `true`/`false` | all | Compute Z2 invariant. |
 | `z2_method` | string | `"auto"` | `"auto"`, `"gap"`, `"parity"` | all | Z2 computation method. `"auto"` selects based on geometry. |
 | `extract_edge_states` | boolean | `false` | `true`/`false` | W | Extract edge state energies and localization length. |
@@ -399,7 +400,9 @@ Nested under `[topology]` when `mode = "sweep"`:
 | Key | Type | Default | Valid range | Modes | Description |
 |---|---|---|---|---|---|
 | `compute_gap_sweep` | boolean | `false` | `true`/`false` | B/Q/W | Enable gap sweep phase diagram. |
-| `gap_sweep_B` | 3 values | `[0.0, 1.0, 20]` | `[min, max, npts]` (T) | W/Q | Magnetic-field sweep grid. |
+| `gap_sweep_B_min` | float | `0.0` | >= 0 (T) | W/Q | Minimum magnetic field for gap sweep. |
+| `gap_sweep_B_max` | float | `1.0` | >= `gap_sweep_B_min` (T) | W/Q | Maximum magnetic field for gap sweep. |
+| `gap_sweep_nB` | integer | `20` | >= 1 | W/Q | Number of B-field points in gap sweep. |
 | `gap_sweep_mu` | 3 values | `[0.0, 0.01, 20]` | `[min, max, npts]` (eV) | W/Q | Chemical-potential sweep grid. |
 | `sweep_model` | string | `"bhz_analytic"` | `"bhz_analytic"`, `"wire_bdg"`, `"qw_fukane"` | B/Q/W | Gap sweep evaluator. |
 
@@ -417,7 +420,7 @@ Nested under `[topology]` when `mode = "sweep"`:
 |---|---|---|---|---|---|
 | `compute_conductance` | boolean | `false` | `true`/`false` | B/Q/W | Compute conductance. |
 | `conductance_method` | string | `"kubo_chern"` | `"kubo_chern"`, `"kubo_berry"`, `"landauer"` | B/Q/W | Conductance method. |
-| `berry_nk` | integer | `21` | >= 2 | B/Q | Kubo Berry grid size. |
+| `berry_nk` | integer | `50` | >= 2 | B/Q | Kubo Berry grid size. |
 | `landauer_energy` | float | `0.0` | any (eV) | W | Energy for Landauer helper. |
 
 ### Output files
@@ -457,7 +460,7 @@ Optional. Bogoliubov-de Gennes parameters for topological superconductor / Major
 | `delta_0` | float | `0.0` | >= 0 (eV) | W | s-wave superconducting gap amplitude in eV. |
 | `g_factor` | float | `2.0` | > 0 | W | Lande g-factor for Zeeman splitting. |
 | `B_vec` | 3 floats | `[0.0, 0.0, 0.0]` | any (T) | W | Magnetic field `[Bx, By, Bz]` for Zeeman splitting in Tesla. |
-| `gauge` | string | `"landau"` | `"landau"`, `"landau_x"`, `"landau_z"`, `"zeeman"` | W | Gauge choice for magnetic field coupling. |
+| `gauge` | string | `"landau_x"` | `"landau_x"`, `"landau_z"`, `"zeeman"` | W | Gauge choice for magnetic field coupling. |
 | `kz` | float | `0.0` | any (1/A) | W | Out-of-plane wave vector. |
 | `self_consistent` | boolean | `false` | `true`/`false` | W | Enable self-consistent gap computation (future). |
 | `B_sweep` | 3 floats | -- | `[min, max, step]` (T) | W | B-field sweep parameters for phase diagram. |
@@ -469,7 +472,7 @@ mu = 0.0
 delta_0 = 0.001
 g_factor = 2.0
 B_vec = [0.0, 0.0, 0.0]
-gauge = "landau"
+gauge = "landau_x"
 B_sweep = [0.5, 10.0, 0.5]
 ```
 
@@ -900,7 +903,7 @@ mu = 0.0
 delta_0 = 0.001
 g_factor = 2.0
 B_vec = [0.0, 0.0, 0.0]
-gauge = "landau"
+gauge = "landau_x"
 ```
 
 ---
