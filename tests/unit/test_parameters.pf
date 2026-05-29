@@ -268,4 +268,120 @@ contains
     call validate_semantic(cfg, 'topologicalAnalysis')
   end subroutine test_validate_semantic_topology_enabled_ok
 
+  ! ------------------------------------------------------------------
+  ! S1: wire gfactor with valid bandIdx in range [1, num_cb-1]
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_gfactor_bandidx_wire_ok()
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'wire'
+    cfg%wave_vector%nsteps = 0
+    cfg%wave_vector%mode = 'k0'
+    cfg%band_idx = 1
+    cfg%bands%num_cb = 4
+
+    call validate_semantic(cfg, 'gfactor')
+  end subroutine test_validate_semantic_gfactor_bandidx_wire_ok
+
+  ! ------------------------------------------------------------------
+  ! S2: QSHE Z2 with QW confinement accepted
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_qshe_qw_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qshe'
+    cfg%confinement = 'qw'
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_qshe_qw_ok
+
+  ! ------------------------------------------------------------------
+  ! S3/S4: BdG mode with enabled bdg section and wire confinement
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_bdg_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'bdg'
+    cfg%bdg%enabled = .true.
+    cfg%confinement = 'wire'
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_bdg_ok
+
+  ! ------------------------------------------------------------------
+  ! S5/S6/S7: spectral function with valid parameters
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_spectral_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qhe'
+    cfg%confinement = 'bulk'
+    cfg%topo%compute_spectral = .true.
+    cfg%topo%spectral_eta = 0.001_dp
+    cfg%topo%spectral_nk = 100
+    cfg%topo%spectral_nE = 200
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_spectral_ok
+
+  ! ------------------------------------------------------------------
+  ! S8: sweep_model='bhz_analytic' accepted (confinement-agnostic)
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_sweep_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qhe'
+    cfg%confinement = 'qw'
+    cfg%topo%sweep_model = 'bhz_analytic'
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_sweep_ok
+
+  ! ------------------------------------------------------------------
+  ! S9: conductance with recognized method accepted
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_conductance_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qhe'
+    cfg%confinement = 'bulk'
+    cfg%topo%compute_conductance = .true.
+    cfg%topo%conductance_method = 'kubo_chern'
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_conductance_ok
+
+  ! ------------------------------------------------------------------
+  ! S10: topology mode='qhe' recognized (redundant with existing test
+  ! but explicitly exercises S10 acceptance path)
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_mode_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qhe'
+    cfg%confinement = 'bulk'
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_mode_ok
+
 end module test_parameters

@@ -209,4 +209,263 @@ contains
     @assertTrue(.true.)
   end subroutine test_validate_wire_multi_region
 
+  ! ------------------------------------------------------------------
+  ! V1: bulk accepts evnum=8 (8x8 Hamiltonian limit)
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_bulk_evnum_ok()
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'bulk'
+    cfg%FDorder     = 2
+    cfg%fd_step     = 1
+    cfg%grid%ndim   = 0
+    cfg%grid%nx     = 1
+    cfg%grid%ny     = 1
+
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum        = 8
+
+    cfg%num_layers = 1
+    cfg%wave_vector%mode = 'k0'
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+    allocate(cfg%params(1))
+    cfg%params(:)%Eg = 1.519_dp
+
+    call cfg%validate()
+    @assertTrue(.true.)
+  end subroutine test_validate_bulk_evnum_ok
+
+  ! ------------------------------------------------------------------
+  ! V2: QW accepts valid num_cb (num_cb < NUM_CB_STATES * npoints)
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_qw_num_cb_ok()
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'qw'
+    cfg%FDorder     = 2
+    cfg%fd_step     = 50
+    cfg%grid%ndim   = 1
+    cfg%grid%nx     = 1
+    cfg%grid%ny     = 50
+
+    cfg%bands%num_cb = 4
+    cfg%bands%num_vb = 12
+    cfg%evnum        = 16
+
+    cfg%num_layers = 1
+    cfg%wave_vector%mode = 'k0'
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+    allocate(cfg%params(1))
+    cfg%params(:)%Eg = 1.519_dp
+
+    call cfg%validate()
+    @assertTrue(.true.)
+  end subroutine test_validate_qw_num_cb_ok
+
+  ! ------------------------------------------------------------------
+  ! V3: QW accepts valid num_vb (num_vb < NUM_VB_STATES * npoints)
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_qw_num_vb_ok()
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'qw'
+    cfg%FDorder     = 2
+    cfg%fd_step     = 50
+    cfg%grid%ndim   = 1
+    cfg%grid%nx     = 1
+    cfg%grid%ny     = 50
+
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 12
+    cfg%evnum        = 14
+
+    cfg%num_layers = 1
+    cfg%wave_vector%mode = 'k0'
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+    allocate(cfg%params(1))
+    cfg%params(:)%Eg = 1.519_dp
+
+    call cfg%validate()
+    @assertTrue(.true.)
+  end subroutine test_validate_qw_num_vb_ok
+
+  ! ------------------------------------------------------------------
+  ! V4: wave_vector mode='k0' is recognized
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_wave_vector_k0()
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'bulk'
+    cfg%FDorder     = 2
+    cfg%fd_step     = 1
+    cfg%grid%ndim   = 0
+    cfg%grid%nx     = 1
+    cfg%grid%ny     = 1
+
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum        = 8
+
+    cfg%num_layers = 1
+    cfg%wave_vector%mode = 'k0'
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+    allocate(cfg%params(1))
+    cfg%params(:)%Eg = 1.519_dp
+
+    call cfg%validate()
+    @assertTrue(.true.)
+  end subroutine test_validate_wave_vector_k0
+
+  ! ------------------------------------------------------------------
+  ! V5: B-sweep with positive step accepted
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_bsweep_positive()
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'bulk'
+    cfg%FDorder     = 2
+    cfg%fd_step     = 1
+    cfg%grid%ndim   = 0
+    cfg%grid%nx     = 1
+    cfg%grid%ny     = 1
+
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum        = 8
+
+    cfg%num_layers = 1
+    cfg%wave_vector%mode = 'k0'
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+    allocate(cfg%params(1))
+    cfg%params(:)%Eg = 1.519_dp
+
+    ! Positive B-sweep step
+    cfg%bdg%B_sweep = [0.0_dp, 1.0_dp, 0.1_dp]
+
+    call cfg%validate()
+    @assertTrue(.true.)
+  end subroutine test_validate_bsweep_positive
+
+  ! ------------------------------------------------------------------
+  ! V6: z_min < z_max for all material layers accepted
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_zmin_lt_zmax()
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'qw'
+    cfg%FDorder     = 2
+    cfg%fd_step     = 50
+    cfg%grid%ndim   = 1
+    cfg%grid%nx     = 1
+    cfg%grid%ny     = 50
+
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum        = 8
+
+    cfg%num_layers = 1
+    cfg%wave_vector%mode = 'k0'
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+    allocate(cfg%params(1))
+    cfg%params(:)%Eg = 1.519_dp
+
+    ! Valid material layer boundaries
+    allocate(cfg%z_min(1))
+    allocate(cfg%z_max(1))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 10.0_dp
+
+    call cfg%validate()
+    @assertTrue(.true.)
+  end subroutine test_validate_zmin_lt_zmax
+
+  ! ------------------------------------------------------------------
+  ! V7: SC with QW confinement accepted
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_sc_qw_ok()
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'qw'
+    cfg%FDorder     = 2
+    cfg%fd_step     = 50
+    cfg%grid%ndim   = 1
+    cfg%grid%nx     = 1
+    cfg%grid%ny     = 50
+
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum        = 8
+
+    cfg%num_layers = 1
+    cfg%wave_vector%mode = 'k0'
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+    allocate(cfg%params(1))
+    cfg%params(:)%Eg = 1.519_dp
+
+    ! SC enabled with QW confinement — valid
+    cfg%sc%enabled = 1
+
+    call cfg%validate()
+    @assertTrue(.true.)
+  end subroutine test_validate_sc_qw_ok
+
+  ! ------------------------------------------------------------------
+  ! V8: valid electric field with z(1) /= 0 accepted
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_efield_z_nonzero()
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'qw'
+    cfg%FDorder     = 2
+    cfg%fd_step     = 50
+    cfg%grid%ndim   = 1
+    cfg%grid%nx     = 1
+    cfg%grid%ny     = 50
+
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum        = 8
+
+    cfg%num_layers = 1
+    cfg%wave_vector%mode = 'k0'
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+    allocate(cfg%params(1))
+    cfg%params(:)%Eg = 1.519_dp
+
+    ! Electric field enabled with z(1) /= 0
+    cfg%external_field%enabled = .true.
+    cfg%external_field%type = 'EF'
+    allocate(cfg%z(2))
+    cfg%z(1) = 0.5_dp
+    cfg%z(2) = 1.0_dp
+
+    call cfg%validate()
+    @assertTrue(.true.)
+  end subroutine test_validate_efield_z_nonzero
+
 end module test_defs
