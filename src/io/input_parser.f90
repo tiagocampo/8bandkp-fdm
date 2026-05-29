@@ -121,7 +121,7 @@ contains
     call parse_gfactor(table, cfg)
 
     ! ---- Material parameter database ----
-    call paramDatabase(cfg%material_names, cfg%num_layers, cfg%params)
+    call paramDatabase(cfg%material_names, size(cfg%material_names), cfg%params)
 
     ! ---- Bulk strain substrate (optional) ----
     call get_value(table, 'strain_substrate', cfg%params(1)%strainSubstrate, &
@@ -309,7 +309,7 @@ contains
     if (associated(regions_arr)) then
       nreg = tomlf_len(regions_arr)
       cfg%wire%num_regions = nreg
-      cfg%num_layers = nreg
+      cfg%num_layers = 1
       allocate(cfg%wire%regions(nreg))
       allocate(cfg%material_names(nreg))
       allocate(cfg%params(nreg))
@@ -517,9 +517,9 @@ contains
     call get_value(table, 'doping', doping_arr, requested=.false., stat=stat)
     if (associated(doping_arr)) then
       ndop = tomlf_len(doping_arr)
-      ! Allocate by num_layers (not ndop) to match layer indexing
-      allocate(cfg%doping(cfg%num_layers))
-      do i = 1, min(ndop, cfg%num_layers)
+      ! Allocate by material/region count (not ndop) to match layer indexing
+      allocate(cfg%doping(size(cfg%material_names)))
+      do i = 1, min(ndop, size(cfg%material_names))
         call get_value(doping_arr, i, dop, stat=stat)
         if (.not. associated(dop)) cycle
         call get_value(dop, 'ND', cfg%doping(i)%ND, 0.0_dp, stat=stat)

@@ -232,4 +232,61 @@ contains
     close(unit=99, status='delete')
   end subroutine
 
+  ! ------------------------------------------------------------------
+  ! Wire parser: num_layers must be 1, region count in wire%num_regions.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_wire_parser_num_layers_vs_num_regions()
+    type(simulation_config) :: cfg
+
+    ! Wire mode with 2 regions: InAs core + GaAs shell
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "wire"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wire]'
+    write(99, '(A)') 'nx = 7'
+    write(99, '(A)') 'ny = 7'
+    write(99, '(A)') 'dx = 3.0'
+    write(99, '(A)') 'dy = 3.0'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wire.geometry]'
+    write(99, '(A)') 'shape = "circle"'
+    write(99, '(A)') 'radius = 10.0'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[region]]'
+    write(99, '(A)') 'material = "InAs"'
+    write(99, '(A)') 'inner = 0.0'
+    write(99, '(A)') 'outer = 5.0'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[region]]'
+    write(99, '(A)') 'material = "GaAs"'
+    write(99, '(A)') 'inner = 5.0'
+    write(99, '(A)') 'outer = 10.0'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "kz"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 2'
+    write(99, '(A)') 'num_vb = 6'
+    close(99)
+
+    call read_config(cfg)
+
+    ! num_layers must be 1 for wire (material layers concept, not regions)
+    @assertEqual(1, cfg%num_layers)
+    ! wire%num_regions holds the actual region count
+    @assertEqual(2, cfg%wire%num_regions)
+    ! material_names should be sized by region count
+    @assertEqual(2, size(cfg%material_names))
+    ! params should have 2 entries (one per region)
+    @assertEqual(2, size(cfg%params))
+    ! Both params should have valid lattice constants
+    @assertTrue(cfg%params(1)%a0 > 0.0_dp)
+    @assertTrue(cfg%params(2)%a0 > 0.0_dp)
+
+    close(unit=99, status='delete')
+  end subroutine
+
 end module

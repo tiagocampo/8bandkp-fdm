@@ -70,4 +70,87 @@ contains
     @assertEqual('x', conf_direction('landau'))
   end subroutine test_conf_direction_landau
 
+  ! ------------------------------------------------------------------
+  ! num_layers semantics: num_layers = material layers, not regions.
+  ! Wire mode stores its region count in cfg%wire%num_regions.
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_wire_num_layers_is_one_single_region()
+    ! Wire with 1 region: num_layers must be 1, not the region count.
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'wire'
+    cfg%wire%num_regions = 1
+    cfg%num_layers = 1
+
+    @assertEqual(1, cfg%num_layers)
+    @assertEqual(1, cfg%wire%num_regions)
+  end subroutine test_wire_num_layers_is_one_single_region
+
+  @test
+  subroutine test_wire_num_layers_is_one_multi_region()
+    ! Wire with 3 regions: num_layers must be 1, regions in wire%num_regions.
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'wire'
+    cfg%wire%num_regions = 3
+    cfg%num_layers = 1
+
+    @assertEqual(1, cfg%num_layers)
+    @assertEqual(3, cfg%wire%num_regions)
+  end subroutine test_wire_num_layers_is_one_multi_region
+
+  @test
+  subroutine test_wire_material_array_sized_by_regions()
+    ! Wire material arrays are sized by region count, not num_layers.
+    ! After parser, size(material_names) == wire%num_regions, num_layers == 1.
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'wire'
+    cfg%wire%num_regions = 2
+    cfg%num_layers = 1
+
+    allocate(cfg%material_names(cfg%wire%num_regions))
+    cfg%material_names(1) = 'InAs'
+    cfg%material_names(2) = 'GaAs'
+
+    @assertEqual(1, cfg%num_layers)
+    @assertEqual(2, cfg%wire%num_regions)
+    @assertEqual(2, size(cfg%material_names))
+  end subroutine test_wire_material_array_sized_by_regions
+
+  @test
+  subroutine test_qw_num_layers_equals_nmat()
+    ! QW with 3 materials: num_layers = 3 (material layer count).
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'qw'
+    cfg%num_layers = 3
+
+    @assertEqual(3, cfg%num_layers)
+  end subroutine test_qw_num_layers_equals_nmat
+
+  @test
+  subroutine test_bulk_num_layers_is_one()
+    ! Bulk: single material, num_layers = 1.
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'bulk'
+    cfg%num_layers = 1
+
+    @assertEqual(1, cfg%num_layers)
+  end subroutine test_bulk_num_layers_is_one
+
+  @test
+  subroutine test_landau_num_layers_is_one()
+    ! Landau: single material, num_layers = 1.
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'landau'
+    cfg%num_layers = 1
+
+    @assertEqual(1, cfg%num_layers)
+  end subroutine test_landau_num_layers_is_one
+
 end module test_defs

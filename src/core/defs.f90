@@ -442,7 +442,10 @@ module definitions
     type(wire_config)          :: wire              ! confinement = "wire"
     type(landau_config)        :: landau            ! confinement = "landau"
 
-    ! Material layers (QW/bulk)
+    ! Material layers (QW: num_layers = nmat; bulk/landau/wire: num_layers = 1)
+    ! Wire regions tracked separately in cfg%wire%num_regions.
+    ! material_names/params arrays are sized by material count (QW) or region
+    ! count (wire), which may differ from num_layers.
     character(len=255), allocatable :: material_names(:)
     real(dp), allocatable :: z_min(:), z_max(:)
     integer               :: num_layers = 1
@@ -616,6 +619,9 @@ module definitions
         end if
         if (cfg%wire%ny < cfg%FDorder + 1) then
           error stop 'validate_simulation_config: wire ny must be >= FDorder + 1'
+        end if
+        if (cfg%wire%num_regions < 1) then
+          error stop 'validate_simulation_config: wire num_regions must be >= 1'
         end if
       end if
       if (cfg%confinement == 'landau') then
