@@ -164,9 +164,12 @@ defs.f90                      (kinds, constants, derived types — no deps)
 ### Key design concepts
 
 - **Basis ordering** (fixed throughout): bands 1-4 = valence (HH, LH, LH, HH), bands 5-6 = split-off, bands 7-8 = conduction
-- **Dual mode**: `confinement = "bulk"` → bulk (8x8), `confinement = "qw"` → quantum well (8N x 8N, N = ngrid)
+- **Dual mode**: `confinement = "bulk"` → bulk (8x8), `confinement = "qw"` → quantum well (8N x 8N, N = grid%npoints())
 - **QW Hamiltonian**: 8x8 block matrix, each block NxN. Block structure defined in `hamiltonian_blocks.f90` as a 52-entry table (`get_kp_block_table()`) with named constants (KP_Q, KP_R, etc.). Both dense (`hamiltonianConstructor.f90`) and COO (`hamiltonian_wire.f90`) builders read this table instead of hard-coding the block topology. Blocks: k.p terms (Q, R, S, T, P) + band offsets
 - **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it from `input.toml` using sub-types mirroring TOML sections (`wave_vector_config`, `bands_config`, `external_field_config`, `b_field_config`, `wire_config`, `landau_config`, `feast_config`)
+- **`conf_direction()`** function returns the confinement direction character: bulk → `'n'` (none), QW → `'z'`, wire → `'z'`, Landau → `'x'`. Replaces the old `conf_dir` stored field.
+- **`grid%npoints()`** accessor returns the total number of spatial grid points: bulk → 1, QW → `fd_step`, wire → `nx * ny`, Landau → `landau.nx`. Replaces the old `ngrid` computed field.
+- **`num_layers`** counts `[[material]]` entries (material layers for bulk/QW). Wire mode uses `cfg%wire%num_regions` for `[[region]]` entries instead.
 - **`confinementInitialization`** precomputes material parameters at each z-point into `kpterms(ny, ny, 10)`
 - **Last-layer-wins** in `confinement_init.f90`: later material layers overwrite earlier ones. Use 2-layer pattern (barrier covers full domain, well overwrites center). Avoid full-domain layers after a narrow well layer — they silently destroy the QW.
 - **Sparse vs dense**: g-factor uses MKL SpBLAS for large QW; band structure uses dense LAPACK (`zheevx`)
@@ -179,7 +182,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
 
 ### Input file (`input.toml`)
 
-TOML format parsed by `toml-f` library. Sections are order-independent. Key top-level fields: `confinement` (`"bulk"`, `"qw"`, `"wire"`, `"landau"`), `FDorder` (default 2), `fd_step` (grid points for QW).
+TOML format parsed by `toml-f` library. Sections are order-independent. Key top-level fields: `confinement` (`"bulk"`, `"qw"`, `"wire"`, `"landau"`), `FDorder` (default 2), `fd_step` (grid points for QW; not used for wire/Landau, which derive the grid from `[wire]`/`[landau]` sections).
 
 Sections: `[wave_vector]` (mode, max, nsteps), `[bands]` (num_cb, num_vb), `[[material]]` (name, z_min, z_max), `[wire]` + `[wire.geometry]` + `[[region]]` (wire mode), `[landau]` (Landau mode), `[external_field]` (type, value), `[b_field]` (components, g_factor), `[strain]` (reference), `[sc]` (self-consistent parameters), `[[doping]]` (ND, NA or delta doping), `[topology]` (topological analysis), `[bdg]` (BdG parameters), `[optics]` (optical spectra), `[exciton]`, `[scattering]`, `[feast]`.
 

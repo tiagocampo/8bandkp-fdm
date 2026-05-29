@@ -18,7 +18,7 @@ Required parameters that control the simulation mode and discretization.
 |---|---|---|---|---|---|
 | `confinement` | string | (required) | `"bulk"`, `"qw"`, `"wire"`, `"landau"` | all | Simulation mode: `"bulk"` = 8x8 Hamiltonian, `"qw"` = 8NxN (1D confinement along z), `"wire"` = 2D confinement in x-y, `"landau"` = Landau levels with magnetic field. |
 | `FDorder` | integer | `2` | 2, 4, 6, 8, 10 | Q W | Finite-difference stencil order. Higher orders give better accuracy but require more grid points. Grid must have >= `FDorder + 1` points. |
-| `fd_step` | integer | `1` | >= 1 (bulk), >= 3 (QW) | B Q | Number of finite-difference grid points along the confinement direction. For bulk, set to any value (internally forced to 1). For wire/Landau, ignored (derived from wire/landau grid). |
+| `fd_step` | integer | `1` | >= 1 (bulk), >= 3 (QW) | B Q | Number of finite-difference grid points along the confinement direction. For bulk, set to any value (internally forced to 1). For wire/Landau, this key is not used; the grid is derived from the `[wire]` or `[landau]` section. |
 | `which_band` | integer | `0` | 0, 1 | G | Band edge for g-factor calculation: 0 = conduction band, 1 = valence band. |
 | `band_idx` | integer | `1` | >= 1 | G | Subband doublet index: 1 = ground state, 2 = first excited, etc. |
 
@@ -913,7 +913,7 @@ gauge = "landau"
 - Comments use `#` prefix (standard TOML).
 - Material names are case-sensitive and must match the database in `src/core/parameters.f90` (e.g. `GaAs`, `InAsW`, `Al20Ga80As`).
 - Alloy materials like `Al20Ga80As` use linear interpolation between endpoint binaries with the indicated composition fraction.
-- The `fd_step` field is the user-specified grid size. Internally, a computed `ngrid` field is derived: bulk -> 1, QW -> `fd_step`, wire -> `wire.ny`, Landau -> `landau.nx`.
+- The `fd_step` field is the user-specified grid size for bulk and QW modes. Internally, the grid system (`cfg%grid`) manages the actual point count, accessible via `cfg%grid%npoints()`: bulk returns 1, QW returns `fd_step`, wire returns `nx * ny`, Landau returns `landau.nx`.
 - For bulk mode, the `[[material]]` entry does not need `z_min`/`z_max`.
-- For wire mode, `fd_step` is ignored; the grid size is derived from `wire.ny`.
+- For wire mode, `fd_step` is not used; the grid is specified via the `[wire]` section (`nx`, `ny`, `dx`, `dy`).
 - The `topologicalAnalysis` executable uses the same `input.toml` format with `[topology]` and `[bdg]` sections.

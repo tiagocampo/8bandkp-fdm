@@ -205,7 +205,7 @@ If your physics changes the on-site energies but not the kinetic terms, modify t
 - **Strain**: `compute_bir_pikus_blocks` in `strain_solver.f90` computes Bir-Pikus shifts from the strain tensor.
 - **Self-consistent SP**: The SC loop updates `profile` iteratively via the Poisson potential.
 
-The profile is a 2D array with shape `(Ngrid, 3)` where column 1 is EV, column 2 is EV minus DeltaSO (SO band edge), and column 3 is EC. In QW mode it has shape `(fdStep, 3)`. Modify it any time before the Hamiltonian is built for a given k-point.
+The profile is a 2D array with shape `(grid%npoints(), 3)` where column 1 is EV, column 2 is EV minus DeltaSO (SO band edge), and column 3 is EC. In QW mode the number of rows equals the grid point count from `fd_step`. Modify it any time before the Hamiltonian is built for a given k-point.
 
 ### Level 2: Inside the Hamiltonian (modify k.p terms)
 
@@ -214,7 +214,7 @@ If you need to change the kinetic terms or add new couplings, you must edit the 
 - **Block structure table**: `hamiltonian_blocks.f90` defines a 52-entry table (`get_kp_block_table()`) mapping each nonzero block in the 8x8 band space to its k.p term and complex prefactor. Both dense and COO builders consume this table. Named constants (KP_Q, KP_R, etc.) identify the k.p terms. To add a new coupling, add an entry to this table.
 - **Bulk**: `ZB8bandBulk` -- 8x8 matrix, reads from the k.p block table. Add new off-diagonal elements via the table.
 - **QW**: `ZB8bandQW` -- 8N x 8N block matrix, reads from the k.p block table. The `kpterms(:,:,:)` array holds the precomputed position-dependent FD operators. Index 1-4 are diagonal (gamma1, gamma2, gamma3, P), 5 is A times d^2/dz^2, 6 is P times d/dz, 7 is (gamma1-2gamma2) times d^2/dz^2, 8 is (gamma1+2gamma2) times d^2/dz^2, 9 is gamma3 times d/dz, 10 is A (diagonal).
-- **Wire**: `ZB8bandGeneralized` -- 8*Ngrid x 8*Ngrid sparse CSR, reads from the k.p block table. The `kpterms_2d(:)` array holds 17 CSR matrices (indices 1-17). Indices 1-4 diagonal, 5 A*Laplacian, 6 P*gradient, 7-8 Q/T kinetic terms, 9 gamma3*gradient (legacy), 10 A diagonal, 11 cross-derivative, 12-13 P*x/y gradients for g-factor, 14-15 gamma3*x/y gradients for S/SC terms and g-factor, 16 gamma2*(D2x-D2y) anisotropic Laplacian for R term, 17 placeholder (unused).
+- **Wire**: `ZB8bandGeneralized` -- 8*grid%npoints() x 8*grid%npoints() sparse CSR, reads from the k.p block table. The `kpterms_2d(:)` array holds 17 CSR matrices (indices 1-17). Indices 1-4 diagonal, 5 A*Laplacian, 6 P*gradient, 7-8 Q/T kinetic terms, 9 gamma3*gradient (legacy), 10 A diagonal, 11 cross-derivative, 12-13 P*x/y gradients for g-factor, 14-15 gamma3*x/y gradients for S/SC terms and g-factor, 16 gamma2*(D2x-D2y) anisotropic Laplacian for R term, 17 placeholder (unused).
 - **Strain blocks**: `get_strain_table()` in `strain_solver.f90` defines which Bir-Pikus strain entries apply to which band pairs. Both dense and COO builders consume this table.
 - **Zeeman blocks**: `get_zeeman_table()` in `strain_solver.f90` defines which Zeeman magnetic entries apply to which band pairs. Both dense and COO builders consume this table.
 

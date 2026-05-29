@@ -317,7 +317,7 @@ The logic is symmetric: the two code blocks in `gfactorCalculation` are structur
 
 ### 5.2.5 Sparse mode for quantum wells
 
-For multi-layer QW structures, the Hamiltonian is large ($8N \times 8N$ with $N = \mathtt{fdStep}$). The code builds the perturbation Hamiltonians in CSR sparse format via `ZB8bandQW(..., sparse=.True., HT_csr=..., g='g')`. The momentum matrix elements are then computed with CSR sparse matrix-vector multiplication (`csr_spmv`), avoiding the need to store dense $8N \times 8N$ perturbation matrices. The two perturbation CSR matrices (`HT_csr_mod1` and `HT_csr_mod2`) are built once per direction $d$ and reused across all intermediate states.
+For multi-layer QW structures, the Hamiltonian is large ($8N \times 8N$ with $N = \mathtt{grid\%npoints()}$). The code builds the perturbation Hamiltonians in CSR sparse format via `ZB8bandQW(..., sparse=.True., HT_csr=..., g='g')`. The momentum matrix elements are then computed with CSR sparse matrix-vector multiplication (`csr_spmv`), avoiding the need to store dense $8N \times 8N$ perturbation matrices. The two perturbation CSR matrices (`HT_csr_mod1` and `HT_csr_mod2`) are built once per direction $d$ and reused across all intermediate states.
 
 ### 5.2.6 Wire mode g-factor
 
@@ -468,7 +468,7 @@ z_max = 35
 This defines an InAs/GaSb broken-gap quantum well with AlSb barriers:
 - 101 FD grid points, second-order finite differences.
 - Three material layers with Winkler parameters (the `W` suffix selects the Winkler parameter set).
-- `num_cb = 32` and `num_vb = 32` are multiplied by `ngrid` internally to give 202 CB and 606 VB states for the full $808 \times 808$ QW Hamiltonian.
+- `num_cb = 32` and `num_vb = 32` are multiplied by `grid%npoints()` internally to give 202 CB and 606 VB states for the full $808 \times 808$ QW Hamiltonian.
 
 Run:
 

@@ -1043,7 +1043,7 @@ for several subsequent topics:
 
 The standard QW mode assumes:
 
-- Growth along $z$ (enforced by `confDir = 'z'`)
+- Growth along $z$ (enforced by `conf_direction()` returning `'z'` for QW mode)
 - Uniform grid spacing across the entire domain
 - No strain applied by default in this example (strain is supported via the `[strain]` section; see Chapter 04 for strained QW calculations)
 - No self-consistent charge treatment (the SC loop is a separate module; see

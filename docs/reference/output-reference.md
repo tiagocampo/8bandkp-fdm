@@ -28,7 +28,7 @@ Eigenvalues at each k-point in the wave-vector sweep. Written by `bandStructure`
 | 1 | `\|k\|` = `sqrt(kx^2 + ky^2 + kz^2)` | 1/Angstrom |
 | 2 .. N+1 | Eigenvalues sorted ascending (valence then conduction) | eV |
 
-**Interpretation:** For bulk (`confinement = "bulk"`), there are always 8 eigenvalues per k-point (2 conduction, 6 valence). For QW (`confinement = "qw"`), there are `num_cb + num_vb` eigenvalues where `num_cb = 2 * ngrid` and `num_vb = 6 * ngrid`. For wire (`confinement = "wire"`), the count equals the input `num_cb + num_vb` directly (not scaled by grid size).
+**Interpretation:** For bulk (`confinement = "bulk"`), there are always 8 eigenvalues per k-point (2 conduction, 6 valence). For QW (`confinement = "qw"`), there are `num_cb + num_vb` eigenvalues where `num_cb = 2 * grid%npoints()` and `num_vb = 6 * grid%npoints()`. For wire (`confinement = "wire"`), the count equals the input `num_cb + num_vb` directly (not scaled by grid size).
 
 ---
 
@@ -52,7 +52,7 @@ Eigenfunction amplitudes for a specific eigenstate at a specific k-point. Zero-p
 
 #### Quantum well format (`confinement = "qw"`)
 
-One row per spatial grid point. Each eigenvector has `8 * ngrid` components; the file shows the 8 band components extracted at each z-position.
+One row per spatial grid point. Each eigenvector has `8 * grid%npoints()` components; the file shows the 8 band components extracted at each z-position.
 
 | Column | Meaning | Units |
 |--------|---------|-------|

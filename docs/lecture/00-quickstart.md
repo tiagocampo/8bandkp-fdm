@@ -96,7 +96,7 @@ name = "GaAs"
 | Parameter | Value | Meaning |
 |---|---|---|
 | `confinement` | `"bulk"` | Bulk mode: 8x8 Hamiltonian |
-| `fd_step` | `101` | Ignored in bulk; code forces it to 1 |
+| `fd_step` | `101` | Ignored in bulk; code forces it to 1; used by the grid system for QW mode |
 | `FDorder` | `2` | Finite-difference order (irrelevant for bulk) |
 | `[wave_vector] mode` | `"kx"` | Sweep along the [100] direction |
 | `[wave_vector] max` | `0.1` | Maximum k in 1/Angstrom |
@@ -120,8 +120,8 @@ $E_P = 28.8$ eV, the interband momentum matrix element $P = \sqrt{E_P \cdot \hba
 $\gamma_3$. These are the Vurgaftman 2001 values for GaAs.
 
 The "Warning" about `fdStep` is harmless: bulk mode solves an 8x8 matrix at
-each k-point and does not use finite differences, so the code overrides the
-value to 1. Output file: `output/eigenvalues.dat`
+each k-point and does not use finite differences, so the grid system returns
+1 point regardless of the `fd_step` value. Output file: `output/eigenvalues.dat`
 
 The program writes eigenvalues to `output/eigenvalues.dat`. The first few lines
 look like this:

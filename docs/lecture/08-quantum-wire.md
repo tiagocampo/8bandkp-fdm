@@ -322,7 +322,7 @@ outer = <real>       # outer radius/distance (AA)
 
 For circle and hexagon shapes, `radius` replaces `width`/`height`. For polygon, `vertices` specifies the vertex coordinates as `[[x1, y1], [x2, y2], ...]`.
 
-The parser validates that `wire.nx >= FDorder + 1` and `wire.ny >= FDorder + 1`, builds the `regions` array, and sets up backward-compatible fields (`fdStep`, `dz`) for routines shared between QW and wire modes.
+The parser validates that `wire.nx >= FDorder + 1` and `wire.ny >= FDorder + 1`, builds the `regions` array, and initializes the spatial grid via `init_grid_from_config()`.
 
 ---
 
@@ -630,7 +630,7 @@ For core-shell wires (e.g., InAs core with GaAs shell), multiple regions with di
 ### 6.5 Limitations and tips
 
 **Current limitations:**
-- The free propagation direction is fixed to $z$ (`confDir = 'z'`)
+- The free propagation direction is fixed to $z$ (returned by `conf_direction()` for wire mode)
 - The grid is uniform (no adaptive mesh refinement)
 - Self-consistent Schrodinger-Poisson for wires uses the 2D Poisson solver `solve_poisson_2d` with box integration and cut-cell support
 - Strain is handled by the strain solver module (`src/physics/strain_solver.f90`) but is not yet fully integrated into the wire pipeline
