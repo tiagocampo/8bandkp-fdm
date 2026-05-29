@@ -853,8 +853,8 @@ module definitions
       end if
 
       ! S8: sweep_model must match confinement
-      if (trim(cfg%topo%sweep_model) == 'bhz_analytic' .or. &
-          trim(cfg%topo%sweep_model) == 'qw_fukane') then
+      ! bhz_analytic is confinement-agnostic (purely analytical)
+      if (trim(cfg%topo%sweep_model) == 'qw_fukane') then
         if (trim(cfg%confinement) /= 'qw') then
           error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
             ''' requires confinement=''qw'', got ''' // trim(cfg%confinement) // ''''
