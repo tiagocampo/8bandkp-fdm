@@ -698,10 +698,6 @@ contains
     ! but no [bdg]) propagate the magnetic field correctly.
     cfg%bdg%B_vec = cfg%b_field%components
     cfg%bdg%g_factor = cfg%b_field%g_factor
-    ! Enable Zeeman when [b_field] has nonzero components, even without [bdg].
-    if (any(abs(cfg%b_field%components) > 1.0e-12_dp)) then
-      cfg%bdg%enabled = .true.
-    end if
 
     call get_value(table, 'bdg', bdg_tbl, requested=.false., stat=stat)
     if (.not. associated(bdg_tbl)) return

@@ -286,7 +286,7 @@ module hamiltonian_wire
         ! ==================================================================
         ! Add Zeeman splitting to diagonal blocks
         ! ==================================================================
-        if (cfg%bdg%enabled) then
+        if (any(abs(cfg%bdg%B_vec) > 1.0e-12_dp)) then
           call insert_zeeman_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
             coo_idx, cfg%bdg%B_vec, cfg%bdg%g_factor, cfg%grid, N)
         end if
@@ -418,7 +418,7 @@ module hamiltonian_wire
         ! ==================================================================
         ! Add Zeeman splitting to diagonal blocks
         ! ==================================================================
-        if (cfg%bdg%enabled) then
+        if (any(abs(cfg%bdg%B_vec) > 1.0e-12_dp)) then
           call insert_zeeman_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
             coo_idx, cfg%bdg%B_vec, cfg%bdg%g_factor, cfg%grid, N)
         end if

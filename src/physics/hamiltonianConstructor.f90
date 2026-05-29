@@ -170,23 +170,25 @@ module hamiltonianConstructor
       ! Uses the data-driven Zeeman table from strain_solver.
       ! ---------------------------------------------------------------
       if (present(cfg)) then
-        if (.not. present(g) .and. cfg%bdg%enabled) then
+        if (.not. present(g)) then
           block
             real(kind=dp) :: B_mag, E0
             type(zeeman_entry) :: ztable(8)
             integer :: b
             B_mag = sqrt(sum(cfg%bdg%B_vec**2))
-            E0 = cfg%bdg%g_factor * mu_B * B_mag
-            ztable = get_zeeman_table()
-            do ii = 1, N
-              do b = 1, 8
-                HT(ztable(b)%band_index*N + ii, &
-                   ztable(b)%band_index*N + ii) = &
-                   HT(ztable(b)%band_index*N + ii, &
-                      ztable(b)%band_index*N + ii) &
-                   + ztable(b)%g_multiplier * E0
+            if (B_mag > 1.0e-12_dp) then
+              E0 = cfg%bdg%g_factor * mu_B * B_mag
+              ztable = get_zeeman_table()
+              do ii = 1, N
+                do b = 1, 8
+                  HT(ztable(b)%band_index*N + ii, &
+                     ztable(b)%band_index*N + ii) = &
+                     HT(ztable(b)%band_index*N + ii, &
+                        ztable(b)%band_index*N + ii) &
+                     + ztable(b)%g_multiplier * E0
+                end do
               end do
-            end do
+            end if
           end block
         end if
       end if
@@ -529,12 +531,12 @@ module hamiltonianConstructor
       ! Uses the data-driven Zeeman table from strain_solver.
       ! ---------------------------------------------------------------
       if (present(cfg)) then
-        if (cfg%bdg%enabled) then
-          block
-            real(kind=dp) :: B_mag, E0
-            type(zeeman_entry) :: ztable(8)
-            integer :: b
-            B_mag = sqrt(sum(cfg%bdg%B_vec**2))
+        block
+          real(kind=dp) :: B_mag, E0
+          type(zeeman_entry) :: ztable(8)
+          integer :: b
+          B_mag = sqrt(sum(cfg%bdg%B_vec**2))
+          if (B_mag > 1.0e-12_dp) then
             E0 = cfg%bdg%g_factor * mu_B * B_mag
             ztable = get_zeeman_table()
             do b = 1, 8
@@ -542,8 +544,8 @@ module hamiltonianConstructor
                 HT(ztable(b)%band_index + 1, ztable(b)%band_index + 1) &
                 + ztable(b)%g_multiplier * E0
             end do
-          end block
-        end if
+          end if
+        end block
       end if
 
       ! ---------------------------------------------------------------
