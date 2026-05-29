@@ -11,7 +11,7 @@ module definitions
   ! Physical constants
   public :: pi_sp, pi_dp, pi_qp
   public :: a0, hbar, const, c, m0, e, e0
-  public :: kB_eV, mu_B, tolerance, renormalization, hbar2O2m0
+  public :: kB_eV, mu_B, tolerance, coord_tolerance, renormalization, hbar2O2m0
   public :: NUM_CB_STATES, NUM_VB_STATES, g_free
   public :: SQR3, SQR2, SQR2o3, SQR3o2, RQS3, RQS2
   public :: IU, ZERO, UM
@@ -52,6 +52,7 @@ module definitions
   real(kind=dp), parameter :: kB_eV = 8.617333262e-5_dp        ! Boltzmann constant (eV/K)
   real(kind=dp), parameter :: mu_B = 5.7883818012e-5_dp       ! Bohr magneton (eV/T)
   real(kind=dp), parameter :: tolerance=1e-7
+  real(kind=dp), parameter :: coord_tolerance=1e-12_dp  ! spatial coordinate zero-check threshold
   logical, parameter :: renormalization = .False.
 
   ! Band structure constants (8-band basis: 2 CB + 6 VB per k-point)
@@ -151,7 +152,7 @@ module definitions
   end type sc_config
 
   ! ------------------------------------------------------------------
-  ! Wire geometry specification for confinement=2.
+  ! Wire geometry specification for confinement='wire'.
   ! shape: 'rectangle', 'circle', 'hexagon', 'polygon'
   ! For circle/hexagon: wire_radius is the defining size.
   ! For rectangle: wire_width (x), wire_height (y).
@@ -185,7 +186,7 @@ module definitions
   ! QW:     nx=1, ny=fdStep, dy>0, z(:) holds 1D grid.
   ! Wire:   nx>1, ny>1, dx>0, dy>0, coords(:,:) holds 2D grid.
   !
-  ! For wire mode (confinement=2): nx and ny are the grid points in
+  ! For wire mode (confinement='wire'): nx and ny are the grid points in
   ! the x and y confinement directions respectively. The free
   ! propagation direction is z (kz sweep).
   !
@@ -582,12 +583,12 @@ module definitions
         error stop 'validate_simulation_config: grid must have at least one point'
       end if
 
-      ! bands: must be non-negative
-      if (cfg%bands%num_cb < 0) then
-        error stop 'validate_simulation_config: num_cb must be non-negative'
+      ! bands: must be positive (at least 1 CB and 1 VB)
+      if (cfg%bands%num_cb < 1) then
+        error stop 'validate_simulation_config: num_cb must be >= 1'
       end if
-      if (cfg%bands%num_vb < 0) then
-        error stop 'validate_simulation_config: num_vb must be non-negative'
+      if (cfg%bands%num_vb < 1) then
+        error stop 'validate_simulation_config: num_vb must be >= 1'
       end if
 
       ! evnum must equal num_cb + num_vb (set by parser)
@@ -745,9 +746,42 @@ module definitions
       ! ---- V8: electric field requires z(1) /= 0 ----
       if (cfg%external_field%enabled .and. allocated(cfg%z)) then
         if (cfg%external_field%type == 'EF') then
-          if (abs(cfg%z(1)) < tolerance) then
+          if (abs(cfg%z(1)) < coord_tolerance) then
             error stop 'validate_simulation_config: electric field requires z(1) /= 0'
           end if
+        end if
+      end if
+
+      ! ---- I9: which_band must be 0 or 1 ----
+      if (cfg%which_band < 0 .or. cfg%which_band > 1) then
+        block
+          character(len=16) :: buf
+          write(buf, '(I0)') cfg%which_band
+          error stop 'validate_simulation_config: which_band must be 0 or 1, got ' // trim(buf)
+        end block
+      end if
+
+      ! ---- I11: feast%emin < feast%emax when both nonzero ----
+      if (cfg%feast%emin /= 0.0_dp .and. cfg%feast%emax /= 0.0_dp) then
+        if (cfg%feast%emin >= cfg%feast%emax) then
+          block
+            character(len=32) :: buf_emin, buf_emax
+            write(buf_emin, '(ES12.4)') cfg%feast%emin
+            write(buf_emax, '(ES12.4)') cfg%feast%emax
+            error stop 'validate_simulation_config: feast%emin (' // trim(buf_emin) // &
+              ') must be < feast%emax (' // trim(buf_emax) // ')'
+          end block
+        end if
+      end if
+
+      ! ---- I12: feast%m0 must be in [1, 1000] when nonzero ----
+      if (cfg%feast%m0 /= 0) then
+        if (cfg%feast%m0 < 1 .or. cfg%feast%m0 > 1000) then
+          block
+            character(len=16) :: buf
+            write(buf, '(I0)') cfg%feast%m0
+            error stop 'validate_simulation_config: feast%m0 must be in [1, 1000], got ' // trim(buf)
+          end block
         end if
       end if
 
@@ -773,17 +807,18 @@ module definitions
       if (cfg%wave_vector%nsteps /= 0 .and. cfg%wave_vector%mode /= 'k0') then
         error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
       end if
-      ! S1: bandIdx in range for wire gfactor
+      ! S1: bandIdx in range for wire and QW gfactor
       ! gfactor accesses cb_state(:, bandIdx) and cb_state(:, bandIdx+1),
       ! so the valid range is [1, num_cb-1] (band_idx+1 must be <= num_cb).
-      if (trim(cfg%confinement) == 'wire') then
+      if (trim(cfg%confinement) == 'wire' .or. trim(cfg%confinement) == 'qw') then
         if (cfg%band_idx < 1 .or. cfg%band_idx + 1 > cfg%bands%num_cb) then
           block
             character(len=16) :: buf_idx, buf_max
             write(buf_idx, '(I0)') cfg%band_idx
             write(buf_max, '(I0)') cfg%bands%num_cb - 1
             error stop 'validate_semantic: bandIdx (=' // trim(buf_idx) // &
-              ') out of range [1, ' // trim(buf_max) // '] for wire gfactor'
+              ') out of range [1, ' // trim(buf_max) // '] for ' // &
+              trim(cfg%confinement) // ' gfactor'
           end block
         end if
       end if
@@ -791,6 +826,11 @@ module definitions
     case ('opticalProperties')
       if (.not. cfg%optics%enabled) then
         error stop 'validate_semantic: opticalProperties requires [optics] block with enabled = true'
+      end if
+      ! I8: optics does not support landau confinement
+      if (trim(cfg%confinement) == 'landau') then
+        error stop 'validate_semantic: opticalProperties does not support confinement=''landau''' // &
+          ' (supported: bulk, qw, wire)'
       end if
 
     case ('topologicalAnalysis')
@@ -955,9 +995,9 @@ module definitions
   ! Initialize a spatial_grid from the fields already set in
   ! simulation_config.  This is the primary grid initialization path.
   !
-  ! For bulk (confinement=0): ndim=0, nx=ny=1.
-  ! For QW  (confinement=1): ndim=1, nx=1, ny=fdStep, z(:) copied.
-  ! For wire(confinement=2): ndim=2, nx=wire_nx, ny=wire_ny,
+  ! For bulk (confinement='bulk'): ndim=0, nx=ny=1.
+  ! For QW  (confinement='qw'): ndim=1, nx=1, ny=fdStep, z(:) copied.
+  ! For wire(confinement='wire'): ndim=2, nx=wire_nx, ny=wire_ny,
   !   set grid dimensions only.  Coordinate arrays, material_id,
   !   cut-cell fields and ghost_map are populated by
   !   init_wire_from_config() in the geometry module.
