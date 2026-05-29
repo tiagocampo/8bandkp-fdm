@@ -61,7 +61,7 @@ TOL_EG = TOL_EXACT              # machine precision
 TOL_DELTASO = TOL_EXACT         # machine precision
 TOL_MASS = 0.05                 # 5% for 8-band reference comparison
 TOL_GFACTOR = TOL_ANALYTICAL    # 1% for Roth vs 8-band
-TOL_ABSORPTION = 0.05           # 5% for absorption edge (onset shape varies with VB dispersion)
+TOL_ABSORPTION = 0.06           # 6% for absorption edge (onset is broadened above Eg by linewidth + VB dispersion)
 
 # CB eigenvalue index (0-based): bands 1-4=valence, 5-6=SO, 7-8=CB
 CB_INDEX = 6

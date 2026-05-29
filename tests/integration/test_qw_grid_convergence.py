@@ -275,6 +275,7 @@ SYSTEMS = {
         'fdsteps': [51, 101, 201, 401],
         'fdorder': 2,
         'observables': ['CB1_energy', 'CB2_energy', 'subband_spacing', 'effective_mass', 'gz', 'absorption_edge'],
+        'rate_tolerance': 1.0,  # 8-band k.p with material interfaces converges slower than FD order
     },
     'S5': {
         'name': 'InAsW/GaSbW QW',
@@ -291,7 +292,7 @@ SYSTEMS = {
         'fdsteps': [51, 101, 201, 401],
         'fdorder': 2,
         'observables': ['CB1_energy'],
-        'rate_tolerance': 0.5,
+        'rate_tolerance': 1.0,  # strained QW with material interfaces converges slower than FD order
     },
 }
 

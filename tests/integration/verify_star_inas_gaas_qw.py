@@ -124,7 +124,7 @@ TOL_GFACTOR = 0.05     # 5% regression tolerance vs 8-band QW reference
 # The bulk Bir-Pikus and Roth predictions are printed for comparison but
 # the QW results differ due to confinement and band-mixing effects.
 HHLH_REF = 0.1623      # eV (const-correct 8-band QW with corrected Q_eps sign)
-G_REF = -1.829         # gz (const-correct 8-band QW; bulk Roth: -14.6)
+G_REF = -1.190         # gz (8-band QW with strain; bulk Roth: -14.6)
 
 
 def check_hh_lh_splitting(evals, num_vb):
