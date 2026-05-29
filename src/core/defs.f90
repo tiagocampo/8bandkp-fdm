@@ -745,7 +745,7 @@ module definitions
       ! ---- V8: electric field requires z(1) /= 0 ----
       if (cfg%external_field%enabled .and. allocated(cfg%z)) then
         if (cfg%external_field%type == 'EF') then
-          if (cfg%z(1) == 0.0_dp) then
+          if (abs(cfg%z(1)) < tolerance) then
             error stop 'validate_simulation_config: electric field requires z(1) /= 0'
           end if
         end if
@@ -833,7 +833,9 @@ module definitions
       end if
 
       ! S5–S7: spectral function parameters
-      if (cfg%topo%compute_spectral) then
+      ! Validate when mode='spectral' (dispatches to run_spectral) or
+      ! compute_spectral=.true. (spectral computation requested for any mode).
+      if (trim(cfg%topo%mode) == 'spectral' .or. cfg%topo%compute_spectral) then
         if (cfg%topo%spectral_eta <= 0.0_dp) then
           block
             character(len=32) :: buf_eta
@@ -858,27 +860,32 @@ module definitions
       end if
 
       ! S8: sweep_model must be recognized and match confinement
-      ! bhz_analytic is confinement-agnostic (purely analytical)
-      select case (trim(cfg%topo%sweep_model))
-      case ('bhz_analytic')
-        ! confinement-agnostic, no further check needed
-      case ('qw_fukane')
-        if (trim(cfg%confinement) /= 'qw') then
+      ! Only validate when mode='sweep' (the sole consumer of sweep_model).
+      ! bhz_analytic is confinement-agnostic (purely analytical).
+      if (trim(cfg%topo%mode) == 'sweep') then
+        select case (trim(cfg%topo%sweep_model))
+        case ('bhz_analytic')
+          ! confinement-agnostic, no further check needed
+        case ('qw_fukane')
+          if (trim(cfg%confinement) /= 'qw') then
+            error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
+              ''' requires confinement=''qw'', got ''' // trim(cfg%confinement) // ''''
+          end if
+        case ('wire_bdg')
+          if (trim(cfg%confinement) /= 'wire') then
+            error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
+              ''' requires confinement=''wire'', got ''' // trim(cfg%confinement) // ''''
+          end if
+        case default
           error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
-            ''' requires confinement=''qw'', got ''' // trim(cfg%confinement) // ''''
-        end if
-      case ('wire_bdg')
-        if (trim(cfg%confinement) /= 'wire') then
-          error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
-            ''' requires confinement=''wire'', got ''' // trim(cfg%confinement) // ''''
-        end if
-      case default
-        error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
-          ''' not recognized (expected: bhz_analytic, qw_fukane, wire_bdg)'
-      end select
+            ''' not recognized (expected: bhz_analytic, qw_fukane, wire_bdg)'
+        end select
+      end if
 
       ! S9: conductance_method must be a recognized enum
-      if (cfg%topo%compute_conductance) then
+      ! Validate when mode='conductance' (dispatches to run_conductance) or
+      ! compute_conductance=.true. (conductance computation requested).
+      if (trim(cfg%topo%mode) == 'conductance' .or. cfg%topo%compute_conductance) then
         if (trim(cfg%topo%conductance_method) /= 'kubo_chern' .and. &
             trim(cfg%topo%conductance_method) /= 'kubo_berry' .and. &
             trim(cfg%topo%conductance_method) /= 'landauer') then
