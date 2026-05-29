@@ -804,9 +804,12 @@ module definitions
       ! S10: topology mode must be a recognized enum
       if (trim(cfg%topo%mode) /= 'qhe' .and. &
           trim(cfg%topo%mode) /= 'qshe' .and. &
-          trim(cfg%topo%mode) /= 'bdg') then
+          trim(cfg%topo%mode) /= 'bdg' .and. &
+          trim(cfg%topo%mode) /= 'spectral' .and. &
+          trim(cfg%topo%mode) /= 'conductance' .and. &
+          trim(cfg%topo%mode) /= 'sweep') then
         error stop 'validate_semantic: topology mode ''' // trim(cfg%topo%mode) // &
-          ''' not recognized (expected: qhe, qshe, bdg)'
+          ''' not recognized (expected: qhe, qshe, bdg, spectral, conductance, sweep)'
       end if
 
       ! S2: QSHE Z2 requires QW or wire confinement

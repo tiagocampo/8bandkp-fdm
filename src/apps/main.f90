@@ -112,9 +112,6 @@ program kpfdm
     case ("k0")
       ! Already zeroed above
 
-    case default
-      stop "no such direction"
-
   end select
 
   ! ====================================================================
@@ -412,25 +409,6 @@ program kpfdm
   N = cfg%grid%npoints() * 8
   if (conf_direction(cfg%confinement) == 'n') then
     N = 8  ! For bulk, we only need 8x8
-    if (cfg%evnum > 8) then
-      print *, "Warning: requesting more bands than available in bulk (8). Using all 8 bands."
-      cfg%evnum = 8
-      cfg%bands%num_cb = 2
-      cfg%bands%num_vb = 6
-    end if
-  end if
-
-  ! For quantum well, check if requested bands are within limits
-  if (conf_direction(cfg%confinement) == 'z') then
-    if (cfg%bands%num_cb > NUM_CB_STATES*cfg%grid%npoints()) then
-      print *, "Warning: requesting more conduction bands than available. Limiting to ", NUM_CB_STATES*cfg%grid%npoints()
-      cfg%bands%num_cb = NUM_CB_STATES*cfg%grid%npoints()
-    end if
-    if (cfg%bands%num_vb > NUM_VB_STATES*cfg%grid%npoints()) then
-      print *, "Warning: requesting more valence bands than available. Limiting to ", NUM_VB_STATES*cfg%grid%npoints()
-      cfg%bands%num_vb = NUM_VB_STATES*cfg%grid%npoints()
-    end if
-    cfg%evnum = cfg%bands%num_cb + cfg%bands%num_vb
   end if
 
   vl = 0.0_dp
@@ -756,10 +734,6 @@ program kpfdm
         B_max  = cfg%bdg%B_sweep(2)
         B_step = cfg%bdg%B_sweep(3)
 
-        if (B_step <= 0.0_dp) then
-          print *, 'ERROR: b_sweep step must be > 0, got:', B_step
-          stop 1
-        end if
         nB = int((B_max - B_min) / B_step) + 1
         nL = iuu - il + 1
 

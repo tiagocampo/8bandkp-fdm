@@ -87,9 +87,6 @@ contains
 
     select case(trim(cfg%confinement))
     case('bulk')
-      if (cfg%sc%enabled == 1) then
-        print *, 'Warning: SC with bulk mode requires confinement=qw.'
-      end if
       setup%N = 8
       setup%il = 1
       setup%iuu = 8
@@ -103,10 +100,6 @@ contains
       setup%kpterms = 0.0_dp
       call confinementInitialization(cfg, setup%profile, setup%kpterms)
       if (cfg%external_field%enabled .and. cfg%external_field%type == "EF") then
-        if (abs(cfg%z(1)) < tolerance) then
-          print *, 'Error: Electric field requires z(1) /= 0.'
-          stop 1
-        end if
         call externalFieldSetup_electricField(setup%profile, cfg%external_field%value, &
           cfg%totalSize, cfg%z)
       end if

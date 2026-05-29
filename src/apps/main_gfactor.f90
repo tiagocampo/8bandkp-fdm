@@ -71,13 +71,6 @@ program gfactor
   smallk(1)%ky = 0
   smallk(1)%kz = 0
 
-  select case(cfg%wave_vector%mode)
-    case ("k0")
-      ! Already set to zero
-    case default
-      stop "no such direction"
-  end select
-
   whichBand = cfg%which_band
   bandIdx = cfg%band_idx
 
@@ -129,12 +122,6 @@ program gfactor
         print *, 'Error: FEAST found', eigen_res%nev_found, &
           ' eigenvalues but need', cfg%bands%num_cb + cfg%bands%num_vb
         print *, '  numcb=', cfg%bands%num_cb, ' numvb=', cfg%bands%num_vb
-        stop 1
-      end if
-
-      if (bandIdx < 1 .or. bandIdx + 1 > cfg%bands%num_cb) then
-        print *, 'Error: bandIdx=', bandIdx, ' out of range for numcb=', cfg%bands%num_cb
-        print *, '  Need bandIdx >= 1 and bandIdx+1 <= numcb'
         stop 1
       end if
 

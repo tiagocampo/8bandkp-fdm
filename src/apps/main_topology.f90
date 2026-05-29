@@ -162,9 +162,6 @@ program topologicalAnalysis
             print *, '  Z2 invariant: ', topo_result%z2_invariant
             print *, '  Minimum direct gap: ', topo_result%min_gap, ' eV'
           end block
-        else
-          print *, 'Error: QSHE Z2 mode requires confinement=1 (QW) or confinement=2 (wire)'
-          stop 1
         end if
       end if
 
@@ -178,18 +175,10 @@ program topologicalAnalysis
     case('bdg')
     ! Bogoliubov-de Gennes: topological SC with Majorana modes
     ! ==================================================================
-      if (.not. cfg%bdg%enabled) then
-        print *, 'Error: bdg mode requires [bdg] block with enabled = true in input.toml'
-        stop 1
-      end if
-
       if (cfg%confinement == 'wire') then
         call run_bdg_wire(cfg, topo_result)
       else if (cfg%confinement == 'qw') then
         call run_bdg_qw(cfg, profile, kpterms, topo_result)
-      else
-        print *, 'Error: BdG mode requires confinement=1 (QW) or confinement=2 (wire)'
-        stop 1
       end if
 
       print *, '=== BdG analysis complete ==='
@@ -223,11 +212,6 @@ program topologicalAnalysis
         call run_gap_sweep(cfg, topo_result)
       end if
       print *, '=== Gap sweep analysis complete ==='
-
-    case default
-      print *, 'Error: Unknown topology mode: ', trim(cfg%topo%mode)
-      print *, '  Supported modes: qhe, qshe, bdg, spectral, conductance, sweep'
-      stop 1
 
   end select
 
@@ -922,22 +906,9 @@ contains
 
     print *, '--- Spectral function A(k, E) ---'
 
-    if (cfg_in%topo%spectral_eta <= 0.0_dp) then
-      print *, 'Error: spectral mode requires spectral_eta > 0'
-      stop 1
-    end if
-
     ! Build k and E grids from config
     nk = cfg_in%topo%spectral_nk
     nE = cfg_in%topo%spectral_nE
-    if (nk < 1) then
-      print *, 'Error: spectral mode requires spectral_nk >= 1'
-      stop 1
-    end if
-    if (nE < 1) then
-      print *, 'Error: spectral mode requires spectral_nE >= 1'
-      stop 1
-    end if
     allocate(k_arr(nk), E_arr(nE))
 
     if (nk > 1) then
@@ -1095,9 +1066,6 @@ contains
       print *, '  Method: Landauer single-channel chain'
       print *, '  Transmission T = ', T
       print *, '  Conductance G = ', result%conductance_zz, ' e^2/h'
-    case default
-      print *, 'Error: unsupported conductance_method: ', trim(cfg_in%topo%conductance_method)
-      stop 1
     end select
 
   end subroutine run_conductance
@@ -1134,17 +1102,9 @@ contains
         & cfg_in%topo%gap_sweep_mu_min, cfg_in%topo%gap_sweep_mu_max, nMu, &
         & gap_threshold, z2_map_int, gap_map_real, transitions)
     case ('qw_fukane')
-      if (cfg_in%confinement /= 'qw' .or. .not. present(profile_in) .or. .not. present(kpterms_in)) then
-        print *, 'ERROR: sweep_model=qw_fukane requires confinement=1 with QW profile/kpterms'
-        stop 1
-      end if
       call compute_qw_fukane_gap_sweep(cfg_in, profile_in, kpterms_in, gap_threshold, &
         & z2_map_int, gap_map_real, transitions)
     case ('wire_bdg')
-      if (cfg_in%confinement /= 'wire') then
-        print *, 'ERROR: sweep_model=wire_bdg requires confinement=2'
-        stop 1
-      end if
       call compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map_int, gap_map_real, transitions)
     case default
       print *, 'ERROR: unknown topology sweep_model: ', trim(cfg_in%topo%sweep_model)
