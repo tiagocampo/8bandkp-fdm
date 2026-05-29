@@ -613,7 +613,7 @@ program opticalProperties
     print '(a)', ' Wire optical spectra written to output/'
 
   case default
-    print '(a,i0)', 'ERROR: unknown confinement mode ', cfg%confinement
+    print '(a,a)', 'ERROR: unknown confinement mode ', trim(cfg%confinement)
     stop 1
 
   end select
