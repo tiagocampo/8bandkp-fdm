@@ -774,12 +774,14 @@ module definitions
         error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
       end if
       ! S1: bandIdx in range for wire gfactor
+      ! gfactor accesses cb_state(:, bandIdx) and cb_state(:, bandIdx+1),
+      ! so the valid range is [1, num_cb-1] (band_idx+1 must be <= num_cb).
       if (trim(cfg%confinement) == 'wire') then
-        if (cfg%band_idx < 1 .or. cfg%band_idx > cfg%bands%num_cb) then
+        if (cfg%band_idx < 1 .or. cfg%band_idx + 1 > cfg%bands%num_cb) then
           block
             character(len=16) :: buf_idx, buf_max
             write(buf_idx, '(I0)') cfg%band_idx
-            write(buf_max, '(I0)') cfg%bands%num_cb
+            write(buf_max, '(I0)') cfg%bands%num_cb - 1
             error stop 'validate_semantic: bandIdx (=' // trim(buf_idx) // &
               ') out of range [1, ' // trim(buf_max) // '] for wire gfactor'
           end block
@@ -852,19 +854,25 @@ module definitions
         end if
       end if
 
-      ! S8: sweep_model must match confinement
+      ! S8: sweep_model must be recognized and match confinement
       ! bhz_analytic is confinement-agnostic (purely analytical)
-      if (trim(cfg%topo%sweep_model) == 'qw_fukane') then
+      select case (trim(cfg%topo%sweep_model))
+      case ('bhz_analytic')
+        ! confinement-agnostic, no further check needed
+      case ('qw_fukane')
         if (trim(cfg%confinement) /= 'qw') then
           error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
             ''' requires confinement=''qw'', got ''' // trim(cfg%confinement) // ''''
         end if
-      else if (trim(cfg%topo%sweep_model) == 'wire_bdg') then
+      case ('wire_bdg')
         if (trim(cfg%confinement) /= 'wire') then
           error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
             ''' requires confinement=''wire'', got ''' // trim(cfg%confinement) // ''''
         end if
-      end if
+      case default
+        error stop 'validate_semantic: sweep_model ''' // trim(cfg%topo%sweep_model) // &
+          ''' not recognized (expected: bhz_analytic, qw_fukane, wire_bdg)'
+      end select
 
       ! S9: conductance_method must be a recognized enum
       if (cfg%topo%compute_conductance) then
