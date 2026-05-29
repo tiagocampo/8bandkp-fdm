@@ -230,6 +230,13 @@ contains
 
     ! Grid computation
     cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
+    if (cfg%fd_step < 2) then
+      block
+        character(len=16) :: buf
+        write(buf, '(I0)') cfg%fd_step
+        error stop 'parse_materials_qw: fd_step must be >= 2, got ' // trim(buf)
+      end block
+    end if
     cfg%delta = cfg%totalSize / real(cfg%fd_step - 1, kind=dp)
     cfg%z = [ (cfg%z_min(1) + (i-1)*cfg%delta, i=1, cfg%fd_step) ]
     cfg%dz = cfg%delta
