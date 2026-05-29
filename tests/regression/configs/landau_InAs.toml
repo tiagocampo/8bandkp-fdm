@@ -18,3 +18,7 @@ name = "InAs"
 [external_field]
 type = "EF"
 value = 0.0005
+
+[b_field]
+components = [0.0, 0.0, 5.0]
+g_factor = 2.0
