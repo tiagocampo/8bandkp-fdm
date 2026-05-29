@@ -111,6 +111,7 @@ contains
     call parse_external_field(table, cfg)
     call parse_b_field(table, cfg)
     call parse_sc(table, cfg)
+    call parse_doping(table, cfg)
     call parse_topology(table, cfg)
     call parse_bdg(table, cfg)
     call parse_optics(table, cfg)
@@ -122,11 +123,6 @@ contains
 
     ! ---- Material parameter database ----
     call paramDatabase(cfg%material_names, size(cfg%material_names), cfg%params)
-
-    ! ---- Bulk strain substrate (optional) ----
-    call get_value(table, 'strain_substrate', cfg%params(1)%strainSubstrate, &
-      0.0_dp, stat=stat)
-    call check_optional_stat(stat, 'strain_substrate', 'top-level')
 
     ! ---- Initialize spatial grid ----
     call init_grid_from_config(cfg)
@@ -230,11 +226,11 @@ contains
 
     ! Grid computation
     cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
-    if (cfg%fd_step < 2) then
+    if (cfg%fd_step < 3) then
       block
         character(len=16) :: buf
         write(buf, '(I0)') cfg%fd_step
-        error stop 'parse_materials_qw: fd_step must be >= 2, got ' // trim(buf)
+        error stop 'parse_materials_qw: fd_step must be >= 3, got ' // trim(buf)
       end block
     end if
     cfg%delta = cfg%totalSize / real(cfg%fd_step - 1, kind=dp)
@@ -470,10 +466,8 @@ contains
     type(simulation_config), intent(inout) :: cfg
 
     type(toml_table), pointer :: sc_tbl => null()
-    type(toml_array), pointer :: doping_arr => null()
-    type(toml_table), pointer :: dop => null()
     character(len=:), allocatable :: fermi_mode_str, bc_str
-    integer :: stat, i, ndop
+    integer :: stat
 
     call get_value(table, 'sc', sc_tbl, requested=.false., stat=stat)
     if (.not. associated(sc_tbl)) return
@@ -519,37 +513,53 @@ contains
     call check_optional_stat(stat, 'bc_left', 'sc')
     call get_value(sc_tbl, 'bc_right', cfg%sc%bc_right, 0.0_dp, stat=stat)
     call check_optional_stat(stat, 'bc_right', 'sc')
-
-    ! Doping
-    call get_value(table, 'doping', doping_arr, requested=.false., stat=stat)
-    if (associated(doping_arr)) then
-      ndop = tomlf_len(doping_arr)
-      ! Allocate by material/region count (not ndop) to match layer indexing
-      allocate(cfg%doping(size(cfg%material_names)))
-      do i = 1, min(ndop, size(cfg%material_names))
-        call get_value(doping_arr, i, dop, stat=stat)
-        if (.not. associated(dop)) cycle
-        call get_value(dop, 'ND', cfg%doping(i)%ND, 0.0_dp, stat=stat)
-        call check_optional_stat(stat, 'ND', 'doping')
-        call get_value(dop, 'NA', cfg%doping(i)%NA, 0.0_dp, stat=stat)
-        call check_optional_stat(stat, 'NA', 'doping')
-        call get_value(dop, 'NS', cfg%doping(i)%NS, 0.0_dp, stat=stat)
-        call check_optional_stat(stat, 'NS', 'doping')
-        call get_value(dop, 'fwhm', cfg%doping(i)%delta_fwhm, 10.0_dp, stat=stat)
-        call check_optional_stat(stat, 'fwhm', 'doping')
-        call get_value(dop, 'pos', cfg%doping(i)%delta_pos, 0.0_dp, stat=stat)
-        call check_optional_stat(stat, 'pos', 'doping')
-        block
-          character(len=:), allocatable :: dtype_str
-          call get_value(dop, 'type', dtype_str, 'uniform', stat=stat)
-          call check_optional_stat(stat, 'type', 'doping')
-          if (allocated(dtype_str)) then
-            cfg%doping(i)%dtype = trim(dtype_str)
-          end if
-        end block
-      end do
-    end if
   end subroutine parse_sc
+
+  ! ==================================================================
+  ! [[doping]] array-of-tables (top-level, independent of [sc])
+  ! ==================================================================
+  subroutine parse_doping(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_array), pointer :: doping_arr => null()
+    type(toml_table), pointer :: dop => null()
+    integer :: stat, i, ndop
+
+    call get_value(table, 'doping', doping_arr, requested=.false., stat=stat)
+    if (.not. associated(doping_arr)) return
+
+    ! Warn if [sc] section is absent — doping has no effect without SC loop
+    if (cfg%sc%enabled == 0) then
+      print *, 'Warning: [[doping]] present without [sc] section — doping will be parsed but has no effect'
+    end if
+
+    ndop = tomlf_len(doping_arr)
+    ! Allocate by material/region count (not ndop) to match layer indexing
+    allocate(cfg%doping(size(cfg%material_names)))
+    do i = 1, min(ndop, size(cfg%material_names))
+      call get_value(doping_arr, i, dop, stat=stat)
+      if (.not. associated(dop)) cycle
+      call get_value(dop, 'ND', cfg%doping(i)%ND, 0.0_dp, stat=stat)
+      call check_optional_stat(stat, 'ND', 'doping')
+      call get_value(dop, 'NA', cfg%doping(i)%NA, 0.0_dp, stat=stat)
+      call check_optional_stat(stat, 'NA', 'doping')
+      call get_value(dop, 'NS', cfg%doping(i)%NS, 0.0_dp, stat=stat)
+      call check_optional_stat(stat, 'NS', 'doping')
+      call get_value(dop, 'fwhm', cfg%doping(i)%delta_fwhm, 10.0_dp, stat=stat)
+      call check_optional_stat(stat, 'fwhm', 'doping')
+      call get_value(dop, 'pos', cfg%doping(i)%delta_pos, 0.0_dp, stat=stat)
+      call check_optional_stat(stat, 'pos', 'doping')
+      block
+        character(len=:), allocatable :: dtype_str
+        call get_value(dop, 'type', dtype_str, 'uniform', stat=stat)
+        call check_optional_stat(stat, 'type', 'doping')
+        if (allocated(dtype_str)) then
+          cfg%doping(i)%dtype = trim(dtype_str)
+        end if
+      end block
+    end do
+  end subroutine parse_doping
 
   ! ==================================================================
   ! [topology] section
@@ -683,14 +693,16 @@ contains
     character(len=:), allocatable :: gauge_val
     integer :: stat, i
 
-    call get_value(table, 'bdg', bdg_tbl, requested=.false., stat=stat)
-    if (.not. associated(bdg_tbl)) return
-
-    ! Default B_vec and g_factor from [b_field] section, then override below
-    ! Only override with TOML values when explicitly present in [bdg].
+    ! Default B_vec and g_factor from [b_field] section — must run even
+    ! when [bdg] is absent so that Landau configs (which have [b_field]
+    ! but no [bdg]) propagate the magnetic field correctly.
     cfg%bdg%B_vec = cfg%b_field%components
     cfg%bdg%g_factor = cfg%b_field%g_factor
 
+    call get_value(table, 'bdg', bdg_tbl, requested=.false., stat=stat)
+    if (.not. associated(bdg_tbl)) return
+
+    ! Only override with TOML values when explicitly present in [bdg].
     call get_value(bdg_tbl, 'mu', cfg%bdg%mu, 0.0_dp, stat=stat)
     call check_optional_stat(stat, 'mu', 'bdg')
     call get_value(bdg_tbl, 'delta_0', cfg%bdg%delta_0, 0.0_dp, stat=stat)
@@ -855,6 +867,9 @@ contains
     if (.not. associated(strain_tbl)) return
 
     cfg%strain%enabled = .true.
+    call get_value(strain_tbl, 'strain_substrate', cfg%params(1)%strainSubstrate, &
+      0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'strain_substrate', 'strain')
     call get_value(strain_tbl, 'reference', ref_val, 'substrate', stat=stat)
     call check_optional_stat(stat, 'reference', 'strain')
     if (allocated(ref_val)) then
