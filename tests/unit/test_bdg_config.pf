@@ -223,11 +223,14 @@ contains
     @assertEqual(1.0_dp, cfg%b_field%components(1), tolerance=1.0e-12_dp)
     @assertEqual(15.0_dp, cfg%b_field%g_factor, tolerance=1.0e-12_dp)
 
-    ! bdg should remain at defaults (not enabled, not populated)
+    ! bdg should NOT be enabled (no [bdg] section), but B_vec and g_factor
+    ! are now copied from [b_field] unconditionally so that Landau configs
+    ! (which have [b_field] but no [bdg]) propagate the magnetic field.
     @assertFalse(cfg%bdg%enabled)
-    @assertEqual(0.0_dp, cfg%bdg%B_vec(1), tolerance=1.0e-12_dp)
-    @assertEqual(0.0_dp, cfg%bdg%B_vec(2), tolerance=1.0e-12_dp)
-    @assertEqual(0.0_dp, cfg%bdg%B_vec(3), tolerance=1.0e-12_dp)
+    @assertEqual(1.0_dp, cfg%bdg%B_vec(1), tolerance=1.0e-12_dp)
+    @assertEqual(2.0_dp, cfg%bdg%B_vec(2), tolerance=1.0e-12_dp)
+    @assertEqual(3.0_dp, cfg%bdg%B_vec(3), tolerance=1.0e-12_dp)
+    @assertEqual(15.0_dp, cfg%bdg%g_factor, tolerance=1.0e-12_dp)
 
     close(unit=99, status='delete')
   end subroutine
