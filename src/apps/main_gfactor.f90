@@ -111,7 +111,7 @@ program gfactor
       if (eigen_res%nev_found == 0) then
         print *, 'Error: FEAST found no eigenvalues. Check energy window.'
         print *, '  Window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
-        stop 1
+        error stop 'FEAST found no eigenvalues'
       end if
 
       if (.not. eigen_res%converged) then
@@ -122,7 +122,7 @@ program gfactor
         print *, 'Error: FEAST found', eigen_res%nev_found, &
           ' eigenvalues but need', cfg%bands%num_cb + cfg%bands%num_vb
         print *, '  numcb=', cfg%bands%num_cb, ' numvb=', cfg%bands%num_vb
-        stop 1
+        error stop 'FEAST eigenvalue count mismatch'
       end if
 
       N = setup%Ntot

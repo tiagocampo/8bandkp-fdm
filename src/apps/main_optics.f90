@@ -115,7 +115,7 @@ program opticalProperties
       eig(:,1), HT, N, work, lwork, rwork, iwork, ifail, info)
     if (info /= 0) then
       print '(a,i0)', 'ERROR: zheevx workspace query failed, info = ', info
-      stop 1
+      error stop 'zheevx workspace query failed'
     end if
     lwork = int(real(work(1)))
     deallocate(work)
@@ -192,7 +192,7 @@ program opticalProperties
           !$omp critical
           print '(a,i0,a,i0)', ' ERROR: diagonalization failed at k=', k, ' info=', info_loc
           !$omp end critical
-          stop 1
+          error stop 'diagonalization failed during k-sweep'
         end if
 
         ! Store eigenvectors (zheevx overwrites HT_loc with them)
@@ -309,7 +309,7 @@ program opticalProperties
       eig(:,1), HT, N, work, lwork, rwork, iwork, ifail, info)
     if (info /= 0) then
       print '(a,i0)', 'ERROR: zheevx workspace query failed, info = ', info
-      stop 1
+      error stop 'zheevx workspace query failed'
     end if
     lwork = int(real(work(1)))
     deallocate(work)
@@ -381,7 +381,7 @@ program opticalProperties
           !$omp critical
           print '(a,i0,a,i0)', ' ERROR: diagonalization failed at k=', k, ' info=', info_loc
           !$omp end critical
-          stop 1
+          error stop 'diagonalization failed during k-sweep'
         end if
 
         ! Store eigenvectors (zheevx overwrites HT_loc with them)
@@ -614,7 +614,7 @@ program opticalProperties
 
   case default
     print '(a,a)', 'ERROR: unknown confinement mode ', trim(cfg%confinement)
-    stop 1
+    error stop 'unknown confinement mode'
 
   end select
 

@@ -46,6 +46,7 @@ module eigensolver
     complex(kind=dp), allocatable :: eigenvectors(:,:)
     integer                       :: iterations = 0
     logical                       :: converged = .false.
+    logical                       :: was_freed = .false.
   contains
     final :: eigensolver_result_finalize
   end type eigensolver_result
@@ -79,6 +80,7 @@ module eigensolver
     integer                       :: M0 = 0
     integer                       :: N = 0
     logical                       :: initialized = .false.
+    logical                       :: was_freed = .false.
   contains
     final :: feast_workspace_finalize
   end type feast_workspace
@@ -780,6 +782,8 @@ contains
   subroutine eigensolver_result_free(result)
     type(eigensolver_result), intent(inout) :: result
 
+    if (result%was_freed) return
+    result%was_freed = .true.
     if (allocated(result%eigenvalues))  deallocate(result%eigenvalues)
     if (allocated(result%eigenvectors)) deallocate(result%eigenvectors)
     result%nev_found = 0
@@ -802,6 +806,8 @@ contains
   subroutine feast_workspace_free(fw)
     type(feast_workspace), intent(inout) :: fw
 
+    if (fw%was_freed) return
+    fw%was_freed = .true.
     if (allocated(fw%rowptr_loc)) deallocate(fw%rowptr_loc)
     if (allocated(fw%colind_loc)) deallocate(fw%colind_loc)
     fw%nnz_upper = 0

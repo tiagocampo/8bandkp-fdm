@@ -51,6 +51,7 @@ module simulation_setup_mod
     type(eigensolver_config)      :: eigen_cfg
     class(eigensolver_base), allocatable :: eigen_solver
     integer :: Ngrid = 0, Ntot = 0, nev_wire = 0
+    logical :: was_freed = .false.
   contains
     final :: simulation_setup_finalize
   end type simulation_setup
@@ -84,6 +85,7 @@ contains
     setup%sc_was_run = .false.
     setup%fermi_level = 0.0_dp
     setup%vel_built = .false.
+    setup%was_freed = .false.
 
     select case(trim(cfg%confinement))
     case('bulk')
@@ -159,8 +161,7 @@ contains
         call zheev('V', 'L', setup%N, setup%HT, setup%N, eig_tmp(:,1), &
           setup%work, -1, setup%rwork, info)
         if (info /= 0) then
-          print *, 'Error: zheev workspace query failed, info =', info
-          stop 1
+          error stop 'zheev workspace query failed in simulation_setup_init'
         end if
         setup%lwork = int(real(setup%work(1)))
         deallocate(setup%work)
@@ -171,8 +172,7 @@ contains
         call zheevd('V', 'U', setup%N, setup%HT, setup%N, eig_tmp(:,1), &
           setup%work, -1, setup%rwork, -1, setup%iwork, -1, info)
         if (info /= 0) then
-          print *, 'Error: zheevd workspace query failed, info =', info
-          stop 1
+          error stop 'zheevd workspace query failed in simulation_setup_init'
         end if
         setup%lwork = int(real(setup%work(1)))
         lrwork = int(real(setup%rwork(1)))
@@ -285,7 +285,7 @@ contains
 
     case default
       print *, 'Error: simulation_setup_init unsupported confinement=', cfg%confinement
-      stop 1
+      error stop 'simulation_setup_init: unsupported confinement'
     end select
   end subroutine simulation_setup_init
 
@@ -299,13 +299,13 @@ contains
     case('bulk')
       if (.not. present(HT_out)) then
         print *, 'Error: setup_build_H bulk requires HT_out'
-        stop 1
+        error stop 'setup_build_H: bulk requires HT_out'
       end if
       call ZB8bandBulk(HT_out, kvec, cfg%params(1), cfg=cfg)
     case('qw')
       if (.not. present(HT_out)) then
         print *, 'Error: setup_build_H QW requires HT_out'
-        stop 1
+        error stop 'setup_build_H: QW requires HT_out'
       end if
       call ZB8bandQW(HT_out, kvec, setup%profile, setup%kpterms, cfg=cfg)
     case('wire')
@@ -313,7 +313,7 @@ contains
         setup%profile_2d, setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
     case default
       print *, 'Error: setup_build_H unsupported confinement=', setup%confinement
-      stop 1
+      error stop 'setup_build_H: unsupported confinement'
     end select
   end subroutine setup_build_H
 
@@ -336,8 +336,7 @@ contains
         allocate(rwork_local(max(1, 3*8 - 2)))
         call zheev('V', 'L', 8, setup%HT, 8, evals, setup%work, -1, rwork_local, info)
         if (info /= 0) then
-          print *, 'Error: zheev workspace query failed in setup_solve_kpoint_serial, info =', info
-          stop 1
+          error stop 'zheev workspace query failed in setup_solve_kpoint_serial'
         end if
         setup%lwork = int(real(setup%work(1)))
         deallocate(setup%work)
@@ -350,7 +349,7 @@ contains
       call zheev('V', 'L', 8, setup%HT, 8, evals, setup%work, setup%lwork, setup%rwork, info)
       if (info /= 0) then
         print *, 'Error: zheev failed in setup_solve_kpoint_serial, info =', info
-        stop 1
+        error stop 'zheev failed in setup_solve_kpoint_serial'
       end if
       evecs = setup%HT
     case('qw')
@@ -360,19 +359,19 @@ contains
         call zheev('V', 'L', setup%N, setup%HT, setup%N, evals, setup%work, setup%lwork, setup%rwork, info)
         if (info /= 0) then
           print *, 'Error: zheev failed in setup_solve_kpoint_serial, info =', info
-          stop 1
+          error stop 'zheev failed in setup_solve_kpoint_serial (QW)'
         end if
       else
         call zheevd('V', 'U', setup%N, setup%HT, setup%N, evals, setup%work, setup%lwork, setup%rwork, size(setup%rwork), setup%iwork, size(setup%iwork), info)
         if (info /= 0) then
           print *, 'Error: zheevd failed in setup_solve_kpoint_serial, info =', info
-          stop 1
+          error stop 'zheevd failed in setup_solve_kpoint_serial (QW)'
         end if
       end if
       evecs = setup%HT
     case default
       print *, 'Error: setup_solve_kpoint_serial unsupported confinement=', setup%confinement
-      stop 1
+      error stop 'setup_solve_kpoint_serial: unsupported confinement'
     end select
   end subroutine setup_solve_kpoint_serial
 
@@ -386,7 +385,7 @@ contains
     if (setup%confinement == 'wire') then
       if (.not. allocated(setup%HT_csr_ptr%rowptr)) then
         print *, 'Error: call setup_build_H before setup_build_velocity_matrices for wire'
-        stop 1
+        error stop 'setup_build_velocity_matrices: call setup_build_H first for wire'
       end if
     end if
 
@@ -432,7 +431,7 @@ contains
         setup%kpterms_2d, cfg, g='g3')
     case default
       print *, 'Error: setup_build_velocity_matrices unsupported confinement=', setup%confinement
-      stop 1
+      error stop 'setup_build_velocity_matrices: unsupported confinement'
     end select
     setup%vel_built = .true.
   end subroutine setup_build_velocity_matrices
@@ -440,6 +439,8 @@ contains
   subroutine simulation_setup_free(setup)
     type(simulation_setup), intent(inout) :: setup
     integer :: i
+    if (setup%was_freed) return
+    setup%was_freed = .true.
     if (allocated(setup%profile)) deallocate(setup%profile)
     if (allocated(setup%kpterms)) deallocate(setup%kpterms)
     if (allocated(setup%HT)) deallocate(setup%HT)
@@ -498,7 +499,7 @@ contains
     integer :: t
     if (setup%confinement /= 'wire') then
       print *, "Error: setup_alloc_sweep requires confinement='wire'"
-      stop 1
+      error stop "setup_alloc_sweep: requires confinement='wire'"
     end if
     allocate(tws(nthreads))
     do t = 1, nthreads

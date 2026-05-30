@@ -157,7 +157,7 @@ program topologicalAnalysis
               print *, '  status 1: invalid inputs or missing lattice constant'
               print *, '  status 2: QW profile is not inversion symmetric'
               print *, '  status 3: LAPACK zheev failed'
-              stop 1
+              error stop 'QW Fu-Kane Z2 calculation failed'
             end if
             print *, '  Z2 invariant: ', topo_result%z2_invariant
             print *, '  Minimum direct gap: ', topo_result%min_gap, ' eV'
@@ -224,7 +224,7 @@ program topologicalAnalysis
        action='write', iostat=status)
   if (status /= 0) then
     print *, 'ERROR: cannot open output/topology_result.dat (iostat=', status, ')'
-    stop 1
+    error stop 'cannot open topology_result.dat'
   end if
   write(iounit, '(A)') '# Topological Analysis Results'
   write(iounit, '(A,A)') '# mode: ', trim(cfg%topo%mode)
@@ -362,7 +362,7 @@ contains
 
     if (eigen_res_local%nev_found == 0) then
       print *, 'Error: eigensolver found no eigenvalues'
-      stop 1
+      error stop 'eigensolver found no eigenvalues'
     end if
 
     allocate(eigvals_local(eigen_res_local%nev_found))
@@ -735,7 +735,7 @@ contains
       & work_local, lwork_local, rwork_local, info_local)
     if (info_local /= 0) then
       print *, 'Error: QW BdG zheev failed with info=', info_local
-      stop 1
+      error stop 'QW BdG zheev failed'
     end if
 
     result%min_gap = 2.0_dp * minval(abs(eigvals_bdg))
@@ -940,7 +940,7 @@ contains
     case ('qw')
       if (.not. present(profile_in) .or. .not. present(kpterms_in)) then
         print *, 'Error: QW spectral mode requires allocated profile and kpterms'
-        stop 1
+        error stop 'QW spectral mode requires profile and kpterms'
       end if
       call compute_spectral_function_qw(cfg_in, profile_in, kpterms_in, &
         & k_arr, E_arr, cfg_in%topo%spectral_eta, A_kE)
@@ -949,11 +949,11 @@ contains
         & cfg_in%topo%spectral_eta, A_kE)
     case default
       print *, 'Error: unsupported confinement for spectral mode: ', cfg_in%confinement
-      stop 1
+      error stop 'unsupported confinement for spectral mode'
     end select
     if (.not. allocated(A_kE) .or. size(A_kE, 1) == 0 .or. size(A_kE, 2) == 0) then
       print *, 'Error: spectral function calculation failed'
-      stop 1
+      error stop 'spectral function calculation failed'
     end if
 
     ! Store in result
@@ -968,7 +968,7 @@ contains
          action='write', iostat=status_loc)
     if (status_loc /= 0) then
       print *, 'ERROR: cannot open output/spectral_function.dat'
-      stop 1
+      error stop 'cannot open spectral_function.dat'
     end if
     write(iounit_loc, '(A)') '# Spectral function A(k, E)'
     write(iounit_loc, '(A,A)') '# confinement=', trim(cfg_in%confinement)
@@ -1108,7 +1108,7 @@ contains
       call compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map_int, gap_map_real, transitions)
     case default
       print *, 'ERROR: unknown topology sweep_model: ', trim(cfg_in%topo%sweep_model)
-      stop 1
+      error stop 'unknown topology sweep_model'
     end select
 
     ! Convert integer z2_map to real(dp) for storage in result
@@ -1130,7 +1130,7 @@ contains
          action='write', iostat=status_loc)
     if (status_loc /= 0) then
       print *, 'ERROR: cannot open output/z2_phase_diagram.dat'
-      stop 1
+      error stop 'cannot open z2_phase_diagram.dat'
     end if
     write(iounit_loc, '(A)') '# Z2 phase diagram'
     write(iounit_loc, '(A,I0,A,I0)') '# nB=', nB, '  nMu=', nMu
@@ -1153,7 +1153,7 @@ contains
          action='write', iostat=status_loc)
     if (status_loc /= 0) then
       print *, 'ERROR: cannot open output/z2_transitions.dat'
-      stop 1
+      error stop 'cannot open z2_transitions.dat'
     end if
     write(iounit_loc, '(A)') '# B(T) mu(eV)'
     do iB = 1, size(transitions, 1)
@@ -1316,13 +1316,13 @@ contains
 
     if (.not. eigen_res_local%converged .or. eigen_res_local%nev_found < 1) then
       print *, 'ERROR: wire BdG sweep eigensolver failed or found no states'
-      stop 1
+      error stop 'wire BdG eigensolver failed'
     end if
     if (eigen_res_local%nev_found >= eigen_cfg_local%feast_m0 .and. &
         eigen_cfg_local%feast_m0 < Nbdg_local) then
       print *, 'ERROR: wire BdG sweep likely truncated FEAST subspace'
       print *, '  nev_found=', eigen_res_local%nev_found, ' feast_m0=', eigen_cfg_local%feast_m0
-      stop 1
+      error stop 'wire BdG FEAST subspace likely truncated'
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues

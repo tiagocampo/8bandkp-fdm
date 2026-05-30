@@ -49,6 +49,7 @@ module optical_spectra
     real(kind=dp) :: mu_e = 0.0_dp
     real(kind=dp) :: mu_h = 0.0_dp
     logical       :: gain_fermi_computed = .false.
+    logical       :: was_freed = .false.
   contains
     procedure :: free => optics_free_tbp
     final :: optics_engine_finalize
@@ -375,6 +376,7 @@ contains
 
     ! Defensive cleanup in case of prior initialization
     call optics_free(oe)
+    oe%was_freed = .false.
 
     ! Store config
     oe%config = optcfg
@@ -442,6 +444,8 @@ contains
   subroutine optics_free(oe)
     type(optics_engine), intent(inout) :: oe
 
+    if (oe%was_freed) return
+    oe%was_freed = .true.
     if (allocated(oe%E_grid))         deallocate(oe%E_grid)
     if (allocated(oe%alpha_te))       deallocate(oe%alpha_te)
     if (allocated(oe%alpha_tm))       deallocate(oe%alpha_tm)

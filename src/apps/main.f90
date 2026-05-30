@@ -276,7 +276,7 @@ program kpfdm
         if (eigen_res%nev_found < nev_wire) then
           print *, '  ERROR: FEAST did not converge at k-point 1 and found only', &
             eigen_res%nev_found, 'eigenvalues (need', nev_wire, ')'
-          stop 1
+          error stop 'FEAST convergence failed at k-point 1'
         end if
         print *, '  WARNING: FEAST subspace issue at k-point 1, but found enough eigenvalues'
       end if
@@ -323,7 +323,7 @@ program kpfdm
             if (eigen_res%nev_found < nev_wire) then
               print *, '  ERROR: FEAST did not converge at k-point', k, &
                 'and found only', eigen_res%nev_found, 'eigenvalues (need', nev_wire, ')'
-              stop 1
+              error stop 'FEAST convergence failed at k-point 1'
             end if
             print *, '  WARNING: eigensolver subspace issue at k-point', k, &
               ' but found enough eigenvalues'
@@ -531,7 +531,7 @@ program kpfdm
                HTmp, 8, work, lwork, rwork, iwork, ifail, info)
     if (info /= 0) then
       print *, 'Error: zheevx bulk workspace query failed, info =', info
-      stop 1
+      error stop 'zheevx parameter error'
     end if
     lwork = int(real(work(1)))
     if (allocated(work)) deallocate(work)
@@ -546,7 +546,7 @@ program kpfdm
                HT, N, work, lwork, rwork, iwork, ifail, info)
     if (info /= 0) then
       print *, 'Error: zheevx QW workspace query failed, info =', info
-      stop 1
+      error stop 'zheevx parameter error'
     end if
     lwork = int(real(work(1)))
     if (allocated(work)) deallocate(work)
@@ -561,7 +561,7 @@ program kpfdm
                HT, N, work, lwork, rwork, iwork, ifail, info)
     if (info /= 0) then
       print *, 'Error: zheevx Landau workspace query failed, info =', info
-      stop 1
+      error stop 'zheevx parameter error'
     end if
     lwork = int(real(work(1)))
     if (allocated(work)) deallocate(work)
@@ -636,7 +636,7 @@ program kpfdm
           print *, "ERROR: diagonalization failed at k=", k, "info=", info_loc
           if (info_loc < 0) print *, "  Parameter ", -info_loc, " had illegal value"
           !$omp end critical
-          stop 1
+          error stop 'FEAST convergence failed at k-point 1'
         end if
 
         ! Store eigenvectors (HT_loc now holds them, zheevx overwrites input)
@@ -695,7 +695,7 @@ program kpfdm
           print *, "ERROR: Landau diagonalization failed at k=", k, "info=", info_loc
           if (info_loc < 0) print *, "  Parameter ", -info_loc, " had illegal value"
           !$omp end critical
-          stop 1
+          error stop 'FEAST convergence failed at k-point 1'
         end if
 
         ! Store eigenvectors (HT_loc now holds them, zheevx overwrites input)
@@ -772,7 +772,7 @@ program kpfdm
           if (info_B /= 0) then
             print *, 'ERROR: B-sweep diagonalization failed at B=', B_val, &
               & ' info=', info_B
-            stop 1
+            error stop 'FEAST convergence failed at k-point 1'
           end if
         end do
 
