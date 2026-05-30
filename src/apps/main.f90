@@ -3,13 +3,14 @@ program kpfdm
   use definitions
   use parameters
   use hamiltonianConstructor
+  use hamiltonian_blocks, only: init_kp_block_cache
   use confinement_init, only: confinementInitialization_landau
   use OMP_lib
   use outputFunctions
   use input_parser
   use sc_loop
   use eigensolver, only: eigensolver_result, eigensolver_result_free
-  use strain_solver, only: strain_result, strain_result_free
+  use strain_solver, only: strain_result, strain_result_free, init_strain_cache, init_zeeman_cache
   use exciton_solver
   use scattering_solver
   use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch
@@ -613,6 +614,11 @@ program kpfdm
       integer, allocatable          :: iwork_loc(:), ifail_loc(:)
       integer :: info_loc, M_loc
 
+      ! Pre-initialize block table caches before OpenMP fork (thread-safety)
+      call init_kp_block_cache()
+      call init_strain_cache()
+      call init_zeeman_cache()
+
       !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
       ! Each thread allocates its own workspace
       allocate(HT_loc(N, N))
@@ -671,6 +677,11 @@ program kpfdm
       real(kind=dp), allocatable    :: rwork_loc(:)
       integer, allocatable          :: iwork_loc(:), ifail_loc(:)
       integer :: info_loc, M_loc
+
+      ! Pre-initialize block table caches before OpenMP fork (thread-safety)
+      call init_kp_block_cache()
+      call init_strain_cache()
+      call init_zeeman_cache()
 
       !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
       ! Each thread allocates its own workspace

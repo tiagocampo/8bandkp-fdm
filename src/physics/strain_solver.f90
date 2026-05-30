@@ -33,8 +33,10 @@ module strain_solver
   public :: strain_entry
   public :: build_strain_table
   public :: get_strain_table
+  public :: init_strain_cache
   public :: zeeman_entry
   public :: get_zeeman_table
+  public :: init_zeeman_cache
 
   ! ------------------------------------------------------------------
   ! Strain COO insertion table entry: describes one of the 32 block
@@ -184,6 +186,24 @@ contains
     end if
     table = zeeman_table_cache
   end function get_zeeman_table
+
+  ! ==================================================================
+  ! Pre-initialize the strain table cache (thread-safety).
+  ! Call before OpenMP fork to avoid races on the SAVE cache.
+  ! ==================================================================
+  subroutine init_strain_cache()
+    type(strain_entry) :: dummy(32)
+    dummy = get_strain_table()
+  end subroutine init_strain_cache
+
+  ! ==================================================================
+  ! Pre-initialize the Zeeman table cache (thread-safety).
+  ! Call before OpenMP fork to avoid races on the SAVE cache.
+  ! ==================================================================
+  subroutine init_zeeman_cache()
+    type(zeeman_entry) :: dummy(8)
+    dummy = get_zeeman_table()
+  end subroutine init_zeeman_cache
 
   ! ==================================================================
   ! Top-level strain computation dispatcher.

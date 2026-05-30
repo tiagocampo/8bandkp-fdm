@@ -63,6 +63,7 @@ module hamiltonian_blocks
   end type kp_entry
 
   public :: get_kp_block_table
+  public :: init_kp_block_cache
 
   ! Module-level cache
   logical, save :: kp_table_cached = .false.
@@ -105,6 +106,15 @@ contains
     end if
     table = kp_table_cache
   end function get_kp_block_table
+
+  ! ==================================================================
+  ! Pre-initialize the kp block table cache (thread-safety).
+  ! Call before OpenMP fork to avoid races on the SAVE cache.
+  ! ==================================================================
+  subroutine init_kp_block_cache()
+    type(kp_entry) :: dummy(52)
+    dummy = get_kp_block_table()
+  end subroutine init_kp_block_cache
 
   function build_kp_table() result(table)
     type(kp_entry) :: table(52)
