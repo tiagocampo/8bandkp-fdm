@@ -1016,7 +1016,7 @@ module hamiltonian_wire
       integer, intent(in) :: N
 
       type(csr_matrix), target :: blks(12)
-      type(kp_entry), allocatable :: table(:)
+      type(kp_entry) :: table(52)
       type(csr_matrix), pointer :: blk
       integer :: e
 
@@ -1084,7 +1084,7 @@ module hamiltonian_wire
       integer, intent(in) :: N
 
       type(csr_matrix), target :: blks(12)
-      type(kp_entry), allocatable :: table(:)
+      type(kp_entry) :: table(52)
       type(csr_matrix), pointer :: blk
       integer :: e
 
