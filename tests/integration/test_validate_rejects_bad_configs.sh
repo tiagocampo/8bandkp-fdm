@@ -134,6 +134,45 @@ name = "GaAs"
 EOF
 run_test "V8_bad_wv_mode" "wave_vector mode"
 
+GF_EXE="$(dirname "$EXE")/gfactorCalculation"
+
+# V9: bulk gfactor with band_idx out of range
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+which_band = 0
+band_idx = 2
+[bands]
+num_cb = 2
+num_vb = 6
+[[material]]
+name = "GaAs"
+EOF
+"$GF_EXE" > "$WORKDIR/test_output.log" 2>&1 && RC=0 || RC=$?
+if [ "$RC" -ne 0 ] && grep -qi "bandIdx" "$WORKDIR/test_output.log"; then
+  PASS=$((PASS + 1))
+else
+  FAIL=$((FAIL + 1))
+  echo "FAIL: V9_bulk_band_idx_out_of_range — exit=$RC, pattern='bandIdx'"
+  grep -i 'error\|STOP' "$WORKDIR/test_output.log" | head -3 | sed 's/^/  /'
+fi
+
+# V10: unknown fermi_mode silently falls back — now errors
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[bands]
+num_cb = 2
+num_vb = 6
+[sc]
+fermi_mode = "typo"
+max_iterations = 100
+tolerance = 1e-6
+[[material]]
+name = "GaAs"
+EOF
+run_test "V10_bad_fermi_mode" "fermi_mode"
+
 echo ""
 echo "========================================"
 echo " Validation rejection: $PASS passed, $FAIL failed"

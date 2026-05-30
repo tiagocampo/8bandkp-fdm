@@ -35,9 +35,7 @@ contains
     ! Load TOML file
     call toml_load(table, 'input.toml', error=parse_error)
     if (allocated(parse_error)) then
-      print *, 'Error: Failed to parse input.toml'
-      print *, '  ', trim(parse_error%message)
-      stop 1
+      error stop 'Error: Failed to parse input.toml: ' // trim(parse_error%message)
     end if
 
     ! ---- Required top-level fields ----
@@ -101,9 +99,8 @@ contains
       call parse_landau(table, cfg)
 
     case default
-      print *, 'Error: Unknown confinement: ', trim(cfg%confinement)
-      print *, '  Supported: bulk, qw, wire, landau'
-      stop 1
+      error stop 'Error: Unknown confinement: ' // trim(cfg%confinement) // &
+        & '. Supported: bulk, qw, wire, landau'
 
     end select
 
@@ -151,14 +148,12 @@ contains
 
     call get_value(table, 'material', materials, requested=.false., stat=stat)
     if (.not. associated(materials)) then
-      print *, 'Error: [[material]] section required for bulk mode'
-      stop 1
+      error stop 'Error: [[material]] section required for bulk mode'
     end if
 
     nmat = tomlf_len(materials)
     if (nmat < 1) then
-      print *, 'Error: bulk mode requires at least 1 [[material]] entry'
-      stop 1
+      error stop 'Error: bulk mode requires at least 1 [[material]] entry'
     end if
 
     cfg%num_layers = 1
@@ -171,8 +166,7 @@ contains
 
     call get_value(materials, 1, mat, stat=stat)
     if (.not. associated(mat)) then
-      print *, 'Error: Failed to read [[material]] entry 1'
-      stop 1
+      error stop 'Error: Failed to read [[material]] entry 1'
     end if
     call require_string(mat, 'name', name_val, 'material')
     cfg%material_names(1) = trim(name_val)
@@ -192,14 +186,12 @@ contains
 
     call get_value(table, 'material', materials, requested=.false., stat=stat)
     if (.not. associated(materials)) then
-      print *, 'Error: [[material]] section required for QW mode'
-      stop 1
+      error stop 'Error: [[material]] section required for QW mode'
     end if
 
     nmat = tomlf_len(materials)
     if (nmat < 1) then
-      print *, 'Error: QW mode requires at least 1 [[material]] entry'
-      stop 1
+      error stop 'Error: QW mode requires at least 1 [[material]] entry'
     end if
 
     cfg%num_layers = nmat
@@ -213,8 +205,11 @@ contains
     do i = 1, nmat
       call get_value(materials, i, mat, stat=stat)
       if (.not. associated(mat)) then
-        print *, 'Error: Failed to read [[material]] entry', i
-        stop 1
+      block
+        character(len=16) :: buf
+        write(buf, '(I0)') i
+        error stop 'Error: Failed to read [[material]] entry ' // trim(buf)
+      end block
       end if
       call require_string(mat, 'name', name_val, 'material')
       cfg%material_names(i) = trim(name_val)
@@ -260,8 +255,7 @@ contains
 
     call get_value(table, 'wire', wire_tbl, requested=.false., stat=stat)
     if (.not. associated(wire_tbl)) then
-      print *, 'Error: [wire] section required for wire mode'
-      stop 1
+      error stop 'Error: [wire] section required for wire mode'
     end if
 
     call require_int(wire_tbl, 'nx', cfg%wire%nx, 'wire')
@@ -284,8 +278,7 @@ contains
       case ('polygon')
         call get_value(geom_tbl, 'vertices', verts_arr, requested=.false., stat=stat)
         if (.not. associated(verts_arr)) then
-          print *, 'Error: polygon shape requires vertices array'
-          stop 1
+          error stop 'Error: polygon shape requires vertices array'
         end if
         nverts = tomlf_len(verts_arr)
         cfg%wire%geom%nverts = nverts
@@ -297,13 +290,14 @@ contains
             call get_value(verts_arr, i, vert, stat=stat)
             if (associated(vert)) then
               call get_value(vert, 1, cfg%wire%geom%verts(1, i), stat=stat)
+              call check_optional_stat(stat, 'x', 'wire.geometry.polygon')
               call get_value(vert, 2, cfg%wire%geom%verts(2, i), stat=stat)
+              call check_optional_stat(stat, 'y', 'wire.geometry.polygon')
             end if
           end block
         end do
       case default
-        print *, 'Error: Unknown wire shape: ', trim(cfg%wire%geom%shape)
-        stop 1
+        error stop 'Error: Unknown wire shape: ' // trim(cfg%wire%geom%shape)
       end select
     end if
 
@@ -321,8 +315,11 @@ contains
       do i = 1, nreg
         call get_value(regions_arr, i, reg, stat=stat)
         if (.not. associated(reg)) then
-          print *, 'Error: Failed to read [[region]] entry', i
-          stop 1
+        block
+          character(len=16) :: buf
+          write(buf, '(I0)') i
+          error stop 'Error: Failed to read [[region]] entry ' // trim(buf)
+        end block
         end if
         call require_string(reg, 'material', mat_name, 'region')
         cfg%wire%regions(i)%material = trim(mat_name)
@@ -335,8 +332,7 @@ contains
         cfg%z_max(i) = cfg%wire%regions(i)%outer
       end do
     else
-      print *, 'Error: wire mode requires at least one [[region]] entry'
-      stop 1
+      error stop 'Error: wire mode requires at least one [[region]] entry'
     end if
 
     ! Computed grid size
@@ -358,8 +354,7 @@ contains
 
     call get_value(table, 'landau', landau_tbl, requested=.false., stat=stat)
     if (.not. associated(landau_tbl)) then
-      print *, 'Error: [landau] section required for landau mode'
-      stop 1
+      error stop 'Error: [landau] section required for landau mode'
     end if
 
     call require_int(landau_tbl, 'nx', cfg%landau%nx, 'landau')
@@ -375,8 +370,7 @@ contains
     ! Material
     call get_value(table, 'material', materials, requested=.false., stat=stat)
     if (.not. associated(materials)) then
-      print *, 'Error: [[material]] section required for landau mode'
-      stop 1
+      error stop 'Error: [[material]] section required for landau mode'
     end if
 
     cfg%num_layers = 1
@@ -389,8 +383,7 @@ contains
 
     call get_value(materials, 1, mat, stat=stat)
     if (.not. associated(mat)) then
-      print *, 'Error: Failed to read [[material]] entry for landau'
-      stop 1
+      error stop 'Error: Failed to read [[material]] entry for landau'
     end if
     call require_string(mat, 'name', name_val, 'material')
     cfg%material_names(1) = trim(name_val)
@@ -499,7 +492,8 @@ contains
       case ('fixed')
         cfg%sc%fermi_mode = 1
       case default
-        cfg%sc%fermi_mode = 0
+        error stop 'parse_sc: unknown fermi_mode ''' // trim(fermi_mode_str) // &
+          '''. Valid values: charge_neutrality, fixed'
       end select
     end if
 
@@ -910,8 +904,7 @@ contains
 
     call get_value(table, key, val, stat=stat)
     if (stat /= 0 .or. .not. allocated(val)) then
-      print *, 'Error: [', trim(section), '] requires key ''', trim(key), ''''
-      stop 1
+      error stop 'Error: [' // trim(section) // '] requires key ''' // trim(key) // ''''
     end if
   end subroutine require_string
 
@@ -927,8 +920,7 @@ contains
 
     call get_value(table, key, val, stat=stat)
     if (stat /= 0) then
-      print *, 'Error: [', trim(section), '] requires key ''', trim(key), ''''
-      stop 1
+      error stop 'Error: [' // trim(section) // '] requires key ''' // trim(key) // ''''
     end if
   end subroutine require_int
 
@@ -944,8 +936,7 @@ contains
 
     call get_value(table, key, val, stat=stat)
     if (stat /= 0) then
-      print *, 'Error: [', trim(section), '] requires key ''', trim(key), ''''
-      stop 1
+      error stop 'Error: [' // trim(section) // '] requires key ''' // trim(key) // ''''
     end if
   end subroutine require_real
 
@@ -957,9 +948,8 @@ contains
     character(len=*), intent(in) :: key, section
 
     if (stat /= 0) then
-      print *, 'Error: [', trim(section), '] key ''', trim(key), &
+      error stop 'Error: [' // trim(section) // '] key ''' // trim(key) // &
         & ''' has wrong type'
-      stop 1
     end if
   end subroutine check_optional_stat
 

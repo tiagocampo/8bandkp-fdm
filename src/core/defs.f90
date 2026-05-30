@@ -808,20 +808,17 @@ module definitions
       if (cfg%wave_vector%nsteps /= 0 .and. cfg%wave_vector%mode /= 'k0') then
         error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
       end if
-      ! S1: bandIdx in range for wire and QW gfactor
+      ! S1: bandIdx in range for gfactor (bulk, QW, wire)
       ! gfactor accesses cb_state(:, bandIdx) and cb_state(:, bandIdx+1),
       ! so the valid range is [1, num_cb-1] (band_idx+1 must be <= num_cb).
-      if (trim(cfg%confinement) == 'wire' .or. trim(cfg%confinement) == 'qw') then
-        if (cfg%band_idx < 1 .or. cfg%band_idx + 1 > cfg%bands%num_cb) then
-          block
-            character(len=16) :: buf_idx, buf_max
-            write(buf_idx, '(I0)') cfg%band_idx
-            write(buf_max, '(I0)') cfg%bands%num_cb - 1
-            error stop 'validate_semantic: bandIdx (=' // trim(buf_idx) // &
-              ') out of range [1, ' // trim(buf_max) // '] for ' // &
-              trim(cfg%confinement) // ' gfactor'
-          end block
-        end if
+      if (cfg%band_idx < 1 .or. cfg%band_idx + 1 > cfg%bands%num_cb) then
+        block
+          character(len=16) :: buf_idx, buf_max
+          write(buf_idx, '(I0)') cfg%band_idx
+          write(buf_max, '(I0)') cfg%bands%num_cb - 1
+          error stop 'validate_semantic: bandIdx (=' // trim(buf_idx) // &
+            ') out of range [1, ' // trim(buf_max) // '] for gfactor'
+        end block
       end if
 
     case ('opticalProperties')
