@@ -252,13 +252,13 @@ end function simpson_real
   end subroutine tick
 
   ! returns time in seconds from now to time described by t
-  real function tock(t)
+  real(kind=dp) function tock(t)
       integer, intent(in) :: t
       integer :: now, clock_rate
 
       call system_clock(now,clock_rate)
 
-      tock = real(now - t)/real(clock_rate)
+      tock = real(now - t, kind=dp) / real(clock_rate, kind=dp)
   end function tock
 
 

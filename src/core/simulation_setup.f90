@@ -1,7 +1,6 @@
 module simulation_setup_mod
 
   use definitions
-  use parameters
   use hamiltonianConstructor
   use confinement_init, only: confinementInitialization, confinementInitialization_2d
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &

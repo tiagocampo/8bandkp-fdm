@@ -31,10 +31,7 @@ module hamiltonianConstructor
       integer :: i
 
       if (size(z) > 0 .and. abs(z(1)) < tolerance) then
-        print *, "ERROR: externalFieldSetup_electricField called with z(1)=0"
-        print *, "  This causes division by zero in the linear potential."
-        print *, "  Ensure z-coordinates start at a non-zero value."
-        stop 1
+        error stop 'externalFieldSetup_electricField: z(1)=0 causes division by zero in linear potential'
       end if
 
       do i = 1, ubound(z, dim=1), 1

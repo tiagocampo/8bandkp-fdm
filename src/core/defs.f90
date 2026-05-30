@@ -51,7 +51,7 @@ module definitions
   real(kind=dp), parameter :: e0 = 8.854187817_dp*1E-12*(1E-9) ! C V-1 nm-1
   real(kind=dp), parameter :: kB_eV = 8.617333262e-5_dp        ! Boltzmann constant (eV/K)
   real(kind=dp), parameter :: mu_B = 5.7883818012e-5_dp       ! Bohr magneton (eV/T)
-  real(kind=dp), parameter :: tolerance=1e-7
+  real(kind=dp), parameter :: tolerance=1e-7_dp
   real(kind=dp), parameter :: coord_tolerance=1e-12_dp  ! spatial coordinate zero-check threshold
   logical, parameter :: renormalization = .False.
 
@@ -809,16 +809,28 @@ module definitions
         error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
       end if
       ! S1: bandIdx in range for gfactor (bulk, QW, wire)
-      ! gfactor accesses cb_state(:, bandIdx) and cb_state(:, bandIdx+1),
-      ! so the valid range is [1, num_cb-1] (band_idx+1 must be <= num_cb).
-      if (cfg%band_idx < 1 .or. cfg%band_idx + 1 > cfg%bands%num_cb) then
-        block
-          character(len=16) :: buf_idx, buf_max
-          write(buf_idx, '(I0)') cfg%band_idx
-          write(buf_max, '(I0)') cfg%bands%num_cb - 1
-          error stop 'validate_semantic: bandIdx (=' // trim(buf_idx) // &
-            ') out of range [1, ' // trim(buf_max) // '] for gfactor'
-        end block
+      ! CB (which_band=0): accesses cb_state(:, bandIdx:bandIdx+1) → range [1, num_cb-1]
+      ! VB (which_band=1): accesses vb_state(:, bandIdx:bandIdx+1) → range [1, num_vb-1]
+      if (cfg%which_band == 0) then
+        if (cfg%band_idx < 1 .or. cfg%band_idx + 1 > cfg%bands%num_cb) then
+          block
+            character(len=16) :: buf_idx, buf_max
+            write(buf_idx, '(I0)') cfg%band_idx
+            write(buf_max, '(I0)') cfg%bands%num_cb - 1
+            error stop 'validate_semantic: bandIdx (=' // trim(buf_idx) // &
+              ') out of range [1, ' // trim(buf_max) // '] for CB gfactor'
+          end block
+        end if
+      else
+        if (cfg%band_idx < 1 .or. cfg%band_idx + 1 > cfg%bands%num_vb) then
+          block
+            character(len=16) :: buf_idx, buf_max
+            write(buf_idx, '(I0)') cfg%band_idx
+            write(buf_max, '(I0)') cfg%bands%num_vb - 1
+            error stop 'validate_semantic: bandIdx (=' // trim(buf_idx) // &
+              ') out of range [1, ' // trim(buf_max) // '] for VB gfactor'
+          end block
+        end if
       end if
 
     case ('opticalProperties')
