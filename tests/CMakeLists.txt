@@ -1001,3 +1001,13 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 set_tests_properties(convergence_exciton PROPERTIES LABELS "convergence" TIMEOUT 1200)
+
+# Validation rejection tests: verify error-stop branches reject bad configs
+# Covers error-stop paths in validate()/validate_semantic() that pFUnit cannot test.
+add_test(
+    NAME validation_rejects_bad_configs
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_validate_rejects_bad_configs.sh
+        $<TARGET_FILE:bandStructure>
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(validation_rejects_bad_configs PROPERTIES LABELS "validation" TIMEOUT 60)

@@ -65,7 +65,7 @@ Consolidate config-level validation into the existing two validators. The dividi
 
 4. **Moderate scope**: only crash-level gaps addressed (fd_step division-by-zero, z_min >= z_max). Softer gaps (negative temperature, unrecognized fermi_mode, negative grid spacings) deferred.
 
-5. **Passing-case pFUnit tests only**, following the existing pattern. `error stop` cannot be caught by pFUnit 4.x, so failure cases are tested manually.
+5. **Passing-case pFUnit tests only**, following the existing pattern. `error stop` cannot be caught by pFUnit 4.x, so failure cases are tested via shell script (`test_validate_rejects_bad_configs.sh`) that feeds bad TOML configs to the executable and checks for non-zero exit codes and expected error patterns.
 
 6. **Implementation order**: add checks → write tests → remove old checks → docs. Each phase compiles and passes tests independently.
 
@@ -108,4 +108,4 @@ Add negative temperature, negative grid spacing, unrecognized fermi_mode, ldos_E
 
 - **Harder to bypass**: code that constructs configs programmatically must call `cfg%validate()` explicitly. The old executable checks were a safety net that's now removed.
 - **Moderate scope leaves gaps**: negative temperature, fermi_mode fallback, and other "wrong physics" issues are not addressed. These could produce wrong results silently.
-- **Test coverage limited**: only passing cases are unit-tested. Failure paths rely on manual testing.
+- **Test coverage limited**: ~47 `error stop` branches cannot be unit-tested with pFUnit 4.x. Failure paths are covered by `test_validate_rejects_bad_configs.sh` (8 test cases covering the most impactful rejection checks). Remaining branches are verified manually.
