@@ -14,7 +14,7 @@ ZERO_FIELD_REF="$(dirname "$REF_DIR")/sc_qcse_gaas_algaas/eigenvalues.dat"
 WORKDIR=$(mktemp -d)
 trap "rm -rf $WORKDIR" EXIT
 
-/bin/cp "$CONFIG" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG" "$WORKDIR/input.toml"
 mkdir -p "$WORKDIR/output"
 
 cd "$WORKDIR"

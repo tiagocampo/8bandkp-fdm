@@ -102,7 +102,7 @@ contains
     kpterms = 0.0_dp
     call confinementInitialization_landau(x_grid, material, params, profile, kpterms)
 
-    cfg%confinement = 3
+    cfg%confinement = 'landau'
     cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 5.0_dp]
     cfg%bdg%g_factor = 2.0_dp
     cfg%bdg%enabled = .false.
@@ -158,7 +158,7 @@ contains
     kpterms = 0.0_dp
     call confinementInitialization_landau(x_grid, material, params, profile, kpterms)
 
-    cfg%confinement = 3
+    cfg%confinement = 'landau'
     cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 0.0_dp]
     cfg%bdg%g_factor = 2.0_dp
     cfg%bdg%enabled = .false.

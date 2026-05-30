@@ -661,7 +661,7 @@ subroutine gfactorCalculation(tensor, g_eff, whichBand, bandIdx, numcb, numvb, &
 end subroutine gfactorCalculation
 
 ! ======================================================================
-! Wire mode g-factor routines (confinement=2)
+! Wire mode g-factor routines (confinement='wire')
 ! ======================================================================
 
 ! ----------------------------------------------------------------------

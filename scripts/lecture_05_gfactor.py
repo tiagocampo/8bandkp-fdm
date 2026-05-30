@@ -102,7 +102,7 @@ def test_gaas_gfactor():
     print("Lecture 05 -- Section 1: GaAs CB g-factor")
     print("=" * 60)
 
-    gx, gy, gz = run_gfactor("gfactor_bulk_gaas_cb.cfg", "GaAs CB")
+    gx, gy, gz = run_gfactor("gfactor_bulk_gaas_cb.toml", "GaAs CB")
     g_code = gz  # bulk is isotropic; use gz component
 
     p = MATERIALS['GaAs']
@@ -134,7 +134,7 @@ def test_insb_gfactor():
     print("Lecture 05 -- Section 2: InSb CB g-factor (extreme regime)")
     print("=" * 60)
 
-    gx, gy, gz = run_gfactor("gfactor_bulk_insb_cb.cfg", "InSb CB")
+    gx, gy, gz = run_gfactor("gfactor_bulk_insb_cb.toml", "InSb CB")
     g_code = gz
 
     p = MATERIALS['InSb']
@@ -177,7 +177,7 @@ def test_gaasw_gfactor():
     print("Lecture 05 -- Section 3: GaAsW CB g-factor (Winkler params)")
     print("=" * 60)
 
-    gx, gy, gz = run_gfactor("gfactor_bulk_gaasw_cb.cfg", "GaAsW CB")
+    gx, gy, gz = run_gfactor("gfactor_bulk_gaasw_cb.toml", "GaAsW CB")
     g_code = gz
 
     p = MATERIALS['GaAsW']
@@ -209,7 +209,7 @@ def test_landau_levels():
     print("Lecture 05 -- Section 4: GaAs Landau levels at B=5T")
     print("=" * 60)
 
-    data = run_bandstructure("landau_bulk_GaAs.cfg", "GaAs Landau")
+    data = run_bandstructure("landau_bulk_GaAs.toml", "GaAs Landau")
     if not data:
         sys.exit("ERROR: no eigenvalue data parsed for GaAs Landau")
 
@@ -378,7 +378,7 @@ def _run_gfactor_inline(config_text, label):
     """Run gfactorCalculation with inline config text, return (gx, gy, gz)."""
     with tempfile.TemporaryDirectory() as work:
         # Write config to a temp location outside work_dir to avoid SameFileError
-        cfg_tmp = os.path.join(work, "config.cfg")
+        cfg_tmp = os.path.join(work, "config.toml")
         with open(cfg_tmp, "w") as f:
             f.write(config_text)
 

@@ -88,7 +88,7 @@ def main():
 
         work_dir = tempfile.mkdtemp(prefix="regen_")
         try:
-            shutil.copy(config_path, os.path.join(work_dir, "input.cfg"))
+            shutil.copy(config_path, os.path.join(work_dir, "input.toml"))
             os.makedirs(os.path.join(work_dir, "output"), exist_ok=True)
 
             result = subprocess.run(

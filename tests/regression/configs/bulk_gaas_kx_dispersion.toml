@@ -1,0 +1,15 @@
+confinement = "bulk"
+FDorder = 2
+fd_step = 101
+
+[wave_vector]
+mode = "kx"
+max = 0.05
+nsteps = 51
+
+[bands]
+num_cb = 2
+num_vb = 6
+
+[[material]]
+name = "GaAs"

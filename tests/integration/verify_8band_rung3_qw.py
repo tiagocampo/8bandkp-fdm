@@ -76,7 +76,7 @@ def copy_config_and_run(build_dir, repo_dir, config_relpath, label):
 
     work_dir = tempfile.mkdtemp(prefix=f"rung3_{label}_")
     try:
-        shutil.copy(config_src, os.path.join(work_dir, "input.cfg"))
+        shutil.copy(config_src, os.path.join(work_dir, "input.toml"))
         evals = run_bandstructure(build_dir, work_dir)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -353,7 +353,7 @@ def main():
         evals_gaas = copy_config_and_run(
             build_dir,
             repo_dir,
-            "tests/regression/configs/qw_gaas_algaas.cfg",
+            "tests/regression/configs/qw_gaas_algaas.toml",
             "gaas_qw",
         )
         fail = check_r10(evals_gaas)
@@ -369,7 +369,7 @@ def main():
         evals_bg = copy_config_and_run(
             build_dir,
             repo_dir,
-            "tests/regression/configs/qw_inasw_gasbw_broken_gap.cfg",
+            "tests/regression/configs/qw_inasw_gasbw_broken_gap.toml",
             "broken_gap",
         )
         fail = check_r12(evals_bg)

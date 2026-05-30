@@ -3,6 +3,7 @@ set(COMMON_SOURCES
     core/defs.f90
     core/parameters.f90
     core/utils.f90
+    core/simulation_setup.f90
     math/sparse_matrices.f90
     math/geometry.f90
     math/finitedifferences.f90
@@ -11,6 +12,7 @@ set(COMMON_SOURCES
     io/outputFunctions.f90
     io/input_parser.f90
     physics/confinement_init.f90
+    physics/hamiltonian_blocks.f90
     physics/hamiltonian_wire.f90
     physics/hamiltonianConstructor.f90
     physics/charge_density.f90
@@ -31,8 +33,8 @@ set(COMMON_SOURCES
 # Create library of common code
 add_library(8bandkp_common STATIC ${COMMON_SOURCES})
 
-# Link MKL and FFTW3
-target_link_libraries(8bandkp_common PUBLIC MKL::MKL FFTW3::FFTW3)
+# Link MKL, FFTW3, and toml-f
+target_link_libraries(8bandkp_common PUBLIC MKL::MKL FFTW3::FFTW3 toml-f-lib)
 
 # Module include directory for consumers
 target_include_directories(8bandkp_common PUBLIC
@@ -58,6 +60,7 @@ set_source_files_properties(
     core/defs.f90
     core/parameters.f90
     core/utils.f90
+    core/simulation_setup.f90
     math/sparse_matrices.f90
     math/geometry.f90
     math/finitedifferences.f90
@@ -66,6 +69,7 @@ set_source_files_properties(
     io/outputFunctions.f90
     io/input_parser.f90
     physics/confinement_init.f90
+    physics/hamiltonian_blocks.f90
     physics/hamiltonian_wire.f90
     physics/hamiltonianConstructor.f90
     physics/charge_density.f90

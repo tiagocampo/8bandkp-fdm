@@ -154,17 +154,17 @@ contains
     nE = 801
     nk = 10
 
-    cfg%confinement = 1
-    cfg%fdStep = N
+    cfg%confinement = 'qw'
+    cfg%fd_step = N
     cfg%FDorder = 2
-    cfg%numLayers = 1
-    cfg%confDir = 'z'
+    cfg%num_layers = 1
     cfg%totalSize = 50.0_dp
     cfg%delta = 10.0_dp
     cfg%dz = 10.0_dp
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
+    call init_grid_from_config(cfg)
 
     allocate(profile(N, 3))
     profile(:, 1) = 0.0_dp
@@ -196,7 +196,7 @@ contains
 
     dE = E_arr(2) - E_arr(1)
     integral = sum(A_kE(1,:)) * dE
-    @assertTrue(abs(integral - real(8 * cfg%fdStep, kind=dp)) < 1.0_dp, message="spectral integral should recover the number of states")
+    @assertTrue(abs(integral - real(8 * cfg%grid%npoints(), kind=dp)) < 1.0_dp, message="spectral integral should recover the number of states")
 
     deallocate(profile, kpterms, k_arr, E_arr, A_kE)
   end subroutine test_spectral_function_qw_sum_rule
@@ -233,8 +233,7 @@ contains
     type(simulation_config) :: cfg
     real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:), k_arr(:), E_arr(:), A(:,:)
 
-    cfg%confinement = 1
-    cfg%fdStep = 3
+    cfg%confinement = 'qw'
     allocate(profile(3,3), kpterms(3,3,10), k_arr(1), E_arr(3))
     profile = 0.0_dp
     kpterms = 0.0_dp
@@ -287,7 +286,7 @@ contains
     real(kind=dp), allocatable :: z(:)
     character(len=255) :: material(2)
     type(paramStruct) :: params(2)
-    integer :: intStartPos(2), intEndPos(2)
+    integer :: int_start_pos(2), int_end_pos(2)
 
     ! Grid: 20 nm QW region, dz=1 nm
     dz_val = 10.0_dp
@@ -295,17 +294,17 @@ contains
     nk = 3
     nE = 100
 
-    cfg%confinement = 1
-    cfg%fdStep = ngrid
+    cfg%confinement = 'qw'
+    cfg%fd_step = ngrid
     cfg%FDorder = 2
-    cfg%numLayers = 2
-    cfg%confDir = 'z'
+    cfg%num_layers = 2
     cfg%totalSize = real(ngrid, kind=dp) * dz_val
     cfg%delta = dz_val
     cfg%dz = dz_val
-    cfg%numcb = 2
-    cfg%numvb = 6
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
     cfg%evnum = 8
+    call init_grid_from_config(cfg)
 
     ! Grid points
     allocate(z(ngrid))
@@ -314,15 +313,15 @@ contains
     end do
 
     ! 2-layer: AlGaAs barrier | GaAs well
-    intStartPos(1) = 1;  intEndPos(1) = 3
-    intStartPos(2) = 4;  intEndPos(2) = ngrid
+    int_start_pos(1) = 1;  int_end_pos(1) = 3
+    int_start_pos(2) = 4;  int_end_pos(2) = ngrid
     material(1) = "Al30Ga70As"
     material(2) = "GaAs"
     call paramDatabase(material, 2, params)
 
     allocate(kpterms(ngrid, ngrid, 10))
     kpterms = 0.0_dp
-    call confinementInitialization_raw(z, intStartPos, intEndPos, material, &
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
       2, params, 'z', profile, kpterms, FDorder=2)
 
     ! Small k range near Gamma

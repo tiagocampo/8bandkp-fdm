@@ -238,23 +238,40 @@ To illustrate the concepts above with real data, we use the type-II AlSbW/GaSbW/
 
 ### 7.1 The input configuration
 
-The configuration file `tests/regression/configs/qw_alsbw_gasbw_inasw.cfg` reads:
+The configuration file `tests/regression/configs/qw_alsbw_gasbw_inasw.toml` reads:
 
-```
-waveVector: kx
-waveVectorMax: 0.1
-waveVectorStep: 51
-confinement:  1
-FDstep: 401
-FDorder: 4
-numLayers:  3
-material1: AlSbW -250  250 0
-material2: GaSbW -135  135 0.2414
-material3: InAsW  -35   35 -0.0914
-numcb: 10
-numvb: 10
-ExternalField: 0  EF
-EFParams: 0.0005
+```toml
+confinement = "qw"
+FDorder = 4
+fd_step = 401
+
+[wave_vector]
+mode = "kx"
+max = 0.1
+nsteps = 51
+
+[bands]
+num_cb = 10
+num_vb = 10
+
+[[material]]
+name = "AlSbW"
+z_min = -250
+z_max = 250
+
+[[material]]
+name = "GaSbW"
+z_min = -135
+z_max = 135
+
+[[material]]
+name = "InAsW"
+z_min = -35
+z_max = 35
+
+[external_field]
+type = "EF"
+value = 0.0005
 ```
 
 Key parameters: $N = 401$ grid points over $z \in [-250, 250]$ A (spacing $\Delta z = 1.25$ A), 3 material layers with AlSbW barriers, GaSbW as the main well, and a narrow InAsW insert. The code computes $10 + 10 = 20$ eigenvalues at each of 51 k-steps. This uses a finer grid than the reference regression config (FDstep=101, FDorder=2) for improved accuracy.
@@ -325,7 +342,7 @@ plot 'output/eigenfunctions_k_00001_ev_00011.dat' \
   using 1:($8**2+$9**2) with lines title 'CB character'
 ```
 
-For the present `qw_alsbw_gasbw_inasw.cfg` run, replace `00011` by `00033` if
+For the present `qw_alsbw_gasbw_inasw.toml` run, replace `00011` by `00033` if
 you want the lowest conduction-like state.
 
 ### 7.5 Band-resolved parts: the full picture
@@ -347,7 +364,7 @@ At $k_{\parallel}=0$, the first conduction-like pair appears at states 33/34:
 
 Several features are worth noting:
 
-1. **The state offset matters.** With `numvb: 32`, states 1--32 are the
+1. **The state offset matters.** With `num_vb = 32`, states 1--32 are the
    valence-like manifold and the first conduction-like state is state 33.
 2. **Kramers pairs remain degenerate at $k=0$.** States 33/34 and 35/36 form
    nearly identical pairs in energy and total envelope density, differing only
@@ -385,20 +402,29 @@ with a conduction band offset of 299 meV and a valence band offset of 159 meV.
 
 ### 7b.1 Configuration
 
-```
-waveVector: kx
-waveVectorMax: 0.1
-waveVectorStep: 21
-confinement:  1
-FDstep: 401
-FDorder: 4
-numLayers:  2
-material1: Al30Ga70As -200 200 0
-material2: GaAs -50 50 0
-numcb: 4
-numvb: 8
-ExternalField: 0  EF
-EFParams: 0.0
+```toml
+confinement = "qw"
+FDorder = 4
+fd_step = 401
+
+[wave_vector]
+mode = "kx"
+max = 0.1
+nsteps = 21
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "Al30Ga70As"
+z_min = -200
+z_max = 200
+
+[[material]]
+name = "GaAs"
+z_min = -50
+z_max = 50
 ```
 
 Domain: $z \in [-200, 200]$ Å with $N = 401$ grid points ($\Delta z = 1.0$ Å).
@@ -569,14 +595,15 @@ quantum well the confinement potential prevents the electron from escaping, and 
 field distorts the envelope function inside the well. This is the **quantum-confined
 Stark effect** (QCSE).
 
-The field is activated through the `ExternalField` input parameter:
+The field is activated through the `[external_field]` section:
 
-```
-ExternalField: 1  EF
-EFParams: -0.007    ! Electric field in eV/Angstrom
+```toml
+[external_field]
+type = "EF"
+value = -0.007    # Electric field in eV/Angstrom
 ```
 
-A positive `EFParams` value corresponds to a field pointing in the $+z$ direction,
+A positive `value` corresponds to a field pointing in the $+z$ direction,
 which shifts the conduction band edge downward on the right side of the well and
 upward on the left. The code adds this linear potential directly to the diagonal
 of the Hamiltonian before diagonalization, so all wavefunctions and parts are
@@ -621,8 +648,8 @@ consequences:
    applied field can either increase or decrease the electron-hole overlap depending
    on the field direction, providing an electrically tunable optical matrix element.
 
-The QCSE connects directly to the `ExternalField` and `EFParams` input parameters.
-By sweeping `EFParams` from 0 to some maximum value and recomputing the wavefunctions
+The QCSE connects directly to the `[external_field]` section (`type` and `value` parameters).
+By sweeping the `value` parameter from 0 to some maximum value and recomputing the wavefunctions
 and parts, one can trace the full evolution from a symmetric state to a strongly
 asymmetric, field-polarized state. The parts vector provides a complementary
 view: as the field increases, the band character of each state can change because the
@@ -713,7 +740,7 @@ python3 scripts/lecture_03_wavefunctions.py
 
 ### Code-Output Anchors
 
-Running `qw_alsbw_gasbw_inasw.cfg` produces:
+Running `qw_alsbw_gasbw_inasw.toml` produces:
 - **CB ground state**: 98.55% CB character (broken-gap admixture verified)
 - **HH ground state**: 100% HH character; **Normalization**: 1.0
 

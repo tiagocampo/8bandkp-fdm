@@ -144,42 +144,39 @@ electro-absorption modulators.
 
 ### 10.3.1 Input parameters
 
-The electric field is controlled by two lines in `input.cfg`:
+The electric field is controlled by the `[external_field]` section in `input.toml`:
 
+```toml
+[external_field]
+type = "EF"
+value = -0.007
 ```
-ExternalField: 1  EF
-EFParams: -0.007
-```
 
-The `ExternalField` line has two fields: an integer flag (0 = off, 1 = on) and
-a string type identifier. Currently only `EF` (uniform electric field) is
-supported. The `EFParams` line provides the field strength in eV/Angstrom.
+The `type` field specifies the field type. Currently only `"EF"` (uniform electric
+field) is supported. The `value` field provides the field strength in eV/Angstrom.
+When the `[external_field]` section is absent, no field is applied. To disable
+the field while keeping the section, set `value = 0.0`:
 
-When `ExternalField` is set to 0, the field is disabled and `EFParams` is still
-read but ignored:
-
-```
-ExternalField: 0  EF
-EFParams: 0.0
+```toml
+[external_field]
+type = "EF"
+value = 0.0
 ```
 
 ### 10.3.2 Parsing in `input_parser.f90`
 
-The input parser reads the `ExternalField` and `EFParams` lines and stores the
-field strength in `cfg%Evalue`:
+The TOML parser reads the `[external_field]` section and stores the field
+strength in `cfg%external_field%value`:
 
 ```fortran
-read(data_unit, *, iostat=status) label, cfg%ExternalField, cfg%EFtype
-if (cfg%EFtype == "EF") then
-  read(data_unit, *, iostat=status) label, cfg%Evalue
-end if
+call get_value(ef_table, "value", cfg%external_field%value, 0.0_dp)
 ```
 
 A guard clause checks that the grid does not start at $z = 0$, which would
 cause a division by zero in the field formula:
 
 ```fortran
-if (cfg%ExternalField == 1 .and. cfg%EFtype == "EF") then
+if (cfg%external_field%value /= 0.0_dp) then
   if (abs(cfg%z(1)) < tolerance) then
     print *, 'Error: Electric field requires z(1) /= 0.'
     stop 1
@@ -259,29 +256,42 @@ The well width is $L_w = 60$ Angstroms. The computational domain spans
 
 ### 10.4.2 Zero field: subband structure
 
-**Config:** `tests/regression/configs/sc_qcse_gaas_algaas.cfg`
+**Config:** `tests/regression/configs/sc_qcse_gaas_algaas.toml`
 
-```
-waveVector: k0
-waveVectorMax: 0.0
-waveVectorStep: 1
-confinement:  1
-FDstep: 461
-FDorder: 2
-numLayers:  3
-material1: Al20Ga80As -230 230 0
-material2: GaAs -30 30 0
-material3: Al20Ga80As -230 230 0
-numcb: 4
-numvb: 8
-ExternalField: 0  EF
-EFParams: 0.0
+```toml
+confinement = "qw"
+FDorder = 2
+fd_step = 461
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "Al20Ga80As"
+z_min = -230
+z_max = 230
+
+[[material]]
+name = "GaAs"
+z_min = -30
+z_max = 30
+
+[[material]]
+name = "Al20Ga80As"
+z_min = -230
+z_max = 230
 ```
 
 **Running:**
 
 ```bash
-cat tests/regression/configs/sc_qcse_gaas_algaas.cfg > input.cfg
+cp tests/regression/configs/sc_qcse_gaas_algaas.toml input.toml
 ./build/src/bandStructure
 ```
 
@@ -319,33 +329,50 @@ The narrow 8-meV spacing reflects the relatively large well width
 
 ### 10.4.3 With electric field: $F = -0.007$ eV/Angstrom
 
-**Config:** `tests/regression/configs/sc_qcse_gaas_algaas_ef.cfg`
+**Config:** `tests/regression/configs/sc_qcse_gaas_algaas_ef.toml`
 
-```
-waveVector: k0
-waveVectorMax: 0.0
-waveVectorStep: 1
-confinement:  1
-FDstep: 461
-FDorder: 2
-numLayers:  3
-material1: Al20Ga80As -230 230 0
-material2: GaAs -30 30 0
-material3: Al20Ga80As -230 230 0
-numcb: 4
-numvb: 8
-ExternalField: 1  EF
-EFParams: -0.007
+```toml
+confinement = "qw"
+FDorder = 2
+fd_step = 461
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "Al20Ga80As"
+z_min = -230
+z_max = 230
+
+[[material]]
+name = "GaAs"
+z_min = -30
+z_max = 30
+
+[[material]]
+name = "Al20Ga80As"
+z_min = -230
+z_max = 230
+
+[external_field]
+type = "EF"
+value = -0.007
 ```
 
-The only change from the zero-field config is `ExternalField: 1` and
-`EFParams: -0.007`. Everything else --- grid, materials, number of states ---
+The only change from the zero-field config is the `[external_field]` section
+with `value = -0.007`. Everything else -- grid, materials, number of states --
 is identical.
 
 **Running:**
 
 ```bash
-cat tests/regression/configs/sc_qcse_gaas_algaas_ef.cfg > input.cfg
+cp tests/regression/configs/sc_qcse_gaas_algaas_ef.toml input.toml
 ./build/src/bandStructure
 ```
 
@@ -536,8 +563,8 @@ by free carriers.
 $V(z) = -eFz$. This is exact for a uniform field in an undoped structure.
 In a doped structure, the self-consistent Poisson potential produces a
 nonlinear band bending that modifies the QCSE. The combination of external
-field and self-consistent effects can be explored by enabling both `ExternalField`
-and `SC` in the input file.
+field and self-consistent effects can be explored by enabling both `[external_field]`
+and `[sc]` sections in the input file.
 
 ---
 
@@ -557,7 +584,7 @@ python3 scripts/lecture_10_qcse.py
 
 ### Code-Output Anchors
 
-Running `qcse_gaas_algaas.cfg` produces:
+Running `qcse_gaas_algaas.toml` produces:
 - **Stark shift**: QCSE red shift confirmed; CB1 shift = +1050 meV, transition shift = -1743 meV
 - **Wavefunction asymmetry**: visible distortion under applied field
 

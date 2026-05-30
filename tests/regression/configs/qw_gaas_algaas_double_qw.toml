@@ -1,0 +1,27 @@
+confinement = "qw"
+FDorder = 4
+fd_step = 201
+
+[wave_vector]
+mode = "kx"
+max = 0.15
+nsteps = 101
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "Al30Ga70As"
+z_min = -150
+z_max = 150
+
+[[material]]
+name = "GaAs"
+z_min = -60
+z_max = -10
+
+[[material]]
+name = "GaAs"
+z_min = 10
+z_max = 60

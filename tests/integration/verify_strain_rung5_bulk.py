@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rung 5 — Bulk Strain Verification (U1).
 
-Validates the full bulk strain chain: strainSubstrate -> apply_bp_strain_inline
+Validates the full bulk strain chain: strainSubstrate -> apply_strain_table_dense
 produces correct strained eigenvalues, HH-LH splitting, and additive modification.
 
 Requirements: R1, R2, R3, R11, R13, R14.
@@ -44,36 +44,56 @@ TOL_STRAIN = 0.01      # 1% for analytical Bir-Pikus comparison
 TOL_ADDITIVE = 1e-5    # eigenvalue solver precision for additive check (CB, HH)
 
 
-# Inline configs for InAs bulk
+# Inline configs for InAs bulk (TOML format)
 CONFIG_UNSTRAINED = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 1\n"
-    "confinement:  0\n"
-    "FDstep: 101\n"
-    "FDorder: 2\n"
-    "numLayers:  1\n"
-    "material1: InAs\n"
-    "numcb: 2\n"
-    "numvb: 6\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
+    'confinement = "bulk"\n'
+    "FDorder = 2\n"
+    "fd_step = 101\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0.0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 2\n"
+    "num_vb = 6\n"
+    "\n"
+    "[[material]]\n"
+    'name = "InAs"\n'
+    "z_min = 0\n"
+    "z_max = 1\n"
+    "\n"
+    "[external_field]\n"
+    'type = "EF"\n'
+    "value = 0.0\n"
 )
 
 CONFIG_STRAINED = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 1\n"
-    "confinement:  0\n"
-    "FDstep: 101\n"
-    "FDorder: 2\n"
-    "numLayers:  1\n"
-    "material1: InAs\n"
-    "numcb: 2\n"
-    "numvb: 6\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
-    f"strainSubstrate: {GAAS_A0_SUB}\n"
+    'confinement = "bulk"\n'
+    "FDorder = 2\n"
+    "fd_step = 101\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0.0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 2\n"
+    "num_vb = 6\n"
+    "\n"
+    "[[material]]\n"
+    'name = "InAs"\n'
+    "z_min = 0\n"
+    "z_max = 1\n"
+    "\n"
+    "[external_field]\n"
+    'type = "EF"\n'
+    "value = 0.0\n"
+    "\n"
+    "[strain]\n"
+    f"strain_substrate = {GAAS_A0_SUB}\n"
 )
 
 
@@ -81,7 +101,7 @@ def run_with_config(build_dir, config_str, label):
     """Run bandStructure with an inline config string. Returns eigenvalues."""
     work = tempfile.mkdtemp(prefix=f"rung5_{label}_")
     try:
-        cfg_path = os.path.join(work, "strain.cfg")
+        cfg_path = os.path.join(work, "strain.toml")
         with open(cfg_path, "w") as f:
             f.write(config_str)
         rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work)

@@ -158,7 +158,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
 
     call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
 
@@ -206,7 +206,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     cfg%bdg%enabled = .false.
 
     call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
@@ -284,7 +284,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     cfg%bdg%enabled = .false.
 
     call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
@@ -338,7 +338,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     cfg%sc%enabled = 1
 
     call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
@@ -388,7 +388,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
 
     call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
 
@@ -437,7 +437,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
 
     call ZB8bandGeneralized(H_csr, 0.05_dp, profile_2d, kpterms_2d, cfg)
 

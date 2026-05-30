@@ -46,7 +46,7 @@ def test_gaas_21x21_wire():
     print("Lecture 08 -- Section 1: GaAs 21x21 wire eigenvalues")
     print("=" * 60)
 
-    cfg = CONFIGS_DIR / "wire_gaas_rectangle.cfg"
+    cfg = CONFIGS_DIR / "wire_gaas_rectangle.toml"
     nx, ny = 21, 21
     expected_hdim = 8 * nx * ny  # 3528
     expected_numcb = 8
@@ -112,7 +112,7 @@ def test_inas_rectangle_wire():
     print("Lecture 08 -- Section 2: InAs rectangular wire")
     print("=" * 60)
 
-    cfg = CONFIGS_DIR / "wire_inas_rectangle.cfg"
+    cfg = CONFIGS_DIR / "wire_inas_rectangle.toml"
 
     with tempfile.TemporaryDirectory(prefix="lecture08_inas_") as work:
         rc, outdir = run_exe(str(BUILD_DIR), "bandStructure",
@@ -162,8 +162,8 @@ def test_dense_sparse_consistency():
     print("Lecture 08 -- Section 3: Dense-sparse consistency")
     print("=" * 60)
 
-    dense_cfg = CONFIGS_DIR / "wire_gaas_dense_sparse_dense.cfg"
-    sparse_cfg = CONFIGS_DIR / "wire_gaas_dense_sparse_sparse.cfg"
+    dense_cfg = CONFIGS_DIR / "wire_gaas_dense_sparse_dense.toml"
+    sparse_cfg = CONFIGS_DIR / "wire_gaas_dense_sparse_sparse.toml"
 
     if not dense_cfg.is_file() or not sparse_cfg.is_file():
         print("  SKIP: dense-sparse comparison configs not available")

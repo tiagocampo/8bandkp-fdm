@@ -25,7 +25,7 @@ TOL_CB1_MEV = 5.0
 WIRE_CONFIGS = [
     {
         "name": "InAs 55x55 rectangle (11x11 grid)",
-        "config": "wire_inas_rectangle.cfg",
+        "config": "wire_inas_rectangle.toml",
         "material": "InAs",
         "Eg_eV": 0.417,  # bulk InAs gap
         "timeout": 180,
@@ -44,7 +44,7 @@ def run_fortran_wire(config_name, build_dir, project_root, timeout=180):
 
     workdir = tempfile.mkdtemp(prefix="wire_")
     try:
-        shutil.copy2(config_path, os.path.join(workdir, "input.cfg"))
+        shutil.copy2(config_path, os.path.join(workdir, "input.toml"))
         os.makedirs(os.path.join(workdir, "output"), exist_ok=True)
         result = subprocess.run(
             [exe], cwd=workdir, capture_output=True, text=True, timeout=timeout

@@ -25,7 +25,7 @@ TOL_CB1_MEV = 5.0
 SC_CONFIGS = [
     {
         "name": "GaAs/AlGaAs doped QW",
-        "config": "sc_gaas_alas_qw.cfg",
+        "config": "sc_gaas_alas_qw.toml",
         "expected_cb1_meV": 800.0,  # approximate, depends on SC state
     },
 ]
@@ -42,7 +42,7 @@ def run_fortran_sc(config_name, build_dir, project_root):
 
     workdir = tempfile.mkdtemp(prefix="sc_")
     try:
-        shutil.copy2(config_path, os.path.join(workdir, "input.cfg"))
+        shutil.copy2(config_path, os.path.join(workdir, "input.toml"))
         os.makedirs(os.path.join(workdir, "output"), exist_ok=True)
         result = subprocess.run(
             [exe], cwd=workdir, capture_output=True, text=True, timeout=300

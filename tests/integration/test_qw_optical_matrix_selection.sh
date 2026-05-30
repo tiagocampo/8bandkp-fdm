@@ -11,7 +11,7 @@ CONFIG="$2"
 WORKDIR=$(mktemp -d)
 trap "rm -rf $WORKDIR" EXIT
 
-/bin/cp "$CONFIG" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG" "$WORKDIR/input.toml"
 
 cd "$WORKDIR"
 "$EXE" > test_output.log 2>&1

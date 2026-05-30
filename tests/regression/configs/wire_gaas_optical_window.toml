@@ -1,0 +1,51 @@
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "k0"
+max = 0.1
+nsteps = 11
+
+[bands]
+num_cb = 3
+num_vb = 140
+
+[wire]
+nx = 11
+ny = 11
+dx = 5.0
+dy = 5.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 55.0
+height = 55.0
+
+[[region]]
+material = "GaAs"
+inner = 0.0
+outer = 100.0
+
+
+[optics]
+linewidth_lorentzian = 0.030
+linewidth_gaussian = 0.005
+refractive_index = 3.3
+E_min = 0.0
+E_max = 2.0
+num_energy_points = 50
+temperature = 300.0
+carrier_density = 0.0
+gain_enabled = false
+gain_carrier_density = 0.0
+ISBT = false
+spontaneous = false
+spin_resolved = false
+
+[feast]
+emin = -4.0
+emax = 3.0
+m0 = 150

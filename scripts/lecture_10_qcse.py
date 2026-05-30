@@ -2,8 +2,8 @@
 """Lecture 10: Quantum-Confined Stark Effect -- Field-dependent subband shift.
 
 Runs the 8-band k.p solver for a GaAs/AlGaAs quantum well in two conditions:
-  1. Zero electric field (reference): sc_qcse_gaas_algaas.cfg
-  2. With electric field (-0.007 eV/Ang = -700 kV/cm): sc_qcse_gaas_algaas_ef.cfg
+  1. Zero electric field (reference): sc_qcse_gaas_algaas.toml
+  2. With electric field (-0.007 eV/Ang = -700 kV/cm): sc_qcse_gaas_algaas_ef.toml
 
 Extracts eigenvalues at k=0 from each run and computes:
   - Raw CB1 eigenvalue shift: Delta_E_CB1 = E_CB1(field) - E_CB1(0)
@@ -276,7 +276,7 @@ def main():
     # ------------------------------------------------------------------
     print("\n[1/5] Running GaAs/AlGaAs QW without electric field...")
     with tempfile.TemporaryDirectory(prefix="lecture10_nofield_") as work_0:
-        rc_0, eig_0 = run_bandstructure("sc_qcse_gaas_algaas.cfg", work_0)
+        rc_0, eig_0 = run_bandstructure("sc_qcse_gaas_algaas.toml", work_0)
         if rc_0 != 0 or eig_0 is None:
             print(f"  FAIL: bandStructure returned {rc_0} (no field)")
             all_passed = False
@@ -296,7 +296,7 @@ def main():
     print(f"\n[2/5] Running GaAs/AlGaAs QW with electric field "
           f"({EFIELD_KV_PER_CM:.0f} kV/cm)...")
     with tempfile.TemporaryDirectory(prefix="lecture10_field_") as work_f:
-        rc_f, eig_f = run_bandstructure("sc_qcse_gaas_algaas_ef.cfg", work_f)
+        rc_f, eig_f = run_bandstructure("sc_qcse_gaas_algaas_ef.toml", work_f)
         if rc_f != 0 or eig_f is None:
             print(f"  FAIL: bandStructure returned {rc_f} (with field)")
             all_passed = False

@@ -1,0 +1,52 @@
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "kz"
+max = 0.1
+nsteps = 21
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[wire]
+nx = 21
+ny = 21
+dx = 3.0
+dy = 3.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 50.0
+height = 50.0
+
+[[region]]
+material = "InAs"
+inner = 0.0
+outer = 100.0
+
+
+[topology]
+mode = "bdg"
+compute_chern = false
+compute_hall = false
+qwz_u = 0.0
+compute_z2 = false
+extract_edge_states = false
+edge_E_window = 0.01
+compute_ldos = false
+ldos_eta = 0.001
+ldos_E_range = [-0.1, 0.1]
+ldos_num_E = 200
+
+[bdg]
+mu = 0.637928
+delta_0 = 0.0002
+g_factor = 2.0
+B_vec = [0.0, 0.0, 6.0]
+gauge = "landau"
+kz = 0.0

@@ -73,6 +73,7 @@ __pycache__/
 # Test/debug artifacts
 test_debug_*
 test_staggered
+tests/integration/convergence_results/
 
 # CMake generated files
 Makefile

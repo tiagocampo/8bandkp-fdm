@@ -9,37 +9,285 @@ contains
   @test
   subroutine test_bdg_g_factor_parsing()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
 
-    ! Write a minimal config with bdg block including g_factor
-    open(unit=99, file='input.cfg', status='replace', action='write')
-    write(99, '(A)') 'waveVector k0'
-    write(99, '(A)') 'waveVectorMax 0.0'
-    write(99, '(A)') 'waveVectorStep 1'
-    write(99, '(A)') 'confinement 0'
-    write(99, '(A)') 'FDstep 50'
-    write(99, '(A)') 'FDorder 2'
-    write(99, '(A)') 'numLayers 1'
-    write(99, '(A)') 'material1 InAs'
-    write(99, '(A)') 'numcb 1'
-    write(99, '(A)') 'numvb 2'
-    write(99, '(A)') 'SC 0'
-    write(99, '(A)') 'topology: T'
-    write(99, '(A)') 'topology_mode bdg'
-    write(99, '(A)') 'bdg: T'
-    write(99, '(A)') 'bdg_mu 0.010'
-    write(99, '(A)') 'bdg_delta 0.0003'
-    write(99, '(A)') 'g_factor 2.0'
-    write(99, '(A)') 'bdg_gauge landau_y'
+    ! Write a minimal TOML config with [bdg] block including g_factor
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "k0"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 1'
+    write(99, '(A)') 'num_vb = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "bdg"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bdg]'
+    write(99, '(A)') 'mu = 0.010'
+    write(99, '(A)') 'delta_0 = 0.0003'
+    write(99, '(A)') 'g_factor = 2.0'
+    write(99, '(A)') 'gauge = "landau_y"'
     close(99)
 
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
 
     ! Verify g_factor was parsed correctly
     @assertEqual(2.0_dp, cfg%bdg%g_factor, tolerance=1.0e-6_dp)
     @assertEqual(0.010_dp, cfg%bdg%mu, tolerance=1.0e-6_dp)
     @assertEqual(0.0003_dp, cfg%bdg%delta_0, tolerance=1.0e-8_dp)
     @assertEqual('landau_y', trim(cfg%bdg%gauge))
+
+    close(unit=99, status='delete')
+  end subroutine
+
+  ! ------------------------------------------------------------------
+  ! Test: b_field defaults flow into bdg when [bdg] lacks overrides.
+  ! parse_bdg should inherit B_vec and g_factor from [b_field] section.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_bdg_inherits_b_field_defaults()
+    type(simulation_config) :: cfg
+
+    ! Write config with [b_field] having non-default values,
+    ! and [bdg] with NO g_factor or B_vec overrides.
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "k0"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 1'
+    write(99, '(A)') 'num_vb = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[b_field]'
+    write(99, '(A)') 'components = [0.0, 0.5, 1.0]'
+    write(99, '(A)') 'g_factor = 15.0'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "bdg"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bdg]'
+    write(99, '(A)') 'mu = 0.010'
+    write(99, '(A)') 'delta_0 = 0.0003'
+    close(99)
+
+    call read_config(cfg)
+
+    ! BdG B_vec should inherit from [b_field]
+    @assertEqual(0.0_dp, cfg%bdg%B_vec(1), tolerance=1.0e-12_dp)
+    @assertEqual(0.5_dp, cfg%bdg%B_vec(2), tolerance=1.0e-12_dp)
+    @assertEqual(1.0_dp, cfg%bdg%B_vec(3), tolerance=1.0e-12_dp)
+
+    ! BdG g_factor should inherit from [b_field] g_factor=15.0,
+    ! NOT the hardcoded default of 2.0.
+    @assertEqual(15.0_dp, cfg%bdg%g_factor, tolerance=1.0e-12_dp)
+
+    ! b_field itself should be parsed correctly
+    @assertEqual(0.5_dp, cfg%b_field%components(2), tolerance=1.0e-12_dp)
+    @assertEqual(15.0_dp, cfg%b_field%g_factor, tolerance=1.0e-12_dp)
+
+    close(unit=99, status='delete')
+  end subroutine
+
+  ! ------------------------------------------------------------------
+  ! Test: [bdg] explicit g_factor overrides [b_field] g_factor.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_bdg_g_factor_override()
+    type(simulation_config) :: cfg
+
+    ! Write config where [b_field] and [bdg] both specify g_factor.
+    ! [bdg] should win.
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "k0"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 1'
+    write(99, '(A)') 'num_vb = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[b_field]'
+    write(99, '(A)') 'g_factor = 15.0'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "bdg"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bdg]'
+    write(99, '(A)') 'mu = 0.010'
+    write(99, '(A)') 'delta_0 = 0.0003'
+    write(99, '(A)') 'g_factor = 50.0'
+    close(99)
+
+    call read_config(cfg)
+
+    ! [bdg] g_factor should override [b_field] g_factor
+    @assertEqual(50.0_dp, cfg%bdg%g_factor, tolerance=1.0e-12_dp)
+    ! [b_field] g_factor should be unchanged
+    @assertEqual(15.0_dp, cfg%b_field%g_factor, tolerance=1.0e-12_dp)
+
+    close(unit=99, status='delete')
+  end subroutine
+
+  ! ------------------------------------------------------------------
+  ! Test: [bdg] B_vec explicit overrides [b_field] components.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_bdg_bvec_override()
+    type(simulation_config) :: cfg
+
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "k0"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 1'
+    write(99, '(A)') 'num_vb = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[b_field]'
+    write(99, '(A)') 'components = [1.0, 2.0, 3.0]'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "bdg"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bdg]'
+    write(99, '(A)') 'mu = 0.010'
+    write(99, '(A)') 'delta_0 = 0.0003'
+    write(99, '(A)') 'B_vec = [0.1, 0.2, 0.3]'
+    close(99)
+
+    call read_config(cfg)
+
+    ! [bdg] B_vec should override [b_field] components
+    @assertEqual(0.1_dp, cfg%bdg%B_vec(1), tolerance=1.0e-12_dp)
+    @assertEqual(0.2_dp, cfg%bdg%B_vec(2), tolerance=1.0e-12_dp)
+    @assertEqual(0.3_dp, cfg%bdg%B_vec(3), tolerance=1.0e-12_dp)
+
+    close(unit=99, status='delete')
+  end subroutine
+
+  ! ------------------------------------------------------------------
+  ! Test: parse_b_field does NOT write to cfg%bdg fields.
+  ! Ensures separation of concerns between parse_b_field and parse_bdg.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_parse_b_field_no_bdg_write()
+    type(simulation_config) :: cfg
+
+    ! Write config with [b_field] but NO [bdg] or [topology].
+    ! cfg%bdg should remain at type defaults (enabled=.false., B_vec=0).
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "k0"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 1'
+    write(99, '(A)') 'num_vb = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[b_field]'
+    write(99, '(A)') 'components = [1.0, 2.0, 3.0]'
+    write(99, '(A)') 'g_factor = 15.0'
+    close(99)
+
+    call read_config(cfg)
+
+    ! b_field should be parsed
+    @assertEqual(1.0_dp, cfg%b_field%components(1), tolerance=1.0e-12_dp)
+    @assertEqual(15.0_dp, cfg%b_field%g_factor, tolerance=1.0e-12_dp)
+
+    ! bdg should NOT be enabled (no [bdg] section), but B_vec and g_factor
+    ! are now copied from [b_field] unconditionally so that Landau configs
+    ! (which have [b_field] but no [bdg]) propagate the magnetic field.
+    @assertFalse(cfg%bdg%enabled)
+    @assertEqual(1.0_dp, cfg%bdg%B_vec(1), tolerance=1.0e-12_dp)
+    @assertEqual(2.0_dp, cfg%bdg%B_vec(2), tolerance=1.0e-12_dp)
+    @assertEqual(3.0_dp, cfg%bdg%B_vec(3), tolerance=1.0e-12_dp)
+    @assertEqual(15.0_dp, cfg%bdg%g_factor, tolerance=1.0e-12_dp)
+
+    close(unit=99, status='delete')
+  end subroutine
+
+  ! ------------------------------------------------------------------
+  ! Wire parser: num_layers must be 1, region count in wire%num_regions.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_wire_parser_num_layers_vs_num_regions()
+    type(simulation_config) :: cfg
+
+    ! Wire mode with 2 regions: InAs core + GaAs shell
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "wire"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wire]'
+    write(99, '(A)') 'nx = 7'
+    write(99, '(A)') 'ny = 7'
+    write(99, '(A)') 'dx = 3.0'
+    write(99, '(A)') 'dy = 3.0'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wire.geometry]'
+    write(99, '(A)') 'shape = "circle"'
+    write(99, '(A)') 'radius = 10.0'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[region]]'
+    write(99, '(A)') 'material = "InAs"'
+    write(99, '(A)') 'inner = 0.0'
+    write(99, '(A)') 'outer = 5.0'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[region]]'
+    write(99, '(A)') 'material = "GaAs"'
+    write(99, '(A)') 'inner = 5.0'
+    write(99, '(A)') 'outer = 10.0'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "kz"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 2'
+    write(99, '(A)') 'num_vb = 6'
+    close(99)
+
+    call read_config(cfg)
+
+    ! num_layers must be 1 for wire (material layers concept, not regions)
+    @assertEqual(1, cfg%num_layers)
+    ! wire%num_regions holds the actual region count
+    @assertEqual(2, cfg%wire%num_regions)
+    ! material_names should be sized by region count
+    @assertEqual(2, size(cfg%material_names))
+    ! params should have 2 entries (one per region)
+    @assertEqual(2, size(cfg%params))
+    ! Both params should have valid lattice constants
+    @assertTrue(cfg%params(1)%a0 > 0.0_dp)
+    @assertTrue(cfg%params(2)%a0 > 0.0_dp)
 
     close(unit=99, status='delete')
   end subroutine

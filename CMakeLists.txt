@@ -32,6 +32,9 @@ else()
   message(STATUS "fortran_stdlib not found - building without stdlib support")
 endif()
 
+# toml-f (TOML parser for Fortran — vendored as submodule in subprojects/toml-f)
+add_subdirectory(subprojects/toml-f)
+
 # BLAS/LAPACK backend selector (future portability)
 set(LINALG_BACKEND "MKL" CACHE STRING "BLAS/LAPACK backend: MKL, OPENBLAS, AOCL")
 

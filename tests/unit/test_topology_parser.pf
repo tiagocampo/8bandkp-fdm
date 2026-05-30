@@ -8,27 +8,29 @@ contains
   @test
   subroutine test_parse_topology_and_bdg_block()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
-    open(unit=99, file='input.cfg', status='replace', action='write')
-    write(99, '(A)') 'waveVector k0'
-    write(99, '(A)') 'waveVectorMax 0.0'
-    write(99, '(A)') 'waveVectorStep 1'
-    write(99, '(A)') 'confinement 0'
-    write(99, '(A)') 'FDstep 50'
-    write(99, '(A)') 'FDorder 2'
-    write(99, '(A)') 'numLayers 1'
-    write(99, '(A)') 'material1 InAs'
-    write(99, '(A)') 'numcb 1'
-    write(99, '(A)') 'numvb 2'
-    write(99, '(A)') 'SC 0'
-    write(99, '(A)') 'topology: T'
-    write(99, '(A)') 'topology_mode bdg'
-    write(99, '(A)') 'topology_compute_chern T'
-    write(99, '(A)') 'bdg: T'
-    write(99, '(A)') 'bdg_mu 0.010'
-    write(99, '(A)') 'bdg_delta 0.0003'
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "k0"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 1'
+    write(99, '(A)') 'num_vb = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "bdg"'
+    write(99, '(A)') 'compute_chern = true'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bdg]'
+    write(99, '(A)') 'mu = 0.010'
+    write(99, '(A)') 'delta_0 = 0.0003'
     close(99)
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
     @assertTrue(cfg%topo%enabled)
     @assertEqual('bdg', trim(cfg%topo%mode))
     @assertTrue(cfg%topo%compute_chern)
@@ -41,34 +43,34 @@ contains
   @test
   subroutine test_parse_topology_false_values()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
-    open(unit=99, file='input.cfg', status='replace', action='write')
-    write(99, '(A)') 'waveVector k0'
-    write(99, '(A)') 'waveVectorMax 0.0'
-    write(99, '(A)') 'waveVectorStep 1'
-    write(99, '(A)') 'confinement 0'
-    write(99, '(A)') 'FDstep 50'
-    write(99, '(A)') 'FDorder 2'
-    write(99, '(A)') 'numLayers 1'
-    write(99, '(A)') 'material1 InAs'
-    write(99, '(A)') 'numcb 1'
-    write(99, '(A)') 'numvb 2'
-    write(99, '(A)') 'SC 0'
-    write(99, '(A)') 'topology: T'
-    write(99, '(A)') 'topology_mode qhe'
-    write(99, '(A)') 'topology_compute_chern F'
-    write(99, '(A)') 'topology_compute_hall f'
-    write(99, '(A)') 'topology_qwz_u 2.0'
-    write(99, '(A)') 'topology_compute_z2 F'
-    write(99, '(A)') 'topology_extract_edge_states F'
-    write(99, '(A)') 'topology_edge_E_window 0.05'
-    write(99, '(A)') 'topology_compute_ldos F'
-    write(99, '(A)') 'topology_ldos_eta 0.001'
-    write(99, '(A)') 'topology_ldos_E_range: -0.1'
-    write(99, '(A)') 'topology_ldos_E_range: 0.1'
-    write(99, '(A)') 'topology_ldos_num_E 100'
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "k0"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 1'
+    write(99, '(A)') 'num_vb = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "qhe"'
+    write(99, '(A)') 'compute_chern = false'
+    write(99, '(A)') 'compute_hall = false'
+    write(99, '(A)') 'qwz_u = 2.0'
+    write(99, '(A)') 'compute_z2 = false'
+    write(99, '(A)') 'extract_edge_states = false'
+    write(99, '(A)') 'edge_E_window = 0.05'
+    write(99, '(A)') 'compute_ldos = false'
+    write(99, '(A)') 'ldos_eta = 0.001'
+    write(99, '(A)') 'ldos_E_range = [-0.1, 0.1]'
+    write(99, '(A)') 'ldos_num_E = 100'
     close(99)
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
     @assertTrue(cfg%topo%enabled)
     @assertEqual('qhe', trim(cfg%topo%mode))
     @assertFalse(cfg%topo%compute_chern)
@@ -86,47 +88,57 @@ contains
   @test
   subroutine test_parse_topology_phase6_name_aware_fields()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
 
-    open(unit=99, file='input.cfg', status='replace', action='write')
-    write(99, '(A)') 'waveVector k0'
-    write(99, '(A)') 'waveVectorMax 0.0'
-    write(99, '(A)') 'waveVectorStep 1'
-    write(99, '(A)') 'confinement 0'
-    write(99, '(A)') 'FDstep 1'
-    write(99, '(A)') 'FDorder 2'
-    write(99, '(A)') 'numLayers 1'
-    write(99, '(A)') 'material1 InAs'
-    write(99, '(A)') 'numcb 1'
-    write(99, '(A)') 'numvb 2'
-    write(99, '(A)') 'SC 0'
-    write(99, '(A)') 'topology: T'
-    write(99, '(A)') 'topology_mode conductance'
-    write(99, '(A)') 'topology_compute_chern F'
-    write(99, '(A)') 'topology_compute_hall F'
-    write(99, '(A)') 'topology_qwz_u -0.8'
-    write(99, '(A)') 'topology_compute_z2 F'
-    write(99, '(A)') 'topology_extract_edge_states F'
-    write(99, '(A)') 'topology_edge_E_window 0.01'
-    write(99, '(A)') 'topology_compute_ldos F'
-    write(99, '(A)') 'topology_ldos_eta 0.001'
-    write(99, '(A)') 'topology_ldos_E_range: -0.1'
-    write(99, '(A)') 'topology_ldos_E_range: 0.1'
-    write(99, '(A)') 'topology_ldos_num_E 10'
-    write(99, '(A)') 'compute_spectral: T'
-    write(99, '(A)') 'spectral_E_grid: -0.2 0.2 21 0.004'
-    write(99, '(A)') 'conductance_method: landauer'
-    write(99, '(A)') 'spectral_k_grid: -0.02 0.02 5'
-    write(99, '(A)') 'compute_conductance: T'
-    write(99, '(A)') 'berry_nk: 9'
-    write(99, '(A)') 'landauer_energy: 0.03'
-    write(99, '(A)') 'compute_gap_sweep: T'
-    write(99, '(A)') 'gap_sweep_mu: 0.0 0.002 2'
-    write(99, '(A)') 'sweep_model: bhz_analytic'
-    write(99, '(A)') 'gap_sweep_B: -0.01 0.01 3'
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'fd_step = 1'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "k0"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 1'
+    write(99, '(A)') 'num_vb = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "conductance"'
+    write(99, '(A)') 'compute_chern = false'
+    write(99, '(A)') 'compute_hall = false'
+    write(99, '(A)') 'qwz_u = -0.8'
+    write(99, '(A)') 'compute_z2 = false'
+    write(99, '(A)') 'extract_edge_states = false'
+    write(99, '(A)') 'edge_E_window = 0.01'
+    write(99, '(A)') 'compute_ldos = false'
+    write(99, '(A)') 'ldos_eta = 0.001'
+    write(99, '(A)') 'ldos_E_range = [-0.1, 0.1]'
+    write(99, '(A)') 'ldos_num_E = 10'
+    write(99, '(A)') 'compute_spectral = true'
+    write(99, '(A)') 'spectral_E_min = -0.2'
+    write(99, '(A)') 'spectral_E_max = 0.2'
+    write(99, '(A)') 'spectral_nE = 21'
+    write(99, '(A)') 'spectral_eta = 0.004'
+    write(99, '(A)') 'conductance_method = "landauer"'
+    write(99, '(A)') 'spectral_k_min = -0.02'
+    write(99, '(A)') 'spectral_k_max = 0.02'
+    write(99, '(A)') 'spectral_nk = 5'
+    write(99, '(A)') 'compute_conductance = true'
+    write(99, '(A)') 'berry_nk = 9'
+    write(99, '(A)') 'landauer_energy = 0.03'
+    write(99, '(A)') 'compute_gap_sweep = true'
+    write(99, '(A)') 'gap_sweep_mu_min = 0.0'
+    write(99, '(A)') 'gap_sweep_mu_max = 0.002'
+    write(99, '(A)') 'gap_sweep_nMu = 2'
+    write(99, '(A)') 'sweep_model = "bhz_analytic"'
+    write(99, '(A)') 'gap_sweep_B_min = -0.01'
+    write(99, '(A)') 'gap_sweep_B_max = 0.01'
+    write(99, '(A)') 'gap_sweep_nB = 3'
     close(99)
 
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
 
     @assertTrue(cfg%topo%compute_spectral)
     @assertEqual(5, cfg%topo%spectral_nk)
@@ -147,26 +159,28 @@ contains
   @test
   subroutine test_parse_topology_old_qhe_block()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
 
-    open(unit=99, file='input.cfg', status='replace', action='write')
-    write(99, '(A)') 'waveVector k0'
-    write(99, '(A)') 'waveVectorMax 0.0'
-    write(99, '(A)') 'waveVectorStep 1'
-    write(99, '(A)') 'confinement 0'
-    write(99, '(A)') 'FDstep 1'
-    write(99, '(A)') 'FDorder 2'
-    write(99, '(A)') 'numLayers 1'
-    write(99, '(A)') 'material1 InAs'
-    write(99, '(A)') 'numcb 1'
-    write(99, '(A)') 'numvb 2'
-    write(99, '(A)') 'SC 0'
-    write(99, '(A)') 'topology: T'
-    write(99, '(A)') 'mode: qhe'
-    write(99, '(A)') 'compute_chern: T'
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'fd_step = 1'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "k0"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 1'
+    write(99, '(A)') 'num_vb = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "qhe"'
+    write(99, '(A)') 'compute_chern = true'
     close(99)
 
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
 
     @assertTrue(cfg%topo%enabled)
     @assertEqual('qhe', trim(cfg%topo%mode))
@@ -178,40 +192,45 @@ contains
   @test
   subroutine test_parse_topology_sweep_model()
     type(simulation_config) :: cfg
-    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
 
-    open(unit=99, file='input.cfg', status='replace', action='write')
-    write(99, '(A)') 'waveVector k0'
-    write(99, '(A)') 'waveVectorMax 0.0'
-    write(99, '(A)') 'waveVectorStep 1'
-    write(99, '(A)') 'confinement 0'
-    write(99, '(A)') 'FDstep 1'
-    write(99, '(A)') 'FDorder 2'
-    write(99, '(A)') 'numLayers 1'
-    write(99, '(A)') 'material1 InAs'
-    write(99, '(A)') 'numcb 1'
-    write(99, '(A)') 'numvb 2'
-    write(99, '(A)') 'SC 0'
-    write(99, '(A)') 'topology: T'
-    write(99, '(A)') 'topology_mode sweep'
-    write(99, '(A)') 'topology_compute_chern F'
-    write(99, '(A)') 'topology_compute_hall F'
-    write(99, '(A)') 'topology_qwz_u 0.0'
-    write(99, '(A)') 'topology_compute_z2 F'
-    write(99, '(A)') 'topology_extract_edge_states F'
-    write(99, '(A)') 'topology_edge_E_window 0.01'
-    write(99, '(A)') 'topology_compute_ldos F'
-    write(99, '(A)') 'topology_ldos_eta 0.001'
-    write(99, '(A)') 'topology_ldos_E_range: -0.1'
-    write(99, '(A)') 'topology_ldos_E_range: 0.1'
-    write(99, '(A)') 'topology_ldos_num_E 10'
-    write(99, '(A)') 'compute_gap_sweep T'
-    write(99, '(A)') 'gap_sweep_B -0.01 0.01 3'
-    write(99, '(A)') 'gap_sweep_mu 0.0 0.001 2'
-    write(99, '(A)') 'sweep_model qw_fukane'
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'fd_step = 1'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[wave_vector]'
+    write(99, '(A)') 'mode = "k0"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[bands]'
+    write(99, '(A)') 'num_cb = 1'
+    write(99, '(A)') 'num_vb = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "sweep"'
+    write(99, '(A)') 'compute_chern = false'
+    write(99, '(A)') 'compute_hall = false'
+    write(99, '(A)') 'qwz_u = 0.0'
+    write(99, '(A)') 'compute_z2 = false'
+    write(99, '(A)') 'extract_edge_states = false'
+    write(99, '(A)') 'edge_E_window = 0.01'
+    write(99, '(A)') 'compute_ldos = false'
+    write(99, '(A)') 'ldos_eta = 0.001'
+    write(99, '(A)') 'ldos_E_range = [-0.1, 0.1]'
+    write(99, '(A)') 'ldos_num_E = 10'
+    write(99, '(A)') 'compute_gap_sweep = true'
+    write(99, '(A)') 'gap_sweep_B_min = -0.01'
+    write(99, '(A)') 'gap_sweep_B_max = 0.01'
+    write(99, '(A)') 'gap_sweep_nB = 3'
+    write(99, '(A)') 'gap_sweep_mu_min = 0.0'
+    write(99, '(A)') 'gap_sweep_mu_max = 0.001'
+    write(99, '(A)') 'gap_sweep_nMu = 2'
+    write(99, '(A)') 'sweep_model = "qw_fukane"'
     close(99)
 
-    call read_and_setup(cfg, profile, kpterms)
+    call read_config(cfg)
 
     @assertTrue(cfg%topo%compute_gap_sweep)
     @assertEqual('qw_fukane', trim(cfg%topo%sweep_model))

@@ -316,6 +316,94 @@ contains
 #line 155 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
   end subroutine test_central_coeffs_sum_to_zero
 
+  !@test
+  subroutine test_d1_order10_coefficients()
+    ! Order-10 central 1st-derivative coefficients (divided by dz)
+    ! Analytical values: [-1, 5/504, -5/84, 5/21, -5/6, 0, 5/6, -5/21, 5/84, -5/504, 1]/1260
+    real(kind=dp), allocatable :: coeffs(:)
+    real(kind=dp) :: dz, tol
+    dz = 0.1_dp
+    tol = 1.0e-12_dp
+    call FDcentralCoeffs1st(10, dz, coeffs)
+#line 166 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(-1.0_dp/1260.0_dp/dz, coeffs(1), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 166) )
+  if (anyExceptions()) return
+#line 167 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+#line 167 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(5.0_dp/504.0_dp/dz, coeffs(2), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 167) )
+  if (anyExceptions()) return
+#line 168 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+#line 168 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(-5.0_dp/84.0_dp/dz, coeffs(3), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 168) )
+  if (anyExceptions()) return
+#line 169 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+#line 169 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(5.0_dp/21.0_dp/dz, coeffs(4), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 169) )
+  if (anyExceptions()) return
+#line 170 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+#line 170 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(-5.0_dp/6.0_dp/dz, coeffs(5), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 170) )
+  if (anyExceptions()) return
+#line 171 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+#line 171 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(0.0_dp, coeffs(6), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 171) )
+  if (anyExceptions()) return
+#line 172 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+#line 172 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(5.0_dp/6.0_dp/dz, coeffs(7), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 172) )
+  if (anyExceptions()) return
+#line 173 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+#line 173 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(-5.0_dp/21.0_dp/dz, coeffs(8), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 173) )
+  if (anyExceptions()) return
+#line 174 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+#line 174 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(5.0_dp/84.0_dp/dz, coeffs(9), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 174) )
+  if (anyExceptions()) return
+#line 175 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+#line 175 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(-5.0_dp/504.0_dp/dz, coeffs(10), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 175) )
+  if (anyExceptions()) return
+#line 176 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+#line 176 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  call assertEqual(1.0_dp/1260.0_dp/dz, coeffs(11), tolerance=tol, &
+ & location=SourceLocation( &
+ & 'test_finitedifferences.pf', &
+ & 176) )
+  if (anyExceptions()) return
+#line 177 "/data/8bandkp-fdm/tests/unit/test_finitedifferences.pf"
+  end subroutine test_d1_order10_coefficients
+
 end module test_finitedifferences
 
 module Wraptest_finitedifferences
@@ -383,6 +471,11 @@ function test_finitedifferences_suite() result(suite)
    if(allocated(t)) deallocate(t)
    allocate(t, source=TestMethod('test_central_coeffs_sum_to_zero', &
       test_central_coeffs_sum_to_zero))
+   call suite%addTest(t)
+
+   if(allocated(t)) deallocate(t)
+   allocate(t, source=TestMethod('test_d1_order10_coefficients', &
+      test_d1_order10_coefficients))
    call suite%addTest(t)
 
 

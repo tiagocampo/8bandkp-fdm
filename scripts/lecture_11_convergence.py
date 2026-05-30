@@ -45,19 +45,28 @@ from star_helpers import (
 # ---------------------------------------------------------------------------
 
 QW_TEMPLATE = (
-    "waveVector: k0\n"
-    "waveVectorMax: 0\n"
-    "waveVectorStep: 1\n"
-    "confinement:  1\n"
-    "FDstep: {fdstep}\n"
-    "FDorder: 2\n"
-    "numLayers:  2\n"
-    "material1: Al30Ga70As -200 200 0\n"
-    "material2: GaAs -50 50 0\n"
-    "numcb: 4\n"
-    "numvb: 8\n"
-    "ExternalField: 0  EF\n"
-    "EFParams: 0.0\n"
+    'confinement = "qw"\n'
+    "FDorder = 2\n"
+    "fd_step = {fdstep}\n"
+    "\n"
+    "[wave_vector]\n"
+    'mode = "k0"\n'
+    "max = 0\n"
+    "nsteps = 1\n"
+    "\n"
+    "[bands]\n"
+    "num_cb = 4\n"
+    "num_vb = 8\n"
+    "\n"
+    "[[material]]\n"
+    'name = "Al30Ga70As"\n'
+    "z_min = -200\n"
+    "z_max = 200\n"
+    "\n"
+    "[[material]]\n"
+    'name = "GaAs"\n'
+    "z_min = -50\n"
+    "z_max = 50\n"
 )
 
 # Domain width in Angstroms for the QW config (barrier extends -200 to 200)
@@ -67,12 +76,12 @@ QW_DOMAIN_WIDTH = 400.0  # Angstrom
 def write_config(work_dir, fdstep):
     """Write a QW config with the given FDstep into a staging file.
 
-    The config is written to a staging path (not input.cfg) because run_exe
-    copies the config to <work_dir>/input.cfg itself.
+    The config is written to a staging path (not input.toml) because run_exe
+    copies the config to <work_dir>/input.toml itself.
 
     Returns the staging config path.
     """
-    cfg_path = os.path.join(work_dir, "staged.cfg")
+    cfg_path = os.path.join(work_dir, "staged.toml")
     content = QW_TEMPLATE.format(fdstep=fdstep)
     with open(cfg_path, "w") as f:
         f.write(content)
@@ -210,22 +219,31 @@ def run_fdorder_sweep(fdstep, fdorder_values, timeout=600):
         print(f"  FDorder = {order}  FDstep = {fdstep}  ... ", end="", flush=True)
         with tempfile.TemporaryDirectory() as work:
             cfg_content = (
-                "waveVector: k0\n"
-                "waveVectorMax: 0\n"
-                "waveVectorStep: 1\n"
-                "confinement:  1\n"
-                f"FDstep: {fdstep}\n"
-                f"FDorder: {order}\n"
-                "numLayers:  2\n"
-                "material1: Al30Ga70As -200 200 0\n"
-                "material2: GaAs -50 50 0\n"
-                "numcb: 4\n"
-                "numvb: 8\n"
-                "ExternalField: 0  EF\n"
-                "EFParams: 0.0\n"
+                'confinement = "qw"\n'
+                f"FDorder = {order}\n"
+                f"fd_step = {fdstep}\n"
+                "\n"
+                "[wave_vector]\n"
+                'mode = "k0"\n'
+                "max = 0\n"
+                "nsteps = 1\n"
+                "\n"
+                "[bands]\n"
+                "num_cb = 4\n"
+                "num_vb = 8\n"
+                "\n"
+                "[[material]]\n"
+                'name = "Al30Ga70As"\n'
+                "z_min = -200\n"
+                "z_max = 200\n"
+                "\n"
+                "[[material]]\n"
+                'name = "GaAs"\n'
+                "z_min = -50\n"
+                "z_max = 50\n"
             )
-            # Write to staged.cfg; run_exe will copy it to input.cfg
-            cfg_path = os.path.join(work, "staged.cfg")
+            # Write to staged.toml; run_exe will copy it to input.toml
+            cfg_path = os.path.join(work, "staged.toml")
             with open(cfg_path, "w") as f:
                 f.write(cfg_content)
 

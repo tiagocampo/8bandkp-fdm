@@ -56,25 +56,33 @@ def _run_fortran_qw(barrier, well, l_well_ang, l_barrier_ang, total_ang,
         well_end = l_well_ang / 2.0
 
         lines = [
-            "waveVector: k0",
-            "waveVectorMax: 0",
-            "waveVectorStep: 1",
-            "confinement: 1",
-            f"FDstep: {fdstep}",
-            "FDorder: 2",
-            "numLayers: 2",
-            f"material1: {barrier} {-half_total:.1f} {half_total:.1f} 0",
-            f"material2: {well} {well_start:.1f} {well_end:.1f} 0",
-            "numcb: 6",
-            "numvb: 12",
-            "ExternalField: 0  EF",
-            "EFParams: 0.0",
+            'confinement = "qw"',
+            "FDorder = 2",
+            f"fd_step = {fdstep}",
+            "",
+            "[wave_vector]",
+            'mode = "k0"',
+            "max = 0",
+            "nsteps = 1",
+            "",
+            "[bands]",
+            "num_cb = 6",
+            "num_vb = 12",
+            "",
+            "[[material]]",
+            f'name = "{barrier}"',
+            f"z_min = {-half_total:.1f}",
+            f"z_max = {half_total:.1f}",
+            "",
+            "[[material]]",
+            f'name = "{well}"',
+            f"z_min = {well_start:.1f}",
+            f"z_max = {well_end:.1f}",
         ]
         if substrate:
-            lines.append("strain: T")
-            lines.append(f"strain_ref: {substrate}")
+            lines.extend(["", "[strain]", f'reference = "{substrate}"'])
 
-        with open(os.path.join(work_dir, "input.cfg"), 'w') as f:
+        with open(os.path.join(work_dir, "input.toml"), 'w') as f:
             f.write('\n'.join(lines) + '\n')
         os.makedirs(os.path.join(work_dir, "output"), exist_ok=True)
 

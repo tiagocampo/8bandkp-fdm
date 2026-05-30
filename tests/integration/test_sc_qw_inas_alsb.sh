@@ -12,7 +12,7 @@ COMPARE="$4"
 WORKDIR=$(mktemp -d)
 trap "rm -rf $WORKDIR" EXIT
 
-/bin/cp "$CONFIG" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG" "$WORKDIR/input.toml"
 mkdir -p "$WORKDIR/output"
 
 cd "$WORKDIR"
@@ -54,5 +54,5 @@ python3 "$COMPARE" "$REF_DIR/eigenvalues.dat" "$WORKDIR/output/eigenvalues.dat" 
 # Quantitative SC benchmark checks
 VERIFY_SC="$(dirname "$0")/verify_sc_benchmarks.py"
 if [ -f "$VERIFY_SC" ]; then
-    python3 "$VERIFY_SC" "$WORKDIR/test_output.log" "$WORKDIR/output/eigenvalues.dat" "$WORKDIR/input.cfg"
+    python3 "$VERIFY_SC" "$WORKDIR/test_output.log" "$WORKDIR/output/eigenvalues.dat" "$WORKDIR/input.toml"
 fi

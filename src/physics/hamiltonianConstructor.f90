@@ -4,10 +4,14 @@ module hamiltonianConstructor
   use finitedifferences
   use sparse_matrices
   use utils
-  use strain_solver, only: compute_bp_scalar, bir_pikus_blocks_free
+  use strain_solver, only: compute_bp_scalar, bir_pikus_blocks_free, &
+    get_strain_table, strain_entry, zeeman_entry, get_zeeman_table
   use confinement_init
   use hamiltonian_wire
-  use magnetic_field, only: compute_zeeman_vz, compute_gauge_shifts
+  use magnetic_field, only: compute_gauge_shifts
+  use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &
+    KP_Q, KP_T, KP_S, KP_SC, KP_R, KP_RC, KP_PP, KP_PM, KP_PZ, &
+    KP_A, KP_DIFF, KP_HALF_SUM
 
   implicit none
 
@@ -15,7 +19,6 @@ module hamiltonianConstructor
 
   public :: externalFieldSetup_electricField
   public :: ZB8bandQW, ZB8bandBulk, ZB8bandLandau
-  public :: add_bp_strain_dense
 
   contains
 
@@ -28,10 +31,7 @@ module hamiltonianConstructor
       integer :: i
 
       if (size(z) > 0 .and. abs(z(1)) < tolerance) then
-        print *, "ERROR: externalFieldSetup_electricField called with z(1)=0"
-        print *, "  This causes division by zero in the linear potential."
-        print *, "  Ensure z-coordinates start at a non-zero value."
-        stop 1
+        error stop 'externalFieldSetup_electricField: z(1)=0 causes division by zero in linear potential'
       end if
 
       do i = 1, ubound(z, dim=1), 1
@@ -133,80 +133,8 @@ module hamiltonianConstructor
 
       HT = 0
 
-      ! kp matrix
-      !col 1
-      HT(1 + 0*N : 1*N, 1 + 0*N : 1*N) =  Q
-      HT(1 + 0*N : 1*N, 1 + 1*N : 2*N) =  SC
-      HT(1 + 0*N : 1*N, 1 + 2*N : 3*N) =  RC
-      ! HT(1 + 0*N : 1*N, 1 + 3*N : 4*N) =  0.0_dp
-      HT(1 + 0*N : 1*N, 1 + 4*N : 5*N) = -IU * RQS2 * SC
-      HT(1 + 0*N : 1*N, 1 + 5*N : 6*N) =  IU * SQR2 * RC
-      HT(1 + 0*N : 1*N, 1 + 6*N : 7*N) =  IU * PP
-      ! HT(1 + 0*N : 1*N, 1 + 7*N : 8*N) =  0.0_dp
-
-      !col 2
-      HT(1 + 1*N : 2*N, 1 + 0*N : 1*N) =  (S)
-      HT(1 + 1*N : 2*N, 1 + 1*N : 2*N) =  T
-      ! HT(1 + 1*N : 2*N, 1 + 2*N : 3*N) =  0.0_dp
-      HT(1 + 1*N : 2*N, 1 + 3*N : 4*N) =  RC
-      HT(1 + 1*N : 2*N, 1 + 4*N : 5*N) =  IU * RQS2 * (Q - T)
-      HT(1 + 1*N : 2*N, 1 + 5*N : 6*N) = -IU * SQR3 * RQS2 * SC
-      HT(1 + 1*N : 2*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PZ
-      HT(1 + 1*N : 2*N, 1 + 7*N : 8*N) = -RQS3*PP
-
-      !col 3
-      HT(1 + 2*N : 3*N, 1 + 0*N : 1*N) =  R
-      HT(1 + 2*N : 3*N, 1 + 2*N : 3*N) =  T
-      HT(1 + 2*N : 3*N, 1 + 3*N : 4*N) = -SC
-      HT(1 + 2*N : 3*N, 1 + 4*N : 5*N) =  IU * SQR3 * RQS2 * S
-      HT(1 + 2*N : 3*N, 1 + 5*N : 6*N) =  IU * RQS2 * (Q - T)
-      HT(1 + 2*N : 3*N, 1 + 6*N : 7*N) =  IU * RQS3 * PM
-      HT(1 + 2*N : 3*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PZ
-
-      !col 4
-      HT(1 + 3*N : 4*N, 1 + 1*N : 2*N) =  R
-      HT(1 + 3*N : 4*N, 1 + 2*N : 3*N) = (-S)
-      HT(1 + 3*N : 4*N, 1 + 3*N : 4*N) =  Q
-      HT(1 + 3*N : 4*N, 1 + 4*N : 5*N) =  IU * SQR2 * R
-      HT(1 + 3*N : 4*N, 1 + 5*N : 6*N) =  IU * RQS2 * S
-      ! HT(1 + 3*N : 4*N, 1 + 6*N : 7*N) =  0.0_dp
-      HT(1 + 3*N : 4*N, 1 + 7*N : 8*N) = -PM
-
-      !col 5
-      HT(1 + 4*N : 5*N, 1 + 0*N : 1*N) =  IU * RQS2 * (S)
-      HT(1 + 4*N : 5*N, 1 + 1*N : 2*N) = -IU * RQS2 * (Q - T)
-      HT(1 + 4*N : 5*N, 1 + 2*N : 3*N) = -IU * SQR3 * RQS2 * (SC)
-      HT(1 + 4*N : 5*N, 1 + 3*N : 4*N) = -IU * SQR2 * RC
-      HT(1 + 4*N : 5*N, 1 + 4*N : 5*N) =  0.5_dp*(Q + T)
-      ! HT(1 + 4*N : 5*N, 1 + 5*N : 6*N) =  0.0_dp
-      HT(1 + 4*N : 5*N, 1 + 6*N : 7*N) =  IU * RQS3 * PZ
-      HT(1 + 4*N : 5*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PP
-
-      !col 6
-      HT(1 + 5*N : 6*N, 1 + 0*N : 1*N) = -IU * SQR2 * R
-      HT(1 + 5*N : 6*N, 1 + 1*N : 2*N) =  IU * SQR3 * RQS2 * (S)
-      HT(1 + 5*N : 6*N, 1 + 2*N : 3*N) = -IU * RQS2 * (Q- T)
-      HT(1 + 5*N : 6*N, 1 + 3*N : 4*N) = -IU * RQS2 * (SC)
-      HT(1 + 5*N : 6*N, 1 + 5*N : 6*N) =  0.5_dp*(Q + T)
-      HT(1 + 5*N : 6*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PM
-      HT(1 + 5*N : 6*N, 1 + 7*N : 8*N) = -RQS3 * PZ
-
-      !col 7
-      HT(1 + 6*N : 7*N, 1 + 0*N : 1*N) = -IU * PM
-      HT(1 + 6*N : 7*N, 1 + 1*N : 2*N) =  SQR2 * RQS3 * (PZ)
-      HT(1 + 6*N : 7*N, 1 + 2*N : 3*N) = -IU * RQS3 * PP
-      HT(1 + 6*N : 7*N, 1 + 4*N : 5*N) = -IU * RQS3 * (PZ)
-      HT(1 + 6*N : 7*N, 1 + 5*N : 6*N) =  SQR2 * RQS3 * PP
-      HT(1 + 6*N : 7*N, 1 + 6*N : 7*N) =  A
-      ! HT(7,8) =  0.0_dp
-
-      !col 8
-      HT(1 + 7*N : 8*N, 1 + 1*N : 2*N) = -RQS3 * PM
-      HT(1 + 7*N : 8*N, 1 + 2*N : 3*N) = -IU * SQR2 * RQS3 * (PZ)
-      HT(1 + 7*N : 8*N, 1 + 3*N : 4*N) = -PP
-      HT(1 + 7*N : 8*N, 1 + 4*N : 5*N) = -IU * SQR2 * RQS3 * PM
-      HT(1 + 7*N : 8*N, 1 + 5*N : 6*N) = -RQS3 * (PZ)
-      HT(1 + 7*N : 8*N, 1 + 7*N : 8*N) =  A
+      ! kp matrix — data-driven via block table
+      call apply_kp_table_dense(HT, N, Q, T, S, SC, R, RC, PP, PM, PZ, A)
 
 
       ! Profile
@@ -221,65 +149,11 @@ module hamiltonianConstructor
         HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + profile(ii,3)
       end do
 
-      ! Full Bir-Pikus strain (k-independent, not in g-mode)
-      ! Inlined from add_bp_strain_dense to avoid compiler temporaries
-      ! that cause stack corruption with -O3 + OpenMP.
+      ! Full Bir-Pikus strain (k-independent, not in g-mode).
+      ! Table-driven via get_strain_table() from strain_solver.
       if (present(cfg)) then
         if (.not. present(g) .and. allocated(cfg%strain_blocks%delta_Ec)) then
-          do ii = 1, N
-            block
-              real(kind=dp) :: dEc, dEHH, dELH, dESO, dQT2
-              complex(kind=dp) :: dR, dS, dR_c, dS_c
-              dEc  = cfg%strain_blocks%delta_Ec(ii)
-              dEHH = cfg%strain_blocks%delta_EHH(ii)
-              dELH = cfg%strain_blocks%delta_ELH(ii)
-              dESO = cfg%strain_blocks%delta_ESO(ii)
-              dR   = cfg%strain_blocks%R_eps(ii)
-              dS   = cfg%strain_blocks%S_eps(ii)
-              dQT2 = cfg%strain_blocks%QT2_eps(ii)
-              dR_c = conjg(dR)
-              dS_c = conjg(dS)
-
-              HT(      ii,      ii) = HT(      ii,      ii) + dEHH
-              HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + dELH
-              HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + dELH
-              HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + dEHH
-              HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + dESO
-              HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + dESO
-              HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + dEc
-              HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + dEc
-
-              HT(      ii,  N + ii) = HT(      ii,  N + ii) + dS_c
-              HT(  N + ii,      ii) = HT(  N + ii,      ii) + dS
-              HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - dS_c
-              HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - dS
-
-              HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + dR_c
-              HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + dR
-              HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + dR_c
-              HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + dR
-
-              HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU*RQS2*dS_c
-              HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU*RQS2*dS
-              HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU*SQR2*dR_c
-              HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU*SQR2*dR
-
-              HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU*RQS2*dQT2
-              HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU*RQS2*dQT2
-              HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU*SQR3o2*dS_c
-              HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU*SQR3o2*dS
-
-              HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU*SQR3o2*dS
-              HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU*SQR3o2*dS_c
-              HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU*RQS2*dQT2
-              HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU*RQS2*dQT2
-
-              HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU*SQR2*dR
-              HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU*SQR2*dR_c
-              HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU*RQS2*dS
-              HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU*RQS2*dS_c
-            end block
-          end do
+          call apply_strain_table_dense(HT, N, cfg%strain_blocks)
         end if
       end if
 
@@ -290,23 +164,28 @@ module hamiltonianConstructor
       ! correct: spin splitting depends on total |B|, regardless of
       ! direction. Orbital effects (Landau levels) from B_perp are
       ! handled separately via Peierls substitution in wire mode.
+      ! Uses the data-driven Zeeman table from strain_solver.
       ! ---------------------------------------------------------------
       if (present(cfg)) then
-        if (.not. present(g) .and. cfg%bdg%enabled) then
+        if (.not. present(g)) then
           block
-            real(kind=dp) :: B_mag, Vz(8)
+            real(kind=dp) :: B_mag, E0
+            type(zeeman_entry) :: ztable(8)
+            integer :: b
             B_mag = sqrt(sum(cfg%bdg%B_vec**2))
-            call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag, Vz)
-            do ii = 1, N
-              HT(      ii,      ii) = HT(      ii,      ii) + Vz(1)
-              HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + Vz(2)
-              HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + Vz(3)
-              HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + Vz(4)
-              HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + Vz(5)
-              HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + Vz(6)
-              HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + Vz(7)
-              HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + Vz(8)
-            end do
+            if (B_mag > 1.0e-12_dp) then
+              E0 = cfg%bdg%g_factor * mu_B * B_mag
+              ztable = get_zeeman_table()
+              do ii = 1, N
+                do b = 1, 8
+                  HT(ztable(b)%band_index*N + ii, &
+                     ztable(b)%band_index*N + ii) = &
+                     HT(ztable(b)%band_index*N + ii, &
+                        ztable(b)%band_index*N + ii) &
+                     + ztable(b)%g_multiplier * E0
+                end do
+              end do
+            end if
           end block
         end if
       end if
@@ -362,7 +241,6 @@ module hamiltonianConstructor
 
       complex(kind=dp), allocatable :: Q(:,:), R(:,:), RC(:,:), S(:,:), SC(:,:)
       complex(kind=dp), allocatable :: T(:,:), PZ(:,:), PP(:,:), PM(:,:), Amat(:,:)
-      real(kind=dp) :: Vz(8)
 
       N = size(HT, dim=1) / 8
 
@@ -485,74 +363,8 @@ module hamiltonianConstructor
       ! Initialize HT
       HT = ZERO
 
-      ! Assemble 8Nx8N Hamiltonian (identical block structure to ZB8bandQW)
-      ! col 1
-      HT(1 + 0*N : 1*N, 1 + 0*N : 1*N) =  Q
-      HT(1 + 0*N : 1*N, 1 + 1*N : 2*N) =  SC
-      HT(1 + 0*N : 1*N, 1 + 2*N : 3*N) =  RC
-      HT(1 + 0*N : 1*N, 1 + 4*N : 5*N) = -IU * RQS2 * SC
-      HT(1 + 0*N : 1*N, 1 + 5*N : 6*N) =  IU * SQR2 * RC
-      HT(1 + 0*N : 1*N, 1 + 6*N : 7*N) =  IU * PP
-
-      ! col 2
-      HT(1 + 1*N : 2*N, 1 + 0*N : 1*N) =  S
-      HT(1 + 1*N : 2*N, 1 + 1*N : 2*N) =  T
-      HT(1 + 1*N : 2*N, 1 + 3*N : 4*N) =  RC
-      HT(1 + 1*N : 2*N, 1 + 4*N : 5*N) =  IU * RQS2 * (Q - T)
-      HT(1 + 1*N : 2*N, 1 + 5*N : 6*N) = -IU * SQR3 * RQS2 * SC
-      HT(1 + 1*N : 2*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PZ
-      HT(1 + 1*N : 2*N, 1 + 7*N : 8*N) = -RQS3 * PP
-
-      ! col 3
-      HT(1 + 2*N : 3*N, 1 + 0*N : 1*N) =  R
-      HT(1 + 2*N : 3*N, 1 + 2*N : 3*N) =  T
-      HT(1 + 2*N : 3*N, 1 + 3*N : 4*N) = -SC
-      HT(1 + 2*N : 3*N, 1 + 4*N : 5*N) =  IU * SQR3 * RQS2 * S
-      HT(1 + 2*N : 3*N, 1 + 5*N : 6*N) =  IU * RQS2 * (Q - T)
-      HT(1 + 2*N : 3*N, 1 + 6*N : 7*N) =  IU * RQS3 * PM
-      HT(1 + 2*N : 3*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PZ
-
-      ! col 4
-      HT(1 + 3*N : 4*N, 1 + 1*N : 2*N) =  R
-      HT(1 + 3*N : 4*N, 1 + 2*N : 3*N) = -S
-      HT(1 + 3*N : 4*N, 1 + 3*N : 4*N) =  Q
-      HT(1 + 3*N : 4*N, 1 + 4*N : 5*N) =  IU * SQR2 * R
-      HT(1 + 3*N : 4*N, 1 + 5*N : 6*N) =  IU * RQS2 * S
-      HT(1 + 3*N : 4*N, 1 + 7*N : 8*N) = -PM
-
-      ! col 5
-      HT(1 + 4*N : 5*N, 1 + 0*N : 1*N) =  IU * RQS2 * S
-      HT(1 + 4*N : 5*N, 1 + 1*N : 2*N) = -IU * RQS2 * (Q - T)
-      HT(1 + 4*N : 5*N, 1 + 2*N : 3*N) = -IU * SQR3 * RQS2 * SC
-      HT(1 + 4*N : 5*N, 1 + 3*N : 4*N) = -IU * SQR2 * RC
-      HT(1 + 4*N : 5*N, 1 + 4*N : 5*N) =  0.5_dp * (Q + T)
-      HT(1 + 4*N : 5*N, 1 + 6*N : 7*N) =  IU * RQS3 * PZ
-      HT(1 + 4*N : 5*N, 1 + 7*N : 8*N) =  IU * SQR2 * RQS3 * PP
-
-      ! col 6
-      HT(1 + 5*N : 6*N, 1 + 0*N : 1*N) = -IU * SQR2 * R
-      HT(1 + 5*N : 6*N, 1 + 1*N : 2*N) =  IU * SQR3 * RQS2 * S
-      HT(1 + 5*N : 6*N, 1 + 2*N : 3*N) = -IU * RQS2 * (Q - T)
-      HT(1 + 5*N : 6*N, 1 + 3*N : 4*N) = -IU * RQS2 * SC
-      HT(1 + 5*N : 6*N, 1 + 5*N : 6*N) =  0.5_dp * (Q + T)
-      HT(1 + 5*N : 6*N, 1 + 6*N : 7*N) =  SQR2 * RQS3 * PM
-      HT(1 + 5*N : 6*N, 1 + 7*N : 8*N) = -RQS3 * PZ
-
-      ! col 7
-      HT(1 + 6*N : 7*N, 1 + 0*N : 1*N) = -IU * PM
-      HT(1 + 6*N : 7*N, 1 + 1*N : 2*N) =  SQR2 * RQS3 * PZ
-      HT(1 + 6*N : 7*N, 1 + 2*N : 3*N) = -IU * RQS3 * PP
-      HT(1 + 6*N : 7*N, 1 + 4*N : 5*N) = -IU * RQS3 * PZ
-      HT(1 + 6*N : 7*N, 1 + 5*N : 6*N) =  SQR2 * RQS3 * PP
-      HT(1 + 6*N : 7*N, 1 + 6*N : 7*N) =  Amat
-
-      ! col 8
-      HT(1 + 7*N : 8*N, 1 + 1*N : 2*N) = -RQS3 * PM
-      HT(1 + 7*N : 8*N, 1 + 2*N : 3*N) = -IU * SQR2 * RQS3 * PZ
-      HT(1 + 7*N : 8*N, 1 + 3*N : 4*N) = -PP
-      HT(1 + 7*N : 8*N, 1 + 4*N : 5*N) = -IU * SQR2 * RQS3 * PM
-      HT(1 + 7*N : 8*N, 1 + 5*N : 6*N) = -RQS3 * PZ
-      HT(1 + 7*N : 8*N, 1 + 7*N : 8*N) =  Amat
+      ! Assemble 8Nx8N Hamiltonian — data-driven via block table
+      call apply_kp_table_dense(HT, N, Q, T, S, SC, R, RC, PP, PM, PZ, Amat)
 
       ! Add profile (band edges)
       do ii = 1, N
@@ -567,19 +379,25 @@ module hamiltonianConstructor
       end do
 
       ! Zeeman splitting (full |B| magnitude)
+      ! Uses the data-driven Zeeman table from strain_solver.
       if (present(cfg)) then
         if (B_mag > 1.0e-12_dp) then
-          call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag, Vz)
-          do ii = 1, N
-            HT(      ii,      ii) = HT(      ii,      ii) + Vz(1)
-            HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + Vz(2)
-            HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + Vz(3)
-            HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + Vz(4)
-            HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + Vz(5)
-            HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + Vz(6)
-            HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + Vz(7)
-            HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + Vz(8)
-          end do
+          block
+            real(kind=dp) :: E0
+            type(zeeman_entry) :: ztable(8)
+            integer :: b
+            E0 = cfg%bdg%g_factor * mu_B * B_mag
+            ztable = get_zeeman_table()
+            do ii = 1, N
+              do b = 1, 8
+                HT(ztable(b)%band_index*N + ii, &
+                   ztable(b)%band_index*N + ii) = &
+                   HT(ztable(b)%band_index*N + ii, &
+                      ztable(b)%band_index*N + ii) &
+                   + ztable(b)%g_multiplier * E0
+              end do
+            end do
+          end block
         end if
       end if
 
@@ -630,12 +448,20 @@ module hamiltonianConstructor
       kminus  = wv%kx - IU*wv%ky
 
       !kp parameters
-      if (present(g) .and. g == 'g') then
-        gamma1 = 0.0_dp
-        gamma2 = 0.0_dp
-        gamma3 = 0.0_dp
-        P = params(1)%P
-        A = 0.0_dp
+      if (present(g)) then
+        if (g == 'g') then
+          gamma1 = 0.0_dp
+          gamma2 = 0.0_dp
+          gamma3 = 0.0_dp
+          P = params(1)%P
+          A = 0.0_dp
+        else
+          gamma1 = params(1)%gamma1 * const
+          gamma2 = params(1)%gamma2 * const
+          gamma3 = params(1)%gamma3 * const
+          P = params(1)%P
+          A = params(1)%A * const
+        end if
       else
         ! Scale gamma and A by const = hbar^2/(2*m_0) so that k-dependent
         ! diagonal terms have energy units (eV). P already includes const
@@ -665,80 +491,9 @@ module hamiltonianConstructor
 
       HT = 0
 
-      ! kp matrix
-      !col 1
-      HT(1,1) =  Q
-      HT(1,2) =  SC
-      HT(1,3) =  RC
-      HT(1,4) =  0.0_dp
-      HT(1,5) = -IU * RQS2 * SC
-      HT(1,6) =  IU * SQR2 * RC
-      HT(1,7) =  IU * PP
-      HT(1,8) =  0.0_dp
-
-      !col 2
-      HT(2,1) =  S
-      HT(2,2) =  T
-      HT(2,3) =  0.0_dp
-      HT(2,4) =  RC
-      HT(2,5) =  IU * RQS2 * (Q - T)
-      HT(2,6) = -IU * SQR3 * RQS2 * SC
-      HT(2,7) =  SQR2 * RQS3 * PZ
-      HT(2,8) = -RQS3*PP
-
-      !col 3
-      HT(3,1) =  R
-      HT(3,3) =  T
-      HT(3,4) = -SC
-      HT(3,5) =  IU * SQR3 * RQS2 * S
-      HT(3,6) =  IU * RQS2 * (Q - T)
-      HT(3,7) =  IU * RQS3 * PM
-      HT(3,8) =  IU * SQR2 * RQS3 * PZ
-
-      !col 4
-      HT(4,2) =  R
-      HT(4,3) = -S
-      HT(4,4) =  Q
-      HT(4,5) =  IU * SQR2 * R
-      HT(4,6) =  IU * RQS2 * S
-      HT(4,7) =  0.0_dp
-      HT(4,8) = -PM
-
-      !col 5
-      HT(5,1) =  IU * RQS2 * S
-      HT(5,2) = -IU * RQS2 * (Q - T)
-      HT(5,3) = -IU * SQR3 * RQS2 * SC
-      HT(5,4) = -IU * SQR2 * RC
-      HT(5,5) =  0.5_dp*(Q + T)
-      HT(5,6) =  0.0_dp
-      HT(5,7) =  IU * RQS3 * PZ
-      HT(5,8) =  IU * SQR2 * RQS3 * PP
-
-      !col 6
-      HT(6,1) = -IU * SQR2 * R
-      HT(6,2) =  IU * SQR3 * RQS2 * S
-      HT(6,3) = -IU * RQS2 * (Q - T)
-      HT(6,4) = -IU * RQS2 * SC
-      HT(6,6) =  0.5_dp*(Q + T)
-      HT(6,7) =  SQR2 * RQS3 * PM
-      HT(6,8) = -RQS3 * PZ
-
-      !col 7
-      HT(7,1) = -IU * PM
-      HT(7,2) =  SQR2 * RQS3 * PZ
-      HT(7,3) = -IU * RQS3 * PP
-      HT(7,5) = -IU * RQS3 * PZ
-      HT(7,6) =  SQR2 * RQS3 * PP
-      HT(7,7) =  A * k2
-      HT(7,8) =  0.0_dp
-
-      !col 8
-      HT(8,2) = -RQS3 * PM
-      HT(8,3) = -IU * SQR2 * RQS3 * PZ
-      HT(8,4) = -PP
-      HT(8,5) = -IU * SQR2 * RQS3 * PM
-      HT(8,6) = -RQS3 * PZ
-      HT(8,8) =  A * k2
+      ! kp matrix — data-driven via block table (scalar version for bulk)
+      ! A_for_table = A * k2 since bulk A already includes the k^2 weighting
+      call apply_kp_table_bulk(HT, Q, T, S, SC, R, RC, PP, PM, PZ, cmplx(A * k2, 0.0_dp, kind=dp))
 
 
       ! SOC
@@ -750,9 +505,9 @@ module hamiltonianConstructor
 
       ! External potential shifts (EF + SC)
       if (present(cfg)) then
-        if (cfg%ExternalField == 1 .and. cfg%EFtype == 'EF') then
+        if (cfg%external_field%enabled .and. cfg%external_field%type == 'EF') then
           do i = 1, 8
-            HT(i,i) = HT(i,i) + cmplx(cfg%Evalue, 0.0_dp, kind=dp)
+            HT(i,i) = HT(i,i) + cmplx(cfg%external_field%value, 0.0_dp, kind=dp)
           end do
         end if
         if (cfg%sc_potential_shift /= 0.0_dp) then
@@ -769,24 +524,25 @@ module hamiltonianConstructor
       ! requires Peierls substitution (kz -> kz - eBx*y/hbar) which needs
       ! spatial y-discretization. Bulk 8x8 at k=0 has no y information
       ! so only Zeeman (spin) is possible here. For orbital physics, use
-      ! wire mode (confinement=2) which has 2D grid and can do Peierls.
+      ! wire mode (confinement='wire') which has 2D grid and can do Peierls.
+      ! Uses the data-driven Zeeman table from strain_solver.
       ! ---------------------------------------------------------------
       if (present(cfg)) then
-        if (cfg%bdg%enabled) then
-          block
-            real(kind=dp) :: B_mag, Vz(8)
-            B_mag = sqrt(sum(cfg%bdg%B_vec**2))
-            call compute_zeeman_vz(cfg%bdg%g_factor, mu_B, B_mag, Vz)
-            HT(1,1) = HT(1,1) + Vz(1)
-            HT(2,2) = HT(2,2) + Vz(2)
-            HT(3,3) = HT(3,3) + Vz(3)
-            HT(4,4) = HT(4,4) + Vz(4)
-            HT(5,5) = HT(5,5) + Vz(5)
-            HT(6,6) = HT(6,6) + Vz(6)
-            HT(7,7) = HT(7,7) + Vz(7)
-            HT(8,8) = HT(8,8) + Vz(8)
-          end block
-        end if
+        block
+          real(kind=dp) :: B_mag, E0
+          type(zeeman_entry) :: ztable(8)
+          integer :: b
+          B_mag = sqrt(sum(cfg%bdg%B_vec**2))
+          if (B_mag > 1.0e-12_dp) then
+            E0 = cfg%bdg%g_factor * mu_B * B_mag
+            ztable = get_zeeman_table()
+            do b = 1, 8
+              HT(ztable(b)%band_index + 1, ztable(b)%band_index + 1) = &
+                HT(ztable(b)%band_index + 1, ztable(b)%band_index + 1) &
+                + ztable(b)%g_multiplier * E0
+            end do
+          end if
+        end block
       end if
 
       ! ---------------------------------------------------------------
@@ -843,9 +599,7 @@ module hamiltonianConstructor
               bp_bulk%QT2_eps(1)   = s%QT2_eps
             end associate
 
-            call apply_bp_strain_inline(HT, 1, 1, &
-              bp_bulk%delta_Ec(1), bp_bulk%delta_EHH(1), bp_bulk%delta_ELH(1), &
-              bp_bulk%delta_ESO(1), bp_bulk%R_eps(1), bp_bulk%S_eps(1), bp_bulk%QT2_eps(1))
+            call apply_strain_table_dense(HT, 1, bp_bulk)
             call bir_pikus_blocks_free(bp_bulk)
           end if
         end block
@@ -853,112 +607,152 @@ module hamiltonianConstructor
 
 
     end subroutine ZB8bandBulk
-    subroutine add_bp_strain_dense(HT, ii, N, delta_Ec, delta_EHH, delta_ELH, &
-        delta_ESO, R_eps, S_eps, QT2_eps)
+
+    ! ==================================================================
+    ! Table-driven Bir-Pikus strain insertion for dense Hamiltonian.
+    !
+    ! Reads the 32-entry strain table from get_strain_table() and applies
+    ! all strain terms to the dense 8N x 8N Hamiltonian.  Uses scalar
+    ! field lookups from bir_pikus_blocks (no array temporaries) to
+    ! avoid -O3 + OpenMP stack corruption.
+    !
+    ! Works for both QW (N > 1) and bulk (N = 1).
+    ! ==================================================================
+    subroutine apply_strain_table_dense(HT, N, bp)
       complex(kind=dp), intent(inout), contiguous :: HT(:,:)
-      integer, intent(in) :: ii, N
-      real(kind=dp), intent(in), contiguous :: delta_Ec(:), delta_EHH(:), delta_ELH(:)
-      real(kind=dp), intent(in), contiguous :: delta_ESO(:), QT2_eps(:)
-      complex(kind=dp), intent(in), contiguous :: R_eps(:), S_eps(:)
+      integer, intent(in) :: N
+      type(bir_pikus_blocks), intent(in) :: bp
 
-      complex(kind=dp) :: R_eps_c, S_eps_c
+      type(strain_entry) :: table(32)
+      integer :: ii, e, row, col
+      complex(kind=dp) :: field_val
 
-      R_eps_c = conjg(R_eps(ii))
-      S_eps_c = conjg(S_eps(ii))
+      table = get_strain_table()
 
-      ! === Diagonal per-band ===
-      HT(      ii,      ii) = HT(      ii,      ii) + delta_EHH(ii)
-      HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + delta_ELH(ii)
-      HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + delta_ELH(ii)
-      HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + delta_EHH(ii)
-      HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + delta_ESO(ii)
-      HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + delta_ESO(ii)
-      HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + delta_Ec(ii)
-      HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + delta_Ec(ii)
+      do ii = 1, N
+        do e = 1, 32
+          ! Scalar field lookup from bir_pikus_blocks — no array temporaries
+          select case (table(e)%field_id)
+          case (1); field_val = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
+          case (2); field_val = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
+          case (3); field_val = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
+          case (4); field_val = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
+          case (5); field_val = bp%S_eps(ii)
+          case (6); field_val = bp%R_eps(ii)
+          case (7); field_val = cmplx(bp%QT2_eps(ii), 0.0_dp, kind=dp)
+          case default
+            error stop 'apply_strain_table_dense: unknown field_id'
+          end select
 
-      ! === Off-diagonal: S_eps (HH-LH) ===
-      HT(      ii,  N + ii) = HT(      ii,  N + ii) + S_eps_c
-      HT(  N + ii,      ii) = HT(  N + ii,      ii) + S_eps(ii)
-      HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - S_eps_c
-      HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - S_eps(ii)
+          if (table(e)%use_conjg) field_val = conjg(field_val)
 
-      ! === Off-diagonal: R_eps (HH-LH) ===
-      HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + R_eps_c
-      HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + R_eps(ii)
-      HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + R_eps_c
-      HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + R_eps(ii)
+          row = table(e)%row_band * N + ii
+          col = table(e)%col_band * N + ii
 
-      ! === Off-diagonal: VB-SO coupling ===
-      HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU * RQS2 * S_eps_c
-      HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU * RQS2 * S_eps(ii)
-      HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU * SQR2 * R_eps_c
-      HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU * SQR2 * R_eps(ii)
+          HT(row, col) = HT(row, col) + table(e)%prefactor * field_val
+        end do
+      end do
+    end subroutine apply_strain_table_dense
 
-      HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU * RQS2 * QT2_eps(ii)
-      HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU * RQS2 * QT2_eps(ii)
-      HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU * SQR3o2 * S_eps_c
-      HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU * SQR3o2 * S_eps(ii)
-
-      HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU * SQR3o2 * S_eps(ii)
-      HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU * SQR3o2 * S_eps_c
-      HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU * RQS2 * QT2_eps(ii)
-      HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU * RQS2 * QT2_eps(ii)
-
-      HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU * SQR2 * R_eps(ii)
-      HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU * SQR2 * R_eps_c
-      HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU * RQS2 * S_eps(ii)
-      HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU * RQS2 * S_eps_c
-    end subroutine add_bp_strain_dense
-
-    ! Scalar variant for bulk (single-element arrays) — avoids array temporaries.
-    subroutine apply_bp_strain_inline(HT, ii, N, dEc, dEHH, dELH, dESO, dR, dS, dQT2)
+    ! ==================================================================
+    ! Table-driven k.p block insertion for dense Hamiltonian.
+    !
+    ! Reads the 52-entry k.p block table from get_kp_block_table() and
+    ! writes all k.p terms into the dense 8N x 8N Hamiltonian.  The kp
+    ! matrices (Q, T, S, SC, R, RC, PP, PM, PZ, A) must be precomputed;
+    ! derived terms KP_DIFF and KP_HALF_SUM are computed on the fly.
+    ! ==================================================================
+    subroutine apply_kp_table_dense(HT, N, Q, T, S, SC, R, RC, PP, PM, PZ, A)
       complex(kind=dp), intent(inout), contiguous :: HT(:,:)
-      integer, intent(in) :: ii, N
-      real(kind=dp), intent(in) :: dEc, dEHH, dELH, dESO, dQT2
-      complex(kind=dp), intent(in) :: dR, dS
-      complex(kind=dp) :: dR_c, dS_c
+      integer, intent(in) :: N
+      complex(kind=dp), intent(in), contiguous :: Q(:,:), T(:,:), S(:,:), SC(:,:)
+      complex(kind=dp), intent(in), contiguous :: R(:,:), RC(:,:)
+      complex(kind=dp), intent(in), contiguous :: PP(:,:), PM(:,:), PZ(:,:), A(:,:)
 
-      dR_c = conjg(dR)
-      dS_c = conjg(dS)
+      type(kp_entry) :: table(52)
+      integer :: e, rb, cb, r1, r2, c1, c2
 
-      HT(      ii,      ii) = HT(      ii,      ii) + dEHH
-      HT(  N + ii,  N + ii) = HT(  N + ii,  N + ii) + dELH
-      HT(2*N + ii,2*N + ii) = HT(2*N + ii,2*N + ii) + dELH
-      HT(3*N + ii,3*N + ii) = HT(3*N + ii,3*N + ii) + dEHH
-      HT(4*N + ii,4*N + ii) = HT(4*N + ii,4*N + ii) + dESO
-      HT(5*N + ii,5*N + ii) = HT(5*N + ii,5*N + ii) + dESO
-      HT(6*N + ii,6*N + ii) = HT(6*N + ii,6*N + ii) + dEc
-      HT(7*N + ii,7*N + ii) = HT(7*N + ii,7*N + ii) + dEc
+      table = get_kp_block_table()
 
-      HT(      ii,  N + ii) = HT(      ii,  N + ii) + dS_c
-      HT(  N + ii,      ii) = HT(  N + ii,      ii) + dS
-      HT(2*N + ii,3*N + ii) = HT(2*N + ii,3*N + ii) - dS_c
-      HT(3*N + ii,2*N + ii) = HT(3*N + ii,2*N + ii) - dS
+      do e = 1, 52
+        rb = table(e)%row_band
+        cb = table(e)%col_band
+        r1 = rb * N + 1
+        r2 = rb * N + N
+        c1 = cb * N + 1
+        c2 = cb * N + N
 
-      HT(      ii,2*N + ii) = HT(      ii,2*N + ii) + dR_c
-      HT(2*N + ii,      ii) = HT(2*N + ii,      ii) + dR
-      HT(  N + ii,3*N + ii) = HT(  N + ii,3*N + ii) + dR_c
-      HT(3*N + ii,  N + ii) = HT(3*N + ii,  N + ii) + dR
+        select case (table(e)%kp_term)
+        case (KP_Q)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * Q
+        case (KP_T)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * T
+        case (KP_S)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * S
+        case (KP_SC)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * SC
+        case (KP_R)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * R
+        case (KP_RC)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * RC
+        case (KP_PP)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * PP
+        case (KP_PM)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * PM
+        case (KP_PZ)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * PZ
+        case (KP_A)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * A
+        case (KP_DIFF)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * (Q - T)
+        case (KP_HALF_SUM)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * 0.5_dp * (Q + T)
+        case default
+          error stop 'apply_kp_table_dense: unknown kp_term'
+        end select
+      end do
+    end subroutine apply_kp_table_dense
 
-      HT(      ii,4*N + ii) = HT(      ii,4*N + ii) - IU*RQS2*dS_c
-      HT(4*N + ii,      ii) = HT(4*N + ii,      ii) + IU*RQS2*dS
-      HT(      ii,5*N + ii) = HT(      ii,5*N + ii) + IU*SQR2*dR_c
-      HT(5*N + ii,      ii) = HT(5*N + ii,      ii) - IU*SQR2*dR
+    ! ==================================================================
+    ! Table-driven k.p block insertion for bulk (8x8) Hamiltonian.
+    !
+    ! Scalar version of apply_kp_table_dense for the 8x8 bulk case.
+    ! The kp terms are complex scalars.  Band indices in the table are
+    ! 0-based, so row = row_band + 1, col = col_band + 1.
+    ! ==================================================================
+    subroutine apply_kp_table_bulk(HT, Q, T, S, SC, R, RC, PP, PM, PZ, A)
+      complex(kind=dp), intent(inout) :: HT(8,8)
+      complex(kind=dp), intent(in) :: Q, T, S, SC, R, RC, PP, PM, PZ, A
 
-      HT(  N + ii,4*N + ii) = HT(  N + ii,4*N + ii) + IU*RQS2*dQT2
-      HT(4*N + ii,  N + ii) = HT(4*N + ii,  N + ii) - IU*RQS2*dQT2
-      HT(  N + ii,5*N + ii) = HT(  N + ii,5*N + ii) - IU*SQR3o2*dS_c
-      HT(5*N + ii,  N + ii) = HT(5*N + ii,  N + ii) + IU*SQR3o2*dS
+      type(kp_entry) :: table(52)
+      integer :: e, row, col
+      complex(kind=dp) :: val
 
-      HT(2*N + ii,4*N + ii) = HT(2*N + ii,4*N + ii) + IU*SQR3o2*dS
-      HT(4*N + ii,2*N + ii) = HT(4*N + ii,2*N + ii) - IU*SQR3o2*dS_c
-      HT(2*N + ii,5*N + ii) = HT(2*N + ii,5*N + ii) + IU*RQS2*dQT2
-      HT(5*N + ii,2*N + ii) = HT(5*N + ii,2*N + ii) - IU*RQS2*dQT2
+      table = get_kp_block_table()
 
-      HT(3*N + ii,4*N + ii) = HT(3*N + ii,4*N + ii) - IU*SQR2*dR
-      HT(4*N + ii,3*N + ii) = HT(4*N + ii,3*N + ii) + IU*SQR2*dR_c
-      HT(3*N + ii,5*N + ii) = HT(3*N + ii,5*N + ii) + IU*RQS2*dS
-      HT(5*N + ii,3*N + ii) = HT(5*N + ii,3*N + ii) - IU*RQS2*dS_c
-    end subroutine apply_bp_strain_inline
+      do e = 1, 52
+        row = table(e)%row_band + 1
+        col = table(e)%col_band + 1
+
+        select case (table(e)%kp_term)
+        case (KP_Q);         val = Q
+        case (KP_T);         val = T
+        case (KP_S);         val = S
+        case (KP_SC);        val = SC
+        case (KP_R);         val = R
+        case (KP_RC);        val = RC
+        case (KP_PP);        val = PP
+        case (KP_PM);        val = PM
+        case (KP_PZ);        val = PZ
+        case (KP_A);         val = A
+        case (KP_DIFF);      val = Q - T
+        case (KP_HALF_SUM);  val = 0.5_dp * (Q + T)
+        case default
+          error stop 'apply_kp_table_bulk: unknown kp_term'
+        end select
+
+        HT(row, col) = table(e)%prefactor * val
+      end do
+    end subroutine apply_kp_table_bulk
 
 end module hamiltonianConstructor

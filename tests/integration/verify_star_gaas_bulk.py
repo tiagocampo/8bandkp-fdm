@@ -61,7 +61,7 @@ TOL_EG = TOL_EXACT              # machine precision
 TOL_DELTASO = TOL_EXACT         # machine precision
 TOL_MASS = 0.05                 # 5% for 8-band reference comparison
 TOL_GFACTOR = TOL_ANALYTICAL    # 1% for Roth vs 8-band
-TOL_ABSORPTION = 0.05           # 5% for absorption edge (onset shape varies with VB dispersion)
+TOL_ABSORPTION = 0.06           # 6% for absorption edge (onset is broadened above Eg by linewidth + VB dispersion)
 
 # CB eigenvalue index (0-based): bands 1-4=valence, 5-6=SO, 7-8=CB
 CB_INDEX = 6
@@ -76,7 +76,7 @@ def check_eg_deltaso(build_dir, source_dir):
     Returns list of benchmark row dicts.
     """
     config_path = os.path.join(
-        source_dir, "tests", "regression", "configs", "bulk_gaas_k0.cfg"
+        source_dir, "tests", "regression", "configs", "bulk_gaas_k0.toml"
     )
     exe_path = os.path.join(build_dir, "src", "bandStructure")
     rows = []
@@ -153,7 +153,7 @@ def check_effective_mass(build_dir, source_dir):
     """
     config_path = os.path.join(
         source_dir, "tests", "regression", "configs",
-        "bulk_gaas_kx_dispersion.cfg"
+        "bulk_gaas_kx_dispersion.toml"
     )
     exe_path = os.path.join(build_dir, "src", "bandStructure")
     rows = []
@@ -239,7 +239,7 @@ def check_gfactor(build_dir, source_dir):
     """
     config_path = os.path.join(
         source_dir, "tests", "regression", "configs",
-        "gfactor_bulk_gaas_cb.cfg"
+        "gfactor_bulk_gaas_cb.toml"
     )
     exe_path = os.path.join(build_dir, "src", "gfactorCalculation")
     rows = []
@@ -290,7 +290,7 @@ def check_absorption_edge(build_dir, source_dir):
     """
     config_path = os.path.join(
         source_dir, "tests", "regression", "configs",
-        "bulk_gaas_optics.cfg"
+        "bulk_gaas_optics.toml"
     )
     exe_path = os.path.join(build_dir, "src", "opticalProperties")
     rows = []

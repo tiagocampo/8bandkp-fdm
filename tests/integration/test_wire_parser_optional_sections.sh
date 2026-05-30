@@ -3,6 +3,9 @@
 # Integration test: optional optics/exciton/scattering sections must not
 # consume subsequent FEAST or strain settings in wire configs.
 #
+# Verifies that [feast] emin/emax are used (via "Manual energy window" print)
+# and that strain computation runs (strain.dat produced).
+#
 # Args:
 #   <bandStructure_exe> <wire_dense_cfg> <wire_strain_cfg>
 set -euo pipefail
@@ -15,10 +18,10 @@ run_case() {
     local cfg="$1"
     local workdir
     workdir=$(mktemp -d)
-    /bin/cp "$cfg" "$workdir/input.cfg"
-    sed -i 's/^waveVectorStep:.*/waveVectorStep: 1/' "$workdir/input.cfg"
-    sed -i 's/^wire_nx:.*/wire_nx: 7/' "$workdir/input.cfg"
-    sed -i 's/^wire_ny:.*/wire_ny: 7/' "$workdir/input.cfg"
+    /bin/cp "$cfg" "$workdir/input.toml"
+    sed -i 's/^nsteps = .*/nsteps = 2/' "$workdir/input.toml"
+    sed -i 's/^nx = .*/nx = 7/' "$workdir/input.toml"
+    sed -i 's/^ny = .*/ny = 7/' "$workdir/input.toml"
     mkdir -p "$workdir/output"
     (
         cd "$workdir"
@@ -30,54 +33,38 @@ run_case() {
 WORKDIR_DENSE=$(run_case "$DENSE_CFG")
 trap 'rm -rf "$WORKDIR_DENSE" "${WORKDIR_STRAIN:-}"' EXIT
 
-if ! grep -q "feast_emin:" "$WORKDIR_DENSE/test_output.log"; then
-    echo "FAIL: feast_emin was not parsed from wire dense config"
-    cat "$WORKDIR_DENSE/test_output.log"
-    exit 1
-fi
-
-if ! grep -q "feast_emax:" "$WORKDIR_DENSE/test_output.log"; then
-    echo "FAIL: feast_emax was not parsed from wire dense config"
-    cat "$WORKDIR_DENSE/test_output.log"
-    exit 1
-fi
-
-if ! grep -q "feast_m0:" "$WORKDIR_DENSE/test_output.log"; then
-    echo "FAIL: feast_m0 was not parsed from wire dense config"
-    cat "$WORKDIR_DENSE/test_output.log"
-    exit 1
-fi
-
-# Negative feast_m0 selects dense LAPACK path (not FEAST).
-# Verify by checking for the "Manual energy window" print unique to dense path.
+# Verify FEAST energy window was parsed by checking the "Manual energy window"
+# print which includes the feast emin/emax values.
 if ! grep -q "Manual energy window" "$WORKDIR_DENSE/test_output.log"; then
-    echo "FAIL: negative feast_m0 did not select dense LAPACK in wire config"
+    echo "FAIL: feast emin/emax not used (no Manual energy window print)"
     cat "$WORKDIR_DENSE/test_output.log"
     exit 1
 fi
+
+# Verify the energy window contains the expected feast values [-1.5, 2.0]
+if ! grep -q "\[  -1.5000000000000000      ,   2.0000000000000000" "$WORKDIR_DENSE/test_output.log"; then
+    echo "FAIL: feast emin/emax values incorrect in energy window"
+    cat "$WORKDIR_DENSE/test_output.log"
+    exit 1
+fi
+
+# Negative feast_m0 selects dense LAPACK path (not FEAST), which prints
+# "Dense eigensolver" or runs through the dense path without FEAST.
+# The "Manual energy window" print itself confirms dense path was taken.
 
 WORKDIR_STRAIN=$(run_case "$STRAIN_CFG")
 
-if ! grep -q "strain:" "$WORKDIR_STRAIN/test_output.log"; then
-    echo "FAIL: strain flag was not parsed from wire strain config"
-    cat "$WORKDIR_STRAIN/test_output.log"
-    exit 1
-fi
-
-if ! grep -q "strain_ref:" "$WORKDIR_STRAIN/test_output.log"; then
-    echo "FAIL: strain reference was not parsed from wire strain config"
-    cat "$WORKDIR_STRAIN/test_output.log"
-    exit 1
-fi
-
-if ! grep -q "strain_solver:" "$WORKDIR_STRAIN/test_output.log"; then
-    echo "FAIL: strain solver was not parsed from wire strain config"
-    cat "$WORKDIR_STRAIN/test_output.log"
-    exit 1
-fi
-
+# Verify strain computation ran by checking for strain.dat output
 if [ ! -f "$WORKDIR_STRAIN/output/strain.dat" ]; then
     echo "FAIL: strain.dat was not produced for strained wire config"
+    cat "$WORKDIR_STRAIN/test_output.log"
+    exit 1
+fi
+
+# Verify strain output is non-empty (has data rows beyond header)
+STRAIN_LINES=$(grep -c -v '^#' "$WORKDIR_STRAIN/output/strain.dat" 2>/dev/null || echo 0)
+if [ "$STRAIN_LINES" -lt 1 ]; then
+    echo "FAIL: strain.dat has no data rows"
     cat "$WORKDIR_STRAIN/test_output.log"
     exit 1
 fi

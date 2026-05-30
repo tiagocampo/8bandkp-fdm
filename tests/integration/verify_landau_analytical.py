@@ -48,14 +48,35 @@ def parse_eigenvalues(filepath):
 
 
 def parse_config_value(filepath, key):
-    """Read a config value from a `key: value` line."""
+    """Read a config value from TOML or old `key: value` format."""
     with open(filepath) as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith('!'):
+            if not line or line.startswith('#') or line.startswith('!'):
                 continue
+            # TOML: key = "value" or key = value
+            if line.startswith(f'{key} =') or line.startswith(f'{key}='):
+                val = line.split('=', 1)[1].strip()
+                # Strip TOML quotes
+                if val.startswith('"') and val.endswith('"'):
+                    val = val[1:-1]
+                return val
+            # Old format: key: value
             if line.startswith(f"{key}:"):
                 return line.split(":", 1)[1].strip()
+    return None
+
+
+def parse_toml_material_name(filepath):
+    """Extract material name from TOML [[material]] name = 'X' entry."""
+    with open(filepath) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('name =') or line.startswith('name='):
+                val = line.split('=', 1)[1].strip()
+                if val.startswith('"') and val.endswith('"'):
+                    val = val[1:-1]
+                return val
     return None
 
 
@@ -68,11 +89,14 @@ def main():
     config = sys.argv[2]
 
     # Parse material and B-field from config
-    material_line = parse_config_value(config, "material1")
-    if material_line is None:
-        print("FAIL: material1 not found in config")
-        sys.exit(1)
-    material = material_line.split()[0]
+    # Try TOML format first ([[material]] name = "X"), then old format (material1: X ...)
+    material = parse_toml_material_name(config)
+    if material is None:
+        material_line = parse_config_value(config, "material1")
+        if material_line is None:
+            print("FAIL: material not found in config")
+            sys.exit(1)
+        material = material_line.split()[0]
 
     if material not in MATERIALS:
         print(f"FAIL: unknown material '{material}'")
@@ -81,17 +105,22 @@ def main():
     m_star = MATERIALS[material]["m_star"]
     E_C_material = MATERIALS[material]["EV"] + MATERIALS[material]["Eg"]
 
-    b_field_str = parse_config_value(config, "b_field")
+    # Parse B-field: TOML uses 'components = [x, y, z]' in [b_field], old uses 'b_field: x y z'
+    b_field_str = parse_config_value(config, "components")
+    if b_field_str is None:
+        b_field_str = parse_config_value(config, "b_field")
     if b_field_str is None:
         print("FAIL: b_field not found in config")
         sys.exit(1)
+    # Strip brackets and commas for TOML array format [x, y, z]
+    b_field_str = b_field_str.strip().strip('[]').replace(',', ' ')
     b_vals = [float(x) for x in b_field_str.split()]
     B_mag = (b_vals[0]**2 + b_vals[1]**2 + b_vals[2]**2)**0.5
 
     # Run bandStructure
     workdir = tempfile.mkdtemp()
     try:
-        dst = os.path.join(workdir, "input.cfg")
+        dst = os.path.join(workdir, "input.toml")
         with open(dst, 'w') as f:
             with open(config) as src:
                 f.write(src.read())

@@ -1,0 +1,939 @@
+module test_simulation_setup
+  use funit
+  use definitions
+  use parameters
+  use simulation_setup_mod
+  use strain_solver, only: strain_result, strain_result_free
+  implicit none
+
+contains
+
+  ! Vertical slice 1: Bulk init — simulation_setup_init with bulk GaAs config
+  @test
+  subroutine test_bulk_init()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+
+    call make_bulk_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+
+    ! Assertions
+    @assertTrue(setup%confinement == 'bulk')
+    @assertEqual(8, setup%N)
+    @assertEqual(1, setup%il)
+    @assertEqual(8, setup%iuu)
+    @assertFalse(setup%has_strain)
+    @assertFalse(setup%sc_was_run)
+
+    ! Cleanup
+    call simulation_setup_free(setup)
+  end subroutine test_bulk_init
+
+
+  ! Vertical slice 2: Bulk build_H — 8x8 Hamiltonian
+  @test
+  subroutine test_bulk_build_H()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    complex(kind=dp), allocatable :: HT(:,:)
+    type(wavevector) :: kv
+
+    call make_bulk_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+
+    ! Build H at k=0
+    allocate(HT(8, 8))
+    HT = 0.0_dp
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+
+    call setup_build_H(setup, cfg, kv, HT)
+
+    ! HT should be 8x8 with nonzero diagonal (bandgaps)
+    @assertTrue(size(HT, 1) == 8)
+    @assertTrue(size(HT, 2) == 8)
+    ! CB diagonal (bands 7,8) should have Eg on the diagonal at k=0
+    @assertTrue(abs(real(HT(7,7))) > 0.1_dp)
+    @assertTrue(abs(real(HT(8,8))) > 0.1_dp)
+
+    deallocate(HT)
+    call simulation_setup_free(setup)
+  end subroutine test_bulk_build_H
+
+
+  ! Vertical slice 3: Bulk solve at k=0 — eigenvalues match known GaAs bandgap
+  @test
+  subroutine test_bulk_solve_k0()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    real(kind=dp), allocatable :: evals(:)
+    complex(kind=dp), allocatable :: evecs(:,:)
+    type(wavevector) :: kv
+    real(kind=dp) :: eg_gaas, eg_computed
+
+    call make_bulk_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+
+    ! Solve at k=0
+    allocate(evals(8))
+    allocate(evecs(8, 8))
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+
+    call setup_solve_kpoint_serial(setup, cfg, kv, evals, evecs)
+
+    ! GaAs bandgap ~1.519 eV (Vurgaftman 2001)
+    ! CB minimum = evals(7) (7th eigenvalue sorted ascending)
+    ! VB maximum = evals(6)
+    eg_gaas = 1.519_dp
+    eg_computed = evals(7) - evals(6)
+
+    @assertEqual(eg_gaas, eg_computed, tolerance=0.01_dp)
+
+    ! VB top should be near 0 (EV reference)
+    @assertTrue(abs(evals(6)) < 0.5_dp)
+
+    deallocate(evals, evecs)
+    call simulation_setup_free(setup)
+  end subroutine test_bulk_solve_k0
+
+
+  ! Vertical slice 4: QW init — correct N, il, iuu
+  @test
+  subroutine test_qw_init()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    character(len=255) :: materials(2)
+    integer :: fdStep, expected_N
+
+    ! Build a minimal QW GaAs/AlGaAs config
+    fdStep = 51
+    cfg%confinement = 'qw'
+    cfg%fd_step = fdStep
+    cfg%FDorder = 2
+    cfg%num_layers = 2
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum = 8
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
+
+    ! Two layers: AlGaAs barrier (full domain) + GaAs well (center)
+    allocate(cfg%material_names(2))
+    cfg%material_names(1) = 'Al20Ga80As'
+    cfg%material_names(2) = 'GaAs'
+
+    allocate(cfg%z_min(2))
+    allocate(cfg%z_max(2))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 200.0_dp    ! barrier covers full domain
+    cfg%z_min(2) = 80.0_dp
+    cfg%z_max(2) = 120.0_dp    ! well in center
+
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
+    cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
+    cfg%dz = cfg%delta
+
+    allocate(cfg%z(fdStep))
+    block
+      integer :: i
+      do i = 1, fdStep
+        cfg%z(i) = cfg%z_min(1) + (i-1)*cfg%delta
+      end do
+    end block
+
+    allocate(cfg%int_start_pos(2))
+    allocate(cfg%int_end_pos(2))
+    cfg%int_start_pos(1) = 1
+    cfg%int_end_pos(1) = fdStep
+    cfg%int_start_pos(2) = nint((cfg%z_min(2) - cfg%z_min(1)) / cfg%delta) + 1
+    cfg%int_end_pos(2) = nint((cfg%z_max(2) - cfg%z_min(1)) / cfg%delta) + 1
+
+    ! Material parameters
+    allocate(cfg%params(2))
+    materials(1) = 'Al20Ga80As'
+    materials(2) = 'GaAs'
+    call paramDatabase(materials, 2, cfg%params)
+    call init_grid_from_config(cfg)
+
+    call simulation_setup_init(cfg, setup)
+
+    expected_N = fdStep * 8
+
+    @assertTrue(setup%confinement == 'qw')
+    @assertEqual(expected_N, setup%N)
+    @assertTrue(allocated(setup%profile))
+    @assertTrue(allocated(setup%kpterms))
+    @assertTrue(allocated(setup%HT))
+    @assertTrue(allocated(setup%work))
+    @assertTrue(setup%lwork > 0)
+
+    call simulation_setup_free(setup)
+  end subroutine test_qw_init
+
+
+  ! Vertical slice 5: Bulk velocity matrices — CSR with correct size
+  @test
+  subroutine test_bulk_velocity_matrices()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+
+    call make_bulk_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+    call setup_build_velocity_matrices(setup, cfg)
+
+    @assertTrue(setup%vel_built)
+
+    ! Each velocity matrix should be 8x8 CSR
+    @assertEqual(8, setup%vel(1)%nrows)
+    @assertEqual(8, setup%vel(1)%ncols)
+    @assertTrue(setup%vel(1)%nnz > 0)
+
+    @assertEqual(8, setup%vel(2)%nrows)
+    @assertEqual(8, setup%vel(2)%ncols)
+    @assertTrue(setup%vel(2)%nnz > 0)
+
+    @assertEqual(8, setup%vel(3)%nrows)
+    @assertEqual(8, setup%vel(3)%ncols)
+    @assertTrue(setup%vel(3)%nnz > 0)
+
+    ! Kane P matrix element should be nonzero for vx/vy
+    ! (GaAs has P ~ 10.493 eV*A)
+    @assertTrue(setup%vel(1)%nnz > 0)
+
+    call simulation_setup_free(setup)
+  end subroutine test_bulk_velocity_matrices
+
+
+  ! Vertical slice 6: QW velocity matrices — CSR with correct dimensions
+  @test
+  subroutine test_qw_velocity_matrices()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    integer :: expected_N
+
+    call make_qw_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+    call setup_build_velocity_matrices(setup, cfg)
+
+    expected_N = cfg%grid%npoints() * 8
+
+    @assertTrue(setup%vel_built)
+
+    ! Each velocity matrix should be expected_N x expected_N CSR
+    @assertEqual(expected_N, setup%vel(1)%nrows)
+    @assertEqual(expected_N, setup%vel(1)%ncols)
+    @assertTrue(setup%vel(1)%nnz > 0)
+
+    @assertEqual(expected_N, setup%vel(2)%nrows)
+    @assertEqual(expected_N, setup%vel(2)%ncols)
+    @assertTrue(setup%vel(2)%nnz > 0)
+
+    @assertEqual(expected_N, setup%vel(3)%nrows)
+    @assertEqual(expected_N, setup%vel(3)%ncols)
+    @assertTrue(setup%vel(3)%nnz > 0)
+
+    ! x and y velocity matrices should have nonzero Kane P elements
+    @assertTrue(setup%vel(1)%nnz > 0)
+    @assertTrue(setup%vel(2)%nnz > 0)
+    ! z velocity should also be nonzero (P*kz term)
+    @assertTrue(setup%vel(3)%nnz > 0)
+
+    call simulation_setup_free(setup)
+  end subroutine test_qw_velocity_matrices
+
+
+  ! Helper: build a minimal bulk GaAs config (shared across tests)
+  subroutine make_bulk_gaas_config(cfg)
+    type(simulation_config), intent(out) :: cfg
+    character(len=255) :: materials(1)
+
+    cfg%confinement = 'bulk'
+    cfg%FDorder = 2
+    cfg%num_layers = 1
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum = 8
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%totalSize = 0.0_dp
+    cfg%delta = 0.0_dp
+    cfg%dz = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
+
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+    allocate(cfg%z_min(1))
+    allocate(cfg%z_max(1))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 1.0_dp
+
+    allocate(cfg%params(1))
+    materials(1) = 'GaAs'
+    call paramDatabase(materials, 1, cfg%params)
+    call init_grid_from_config(cfg)
+  end subroutine make_bulk_gaas_config
+
+
+  ! Helper: build a minimal QW GaAs/AlGaAs config
+  subroutine make_qw_gaas_config(cfg)
+    type(simulation_config), intent(out) :: cfg
+    character(len=255) :: materials(2)
+    integer :: fdStep
+
+    fdStep = 11
+    cfg%confinement = 'qw'
+    cfg%fd_step = fdStep
+    cfg%FDorder = 2
+    cfg%num_layers = 2
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum = 8
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
+
+    ! Two layers: AlGaAs barrier (full domain) + GaAs well (center)
+    allocate(cfg%material_names(2))
+    cfg%material_names(1) = 'Al20Ga80As'
+    cfg%material_names(2) = 'GaAs'
+
+    allocate(cfg%z_min(2))
+    allocate(cfg%z_max(2))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 200.0_dp    ! barrier covers full domain
+    cfg%z_min(2) = 80.0_dp
+    cfg%z_max(2) = 120.0_dp    ! well in center
+
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
+    cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
+    cfg%dz = cfg%delta
+
+    allocate(cfg%z(fdStep))
+    block
+      integer :: i
+      do i = 1, fdStep
+        cfg%z(i) = cfg%z_min(1) + (i-1)*cfg%delta
+      end do
+    end block
+
+    allocate(cfg%int_start_pos(2))
+    allocate(cfg%int_end_pos(2))
+    cfg%int_start_pos(1) = 1
+    cfg%int_end_pos(1) = fdStep
+    cfg%int_start_pos(2) = nint((cfg%z_min(2) - cfg%z_min(1)) / cfg%delta) + 1
+    cfg%int_end_pos(2) = nint((cfg%z_max(2) - cfg%z_min(1)) / cfg%delta) + 1
+
+    ! Material parameters
+    allocate(cfg%params(2))
+    materials(1) = 'Al20Ga80As'
+    materials(2) = 'GaAs'
+    call paramDatabase(materials, 2, cfg%params)
+    call init_grid_from_config(cfg)
+  end subroutine make_qw_gaas_config
+
+
+  ! Vertical slice 7: Wire init — correct Ngrid, Ntot, sparse components
+  @test
+  subroutine test_wire_init()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    integer :: expected_Ngrid, expected_Ntot
+
+    call make_wire_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+
+    expected_Ngrid = 5 * 5
+    expected_Ntot = 8 * expected_Ngrid
+
+    @assertTrue(setup%confinement == 'wire')
+    @assertEqual(expected_Ngrid, setup%Ngrid)
+    @assertEqual(expected_Ntot, setup%Ntot)
+    @assertEqual(expected_Ntot, setup%N)
+    @assertTrue(allocated(setup%profile_2d))
+    @assertTrue(allocated(setup%kpterms_2d))
+    @assertTrue(allocated(setup%HT_csr_ptr))
+    @assertTrue(allocated(setup%coo_cache_ptr))
+    @assertTrue(allocated(setup%wire_ws_ptr))
+    @assertTrue(allocated(setup%eigen_solver))
+    @assertFalse(setup%has_strain)
+    @assertFalse(setup%sc_was_run)
+
+    call simulation_setup_free(setup)
+  end subroutine test_wire_init
+
+
+  ! Vertical slice 8: Wire build_H — CSR Hamiltonian with nonzero entries
+  @test
+  subroutine test_wire_build_H()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    type(wavevector) :: kv
+    integer :: expected_Ntot
+
+    call make_wire_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+
+    expected_Ntot = 8 * 25
+
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+
+    call setup_build_H(setup, cfg, kv)
+
+    @assertTrue(allocated(setup%HT_csr_ptr))
+    @assertEqual(expected_Ntot, setup%HT_csr_ptr%nrows)
+    @assertEqual(expected_Ntot, setup%HT_csr_ptr%ncols)
+    @assertTrue(setup%HT_csr_ptr%nnz > 0)
+
+    call simulation_setup_free(setup)
+  end subroutine test_wire_build_H
+
+
+  ! Vertical slice 9: Wire velocity matrices — CSR with correct dimensions
+  @test
+  subroutine test_wire_velocity_matrices()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    type(wavevector) :: kv
+    integer :: expected_Ntot
+
+    call make_wire_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+
+    expected_Ntot = 8 * 25
+
+    ! Build H first (needed for velocity matrices)
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+    call setup_build_H(setup, cfg, kv)
+
+    ! Build velocity matrices
+    call setup_build_velocity_matrices(setup, cfg)
+
+    @assertTrue(setup%vel_built)
+
+    ! vel(1) = vx, vel(2) = vy
+    @assertEqual(expected_Ntot, setup%vel(1)%nrows)
+    @assertEqual(expected_Ntot, setup%vel(1)%ncols)
+    @assertTrue(setup%vel(1)%nnz > 0)
+
+    @assertEqual(expected_Ntot, setup%vel(2)%nrows)
+    @assertEqual(expected_Ntot, setup%vel(2)%ncols)
+    @assertTrue(setup%vel(2)%nnz > 0)
+
+    call simulation_setup_free(setup)
+  end subroutine test_wire_velocity_matrices
+
+
+  ! Vertical slice 10: Full bulk pipeline integration — GaAs bandgap at Gamma
+  ! Exercises: simulation_setup_init → setup_build_H → setup_solve_kpoint_serial
+  ! Validates that the CB-VB gap matches Vurgaftman 2001 Eg(GaAs) = 1.519 eV.
+  @test
+  subroutine test_gaas_bulk_pipeline()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    real(kind=dp), allocatable :: evals(:)
+    complex(kind=dp), allocatable :: evecs(:,:)
+    type(wavevector) :: kv
+    real(kind=dp) :: eg_gaas, eg_computed, cb_min, vb_max
+
+    call make_bulk_gaas_config(cfg)
+
+    ! Step 1: Initialize setup (bulk path)
+    call simulation_setup_init(cfg, setup)
+    @assertTrue(setup%confinement == 'bulk')
+    @assertEqual(8, setup%N)
+
+    ! Step 2: Build H at k=0 via setup_build_H
+    allocate(setup%HT(8, 8))
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+    call setup_build_H(setup, cfg, kv, setup%HT)
+    ! CB diagonal should be nonzero at k=0
+    @assertTrue(abs(real(setup%HT(7,7))) > 0.1_dp)
+
+    ! Step 3: Solve at k=0 via setup_solve_kpoint_serial
+    allocate(evals(8))
+    allocate(evecs(8, 8))
+    call setup_solve_kpoint_serial(setup, cfg, kv, evals, evecs)
+
+    ! Step 4: Verify GaAs bandgap at Gamma (Vurgaftman 2001: Eg = 1.519 eV)
+    ! Eigenvalues are sorted ascending: bands 1-6 = VB, 7-8 = CB
+    cb_min = evals(7)
+    vb_max = evals(6)
+    eg_computed = cb_min - vb_max
+    eg_gaas = 1.519_dp
+
+    @assertEqual(eg_gaas, eg_computed, tolerance=0.01_dp)
+
+    ! Step 5: Free
+    deallocate(evals, evecs)
+    call simulation_setup_free(setup)
+  end subroutine test_gaas_bulk_pipeline
+
+
+  ! Helper: build a minimal wire GaAs config for testing
+  subroutine make_wire_gaas_config(cfg)
+    type(simulation_config), intent(out) :: cfg
+    character(len=255) :: materials(1)
+    integer :: nx, ny
+
+    nx = 5
+    ny = 5
+
+    cfg%confinement = 'wire'
+    cfg%FDorder = 2
+    cfg%num_layers = 1
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum = 8
+    cfg%wave_vector%mode = 'kz'
+    cfg%wave_vector%max = 0.1_dp
+    cfg%wave_vector%nsteps = 2
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
+    cfg%feast%m0 = -1
+
+    ! Wire grid dimensions
+    cfg%wire%nx = nx
+    cfg%wire%ny = ny
+    cfg%wire%dx = 4.0_dp
+    cfg%wire%dy = 4.0_dp
+    cfg%wire%geom%shape = 'rectangle'
+
+    ! Single material: GaAs everywhere
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'GaAs'
+
+    allocate(cfg%z_min(1))
+    allocate(cfg%z_max(1))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = real(nx, kind=dp) * cfg%wire%dx
+
+    ! One region: full domain
+    cfg%wire%num_regions = 1
+    allocate(cfg%wire%regions(1))
+    cfg%wire%regions(1)%material = 'GaAs'
+    cfg%wire%regions(1)%inner = 0.0_dp
+    cfg%wire%regions(1)%outer = sqrt((real(nx, kind=dp) * cfg%wire%dx)**2 + &
+      (real(ny, kind=dp) * cfg%wire%dy)**2)
+
+    ! Material parameters
+    allocate(cfg%params(1))
+    materials(1) = 'GaAs'
+    call paramDatabase(materials, 1, cfg%params)
+    call init_grid_from_config(cfg)
+  end subroutine make_wire_gaas_config
+
+  ! Vertical slice 11: Strain setup — has_strain and strain_blocks populated
+  ! Uses InAs/GaAs QW (lattice-mismatched) to trigger nonzero strain.
+  @test
+  subroutine test_strain_setup()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    type(strain_result), allocatable :: strain_diag
+    character(len=255) :: materials(2)
+    integer :: fdStep, i
+    real(kind=dp) :: strain_sum
+
+    ! Build QW with InAs well in GaAs barrier (lattice mismatch ~7%)
+    fdStep = 51
+    cfg%confinement = 'qw'
+    cfg%fd_step = fdStep
+    cfg%FDorder = 2
+    cfg%num_layers = 2
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum = 8
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
+
+    ! Two layers: GaAs barrier (full domain) + InAs well (center)
+    allocate(cfg%material_names(2))
+    cfg%material_names(1) = 'GaAs'
+    cfg%material_names(2) = 'InAs'
+
+    allocate(cfg%z_min(2))
+    allocate(cfg%z_max(2))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 200.0_dp     ! barrier covers full domain
+    cfg%z_min(2) = 80.0_dp
+    cfg%z_max(2) = 120.0_dp     ! well in center
+
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
+    cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
+    cfg%dz = cfg%delta
+
+    allocate(cfg%z(fdStep))
+    do i = 1, fdStep
+      cfg%z(i) = cfg%z_min(1) + (i-1)*cfg%delta
+    end do
+
+    ! Compute layer index bounds from positions
+    allocate(cfg%int_start_pos(2))
+    allocate(cfg%int_end_pos(2))
+    do i = 1, cfg%num_layers
+      cfg%int_start_pos(i) = max(1, nint((cfg%z_min(i) - cfg%z_min(1)) / cfg%delta) + 1)
+      cfg%int_end_pos(i) = min(fdStep, nint((cfg%z_max(i) - cfg%z_min(1)) / cfg%delta) + 1)
+    end do
+
+    ! Material parameters
+    allocate(cfg%params(2))
+    materials(1) = 'GaAs'
+    materials(2) = 'InAs'
+    call paramDatabase(materials, 2, cfg%params)
+    call init_grid_from_config(cfg)
+
+    ! Enable strain
+    cfg%strain%enabled = .true.
+
+    ! Initialize with strain capture
+    call simulation_setup_init(cfg, setup, strain_out=strain_diag)
+
+    ! Assert: has_strain flag set
+    @assertTrue(setup%has_strain)
+
+    ! Assert: strain_blocks populated (bir_pikus_blocks allocated)
+    @assertTrue(allocated(cfg%strain_blocks%delta_Ec))
+    @assertTrue(allocated(cfg%strain_blocks%delta_EHH))
+    @assertTrue(allocated(cfg%strain_blocks%delta_ELH))
+    @assertTrue(allocated(cfg%strain_blocks%delta_ESO))
+
+    ! Assert: strain_diag allocated and has nonzero strain components
+    @assertTrue(allocated(strain_diag))
+    @assertTrue(allocated(strain_diag%eps_xx))
+    @assertTrue(allocated(strain_diag%eps_yy))
+    @assertTrue(allocated(strain_diag%eps_zz))
+
+    ! InAs well region should have nonzero in-plane strain
+    ! (InAs a0=6.058, GaAs a0=5.653 -> ~7% mismatch)
+    strain_sum = sum(abs(strain_diag%eps_xx)) + sum(abs(strain_diag%eps_yy)) + &
+                 sum(abs(strain_diag%eps_zz))
+    @assertTrue(strain_sum > 1.0e-6_dp)
+
+    ! Cleanup
+    call strain_result_free(strain_diag)
+    call simulation_setup_free(setup)
+  end subroutine test_strain_setup
+
+
+  ! Vertical slice 12: SC setup — sc_was_run flag and Fermi level adjustment
+  @test
+  subroutine test_sc_setup()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    character(len=255) :: materials(2)
+    integer :: fdStep, i
+
+    ! Build QW config inline with valid material names
+    ! (make_qw_gaas_config uses 'AlGaAs' which is not in the parameter DB)
+    fdStep = 11
+    cfg%confinement = 'qw'
+    cfg%fd_step = fdStep
+    cfg%FDorder = 2
+    cfg%num_layers = 2
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum = 8
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
+
+    ! Two layers: Al20Ga80As barrier (full domain) + GaAs well (center)
+    allocate(cfg%material_names(2))
+    cfg%material_names(1) = 'Al20Ga80As'
+    cfg%material_names(2) = 'GaAs'
+
+    allocate(cfg%z_min(2))
+    allocate(cfg%z_max(2))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 200.0_dp
+    cfg%z_min(2) = 80.0_dp
+    cfg%z_max(2) = 120.0_dp
+
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
+    cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
+    cfg%dz = cfg%delta
+
+    allocate(cfg%z(fdStep))
+    do i = 1, fdStep
+      cfg%z(i) = cfg%z_min(1) + (i-1)*cfg%delta
+    end do
+
+    ! Compute layer index bounds from positions (clamped to grid)
+    allocate(cfg%int_start_pos(2))
+    allocate(cfg%int_end_pos(2))
+    do i = 1, cfg%num_layers
+      cfg%int_start_pos(i) = max(1, nint((cfg%z_min(i) - cfg%z_min(1)) / cfg%delta) + 1)
+      cfg%int_end_pos(i) = min(fdStep, nint((cfg%z_max(i) - cfg%z_min(1)) / cfg%delta) + 1)
+    end do
+
+    ! Material parameters
+    allocate(cfg%params(2))
+    materials(1) = 'Al20Ga80As'
+    materials(2) = 'GaAs'
+    call paramDatabase(materials, 2, cfg%params)
+    call init_grid_from_config(cfg)
+
+    ! Enable SC with minimal parameters (3 iterations for speed)
+    cfg%sc%enabled = 1
+    cfg%sc%temperature = 300.0_dp
+    cfg%sc%max_iterations = 3
+    cfg%sc%tolerance = 1.0e-6_dp
+    cfg%sc%mixing_alpha = 0.3_dp
+    cfg%sc%num_kpar = 5
+    cfg%sc%kpar_max = 0.3_dp
+    cfg%sc%bc_type = 'DD'
+    cfg%sc%fermi_mode = 1
+    cfg%sc%fermi_level = 1.0_dp
+
+    call simulation_setup_init(cfg, setup)
+
+    ! Assert: SC was run
+    @assertTrue(setup%sc_was_run)
+
+    ! Assert: Fermi level was set (SC adjusts it from initial value)
+    @assertTrue(setup%fermi_level /= 0.0_dp)
+
+    call simulation_setup_free(setup)
+  end subroutine test_sc_setup
+
+
+  ! Vertical slice 13: skip_sc=.true. prevents SC iteration even when cfg%sc%enabled=1.
+  ! This verifies the optional skip_sc argument to simulation_setup_init.
+  @test
+  subroutine test_skip_sc_flag()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    character(len=255) :: materials(2)
+    integer :: fdStep, i
+
+    ! Build QW config identical to test_sc_setup
+    fdStep = 11
+    cfg%confinement = 'qw'
+    cfg%fd_step = fdStep
+    cfg%FDorder = 2
+    cfg%num_layers = 2
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum = 8
+    cfg%wave_vector%mode = 'k0'
+    cfg%wave_vector%max = 0.0_dp
+    cfg%wave_vector%nsteps = 100
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%which_band = 0
+    cfg%band_idx = 1
+
+    allocate(cfg%material_names(2))
+    cfg%material_names(1) = 'Al20Ga80As'
+    cfg%material_names(2) = 'GaAs'
+
+    allocate(cfg%z_min(2))
+    allocate(cfg%z_max(2))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = 200.0_dp
+    cfg%z_min(2) = 80.0_dp
+    cfg%z_max(2) = 120.0_dp
+
+    cfg%totalSize = cfg%z_max(1) - cfg%z_min(1)
+    cfg%delta = cfg%totalSize / real(fdStep - 1, kind=dp)
+    cfg%dz = cfg%delta
+
+    allocate(cfg%z(fdStep))
+    do i = 1, fdStep
+      cfg%z(i) = cfg%z_min(1) + (i-1)*cfg%delta
+    end do
+
+    allocate(cfg%int_start_pos(2))
+    allocate(cfg%int_end_pos(2))
+    do i = 1, cfg%num_layers
+      cfg%int_start_pos(i) = max(1, nint((cfg%z_min(i) - cfg%z_min(1)) / cfg%delta) + 1)
+      cfg%int_end_pos(i) = min(fdStep, nint((cfg%z_max(i) - cfg%z_min(1)) / cfg%delta) + 1)
+    end do
+
+    allocate(cfg%params(2))
+    materials(1) = 'Al20Ga80As'
+    materials(2) = 'GaAs'
+    call paramDatabase(materials, 2, cfg%params)
+    call init_grid_from_config(cfg)
+
+    ! Enable SC (same as test_sc_setup) but pass skip_sc=.true.
+    cfg%sc%enabled = 1
+    cfg%sc%temperature = 300.0_dp
+    cfg%sc%max_iterations = 3
+    cfg%sc%tolerance = 1.0e-6_dp
+    cfg%sc%mixing_alpha = 0.3_dp
+    cfg%sc%num_kpar = 5
+    cfg%sc%kpar_max = 0.3_dp
+    cfg%sc%bc_type = 'DD'
+    cfg%sc%fermi_mode = 1
+    cfg%sc%fermi_level = 1.0_dp
+
+    ! Call with skip_sc=.true. — SC should NOT run
+    call simulation_setup_init(cfg, setup, skip_sc=.true.)
+
+    ! Assert: SC was NOT run despite cfg%sc%enabled=1
+    @assertFalse(setup%sc_was_run)
+
+    ! Assert: Fermi level remains at default (not adjusted by SC)
+    @assertEqual(0.0_dp, setup%fermi_level)
+
+    ! Assert: cfg%sc%enabled is still 1 (not mutated by skip_sc)
+    @assertEqual(1, cfg%sc%enabled)
+
+    call simulation_setup_free(setup)
+  end subroutine test_skip_sc_flag
+
+
+  ! ==================================================================
+  ! C9: setup_alloc_sweep and thread_workspace tests
+  ! ==================================================================
+
+  ! Vertical slice 14: setup_alloc_sweep allocates thread workspaces
+  ! Exercises: wire init → build_H → setup_alloc_sweep
+  @test
+  subroutine test_alloc_sweep_creates_workspaces()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    type(thread_workspace), allocatable :: tws(:)
+    type(wavevector) :: kv
+    integer, parameter :: nthreads = 2
+    integer :: expected_Ntot, t
+
+    call make_wire_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+
+    ! Build H to populate HT_csr_ptr
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+    call setup_build_H(setup, cfg, kv)
+
+    expected_Ntot = setup%Ntot
+
+    call setup_alloc_sweep(setup, nthreads, tws)
+
+    ! Array should be allocated with nthreads entries
+    @assertTrue(allocated(tws))
+    @assertEqual(nthreads, size(tws))
+
+    do t = 1, nthreads
+      ! Each workspace should have a cloned CSR structure
+      @assertEqual(expected_Ntot, tws(t)%HT_step%nrows)
+      @assertEqual(expected_Ntot, tws(t)%HT_step%ncols)
+
+      ! Each workspace should have an allocated eigensolver
+      @assertTrue(allocated(tws(t)%solver))
+    end do
+
+    ! Cleanup: deallocate workspaces (tests finalizer)
+    deallocate(tws)
+    call simulation_setup_free(setup)
+  end subroutine test_alloc_sweep_creates_workspaces
+
+
+  ! Vertical slice 15: thread_workspace finalizer is safe
+  ! Verifies that the finalizer deallocates CSR and solver without crash.
+  @test
+  subroutine test_thread_workspace_finalizer_safe()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    type(thread_workspace), allocatable :: tws(:)
+    type(wavevector) :: kv
+
+    call make_wire_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+    call setup_build_H(setup, cfg, kv)
+
+    call setup_alloc_sweep(setup, 1, tws)
+
+    ! Explicitly deallocate — finalizer should run without error
+    deallocate(tws)
+
+    ! If we reach here, the finalizer ran cleanly
+    @assertTrue(.true.)
+
+    call simulation_setup_free(setup)
+  end subroutine test_thread_workspace_finalizer_safe
+
+
+  ! Vertical slice 16: sweep workspaces have independent CSR clones
+  ! Verifies that each workspace has its own CSR copy (no shared pointers).
+  @test
+  subroutine test_sweep_workspaces_independent()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    type(thread_workspace), allocatable :: tws(:)
+    type(wavevector) :: kv
+
+    call make_wire_gaas_config(cfg)
+    call simulation_setup_init(cfg, setup)
+
+    kv%kx = 0.0_dp
+    kv%ky = 0.0_dp
+    kv%kz = 0.0_dp
+    call setup_build_H(setup, cfg, kv)
+
+    call setup_alloc_sweep(setup, 2, tws)
+
+    ! Verify CSR row pointers are allocated independently
+    @assertTrue(allocated(tws(1)%HT_step%rowptr))
+    @assertTrue(allocated(tws(2)%HT_step%rowptr))
+
+    ! Row pointers should have same values (same sparsity pattern)
+    @assertEqual(size(tws(1)%HT_step%rowptr), size(tws(2)%HT_step%rowptr))
+
+    ! But they should be separate allocations (different memory)
+    ! We can't test pointer identity directly, but we CAN verify that
+    ! modifying one doesn't affect the other.
+    tws(1)%HT_step%rowptr(1) = -999
+    @assertTrue(tws(2)%HT_step%rowptr(1) /= -999, message="independent CSR")
+
+    deallocate(tws)
+    call simulation_setup_free(setup)
+  end subroutine test_sweep_workspaces_independent
+
+
+end module test_simulation_setup

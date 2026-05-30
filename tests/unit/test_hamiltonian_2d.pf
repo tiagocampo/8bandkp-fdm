@@ -665,7 +665,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
 
     ngrid = nnx * nny
@@ -733,7 +733,7 @@ contains
     call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
     call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
 
     @assertTrue(csr_hermitian_error(HT_csr) < 1.0e-10_dp, message="Heterostructure wire Hamiltonian Hermitian")
@@ -794,7 +794,7 @@ contains
 
     ! Minimal config for ZB8bandGeneralized
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
 
     ! Build full Hamiltonian
     call ZB8bandGeneralized(H_csr, kz_test, profile_2d, kpterms_2d, cfg)
@@ -892,7 +892,7 @@ contains
 
     ! Minimal config for ZB8bandGeneralized
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
 
     call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
 
@@ -967,7 +967,7 @@ contains
       profile_2d, kpterms_2d, FDorder=2)
 
     cfg%grid = grid
-    cfg%confinement = 2
+    cfg%confinement = 'wire'
 
     call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
     allocate(Hd(HT_csr%nrows, HT_csr%ncols))

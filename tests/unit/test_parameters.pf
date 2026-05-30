@@ -218,4 +218,170 @@ contains
     @assertEqual(5.65482_dp, params(1)%a0, tolerance=1.0e-10_dp)
   end subroutine test_alloy_strain_interpolation
 
+  ! ==================================================================
+  ! validate_semantic tests — passing cases only.
+  ! error stop cannot be caught by pFUnit 4.x, so failure cases
+  ! are tested manually.
+  ! ==================================================================
+
+  @test
+  subroutine test_validate_semantic_bandStructure_ok()
+    ! bandStructure has no additional semantic constraints — always passes.
+    type(simulation_config) :: cfg
+    ! cfg is default-initialized; no fields need setting.
+    call validate_semantic(cfg, 'bandStructure')
+    ! If we reach here, the test passes (no error stop).
+  end subroutine test_validate_semantic_bandStructure_ok
+
+  @test
+  subroutine test_validate_semantic_gfactor_nsteps0_ok()
+    ! gfactor with nsteps=0 should pass regardless of mode.
+    type(simulation_config) :: cfg
+    cfg%wave_vector%nsteps = 0
+    cfg%wave_vector%mode = 'sweep'
+    call validate_semantic(cfg, 'gfactor')
+  end subroutine test_validate_semantic_gfactor_nsteps0_ok
+
+  @test
+  subroutine test_validate_semantic_gfactor_mode_k0_ok()
+    ! gfactor with mode='k0' should pass even if nsteps /= 0.
+    type(simulation_config) :: cfg
+    cfg%wave_vector%nsteps = 100
+    cfg%wave_vector%mode = 'k0'
+    call validate_semantic(cfg, 'gfactor')
+  end subroutine test_validate_semantic_gfactor_mode_k0_ok
+
+  @test
+  subroutine test_validate_semantic_optics_enabled_ok()
+    ! opticalProperties with optics%enabled=.true. passes.
+    type(simulation_config) :: cfg
+    cfg%optics%enabled = .true.
+    call validate_semantic(cfg, 'opticalProperties')
+  end subroutine test_validate_semantic_optics_enabled_ok
+
+  @test
+  subroutine test_validate_semantic_topology_enabled_ok()
+    ! topologicalAnalysis with topo%enabled=.true. and mode set passes.
+    type(simulation_config) :: cfg
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qhe'
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_enabled_ok
+
+  ! ------------------------------------------------------------------
+  ! S1: wire gfactor with valid bandIdx in range [1, num_cb-1]
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_gfactor_bandidx_wire_ok()
+    type(simulation_config) :: cfg
+
+    cfg%confinement = 'wire'
+    cfg%wave_vector%nsteps = 0
+    cfg%wave_vector%mode = 'k0'
+    cfg%band_idx = 1
+    cfg%bands%num_cb = 4
+
+    call validate_semantic(cfg, 'gfactor')
+  end subroutine test_validate_semantic_gfactor_bandidx_wire_ok
+
+  ! ------------------------------------------------------------------
+  ! S2: QSHE Z2 with QW confinement accepted
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_qshe_qw_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qshe'
+    cfg%confinement = 'qw'
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_qshe_qw_ok
+
+  ! ------------------------------------------------------------------
+  ! S3/S4: BdG mode with enabled bdg section and wire confinement
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_bdg_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'bdg'
+    cfg%bdg%enabled = .true.
+    cfg%confinement = 'wire'
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_bdg_ok
+
+  ! ------------------------------------------------------------------
+  ! S5/S6/S7: spectral function with valid parameters
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_spectral_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qhe'
+    cfg%confinement = 'bulk'
+    cfg%topo%compute_spectral = .true.
+    cfg%topo%spectral_eta = 0.001_dp
+    cfg%topo%spectral_nk = 100
+    cfg%topo%spectral_nE = 200
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_spectral_ok
+
+  ! ------------------------------------------------------------------
+  ! S8: sweep_model='bhz_analytic' accepted (confinement-agnostic)
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_sweep_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qhe'
+    cfg%confinement = 'qw'
+    cfg%topo%sweep_model = 'bhz_analytic'
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_sweep_ok
+
+  ! ------------------------------------------------------------------
+  ! S9: conductance with recognized method accepted
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_conductance_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qhe'
+    cfg%confinement = 'bulk'
+    cfg%topo%compute_conductance = .true.
+    cfg%topo%conductance_method = 'kubo_chern'
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_conductance_ok
+
+  ! ------------------------------------------------------------------
+  ! S10: topology mode='qhe' recognized (redundant with existing test
+  ! but explicitly exercises S10 acceptance path)
+  ! ------------------------------------------------------------------
+
+  @test
+  subroutine test_validate_semantic_topology_mode_ok()
+    type(simulation_config) :: cfg
+
+    cfg%topo%enabled = .true.
+    cfg%topo%mode = 'qhe'
+    cfg%confinement = 'bulk'
+
+    call validate_semantic(cfg, 'topologicalAnalysis')
+  end subroutine test_validate_semantic_topology_mode_ok
+
 end module test_parameters

@@ -11,9 +11,9 @@ Material variant note: Uses InAsW/GaSbW (Winkler 2003 parameter set with
 explicitly defined EV/EC). InAsW: EP=22.2, Eg=0.418 eV, DeltaSO=0.380 eV,
 EV=-0.59 eV, EC=-0.172 eV. GaSbW: EV=-0.03 eV, EC=0.782 eV.
 
-Structure note: The g-factor config (gfactor_qw_cb.cfg) is a 3-layer
+Structure note: The g-factor config (gfactor_qw_cb.toml) is a 3-layer
 AlSbW(500A)/GaSbW(270A)/InAsW(70A) structure with numcb=32, numvb=32.
-The overlap config uses qw_inasw_gasbw_broken_gap.cfg.
+The overlap config uses qw_inasw_gasbw_broken_gap.toml.
 
 Band overlap discussion:
   The code's parameter-derived overlap EC(InAsW) - EV(GaSbW) = -0.172 - (-0.03)
@@ -85,8 +85,8 @@ OVERLAP_LITERATURE = -150.0                      # meV, published value
 # ---------------------------------------------------------------------------
 # Config paths (relative to tests/regression/configs/)
 # ---------------------------------------------------------------------------
-CONFIG_OVERLAP = "qw_inasw_gasbw_broken_gap.cfg"
-CONFIG_GFACTOR = "gfactor_qw_cb.cfg"
+CONFIG_OVERLAP = "qw_inasw_gasbw_broken_gap.toml"
+CONFIG_GFACTOR = "gfactor_qw_cb.toml"
 
 # ---------------------------------------------------------------------------
 # Tolerances (KD6)

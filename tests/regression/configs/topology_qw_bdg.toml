@@ -1,0 +1,40 @@
+confinement = "qw"
+FDorder = 2
+fd_step = 7
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 2
+num_vb = 6
+
+[[material]]
+name = "GaAs"
+z_min = -30
+z_max = 30
+
+
+[topology]
+mode = "bdg"
+compute_chern = false
+compute_hall = false
+qwz_u = 0.0
+compute_z2 = false
+extract_edge_states = true
+edge_E_window = 0.01
+compute_ldos = false
+ldos_eta = 0.001
+ldos_E_range = [-0.1, 0.1]
+ldos_num_E = 20
+
+[bdg]
+mu = 0.0
+delta_0 = 0.001
+g_factor = 2.0
+B_vec = [0.0, 0.0, 0.0]
+gauge = "landau"
+kz = 0.0
+self_consistent = false

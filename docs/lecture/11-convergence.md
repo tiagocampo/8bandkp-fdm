@@ -90,7 +90,7 @@ than the true discretization error.
 ### 11.3.1 Setup
 
 We use the broken-gap AlSbW/GaSbW/InAsW quantum well from
-`tests/regression/configs/qw_alsbw_gasbw_inasw.cfg` with a fixed grid
+`tests/regression/configs/qw_alsbw_gasbw_inasw.toml` with a fixed grid
 (FDstep = 101, $\Delta z = 5$ A) and vary the FD order from 2 to 8.
 The eigenvalues are computed at $k_\parallel = 0$ (Gamma point). Order 8 serves
 as the reference.
@@ -173,6 +173,43 @@ $n + 2$. In practice, it is useful as a convergence diagnostic: if the
 Richardson-extrapolated value differs significantly from the finest-grid value,
 the calculation is not yet converged. If they agree to the desired precision,
 the grid is adequate.
+
+### 11.3.4 Grid Convergence Index (GCI)
+
+The **Grid Convergence Index** (Roache 1998) quantifies the discretization
+uncertainty by wrapping Richardson extrapolation in a safety factor:
+
+$$
+\text{GCI} = F_s \, \frac{|E_1 - E_2|}{E_1} \cdot \frac{1}{r^n - 1}
+$$
+
+where $E_1$ and $E_2$ are the observable values at the fine and coarse grids,
+$r = \Delta z_2 / \Delta z_1$ is the refinement ratio, $n$ is the FD order,
+and $F_s$ is a safety factor: $F_s = 3$ for two-grid Richardson, $F_s = 1.25$
+for three-grid. With 4-5 grid levels, the GCI is computed from the finest
+three-grid subset using $F_s = 1.25$.
+
+The GCI provides a conservative upper bound on the discretization error as a
+fraction of the computed value. A GCI of 0.1% means the discretization
+uncertainty is at most 0.1% of the reported value. This is the standard
+methodology for FD code verification (ASME V&V 20, AIAA guidelines).
+
+The codebase includes an automated convergence fixture (`ctest -L convergence`)
+that applies Richardson extrapolation and GCI to physics observables (subband
+energies, effective masses, g-factors, absorption edges) across the standard-star
+benchmark systems. Every benchmark number produced by this code can be
+accompanied by a GCI uncertainty band.
+
+**Important caveat for 8-band k.p:** The Richardson formula assumes the error
+is a smooth function of $\Delta z$. Material interfaces (abrupt barrier-well
+boundaries) violate this assumption — the Hamiltonian coefficients are
+discontinuous, and FD stencils that straddle the interface produce error that
+does not follow the clean $C_n (\Delta z)^n$ expansion. As shown in section
+11.4, the observed convergence rate in 8-band k.p is generally below the
+nominal FD order (1.2--1.9 instead of 2.0 for FDorder=2). The GCI remains
+valid as a discretization uncertainty estimate, but the convergence rate
+assertion must use an empirically calibrated tolerance, not the theoretical
+FD order as a hard gate.
 
 ---
 
@@ -409,7 +446,9 @@ larger than the final $g^*$ value).
 Before reporting numerical results from this code, verify the following:
 
 1. **Grid convergence:** Run at two grid spacings. If the eigenvalue of interest
-   shifts by more than the desired tolerance, refine the grid.
+   shifts by more than the desired tolerance, refine the grid. For automated
+   convergence certification with Richardson extrapolation and GCI, run
+   `ctest -L convergence`.
 
 2. **Domain size:** Check that the wavefunction decays to $< 10^{-3}$ of its
    peak value at the domain boundary. If not, widen the domain.
@@ -418,13 +457,17 @@ Before reporting numerical results from this code, verify the following:
    calculations, start with order 2 and increase to 4 if grid refinement is
    prohibitively expensive.
 
-4. **Number of eigenvalues:** Request enough states (`numcb`, `numvb`) to
+4. **Number of eigenvalues:** Request enough states (`num_cb`, `num_vb`) to
    include all states in the energy range of interest, plus a safety margin.
    Missing eigenvalues corrupt the g-factor calculation via the Lowdin sum.
 
 5. **State identification:** In broken-gap or strongly coupled systems, verify
    that the state labeling is consistent across grid refinements by checking
    the band character (`parts.dat`), not just the eigenvalue magnitude.
+
+6. **GCI uncertainty:** For publishable results, report the GCI alongside each
+   benchmark number. A GCI below 1% indicates the discretization uncertainty
+   is well-controlled.
 
 ---
 
@@ -435,7 +478,7 @@ Before reporting numerical results from this code, verify the following:
 | $\Delta z$ | Primary accuracy control | 0.5--2 A for QW, 1--2 A per direction for wire |
 | FD order | Accuracy per grid point | 2 for exploration, 4 for production, 6--8 for reference |
 | Domain size | Boundary modeling error | Extend 3--5 decay lengths beyond confinement |
-| `numcb`/`numvb` | Completeness of eigenvalue spectrum | Include 2--4 extra states beyond the target |
+| `num_cb`/`num_vb` | Completeness of eigenvalue spectrum | Include 2--4 extra states beyond the target |
 | Wire $N_x \times N_y$ | 2D memory and time | Minimize by using higher FD order instead of finer grid |
 
 The convergence behavior of the 8-band k.p method is more complex than the
@@ -463,7 +506,7 @@ python3 scripts/lecture_11_convergence.py
 
 ### Code-Output Anchors
 
-Running `convergence_qw_gaas.cfg` produces:
+Running `convergence_qw_gaas.toml` produces:
 - **QW grid convergence rate**: 1.66 (within 0.5 of theoretical order 2)
 - **Richardson extrapolation**: agrees with FD-8 result
 
@@ -493,3 +536,7 @@ Running `convergence_qw_gaas.cfg` produces:
    eigenvalue problems with discontinuous coefficients," SIAM J. Numer. Anal.
    **41**, 1826 (2003). Analysis of why interface discontinuities reduce the
    convergence rate below the nominal FD order.
+
+6. P. J. Roache, *Verification and Validation in Computational Science and
+   Engineering* (Hermosa Publishers, 1998). The Grid Convergence Index (GCI)
+   methodology for quantifying discretization uncertainty in FD codes.

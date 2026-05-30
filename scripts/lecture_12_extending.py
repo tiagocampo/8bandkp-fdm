@@ -100,7 +100,7 @@ def print_architecture():
     print("    main_topology.f90 -- topological invariants")
     print()
     print("  Data flow for a bulk k=0 calculation:")
-    print("    input.cfg  ->  input_parser  ->  simulation_config")
+    print("    input.toml  ->  input_parser  ->  simulation_config")
     print("    simulation_config  ->  parameters%paramDatabase(GaAs)")
     print("    paramStruct  ->  ZB8bandBulk(k=0)  ->  8x8 H matrix")
     print("    H matrix  ->  LAPACK zheevx  ->  8 eigenvalues")
@@ -170,11 +170,11 @@ def print_parameter_mapping():
 def run_and_show_eigenvalues():
     """Run bandStructure for bulk GaAs at k=0 and display eigenvalues."""
     print("=" * 70)
-    print("  Running bandStructure with bulk_gaas_k0.cfg")
+    print("  Running bandStructure with bulk_gaas_k0.toml")
     print("=" * 70)
     print()
 
-    cfg = CONFIGS_DIR / "bulk_gaas_k0.cfg"
+    cfg = CONFIGS_DIR / "bulk_gaas_k0.toml"
     print(f"  Config: {cfg}")
     print("  Settings: confinement=0 (bulk), single k-point at k=0")
     print()

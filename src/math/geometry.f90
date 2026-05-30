@@ -748,14 +748,14 @@ contains
     ! Build material_id_2d from regions using 2D distance from center
     allocate(mat2d(nx, ny))
     mat2d = 0
-    if (cfg%numRegions > 0) then
+    if (cfg%wire%num_regions > 0) then
       do iy = 1, ny
         do ix = 1, nx
           ! Cell-centered coordinate
           dist = sqrt(((ix - 0.5_dp) * dx - cx)**2 + &
                       ((iy - 0.5_dp) * dy - cy)**2)
-          do i = 1, cfg%numRegions
-            if (cfg%regions(i)%inner <= dist .and. dist <= cfg%regions(i)%outer) then
+          do i = 1, cfg%wire%num_regions
+            if (cfg%wire%regions(i)%inner <= dist .and. dist <= cfg%wire%regions(i)%outer) then
               mat2d(ix, iy) = i
               exit
             end if
@@ -765,27 +765,27 @@ contains
     end if
 
     ! Dispatch to the appropriate geometry initializer
-    select case (trim(cfg%wire_geom%shape))
+    select case (trim(cfg%wire%geom%shape))
     case ('rectangle')
       call grid_init_rect(cfg%grid, nx, ny, dx, dy, mat2d)
 
     case ('circle')
       call grid_init_circle(cfg%grid, nx, ny, dx, dy, &
-        cx, cy, cfg%wire_geom%radius, mat2d)
+        cx, cy, cfg%wire%geom%radius, mat2d)
 
     case ('hexagon')
       call grid_init_hexagon(cfg%grid, nx, ny, dx, dy, &
-        cx, cy, cfg%wire_geom%radius, mat2d)
+        cx, cy, cfg%wire%geom%radius, mat2d)
 
     case ('polygon')
       call grid_init_polygon(cfg%grid, nx, ny, dx, dy, &
-        cfg%wire_geom%nverts, &
-        cfg%wire_geom%verts(1, 1:cfg%wire_geom%nverts), &
-        cfg%wire_geom%verts(2, 1:cfg%wire_geom%nverts), mat2d)
+        cfg%wire%geom%nverts, &
+        cfg%wire%geom%verts(1, 1:cfg%wire%geom%nverts), &
+        cfg%wire%geom%verts(2, 1:cfg%wire%geom%nverts), mat2d)
 
     case default
       print *, 'Error: Unknown wire shape in init_wire_from_config: ', &
-        trim(cfg%wire_geom%shape)
+        trim(cfg%wire%geom%shape)
       stop 1
     end select
 

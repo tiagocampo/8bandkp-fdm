@@ -347,7 +347,7 @@ s%delta_ELH = -P_eps - Q_eps
 s%delta_ESO = -P_eps
 ```
 
-During the assembly of the $8N \times 8N$ Hamiltonian (`ZB8bandGeneralized` in `hamiltonianConstructor.f90`), these diagonal shifts are added directly to the matrix diagonal for the corresponding band blocks.
+During the assembly of the $8N \times 8N$ Hamiltonian (`ZB8bandGeneralized` in `hamiltonianConstructor.f90`), these diagonal shifts are added directly to the matrix diagonal for the corresponding band blocks. The strain block table (`get_strain_table()` in `strain_solver.f90`) defines which Bir-Pikus entries apply to which band pairs; both dense and COO builders iterate over this table.
 
 In addition to the diagonal shifts, `compute_bp_scalar` evaluates the **off-diagonal** Bir--Pikus terms that couple different valence-band blocks:
 
@@ -524,7 +524,7 @@ stored in `parameters.f90`.
 
 The type-II broken-gap AlSb/GaSb/InAs system is a near-lattice-matched
 heterostructure used for mid-infrared devices.  The quantum well configuration
-(from `tests/regression/configs/qw_alsb_gasb_inas.cfg`) consists of:
+(from `tests/regression/configs/qw_alsb_gasb_inas.toml`) consists of:
 
 | Layer | Material | Range (A) | $a_0$ (A) |
 |---|---|---|---|
@@ -870,6 +870,8 @@ calculations against analytical Bir-Pikus formula values.
 | `compute_bir_pikus_blocks` | `src/physics/strain_solver.f90` | Bir--Pikus shifts to structured output |
 | `bir_pikus_blocks_free` | `src/physics/strain_solver.f90` | Free Bir--Pikus arrays |
 | `compute_bp_scalar` | `src/physics/strain_solver.f90` | Pure function: BP shifts for single point |
+| `get_strain_table` | `src/physics/strain_solver.f90` | Strain block table: which BP entries apply to which band pairs |
+| `get_zeeman_table` | `src/physics/strain_solver.f90` | Zeeman block table: diagonal g-multipliers per band index (0-based) |
 | `strain_result` | `src/physics/strain_solver.f90` | Derived type: eps_xx, eps_yy, eps_zz, eps_yz |
 | `strain_config` | `src/core/defs.f90` | Configuration: enabled, reference, solver |
 | `paramStruct` | `src/core/defs.f90` | Deformation potentials: ac, av, b_dp, d_dp, C11, C12, C44, a0 |
@@ -917,7 +919,7 @@ python3 scripts/lecture_04_strain.py
 
 ### Code-Output Anchors
 
-Running `bulk_gaas_strained.cfg` produces:
+Running `bulk_gaas_strained.toml` produces:
 - **Bir-Pikus HH-LH splitting**: matches analytical formula within 1%
 - **Strained QW**: VB splitting confirmed; CB shift = -294 meV (GaAs on InP)
 

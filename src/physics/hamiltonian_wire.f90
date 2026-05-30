@@ -3,10 +3,14 @@ module hamiltonian_wire
   use definitions
   use sparse_matrices
   use utils
-  use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar
+  use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &
+    KP_Q, KP_T, KP_S, KP_SC, KP_R, KP_RC, &
+    KP_PP, KP_PM, KP_PZ, KP_A, KP_DIFF, KP_HALF_SUM
+  use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar, &
+    & strain_entry, build_strain_table, get_strain_table, &
+    & zeeman_entry, get_zeeman_table
   use confinement_init, only: confinementInitialization_2d
   use finitedifferences
-  use magnetic_field, only: compute_zeeman_vz
 
   implicit none
 
@@ -75,26 +79,9 @@ module hamiltonian_wire
     final :: wire_workspace_finalize
   end type wire_workspace
 
-  ! ------------------------------------------------------------------
-  ! Strain COO insertion table entry: describes one of the 32 block
-  ! patterns that map Bir-Pikus fields into the 8x8 band structure.
-  ! row_band/col_band are 0-based band offsets (0-7).
-  ! field_id selects which bp component to read:
-  !   1=delta_EHH, 2=delta_ELH, 3=delta_ESO, 4=delta_Ec,
-  !   5=S_eps, 6=R_eps, 7=QT2_eps
-  ! prefactor scales the value; use_conjg applies conjg() to the field.
-  ! ------------------------------------------------------------------
-  type :: strain_entry
-    integer               :: row_band, col_band  ! 0-based band offsets (0-7)
-    integer               :: field_id            ! 1=EHH,2=ELH,3=ESO,4=Ec,5=S,6=R,7=QT2
-    complex(kind=dp)      :: prefactor           ! complex scale (e.g. IU*RQS2)
-    logical               :: use_conjg           ! conjugate the field value?
-  end type strain_entry
-
   public :: wire_coo_cache, wire_coo_cache_free
   public :: wire_workspace, wire_workspace_free
   public :: build_velocity_matrices
-  public :: strain_entry, build_strain_table
   public :: ZB8bandGeneralized
   public :: insert_strain_coo
 
@@ -103,23 +90,13 @@ module hamiltonian_wire
     module procedure build_velocity_matrices_1d
   end interface build_velocity_matrices
 
-  ! ------------------------------------------------------------------
-  ! Module-level cache for the strain table (32-entry compile-time
-  ! constant).  Avoids rebuilding it on every kz-point.
-  ! ------------------------------------------------------------------
-  logical, save :: strain_table_cached = .false.
-  type(strain_entry), save :: strain_table_cache(32)
-
   contains
 
-    function get_strain_table() result(table)
-      type(strain_entry) :: table(32)
-      if (.not. strain_table_cached) then
-        strain_table_cache = build_strain_table()
-        strain_table_cached = .true.
-      end if
-      table = strain_table_cache
-    end function get_strain_table
+    logical function ws_initialized(ws)
+      type(wire_workspace), intent(in), optional :: ws
+      ws_initialized = .false.
+      if (present(ws)) ws_initialized = ws%initialized
+    end function ws_initialized
 
     ! ==================================================================
     ! Build a scatter map from a source CSR to a destination (union) CSR.
@@ -159,63 +136,6 @@ module hamiltonian_wire
       end do
     end subroutine build_scatter_map
 
-    ! ==================================================================
-    ! Build the 32-entry strain insertion table.
-    !
-    ! Each entry describes how one band-block of the strain Hamiltonian
-    ! is constructed from the Bir-Pikus fields.  The table encodes all
-    ! diagonal shifts, S_eps, R_eps, and VB-SO coupling terms.
-    !
-    ! Constants used (from definitions module):
-    !   IU    = cmplx(0,1,dp)
-    !   RQS2  = 1/sqrt(2)
-    !   SQR2  = sqrt(2)
-    !   SQR3o2 = sqrt(1.5_dp)
-    ! ==================================================================
-    function build_strain_table() result(table)
-      type(strain_entry) :: table(32)
-
-      ! --- Diagonal entries (1-8) ---
-      table( 1) = strain_entry(0, 0, 1, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 2) = strain_entry(1, 1, 2, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 3) = strain_entry(2, 2, 2, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 4) = strain_entry(3, 3, 1, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 5) = strain_entry(4, 4, 3, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 6) = strain_entry(5, 5, 3, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 7) = strain_entry(6, 6, 4, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table( 8) = strain_entry(7, 7, 4, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-
-      ! --- S_eps entries (9-12) ---
-      table( 9) = strain_entry(0, 1, 5, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
-      table(10) = strain_entry(1, 0, 5, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table(11) = strain_entry(2, 3, 5, cmplx(-1.0_dp, 0.0_dp, kind=dp), .true.)
-      table(12) = strain_entry(3, 2, 5, cmplx(-1.0_dp, 0.0_dp, kind=dp), .false.)
-
-      ! --- R_eps entries (13-16) ---
-      table(13) = strain_entry(0, 2, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
-      table(14) = strain_entry(2, 0, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-      table(15) = strain_entry(1, 3, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
-      table(16) = strain_entry(3, 1, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
-
-      ! --- VB-SO coupling entries (17-32) ---
-      table(17) = strain_entry(0, 4, 5, -IU * RQS2,   .true.)
-      table(18) = strain_entry(4, 0, 5,  IU * RQS2,   .false.)
-      table(19) = strain_entry(0, 5, 6,  IU * SQR2,   .true.)
-      table(20) = strain_entry(5, 0, 6, -IU * SQR2,   .false.)
-      table(21) = strain_entry(1, 4, 7,  IU * RQS2,   .false.)
-      table(22) = strain_entry(4, 1, 7, -IU * RQS2,   .false.)
-      table(23) = strain_entry(1, 5, 5, -IU * SQR3o2, .true.)
-      table(24) = strain_entry(5, 1, 5,  IU * SQR3o2, .false.)
-      table(25) = strain_entry(2, 4, 5,  IU * SQR3o2, .false.)
-      table(26) = strain_entry(4, 2, 5, -IU * SQR3o2, .true.)
-      table(27) = strain_entry(2, 5, 7,  IU * RQS2,   .false.)
-      table(28) = strain_entry(5, 2, 7, -IU * RQS2,   .false.)
-      table(29) = strain_entry(3, 4, 6, -IU * SQR2,   .false.)
-      table(30) = strain_entry(4, 3, 6,  IU * SQR2,   .true.)
-      table(31) = strain_entry(3, 5, 5,  IU * RQS2,   .false.)
-      table(32) = strain_entry(5, 3, 5, -IU * RQS2,   .true.)
-
-    end function build_strain_table
     subroutine ZB8bandGeneralized(HT_csr, kz, profile_2d, kpterms_2d, cfg, coo_cache, ws, g)
 
       type(csr_matrix), intent(inout)         :: HT_csr
@@ -366,7 +286,7 @@ module hamiltonian_wire
         ! ==================================================================
         ! Add Zeeman splitting to diagonal blocks
         ! ==================================================================
-        if (cfg%bdg%enabled) then
+        if (any(abs(cfg%bdg%B_vec) > 1.0e-12_dp)) then
           call insert_zeeman_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
             coo_idx, cfg%bdg%B_vec, cfg%bdg%g_factor, cfg%grid, N)
         end if
@@ -498,7 +418,7 @@ module hamiltonian_wire
         ! ==================================================================
         ! Add Zeeman splitting to diagonal blocks
         ! ==================================================================
-        if (cfg%bdg%enabled) then
+        if (any(abs(cfg%bdg%B_vec) > 1.0e-12_dp)) then
           call insert_zeeman_coo(coo_rows, coo_cols, coo_vals, coo_capacity, &
             coo_idx, cfg%bdg%B_vec, cfg%bdg%g_factor, cfg%grid, N)
         end if
@@ -676,7 +596,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: kp7 and kp8 have operator sparsity (= result sparsity)
         blk%values = cmplx(0.25_dp, 0.0_dp, kind=dp) * kpterms_2d(7)%values &
                    + cmplx(0.75_dp, 0.0_dp, kind=dp) * kpterms_2d(8)%values
@@ -725,7 +645,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: kp7 and kp8 have operator sparsity (= result sparsity)
         blk%values = cmplx(0.75_dp, 0.0_dp, kind=dp) * kpterms_2d(7)%values &
                    + cmplx(0.25_dp, 0.0_dp, kind=dp) * kpterms_2d(8)%values
@@ -776,7 +696,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: scatter kp14 and kp15 into union-structure block
         blk%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
         blk%values(ws%scatter_S_14) = cmplx(-2.0_dp*SQR3*kz, 0.0_dp, kind=dp) &
@@ -830,7 +750,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: conjugate transpose the already-built blk_S
         call csr_conjugate_transpose_to_preallocated(ws%blk_S, blk)
       else
@@ -859,7 +779,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: scatter kp16 and kp11 into union-structure block
         blk%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
         blk%values(ws%scatter_R_16) = cmplx(-SQR3, 0.0_dp, kind=dp) &
@@ -914,7 +834,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: conjugate transpose the already-built blk_R
         call csr_conjugate_transpose_to_preallocated(ws%blk_R, blk)
       else
@@ -940,7 +860,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: kp4 is diagonal, result is diagonal
         blk%values = cmplx(kz, 0.0_dp, kind=dp) * kpterms_2d(4)%values
       else
@@ -963,7 +883,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: scatter kp12 and kp13 into union-structure block
         blk%values = cmplx(0.0_dp, 0.0_dp, kind=dp)
         blk%values(ws%scatter_PP_12) = cmplx(0.0_dp, RQS2, kind=dp) &
@@ -1001,7 +921,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: conjugate transpose the already-built blk_PP
         call csr_conjugate_transpose_to_preallocated(ws%blk_PP, blk)
       else
@@ -1028,7 +948,7 @@ module hamiltonian_wire
       type(csr_matrix), intent(inout) :: blk
       type(wire_workspace), intent(inout), optional :: ws
 
-      if (present(ws) .and. ws%initialized) then
+      if (ws_initialized(ws)) then
         ! Fast path: kp5 has operator sparsity (= result sparsity)
         blk%values = kpterms_2d(5)%values
         ! Add diagonal contribution (kp10) at diagonal positions
@@ -1047,18 +967,6 @@ module hamiltonian_wire
         end block
       end if
     end subroutine build_kp_term_A
-    subroutine insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
-        alpha_off, beta_off, blk, N)
-      integer, intent(inout), contiguous :: coo_r(:), coo_c(:)
-      complex(kind=dp), intent(inout), contiguous :: coo_v(:)
-      integer, intent(in) :: coo_cap
-      integer, intent(inout) :: coo_idx
-      integer, intent(in) :: alpha_off, beta_off, N
-      type(csr_matrix), intent(in) :: blk
-
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
-        alpha_off, beta_off, blk, N, cmplx(1.0_dp, 0.0_dp, kind=dp))
-    end subroutine insert_csr_block
 
     ! ==================================================================
     ! Helper: Insert CSR block with complex scalar multiplier
@@ -1094,6 +1002,9 @@ module hamiltonian_wire
     ! ==================================================================
     ! Helper: Insert g3-mode blocks (dH/dkz) into COO arrays
     ! Shared between zb8_generalized_fast and zb8_generalized_slow
+    !
+    ! Uses the k.p block table filtered to kz-linear terms only (S, SC, PZ).
+    ! At kz=0, the derivative dH/dkz picks up only terms linear in kz.
     ! ==================================================================
     subroutine insert_g3_blocks(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
         blk_S, blk_SC, blk_PZ, N)
@@ -1101,42 +1012,64 @@ module hamiltonian_wire
       complex(kind=dp), intent(inout), contiguous :: coo_v(:)
       integer, intent(in) :: coo_cap
       integer, intent(inout) :: coo_idx
-      type(csr_matrix), intent(in) :: blk_S, blk_SC, blk_PZ
+      type(csr_matrix), intent(in), target :: blk_S, blk_SC, blk_PZ
       integer, intent(in) :: N
 
-      ! Row 1 (HH1)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 1, blk_SC, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 4, blk_SC, N, -IU*RQS2)
-      ! Row 2 (HH2)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 0, blk_S, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 5, blk_SC, N, -IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      ! Row 3 (LH1)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 4, blk_S, N, IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 7, blk_PZ, N, IU*SQR2*RQS3)
-      ! Row 4 (LH2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 5, blk_S, N, IU*RQS2)
-      ! Row 5 (SO1)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 0, blk_S, N, IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 2, blk_SC, N, -IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 6, blk_PZ, N, IU*RQS3)
-      ! Row 6 (SO2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 1, blk_S, N, IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 3, blk_SC, N, -IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-      ! Row 7 (CB1)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 4, blk_PZ, N, -IU*RQS3)
-      ! Row 8 (CB2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 2, blk_PZ, N, -IU*SQR2*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
+      type(csr_matrix), target :: blks(12)
+      type(kp_entry) :: table(52)
+      type(csr_matrix), pointer :: blk
+      integer :: e
+
+      ! Map only kz-linear kp_term blocks; others remain uninitialized (unused)
+      blks(KP_S)  = blk_S
+      blks(KP_SC) = blk_SC
+      blks(KP_PZ) = blk_PZ
+
+      table = get_kp_block_table()
+
+      do e = 1, size(table)
+        ! Filter: only kz-linear terms contribute to dH/dkz at kz=0
+        select case (table(e)%kp_term)
+        case (KP_S, KP_SC, KP_PZ)
+          blk => kp_block_ptr(blks, table(e)%kp_term)
+          call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
+            table(e)%row_band, table(e)%col_band, blk, N, table(e)%prefactor)
+        end select
+      end do
+
     end subroutine insert_g3_blocks
 
     ! ==================================================================
+    ! Helper: Return pointer to the CSR block for a given kp_term constant,
+    ! given an array of 12 CSR blocks indexed by kp_term.
+    ! ==================================================================
+    function kp_block_ptr(blks, kp_term) result(ptr)
+      type(csr_matrix), target, intent(in) :: blks(12)
+      integer, intent(in) :: kp_term
+      type(csr_matrix), pointer :: ptr
+
+      select case (kp_term)
+      case (KP_Q);        ptr => blks(KP_Q)
+      case (KP_T);        ptr => blks(KP_T)
+      case (KP_S);        ptr => blks(KP_S)
+      case (KP_SC);       ptr => blks(KP_SC)
+      case (KP_R);        ptr => blks(KP_R)
+      case (KP_RC);       ptr => blks(KP_RC)
+      case (KP_PP);       ptr => blks(KP_PP)
+      case (KP_PM);       ptr => blks(KP_PM)
+      case (KP_PZ);       ptr => blks(KP_PZ)
+      case (KP_A);        ptr => blks(KP_A)
+      case (KP_DIFF);     ptr => blks(KP_DIFF)
+      case (KP_HALF_SUM); ptr => blks(KP_HALF_SUM)
+      case default
+        nullify(ptr)
+      end select
+    end function kp_block_ptr
+
+    ! ==================================================================
     ! Helper: Insert the main 8x8 blocks into COO arrays
-    ! Shared between zb8_generalized_fast and zb8_generalized_slow
+    ! Reads the 52-entry k.p block table from hamiltonian_blocks and
+    ! inserts each entry with its prefactor into the COO arrays.
     ! ==================================================================
     subroutine insert_main_blocks(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
         blk_Q, blk_T, blk_S, blk_SC, blk_R, blk_RC, blk_PZ, blk_PP, &
@@ -1145,71 +1078,38 @@ module hamiltonian_wire
       complex(kind=dp), intent(inout), contiguous :: coo_v(:)
       integer, intent(in) :: coo_cap
       integer, intent(inout) :: coo_idx
-      type(csr_matrix), intent(in) :: blk_Q, blk_T, blk_S, blk_SC
-      type(csr_matrix), intent(in) :: blk_R, blk_RC, blk_PZ, blk_PP
-      type(csr_matrix), intent(in) :: blk_PM, blk_A, blk_diff, blk_temp
+      type(csr_matrix), intent(in), target :: blk_Q, blk_T, blk_S, blk_SC
+      type(csr_matrix), intent(in), target :: blk_R, blk_RC, blk_PZ, blk_PP
+      type(csr_matrix), intent(in), target :: blk_PM, blk_A, blk_diff, blk_temp
       integer, intent(in) :: N
 
-      ! Row 1 (HH1)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 0, blk_Q, N)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 1, blk_SC, N)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 2, blk_RC, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 4, blk_SC, N, -IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 5, blk_RC, N, IU*SQR2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 0, 6, blk_PP, N, IU)
-      ! Row 2 (HH2)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 0, blk_S, N)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 1, blk_T, N)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 3, blk_RC, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 4, blk_diff, N, IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 5, blk_SC, N, -IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 6, blk_PZ, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 1, 7, blk_PP, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-      ! Row 3 (LH1)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 0, blk_R, N)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 2, blk_T, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 3, blk_SC, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 4, blk_S, N, IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 5, blk_diff, N, IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 6, blk_PM, N, IU*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 2, 7, blk_PZ, N, IU*SQR2*RQS3)
-      ! Row 4 (LH2)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 1, blk_R, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 2, blk_S, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 3, blk_Q, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 4, blk_R, N, IU*SQR2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 5, blk_S, N, IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 3, 7, blk_PM, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      ! Row 5 (SO1)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 0, blk_S, N, IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 1, blk_diff, N, -IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 2, blk_SC, N, -IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 3, blk_RC, N, -IU*SQR2)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 4, blk_temp, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 6, blk_PZ, N, IU*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 4, 7, blk_PP, N, IU*SQR2*RQS3)
-      ! Row 6 (SO2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 0, blk_R, N, -IU*SQR2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 1, blk_S, N, IU*SQR3*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 2, blk_diff, N, -IU*RQS2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 3, blk_SC, N, -IU*RQS2)
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 5, blk_temp, N)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 6, blk_PM, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 5, 7, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-      ! Row 7 (CB1)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 0, blk_PM, N, -IU)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 1, blk_PZ, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 2, blk_PP, N, -IU*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 4, blk_PZ, N, -IU*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 5, blk_PP, N, cmplx(SQR2*RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 6, 6, blk_A, N)
-      ! Row 8 (CB2)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 1, blk_PM, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 2, blk_PZ, N, -IU*SQR2*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 3, blk_PP, N, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 4, blk_PM, N, -IU*SQR2*RQS3)
-      call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 5, blk_PZ, N, cmplx(-RQS3, 0.0_dp, kind=dp))
-      call insert_csr_block(coo_r, coo_c, coo_v, coo_cap, coo_idx, 7, 7, blk_A, N)
+      type(csr_matrix), target :: blks(12)
+      type(kp_entry) :: table(52)
+      type(csr_matrix), pointer :: blk
+      integer :: e
+
+      ! Map kp_term constants to CSR blocks
+      blks(KP_Q)        = blk_Q
+      blks(KP_T)        = blk_T
+      blks(KP_S)        = blk_S
+      blks(KP_SC)       = blk_SC
+      blks(KP_R)        = blk_R
+      blks(KP_RC)       = blk_RC
+      blks(KP_PP)       = blk_PP
+      blks(KP_PM)       = blk_PM
+      blks(KP_PZ)       = blk_PZ
+      blks(KP_A)        = blk_A
+      blks(KP_DIFF)     = blk_diff
+      blks(KP_HALF_SUM) = blk_temp
+
+      table = get_kp_block_table()
+
+      do e = 1, size(table)
+        blk => kp_block_ptr(blks, table(e)%kp_term)
+        call insert_csr_block_scaled(coo_r, coo_c, coo_v, coo_cap, coo_idx, &
+          table(e)%row_band, table(e)%col_band, blk, N, table(e)%prefactor)
+      end do
+
     end subroutine insert_main_blocks
 
     ! ==================================================================
@@ -1298,7 +1198,7 @@ module hamiltonian_wire
     ! ==================================================================
     ! Insert Zeeman splitting into COO diagonal entries.
     ! Each grid point contributes 8 diagonal entries (one per band).
-    ! g*mu_B*B . sigma_z eigenvalues: HH=-1.5, LH=+0.5, SO=-0.5, CB=+1.0
+    ! Uses the data-driven Zeeman table from strain_solver.
     ! ==================================================================
     subroutine insert_zeeman_coo(coo_r, coo_c, coo_v, coo_cap, &
         coo_idx, B_vec, g_factor, grid, N)
@@ -1310,25 +1210,28 @@ module hamiltonian_wire
       type(spatial_grid), intent(in) :: grid
       integer, intent(in) :: N
 
-      integer :: i, idx, n_grid
-      real(kind=dp) :: B_mag, Vz(8)
+      integer :: i, e, n_grid, band_idx
+      real(kind=dp) :: B_mag, E0
+      type(zeeman_entry) :: ztable(8)
 
       B_mag = sqrt(sum(B_vec**2))
+      E0 = g_factor * mu_B * B_mag
       n_grid = grid%npoints()
 
-      do i = 1, n_grid
-        call compute_zeeman_vz(g_factor, mu_B, B_mag, Vz)
+      ztable = get_zeeman_table()
 
-        do idx = 1, 8
+      do i = 1, n_grid
+        do e = 1, 8
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
             print *, "ERROR: COO capacity exceeded in insert_zeeman_coo"
             stop 1
           end if
-          ! band-major: row = (band-1)*N + site
-          coo_r(coo_idx) = (idx - 1) * N + i
-          coo_c(coo_idx) = (idx - 1) * N + i
-          coo_v(coo_idx) = cmplx(Vz(idx), 0.0_dp, kind=dp)
+          band_idx = ztable(e)%band_index
+          ! band-major: row = band_index * N + site
+          coo_r(coo_idx) = band_idx * N + i
+          coo_c(coo_idx) = band_idx * N + i
+          coo_v(coo_idx) = cmplx(ztable(e)%g_multiplier * E0, 0.0_dp, kind=dp)
         end do
       end do
     end subroutine insert_zeeman_coo

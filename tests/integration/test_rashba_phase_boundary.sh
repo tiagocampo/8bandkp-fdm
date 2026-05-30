@@ -20,7 +20,7 @@ echo "=== Rashba Wire Phase Boundary Regression Test ==="
 echo ""
 
 echo "Test: InAs Rashba wire at mu=637.928 meV, Delta=0.2 meV, B=6.0 T"
-/bin/cp "$CONFIG" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG" "$WORKDIR/input.toml"
 cd "$WORKDIR"
 RC=0
 timeout 300 "$EXE" > test_output.log 2>&1 || RC=$?

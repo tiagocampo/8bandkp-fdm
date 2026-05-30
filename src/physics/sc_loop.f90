@@ -51,7 +51,8 @@ contains
   ! Main self-consistent loop for QW simulations
   ! ------------------------------------------------------------------
   subroutine self_consistent_loop(profile, cfg, kpterms, HT, eig, eigv, &
-      & smallk, N, il, iuu, n_electron_out, n_hole_out)
+      & smallk, N, il, iuu, n_electron_out, n_hole_out, fermi_level_out, &
+      & converged_out, iterations_out, delta_phi_out)
 
     real(kind=dp), allocatable, intent(inout) :: profile(:,:)
     type(simulation_config), intent(in) :: cfg
@@ -63,6 +64,10 @@ contains
     integer, intent(in) :: N, il, iuu
     real(kind=dp), allocatable, intent(out), optional :: n_electron_out(:)
     real(kind=dp), allocatable, intent(out), optional :: n_hole_out(:)
+    real(kind=dp), intent(out), optional :: fermi_level_out
+    logical, intent(out), optional :: converged_out
+    integer, intent(out), optional :: iterations_out
+    real(kind=dp), intent(out), optional :: delta_phi_out
 
     ! SC loop variables
     integer :: iter, niter, info
@@ -106,7 +111,7 @@ contains
     logical :: sc_converged
     type(wavevector) :: wv
 
-    nz = cfg%fdStep
+    nz = cfg%grid%npoints()
     dz_val = cfg%dz
     num_subbands = iuu - il + 1
     niter = cfg%sc%max_iterations
@@ -118,7 +123,7 @@ contains
     ! Auto-determine kpar_max if not set
     kpar_max_val = cfg%sc%kpar_max
     if (kpar_max_val < tolerance) then
-      kpar_max_val = cfg%waveVectorMax
+      kpar_max_val = cfg%wave_vector%max
       if (kpar_max_val < tolerance) kpar_max_val = 0.5_dp
     end if
 
@@ -236,7 +241,7 @@ contains
       ! Step 4: Compute charge density
       call compute_charge_density_qw(n_electron, n_hole, eigv_kpar, &
         & eig_kpar, kpar_grid, fermi_level, cfg%sc%temperature, &
-        & nz, num_subbands, nk_actual, cfg%numcb)
+        & nz, num_subbands, nk_actual, cfg%bands%num_cb)
 
       ! Step 5: Build total charge and solve Poisson
       ! Convert density from cm^-3 to C/nm^3: rho = e * n * 1e-21 (1 cm^3 = 10^21 nm^3)
@@ -304,6 +309,12 @@ contains
         n_hole_out = n_hole
       end if
     end if
+
+    ! --- Copy SC diagnostics to optional outputs ---
+    if (present(fermi_level_out)) fermi_level_out = fermi_level
+    if (present(converged_out)) converged_out = sc_converged
+    if (present(iterations_out)) iterations_out = min(iter, niter)
+    if (present(delta_phi_out)) delta_phi_out = delta_phi
 
     ! --- Cleanup ---
     deallocate(kpar_grid, phi_old, phi_new, phi_poisson)
@@ -492,7 +503,7 @@ contains
 
       call compute_charge_density_qw(n_elec, n_hole, eigv_kpar, &
         & eig_kpar, kpar_grid, mu_mid, cfg%sc%temperature, &
-        & nz, num_subbands, nk_actual, cfg%numcb)
+        & nz, num_subbands, nk_actual, cfg%bands%num_cb)
 
       charge_excess = 0.0_dp
       do iz = 1, nz
@@ -629,7 +640,7 @@ contains
     ! Auto-determine kpar_max if not set
     kpar_max_val = cfg%sc%kpar_max
     if (kpar_max_val < tolerance) then
-      kpar_max_val = cfg%waveVectorMax
+      kpar_max_val = cfg%wave_vector%max
       if (kpar_max_val < tolerance) kpar_max_val = 0.5_dp
     end if
 
@@ -756,7 +767,7 @@ contains
       ! Step 4: Compute charge density
       call compute_charge_density_wire(n_electron, n_hole, eigv_wire, &
         & eig_wire, kx_grid, fermi_level, cfg%sc%temperature, &
-        & ny, nx, nev_sc, nk_actual, cfg%numcb)
+        & ny, nx, nev_sc, nk_actual, cfg%bands%num_cb)
       ! Note: compute_charge_density_wire takes (Ny, Nz) but for our wire
       ! grid it's (ny, nx). The flattened array is the same size.
 
@@ -907,7 +918,7 @@ contains
 
       call compute_charge_density_wire(work_ne, work_nh, eigv_kx, &
         & eig_kx, kx_grid, mu_mid, cfg%sc%temperature, &
-        & ny, nx, num_subbands, nk_actual, cfg%numcb)
+        & ny, nx, num_subbands, nk_actual, cfg%bands%num_cb)
 
       charge_excess = 0.0_dp
       do p = 1, Ngrid
@@ -996,8 +1007,8 @@ contains
     integer :: iz, ilayer
     allocate(layer_index(nz))
     layer_index = 0
-    do ilayer = 1, cfg%numLayers
-      do iz = cfg%intStartPos(ilayer), cfg%intEndPos(ilayer)
+    do ilayer = 1, cfg%num_layers
+      do iz = cfg%int_start_pos(ilayer), cfg%int_end_pos(ilayer)
         if (iz >= 1 .and. iz <= nz) then
           layer_index(iz) = ilayer
         end if

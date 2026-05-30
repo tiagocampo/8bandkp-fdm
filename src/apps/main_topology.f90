@@ -5,7 +5,7 @@ program topologicalAnalysis
   use hamiltonianConstructor
   use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free, &
     & wire_workspace, wire_workspace_free, ZB8bandGeneralized
-  use confinement_init, only: confinementInitialization_2d
+  use confinement_init, only: confinementInitialization, confinementInitialization_2d
   use finitedifferences
   use outputFunctions
   use input_parser
@@ -20,6 +20,7 @@ program topologicalAnalysis
   use green_functions, only: compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
   use linalg, only: mkl_set_num_threads_local, zheev
+  use simulation_setup_mod, only: simulation_setup, simulation_setup_init, simulation_setup_free
 
   implicit none
 
@@ -44,7 +45,7 @@ program topologicalAnalysis
   ! file handling
   integer(kind=4) :: iounit, status
 
-  ! --- Wire mode (confinement=2) variables ---
+  ! --- Wire mode (confinement='wire') variables ---
   real(kind=dp), allocatable       :: profile_2d(:,:)
   type(csr_matrix), allocatable    :: kpterms_2d(:)
   type(csr_matrix)                 :: HT_csr
@@ -62,18 +63,25 @@ program topologicalAnalysis
   ! MKL_THREADING=intel_thread.
   info = mkl_set_num_threads_local(1)
 
-  call read_and_setup(cfg, profile, kpterms)
+  call read_config(cfg)
 
-  ! Validate topology mode is set
-  if (.not. cfg%topo%enabled) then
-    print *, 'Error: topology analysis requires topology: T in input.cfg'
-    stop 1
-  end if
-  if (len_trim(cfg%topo%mode) == 0) then
-    print *, 'Error: topology analysis requires topology: block with mode set in input.cfg'
-    print *, '  cfg%topo%mode is empty'
-    stop 1
-  end if
+  ! Semantic validation (topology block must be enabled with mode set)
+  call validate_semantic(cfg, 'topologicalAnalysis')
+
+  ! Confinement initialization for QW mode via shared simulation_setup pipeline.
+  ! This handles confinementInitialization, electric field setup, and (if enabled)
+  ! strain — all through simulation_setup_init with skip_sc=.true. since topology
+  ! does not run the self-consistent loop.
+  block
+    type(simulation_setup) :: topo_setup
+    if (trim(cfg%confinement) == 'qw') then
+      call simulation_setup_init(cfg, topo_setup, skip_sc=.true.)
+      ! Extract profile and kpterms for use by topology subroutines
+      call move_alloc(topo_setup%profile, profile)
+      call move_alloc(topo_setup%kpterms, kpterms)
+    end if
+    call simulation_setup_free(topo_setup)
+  end block
 
   print *, ''
   print *, '=== Topological Analysis (mode=', trim(cfg%topo%mode), ') ==='
@@ -82,6 +90,7 @@ program topologicalAnalysis
   print *, '  compute_chern=', cfg%topo%compute_chern
   print *, '  compute_z2=', cfg%topo%compute_z2
   print *, '  extract_edge_states=', cfg%topo%extract_edge_states
+  print *, '  compute_spectral=', cfg%topo%compute_spectral
   print *, '  bdg enabled=', cfg%bdg%enabled
   print *, ''
 
@@ -120,7 +129,7 @@ program topologicalAnalysis
       end if
 
       if (cfg%topo%extract_edge_states) then
-        print *, '  Note: edge state extraction requires confinement=2 (wire mode)'
+        print *, "  Note: edge state extraction requires confinement='wire' (wire mode)"
       end if
 
       print *, '=== QHE analysis complete ==='
@@ -130,10 +139,10 @@ program topologicalAnalysis
     ! Quantum Spin Hall Effect: compute Z2 invariant via Fu-Kane
     ! ==================================================================
       if (cfg%topo%compute_z2) then
-        if (cfg%confinement == 2) then
+        if (trim(cfg%confinement) == 'wire') then
           ! --- Wire mode: compute Z2 from 1D edge states ---
           call run_qshe_wire(cfg, topo_result)
-        else if (cfg%confinement == 1) then
+        else if (trim(cfg%confinement) == 'qw') then
           ! --- QW mode: Fu-Kane parity invariant at the four 2D TRIM points ---
           block
             integer :: z2_status, n_occ
@@ -148,14 +157,11 @@ program topologicalAnalysis
               print *, '  status 1: invalid inputs or missing lattice constant'
               print *, '  status 2: QW profile is not inversion symmetric'
               print *, '  status 3: LAPACK zheev failed'
-              stop 1
+              error stop 'QW Fu-Kane Z2 calculation failed'
             end if
             print *, '  Z2 invariant: ', topo_result%z2_invariant
             print *, '  Minimum direct gap: ', topo_result%min_gap, ' eV'
           end block
-        else
-          print *, 'Error: QSHE Z2 mode requires confinement=1 (QW) or confinement=2 (wire)'
-          stop 1
         end if
       end if
 
@@ -169,18 +175,10 @@ program topologicalAnalysis
     case('bdg')
     ! Bogoliubov-de Gennes: topological SC with Majorana modes
     ! ==================================================================
-      if (.not. cfg%bdg%enabled) then
-        print *, 'Error: bdg mode requires bdg: block with enabled=true in input.cfg'
-        stop 1
-      end if
-
-      if (cfg%confinement == 2) then
+      if (trim(cfg%confinement) == 'wire') then
         call run_bdg_wire(cfg, topo_result)
-      else if (cfg%confinement == 1) then
+      else if (trim(cfg%confinement) == 'qw') then
         call run_bdg_qw(cfg, profile, kpterms, topo_result)
-      else
-        print *, 'Error: BdG mode requires confinement=1 (QW) or confinement=2 (wire)'
-        stop 1
       end if
 
       print *, '=== BdG analysis complete ==='
@@ -189,8 +187,8 @@ program topologicalAnalysis
     case('spectral')
     ! Spectral function A(k, E) for QW systems
     ! ==================================================================
-      select case (cfg%confinement)
-      case (1)
+      select case (trim(cfg%confinement))
+      case ('qw')
         call run_spectral(cfg, topo_result, profile, kpterms)
       case default
         call run_spectral(cfg, topo_result)
@@ -208,17 +206,12 @@ program topologicalAnalysis
     case('sweep')
     ! Z2 phase diagram via gap sweep over (B, mu) parameter space
     ! ==================================================================
-      if (cfg%confinement == 1) then
+      if (trim(cfg%confinement) == 'qw') then
         call run_gap_sweep(cfg, topo_result, profile, kpterms)
       else
         call run_gap_sweep(cfg, topo_result)
       end if
       print *, '=== Gap sweep analysis complete ==='
-
-    case default
-      print *, 'Error: Unknown topology mode: ', trim(cfg%topo%mode)
-      print *, '  Supported modes: qhe, qshe, bdg, spectral, conductance, sweep'
-      stop 1
 
   end select
 
@@ -231,7 +224,7 @@ program topologicalAnalysis
        action='write', iostat=status)
   if (status /= 0) then
     print *, 'ERROR: cannot open output/topology_result.dat (iostat=', status, ')'
-    stop 1
+    error stop 'cannot open topology_result.dat'
   end if
   write(iounit, '(A)') '# Topological Analysis Results'
   write(iounit, '(A,A)') '# mode: ', trim(cfg%topo%mode)
@@ -307,12 +300,12 @@ contains
     cfg = cfg_in
 
     ! Initialize 2D confinement
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
       & profile_2d_local, kpterms_2d_local, cfg%FDorder)
 
     Ngrid_local = grid_ngrid(cfg%grid)
     Ntot_local = 8 * Ngrid_local
-    nev_local = cfg%numcb + cfg%numvb
+    nev_local = cfg%bands%num_cb + cfg%bands%num_vb
 
     print *, '  Grid: nx=', cfg%grid%nx, ' ny=', cfg%grid%ny, ' Ngrid=', Ngrid_local
     print *, '  Matrix size: ', Ntot_local, 'x', Ntot_local
@@ -335,20 +328,20 @@ contains
       real(kind=dp) :: d_ratio
 
       ! Width-dependent effective mass from confinement physics
-      d_ratio = d_critical / cfg%wire_geom%width
+      d_ratio = d_critical / cfg%wire%geom%width
       bhz_M_eff = bhz_M_bulk * (1.0_dp - d_ratio**2)
 
       bhz_p%A = 364.5_dp
       bhz_p%B = -686.0_dp
       bhz_p%D = -512.0_dp
       bhz_p%M = bhz_M_eff
-      bhz_p%d_wire = cfg%wire_geom%width
+      bhz_p%d_wire = cfg%wire%geom%width
       bhz_p%N = bhz_N_fixed
-      bhz_p%dz = cfg%wire_geom%width / real(bhz_N_fixed, kind=dp)
+      bhz_p%dz = cfg%wire%geom%width / real(bhz_N_fixed, kind=dp)
       bhz_N_grid = bhz_p%N
       bhz_dz_grid = bhz_p%dz
       print *, '  BHZ: M_eff=', bhz_M_eff, ' meV (bulk=', bhz_M_bulk, &
-        & ', d/d_c=', cfg%wire_geom%width/d_critical, '), d=', bhz_p%d_wire, ' AA'
+        & ', d/d_c=', cfg%wire%geom%width/d_critical, '), d=', bhz_p%d_wire, ' AA'
       print *, '  Building BHZ Hamiltonian...'
       call build_bhz_wire_hamiltonian(H_csr_local, bhz_p)
       print *, '  BHZ Hamiltonian built, Nrows=', H_csr_local%nrows, 'nnz=', H_csr_local%nnz
@@ -369,7 +362,7 @@ contains
 
     if (eigen_res_local%nev_found == 0) then
       print *, 'Error: eigensolver found no eigenvalues'
-      stop 1
+      error stop 'eigensolver found no eigenvalues'
     end if
 
     allocate(eigvals_local(eigen_res_local%nev_found))
@@ -499,7 +492,7 @@ contains
     kz_val = cfg%bdg%kz
 
     ! Initialize 2D confinement
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
       & profile_2d_local, kpterms_2d_local, cfg%FDorder)
 
     Ngrid_local = grid_ngrid(cfg%grid)
@@ -519,7 +512,7 @@ contains
       & cfg%bdg%B_vec, cfg%bdg%g_factor)
 
     ! Configure FEAST for BdG (search around zero energy for Majoranas)
-    nev_local = cfg%numcb + cfg%numvb
+    nev_local = cfg%bands%num_cb + cfg%bands%num_vb
     eigen_cfg_local%method = 'FEAST'
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
@@ -529,9 +522,9 @@ contains
     ! Search near zero energy for Majorana modes.
     ! Use feast_emin/emax from config when set (for kz sweeps at finite kz),
     ! otherwise use the default ±10 meV window.
-    if (cfg%feast_emin /= 0.0_dp .or. cfg%feast_emax /= 0.0_dp) then
-      emin_local = cfg%feast_emin
-      emax_local = cfg%feast_emax
+    if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
+      emin_local = cfg%feast%emin
+      emax_local = cfg%feast%emax
     else
       emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
       emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
@@ -714,7 +707,7 @@ contains
 
     print *, '--- BdG QW mode: dense Majorana modes ---'
 
-    N_local = cfg_in%fdStep
+    N_local = cfg_in%grid%npoints()
     Ntot_local = 8 * N_local
     Nbdg_local = 16 * N_local
     zero_tol = max(1.0e-10_dp, 0.001_dp * abs(cfg_in%bdg%delta_0))
@@ -742,7 +735,7 @@ contains
       & work_local, lwork_local, rwork_local, info_local)
     if (info_local /= 0) then
       print *, 'Error: QW BdG zheev failed with info=', info_local
-      stop 1
+      error stop 'QW BdG zheev failed'
     end if
 
     result%min_gap = 2.0_dp * minval(abs(eigvals_bdg))
@@ -913,22 +906,9 @@ contains
 
     print *, '--- Spectral function A(k, E) ---'
 
-    if (cfg_in%topo%spectral_eta <= 0.0_dp) then
-      print *, 'Error: spectral mode requires spectral_eta > 0'
-      stop 1
-    end if
-
     ! Build k and E grids from config
     nk = cfg_in%topo%spectral_nk
     nE = cfg_in%topo%spectral_nE
-    if (nk < 1) then
-      print *, 'Error: spectral mode requires spectral_nk >= 1'
-      stop 1
-    end if
-    if (nE < 1) then
-      print *, 'Error: spectral mode requires spectral_nE >= 1'
-      stop 1
-    end if
     allocate(k_arr(nk), E_arr(nE))
 
     if (nk > 1) then
@@ -953,27 +933,27 @@ contains
     print *, '  k range: [', k_arr(1), ',', k_arr(nk), '] 1/A'
     print *, '  E range: [', E_arr(1), ',', E_arr(nE), '] eV'
 
-    select case (cfg_in%confinement)
-    case (0)
+    select case (trim(cfg_in%confinement))
+    case ('bulk')
       call compute_spectral_function_bulk(cfg_in, k_arr, E_arr, &
         & cfg_in%topo%spectral_eta, A_kE)
-    case (1)
+    case ('qw')
       if (.not. present(profile_in) .or. .not. present(kpterms_in)) then
         print *, 'Error: QW spectral mode requires allocated profile and kpterms'
-        stop 1
+        error stop 'QW spectral mode requires profile and kpterms'
       end if
       call compute_spectral_function_qw(cfg_in, profile_in, kpterms_in, &
         & k_arr, E_arr, cfg_in%topo%spectral_eta, A_kE)
-    case (2)
+    case ('wire')
       call compute_spectral_function_wire(cfg_in, k_arr, E_arr, &
         & cfg_in%topo%spectral_eta, A_kE)
     case default
       print *, 'Error: unsupported confinement for spectral mode: ', cfg_in%confinement
-      stop 1
+      error stop 'unsupported confinement for spectral mode'
     end select
     if (.not. allocated(A_kE) .or. size(A_kE, 1) == 0 .or. size(A_kE, 2) == 0) then
       print *, 'Error: spectral function calculation failed'
-      stop 1
+      error stop 'spectral function calculation failed'
     end if
 
     ! Store in result
@@ -988,10 +968,10 @@ contains
          action='write', iostat=status_loc)
     if (status_loc /= 0) then
       print *, 'ERROR: cannot open output/spectral_function.dat'
-      stop 1
+      error stop 'cannot open spectral_function.dat'
     end if
     write(iounit_loc, '(A)') '# Spectral function A(k, E)'
-    write(iounit_loc, '(A,I0)') '# confinement=', cfg_in%confinement
+    write(iounit_loc, '(A,A)') '# confinement=', trim(cfg_in%confinement)
     write(iounit_loc, '(A,I0,A,I0)') '# nk=', nk, '  nE=', nE
     write(iounit_loc, '(A,ES12.4)') '# eta (eV) = ', cfg_in%topo%spectral_eta
     write(iounit_loc, '(A,2ES16.8)') '# k_grid_min_max (1/A) = ', k_arr(1), k_arr(nk)
@@ -1019,6 +999,9 @@ contains
     real(kind=dp) :: sigma_xy, T
 
     print *, '--- Conductance analysis ---'
+    print *, '  conductance_method: ', trim(cfg_in%topo%conductance_method)
+    print *, '  berry_nk: ', cfg_in%topo%berry_nk
+    print *, '  landauer_energy: ', cfg_in%topo%landauer_energy
 
     select case(trim(adjustl(cfg_in%topo%conductance_method)))
     case('kubo_chern', 'kubo')
@@ -1083,9 +1066,6 @@ contains
       print *, '  Method: Landauer single-channel chain'
       print *, '  Transmission T = ', T
       print *, '  Conductance G = ', result%conductance_zz, ' e^2/h'
-    case default
-      print *, 'Error: unsupported conductance_method: ', trim(cfg_in%topo%conductance_method)
-      stop 1
     end select
 
   end subroutine run_conductance
@@ -1122,21 +1102,13 @@ contains
         & cfg_in%topo%gap_sweep_mu_min, cfg_in%topo%gap_sweep_mu_max, nMu, &
         & gap_threshold, z2_map_int, gap_map_real, transitions)
     case ('qw_fukane')
-      if (cfg_in%confinement /= 1 .or. .not. present(profile_in) .or. .not. present(kpterms_in)) then
-        print *, 'ERROR: sweep_model=qw_fukane requires confinement=1 with QW profile/kpterms'
-        stop 1
-      end if
       call compute_qw_fukane_gap_sweep(cfg_in, profile_in, kpterms_in, gap_threshold, &
         & z2_map_int, gap_map_real, transitions)
     case ('wire_bdg')
-      if (cfg_in%confinement /= 2) then
-        print *, 'ERROR: sweep_model=wire_bdg requires confinement=2'
-        stop 1
-      end if
       call compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map_int, gap_map_real, transitions)
     case default
       print *, 'ERROR: unknown topology sweep_model: ', trim(cfg_in%topo%sweep_model)
-      stop 1
+      error stop 'unknown topology sweep_model'
     end select
 
     ! Convert integer z2_map to real(dp) for storage in result
@@ -1158,7 +1130,7 @@ contains
          action='write', iostat=status_loc)
     if (status_loc /= 0) then
       print *, 'ERROR: cannot open output/z2_phase_diagram.dat'
-      stop 1
+      error stop 'cannot open z2_phase_diagram.dat'
     end if
     write(iounit_loc, '(A)') '# Z2 phase diagram'
     write(iounit_loc, '(A,I0,A,I0)') '# nB=', nB, '  nMu=', nMu
@@ -1181,7 +1153,7 @@ contains
          action='write', iostat=status_loc)
     if (status_loc /= 0) then
       print *, 'ERROR: cannot open output/z2_transitions.dat'
-      stop 1
+      error stop 'cannot open z2_transitions.dat'
     end if
     write(iounit_loc, '(A)') '# B(T) mu(eV)'
     do iB = 1, size(transitions, 1)
@@ -1320,7 +1292,7 @@ contains
     cfg%bdg%mu = mu_val
     cfg%bdg%B_vec = [0.0_dp, 0.0_dp, B_val]
 
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%regions, &
+    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
       & profile_2d_local, kpterms_2d_local, cfg%FDorder)
 
     Ngrid_local = grid_ngrid(cfg%grid)
@@ -1330,7 +1302,7 @@ contains
       & 0.0_dp, cfg%bdg%mu, cfg%bdg%delta_0, wire_ws_local, &
       & cfg%bdg%B_vec, cfg%bdg%g_factor)
 
-    nev_local = max(2, cfg%numcb + cfg%numvb)
+    nev_local = max(2, cfg%bands%num_cb + cfg%bands%num_vb)
     eigen_cfg_local%method = 'FEAST'
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
@@ -1344,13 +1316,13 @@ contains
 
     if (.not. eigen_res_local%converged .or. eigen_res_local%nev_found < 1) then
       print *, 'ERROR: wire BdG sweep eigensolver failed or found no states'
-      stop 1
+      error stop 'wire BdG eigensolver failed'
     end if
     if (eigen_res_local%nev_found >= eigen_cfg_local%feast_m0 .and. &
         eigen_cfg_local%feast_m0 < Nbdg_local) then
       print *, 'ERROR: wire BdG sweep likely truncated FEAST subspace'
       print *, '  nev_found=', eigen_res_local%nev_found, ' feast_m0=', eigen_cfg_local%feast_m0
-      stop 1
+      error stop 'wire BdG FEAST subspace likely truncated'
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues

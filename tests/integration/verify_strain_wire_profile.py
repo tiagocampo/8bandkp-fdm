@@ -45,41 +45,60 @@ TOL_STRAIN_MAGNITUDE = 0.60  # 60% for wire strain (free-surface relaxation vs b
 def make_wire_config(nx=20, ny=20, dx=5.0, dy=5.0,
                      width=100.0, height=100.0,
                      core_size=30.0, strain=True):
-    """Build inline wire config."""
+    """Build inline wire config (TOML format)."""
     shell_size = width  # shell extends to wire boundary
-    strain_flag = "T" if strain else "F"
+    strain_section = (
+        '\n[strain]\n'
+        'reference = "GaAs"\n'
+        'solver = "pardiso"\n'
+        'piezoelectric = false\n'
+    ) if strain else ""
     return (
-        "waveVector: kz\n"
-        "waveVectorMax: 0.01\n"
-        "waveVectorStep: 2\n"
-        "confinement:  2\n"
-        "FDstep: 1\n"
-        "FDorder: 2\n"
-        "numLayers:  2\n"
-        f"wire_nx: {nx}\n"
-        f"wire_ny: {ny}\n"
-        f"wire_dx: {dx}\n"
-        f"wire_dy: {dy}\n"
-        "wire_shape: rectangle\n"
-        f"wire_width: {width}\n"
-        f"wire_height: {height}\n"
-        "numRegions: 2\n"
-        f"region: GaAs  {core_size}  {shell_size}\n"
-        f"region: InAs  0.0  {core_size}\n"
-        "numcb: 4\n"
-        "numvb: 8\n"
-        "ExternalField: 0  EF\n"
-        "EFParams: 0.0\n"
-        "whichBand: 0\n"
-        "bandIdx: 1\n"
-        "SC: 0\n"
-        "feast_emin: -1.5\n"
-        "feast_emax: 2.0\n"
-        "feast_m0: -1\n"
-        f"strain: {strain_flag}\n"
-        "strain_ref: GaAs\n"
-        "strain_solver: pardiso\n"
-        "piezo: F\n"
+        'confinement = "wire"\n'
+        "FDorder = 2\n"
+        "\n"
+        "[wave_vector]\n"
+        'mode = "kz"\n'
+        "max = 0.01\n"
+        "nsteps = 2\n"
+        "\n"
+        "[bands]\n"
+        "num_cb = 4\n"
+        "num_vb = 8\n"
+        "\n"
+        "[wire]\n"
+        f"nx = {nx}\n"
+        f"ny = {ny}\n"
+        f"dx = {dx}\n"
+        f"dy = {dy}\n"
+        "\n"
+        "[wire.geometry]\n"
+        'shape = "rectangle"\n'
+        f"width = {width}\n"
+        f"height = {height}\n"
+        "\n"
+        "[[region]]\n"
+        f'material = "GaAs"\n'
+        f"inner = {core_size}\n"
+        f"outer = {shell_size}\n"
+        "\n"
+        "[[region]]\n"
+        f'material = "InAs"\n'
+        "inner = 0.0\n"
+        f"outer = {core_size}\n"
+        "\n"
+        "[external_field]\n"
+        'type = "EF"\n'
+        "value = 0.0\n"
+        "\n"
+        "which_band = 0\n"
+        "band_idx = 1\n"
+        "\n"
+        "[feast]\n"
+        "emin = -1.5\n"
+        "emax = 2.0\n"
+        "m0 = -1\n"
+        f"{strain_section}"
     )
 
 
@@ -333,7 +352,7 @@ def main():
                                        strain=True)
     work = tempfile.mkdtemp(prefix="wire_strain_")
     try:
-        cfg_path = os.path.join(work, "wire.cfg")
+        cfg_path = os.path.join(work, "wire.toml")
         with open(cfg_path, "w") as f:
             f.write(config_strained)
         rc, output_dir = run_exe(build_dir, "bandStructure", cfg_path, work,
@@ -367,7 +386,7 @@ def main():
                                          strain=False)
     work_u = tempfile.mkdtemp(prefix="wire_unstrain_")
     try:
-        cfg_u = os.path.join(work_u, "wire.cfg")
+        cfg_u = os.path.join(work_u, "wire.toml")
         with open(cfg_u, "w") as f:
             f.write(config_unstrained)
         rc_u, output_dir_u = run_exe(build_dir, "bandStructure", cfg_u, work_u,

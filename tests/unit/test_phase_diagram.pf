@@ -128,7 +128,7 @@ contains
     real(kind=dp), allocatable :: gap_map(:,:), transitions(:,:)
     type(simulation_config) :: cfg
 
-    ! cfg has default initialization (confinement=0, bulk mode)
+    ! cfg has default initialization (confinement='bulk', bulk mode)
 
     call compute_z2_gap_sweep(cfg, &
       B_min=0.0_dp, B_max=1.0_dp, nB=5, &

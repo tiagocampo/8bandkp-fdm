@@ -20,7 +20,7 @@ echo ""
 
 # Test 1: Trivial case (Z2=0)
 echo "Test 1: BHZ trivial (d=58A, M=+10 meV) -> Z2=0"
-/bin/cp "$CONFIG_TRIVIAL" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG_TRIVIAL" "$WORKDIR/input.toml"
 cd "$WORKDIR"
 "$EXE" > test_output.log 2>&1
 RC=$?
@@ -47,7 +47,7 @@ echo "  PASS"
 # Test 2: Topological case (Z2=1)
 echo ""
 echo "Test 2: BHZ topological (d=70A, M=-10 meV) -> Z2=1"
-/bin/cp "$CONFIG_TOPOL" "$WORKDIR/input.cfg"
+/bin/cp "$CONFIG_TOPOL" "$WORKDIR/input.toml"
 cd "$WORKDIR"
 "$EXE" > test_output.log 2>&1
 RC=$?

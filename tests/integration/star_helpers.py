@@ -54,7 +54,7 @@ if trapz_fn is None:
 def run_executable(exe_path, config_path, work_dir, timeout=300):
     """Run a Fortran executable in work_dir with the given config.
 
-    Copies config to <work_dir>/input.cfg, runs the executable,
+    Copies config to <work_dir>/input.toml, runs the executable,
     returns the output directory path.
 
     Returns:
@@ -63,7 +63,7 @@ def run_executable(exe_path, config_path, work_dir, timeout=300):
     Raises:
         FileNotFoundError: if exe_path does not exist
     """
-    dst_cfg = os.path.join(work_dir, "input.cfg")
+    dst_cfg = os.path.join(work_dir, "input.toml")
     shutil.copy2(config_path, dst_cfg)
 
     output_dir = os.path.join(work_dir, "output")
@@ -101,7 +101,7 @@ def run_exe(build_dir, name, config_path, work_dir, timeout=300):
     Raises:
         FileNotFoundError: if executable not found
     """
-    exe_path = os.path.join(build_dir, "src", name)
+    exe_path = os.path.abspath(os.path.join(build_dir, "src", name))
     if not os.path.isfile(exe_path):
         raise FileNotFoundError(f"Executable not found: {exe_path}")
     return run_executable(exe_path, config_path, work_dir, timeout)

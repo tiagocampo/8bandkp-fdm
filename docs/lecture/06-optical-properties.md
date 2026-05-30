@@ -42,7 +42,7 @@ where $r_\alpha(i)$ and $r_\alpha(j)$ are the spatial coordinates of grid points
 
 **Connection to the wire g-factor fix.** The same commutator-based velocity operator was originally developed to fix the wire g-factor calculation (Chapter 05). In the wire geometry, the transverse velocity operators $v_x$ and $v_y$ must correctly account for the 2D spatial confinement. The `build_velocity_matrices` subroutine in `hamiltonianConstructor.f90` computes $-i [r_\alpha, H]$ on the CSR Hamiltonian and is shared between the g-factor and optical properties codes.
 
-**Bulk special case.** For bulk semiconductors ($\text{confinement} = 0$), the Hamiltonian is an $8 \times 8$ matrix with no spatial discretization. In this case $[r, H] = 0$ because there is no spatial grid. The velocity matrix elements are instead computed analytically from $\partial H / \partial k_\alpha$ using `ZB8bandBulk(g='g')`, which returns the Kane P-dependent terms at a unit wave vector. The result is stored as a dense $8 \times 8$ matrix and converted to CSR format for uniform treatment in the accumulation loop.
+**Bulk special case.** For bulk semiconductors ($\text{confinement} = \texttt{"bulk"}$), the Hamiltonian is an $8 \times 8$ matrix with no spatial discretization. In this case $[r, H] = 0$ because there is no spatial grid. The velocity matrix elements are instead computed analytically from $\partial H / \partial k_\alpha$ using `ZB8bandBulk(g='g')`, which returns the Kane P-dependent terms at a unit wave vector. The result is stored as a dense $8 \times 8$ matrix and converted to CSR format for uniform treatment in the accumulation loop.
 
 **Units.** The velocity matrix elements $P_\alpha^{if} = \langle \psi_i | v_\alpha | \psi_f \rangle$ from the commutator approach are in "dH/dk" units (eV*angstrom), identical to the old approach. The oscillator strength formula uses $|P_\alpha^{if}|^2 / (\hbar^2 / 2m_0)$, where the $\hbar$ cancels appropriately.
 
@@ -318,7 +318,7 @@ The accumulation is implemented in `optics_accumulate` (absorption), `optics_acc
 
 The standalone `opticalProperties` program (`src/apps/main_optics.f90`) computes optical spectra for all three geometries. Unlike the older approach where optics was computed inline during the `bandStructure` k-sweep, the standalone program separates the optical calculation into a dedicated workflow:
 
-1. Parse `input.cfg` with the `optics:` block (Section 6.5.7).
+1. Parse `input.toml` with the `[optics]` section (Section 6.5.7).
 2. Initialize confinement and material parameters.
 3. Build velocity matrices once at $k = 0$:
    - Bulk: analytical `ZB8bandBulk(g='g')` for each direction.
@@ -331,28 +331,29 @@ The program supports OpenMP parallelization of the diagonalization step (each $k
 
 ### 6.5.7 Input format for the optics block
 
-The `opticalProperties` program reads the same `input.cfg` format as the other executables, with the addition of the `optics:` block:
+The `opticalProperties` program reads the same `input.toml` format as the other executables, with the addition of the `[optics]` section:
 
-```
-optics:
-  T
-  linewidth_lorentzian  0.030
-  linewidth_gaussian    0.005
-  refractive_index      3.3
-  E_min  E_max  num_energy_points
-  temperature            300.0
-  carrier_density        0.0
-  gain_enabled           F
-  gain_carrier_density   3.0e12
-  isbt_enabled           F
-  spontaneous_enabled    F
-  spin_resolved          F
+```toml
+[optics]
+linewidth_lorentzian = 0.030
+linewidth_gaussian = 0.005
+refractive_index = 3.3
+E_min = 1.3
+E_max = 2.0
+num_energy_points = 300
+temperature = 300.0
+carrier_density = 0.0
+gain_enabled = false
+gain_carrier_density = 3.0e12
+ISBT = false
+spontaneous = false
+spin_resolved = false
 ```
 
 The two new fields added in the current update are:
 
-- **`spontaneous_enabled`** (logical, default `F`): enables spontaneous emission calculation, output to `output/spontaneous_TE.dat` and `output/spontaneous_TM.dat`.
-- **`spin_resolved`** (logical, default `F`): enables spin-up/down decomposition of all spectra using the Clebsch-Gordan transformation in `spin_projection.f90`. When enabled, additional output files are generated: `output/absorption_TE_up.dat`, `output/absorption_TE_dw.dat`, `output/absorption_TM_up.dat`, `output/absorption_TM_dw.dat`.
+- **`spontaneous`** (boolean, default `false`): enables spontaneous emission calculation, output to `output/spontaneous_TE.dat` and `output/spontaneous_TM.dat`.
+- **`spin_resolved`** (boolean, default `false`): enables spin-up/down decomposition of all spectra using the Clebsch-Gordan transformation in `spin_projection.f90`. When enabled, additional output files are generated: `output/absorption_TE_up.dat`, `output/absorption_TE_dw.dat`, `output/absorption_TM_up.dat`, `output/absorption_TM_dw.dat`.
 
 ### 6.5.8 Output files
 
@@ -362,13 +363,13 @@ The `opticalProperties` program writes the following files to `output/`:
 |---|---|---|
 | `absorption_TE.dat` | $E$ (eV), $\alpha$ (cm$^{-1}$) | TE-polarized interband absorption |
 | `absorption_TM.dat` | $E$ (eV), $\alpha$ (cm$^{-1}$) | TM-polarized interband absorption |
-| `absorption_ISBT.dat` | $E$ (eV), $\alpha$ (cm$^{-1}$) | ISBT absorption (TM only, when `isbt_enabled=T`) |
-| `gain_TE.dat` | $E$ (eV), $g$ (cm$^{-1}$) | TE gain (when `gain_enabled=T`) |
-| `gain_TM.dat` | $E$ (eV), $g$ (cm$^{-1}$) | TM gain (when `gain_enabled=T`) |
-| `spontaneous_TE.dat` | $E$ (eV), rate (arb. units) | TE spontaneous emission (when `spontaneous_enabled=T`) |
-| `spontaneous_TM.dat` | $E$ (eV), rate (arb. units) | TM spontaneous emission (when `spontaneous_enabled=T`) |
+| `absorption_ISBT.dat` | $E$ (eV), $\alpha$ (cm$^{-1}$) | ISBT absorption (TM only, when `ISBT = true`) |
+| `gain_TE.dat` | $E$ (eV), $g$ (cm$^{-1}$) | TE gain (when `gain_enabled = true`) |
+| `gain_TM.dat` | $E$ (eV), $g$ (cm$^{-1}$) | TM gain (when `gain_enabled = true`) |
+| `spontaneous_TE.dat` | $E$ (eV), rate (arb. units) | TE spontaneous emission (when `spontaneous = true`) |
+| `spontaneous_TM.dat` | $E$ (eV), rate (arb. units) | TM spontaneous emission (when `spontaneous = true`) |
 
-When `spin_resolved=T`, each file additionally has `_up` and `_dw` variants for spin-up and spin-down channels. The sum rule $\text{total} = \text{up} + \text{down}$ provides a consistency check.
+When `spin_resolved = true`, each file additionally has `_up` and `_dw` variants for spin-up and spin-down channels. The sum rule $\text{total} = \text{up} + \text{down}$ provides a consistency check.
 
 The `gfactorCalculation` program continues to write `output/optical_transitions.dat` with the per-transition oscillator strengths for g-factor analysis:
 
@@ -397,7 +398,7 @@ Each row represents one CB-VB pair. The columns are:
 
 ### 6.6.1 Setup: GaAs rectangular wire
 
-Consider a GaAs quantum wire with rectangular cross-section ($63 \times 63$ nm$^2$) modeled on a $21 \times 21$ grid (3.0 nm spacing, 2nd-order FD). The wire is computed in `confinement=2` mode, with `numcb=8` and `numvb=16` states requested. The material parameters are GaAs: $E_P = 28.8$ eV, $E_g = 1.519$ eV, $\Delta_{SO} = 0.341$ eV. The configuration file is `tests/regression/configs/wire_gaas_rectangle.cfg`.
+Consider a GaAs quantum wire with rectangular cross-section ($63 \times 63$ nm$^2$) modeled on a $21 \times 21$ grid (3.0 nm spacing, 2nd-order FD). The wire is computed in `confinement = "wire"` mode, with `num_cb = 8` and `num_vb = 16` states requested. The material parameters are GaAs: $E_P = 28.8$ eV, $E_g = 1.519$ eV, $\Delta_{SO} = 0.341$ eV. The configuration file is `tests/regression/configs/wire_gaas_rectangle.toml`.
 
 The 8-band Hamiltonian for the wire has dimension $8 \times N_{\text{grid}} = 8 \times 441 = 3528$. Dense LAPACK diagonalization (`zheevx`) found 221 eigenvalues at $k_z = 0$ within the energy window $[-1.5, 2.0]$ eV, corresponding to 110 Kramers-degenerate pairs plus one state at 0.0 eV. All eigenvalues exhibit the expected 2-fold Kramers degeneracy.
 
@@ -429,9 +430,9 @@ Table 6.3 lists the computed subband eigenvalues at $k_z = 0$ near the band edge
 
 The wire optical transitions can be computed by either the `opticalProperties` program (using commutator-based velocity matrices and the FEAST eigensolver) or the `gfactorCalculation` program (using the legacy perturbation-Hamiltonian approach). The `opticalProperties` program is the recommended path for full spectra, while the `gfactorCalculation` program provides per-transition oscillator strength tables.
 
-**State selection.** The code selects CB and VB states using band-character-based gap detection. For each eigenstate, the CB character is computed as the sum of the CB-band (7--8) weights from the eigenvector decomposition. The first eigenstate whose CB weight exceeds the threshold of 0.5 is identified as the band edge, and the requested `numvb` and `numcb` states are taken around this gap. If the band-character criterion fails (no state meets the threshold), the code falls back to finding the largest spectral gap between consecutive eigenvalues that can accommodate the requested number of VB and CB states.
+**State selection.** The code selects CB and VB states using band-character-based gap detection. For each eigenstate, the CB character is computed as the sum of the CB-band (7--8) weights from the eigenvector decomposition. The first eigenstate whose CB weight exceeds the threshold of 0.5 is identified as the band edge, and the requested `num_vb` and `num_cb` states are taken around this gap. If the band-character criterion fails (no state meets the threshold), the code falls back to finding the largest spectral gap between consecutive eigenvalues that can accommodate the requested number of VB and CB states.
 
-**FEAST convergence.** The FEAST subspace ($m_0 = 2 \times 24 = 48$) may be too small for the 3528-dimensional problem, producing the warning "FEAST subspace too small (info=3). Missing eigenvalues." Additionally, the COO cache for the perturbation Hamiltonian can overflow (`WARNING: COO capacity exceeded in insert_csr_block_scaled`), causing entries to be dropped. The `opticalProperties` wire branch uses the same FEAST solver but with configurable `feast_emin`/`feast_emax` energy windows.
+**FEAST convergence.** The FEAST subspace ($m_0 = 2 \times 24 = 48$) may be too small for the 3528-dimensional problem, producing the warning "FEAST subspace too small (info=3). Missing eigenvalues." Additionally, the COO cache for the perturbation Hamiltonian can overflow (`WARNING: COO capacity exceeded in insert_csr_block_scaled`), causing entries to be dropped. The `opticalProperties` wire branch uses the same FEAST solver but with configurable `[feast] emin`/`emax` energy windows.
 
 The QW optical transitions (Section 6.6.5) use dense LAPACK and do not suffer from these problems.
 
@@ -672,7 +673,7 @@ been validated to tutorial grade.
 
 4. **Strain effect.** The compressive strain in the InGaAs layer splits the HH and LH band edges at $k_\parallel = 0$, moving the HH above the LH. This increases the TE/TM polarization contrast at the band edge compared to an unstrained QW (where HH and LH are degenerate at $k_\parallel = 0$). The code reproduces this through the Bir-Pikus strain terms in `hamiltonianConstructor.f90`.
 
-The physics in the Dumitras calculation is identical to what this code implements: the same 8-band zincblende k.p Hamiltonian, the same momentum matrix elements from the Kane $E_P$ parameter, and the same Fermi golden rule absorption formula. The numerical values depend on the InGaAs material parameters (Vurgaftman 2001 provides the recommended parameters), the well width, and the strain state, all of which are configurable through `input.cfg`.
+The physics in the Dumitras calculation is identical to what this code implements: the same 8-band zincblende k.p Hamiltonian, the same momentum matrix elements from the Kane $E_P$ parameter, and the same Fermi golden rule absorption formula. The numerical values depend on the InGaAs material parameters (Vurgaftman 2001 provides the recommended parameters), the well width, and the strain state, all of which are configurable through `input.toml`.
 
 ![Strained QW absorption](../figures/qw_absorption_strained.png)
 
@@ -710,7 +711,7 @@ with the same velocity-matrix infrastructure.
 
 ### 6.7.7 Spin-resolved absorption
 
-When the `SpinResolved: T` flag is set in the `optics:` block, the code
+When the `spin_resolved = true` flag is set in the `[optics]` section, the code
 decomposes each interband transition into spin-up and spin-down channels using
 the Clebsch-Gordan projection in `spin_projection.f90`. The total absorption
 satisfies $\alpha_{\text{total}} = \alpha_\uparrow + \alpha_\downarrow$ by
@@ -1002,7 +1003,7 @@ The momentum matrix elements converge more slowly with the FD grid spacing than 
 
 - Use at least 4th-order FD (`FDorder = 4`) for quantum wells.
 - For wires, ensure sufficient grid resolution in both transverse directions.
-- The number of VB states included (`numvb`) should be large enough to capture the dominant transitions; typically 10--20 VB states are needed.
+- The number of VB states included (`num_vb`) should be large enough to capture the dominant transitions; typically 10--20 VB states are needed.
 - Convergence of the oscillator strength should be checked by varying the grid spacing: $f_{ij}$ should change by less than 1% between successive refinements.
 
 ### 6.12.2 Gauge invariance and the commutator
@@ -1025,7 +1026,7 @@ In a bulk crystal, these two formulations ("velocity gauge" vs "length gauge") g
 
 4. **Spin resolution is approximate.** The spin-resolved spectra use the Clebsch-Gordan decomposition of the 8-band k.p basis into spin-orbital components. For interband transitions, the cross-spin terms are small and the projection $w_\uparrow(i) \cdot w_\uparrow(j)$ provides a reasonable approximation. A more rigorous treatment would require the full spin-density matrix formalism.
 
-5. **Wire state selection.** The `gfactorCalculation` wire mode selects CB/VB states using band-character-based gap detection (CB weight threshold at 0.5, with fallback to largest spectral gap). For wires with many subbands where the band character is well-defined, this correctly identifies the band edge. The `opticalProperties` program uses the same state selection via `numcb` and `numvb` parameters.
+5. **Wire state selection.** The `gfactorCalculation` wire mode selects CB/VB states using band-character-based gap detection (CB weight threshold at 0.5, with fallback to largest spectral gap). For wires with many subbands where the band character is well-defined, this correctly identifies the band edge. The `opticalProperties` program uses the same state selection via `num_cb` and `num_vb` parameters.
 
 ### 6.12.4 Wurtzite limitation
 
@@ -1119,7 +1120,7 @@ from what still needs a benchmark closure.
 | ISBT absorption | `src/physics/optical_spectra.f90` | `compute_isbt_absorption` |
 | Spin projection | `src/physics/spin_projection.f90` | `spin_weights` |
 | Optical properties program | `src/apps/main_optics.f90` | `program opticalProperties` |
-| Optics parsing | `src/io/input_parser.f90` | `optics:` block |
+| Optics parsing | `src/io/input_parser.f90` | `[optics]` section |
 | g-factor optical matrix (legacy) | `src/physics/gfactor_functions.f90` | `compute_optical_matrix_wire` |
 | Exciton binding energy | `src/physics/exciton.f90` | `compute_exciton_binding` |
 | LO-phonon scattering rates | `src/physics/scattering.f90` | `compute_phonon_scattering` |
@@ -1142,7 +1143,7 @@ python3 scripts/lecture_06_optical.py
 
 ### Code-Output Anchors
 
-Running `optics_bulk_gaas.cfg` produces:
+Running `optics_bulk_gaas.toml` produces:
 - **Bulk absorption onset**: 1.509 eV (within 1% of Eg); **TE/TM ratio** > 1 for interband
 - **ISBT peak**: at 0.11 eV (conduction intersubband transition)
 

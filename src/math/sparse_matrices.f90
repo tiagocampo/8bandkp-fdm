@@ -41,6 +41,7 @@ module sparse_matrices
     complex(kind=dp), allocatable :: values(:)   ! (nnz)
     integer, allocatable          :: colind(:)   ! (nnz)
     integer, allocatable          :: rowptr(:)   ! (nrows+1)
+    logical                       :: was_freed = .false.
   contains
     procedure :: free => csr_matrix_free_bound
     procedure :: clone_structure => csr_matrix_clone_structure_bound
@@ -131,6 +132,8 @@ contains
   subroutine csr_free(mat)
     type(csr_matrix), intent(inout) :: mat
 
+    if (mat%was_freed) return
+    mat%was_freed = .true.
     if (allocated(mat%values))  deallocate(mat%values)
     if (allocated(mat%colind))  deallocate(mat%colind)
     if (allocated(mat%rowptr))  deallocate(mat%rowptr)

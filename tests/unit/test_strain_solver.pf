@@ -651,4 +651,108 @@ contains
     call bir_pikus_blocks_free(bp)
   end subroutine test_strain_coo_table_matches_unrolled
 
+
+  @test
+  subroutine test_zeeman_table_has_eight_entries()
+    ! get_zeeman_table() should return exactly 8 entries (one per band).
+    type(zeeman_entry) :: table(8)
+    integer :: n
+
+    table = get_zeeman_table()
+    n = size(table)
+    @assertEqual(8, n, message="Zeeman table has 8 entries")
+  end subroutine test_zeeman_table_has_eight_entries
+
+
+  @test
+  subroutine test_zeeman_table_covers_all_bands()
+    ! The 8 entries must cover band_index 0 through 7 exactly once each.
+    type(zeeman_entry) :: table(8)
+    logical :: found(0:7)
+    integer :: i, bi
+    logical :: bi_ok, already_found
+
+    table = get_zeeman_table()
+    found = .false.
+    do i = 1, 8
+      bi = table(i)%band_index
+      bi_ok = (bi >= 0 .and. bi <= 7)
+      @assertTrue(bi_ok, message="band_index in range 0..7")
+      already_found = found(bi)
+      @assertFalse(already_found, message="Each band_index appears exactly once")
+      found(bi) = .true.
+    end do
+    ! All bands covered
+    do i = 0, 7
+      @assertTrue(found(i), message="All 8 band indices covered")
+    end do
+  end subroutine test_zeeman_table_covers_all_bands
+
+
+  @test
+  subroutine test_zeeman_table_multipliers()
+    ! Verify g_multiplier values match compute_zeeman_vz coefficients.
+    ! From compute_zeeman_vz (magnetic_field.f90):
+    !   Band 0 (HH mJ=+3/2): -1.5,  Band 1 (LH mJ=+1/2): +0.5
+    !   Band 2 (LH mJ=-1/2): -0.5,  Band 3 (HH mJ=-3/2): +1.5
+    !   Band 4 (SO mJ=+1/2): -0.5,  Band 5 (SO mJ=-1/2): +0.5
+    !   Band 6 (CB mJ=-1/2): -1.0,  Band 7 (CB mJ=+1/2): +1.0
+    type(zeeman_entry) :: table(8)
+    real(kind=dp) :: expected(0:7)
+    integer :: i, bi
+    real(kind=dp) :: gm, ex
+
+    expected(0) = -1.5_dp
+    expected(1) =  0.5_dp
+    expected(2) = -0.5_dp
+    expected(3) =  1.5_dp
+    expected(4) = -0.5_dp
+    expected(5) =  0.5_dp
+    expected(6) = -1.0_dp
+    expected(7) =  1.0_dp
+
+    table = get_zeeman_table()
+    do i = 1, 8
+      bi = table(i)%band_index
+      gm = table(i)%g_multiplier
+      ex = expected(bi)
+      @assertEqual(ex, gm, tolerance=1.0e-14_dp)
+    end do
+  end subroutine test_zeeman_table_multipliers
+
+
+  @test
+  subroutine test_zeeman_table_matches_compute_zeeman_vz()
+    ! Cross-check: Vz(band) / (g_factor * mu_B * B_mag) must equal
+    ! g_multiplier(band) from the table for each band.
+    use magnetic_field, only: compute_zeeman_vz
+    type(zeeman_entry) :: table(8)
+    real(kind=dp) :: g_factor, B_mag, Vz(8), E0
+    real(kind=dp) :: ratio, expected_ratio
+    integer :: b, e, idx, band_bi
+
+    g_factor = 2.0_dp
+    B_mag = 3.0_dp
+    E0 = g_factor * mu_B * B_mag
+
+    call compute_zeeman_vz(g_factor, mu_B, B_mag, Vz)
+
+    table = get_zeeman_table()
+    do b = 1, 8
+      ! Find the table entry for this band (0-based index = b-1)
+      idx = -1
+      do e = 1, 8
+        band_bi = table(e)%band_index
+        if (band_bi == b - 1) then
+          idx = e
+          exit
+        end if
+      end do
+      @assertTrue(idx > 0, message="Found band in table")
+      ratio = Vz(b) / E0
+      expected_ratio = table(idx)%g_multiplier
+      @assertEqual(expected_ratio, ratio, tolerance=1.0e-14_dp)
+    end do
+  end subroutine test_zeeman_table_matches_compute_zeeman_vz
+
 end module test_strain_solver

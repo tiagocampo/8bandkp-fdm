@@ -663,7 +663,7 @@ python3 scripts/lecture_09_numerical.py
 
 ### Code-Output Anchors
 
-Running `bulk_gaas_fd_order.cfg` produces:
+Running `bulk_gaas_fd_order.toml` produces:
 - **k=0 eigenvalues**: identical across FD orders 2-8 (bulk is grid-independent)
 - **QW convergence rate**: matches theoretical FD order (slope on log-log plot)
 

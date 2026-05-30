@@ -1259,7 +1259,16 @@ contains
     if (.not. allocated(cfg%params)) return
     if (size(cfg%params) < 1) return
 
-    layer = max(1, (cfg%numLayers + 1) / 2)
+    ! Pick midpoint layer: QW uses num_layers (material count),
+    ! wire uses wire%num_regions (region count), bulk/landau use 1.
+    select case (trim(cfg%confinement))
+    case ('qw')
+      layer = max(1, (cfg%num_layers + 1) / 2)
+    case ('wire')
+      layer = max(1, (cfg%wire%num_regions + 1) / 2)
+    case default
+      layer = 1
+    end select
     if (layer <= size(cfg%params)) a_lat = cfg%params(layer)%a0
     if (a_lat > 0.0_dp) return
 

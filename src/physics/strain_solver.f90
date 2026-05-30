@@ -4,9 +4,9 @@ module strain_solver
   ! Strain solver for semiconductor heterostructures.
   !
   ! Supports two modes:
-  !   1. QW biaxial strain (confinement=1): simple algebraic calculation
+  !   1. QW biaxial strain (confinement='qw'): simple algebraic calculation
   !      using lattice mismatch and elastic constants.
-  !   2. Wire plane-strain PDE (confinement=2): solve Navier-Cauchy elasticity
+  !   2. Wire plane-strain PDE (confinement='wire'): solve Navier-Cauchy elasticity
   !      on 2D cross-section using MKL PARDISO.
   !
   ! After strain computation, apply Pikus-Bir deformation potentials to shift
@@ -14,7 +14,7 @@ module strain_solver
   ! ==============================================================================
 
   use definitions, only: dp, paramStruct, spatial_grid, strain_config, &
-    & grid_ngrid, SQR3, IU, bir_pikus_blocks, bp_scalar
+    & grid_ngrid, SQR3, IU, RQS2, SQR2, SQR3o2, bir_pikus_blocks, bp_scalar
   use linalg, only: pardiso_real
   use, intrinsic :: iso_c_binding, only: c_intptr_t
 
@@ -30,6 +30,52 @@ module strain_solver
   public :: bir_pikus_blocks_free
   public :: compute_bir_pikus_blocks
   public :: compute_bp_scalar
+  public :: strain_entry
+  public :: build_strain_table
+  public :: get_strain_table
+  public :: init_strain_cache
+  public :: zeeman_entry
+  public :: get_zeeman_table
+  public :: init_zeeman_cache
+
+  ! ------------------------------------------------------------------
+  ! Strain COO insertion table entry: describes one of the 32 block
+  ! patterns that map Bir-Pikus fields into the 8x8 band structure.
+  ! row_band/col_band are 0-based band offsets (0-7).
+  ! field_id selects which bp component to read:
+  !   1=delta_EHH, 2=delta_ELH, 3=delta_ESO, 4=delta_Ec,
+  !   5=S_eps, 6=R_eps, 7=QT2_eps
+  ! prefactor scales the value; use_conjg applies conjg() to the field.
+  ! ------------------------------------------------------------------
+  type :: strain_entry
+    integer               :: row_band, col_band  ! 0-based band offsets (0-7)
+    integer               :: field_id            ! 1=EHH,2=ELH,3=ESO,4=Ec,5=S,6=R,7=QT2
+    complex(kind=dp)      :: prefactor           ! complex scale (e.g. IU*RQS2)
+    logical               :: use_conjg           ! conjugate the field value?
+  end type strain_entry
+
+  ! Module-level cache for the strain table (32-entry compile-time constant)
+  logical, save :: strain_table_cached = .false.
+  type(strain_entry), save :: strain_table_cache(32)
+
+  ! ------------------------------------------------------------------
+  ! Zeeman diagonal table entry: describes the g_multiplier for one band.
+  ! band_index is 0-based (0-7). The Zeeman energy for band b is:
+  !   Vz(b) = g_factor * g_multiplier(b) * mu_B * B_mag
+  ! Coefficients from compute_zeeman_vz (magnetic_field.f90):
+  !   Band 0 (HH mJ=+3/2): -1.5,  Band 1 (LH mJ=+1/2): +0.5
+  !   Band 2 (LH mJ=-1/2): -0.5,  Band 3 (HH mJ=-3/2): +1.5
+  !   Band 4 (SO mJ=+1/2): -0.5,  Band 5 (SO mJ=-1/2): +0.5
+  !   Band 6 (CB mJ=-1/2): -1.0,  Band 7 (CB mJ=+1/2): +1.0
+  ! ------------------------------------------------------------------
+  type :: zeeman_entry
+    integer               :: band_index     ! 0-based band offset (0-7)
+    real(kind=dp)         :: g_multiplier   ! spin-dependent coefficient c_b
+  end type zeeman_entry
+
+  ! Module-level cache for the Zeeman table (8-entry compile-time constant)
+  logical, save :: zeeman_table_cached = .false.
+  type(zeeman_entry), save :: zeeman_table_cache(8)
 
   ! ------------------------------------------------------------------
   ! Strain tensor at each grid point.
@@ -46,6 +92,118 @@ module strain_solver
   end type strain_result
 
 contains
+
+  ! ==================================================================
+  ! Build the 32-entry strain insertion table.
+  !
+  ! Each entry describes how one band-block of the strain Hamiltonian
+  ! is constructed from the Bir-Pikus fields.  The table encodes all
+  ! diagonal shifts, S_eps, R_eps, and VB-SO coupling terms.
+  ! ==================================================================
+  function build_strain_table() result(table)
+    type(strain_entry) :: table(32)
+
+    ! --- Diagonal entries (1-8) ---
+    table( 1) = strain_entry(0, 0, 1, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+    table( 2) = strain_entry(1, 1, 2, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+    table( 3) = strain_entry(2, 2, 2, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+    table( 4) = strain_entry(3, 3, 1, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+    table( 5) = strain_entry(4, 4, 3, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+    table( 6) = strain_entry(5, 5, 3, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+    table( 7) = strain_entry(6, 6, 4, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+    table( 8) = strain_entry(7, 7, 4, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+
+    ! --- S_eps entries (9-12) ---
+    table( 9) = strain_entry(0, 1, 5, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
+    table(10) = strain_entry(1, 0, 5, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+    table(11) = strain_entry(2, 3, 5, cmplx(-1.0_dp, 0.0_dp, kind=dp), .true.)
+    table(12) = strain_entry(3, 2, 5, cmplx(-1.0_dp, 0.0_dp, kind=dp), .false.)
+
+    ! --- R_eps entries (13-16) ---
+    table(13) = strain_entry(0, 2, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
+    table(14) = strain_entry(2, 0, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+    table(15) = strain_entry(1, 3, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .true.)
+    table(16) = strain_entry(3, 1, 6, cmplx(1.0_dp, 0.0_dp, kind=dp), .false.)
+
+    ! --- VB-SO coupling entries (17-32) ---
+    table(17) = strain_entry(0, 4, 5, -IU * RQS2,   .true.)
+    table(18) = strain_entry(4, 0, 5,  IU * RQS2,   .false.)
+    table(19) = strain_entry(0, 5, 6,  IU * SQR2,   .true.)
+    table(20) = strain_entry(5, 0, 6, -IU * SQR2,   .false.)
+    table(21) = strain_entry(1, 4, 7,  IU * RQS2,   .false.)
+    table(22) = strain_entry(4, 1, 7, -IU * RQS2,   .false.)
+    table(23) = strain_entry(1, 5, 5, -IU * SQR3o2, .true.)
+    table(24) = strain_entry(5, 1, 5,  IU * SQR3o2, .false.)
+    table(25) = strain_entry(2, 4, 5,  IU * SQR3o2, .false.)
+    table(26) = strain_entry(4, 2, 5, -IU * SQR3o2, .true.)
+    table(27) = strain_entry(2, 5, 7,  IU * RQS2,   .false.)
+    table(28) = strain_entry(5, 2, 7, -IU * RQS2,   .false.)
+    table(29) = strain_entry(3, 4, 6, -IU * SQR2,   .false.)
+    table(30) = strain_entry(4, 3, 6,  IU * SQR2,   .true.)
+    table(31) = strain_entry(3, 5, 5,  IU * RQS2,   .false.)
+    table(32) = strain_entry(5, 3, 5, -IU * RQS2,   .true.)
+
+  end function build_strain_table
+
+  function get_strain_table() result(table)
+    type(strain_entry) :: table(32)
+    if (.not. strain_table_cached) then
+      strain_table_cache = build_strain_table()
+      strain_table_cached = .true.
+    end if
+    table = strain_table_cache
+  end function get_strain_table
+
+  ! ==================================================================
+  ! Build the 8-entry Zeeman diagonal table.
+  !
+  ! Each entry maps band_index to its g_multiplier coefficient c_b
+  ! such that the Zeeman energy for band b is:
+  !   Vz(b) = g_factor * c_b * mu_B * B_mag
+  !
+  ! Coefficients are g_J * m_J for each band in the Winkler basis
+  ! (must match compute_zeeman_vz in magnetic_field.f90).
+  ! ==================================================================
+  function build_zeeman_table() result(table)
+    type(zeeman_entry) :: table(8)
+
+    table(1) = zeeman_entry(0, -1.5_dp)  ! HH  (mJ = +3/2)
+    table(2) = zeeman_entry(1,  0.5_dp)  ! LH  (mJ = +1/2)
+    table(3) = zeeman_entry(2, -0.5_dp)  ! LH  (mJ = -1/2)
+    table(4) = zeeman_entry(3,  1.5_dp)  ! HH  (mJ = -3/2)
+    table(5) = zeeman_entry(4, -0.5_dp)  ! SO  (mJ = +1/2)
+    table(6) = zeeman_entry(5,  0.5_dp)  ! SO  (mJ = -1/2)
+    table(7) = zeeman_entry(6, -1.0_dp)  ! CB  (mJ = -1/2)
+    table(8) = zeeman_entry(7,  1.0_dp)  ! CB  (mJ = +1/2)
+
+  end function build_zeeman_table
+
+  function get_zeeman_table() result(table)
+    type(zeeman_entry) :: table(8)
+    if (.not. zeeman_table_cached) then
+      zeeman_table_cache = build_zeeman_table()
+      zeeman_table_cached = .true.
+    end if
+    table = zeeman_table_cache
+  end function get_zeeman_table
+
+  ! ==================================================================
+  ! Pre-initialize the strain table cache (thread-safety).
+  ! Call before OpenMP fork to avoid races on the SAVE cache.
+  ! ==================================================================
+  subroutine init_strain_cache()
+    type(strain_entry) :: dummy(32)
+    dummy = get_strain_table()
+  end subroutine init_strain_cache
+
+  ! ==================================================================
+  ! Pre-initialize the Zeeman table cache (thread-safety).
+  ! Call before OpenMP fork to avoid races on the SAVE cache.
+  ! ==================================================================
+  subroutine init_zeeman_cache()
+    type(zeeman_entry) :: dummy(8)
+    dummy = get_zeeman_table()
+  end subroutine init_zeeman_cache
 
   ! ==================================================================
   ! Top-level strain computation dispatcher.
@@ -111,7 +269,7 @@ contains
   end subroutine compute_strain
 
   ! ==================================================================
-  ! QW biaxial strain (confinement=1).
+  ! QW biaxial strain (confinement='qw').
   !
   ! For each layer with lattice constant a0, relative to reference a0_ref:
   !   eps_0 = (a0_ref - a0) / a0
@@ -167,7 +325,7 @@ contains
   end subroutine compute_strain_qw
 
   ! ==================================================================
-  ! Wire plane-strain PDE solver (confinement=2).
+  ! Wire plane-strain PDE solver (confinement='wire').
   !
   ! Solves the Navier-Cauchy elasticity equations on the 2D cross-section
   ! for displacements u_y, u_z given fixed axial strain eps_xx at each

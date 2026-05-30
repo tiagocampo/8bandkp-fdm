@@ -1,0 +1,46 @@
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "kz"
+max = 0.01
+nsteps = 2
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[wire]
+nx = 30
+ny = 30
+dx = 5.0
+dy = 5.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 150.0
+height = 150.0
+
+[[region]]
+material = "GaAs"
+inner = 40.0
+outer = 150.0
+
+[[region]]
+material = "InAs"
+inner = 0.0
+outer = 40.0
+
+
+[strain]
+reference = "GaAs"
+solver = "pardiso"
+piezoelectric = false
+
+[feast]
+emin = -1.5
+emax = 2.0
+m0 = -1

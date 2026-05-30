@@ -2,7 +2,7 @@
 title: "8-band verification ladder: validation hierarchy and physics insights"
 date: 2026-05-09
 category: best-practices
-module: hamiltonianConstructor
+module: hamiltonianConstructor, hamiltonian_blocks
 problem_type: best_practice
 component: testing_framework
 severity: low
@@ -114,7 +114,7 @@ it as a known model limitation turns confusion into a quantitative diagnostic.
 ## When to Apply
 
 - When adding a new material to `parameters.f90` — add it to Rungs 1 and 2
-- When modifying `hamiltonianConstructor.f90` — run all 4 rungs to isolate
+- When modifying `hamiltonianConstructor.f90` or `hamiltonian_blocks.f90` — run all 4 rungs to isolate
   which physics layer is affected
 - When debugging band structure discrepancies — check which rung fails first
 - When extending to new geometries — add a new rung that tests only the new

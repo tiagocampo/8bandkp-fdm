@@ -164,7 +164,7 @@ The upper limit $k_{\max}$ is set by `kpar_max`. If left at the default (0), the
 
 ### 7.4.4 Subband classification
 
-The eigenstates must be classified as conduction band (CB) or valence band (VB) to assign them to $n(z)$ or $p(z)$. The code does this at $k_\parallel = 0$ by sorting all eigenvalues in descending order. The top `numcb` eigenvalues are assigned to the CB, the rest to the VB. This classification is fixed across all $k_\parallel$ values within a single SC iteration.
+The eigenstates must be classified as conduction band (CB) or valence band (VB) to assign them to $n(z)$ or $p(z)$. The code does this at $k_\parallel = 0$ by sorting all eigenvalues in descending order. The top `num_cb` eigenvalues are assigned to the CB, the rest to the VB. This classification is fixed across all $k_\parallel$ values within a single SC iteration.
 
 ### 7.4.5 Fermi-Dirac distribution
 
@@ -365,36 +365,57 @@ This means `confinementInitialization` and `ZB8bandQW` are called identically wh
 
 **Physical setup.** We simulate a 300-Angstrom structure with a 100-Angstrom GaAs well clad by AlAs barriers. The GaAs well is n-doped at $N_D = 5 \times 10^{18}$ cm$^{-3}$. The Fermi level is found self-consistently by charge neutrality. Temperature is 300 K.
 
-**Config:** `tests/regression/configs/sc_gaas_alas_qw.cfg`
+**Config:** `tests/regression/configs/sc_gaas_alas_qw.toml`
 
-```
-waveVector: k0
-confinement:  1
-FDstep: 101
-FDorder: 2
-numLayers:  2
-material1: AlAs -150  150 0
-material2: GaAs -50  50 0
-numcb: 4     numvb: 8
-SC: 1
-max_iter: 50
-tolerance: 1.0e-6
-mixing_alpha: 0.3
-diis_history: 7
-temperature: 300.0
-fermi_mode: 0
-num_kpar: 41
-kpar_max: 0.2
-bc_type: DD
-doping1: 0.0 0.0
-doping2: 5.0e18 0.0
+```toml
+confinement = "qw"
+FDorder = 2
+fd_step = 101
+
+[wave_vector]
+mode = "k0"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "AlAs"
+z_min = -150
+z_max = 150
+
+[[material]]
+name = "GaAs"
+z_min = -50
+z_max = 50
+
+[sc]
+max_iterations = 50
+tolerance = 1.0e-6
+mixing_alpha = 0.3
+diis_history = 7
+temperature = 300.0
+fermi_mode = "charge_neutrality"
+num_kpar = 41
+kpar_max = 0.2
+bc_type = "DD"
+
+[[doping]]
+ND = 0.0
+NA = 0.0
+
+[[doping]]
+ND = 5.0e18
+NA = 0.0
 ```
 
 Key SC parameters:
 
 | Parameter | Value | Meaning |
 |---|---|---|
-| `fermi_mode` | 0 | Charge neutrality (bisection) |
+| `fermi_mode` | `"charge_neutrality"` | Charge neutrality (bisection) |
 | `mixing_alpha` | 0.3 | 30% linear mixing weight |
 | `diis_history` | 7 | DIIS with 7-iterate history |
 | `num_kpar` | 41 | 41 $k_\parallel$ points |
@@ -403,7 +424,7 @@ Key SC parameters:
 **Running:**
 
 ```bash
-cat tests/regression/configs/sc_gaas_alas_qw.cfg > input.cfg
+cp tests/regression/configs/sc_gaas_alas_qw.toml input.toml
 ./build/src/bandStructure
 ```
 
@@ -471,24 +492,44 @@ The peak density of $7.66 \times 10^{18}$ cm$^{-3}$ exceeds the nominal doping o
 
 **Physical setup.** The same 300-Angstrom structure, but now the AlAs barriers are doped at $N_D = 5 \times 10^{17}$ cm$^{-3}$ while the GaAs well is undoped. This is the modulation-doping geometry: donors in the barriers release electrons that fall into the undoped well, creating a high-mobility 2D electron gas separated from the ionized impurities. The Fermi level is determined by charge neutrality.
 
-**Config:** `tests/regression/configs/sc_mod_doped_gaas_algaas.cfg`
+**Config:** `tests/regression/configs/sc_mod_doped_gaas_algaas.toml`
 
-```
-numLayers:  3
-material1: AlAs -150 150 0
-material2: GaAs -50  50 0
-material3: AlAs -150 150 0
-SC: 1
-max_iter: 100
-mixing_alpha: 0.1
-diis_history: 10
-temperature: 300.0
-fermi_mode: 0
-num_kpar: 21
-kpar_max: 0.1
-doping1: 5.0e17 0.0
-doping2: 0.0   0.0
-doping3: 5.0e17 0.0
+```toml
+[[material]]
+name = "AlAs"
+z_min = -150
+z_max = 150
+
+[[material]]
+name = "GaAs"
+z_min = -50
+z_max = 50
+
+[[material]]
+name = "AlAs"
+z_min = -150
+z_max = 150
+
+[sc]
+max_iterations = 100
+mixing_alpha = 0.1
+diis_history = 10
+temperature = 300.0
+fermi_mode = "charge_neutrality"
+num_kpar = 21
+kpar_max = 0.1
+
+[[doping]]
+ND = 5.0e17
+NA = 0.0
+
+[[doping]]
+ND = 0.0
+NA = 0.0
+
+[[doping]]
+ND = 5.0e17
+NA = 0.0
 ```
 
 The key differences from Example 7.9.1: doping is in the barriers (not the well), the mixing parameter $\alpha$ is smaller (0.1 vs. 0.3), DIIS history is longer (10 vs. 7), and the $k_\parallel$ grid is coarser (21 vs. 41 points).
@@ -496,7 +537,7 @@ The key differences from Example 7.9.1: doping is in the barriers (not the well)
 **Running:**
 
 ```bash
-cat tests/regression/configs/sc_mod_doped_gaas_algaas.cfg > input.cfg
+cp tests/regression/configs/sc_mod_doped_gaas_algaas.toml input.toml
 ./build/src/bandStructure
 ```
 
@@ -591,27 +632,47 @@ The 1--2 meV spread among the three codes arises from differences in grid spacin
 
 **Physical setup.** The InAs/AlSb material system is a technically important narrow-gap heterostructure used in mid-infrared detectors and high-electron-mobility transistors. The band gap of InAs is approximately 0.36 eV (Winkler parameters), and the InAs/AlSb interface exhibits a type-II broken-gap alignment that complicates the subband structure. We simulate a 50-A InAsW quantum well clad by AlSbW barriers, with the well doped at $N_D = 5 \times 10^{17}$ cm$^{-3}$ at 77 K. The 8-band k.p treatment is essential here because the narrow gap produces strong band mixing and nonparabolicity.
 
-**Config:** `tests/regression/configs/sc_qw_inas_alsb.cfg`
+**Config:** `tests/regression/configs/sc_qw_inas_alsb.toml`
 
-```
-confinement:  1
-FDstep: 101
-FDorder: 2
-numLayers:  2
-material1: AlSbW -100 100 0
-material2: InAsW -25  25  0
-numcb: 4     numvb: 8
-SC: 1
-max_iter: 100
-mixing_alpha: 0.2
-diis_history: 5
-temperature: 77.0
-fermi_mode: 0
-num_kpar: 30
-kpar_max: 0.2
-bc_type: DD
-doping1: 0.0 0.0
-doping2: 5.0e17 0.0
+```toml
+confinement = "qw"
+FDorder = 2
+fd_step = 101
+
+[wave_vector]
+mode = "k0"
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "AlSbW"
+z_min = -100
+z_max = 100
+
+[[material]]
+name = "InAsW"
+z_min = -25
+z_max = 25
+
+[sc]
+max_iterations = 100
+mixing_alpha = 0.2
+diis_history = 5
+temperature = 77.0
+fermi_mode = "charge_neutrality"
+num_kpar = 30
+kpar_max = 0.2
+bc_type = "DD"
+
+[[doping]]
+ND = 0.0
+NA = 0.0
+
+[[doping]]
+ND = 5.0e17
+NA = 0.0
 ```
 
 Key differences from the GaAs/AlAs examples: Winkler parameters (the `W` suffix selects InAsW and AlSbW from the Winkler database with InSb EV reference), lower doping, and cryogenic temperature (77 K). The config uses the standard two-layer pattern (full-range barrier + central well) that avoids the last-layer-wins overwriting issue present in three-layer configs with overlapping ranges.
@@ -619,7 +680,7 @@ Key differences from the GaAs/AlAs examples: Winkler parameters (the `W` suffix 
 **Running:**
 
 ```bash
-cat tests/regression/configs/sc_qw_inas_alsb.cfg > input.cfg
+cp tests/regression/configs/sc_qw_inas_alsb.toml input.toml
 ./build/src/bandStructure
 ```
 
@@ -652,19 +713,36 @@ The narrow gap makes the InAs/AlSb system much more sensitive to the details of 
 
 ### 7.9.5 Delta-doped GaAs
 
-A single GaAs layer (200 Å) with a delta-doping plane at $z = 0$:
+A single GaAs layer (200 A) with a delta-doping plane at $z = 0$:
 
-```
-confinement:  1
-FDstep: 101
-numLayers:  1
-material1: GaAs -100 100
-SC: 1
-temperature: 300.0
-fermi_mode: 0
-num_kpar: 51
-kpar_max: 0.3
-delta1: 5.0 10.0 0.0
+```toml
+confinement = "qw"
+FDorder = 2
+fd_step = 101
+
+[wave_vector]
+mode = "k0"
+
+[bands]
+num_cb = 2
+num_vb = 4
+
+[[material]]
+name = "GaAs"
+z_min = -100
+z_max = 100
+
+[sc]
+temperature = 300.0
+fermi_mode = "charge_neutrality"
+num_kpar = 51
+kpar_max = 0.3
+
+[[doping]]
+type = "delta"
+NS = 5.0
+fwhm = 10.0
+pos = 0.0
 ```
 
 This places $N_{2D} = 5 \times 10^{11}$ cm$^{-2}$ donors in a 10 Å FWHM Gaussian at the center. The SC loop converges in ~20 iterations to a V-shaped potential well approximately 9 meV deep. Two subbands form within the notch, with the Fermi level pinned between the first and second subband.
@@ -804,7 +882,7 @@ python3 scripts/lecture_07_scsp.py
 
 ### Code-Output Anchors
 
-Running `sc_gaas_doped.cfg` produces:
+Running `sc_gaas_doped.toml` produces:
 - **SC loop convergence**: 21-25 iterations; DIIS faster than linear mixing
 - **Charge neutrality**: within 5% after convergence
 

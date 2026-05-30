@@ -366,7 +366,7 @@ def main():
 
     # Run bandStructure once in a temporary directory
     with tempfile.TemporaryDirectory() as work_dir:
-        output_dir = run_bandstructure("qw_gaas_algaas.cfg", work_dir)
+        output_dir = run_bandstructure("qw_gaas_algaas.toml", work_dir)
 
         # Verify key output files exist
         eigf_dir = output_dir

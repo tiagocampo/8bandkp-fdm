@@ -55,7 +55,7 @@ EXE_OPTICS = BUILD_DIR / "src" / "opticalProperties"
 CONFIG_DIR = REPO_ROOT / "tests" / "regression" / "configs"
 FIGURE_DIR = REPO_ROOT / "docs" / "figures"
 LECTURE_FIG_DIR = REPO_ROOT / "docs" / "lecture" / "figures"
-INPUT_CFG = REPO_ROOT / "input.cfg"
+INPUT_CFG = REPO_ROOT / "input.toml"
 
 # Derived-figure constants
 BOHR_MAGNETON_MEV_PER_T = 5.7883818060e-2
@@ -151,9 +151,9 @@ def run_executable(
     label: str = "",
     timeout: int = 300,
 ) -> subprocess.CompletedProcess:
-    """Copy config to input.cfg, run executable, return CompletedProcess."""
+    """Copy config to input.toml, run executable, return CompletedProcess."""
     # Copy config file
-    shutil.copy2(str(config_path), str(cwd / "input.cfg"))
+    shutil.copy2(str(config_path), str(cwd / "input.toml"))
     print(f"  [{label}] Running {exe.name} ...")
     t0 = time.time()
     result = subprocess.run(
@@ -2337,7 +2337,7 @@ def fig_convergence_fd_order(output_dir: Path) -> None:
         modified_text = "\n".join(modified_lines) + "\n"
 
         # Write temp config
-        tmp_cfg = REPO_ROOT / "input.cfg"
+        tmp_cfg = REPO_ROOT / "input.toml"
         tmp_cfg.write_text(modified_text)
 
         print(f"  [FDorder={order}] Running QW ...")
@@ -2743,7 +2743,7 @@ def fig_convergence_grid_spacing(output_dir: Path) -> None:
                 modified_lines.append(line)
         modified_text = "\n".join(modified_lines) + "\n"
 
-        tmp_cfg = REPO_ROOT / "input.cfg"
+        tmp_cfg = REPO_ROOT / "input.toml"
         tmp_cfg.write_text(modified_text)
 
         print(f"  [FDstep={step}] Running QW ...")
@@ -4122,7 +4122,7 @@ def _run_absorption_width_sweep(output_dir: Path, widths_aa: list) -> bool:
             "SpinResolved: F",
             "Exciton: F",
         ]
-        tmp = REPO_ROOT / "input.cfg"
+        tmp = REPO_ROOT / "input.toml"
         tmp.write_text("\n".join(lines) + "\n")
         result = subprocess.run(
             [str(EXE_OPTICS)], cwd=str(REPO_ROOT),
@@ -4377,7 +4377,7 @@ def _run_exciton_width(widths_aa: list) -> list:
             "Exciton: T",
             "ExcitonMethod: variational",
         ]
-        tmp = REPO_ROOT / "input.cfg"
+        tmp = REPO_ROOT / "input.toml"
         tmp.write_text("\n".join(lines) + "\n")
         result = subprocess.run(
             [str(EXE_BAND)], cwd=str(REPO_ROOT),
@@ -5387,7 +5387,7 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
             modified_lines.append(line)
     modified_text = "\n".join(modified_lines) + "\n"
 
-    # Write modified config to input.cfg
+    # Write modified config to input.toml
     INPUT_CFG.write_text(modified_text)
 
     print("  Running InAs/GaAs wire kz-sweep ...")
@@ -5683,7 +5683,7 @@ def fig_wire_gfactor_vs_size(output_dir: Path) -> None:
             "feast_emax: 6.0\n"
             f"feast_m0: {feast_m0}\n"
         )
-        tmp_cfg = REPO_ROOT / "input.cfg"
+        tmp_cfg = REPO_ROOT / "input.toml"
         tmp_cfg.write_text(cfg_text)
 
         print(f"  [wire {width}A, nx={nx}] Running gfactorCalculation ...")
@@ -5974,7 +5974,7 @@ def fig_qw_gfactor_vs_width(output_dir: Path) -> None:
             "whichBand: 0\n"
             "bandIdx: 1\n"
         )
-        tmp_cfg = REPO_ROOT / "input.cfg"
+        tmp_cfg = REPO_ROOT / "input.toml"
         tmp_cfg.write_text(cfg_text)
 
         print(f"  [QW L_w={well_width}A, hw={hw}] Running gfactorCalculation ...")
