@@ -145,7 +145,7 @@ where $|0\rangle$ is the target subband state and the sum runs over remote subba
 
 $$\langle n | \hat{O} | m \rangle = \sum_{i_x, i_y} F_n^*(i_x, i_y) \, \hat{O}[F_m](i_x, i_y)$$
 
-where $\hat{O}$ is the perturbation Hamiltonian in the appropriate direction. Note that the code uses a **bare dot product** (no $\Delta x \cdot \Delta y$ spatial integration weight), consistent with `sigmaElem_2d` and `pMatrixEleCalc_2d` using bare `zdotc` calls. The perturbation Hamiltonian $\partial H / \partial k_i$ is built by calling `ZB8bandGeneralized` with the appropriate `g` flag (`g1` for $x$, `g2` for $y$, `g3` for $z$), which uses the separate directional gradient operators `kpterms_2d(12:15)`.
+where $\hat{O}$ is the perturbation Hamiltonian in the appropriate direction. Note that the code uses a **bare dot product** (no $\Delta x \cdot \Delta y$ spatial integration weight), consistent with `sigmaElem_2d` and `pMatrixEleCalc_2d` using bare `zdotc` calls. The velocity operator is computed via the commutator-based `build_velocity_matrices` subroutine in `hamiltonianConstructor.f90`, which computes $v_\alpha = -i [r_\alpha, H]$ element-wise on the CSR Hamiltonian. For the $z$-direction, `ZB8bandGeneralized` with `g='g3'` is used.
 
 ### 1.9 Optical transitions in wire geometry
 
@@ -211,7 +211,7 @@ type spatial_grid
 end type spatial_grid
 ```
 
-The function `grid_ngrid(grid)` returns `nx * ny`. The `ghost_map` maps inactive cells (outside the wire) to their nearest active neighbor in each direction, enabling proper boundary treatment.
+The accessor `grid%npoints()` returns `nx * ny`. The legacy function `grid_ngrid(grid)` is a wrapper. The `ghost_map` maps inactive cells (outside the wire) to their nearest active neighbor in each direction, enabling proper boundary treatment.
 
 ### 2.3 Geometry initialization: `geometry.f90`
 

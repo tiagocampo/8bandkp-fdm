@@ -40,7 +40,7 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all tests (~106: 34 unit + 44 regression + 13 verification + 15 other)
+ctest --test-dir build                    # all tests (107: 34 unit + 44 regression + 6 verification + 7 star + 6 convergence + 1 strain + 1 coverage + 1 validation + misc)
 ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
@@ -56,7 +56,7 @@ OMP_NUM_THREADS=12 ctest --test-dir build -j4 --output-on-failure
 
 pFUnit installs as **uppercase `PFUNIT`** — use `-DPFUNIT_DIR=.../PFUNIT-<ver>/cmake`. Built from source: `git clone https://github.com/Goddard-Fortran-Ecosystem/pFUnit`.
 
-Regression tests use shell scripts + Python (`tests/regression/compare_output.py`) comparing numerical output against reference data. Python dependencies: PyYAML for coverage matrix tool; numpy for standard-star/verification scripts.
+Regression tests use shell scripts + Python (`tests/regression/compare_output.py`) comparing numerical output against reference data. Validation rejection tests (`tests/integration/test_validate_rejects_bad_configs.sh`) verify `error stop` branches via shell exit-code checks. Python dependencies: PyYAML for coverage matrix tool; numpy for standard-star/verification scripts.
 
 ## Running
 
@@ -126,7 +126,7 @@ tests/
 validation/   validation pipeline (12 tests: 6 cross-code against kdotpy + 6 analytical)
 cmake/        FindFFTW3.cmake
 build/        .o, .mod, executables (created by cmake)
-scripts/      lecture_*.py executable lecture-companion scripts (L00-L13) + generate_all_figures.py
+scripts/      lecture_*.py executable lecture-companion scripts (L00-L14) + generate_all_figures.py
 docs/solutions/  documented solutions to past problems (bugs, best practices, patterns), organized by category with YAML frontmatter (module, tags, problem_type)
 ```
 
@@ -198,11 +198,12 @@ Optional sections are enabled by presence -- no separate enable flags. G-factor 
 - Use `c_loc()` from `iso_c_binding` instead of non-standard `loc()`.
 - All modules use `private` default with explicit `public` exports. When adding new modules, use `private` default and enumerate `public ::` exports.
 - When adding new scalar `pure` functions, use `elemental pure` by default (F2008 requires both keywords; F2018+ implies pure).
-  - **Known exceptions:** `grid_ngrid` (`defs.f90:476`), `to_lower_ascii` (`input_parser.f90:17`) — upgrade when touching those functions
+  - **Known exceptions:** `grid_ngrid` (`defs.f90:978`), `to_lower_ascii` (`input_parser.f90:17`) — upgrade when touching those functions
 - Declaration ordering: variables must be declared before use in array dimension expressions.
 - No `goto` in new code — use named `do` loops with `exit` for early-return blocks.
+- Use `error stop` (not `stop 1`) for all fatal error exits. Include a descriptive message string. `stop 1` without message is deprecated across the codebase.
 - External BLAS/LAPACK/PARDISO declarations go through `linalg.f90` interfaces, not local `external ::`.
-- All types with allocatable components have finalizers (delegating to `*_free` routines where they exist, inlined where cross-module delegation isn't possible). Keep explicit `*_free` routines public for manual control.
+- All types with allocatable components have finalizers (delegating to `*_free` routines where they exist, inlined where cross-module delegation isn't possible). Keep explicit `*_free` routines public for manual control. Types with both manual `*_free` and finalizer use a `was_freed` flag for idempotent double-free protection: `*_free` returns immediately if already called.
 - `do concurrent` used on proven-independent loops: velocity matrix construction, optics finalization, kpterms diagonal init.
 - `csr_matrix` has type-bound `free()` and `clone_structure()` but components remain public for hot-path access.
 - `contiguous` attribute on all assumed-shape hot-path array arguments (not on optional or allocatable).
