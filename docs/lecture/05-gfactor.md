@@ -252,7 +252,7 @@ Key subroutines:
 
 The g-factor calculation is driven by program `gfactor`. The workflow is:
 
-1. **Read input** via `read_and_setup` (shared `input_parser` module).
+1. **Parse input** via `input_parser` module (TOML → `simulation_config`), then initialize simulation setup (`simulation_setup_init`).
 2. **Validate**: g-factor requires $k=0$ only (`[wave_vector] mode = "k0"`, `nsteps = 0`).
 3. **Build Hamiltonian** at $\mathbf{k} = 0$ and diagonalize fully:
    - Bulk/QW: dense LAPACK (`zheev`/`zheevd`)
