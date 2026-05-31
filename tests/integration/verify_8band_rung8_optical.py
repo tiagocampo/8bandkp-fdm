@@ -386,11 +386,10 @@ z_max = 20
         d_alpha = np.diff(absorptions)
         d_E = np.diff(energies)
         deriv = d_alpha / d_E
-        # Only look in the energy range near the expected transition.
-        # NOTE: The range 1.5..2.0 eV is specific to GaAs/AlGaAs (Eg~1.52 eV
-        # plus confinement). If extending to other materials (e.g. InAs with
-        # Eg~0.42 eV), compute the search window from material parameters.
-        search_mask = (energies[:-1] >= 1.5) & (energies[:-1] <= 2.0)
+        # Search for the steepest rise in a window around the computed
+        # transition energy.  A ±0.3 eV window captures the broadened edge
+        # while excluding higher-energy interband features.
+        search_mask = (energies[:-1] >= e_transition - 0.3) & (energies[:-1] <= e_transition + 0.3)
         deriv_search = deriv[search_mask]
         e_search = energies[:-1][search_mask]
         # Find the first local maximum in the derivative

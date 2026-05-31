@@ -40,7 +40,7 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all tests (107: 34 unit + 44 regression + 6 verification + 7 star + 6 convergence + 1 strain + 1 coverage + 1 validation + misc)
+ctest --test-dir build                    # all tests (111: 35 unit + 44 regression + 16 verification + 7 star + 6 convergence + 2 strain + 1 coverage + misc)
 ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only

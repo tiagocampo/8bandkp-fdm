@@ -115,6 +115,37 @@ contains
   end subroutine build_bulk_velocity_matrix
 
   ! ------------------------------------------------------------------
+  ! Diagonalize the bulk 8x8 Hamiltonian at a given wavevector.
+  !
+  ! Arguments:
+  !   wv      -- wavevector at which to build H
+  !   params  -- material parameters (size 1)
+  !   evals   -- output: 8 eigenvalues in ascending order
+  ! ------------------------------------------------------------------
+  subroutine diagonalize_bulk_at_k(wv, params, evals)
+    type(wavevector), intent(in)  :: wv
+    type(paramStruct), intent(in) :: params(1)
+    real(kind=dp), intent(out)    :: evals(8)
+
+    complex(kind=dp) :: HT(8, 8)
+    complex(kind=dp), allocatable :: work(:)
+    real(kind=dp), allocatable :: rwork(:)
+    integer, allocatable :: iwork(:)
+    integer :: lwork, lrwork, liwork, info
+
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandBulk(HT, wv, params)
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('N', 'U', 8, HT, 8, evals, work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', 8, HT, 8, evals, work, lwork, rwork, lrwork, &
+      iwork, liwork, info)
+    deallocate(work, rwork, iwork)
+  end subroutine diagonalize_bulk_at_k
+
+  ! ------------------------------------------------------------------
   ! Compute band curvature d2E_n/dk2 using finite differences on
   ! eigenvalues: d2E/dk2 = (E(+d) - 2E(0) + E(-d)) / d^2
   !
@@ -131,60 +162,30 @@ contains
 
     real(kind=dp), parameter :: delta = 1.0e-4_dp
 
-    complex(kind=dp) :: HT(8, 8)
     type(wavevector) :: wv
     real(kind=dp) :: evals_zero(8), evals_plus(8), evals_minus(8)
-    complex(kind=dp), allocatable :: work(:)
-    real(kind=dp), allocatable :: rwork(:)
-    integer, allocatable :: iwork(:)
-    integer :: lwork, lrwork, liwork, info
 
     ! Diagonalize at k=0
     wv%kx = 0.0_dp; wv%ky = 0.0_dp; wv%kz = 0.0_dp
-    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    call ZB8bandBulk(HT, wv, params)
-    allocate(work(1), rwork(1), iwork(1))
-    call zheevd('N', 'U', 8, HT, 8, evals_zero, work, -1, rwork, -1, iwork, -1, info)
-    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
-    deallocate(work, rwork, iwork)
-    allocate(work(lwork), rwork(lrwork), iwork(liwork))
-    call zheevd('N', 'U', 8, HT, 8, evals_zero, work, lwork, rwork, lrwork, &
-      iwork, liwork, info)
-    deallocate(work, rwork, iwork)
+    call diagonalize_bulk_at_k(wv, params, evals_zero)
 
     ! Diagonalize at k=+d
+    wv%kx = 0.0_dp; wv%ky = 0.0_dp; wv%kz = 0.0_dp
     select case(direction)
     case(1); wv%kx = delta
     case(2); wv%ky = delta
     case(3); wv%kz = delta
     end select
-    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    call ZB8bandBulk(HT, wv, params)
-    allocate(work(1), rwork(1), iwork(1))
-    call zheevd('N', 'U', 8, HT, 8, evals_plus, work, -1, rwork, -1, iwork, -1, info)
-    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
-    deallocate(work, rwork, iwork)
-    allocate(work(lwork), rwork(lrwork), iwork(liwork))
-    call zheevd('N', 'U', 8, HT, 8, evals_plus, work, lwork, rwork, lrwork, &
-      iwork, liwork, info)
-    deallocate(work, rwork, iwork)
+    call diagonalize_bulk_at_k(wv, params, evals_plus)
 
     ! Diagonalize at k=-d
+    wv%kx = 0.0_dp; wv%ky = 0.0_dp; wv%kz = 0.0_dp
     select case(direction)
     case(1); wv%kx = -delta
     case(2); wv%ky = -delta
     case(3); wv%kz = -delta
     end select
-    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    call ZB8bandBulk(HT, wv, params)
-    allocate(work(1), rwork(1), iwork(1))
-    call zheevd('N', 'U', 8, HT, 8, evals_minus, work, -1, rwork, -1, iwork, -1, info)
-    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
-    deallocate(work, rwork, iwork)
-    allocate(work(lwork), rwork(lrwork), iwork(liwork))
-    call zheevd('N', 'U', 8, HT, 8, evals_minus, work, lwork, rwork, lrwork, &
-      iwork, liwork, info)
-    deallocate(work, rwork, iwork)
+    call diagonalize_bulk_at_k(wv, params, evals_minus)
 
     ! Central finite difference
     curvature = (evals_plus(band_idx) - 2.0_dp * evals_zero(band_idx) + &
