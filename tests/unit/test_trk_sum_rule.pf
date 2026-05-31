@@ -1,0 +1,509 @@
+module test_trk_sum_rule
+  use funit
+  use definitions
+  use parameters
+  use hamiltonianConstructor
+  use hamiltonian_wire, only: build_velocity_matrices
+  use confinement_init, only: confinementInitialization_raw, confinementInitialization_2d
+  use sparse_matrices
+  use geometry, only: grid_init_rect, grid_free, grid_build_coords
+  use hamiltonian_wire, only: ZB8bandGeneralized
+  use utils, only: dnscsr_z_mkl
+  use linalg, only: zheevd
+  use csr_test_helpers, only: csr_to_dense
+  use trk_helpers
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! Helper: diagonalize 8x8 bulk Hamiltonian at k=0.
+  ! Returns eigenvalues (ascending), eigenvectors as columns, and
+  ! the original Hamiltonian H(0) (zheevd overwrites its input).
+  ! ==================================================================
+  subroutine diag_bulk_8x8(params, H0, evals, evecs, info)
+    type(paramStruct), intent(in) :: params(1)
+    complex(kind=dp), intent(out) :: H0(8, 8)
+    real(kind=dp), intent(out) :: evals(8)
+    complex(kind=dp), intent(out) :: evecs(8, 8)
+    integer, intent(out) :: info
+
+    type(wavevector) :: wv
+    complex(kind=dp), allocatable :: work(:)
+    real(kind=dp), allocatable :: rwork(:)
+    integer, allocatable :: iwork(:)
+    integer :: lwork, lrwork, liwork
+
+    ! Build H at k=0
+    wv%kx = 0.0_dp; wv%ky = 0.0_dp; wv%kz = 0.0_dp
+    H0 = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandBulk(H0, wv, params)
+
+    ! Copy for diagonalization (zheevd destroys input)
+    evecs = H0
+
+    ! Workspace query
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('V', 'U', 8, evecs, 8, evals, work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1)))
+    lrwork = int(rwork(1))
+    liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+
+    ! Diagonalize
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('V', 'U', 8, evecs, 8, evals, work, lwork, rwork, lrwork, &
+      iwork, liwork, info)
+    deallocate(work, rwork, iwork)
+  end subroutine diag_bulk_8x8
+
+  ! ==================================================================
+  ! Helper: compute psi^H * M * psi for 8x8 matrix M and eigenvector
+  ! state_idx.  Returns real part.
+  ! ==================================================================
+  function matrix_expectation(M, evecs, state_idx) result(val)
+    complex(kind=dp), intent(in) :: M(8, 8)
+    complex(kind=dp), intent(in) :: evecs(8, 8)
+    integer, intent(in) :: state_idx
+    real(kind=dp) :: val
+
+    complex(kind=dp) :: tmp(8), dot
+    integer :: i
+
+    do i = 1, 8
+      tmp(i) = sum(M(i, :) * evecs(:, state_idx))
+    end do
+    dot = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, 8
+      dot = dot + conjg(evecs(i, state_idx)) * tmp(i)
+    end do
+    val = real(dot, kind=dp)
+  end function matrix_expectation
+
+  ! ==================================================================
+  ! Test: GaAs CB, kx direction
+  !
+  ! Verify the k.p effective mass sum rule (2nd-order perturbation):
+  !   (1/2) d2E_n/dk2 = (1/2) <n|d2H/dk2|n> + sum_{m!=n} |<m|v|n>|^2/(E_n-E_m)
+  !
+  ! LHS: band curvature from finite-difference on eigenvalues
+  ! RHS: direct term + sum-over-states term
+  !
+  ! CB = highest eigenvalue = index 8 (zheevd ascending order for GaAs)
+  ! ==================================================================
+
+  @test
+  subroutine test_trk_gaas_cb_kx()
+    character(len=255) :: material(1)
+    type(paramStruct) :: params(1)
+    complex(kind=dp) :: H0(8, 8), evecs(8, 8)
+    real(kind=dp) :: evals(8)
+    complex(kind=dp) :: vel(8, 8), d2Hdk2(8, 8)
+    real(kind=dp) :: band_curv, direct_term, trk_sum
+    real(kind=dp) :: lhs, rhs, rel_err
+    integer :: info
+
+    material(1) = "GaAs"
+    call paramDatabase(material, 1, params)
+    call diag_bulk_8x8(params, H0, evals, evecs, info)
+    @assertTrue(info == 0, message="GaAs diagonalization succeeded")
+
+    ! LHS: band curvature / 2
+    call compute_band_curvature_bulk(params, 1, 8, band_curv)
+    lhs = 0.5_dp * band_curv
+
+    ! RHS: direct term + sum-over-states
+    call compute_double_commutator_bulk(d2Hdk2, params, direction=1)
+    direct_term = 0.5_dp * matrix_expectation(d2Hdk2, evecs, 8)
+
+    call build_bulk_velocity_matrix(vel, params, direction=1)
+    call compute_trk_sum_explicit(evals, evecs, vel, 8, trk_sum)
+
+    rhs = direct_term + trk_sum
+
+    rel_err = abs(lhs - rhs) / max(abs(lhs), abs(rhs), 1.0e-15_dp)
+    @assertTrue(rel_err < 1.0e-5_dp, message="GaAs CB effective mass sum rule kx")
+  end subroutine test_trk_gaas_cb_kx
+
+  ! ==================================================================
+  ! Test: GaAs HH, kx direction
+  ! HH = lowest eigenvalue = index 1
+  ! ==================================================================
+
+  @test
+  subroutine test_trk_gaas_hh_kx()
+    character(len=255) :: material(1)
+    type(paramStruct) :: params(1)
+    complex(kind=dp) :: H0(8, 8), evecs(8, 8)
+    real(kind=dp) :: evals(8)
+    complex(kind=dp) :: vel(8, 8), d2Hdk2(8, 8)
+    real(kind=dp) :: band_curv, direct_term, trk_sum
+    real(kind=dp) :: lhs, rhs, rel_err
+    integer :: info
+
+    material(1) = "GaAs"
+    call paramDatabase(material, 1, params)
+    call diag_bulk_8x8(params, H0, evals, evecs, info)
+    @assertTrue(info == 0, message="GaAs diagonalization succeeded")
+
+    call compute_band_curvature_bulk(params, 1, 1, band_curv)
+    lhs = 0.5_dp * band_curv
+
+    call compute_double_commutator_bulk(d2Hdk2, params, direction=1)
+    direct_term = 0.5_dp * matrix_expectation(d2Hdk2, evecs, 1)
+
+    call build_bulk_velocity_matrix(vel, params, direction=1)
+    call compute_trk_sum_explicit(evals, evecs, vel, 1, trk_sum)
+
+    rhs = direct_term + trk_sum
+
+    rel_err = abs(lhs - rhs) / max(abs(lhs), abs(rhs), 1.0e-15_dp)
+    @assertTrue(rel_err < 1.0e-5_dp, message="GaAs HH effective mass sum rule kx")
+  end subroutine test_trk_gaas_hh_kx
+
+  ! ==================================================================
+  ! Test: GaAs CB cubic symmetry
+  ! The effective mass should be isotropic for cubic materials.
+  ! ==================================================================
+
+  @test
+  subroutine test_trk_gaas_cb_cubic_symmetry()
+    character(len=255) :: material(1)
+    type(paramStruct) :: params(1)
+    real(kind=dp) :: curvatures(3)
+    real(kind=dp) :: spread
+    integer :: dir
+
+    material(1) = "GaAs"
+    call paramDatabase(material, 1, params)
+
+    do dir = 1, 3
+      call compute_band_curvature_bulk(params, dir, 8, curvatures(dir))
+    end do
+
+    spread = maxval(curvatures) - minval(curvatures)
+    @assertTrue(spread < 1.0e-5_dp, message="GaAs CB band curvature isotropic")
+  end subroutine test_trk_gaas_cb_cubic_symmetry
+
+  ! ==================================================================
+  ! Test: InAs CB, kx direction
+  ! ==================================================================
+
+  @test
+  subroutine test_trk_inas_cb_kx()
+    character(len=255) :: material(1)
+    type(paramStruct) :: params(1)
+    complex(kind=dp) :: H0(8, 8), evecs(8, 8)
+    real(kind=dp) :: evals(8)
+    complex(kind=dp) :: vel(8, 8), d2Hdk2(8, 8)
+    real(kind=dp) :: band_curv, direct_term, trk_sum
+    real(kind=dp) :: lhs, rhs, rel_err
+    integer :: info
+
+    material(1) = "InAs"
+    call paramDatabase(material, 1, params)
+    call diag_bulk_8x8(params, H0, evals, evecs, info)
+    @assertTrue(info == 0, message="InAs diagonalization succeeded")
+
+    call compute_band_curvature_bulk(params, 1, 8, band_curv)
+    lhs = 0.5_dp * band_curv
+
+    call compute_double_commutator_bulk(d2Hdk2, params, direction=1)
+    direct_term = 0.5_dp * matrix_expectation(d2Hdk2, evecs, 8)
+
+    call build_bulk_velocity_matrix(vel, params, direction=1)
+    call compute_trk_sum_explicit(evals, evecs, vel, 8, trk_sum)
+
+    rhs = direct_term + trk_sum
+
+    rel_err = abs(lhs - rhs) / max(abs(lhs), abs(rhs), 1.0e-15_dp)
+    @assertTrue(rel_err < 1.0e-5_dp, message="InAs CB effective mass sum rule kx")
+  end subroutine test_trk_inas_cb_kx
+
+  ! ==================================================================
+  ! Test: InAs HH, kx direction
+  ! ==================================================================
+
+  @test
+  subroutine test_trk_inas_hh_kx()
+    character(len=255) :: material(1)
+    type(paramStruct) :: params(1)
+    complex(kind=dp) :: H0(8, 8), evecs(8, 8)
+    real(kind=dp) :: evals(8)
+    complex(kind=dp) :: vel(8, 8), d2Hdk2(8, 8)
+    real(kind=dp) :: band_curv, direct_term, trk_sum
+    real(kind=dp) :: lhs, rhs, rel_err
+    integer :: info
+
+    material(1) = "InAs"
+    call paramDatabase(material, 1, params)
+    call diag_bulk_8x8(params, H0, evals, evecs, info)
+    @assertTrue(info == 0, message="InAs diagonalization succeeded")
+
+    call compute_band_curvature_bulk(params, 1, 1, band_curv)
+    lhs = 0.5_dp * band_curv
+
+    call compute_double_commutator_bulk(d2Hdk2, params, direction=1)
+    direct_term = 0.5_dp * matrix_expectation(d2Hdk2, evecs, 1)
+
+    call build_bulk_velocity_matrix(vel, params, direction=1)
+    call compute_trk_sum_explicit(evals, evecs, vel, 1, trk_sum)
+
+    rhs = direct_term + trk_sum
+
+    rel_err = abs(lhs - rhs) / max(abs(lhs), abs(rhs), 1.0e-15_dp)
+    @assertTrue(rel_err < 1.0e-5_dp, message="InAs HH effective mass sum rule kx")
+  end subroutine test_trk_inas_hh_kx
+
+  ! ==================================================================
+  ! QW TRK sum rule test: Al30Ga70As/GaAs/Al30Ga70As QW (51 grid pts)
+  !
+  ! Verifies the TRK sum rule for the QW z-velocity:
+  !   LHS: sum_{m!=n} |<m|v_z|n>|^2 / (E_n - E_m)  (explicit SOS)
+  !   RHS: 1/2 * <n| -[z,[z,H]] |n>                   (double commutator)
+  !
+  ! These should be equal: TRK sum = double commutator / 2.
+  !
+  ! CB1 = highest eigenvalue for GaAs-based QW = index matSize.
+  ! ==================================================================
+
+  @test
+  subroutine test_trk_qw_cb1_z()
+    integer, parameter :: ngrid = 51
+    real(kind=dp), parameter :: dz_val = 2.0_dp
+    integer, parameter :: nlayers = 3
+
+    integer :: matSize, nzmax, info, lwork, lrwork, liwork
+    integer :: cb1_idx, it
+
+    real(kind=dp) :: z(ngrid)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:), work(:), evecs(:,:)
+    real(kind=dp), allocatable :: evals(:), rwork(:)
+    integer, allocatable :: iwork(:)
+
+    type(csr_matrix) :: H_csr, vel(3)
+    type(spatial_grid) :: grid
+
+    real(kind=dp) :: trk_sum, dc_value, rel_err
+
+    ! ---- Setup QW grid and confinement ----
+    do it = 1, ngrid
+      z(it) = -50.0_dp + real(it - 1, kind=dp) * dz_val
+    end do
+
+    int_start_pos(1) = 1;   int_end_pos(1) = 15
+    int_start_pos(2) = 16;  int_end_pos(2) = 36
+    int_start_pos(3) = 37;  int_end_pos(3) = 51
+
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    material(3) = "Al30Ga70As"
+
+    call paramDatabase(material, nlayers, params)
+
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    matSize = ngrid * 8
+
+    ! ---- Build dense QW Hamiltonian at k=0 ----
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+
+    ! ---- Diagonalize ----
+    allocate(evals(matSize), evecs(matSize, matSize))
+
+    evecs = HT
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('V', 'U', matSize, evecs, matSize, evals, work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1)))
+    lrwork = int(rwork(1))
+    liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('V', 'U', matSize, evecs, matSize, evals, work, lwork, rwork, lrwork, &
+      iwork, liwork, info)
+    @assertTrue(info == 0, message="QW diagonalization succeeded")
+    deallocate(work, rwork, iwork)
+
+    ! ---- Convert dense H to CSR ----
+    nzmax = matSize * matSize
+    call dnscsr_z_mkl(nzmax, matSize, HT, H_csr)
+
+    ! ---- Setup 1D spatial grid for velocity builder ----
+    ! Manual construction: only ndim, nx, ny, dy, z(:) are set.
+    ! build_velocity_matrices_1d reads grid%ny and grid%z; npoints()
+    ! returns nx*ny = 1*ngrid = ngrid (correct). compute_double_commutator_csr
+    ! reads grid%z via direction='z'. If the grid API evolves to require
+    ! additional fields (e.g. material_id, coords), use grid_init_rect instead.
+    grid%ndim = 1
+    grid%nx = 1
+    grid%ny = ngrid
+    grid%dx = 0.0_dp
+    grid%dy = dz_val
+    allocate(grid%z(ngrid))
+    grid%z = z
+
+    ! ---- Build z-velocity via commutator ----
+    call build_velocity_matrices(H_csr, grid, vel)
+
+    ! CB1 = highest eigenvalue (index matSize for ascending zheevd)
+    cb1_idx = matSize
+
+    ! ---- Compute TRK sum-over-states (LHS) ----
+    call compute_trk_sum_explicit_csr(evals, evecs, vel(3), cb1_idx, trk_sum)
+
+    ! ---- Compute double commutator (RHS) ----
+    call compute_double_commutator_csr(H_csr, grid, evecs(:, cb1_idx), 'z', dc_value)
+
+    ! ---- Assert LHS = RHS ----
+    ! trk_sum should equal dc_value (both compute the same quantity)
+    rel_err = abs(trk_sum - dc_value) / max(abs(dc_value), 1.0e-15_dp)
+    @assertTrue(rel_err < 1.0e-6_dp, message="QW CB1 TRK sum rule z-direction")
+
+    ! ---- Cleanup ----
+    deallocate(HT, evals, evecs, profile, kpterms)
+    call csr_free(H_csr)
+    do it = 1, 3
+      call csr_free(vel(it))
+    end do
+    if (allocated(grid%z)) deallocate(grid%z)
+  end subroutine test_trk_qw_cb1_z
+
+  ! ==================================================================
+  ! Wire TRK sum rule test: uniform GaAs wire (10x10 grid, 5A spacing)
+  !
+  ! Verifies the TRK sum rule for the wire x and y velocities:
+  !   LHS: sum_{m!=n} |<m|v_alpha|n>|^2 / (E_n - E_m)
+  !   RHS: 1/2 * <n| -[r_alpha,[r_alpha,H]] |n>
+  !
+  ! CB1 = the highest eigenvalue (full diagonalization with zheevd).
+  !
+  ! For a uniform rectangular wire at kz=0, x and y directions should
+  ! give the same result by symmetry (square cross-section).
+  ! ==================================================================
+
+  @test
+  subroutine test_trk_wire_cb1_xy()
+    integer, parameter :: nx = 10, ny = 10
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+
+    integer :: ngrid, ntot, ij, info, lwork, lrwork, liwork, cb1_idx
+
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_csr, vel_x, vel_y
+    type(simulation_config) :: cfg
+    integer :: mat2d(nx, ny)
+
+    complex(kind=dp), allocatable :: Hdense(:,:), evecs(:,:), work(:)
+    real(kind=dp), allocatable :: evals(:), rwork(:)
+    integer, allocatable :: iwork(:)
+
+    real(kind=dp) :: trk_sum_x, trk_sum_y, dc_x, dc_y
+    real(kind=dp) :: rel_err_x, rel_err_y
+
+    ngrid = nx * ny
+    ntot = 8 * ngrid
+
+    mat2d = 1  ! single material (GaAs)
+
+    ! ---- Build grid ----
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    call grid_build_coords(grid)
+
+    ! ---- Setup materials ----
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    ! ---- Build kpterms_2d ----
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    ! ---- Build wire Hamiltonian at kz=0 ----
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+
+    call ZB8bandGeneralized(H_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+
+    @assertEqual(ntot, H_csr%nrows, message="Wire H nrows = 8*N")
+    @assertEqual(ntot, H_csr%ncols, message="Wire H ncols = 8*N")
+
+    ! ---- Convert CSR to dense for diagonalization ----
+    allocate(Hdense(ntot, ntot))
+    call csr_to_dense(H_csr, Hdense)
+
+    ! ---- Diagonalize ----
+    allocate(evals(ntot), evecs(ntot, ntot))
+    evecs = Hdense
+
+    allocate(work(1), rwork(1), iwork(1))
+    call zheevd('V', 'U', ntot, evecs, ntot, evals, work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1)))
+    lrwork = int(rwork(1))
+    liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('V', 'U', ntot, evecs, ntot, evals, work, lwork, rwork, lrwork, &
+      iwork, liwork, info)
+    @assertTrue(info == 0, message="Wire diagonalization succeeded")
+    deallocate(work, rwork, iwork)
+    deallocate(Hdense)
+
+    ! ---- Build transverse velocity matrices ----
+    call build_velocity_matrices(H_csr, grid, vel_x, vel_y)
+
+    ! CB1 = highest eigenvalue (index ntot for ascending zheevd)
+    cb1_idx = ntot
+
+    ! ---- Compute TRK sum for x-direction ----
+    call compute_trk_sum_explicit_csr(evals, evecs, vel_x, cb1_idx, trk_sum_x)
+
+    ! ---- Compute double commutator for x-direction ----
+    call compute_double_commutator_csr(H_csr, grid, evecs(:, cb1_idx), 'x', dc_x)
+
+    ! ---- Assert x-direction ----
+    rel_err_x = abs(trk_sum_x - dc_x) / max(abs(dc_x), 1.0e-15_dp)
+    @assertTrue(rel_err_x < 1.0e-6_dp, message="Wire CB1 TRK sum rule x-direction")
+
+    ! ---- Compute TRK sum for y-direction ----
+    call compute_trk_sum_explicit_csr(evals, evecs, vel_y, cb1_idx, trk_sum_y)
+
+    ! ---- Compute double commutator for y-direction ----
+    call compute_double_commutator_csr(H_csr, grid, evecs(:, cb1_idx), 'y', dc_y)
+
+    ! ---- Assert y-direction ----
+    rel_err_y = abs(trk_sum_y - dc_y) / max(abs(dc_y), 1.0e-15_dp)
+    @assertTrue(rel_err_y < 1.0e-6_dp, message="Wire CB1 TRK sum rule y-direction")
+
+    ! ---- Cleanup ----
+    call csr_free(H_csr)
+    call csr_free(vel_x)
+    call csr_free(vel_y)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    deallocate(evals, evecs)
+    call grid_free(grid)
+  end subroutine test_trk_wire_cb1_xy
+
+end module test_trk_sum_rule

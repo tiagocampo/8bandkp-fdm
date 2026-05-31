@@ -41,7 +41,7 @@ def run_gfactor(material, build_dir):
     """Run gfactorCalculation executable and parse g_z."""
     exe = os.path.join(build_dir, "src", "gfactorCalculation")
     if not os.path.isfile(exe):
-        return None
+        raise RuntimeError(f"gfactorCalculation executable not found at {exe}")
 
     workdir = tempfile.mkdtemp(prefix="gfactor_")
     try:
