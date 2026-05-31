@@ -105,7 +105,7 @@ S6_K0_TEMPLATE = (
     "z_max = 50\n"
     "\n"
     "[strain]\n"
-    "substrate_value = 5.6533\n"
+    "strain_substrate = 5.6533\n"
 )
 
 

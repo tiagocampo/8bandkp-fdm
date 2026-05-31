@@ -182,25 +182,19 @@ def test_r10b_hh_lh_splitting(evals_strained, bp):
     """
     print("  [R10b] HH-LH splitting vs Bir-Pikus prediction")
 
-    # In wire mode, eigenvalues are sorted ascending.
-    # VB bands: indices 0..(num_vb-1) = 0..7
-    # The HH states are the highest VB (indices ~6,7), LH are next (~4,5)
-    # Identify HH and LH by the strained ordering: HH above LH under compression.
-    #
-    # NOTE: This index-based identification assumes InAs/GaAs under compressive
-    # strain where HH-LH splitting is large enough to prevent mixing with SO.
-    # For systems with small HH-LH splitting or different strain regimes, a
-    # more robust approach would identify bands by eigenvector overlap with
-    # strain-free character.
-    vb_evals = evals_strained[:8]
+    # FEAST returns eigenvalues sorted ascending (lowest first).
+    # Taking evals_strained[:8] would pick the 8 DEEPEST VB states (near -1.5 eV),
+    # not the top VB states. Instead, select the top 8 VB eigenvalues: the 8
+    # largest negative eigenvalues (closest to zero from below), sorted descending.
+    # Under compressive strain, HH shifts above LH, so:
+    #   vb_evals[0] = highest VB state (HH top)
+    #   vb_evals[1] = next VB state (LH top)
+    #   vb_evals[2..3] = second LH pair, vb_evals[4..7] = SO + deeper states
+    vb_evals = sorted([e for e in evals_strained if e < 0], reverse=True)[:8]
 
-    # HH ground state: highest VB eigenvalue (index 7)
-    e_hh = vb_evals[-1]
-    # LH ground state: we use the 5th VB eigenvalue (index 5) as LH
-    # In 8-band, bands 0-1 = SO-like, 2-3 = LH-like, 4-5 = LH-like, 6-7 = HH-like
-    # Under compressive strain HH > LH, so the top 2 are HH
-    # The splitting of interest is between the highest HH and highest LH
-    e_lh = vb_evals[5]  # upper LH pair
+    # HH-LH splitting = energy difference between top HH and top LH
+    e_hh = vb_evals[0]
+    e_lh = vb_evals[1]
 
     splitting = e_hh - e_lh
     expected_splitting = bp["HH_LH_splitting"]

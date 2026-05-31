@@ -774,7 +774,7 @@ contains
       ! pFUnit @assertTrue with message
       block
         character(len=256) :: msg
-        write(msg, '(A,A,A,ES10.3,A,ES10.3,A,I2,A,A,A,A,A,I0,A,I0)') &
+        write(msg, '(A,A,A,ES10.3,A,ES10.3,A,I2,A,A,A,I2,A,A,A,I0,A,I0,A)') &
           trim(label), ": max|H-H^+| = ", &
           "exceeds tol. ", max_err, " > ", tol, &
           ". Worst block: (", worst_bi, "=", trim(band_names(worst_bi)), &

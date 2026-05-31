@@ -221,6 +221,7 @@ contains
     trk_sum = 0.0_dp
 
     do m = 1, 8
+      if (m == state_idx) cycle                     ! skip self-term
       if (abs(evals(m) - E0) < 1.0e-10_dp) cycle  ! skip degenerate states
       ! <m|v|state_idx> = sum_k evecs(k,m)^* * sum_j vel(k,j) * evecs(j,state_idx)
       mel = cmplx(0.0_dp, 0.0_dp, kind=dp)

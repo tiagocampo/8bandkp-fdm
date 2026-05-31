@@ -33,6 +33,13 @@ except ImportError:
     print("FAIL: numpy is required (pip install numpy)")
     sys.exit(1)
 
+try:
+    import star_helpers
+except ImportError:
+    # When run from repo root, add tests/integration to path
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+    import star_helpers
+
 
 # ---------------------------------------------------------------------------
 # Physical constants and GaAs parameters (Vurgaftman 2001, parameters.f90)
@@ -145,8 +152,8 @@ def check_r81_kane_self_consistency():
     inv_mstar = 1.0 + Ep * (Eg + 2.0 * DeltaSO / 3.0) / (Eg * (Eg + DeltaSO))
     mstar_kane = 1.0 / inv_mstar
 
-    # Roth g-factor
-    g_roth = 2.0 - 2.0 * Ep * DeltaSO / (3.0 * Eg * (Eg + DeltaSO))
+    # Roth g-factor (Winkler 2003, Eq. 6.42)
+    g_roth = star_helpers.roth_gfactor(Ep, Eg, DeltaSO)
 
     # Reference values (Vurgaftman 2001 experimental / accepted)
     mstar_exp = 0.067   # m0, Vurgaftman 2001
