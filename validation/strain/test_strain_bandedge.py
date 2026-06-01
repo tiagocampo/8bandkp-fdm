@@ -68,7 +68,7 @@ def _run_fortran_bulk(material, build_dir, substrate_a0=None):
             f'name = "{material}"',
         ]
         if substrate_a0 is not None:
-            lines.extend(["", "[strain]", f"substrate_value = {substrate_a0}"])
+            lines.extend(["", "[strain]", f"strain_substrate = {substrate_a0}"])
 
         with open(os.path.join(workdir, "input.toml"), 'w') as f:
             f.write('\n'.join(lines) + '\n')

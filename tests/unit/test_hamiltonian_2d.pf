@@ -9,6 +9,8 @@ module test_hamiltonian_2d
   use confinement_init, only: confinementInitialization_2d
   use hamiltonian_wire
   use linalg, only: zheevx, ilaenv, dlamch
+  use strain_solver, only: compute_strain, compute_bir_pikus_blocks, &
+    strain_result, strain_result_free, bir_pikus_blocks_free
   use csr_test_helpers, only: csr_to_dense, csr_hermitian_error, &
     csr_interior_symmetric_error, csr_interior_hermitian_error, &
     assert_csr_structural_invariants
@@ -1281,5 +1283,180 @@ contains
     deallocate(kpterms_2d, profile_2d, params, regions, material_names)
     call grid_free(grid)
   end subroutine test_workspace_g3_does_not_corrupt_normal_cache
+
+  ! ==================================================================
+  ! H4: Wire strain Hermiticity test
+  !
+  ! Builds a GaAs/InAs heterostructure wire with Bir-Pikus strain
+  ! (reference = GaAs) and verifies that the full 8-band CSR
+  ! Hamiltonian remains Hermitian.
+  ! ==================================================================
+
+  @test
+  subroutine test_wire_strain_hermitian()
+    integer, parameter :: nnx = 5, nny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    type(simulation_config) :: cfg
+    type(strain_result), allocatable :: strain_local
+    real(kind=dp) :: a0_ref
+    integer :: mat2d(nnx, nny)
+
+    mat2d = 1
+    mat2d(3:5, :) = 2
+    call grid_init_rect(grid, nnx, nny, dx, dy, mat2d)
+
+    allocate(material_names(2))
+    material_names(1) = "GaAs"
+    material_names(2) = "InAs"
+    allocate(params(2))
+    call paramDatabase(material_names, 2, params)
+
+    allocate(regions(2))
+    regions(1)%material = "GaAs"
+    regions(2)%material = "InAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+
+    ! Enable strain with GaAs as reference substrate
+    cfg%strain%enabled = .true.
+    cfg%strain%reference = "GaAs"
+    a0_ref = params(1)%a0
+
+    allocate(strain_local)
+    call compute_strain(grid, params, grid%material_id, cfg%strain, a0_ref, strain_local)
+    call compute_bir_pikus_blocks(strain_local, params, grid%material_id, grid, cfg%strain_blocks)
+
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+
+    @assertTrue(csr_hermitian_error(HT_csr) < 1.0e-10_dp, message="Strained heterostructure wire Hamiltonian Hermitian")
+
+    call csr_free(HT_csr)
+    call bir_pikus_blocks_free(cfg%strain_blocks)
+    call strain_result_free(strain_local)
+    deallocate(strain_local)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_wire_strain_hermitian
+
+  ! ==================================================================
+  ! H5: Wire Zeeman Hermiticity test
+  !
+  ! Builds a uniform GaAs wire with an external magnetic field
+  ! (Zeeman splitting) and verifies that the full 8-band CSR
+  ! Hamiltonian remains Hermitian.
+  ! ==================================================================
+
+  @test
+  subroutine test_wire_zeeman_hermitian()
+    integer, parameter :: nnx = 5, nny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nnx, nny)
+
+    mat2d = 1
+    call grid_init_rect(grid, nnx, nny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+
+    ! Enable Zeeman splitting via BdG B_vec
+    cfg%bdg%B_vec = [0.0_dp, 0.5_dp, 0.0_dp]
+    cfg%bdg%g_factor = 2.0_dp
+
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg)
+
+    @assertTrue(csr_hermitian_error(HT_csr) < 1.0e-10_dp, message="Zeeman wire Hamiltonian Hermitian")
+
+    call csr_free(HT_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_wire_zeeman_hermitian
+
+  ! ==================================================================
+  ! H6: Wire g3 (dH/dkz) Hermiticity test
+  !
+  ! Builds a uniform GaAs wire and constructs the dH/dkz velocity
+  ! matrix via g='g3'.  The derivative matrix should be Hermitian
+  ! because dH/dk is the velocity operator v = (1/hbar) dH/dk,
+  ! which is Hermitian for a Hermitian H(k).
+  ! ==================================================================
+
+  @test
+  subroutine test_wire_g3_hermitian()
+    integer, parameter :: nnx = 5, nny = 5
+    real(kind=dp), parameter :: dx = 3.0_dp, dy = 3.0_dp
+    integer :: ij
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: HT_csr
+    type(simulation_config) :: cfg
+    integer :: mat2d(nnx, nny)
+
+    mat2d = 1
+    call grid_init_rect(grid, nnx, nny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+
+    call ZB8bandGeneralized(HT_csr, 0.0_dp, profile_2d, kpterms_2d, cfg, g='g3')
+
+    @assertTrue(csr_hermitian_error(HT_csr) < 1.0e-10_dp, message="g3 (dH/dkz) wire matrix Hermitian")
+
+    call csr_free(HT_csr)
+    do ij = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(ij))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_wire_g3_hermitian
 
 end module test_hamiltonian_2d

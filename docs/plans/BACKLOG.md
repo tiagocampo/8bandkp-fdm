@@ -1,8 +1,8 @@
 # Implementation Backlog — Ordered by Priority
 
-Consolidated from REVIEW.md on 2026-05-06. Updated 2026-05-13.
+Consolidated from REVIEW.md on 2026-05-06. Updated 2026-06-01.
 Piezoelectric explicitly excluded (ZB [001] = zero by symmetry, wires = negligible).
-All phases complete. Remaining items converted to known limitations.
+Phases 1-20 complete. Phases 18-19 remain active backlog (architectural cleanup + extended cross-code).
 
 ---
 
@@ -270,7 +270,7 @@ Post-completion bug fixes and polish from code review.
 
 ---
 
-## Remaining Backlog — ALL CLOSED
+## Remaining Backlog — Phases 1-20 CLOSED, Phases 18-19 Active
 
 | Source | What | Status | Resolution |
 |--------|------|--------|------------|
@@ -288,6 +288,85 @@ Post-completion bug fixes and polish from code review.
 | #60 | Code review findings (29 fixes) | COMPLETE | BdG/topological/numerical/dead-code/contiguous/Python/test fixes (Phase 17a) |
 | #61 | Right-edge Majorana xi regression | COMPLETE | `forward_tail` direction fix + fallback + test (Phase 17b) |
 | #62 | NaN guard + test polish | COMPLETE | BdG delta_0 NaN rejection, is_z2_transition test cleanup (Phase 17c) |
+
+---
+
+## Phase 18: Architectural Cleanup + Code Modernization
+
+Source: Deferred review items from PR #27 (`/tmp/8bandkp-fdm-pr27-review-handoff.md`).
+
+### Architectural Debt
+
+| ID | What | Why Deferred | Effort | Priority |
+|----|------|-------------|--------|----------|
+| I1 | `main.f90` bypasses `simulation_setup` for Landau + k-sweep — refactor to route through it | Works correctly; refactor is architectural debt, not a bug | High | Medium |
+| I2 | `defs.f90` at ~1,089 lines — 3.6× the 300-line guideline — decompose toward guideline | Natural split point unclear; don't split without a clear decomposition | Medium | Medium |
+| I3 | Duplicate confinement string checks in multiple modules — deduplicate | Low priority — works correctly, just repetitive | Low | Medium |
+| I4 | `grid_ngrid`/`grid%npoints()` redundancy — migrate 6 remaining source files (~11 call sites) | Legacy wrapper still called; migration is gradual | Low | Medium |
+
+### Code Cleanup
+
+| ID | What | Why Deferred | Effort | Priority |
+|----|------|-------------|--------|----------|
+| I13-ext | Replace ~42 remaining `stop 1` calls with `error stop` + messages across 14 files (physics/math/io modules) | Non-executable files; bulk sed replacement. Done for `simulation_setup.f90` + 4 executables in PR #27. | Low | Medium |
+
+### Testing Gaps (incremental)
+
+| ID | What | Why Deferred | Effort | Priority |
+|----|------|-------------|--------|----------|
+| I17 | ~~No wire optics path tested in any unit test~~ | DONE — `test_optical.pf:test_optical_matrix_wire_basic()` added | — | — |
+| I18 | ~~`hamiltonian_blocks` has no dedicated unit test~~ | DONE — `test_hamiltonian_blocks.pf` (177 lines, entry count, duplicate pairs) | — | — |
+| I19 | Expand convergence suite to cover all physics modules | Expanding incrementally per feature | Medium | Low |
+| I20 | Harden ISBT test assertions further (C8 improved; further hardening incremental) | C8 added proper physics tests; further hardening is incremental | Low | Low |
+
+---
+
+## Phase 19: Extended Cross-Code Validation
+
+Source: `docs/brainstorms/archive/kdotpy-cross-validation-requirements.md` (deferred items)
+Blocked on: kdotpy API capabilities (LL symbolic mode, hzy() integration)
+
+| Item | What | Effort | Priority |
+|------|------|--------|----------|
+| R9 | Cross-code Zeeman comparison (requires kdotpy LL symbolic mode) | High | Low |
+| R13-R14 | Cross-code wire comparison (requires kdotpy hzy() integration) | High | Low |
+| R15 | QW Landau fan diagram E(B) at 10+ B-field values | Medium | Low |
+| R17 | BHZ parameter extraction comparison | Medium | Low |
+| R18 | QW (not bulk) g-factor cross-code comparison | Medium | Low |
+| R21-R22 | Berry curvature Omega(k) and LL Chern number cross-code comparison | High | Low |
+| R24-R26 | Formal discrepancy logging, resolution protocol, layered verification gates | Medium | Low |
+| R5/R6 | HgCdTe x=0.3 and CdZnTe alloy materials in parameters.f90 with interpolation | Low | Low |
+
+---
+
+## Phase 20: COMPLETED (2026-06-01)
+
+Deep physics validation — TRK sum rule, Hermiticity, verification ladder rungs 7-8, wire strain quantitative.
+
+**Commits:** `b8f16a2` (delivery), `0582ee6` (review fixes), `a36ef34` (test count, dynamic edge, refactor), `3596737` (wire strain test fix).
+
+### Delivered:
+
+| Item | What | Status |
+|------|------|--------|
+| Idea 7 | TRK sum rule / f-sum rule invariant checks | **DONE** — `tests/support/trk_helpers.f90` (6 routines) + `tests/unit/test_trk_sum_rule.pf` (7 tests: bulk GaAs/InAs CB+HH, isotropy, QW CSR, wire CSR) |
+| Idea 8 | Hermiticity smoke test for all geometries | **DONE** — 20 hermiticity tests across 6 test files (bulk, QW, wire, BdG, Landau, BHZ, blocks) |
+| Idea 5 (partial) | Verification ladder rungs 7-8 | **DONE** — `verify_8band_rung7_gfactor.py` (R7.1 bulk Roth 4 materials, R7.2 QW consistency) + `verify_8band_rung8_optical.py` (R8.1 Kane self-consistency, R8.2 absorption edge 10meV, R8.3 TE/TM ordering) |
+| Idea 6 (partial) | Wire strain quantitative | **DONE** — `verify_strain_wire_quantitative.py` (R10a gap direction, R10b HH>LH, R10c measurable VB shift, R11 quantitative gap shift 15% tolerance) |
+
+### Code review fixes applied:
+- Dynamic absorption edge search window (replaces hard-coded 1.5–2.0 eV with `e_transition ± 0.3 eV`)
+- Extracted `diagonalize_bulk_at_k` helper in `trk_helpers.f90` (eliminates 3× boilerplate)
+- Wire strain test: 25×25 grid, narrowed FEAST window [-0.5, 1.0] eV, R10 qualitative + R11 quantitative
+
+---
+
+## Minor Carry-Over Items
+
+| Source | What | Effort | Priority |
+|--------|------|--------|----------|
+| Richardson R9 gap | Investigate why absorption_edge observable absent from stored JSON results despite code being complete | Low | Medium |
+| PR14 review T10 gap | Replace return None in test_bulk_zeeman.py:44 with RuntimeError (consistency) | Trivial | Low |
 
 ---
 
@@ -322,5 +401,9 @@ Items that were explicitly deferred or relaxed with documented justification:
 | 15. Validation tightening | — | Krylov 7/7, standard-star tightening, docs revamp re-scope | DONE |
 | 16. Integration + Rashba | — | Wire hexagon, SC wire, Rashba BdG calibrated | DONE |
 | 17. Post-completion fixes | — | 29 code review findings, fit-tail regression fix, NaN guard | DONE |
+| 18. Architectural cleanup | — | Landau refactor, defs decomposition, grid accessor migration, stop 1 replacement | PENDING |
+| 19. Extended cross-code | — | Wire/Landau/g-factor/strain/Berry/Chern cross-code validation | PENDING (blocked on kdotpy API) |
+| 20. Deep physics validation | — | TRK sum rule (7 tests), Hermiticity (20 tests), rungs 7-8 (g-factor + optical), wire strain quantitative | DONE |
 
-**All phases complete.** 91/91 tests pass. No remaining backlog.
+**Phases 1-20 complete.** 111 tests pass. Phases 18-19 are active backlog.
+Source of truth: `docs/plans/BACKLOG.md` (this file) and `docs/plans/REVIEW.md`.

@@ -210,6 +210,12 @@ if(PFUNIT_FOUND)
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
+
+    add_pfunit_ctest(test_trk_sum_rule
+        TEST_SOURCES unit/test_trk_sum_rule.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
 else()
     message(STATUS "pFUnit not found — unit tests disabled. Install pFUnit and set -DPFUNIT_DIR to enable.")
 endif()
@@ -834,9 +840,28 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
+# Rung 7: g-factor validation vs Roth formula (R7.1, R7.2)
+add_test(
+    NAME verification_rung7_gfactor
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_8band_rung7_gfactor.py
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Rung 8: Optical observables validation (R8.1, R8.2, R8.3)
+add_test(
+    NAME verification_rung8_optical
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_8band_rung8_optical.py
+        ${CMAKE_BINARY_DIR}
+        ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
 set_tests_properties(
     verification_rung1_bulk_k0 verification_rung2_dispersion
     verification_rung3_qw verification_rung4_wire
+    verification_rung7_gfactor verification_rung8_optical
     PROPERTIES LABELS "verification"
 )
 
@@ -871,6 +896,19 @@ add_test(
 set_tests_properties(
     strain_validation_wire
     PROPERTIES LABELS "strain-validation" TIMEOUT 600
+)
+
+# Wire strain quantitative validation (wide-core InAs/GaAs vs Bir-Pikus analytical)
+add_test(
+    NAME strain_validation_wire_quantitative
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_strain_wire_quantitative.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    strain_validation_wire_quantitative
+    PROPERTIES LABELS "strain-validation;verification" TIMEOUT 600
 )
 
 # --- Standard-Star Benchmarks (S1-S7) ---

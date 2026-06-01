@@ -164,7 +164,7 @@ contains
 
     ! ---- Setup grid ----
     do idx = 1, ngrid
-      z(idx) = -50.0_dp + dble(idx - 1) * dz_val
+      z(idx) = -50.0_dp + real(idx - 1, kind=dp) * dz_val
     end do
 
     ! 2-layer: AlGaAs(-50,-25) | GaAs(-25,50)
@@ -563,7 +563,7 @@ contains
     matSize = ngrid * 8
 
     do idx = 1, ngrid
-      z(idx) = -50.0_dp + dble(idx - 1) * dz_val
+      z(idx) = -50.0_dp + real(idx - 1, kind=dp) * dz_val
     end do
 
     int_start_pos(1) = 1;   int_end_pos(1) = 10
@@ -725,5 +725,288 @@ contains
     @assertEqual(expected_CB, delta_diag(8), tolerance=1.0e-12_dp)
 
   end subroutine test_bulk_strain_diagonal
+
+  ! ==================================================================
+  ! Helper: check Hermiticity of an 8N x 8N dense matrix and report
+  ! block-level diagnostics on failure.
+  !
+  ! Band mapping: 1-4 = valence (HH,LH), 5-6 = split-off, 7-8 = conduction
+  ! ==================================================================
+
+  subroutine assert_hermitian_with_block_diagnostics(HT, N, label, tol, max_err)
+    complex(kind=dp), intent(in), contiguous :: HT(:,:)
+    integer, intent(in) :: N
+    character(len=*), intent(in) :: label
+    real(kind=dp), intent(in) :: tol
+    real(kind=dp), intent(out) :: max_err
+
+    integer :: i, j
+    integer :: worst_bi, worst_bj, worst_gi, worst_gj
+    real(kind=dp) :: err
+    character(len=20) :: band_names(8)
+
+    band_names(1) = "HH"; band_names(2) = "LH"
+    band_names(3) = "LH"; band_names(4) = "HH"
+    band_names(5) = "SO"; band_names(6) = "SO"
+    band_names(7) = "CB"; band_names(8) = "CB"
+
+    ! Overall check
+    max_err = 0.0_dp
+    worst_bi = 0; worst_bj = 0; worst_gi = 0; worst_gj = 0
+
+    do j = 1, 8*N
+      do i = 1, 8*N
+        err = abs(HT(i,j) - conjg(HT(j,i)))
+        if (err > max_err) then
+          max_err = err
+          ! Determine which block pair this belongs to
+          ! Row i is in band bi = (i-1)/N + 1, grid point gi = mod(i-1,N) + 1
+          worst_bi = (i - 1) / N + 1
+          worst_bj = (j - 1) / N + 1
+          worst_gi = mod(i - 1, N) + 1
+          worst_gj = mod(j - 1, N) + 1
+        end if
+      end do
+    end do
+
+    if (max_err > tol) then
+      ! Report block-level diagnostic
+      ! pFUnit @assertTrue with message
+      block
+        character(len=256) :: msg
+        write(msg, '(A,A,A,ES10.3,A,ES10.3,A,I2,A,A,A,I2,A,A,A,I0,A,I0,A)') &
+          trim(label), ": max|H-H^+| = ", &
+          "exceeds tol. ", max_err, " > ", tol, &
+          ". Worst block: (", worst_bi, "=", trim(band_names(worst_bi)), &
+          ") x (", worst_bj, "=", trim(band_names(worst_bj)), &
+          ") at grid (", worst_gi, ",", worst_gj, ")"
+        ! Use assert to report failure with diagnostics
+        @assertTrue(.false., message=trim(msg))
+      end block
+    else
+      @assertTrue(.true., message=trim(label) // ": Hermitian")
+    end if
+
+  end subroutine assert_hermitian_with_block_diagnostics
+
+  ! ==================================================================
+  ! H1: test_qw_hermitian
+  ! Build a 3-layer Al30Ga70As/GaAs/Al30Ga70As QW and verify the 8N x 8N
+  ! dense Hamiltonian is Hermitian at k=0.
+  ! ==================================================================
+
+  @test
+  subroutine test_qw_hermitian()
+    integer, parameter :: ngrid = 51
+    real(kind=dp), parameter :: dz_val = 2.0_dp  ! Angstrom
+    integer :: matSize, idx
+
+    ! Grid
+    real(kind=dp) :: z(ngrid)
+
+    ! Materials: 3-layer Al30Ga70As/GaAs/Al30Ga70As
+    integer, parameter :: nlayers = 3
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
+
+    ! Confinement
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    ! Hamiltonian
+    complex(kind=dp), allocatable :: HT(:,:)
+    real(kind=dp) :: max_err
+
+    matSize = ngrid * 8
+
+    ! ---- Setup grid: z from -50 to +50 ----
+    do idx = 1, ngrid
+      z(idx) = -50.0_dp + real(idx - 1, kind=dp) * dz_val
+    end do
+
+    ! 3-layer: Al30Ga70As(1:15) | GaAs(16:36) | Al30Ga70As(37:51)
+    int_start_pos(1) = 1;   int_end_pos(1) = 15
+    int_start_pos(2) = 16;  int_end_pos(2) = 36
+    int_start_pos(3) = 37;  int_end_pos(3) = 51
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    material(3) = "Al30Ga70As"
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Build confinement ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    ! ---- Build Hamiltonian at k=0 ----
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms)
+
+    ! ---- Check Hermiticity ----
+    call assert_hermitian_with_block_diagnostics(HT, ngrid, &
+      & "QW k=0 hermitian", 1.0e-12_dp, max_err)
+
+    deallocate(HT, profile, kpterms)
+  end subroutine test_qw_hermitian
+
+  ! ==================================================================
+  ! H2: test_qw_strain_hermitian
+  ! Same 3-layer QW with Bir-Pikus strain. Verify Hermiticity.
+  ! ==================================================================
+
+  @test
+  subroutine test_qw_strain_hermitian()
+    integer, parameter :: ngrid = 51
+    real(kind=dp), parameter :: dz_val = 2.0_dp
+    integer :: matSize, idx
+
+    real(kind=dp) :: z(ngrid)
+
+    integer, parameter :: nlayers = 3
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
+
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:)
+    type(simulation_config) :: cfg
+    real(kind=dp) :: max_err, a0_ref
+    real(kind=dp) :: eps_xx, eps_yy, eps_zz
+    type(bp_scalar) :: s
+
+    matSize = ngrid * 8
+
+    ! ---- Setup grid ----
+    do idx = 1, ngrid
+      z(idx) = -50.0_dp + real(idx - 1, kind=dp) * dz_val
+    end do
+
+    ! 3-layer: Al30Ga70As(1:15) | GaAs(16:36) | Al30Ga70As(37:51)
+    int_start_pos(1) = 1;   int_end_pos(1) = 15
+    int_start_pos(2) = 16;  int_end_pos(2) = 36
+    int_start_pos(3) = 37;  int_end_pos(3) = 51
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    material(3) = "Al30Ga70As"
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Build confinement ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    ! ---- Setup strain: pseudomorphic GaAs well on Al30Ga70As substrate ----
+    ! Use barrier (layer 1) lattice constant as reference
+    a0_ref = params(1)%a0  ! Al30Ga70As lattice constant
+    allocate(cfg%strain_blocks%delta_Ec(ngrid))
+    allocate(cfg%strain_blocks%delta_EHH(ngrid))
+    allocate(cfg%strain_blocks%delta_ELH(ngrid))
+    allocate(cfg%strain_blocks%delta_ESO(ngrid))
+    allocate(cfg%strain_blocks%R_eps(ngrid))
+    allocate(cfg%strain_blocks%S_eps(ngrid))
+    allocate(cfg%strain_blocks%QT2_eps(ngrid))
+    cfg%strain_blocks%delta_Ec  = 0.0_dp
+    cfg%strain_blocks%delta_EHH = 0.0_dp
+    cfg%strain_blocks%delta_ELH = 0.0_dp
+    cfg%strain_blocks%delta_ESO = 0.0_dp
+    cfg%strain_blocks%R_eps     = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    cfg%strain_blocks%S_eps     = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    cfg%strain_blocks%QT2_eps   = 0.0_dp
+
+    ! Apply strain only in the GaAs well region (points 16-36)
+    do idx = 16, 36
+      eps_xx = (a0_ref - params(2)%a0) / params(2)%a0
+      eps_yy = eps_xx
+      eps_zz = -2.0_dp * params(2)%C12 / params(2)%C11 * eps_xx
+      s = compute_bp_scalar(params(2), eps_xx, eps_yy, eps_zz, &
+                            0.0_dp, 0.0_dp, 0.0_dp)
+      cfg%strain_blocks%delta_Ec(idx)  = s%delta_Ec
+      cfg%strain_blocks%delta_EHH(idx) = s%delta_EHH
+      cfg%strain_blocks%delta_ELH(idx) = s%delta_ELH
+      cfg%strain_blocks%delta_ESO(idx) = s%delta_ESO
+      cfg%strain_blocks%R_eps(idx)     = s%R_eps
+      cfg%strain_blocks%S_eps(idx)     = s%S_eps
+      cfg%strain_blocks%QT2_eps(idx)   = s%QT2_eps
+    end do
+
+    ! ---- Build strained Hamiltonian at k=0 ----
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms, cfg=cfg)
+
+    ! ---- Check Hermiticity ----
+    call assert_hermitian_with_block_diagnostics(HT, ngrid, &
+      & "QW strain hermitian", 1.0e-12_dp, max_err)
+
+    deallocate(HT, profile, kpterms)
+    call bir_pikus_blocks_free(cfg%strain_blocks)
+  end subroutine test_qw_strain_hermitian
+
+  ! ==================================================================
+  ! H3: test_qw_zeeman_hermitian
+  ! Same 3-layer QW with Zeeman splitting. Verify Hermiticity.
+  ! Uses cfg%bdg%B_vec and cfg%bdg%g_factor (matching existing code path
+  ! in ZB8bandQW).
+  ! ==================================================================
+
+  @test
+  subroutine test_qw_zeeman_hermitian()
+    integer, parameter :: ngrid = 51
+    real(kind=dp), parameter :: dz_val = 2.0_dp
+    integer :: matSize, idx
+
+    real(kind=dp) :: z(ngrid)
+
+    integer, parameter :: nlayers = 3
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
+
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:)
+    type(simulation_config) :: cfg
+    real(kind=dp) :: max_err
+
+    matSize = ngrid * 8
+
+    ! ---- Setup grid ----
+    do idx = 1, ngrid
+      z(idx) = -50.0_dp + real(idx - 1, kind=dp) * dz_val
+    end do
+
+    ! 3-layer: Al30Ga70As(1:15) | GaAs(16:36) | Al30Ga70As(37:51)
+    int_start_pos(1) = 1;   int_end_pos(1) = 15
+    int_start_pos(2) = 16;  int_end_pos(2) = 36
+    int_start_pos(3) = 37;  int_end_pos(3) = 51
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    material(3) = "Al30Ga70As"
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Build confinement ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    ! ---- Configure Zeeman: B_z = 1T, g = 2.0 ----
+    ! The QW dense path uses cfg%bdg%B_vec and cfg%bdg%g_factor for Zeeman
+    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 1.0_dp]
+    cfg%bdg%g_factor = 2.0_dp
+
+    ! ---- Build Zeeman-shifted Hamiltonian at k=0 ----
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wavevector(0.0_dp, 0.0_dp, 0.0_dp), profile, kpterms, cfg=cfg)
+
+    ! ---- Check Hermiticity ----
+    call assert_hermitian_with_block_diagnostics(HT, ngrid, &
+      & "QW Zeeman hermitian", 1.0e-12_dp, max_err)
+
+    deallocate(HT, profile, kpterms)
+  end subroutine test_qw_zeeman_hermitian
 
 end module test_hamiltonian

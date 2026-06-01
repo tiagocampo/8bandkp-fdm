@@ -183,7 +183,7 @@ S6_TEMPLATE = (
     "z_max = 50\n"
     "\n"
     "[strain]\n"
-    "substrate_value = 5.6533\n"
+    "strain_substrate = 5.6533\n"
 )
 
 S4_K0_TEMPLATE = (
@@ -449,13 +449,15 @@ def run_system_convergence(build_dir, source_dir, sys_key):
                         edge_vals.append(edge)
                         print(f"    FDstep={fdstep}: edge={edge:.6f} eV")
 
-        if len(h_vals_a) >= 3:
+        if len(h_vals_a) >= 2:
             report = make_convergence_report(
                 f'{sys_key}_{sys_info["name"]}', 'absorption_edge',
                 h_vals_a, edge_vals, order=fdorder,
             )
             all_reports['absorption_edge'] = report
-            print(f"    Richardson edge: {report['richardson_extrapolated']:.6f} eV, {'PASS' if report['passed'] else 'FAIL'}")
+            rich_val = report.get('richardson_extrapolated')
+            rich_str = f"{rich_val:.6f} eV" if rich_val is not None else "N/A"
+            print(f"    Richardson edge: {rich_str}, {'PASS' if report['passed'] else 'FAIL'}")
 
     return all_reports
 
