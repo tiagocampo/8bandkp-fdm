@@ -26,8 +26,10 @@ Checks per config:
 
 # COVERAGE: observable=ISBT_dipole geometry=QW material=GaAs/AlGaAs ref=infinite_well_analytical
 # COVERAGE: observable=ISBT_oscillator_strength geometry=QW material=GaAs/AlGaAs ref=infinite_well_analytical
-# COVERAGE: observable=ISBT_dipole geometry=QW material=InGaAs/AlGaAs ref=infinite_well_analytical
-# COVERAGE: observable=ISBT_oscillator_strength geometry=QW material=InGaAs/AlGaAs ref=infinite_well_analytical
+# COVERAGE: observable=ISBT geometry=QW material=GaAs/AlGaAs ref=infinite_well_analytical
+# COVERAGE: observable=ISBT_dipole geometry=QW material=InGaAs/InAlAs ref=infinite_well_analytical
+# COVERAGE: observable=ISBT_oscillator_strength geometry=QW material=InGaAs/InAlAs ref=infinite_well_analytical
+# COVERAGE: observable=ISBT geometry=QW material=InGaAs/InAlAs ref=infinite_well_analytical
 
 Usage: verify_isbt_benchmark.py <build_dir> <source_dir>
 """

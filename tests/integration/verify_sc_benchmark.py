@@ -9,10 +9,10 @@ quantitative checks against analytical references:
   3. Subband shift: CB1(SC) - CB1(flat) matches Bastard estimate within ~50%
   4. Potential profile: V-shaped dip in well, flat barriers, correct energy scale
 
-# COVERAGE: observable=charge_neutrality geometry=QW material=GaAs/AlAs ref=conservation_law
-# COVERAGE: observable=fermi_level geometry=QW material=GaAs/AlAs ref=parabolic_analytical
-# COVERAGE: observable=subband_shift geometry=QW material=GaAs/AlAs ref=Bastard_perturbative
-# COVERAGE: observable=potential_profile geometry=QW material=GaAs/AlAs ref=Hartree_analytical
+# COVERAGE: observable=charge_neutrality geometry=QW material=GaAs/AlGaAs ref=conservation_law
+# COVERAGE: observable=fermi_level geometry=QW material=GaAs/AlGaAs ref=parabolic_analytical
+# COVERAGE: observable=subband_shift geometry=QW material=GaAs/AlGaAs ref=Bastard_perturbative
+# COVERAGE: observable=potential_profile geometry=QW material=GaAs/AlGaAs ref=Hartree_analytical
 
 Usage:
     python3 verify_sc_benchmark.py <build_dir> <source_dir>

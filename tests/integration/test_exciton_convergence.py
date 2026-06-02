@@ -7,11 +7,11 @@ extrapolation, and validating against published experimental values.
 Miller et al., Phys. Rev. B 1985: GaAs/AlGaAs QW exciton binding energy.
 2D hydrogen model: Eb ~ Rydberg/4 = 13.6/4 = 3.4 meV (sanity check).
 
-COVERAGE: observable=exciton_Eb geometry=QW material=GaAs/AlGaAs tier=convergence_exciton
-
 Usage:
     python3 test_exciton_convergence.py <build_dir> <source_dir>
 """
+
+# COVERAGE: observable=exciton_Eb geometry=QW material=GaAs/AlGaAs ref=Miller1985_Bastard1982
 
 import os
 import sys

@@ -29,6 +29,7 @@ UNIVERSE_FILE = "tests/integration/validation_universe.yml"
 SCAN_PATTERNS = [
     "tests/integration/verify_*.py",
     "tests/integration/test_*.sh",
+    "tests/integration/test_*.py",
 ]
 ANNOTATION_RE = re.compile(r"^#\s*COVERAGE:\s*(.+)$", re.MULTILINE)
 KV_RE = re.compile(r"(\w+)=([^\s]+)")

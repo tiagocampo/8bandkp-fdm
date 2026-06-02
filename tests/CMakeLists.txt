@@ -973,6 +973,30 @@ set_tests_properties(
               TIMEOUT 600
 )
 
+# --- Phase 21: Publishable Validation Benchmarks ---
+
+# ISBT oscillator strength benchmark (2 materials × 3 widths vs infinite-well)
+add_test(
+    NAME verification_isbt_benchmark
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_isbt_benchmark.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# SC Schrödinger-Poisson benchmark (charge neutrality, Fermi level, subband shift, potential)
+add_test(
+    NAME verification_sc_benchmark
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_sc_benchmark.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_isbt_benchmark verification_sc_benchmark
+    PROPERTIES LABELS "verification;standard-star"
+              TIMEOUT 600
+)
+
 # Validation coverage matrix — cross-checks universe file vs test annotations
 add_test(
     NAME coverage_matrix
