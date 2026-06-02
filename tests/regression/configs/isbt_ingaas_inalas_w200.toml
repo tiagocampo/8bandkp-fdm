@@ -1,0 +1,43 @@
+confinement = "qw"
+FDorder = 4
+fd_step = 201
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "kx"
+max = 0.1
+nsteps = 51
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[[material]]
+name = "Al47In53AsW"
+z_min = -200
+z_max = 200
+
+[[material]]
+name = "Ga47In53AsW"
+z_min = -100
+z_max = 100
+
+
+[strain]
+reference = "InP"
+
+[optics]
+linewidth_lorentzian = 0.030
+linewidth_gaussian = 0.005
+refractive_index = 3.3
+E_min = 0.02
+E_max = 0.30
+num_energy_points = 300
+temperature = 300.0
+carrier_density = 0.0
+gain_enabled = true
+gain_carrier_density = 3.0e12
+ISBT = true
+spontaneous = false
+spin_resolved = false
