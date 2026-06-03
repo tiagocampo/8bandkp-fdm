@@ -263,6 +263,12 @@ cells:
     tier: required
     reference: conservation_law
 
+  - observable: fermi_level
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: parabolic_analytical
+
   - observable: subband_shift
     geometry: QW
     material: GaAs/AlGaAs
@@ -409,6 +415,30 @@ cells:
     reference: infinite_well_analytical
 
   - observable: ISBT
+    geometry: QW
+    material: InGaAs/InAlAs
+    tier: required
+    reference: infinite_well_analytical
+
+  - observable: ISBT_dipole
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: infinite_well_analytical
+
+  - observable: ISBT_dipole
+    geometry: QW
+    material: InGaAs/InAlAs
+    tier: required
+    reference: infinite_well_analytical
+
+  - observable: ISBT_oscillator_strength
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: infinite_well_analytical
+
+  - observable: ISBT_oscillator_strength
     geometry: QW
     material: InGaAs/InAlAs
     tier: required
