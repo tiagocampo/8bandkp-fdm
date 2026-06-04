@@ -380,8 +380,9 @@ def main():
         print(f"  Delta_E(CB1) = {delta_E*1000:.3f} meV")
         print(f"  Bastard delta_V estimate = {delta_V_bastard*1000:.3f} meV")
 
-        # The shift should be positive (SC raises CB1 due to Hartree repulsion)
-        # and on the same order as the Bastard estimate (within factor of 3)
+        # For n-type doping, the Hartree potential raises CB1 (repulsive electron
+        # charge). delta_E must be positive. A negative shift would indicate a
+        # Poisson sign regression. Using abs() would miss this failure mode.
         if delta_E > 0:
             ratio = delta_E / delta_V_bastard if delta_V_bastard > 0 else 999
             print(f"  Ratio Delta_E / Bastard_deltaV = {ratio:.3f}")
@@ -392,14 +393,10 @@ def main():
                 print(f"  FAIL: subband shift ratio = {ratio:.3f} outside [0.1, 5]")
                 checks_failed += 1
         else:
-            # Negative shift is also possible if band bending dominates
-            print(f"  WARN: negative CB1 shift ({delta_E*1000:.3f} meV)")
-            abs_ratio = abs(delta_E) / delta_V_bastard if delta_V_bastard > 0 else 999
-            if abs_ratio < 5.0:
-                print(f"  PASS: |shift| within factor of 5 of Bastard estimate")
-                checks_passed += 1
-            else:
-                checks_failed += 1
+            # Negative shift = inverted Hartree sign = Poisson regression
+            print(f"  FAIL: negative CB1 shift ({delta_E*1000:.3f} meV) — "
+                  f"expected positive (Hartree repulsion raises CB1)")
+            checks_failed += 1
 
     # ------------------------------------------------------------------
     # Check 5: Potential profile shape
