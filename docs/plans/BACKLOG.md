@@ -1,8 +1,8 @@
 # Implementation Backlog — Ordered by Priority
 
-Consolidated from REVIEW.md on 2026-05-06. Updated 2026-06-01.
+Consolidated from REVIEW.md on 2026-05-06. Updated 2026-06-03.
 Piezoelectric explicitly excluded (ZB [001] = zero by symmetry, wires = negligible).
-Phases 1-20 complete. Phases 18-19 remain active backlog (architectural cleanup + extended cross-code).
+Phases 1-20 complete. Phase 21 in progress (PR #35). Phases 18-19 remain active backlog (architectural cleanup + extended cross-code).
 
 ---
 
@@ -361,12 +361,67 @@ Deep physics validation — TRK sum rule, Hermiticity, verification ladder rungs
 
 ---
 
+## Phase 21: IN_PROGRESS (PR #35)
+
+Publishable validation benchmarks — ISBT oscillator strength, SC Schrödinger-Poisson, exciton Bastard reference.
+
+**PRD:** `.scratch/publishable-benchmarks/PRD.md`
+**Issues:** `.scratch/publishable-benchmarks/issues/` (6 issues)
+**Branch:** `feat/publishable-benchmarks-phase21`
+**PR:** #35 (not yet merged)
+**Commits:** `c36cfed` through `d28bd0f` (3 feature + 2 review-fix commits)
+
+### Delivered:
+
+| Item | What | Status |
+|------|------|--------|
+| Issue #01 | ISBT GaAs/AlGaAs tracer bullet (100A) | **DONE** — `isbt_gaas_algaas_w100.toml`, infinite-well analytical comparison |
+| Issue #02 | SC charge neutrality hard check <1% | **DONE** — `verify_sc_benchmark.py` Check 2 |
+| Issue #03 | Exciton Miller tolerance tightening (30%→15%) + Bastard 1982 reference | **DONE** — `test_exciton_convergence.py` updated |
+| Issue #04 | ISBT width sweep (50, 100, 200 A GaAs/AlGaAs) | **DONE** — 3 TOML configs + 3-width loop in benchmark |
+| Issue #05 | SC Fermi level, subband shift, potential profile checks | **DONE** — `verify_sc_benchmark.py` Checks 3-5 |
+| Issue #06 | ISBT InGaAs/InAlAs material sweep (50, 100, 200 A) | **DONE** — 3 TOML configs + cross-material comparison |
+
+### Verification scripts:
+
+- `verify_isbt_benchmark.py` — 6-config sweep, 7 checks per config (B1-B7), cross-material comparison, summary table
+- `verify_sc_benchmark.py` — 5 checks (SC convergence, charge neutrality, Fermi level, subband shift, potential profile)
+- `test_exciton_convergence.py` — Updated: Miller 15%, Bastard 1982 (8.5 meV, 20%)
+
+### Infrastructure updates:
+
+- `validation_universe.yml`: +ISBT_dipole, +ISBT_oscillator_strength, +fermi_level QW cells, ISBT promoted to required
+- `coverage_matrix.py`: Added `test_*.py` scan pattern
+- `tests/CMakeLists.txt`: 2 new tests (TIMEOUT 1200/900)
+
+### Code review fixes (2 rounds):
+
+- Round 1 (`8f687fa`): Fixed f12_inf mass-dependence, added B6/B7 checks, fixed SC docstring, added universe cells
+- Round 2 (`d28bd0f`): Fixed B6/B7 docstring sync, increased CTest TIMEOUTs, minor cleanup
+
+### Deferred items (follow-up PRs):
+
+| Item | Description | Recommended PR |
+|------|-------------|----------------|
+| US19/US25 | Benchmark figures (matplotlib) | `feat/publishable-figures` |
+| US24 | ISBT golden data regression tests | `feat/isbt-golden-data` |
+| US3/US4 | Well-width monotonic trend assertion | `feat/isbt-width-trends` |
+| US18 | Multi-width exciton sweep | `feat/exciton-width-sweep` |
+| US10/US11 | Tighter Fermi/subband tolerances | `feat/sc-tolerance-tightening` |
+
+---
+
 ## Minor Carry-Over Items
 
 | Source | What | Effort | Priority |
 |--------|------|--------|----------|
 | Richardson R9 gap | Investigate why absorption_edge observable absent from stored JSON results despite code being complete | Low | Medium |
 | PR14 review T10 gap | Replace return None in test_bulk_zeeman.py:44 with RuntimeError (consistency) | Trivial | Low |
+| Phase 21 PRD | US19/US25: Benchmark figures (matplotlib) matching lecture-script pattern | Medium | Medium |
+| Phase 21 PRD | US24: ISBT golden data regression tests | Medium | Medium |
+| Phase 21 PRD | US3/US4: Well-width monotonic trend + hard cross-material assertion | Low | Medium |
+| Phase 21 PRD | US18: Multi-width exciton sweep (30, 50, 80, 100, 150, 200 A) | Medium | Low |
+| Phase 21 PRD | US10/US11: Tighter Fermi/subband tolerances (need baseline 8-band values) | Low | Low |
 
 ---
 
@@ -404,6 +459,7 @@ Items that were explicitly deferred or relaxed with documented justification:
 | 18. Architectural cleanup | — | Landau refactor, defs decomposition, grid accessor migration, stop 1 replacement | PENDING |
 | 19. Extended cross-code | — | Wire/Landau/g-factor/strain/Berry/Chern cross-code validation | PENDING (blocked on kdotpy API) |
 | 20. Deep physics validation | — | TRK sum rule (7 tests), Hermiticity (20 tests), rungs 7-8 (g-factor + optical), wire strain quantitative | DONE |
+| 21. Publishable benchmarks | — | ISBT 6-config sweep (42 checks), SC benchmark (5 checks), exciton tightening + Bastard 1982 | IN_PROGRESS (PR #35) |
 
-**Phases 1-20 complete.** 111 tests pass. Phases 18-19 are active backlog.
+**Phases 1-20 complete.** 113 tests pass. Phase 21 in progress (PR #35, branch `feat/publishable-benchmarks-phase21`). Phases 18-19 are active backlog.
 Source of truth: `docs/plans/BACKLOG.md` (this file) and `docs/plans/REVIEW.md`.
