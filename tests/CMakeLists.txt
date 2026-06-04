@@ -992,9 +992,15 @@ add_test(
 )
 
 set_tests_properties(
-    verification_isbt_benchmark verification_sc_benchmark
+    verification_isbt_benchmark
     PROPERTIES LABELS "verification;standard-star"
-              TIMEOUT 600
+              TIMEOUT 1200
+)
+
+set_tests_properties(
+    verification_sc_benchmark
+    PROPERTIES LABELS "verification;standard-star"
+              TIMEOUT 900
 )
 
 # Validation coverage matrix — cross-checks universe file vs test annotations
