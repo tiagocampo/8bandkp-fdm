@@ -424,17 +424,22 @@ def main():
 
         shape_failures = []
 
-        # (a) Well should have a V-shaped dip: center higher than edges
+        # (a) Well should have positive Hartree curvature: V(center) > V(edge)
+        # For n-type doping, the electron charge creates a potential hill
+        # (repulsive Hartree). V_dip > 0 is the physically correct sign.
+        # Using abs() would miss a Poisson sign regression.
         if len(V_well) > 2:
             V_center = V_well[len(V_well) // 2]
             V_edge = (V_well[0] + V_well[-1]) / 2
             V_dip = V_center - V_edge
             print(f"  Well V(center) - V(edge) = {V_dip*1000:.3f} meV")
-            if abs(V_dip) > 0.001:  # at least 1 meV dip (above numerical noise)
-                print(f"  (a) PASS: well has detectable potential variation "
-                      f"({abs(V_dip)*1000:.1f} meV > 1 meV threshold)")
+            if V_dip > 0.001:  # positive Hartree curvature, at least 1 meV
+                print(f"  (a) PASS: well has positive Hartree curvature "
+                      f"({V_dip*1000:.1f} meV > 1 meV)")
             else:
-                shape_failures.append("well potential is flat (no V-dip)")
+                shape_failures.append(
+                    f"well Hartree curvature wrong sign or too small "
+                    f"(V_dip={V_dip*1000:.3f} meV, expected positive > 1 meV)")
         else:
             shape_failures.append("insufficient well grid points")
 
