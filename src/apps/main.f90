@@ -4,7 +4,6 @@ program kpfdm
   use parameters
   use hamiltonianConstructor
   use hamiltonian_blocks, only: init_kp_block_cache
-  use confinement_init, only: confinementInitialization_landau
   use OMP_lib
   use outputFunctions
   use input_parser
@@ -382,24 +381,215 @@ program kpfdm
   end if
 
   ! ====================================================================
-  ! Landau mode initialization (confinement='landau')
+  ! Landau mode (confinement='landau'): self-contained block
   ! ====================================================================
   if (trim(cfg%confinement) == 'landau') then
     block
-      character(len=255) :: lmat(1)
-      type(paramStruct) :: lparams(1)
+      type(simulation_setup) :: setup
+      integer :: N_loc, il_loc, iuu_loc, lwork_loc
 
-      lmat(1) = cfg%material_names(1)
-      lparams(1) = cfg%params(1)
+      call simulation_setup_init(cfg, setup)
 
-      N = cfg%landau%nx * 8
-      allocate(kpterms(cfg%landau%nx, cfg%landau%nx, 10))
-      kpterms = 0.0_dp
-      call confinementInitialization_landau(cfg%grid%x, lmat, lparams, &
-        & profile, kpterms, cfg%FDorder)
+      N_loc = setup%N
+      il_loc = setup%il
+      iuu_loc = setup%iuu
+      lwork_loc = setup%lwork
+
+      ! Move profile/kpterms from setup into module-level variables
+      call move_alloc(setup%profile, profile)
+      call move_alloc(setup%kpterms, kpterms)
+
+      N = N_loc
+      il = il_loc
+      iuu = iuu_loc
+      lwork = lwork_loc
+
+      print '(A,I0,A)', ' Landau mode: N=', N, ' (single material)'
+
+      ! --- Write Landau band edge profile ---
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
+      do i = 1, cfg%landau%nx, 1
+        write(iounit,*) cfg%grid%x(i), profile(i,1), profile(i,2), profile(i,3)
+      end do
+      close(iounit)
+
+      vl = 0.0_dp
+      vu = 0.0_dp
+      abstol = DLAMCH('P')
+
+      if (allocated(rwork)) deallocate(rwork)
+      allocate(rwork(7*N))
+      if (allocated(iwork)) deallocate(iwork)
+      allocate(iwork(5*N))
+      if (allocated(ifail)) deallocate(ifail)
+      allocate(ifail(N))
+      if (allocated(eig)) deallocate(eig)
+      allocate(eig(iuu-il+1, cfg%wave_vector%nsteps))
+      if (allocated(eigv)) deallocate(eigv)
+      allocate(eigv(N, iuu-il+1, cfg%wave_vector%nsteps))
+      eig(:,:) = 0_dp
+      eigv(:,:,:) = 0_dp
+
+      if (allocated(HT)) deallocate(HT)
+      allocate(HT(N, N))
+      HT = 0.0_dp
+
+      ! Workspace query: build H at k=0, query optimal lwork via zheevx
+      if (allocated(work)) deallocate(work)
+      allocate(work(1))
+      call ZB8bandLandau(HT, smallk(1), profile, kpterms, cfg%grid%x, cfg=cfg)
+      lwork = -1
+      call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,1), &
+        HT, N, work, lwork, rwork, iwork, ifail, info)
+      if (info /= 0) then
+        print *, 'Error: zheevx Landau workspace query failed, info =', info
+        error stop 'zheevx parameter error'
+      end if
+      lwork = int(real(work(1)))
+      if (allocated(work)) deallocate(work)
+      allocate(work(lwork))
+
+      ! ================================================================
+      ! Landau k-sweep (OpenMP parallel)
+      ! ================================================================
+      info = mkl_set_num_threads_local(1)
+
+      print '(A,I0,A,I0,A)', ' Landau: N=', cfg%landau%nx, ', ', &
+        & cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
+
+      block
+        complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
+        real(kind=dp), allocatable    :: rwork_loc(:)
+        integer, allocatable          :: iwork_loc(:), ifail_loc(:)
+        integer :: info_loc, M_loc
+
+        call init_kp_block_cache()
+        call init_strain_cache()
+        call init_zeeman_cache()
+
+        !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
+        allocate(HT_loc(N, N))
+        allocate(work_loc(lwork))
+        allocate(rwork_loc(7*N))
+        allocate(iwork_loc(5*N))
+        allocate(ifail_loc(N))
+        HT_loc = (0.0_dp, 0.0_dp)
+
+        !$omp do schedule(static)
+        do k = 1, cfg%wave_vector%nsteps
+          call ZB8bandLandau(HT_loc, smallk(k), profile, kpterms, cfg%grid%x, cfg=cfg)
+          call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
+            eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
+            ifail_loc, info_loc)
+          if (info_loc /= 0) then
+            !$omp critical
+            print *, "ERROR: Landau diagonalization failed at k=", k, "info=", info_loc
+            if (info_loc < 0) print *, "  Parameter ", -info_loc, " had illegal value"
+            !$omp end critical
+            error stop 'zheevx diagonalization failed'
+          end if
+          eigv(:,:,k) = HT_loc(:, 1:iuu-il+1)
+        end do
+        !$omp end do
+
+        deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
+        !$omp end parallel
+      end block
+
+      ! Write Landau eigenfunctions at start, middle, end k-points (serial)
+      do k = 1, cfg%wave_vector%nsteps
+        if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
+          call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
+            & k, cfg%landau%nx, cfg%grid%x, .false.)
+        end if
+      end do
+
+      ! ================================================================
+      ! B-sweep fan diagram for Landau mode (landau_sweep='B')
+      ! ================================================================
+      if (trim(cfg%landau%sweep) == 'B') then
+        block
+          real(kind=dp) :: B_min, B_max, B_step, B_val
+          integer :: nB, iB, nL
+          real(kind=dp), allocatable :: eig_B(:,:)
+          complex(kind=dp), allocatable :: HT_B(:,:), work_B(:)
+          real(kind=dp), allocatable :: rwork_B(:)
+          integer, allocatable :: iwork_B(:), ifail_B(:)
+          integer :: info_B, M_B
+          character(len=64) :: fmt_str
+          type(wavevector) :: wv0
+
+          B_min  = cfg%bdg%B_sweep(1)
+          B_max  = cfg%bdg%B_sweep(2)
+          B_step = cfg%bdg%B_sweep(3)
+
+          nB = int((B_max - B_min) / B_step) + 1
+          nL = iuu - il + 1
+
+          print '(A,I0,A,F6.2,A,F6.2,A,F6.2)', ' Landau B-sweep: ', nB, &
+            & ' points, B=[', B_min, ',', B_max, '] T, step=', B_step
+
+          allocate(eig_B(nL, nB))
+          eig_B = 0.0_dp
+
+          wv0%kx = 0.0_dp
+          wv0%ky = 0.0_dp
+          wv0%kz = 0.0_dp
+
+          allocate(HT_B(N, N))
+          allocate(work_B(lwork))
+          allocate(rwork_B(7*N))
+          allocate(iwork_B(5*N))
+          allocate(ifail_B(N))
+          HT_B = (0.0_dp, 0.0_dp)
+
+          do iB = 1, nB
+            B_val = B_min + (iB - 1) * B_step
+            cfg%bdg%B_vec(3) = B_val
+            call ZB8bandLandau(HT_B, wv0, profile, kpterms, cfg%grid%x, cfg=cfg)
+            call zheevx('N', 'I', 'U', N, HT_B, N, vl, vu, il, iuu, abstol, M_B, &
+              eig_B(:, iB), HT_B, N, work_B, lwork, rwork_B, iwork_B, &
+              ifail_B, info_B)
+            if (info_B /= 0) then
+              print *, 'ERROR: B-sweep diagonalization failed at B=', B_val, &
+                & ' info=', info_B
+              error stop 'zheevx diagonalization failed in B-sweep'
+            end if
+          end do
+
+          call ensure_output_dir()
+          call get_unit(iounit)
+          open(unit=iounit, file='output/landau_fan.dat', status='replace', action='write')
+          write(fmt_str, '(A,I0,A)') '(g14.6,', nL, '(1x,g14.6))'
+          write(iounit, '(A)', advance='no') '# B[T]'
+          do i = 1, nL
+            write(iounit, '(A,I0)', advance='no') ' E_', i - 1
+          end do
+          write(iounit, '(A)') ''
+          do iB = 1, nB
+            B_val = B_min + (iB - 1) * B_step
+            write(iounit, fmt_str) B_val, (eig_B(i, iB), i=1, nL)
+          end do
+          close(iounit)
+          print '(A,I0,A)', ' Landau fan diagram written to output/landau_fan.dat (', nB, ' B-points)'
+          deallocate(eig_B, HT_B, work_B, rwork_B, iwork_B, ifail_B)
+        end block
+      end if
+
+      call writeEigenvalues(smallk, eig(:,:), cfg%wave_vector%nsteps)
+
+      call simulation_setup_free(setup)
     end block
 
-    print '(A,I0,A)', ' Landau mode: N=', N, ' (single material)'
+    ! Clean up common allocations and exit
+    if (allocated(smallk))  deallocate(smallk)
+    if (allocated(profile)) deallocate(profile)
+    if (allocated(kpterms)) deallocate(kpterms)
+
+    stop  ! Landau mode complete
+
   end if
 
   ! ====================================================================
@@ -456,22 +646,13 @@ program kpfdm
   if (allocated(work)) deallocate(work)
   allocate(work(N))  ! Will be resized after workspace query
 
-  ! Print profile for QW and Landau modes
+  ! Print profile for QW mode
   if (conf_direction(cfg%confinement) == 'z') then
     call ensure_output_dir()
     call get_unit(iounit)
     open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
     do i = 1, cfg%grid%npoints(), 1
       write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
-    end do
-    close(iounit)
-  else if (conf_direction(cfg%confinement) == 'x') then
-    ! Landau mode: print profile along x
-    call ensure_output_dir()
-    call get_unit(iounit)
-    open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
-    do i = 1, cfg%landau%nx, 1
-      write(iounit,*) cfg%grid%x(i), profile(i,1), profile(i,2), profile(i,3)
     end do
     close(iounit)
   end if
@@ -552,25 +733,10 @@ program kpfdm
     lwork = int(real(work(1)))
     if (allocated(work)) deallocate(work)
     allocate(work(lwork))
-  else if (conf_direction(cfg%confinement) == 'x') then
-    ! LANDAU: NxN workspace query
-    call ZB8bandLandau(HT, smallk(1), profile, kpterms, cfg%grid%x, cfg=cfg)
-    if (allocated(work)) deallocate(work)
-    allocate(work(1))
-    lwork = -1
-    call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,1), &
-               HT, N, work, lwork, rwork, iwork, ifail, info)
-    if (info /= 0) then
-      print *, 'Error: zheevx Landau workspace query failed, info =', info
-      error stop 'zheevx parameter error'
-    end if
-    lwork = int(real(work(1)))
-    if (allocated(work)) deallocate(work)
-    allocate(work(lwork))
   end if
 
   ! ====================================================================
-  ! k-vector sweep: sequential for bulk, OpenMP parallel for QW/Landau
+  ! k-vector sweep: sequential for bulk, OpenMP parallel for QW
   ! ====================================================================
   if (conf_direction(cfg%confinement) == 'n') then
     ! --- BULK (8x8, trivially fast — no parallelization needed) ---
@@ -657,156 +823,6 @@ program kpfdm
           & k, cfg%grid%npoints(), cfg%z, .false.)
       end if
     end do
-
-  else if (conf_direction(cfg%confinement) == 'x') then
-    ! --- LANDAU (8NxN, OpenMP parallel) ---
-    ! Disable MKL internal threading so each OpenMP thread calls
-    ! zheevx in serial — avoids oversubscription.
-    info = mkl_set_num_threads_local(1)
-
-    print '(A,I0,A,I0,A)', ' Landau: N=', cfg%landau%nx, ', ', &
-      & cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
-
-    block
-      ! Thread-private temporaries for the parallel region
-      complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
-      real(kind=dp), allocatable    :: rwork_loc(:)
-      integer, allocatable          :: iwork_loc(:), ifail_loc(:)
-      integer :: info_loc, M_loc
-
-      ! Pre-initialize block table caches before OpenMP fork (thread-safety)
-      call init_kp_block_cache()
-      call init_strain_cache()
-      call init_zeeman_cache()
-
-      !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
-      ! Each thread allocates its own workspace
-      allocate(HT_loc(N, N))
-      allocate(work_loc(lwork))
-      allocate(rwork_loc(7*N))
-      allocate(iwork_loc(5*N))
-      allocate(ifail_loc(N))
-      HT_loc = (0.0_dp, 0.0_dp)
-
-      !$omp do schedule(static)
-      do k = 1, cfg%wave_vector%nsteps
-        ! Build Landau Hamiltonian for this k-point
-        call ZB8bandLandau(HT_loc, smallk(k), profile, kpterms, cfg%grid%x, cfg=cfg)
-
-        ! Diagonalize
-        call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
-                   eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
-                   ifail_loc, info_loc)
-        if (info_loc /= 0) then
-          !$omp critical
-          print *, "ERROR: Landau diagonalization failed at k=", k, "info=", info_loc
-          if (info_loc < 0) print *, "  Parameter ", -info_loc, " had illegal value"
-          !$omp end critical
-          error stop 'zheevx diagonalization failed'
-        end if
-
-        ! Store eigenvectors (HT_loc now holds them, zheevx overwrites input)
-        eigv(:,:,k) = HT_loc(:, 1:iuu-il+1)
-      end do
-      !$omp end do
-
-      deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
-    !$omp end parallel
-    end block
-
-    ! Write Landau eigenfunctions at start, middle, end k-points (serial)
-    do k = 1, cfg%wave_vector%nsteps
-      if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
-        call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
-          & k, cfg%landau%nx, cfg%grid%x, .false.)
-      end if
-    end do
-
-    ! ==================================================================
-    ! B-sweep fan diagram for Landau mode (landau_sweep='B')
-    ! ==================================================================
-    if (trim(cfg%landau%sweep) == 'B') then
-      block
-        real(kind=dp) :: B_min, B_max, B_step, B_val
-        integer :: nB, iB, nL
-        real(kind=dp), allocatable :: eig_B(:,:)
-        complex(kind=dp), allocatable :: HT_B(:,:), work_B(:)
-        real(kind=dp), allocatable :: rwork_B(:)
-        integer, allocatable :: iwork_B(:), ifail_B(:)
-        integer :: info_B, M_B
-        character(len=64) :: fmt_str
-        type(wavevector) :: wv0
-
-        B_min  = cfg%bdg%B_sweep(1)
-        B_max  = cfg%bdg%B_sweep(2)
-        B_step = cfg%bdg%B_sweep(3)
-
-        nB = int((B_max - B_min) / B_step) + 1
-        nL = iuu - il + 1
-
-        print '(A,I0,A,F6.2,A,F6.2,A,F6.2)', ' Landau B-sweep: ', nB, &
-          & ' points, B=[', B_min, ',', B_max, '] T, step=', B_step
-
-        allocate(eig_B(nL, nB))
-        eig_B = 0.0_dp
-
-        ! Fixed Gamma-point wavevector
-        wv0%kx = 0.0_dp
-        wv0%ky = 0.0_dp
-        wv0%kz = 0.0_dp
-
-        ! Workspace allocation
-        allocate(HT_B(N, N))
-        allocate(work_B(lwork))
-        allocate(rwork_B(7*N))
-        allocate(iwork_B(5*N))
-        allocate(ifail_B(N))
-        HT_B = (0.0_dp, 0.0_dp)
-
-        do iB = 1, nB
-          B_val = B_min + (iB - 1) * B_step
-
-          ! Update B_vec for this sweep point
-          cfg%bdg%B_vec(3) = B_val
-
-          ! Build Landau Hamiltonian with updated B field
-          call ZB8bandLandau(HT_B, wv0, profile, kpterms, cfg%grid%x, cfg=cfg)
-
-          ! Diagonalize (eigenvalues only for speed)
-          call zheevx('N', 'I', 'U', N, HT_B, N, vl, vu, il, iuu, abstol, M_B, &
-            eig_B(:, iB), HT_B, N, work_B, lwork, rwork_B, iwork_B, &
-            ifail_B, info_B)
-          if (info_B /= 0) then
-            print *, 'ERROR: B-sweep diagonalization failed at B=', B_val, &
-              & ' info=', info_B
-            error stop 'zheevx diagonalization failed in B-sweep'
-          end if
-        end do
-
-        ! Write fan diagram to output/landau_fan.dat
-        call ensure_output_dir()
-        call get_unit(iounit)
-        open(unit=iounit, file='output/landau_fan.dat', status='replace', action='write')
-
-        ! Header: # B[T] E_0 E_1 ... E_{nL-1}
-        write(fmt_str, '(A,I0,A)') '(g14.6,', nL, '(1x,g14.6))'
-        write(iounit, '(A)', advance='no') '# B[T]'
-        do i = 1, nL
-          write(iounit, '(A,I0)', advance='no') ' E_', i - 1
-        end do
-        write(iounit, '(A)') ''
-
-        do iB = 1, nB
-          B_val = B_min + (iB - 1) * B_step
-          write(iounit, fmt_str) B_val, (eig_B(i, iB), i=1, nL)
-        end do
-        close(iounit)
-
-        print '(A,I0,A)', ' Landau fan diagram written to output/landau_fan.dat (', nB, ' B-points)'
-
-        deallocate(eig_B, HT_B, work_B, rwork_B, iwork_B, ifail_B)
-      end block
-    end if
 
   end if
   call writeEigenvalues(smallk, eig(:,:), cfg%wave_vector%nsteps)
