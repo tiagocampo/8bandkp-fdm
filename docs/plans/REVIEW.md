@@ -1,6 +1,6 @@
 # Plans Review — Implementation Status
 
-Review date: 2026-06-01 (updated from 2026-05-30)
+Review date: 2026-06-03 (updated from 2026-06-01)
 
 | # | Group | Files | Status | Notes |
 |---|-------|-------|--------|-------|
@@ -72,9 +72,10 @@ Review date: 2026-06-01 (updated from 2026-05-30)
 | 66 | 2026-05-19-fix-pr14-review-issues | plan | COMPLETE | All 12 tasks (T1-T12) verified. Doc comments, empty-array comparison, skipped-line warnings, kdotpy wrapping, run_all.py truncation, parse_gfactor, DRY strain runners, tensile strain config, physics parameter verification, return None replacement, SC tolerance, CLAUDE.md update. Commit `33859cc`. |
 | 67 | 2026-05-27-input-parser-toml-refactor | plan | COMPLETE | All 8 phases complete. toml-f submodule, 7 sub-types in defs.f90, 956-line parser (zero BACKSPACE), all consumers updated, 88 TOML configs, test infrastructure updated. Commit `0f5adc7`. |
 | 68 | 2026-05-07-test-coverage-completion | spec | COMPLETE | All 3 tasks (T1-T3) done. gfactor regression (3 golden + 2 standard-star), integration tests (wire hexagon, wire strain, SC wire), contiguous attributes (all 3 sites). Phase 14. |
-| 69 | 2026-05-08-core-kp-validation-ideation | ideation | PARTIAL | 6 of 8 ideas fully implemented (cross-code, Richardson, exciton, SC loop, TRK sum rule, Hermiticity). 2 partially done (verification ladder rungs 7-8, wire strain quantitative). Remaining items tracked in BACKLOG Phase 19. |
-| 70 | 2026-05-30-backlog-deferred-review-items | backlog doc | ACTIVE | 2 of 9 deferred items completed (I17 wire optics unit test, I18 hamiltonian_blocks unit test). 2 partially done (I19 convergence expansion, I20 ISBT hardening). 5 not done (I1, I2, I3, I4, I13-ext). Tracked in BACKLOG Phase 18. |
+| 69 | 2026-05-08-core-kp-validation-ideation | ideation | COMPLETE | All 8 ideas fully implemented. Last 2 (verification ladder rungs 7-8, wire strain quantitative) delivered in Phase 20 (Group #71). Phase 21 added ISBT benchmark, SC benchmark, exciton Bastard reference. |
+| 70 | 2026-05-30-backlog-deferred-review-items | backlog doc | ACTIVE | 4 of 9 deferred items completed: I17 wire optics unit test, I18 hamiltonian_blocks unit test, I20 ISBT hardening (Phase 21 verify_isbt_benchmark.py). I19 convergence expansion partially addressed (Phase 21 exciton tightening + SC benchmark). 5 not done (I1, I2, I3, I4, I13-ext). Tracked in BACKLOG Phase 18. |
 | 71 | 2026-05-31-deep-physics-validation-phase20 | implementation | COMPLETE | All 4 items delivered: TRK sum rule (7 pFUnit tests), Hermiticity (20 tests across 6 files), verification ladder rungs 7-8 (g-factor + optical), wire strain quantitative (4 checks). Commits `b8f16a2` through `3596737`. |
+| 72 | 2026-06-01-publishable-validation-benchmarks-phase21 | PRD + 6 issues | IN_PROGRESS | ISBT benchmark (6-config sweep, 7 checks per config), SC benchmark (5 checks: convergence, charge neutrality, Fermi, subband shift, potential), exciton tightening (Miller 15% + Bastard 1982 at 20%). 6 TOML configs. 2 new ctest tests (#104, #105). PR #35 (branch `feat/publishable-benchmarks-phase21`, not yet merged). |
 
 ---
 

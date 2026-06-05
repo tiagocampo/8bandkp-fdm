@@ -32,6 +32,12 @@ metadata:
     - optical_selection
     - conductance
     - rashba_phase
+    - ISBT_dipole
+    - ISBT_oscillator_strength
+    - charge_neutrality
+    - subband_shift
+    - potential_profile
+    - exciton_Eb
   geometries:
     - bulk
     - QW
@@ -55,6 +61,7 @@ metadata:
     - AlSbW/GaSbW/InAsW
     - InAs/GaAs-core-shell
     - InGaAs/AlGaAs
+    - InGaAs/InAlAs
 
 cells:
   # ── Bulk: band gap ──────────────────────────────────────────
@@ -249,6 +256,38 @@ cells:
     material: GaAs
     tier: required
 
+  # ── Phase 21: SC benchmark suite ────────────────────────────
+  - observable: charge_neutrality
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: conservation_law
+
+  - observable: fermi_level
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: parabolic_analytical
+
+  - observable: subband_shift
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: Bastard_perturbative
+
+  - observable: potential_profile
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: Hartree_analytical
+
+  # ── Phase 21: Exciton benchmark ─────────────────────────────
+  - observable: exciton_Eb
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: Miller1985_Bastard1982
+
   # ── Wire: g-factor ──────────────────────────────────────────
   - observable: g*_cb
     geometry: wire
@@ -372,7 +411,38 @@ cells:
   - observable: ISBT
     geometry: QW
     material: GaAs/AlGaAs
-    tier: aspirational
+    tier: required
+    reference: infinite_well_analytical
+
+  - observable: ISBT
+    geometry: QW
+    material: InGaAs/InAlAs
+    tier: required
+    reference: infinite_well_analytical
+
+  - observable: ISBT_dipole
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: infinite_well_analytical
+
+  - observable: ISBT_dipole
+    geometry: QW
+    material: InGaAs/InAlAs
+    tier: required
+    reference: infinite_well_analytical
+
+  - observable: ISBT_oscillator_strength
+    geometry: QW
+    material: GaAs/AlGaAs
+    tier: required
+    reference: infinite_well_analytical
+
+  - observable: ISBT_oscillator_strength
+    geometry: QW
+    material: InGaAs/InAlAs
+    tier: required
+    reference: infinite_well_analytical
 
   - observable: strain_shift
     geometry: bulk

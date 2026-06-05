@@ -6,6 +6,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Fortran 2018 code solving the **8-band zinc-blende k.p Hamiltonian** via finite differences. Built with `-std=f2018` enforcement. Computes electronic band structures for bulk semiconductors and quantum wells, plus Landau g-factors via second-order Lowdin partitioning with commutator-based velocity operators. Computes optical absorption, gain, spontaneous emission, and intersubband transitions using commutator-based velocity matrices $v_\alpha = -i [r_\alpha, H]$. Includes self-consistent Schrödinger-Poisson solver with DIIS acceleration. GPL v3.0, authored by Tiago de Campos.
 
+## Intent Layer
+
+**Before modifying code in a subdirectory, read its AGENTS.md first** to understand local patterns and invariants.
+
+- **Physics engine** (`src/physics/AGENTS.md`): 17 modules — Hamiltonian construction, optics, strain, SC loop, topology, BdG. ~113k tokens. Contains dependency DAG, basis conventions, and single-source-of-truth contracts.
+- **Integration tests** (`tests/integration/AGENTS.md`): 38 files — verification ladder (rungs 1–8), standard-star benchmarks (S1–S7), convergence tests (U4–U8), coverage matrix. ~108k tokens. Shared infrastructure in `star_helpers.py` and `convergence_helpers.py`.
+- **Lecture scripts** (`scripts/AGENTS.md`): 19 files — lecture-companion scripts (L00–L14), figure generation, config converter. ~155k tokens. Shared infrastructure via `tests/integration/star_helpers.py`.
+
+### Global Invariants
+
+- Basis ordering: bands 1–4 = valence (HH, LH, LH, HH), 5–6 = split-off, 7–8 = conduction — never change
+- Unit system: Angstroms (length), eV (energy), eV·s (time)
+- Single source of truth: k.p block table (`hamiltonian_blocks.f90`), Bir-Pikus formulas (`strain_solver.f90`), Zeeman table (`strain_solver.f90`)
+- All config validation via `validate()` + `validate_semantic()` in `defs.f90` — no silent corrections
+
 ## Build Commands
 
 ```bash
@@ -40,7 +55,7 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all tests (111: 35 unit + 44 regression + 16 verification + 7 star + 6 convergence + 2 strain + 1 coverage + misc)
+ctest --test-dir build                    # all tests (113: 35 unit + 44 regression + 18 verification + 9 standard-star (incl. 2 dual-labeled) + 6 convergence + 2 strain + 1 coverage + misc)
 ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only

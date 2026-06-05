@@ -7,11 +7,11 @@ extrapolation, and validating against published experimental values.
 Miller et al., Phys. Rev. B 1985: GaAs/AlGaAs QW exciton binding energy.
 2D hydrogen model: Eb ~ Rydberg/4 = 13.6/4 = 3.4 meV (sanity check).
 
-COVERAGE: observable=exciton_Eb geometry=QW material=GaAs/AlGaAs tier=convergence_exciton
-
 Usage:
     python3 test_exciton_convergence.py <build_dir> <source_dir>
 """
+
+# COVERAGE: observable=exciton_Eb geometry=QW material=GaAs/AlGaAs ref=Miller1985_Bastard1982
 
 import os
 import sys
@@ -63,7 +63,14 @@ FDSTEPS = [51, 101, 201, 401]
 # Published reference: Miller et al., Phys. Rev. B 1985
 # GaAs/AlGaAs QW, well width ~100 A: Eb ~ 8-10 meV
 MILLER_EB_MEV = 9.0  # approximate value for 100 A well
-MILLER_TOLERANCE = 0.30  # 30% tolerance (structure-dependent)
+MILLER_TOLERANCE = 0.15  # 15% tolerance (tightened from 30% for publishable benchmark)
+
+# Bastard PRB 1982 variational result for GaAs/AlGaAs QW
+# Bastard tabulates Eb for GaAs QWs with Al₀.₃Ga₀.₇As barriers
+# Reference: Bastard, Phys. Rev. B 25, 7584 (1982)
+# For a 100 Å well, Bastard reports Eb ~ 8-9 meV (interpolated from his Figure/tables)
+BASTARD_EB_MEV = 8.5  # approximate value for 100 Å well from Bastard 1982
+BASTARD_TOLERANCE = 0.20  # 20% tolerance (Bastard uses simpler effective-mass approach)
 
 # 2D hydrogen model sanity check
 RYDBERG_EV = 13.605693  # eV
@@ -135,6 +142,12 @@ def main():
           f"{'PASS' if miller_pass else 'FAIL'}")
     print(f"  2D hydrogen sanity (Eb < {HYDROGEN_2D_MEV:.0f} meV): {'PASS' if hydrogen_pass else 'FAIL'}")
 
+    # Bastard 1982 quantitative comparison
+    bastard_delta = abs(rich_eb - BASTARD_EB_MEV) / BASTARD_EB_MEV if BASTARD_EB_MEV > 0 else 999
+    bastard_pass = bastard_delta <= BASTARD_TOLERANCE
+    print(f"  Bastard 1982 ref ({BASTARD_EB_MEV} meV): delta={bastard_delta:.1%} "
+          f"{'PASS' if bastard_pass else 'FAIL'}")
+
     # Add validation to report
     report['experimental_reference'] = {
         'source': 'Miller et al., Phys. Rev. B 1985',
@@ -146,6 +159,12 @@ def main():
         '2D_Rydberg_meV': HYDROGEN_2D_MEV,
         'passed': hydrogen_pass,
     }
+    report['bastard_reference'] = {
+        'source': 'Bastard, Phys. Rev. B 25, 7584 (1982)',
+        'Eb_meV': BASTARD_EB_MEV,
+        'delta_fraction': bastard_delta,
+        'passed': bastard_pass,
+    }
 
     # Exciton variational convergence can be non-monotonic due to lambda oscillation
     if not report['monotonic']:
@@ -153,7 +172,7 @@ def main():
         report['failures'] = [f for f in report['failures'] if 'monotonic' not in f]
         report['passed'] = bool(len(report['failures']) == 0)
 
-    overall_pass = report['passed'] and miller_pass and hydrogen_pass
+    overall_pass = report['passed'] and miller_pass and hydrogen_pass and bastard_pass
     report['overall_pass'] = bool(overall_pass)
 
     # Write JSON
