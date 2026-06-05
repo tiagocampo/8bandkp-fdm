@@ -23,7 +23,7 @@ module simulation_setup_mod
   public :: simulation_setup_init, simulation_setup_free
   public :: setup_build_H, setup_solve_kpoint_serial
   public :: setup_build_velocity_matrices
-  public :: thread_workspace, setup_alloc_sweep
+  public :: thread_workspace
 
   type :: simulation_setup
     character(len=8) :: confinement = 'none'
@@ -491,23 +491,6 @@ contains
     type(simulation_setup), intent(inout) :: setup
     call simulation_setup_free(setup)
   end subroutine simulation_setup_finalize
-  subroutine setup_alloc_sweep(setup, nthreads, tws)
-    type(simulation_setup), intent(in) :: setup
-    integer, intent(in) :: nthreads
-    type(thread_workspace), allocatable, intent(out) :: tws(:)
-    integer :: t
-    if (setup%confinement /= 'wire') then
-      print *, "Error: setup_alloc_sweep requires confinement='wire'"
-      error stop "setup_alloc_sweep: requires confinement='wire'"
-    end if
-    allocate(tws(nthreads))
-    do t = 1, nthreads
-      call csr_clone_structure(setup%HT_csr_ptr, tws(t)%HT_step)
-      tws(t)%cfg = setup%eigen_cfg
-      tws(t)%solver = make_eigensolver(tws(t)%cfg)
-    end do
-  end subroutine setup_alloc_sweep
-
 
 
   subroutine thread_workspace_finalize(tw)

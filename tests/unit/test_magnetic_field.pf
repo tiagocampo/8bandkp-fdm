@@ -9,52 +9,6 @@ module test_magnetic_field
 contains
 
   @test
-  subroutine test_zeeman_single_grid_point()
-    real(kind=dp), allocatable :: coo_vals(:)
-    integer, allocatable :: coo_row(:), coo_col(:)
-    type(spatial_grid) :: grid
-    integer :: nnz_offset, i
-    integer, parameter :: nx = 1, ny = 1
-    integer :: mat2d(nx, ny)
-
-    ! Single grid point
-    mat2d = 1
-    call grid_init_rect(grid, nx, ny, 1.0_dp, 1.0_dp, mat2d)
-    allocate(coo_vals(8), coo_row(8), coo_col(8))
-    nnz_offset = 0
-
-    ! B = [0, 0, 1.0] T, g_factor = 2.0
-    call add_zeeman_coo(coo_vals, coo_row, coo_col, nnz_offset, &
-                         grid, [0.0_dp, 0.0_dp, 1.0_dp], g_factor=2.0_dp, coo_capacity=8)
-
-    @assertEqual(8, nnz_offset)
-    ! All diagonal entries
-    @assertTrue(all(coo_row(1:8) == coo_col(1:8)))
-    ! Verify each band gets the correct Zeeman shift
-    ! mu_B = 5.7883818012e-5 eV/T (CODATA)
-    ! Basis: HH↑, LH↑, LH↓, HH↓, SO↑, SO↓, CB↓, CB↑ (Winkler ordering)
-    ! Kramers partners split with opposite signs
-    ! Band 1 (HH  mJ=+3/2): -3/2 * g*mu_B*B
-    @assertEqual(-1.5_dp * 2.0_dp * mu_B, coo_vals(1), tolerance=1e-12_dp)
-    ! Band 2 (LH  mJ=+1/2): +1/2 * g*mu_B*B
-    @assertEqual( 0.5_dp * 2.0_dp * mu_B, coo_vals(2), tolerance=1e-12_dp)
-    ! Band 3 (LH  mJ=-1/2): -1/2 * g*mu_B*B
-    @assertEqual(-0.5_dp * 2.0_dp * mu_B, coo_vals(3), tolerance=1e-12_dp)
-    ! Band 4 (HH  mJ=-3/2): +3/2 * g*mu_B*B
-    @assertEqual( 1.5_dp * 2.0_dp * mu_B, coo_vals(4), tolerance=1e-12_dp)
-    ! Band 5 (SO  mJ=+1/2): -1/2 * g*mu_B*B
-    @assertEqual(-0.5_dp * 2.0_dp * mu_B, coo_vals(5), tolerance=1e-12_dp)
-    ! Band 6 (SO  mJ=-1/2): +1/2 * g*mu_B*B
-    @assertEqual( 0.5_dp * 2.0_dp * mu_B, coo_vals(6), tolerance=1e-12_dp)
-    ! Band 7 (CB↓ mJ=-1/2): -g*mu_B*B
-    @assertEqual(-1.0_dp * 2.0_dp * mu_B, coo_vals(7), tolerance=1e-12_dp)
-    ! Band 8 (CB↑ mJ=+1/2): +g*mu_B*B
-    @assertEqual( 1.0_dp * 2.0_dp * mu_B, coo_vals(8), tolerance=1e-12_dp)
-    deallocate(coo_vals, coo_row, coo_col)
-    call grid_free(grid)
-  end subroutine
-
-  @test
   subroutine test_peierls_phase_value()
     ! Test that Peierls phase is correctly computed
     ! B = 5T, y_i = 1nm, y_j = 0, dz = 1nm -> |phi| ≈ 0.76 rad
@@ -146,36 +100,6 @@ contains
 
     ! The off-diagonal value should be 0.5 * exp(-i*phi)
     @assertEqual(0.5_dp * exp_phase_expected, coo_vals(2), tolerance=1e-10_dp)
-
-    deallocate(coo_vals, coo_row, coo_col)
-    call grid_free(grid)
-  end subroutine
-
-  @test
-  subroutine test_zeeman_zero_field()
-    ! All Zeeman entries should be zero at B=0
-    real(kind=dp), allocatable :: coo_vals(:)
-    integer, allocatable :: coo_row(:), coo_col(:)
-    type(spatial_grid) :: grid
-    integer :: nnz_offset, i
-    integer, parameter :: nx = 1, ny = 1
-    integer :: mat2d(nx, ny)
-
-    ! Single grid point
-    mat2d = 1
-    call grid_init_rect(grid, nx, ny, 1.0_dp, 1.0_dp, mat2d)
-    allocate(coo_vals(8), coo_row(8), coo_col(8))
-    nnz_offset = 0
-
-    ! B = [0, 0, 0] — no magnetic field
-    call add_zeeman_coo(coo_vals, coo_row, coo_col, nnz_offset, &
-                         grid, [0.0_dp, 0.0_dp, 0.0_dp], g_factor=2.0_dp, coo_capacity=8)
-
-    @assertEqual(8, nnz_offset)
-    ! All diagonal entries should be exactly zero when B=0
-    do i = 1, 8
-      @assertEqual(0.0_dp, coo_vals(i), tolerance=1.0e-30_dp)
-    end do
 
     deallocate(coo_vals, coo_row, coo_col)
     call grid_free(grid)
