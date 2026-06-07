@@ -823,4 +823,98 @@ contains
   end subroutine test_skip_sc_flag
 
 
+  ! ==================================================================
+  ! Landau mode: simulation_setup_init for confinement='landau'
+  ! ==================================================================
+
+  ! Helper: build a minimal Landau InAs config
+  subroutine make_landau_inas_config(cfg)
+    type(simulation_config), intent(out) :: cfg
+    character(len=255) :: materials(1)
+    integer, parameter :: nx = 20
+
+    cfg%confinement = 'landau'
+    cfg%FDorder = 2
+    cfg%fd_step = nx
+    cfg%num_layers = 1
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 4
+    cfg%evnum = 8
+    cfg%wave_vector%mode = 'ky'
+    cfg%wave_vector%max = 0.05_dp
+    cfg%wave_vector%nsteps = 5
+    cfg%external_field%enabled = .false.
+    cfg%external_field%type = 'EF'
+    cfg%external_field%value = 0.0_dp
+    cfg%totalSize = 200.0_dp
+    cfg%delta = 0.0_dp
+    cfg%dz = cfg%totalSize / real(nx - 1, kind=dp)
+    cfg%which_band = 0
+    cfg%band_idx = 1
+
+    ! Landau section
+    cfg%landau%nx = nx
+    cfg%landau%width = 200.0_dp
+
+    ! B-field
+    cfg%b_field%components = [0.0_dp, 0.0_dp, 5.0_dp]
+
+    allocate(cfg%material_names(1))
+    cfg%material_names(1) = 'InAs'
+    allocate(cfg%z_min(1))
+    allocate(cfg%z_max(1))
+    cfg%z_min(1) = 0.0_dp
+    cfg%z_max(1) = cfg%landau%width
+
+    allocate(cfg%params(1))
+    materials(1) = 'InAs'
+    call paramDatabase(materials, 1, cfg%params)
+    call init_grid_from_config(cfg)
+  end subroutine make_landau_inas_config
+
+  ! Test: simulation_setup_init works for Landau mode
+  @test
+  subroutine test_landau_init()
+    type(simulation_config) :: cfg
+    type(simulation_setup) :: setup
+    integer :: expected_N
+
+    call make_landau_inas_config(cfg)
+
+    expected_N = cfg%landau%nx * 8  ! 20 * 8 = 160
+
+    call simulation_setup_init(cfg, setup)
+
+    ! Check matrix dimensions
+    @assertEqual(expected_N, setup%N)
+
+    ! Check eigenvalue range
+    @assertTrue(setup%il > 0)
+    @assertTrue(setup%iuu > setup%il)
+    @assertEqual(cfg%bands%num_cb + cfg%bands%num_vb, setup%iuu - setup%il + 1)
+
+    ! Check profile allocation
+    @assertTrue(allocated(setup%profile))
+
+    ! Check kpterms allocation and shape
+    @assertTrue(allocated(setup%kpterms))
+    @assertEqual(cfg%landau%nx, size(setup%kpterms, 1))
+    @assertEqual(cfg%landau%nx, size(setup%kpterms, 2))
+    @assertEqual(10, size(setup%kpterms, 3))
+
+    ! Check HT allocation
+    @assertTrue(allocated(setup%HT))
+    @assertEqual(expected_N, size(setup%HT, 1))
+    @assertEqual(expected_N, size(setup%HT, 2))
+
+    ! Check workspace query completed
+    @assertTrue(setup%lwork > 0)
+    @assertTrue(allocated(setup%work))
+    @assertTrue(allocated(setup%rwork))
+    @assertTrue(allocated(setup%iwork))
+
+    call simulation_setup_free(setup)
+  end subroutine test_landau_init
+
+
 end module test_simulation_setup

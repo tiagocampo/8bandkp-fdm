@@ -24,8 +24,6 @@ module simulation_setup_mod
   public :: simulation_setup_init, simulation_setup_free
   public :: setup_build_H, setup_solve_kpoint_serial
   public :: setup_build_velocity_matrices
-  public :: thread_workspace
-
   type :: simulation_setup
     character(len=8) :: confinement = 'none'
     logical :: has_strain = .false.
@@ -55,14 +53,6 @@ module simulation_setup_mod
   contains
     final :: simulation_setup_finalize
   end type simulation_setup
-
-  type :: thread_workspace
-    type(csr_matrix) :: HT_step
-    type(eigensolver_config) :: cfg
-    class(eigensolver_base), allocatable :: solver
-  contains
-    final :: thread_workspace_finalize
-  end type thread_workspace
 
 contains
 
@@ -163,7 +153,7 @@ contains
         if (info /= 0) then
           error stop 'zheev workspace query failed in simulation_setup_init'
         end if
-        setup%lwork = int(real(setup%work(1)))
+        setup%lwork = nint(real(setup%work(1)))
         deallocate(setup%work)
         allocate(setup%work(setup%lwork))
         deallocate(setup%rwork)
@@ -174,7 +164,7 @@ contains
         if (info /= 0) then
           error stop 'zheevd workspace query failed in simulation_setup_init'
         end if
-        setup%lwork = int(real(setup%work(1)))
+        setup%lwork = nint(real(setup%work(1)))
         lrwork = int(real(setup%rwork(1)))
         liwork = setup%iwork(1)
         deallocate(setup%work)
@@ -320,7 +310,7 @@ contains
         if (info_loc /= 0) then
           error stop 'zheevx workspace query failed in simulation_setup_init (landau)'
         end if
-        setup%lwork = int(real(setup%work(1)))
+        setup%lwork = nint(real(setup%work(1)))
         deallocate(setup%work)
         allocate(setup%work(setup%lwork))
         deallocate(eig_tmp, ifail_tmp)
@@ -356,13 +346,6 @@ contains
     case('wire')
       call ZB8bandGeneralized(setup%HT_csr_ptr, kvec%kz, &
         setup%profile_2d, setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
-    case('landau')
-      if (.not. present(HT_out)) then
-        print *, 'Error: setup_build_H landau requires HT_out'
-        error stop 'setup_build_H: landau requires HT_out'
-      end if
-      call ZB8bandLandau(HT_out, kvec, setup%profile, setup%kpterms, &
-        cfg%grid%x, cfg=cfg)
     case default
       print *, 'Error: setup_build_H unsupported confinement=', setup%confinement
       error stop 'setup_build_H: unsupported confinement'
@@ -390,7 +373,7 @@ contains
         if (info /= 0) then
           error stop 'zheev workspace query failed in setup_solve_kpoint_serial'
         end if
-        setup%lwork = int(real(setup%work(1)))
+        setup%lwork = nint(real(setup%work(1)))
         deallocate(setup%work)
         allocate(setup%work(setup%lwork))
         deallocate(rwork_local)
@@ -545,12 +528,6 @@ contains
     call simulation_setup_free(setup)
   end subroutine simulation_setup_finalize
 
-
-  subroutine thread_workspace_finalize(tw)
-    type(thread_workspace), intent(inout) :: tw
-    call csr_free(tw%HT_step)
-    if (allocated(tw%solver)) deallocate(tw%solver)
-  end subroutine thread_workspace_finalize
   subroutine dense_to_csr_8(dns, csr_out)
     complex(kind=dp), intent(in), contiguous :: dns(:,:)
     type(csr_matrix), intent(out) :: csr_out

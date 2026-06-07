@@ -432,22 +432,10 @@ program kpfdm
       eig(:,:) = 0_dp
       eigv(:,:,:) = 0_dp
 
-      if (allocated(HT)) deallocate(HT)
-      allocate(HT(N, N))
-      HT = 0.0_dp
+      ! Reuse setup%HT (already allocated and zeroed from workspace query)
+      call move_alloc(setup%HT, HT)
 
-      ! Workspace query: build H at k=0, query optimal lwork via zheevx
-      if (allocated(work)) deallocate(work)
-      allocate(work(1))
-      call ZB8bandLandau(HT, smallk(1), profile, kpterms, cfg%grid%x, cfg=cfg)
-      lwork = -1
-      call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,1), &
-        HT, N, work, lwork, rwork, iwork, ifail, info)
-      if (info /= 0) then
-        print *, 'Error: zheevx Landau workspace query failed, info =', info
-        error stop 'zheevx parameter error'
-      end if
-      lwork = int(real(work(1)))
+      ! Reuse setup's workspace query result (lwork already set from init)
       if (allocated(work)) deallocate(work)
       allocate(work(lwork))
 
@@ -511,7 +499,7 @@ program kpfdm
       ! ================================================================
       if (trim(cfg%landau%sweep) == 'B') then
         block
-          real(kind=dp) :: B_min, B_max, B_step, B_val
+          real(kind=dp) :: B_min, B_max, B_step, B_val, B_orig
           integer :: nB, iB, nL
           real(kind=dp), allocatable :: eig_B(:,:)
           complex(kind=dp), allocatable :: HT_B(:,:), work_B(:)
@@ -545,6 +533,7 @@ program kpfdm
           allocate(ifail_B(N))
           HT_B = (0.0_dp, 0.0_dp)
 
+          B_orig = cfg%bdg%B_vec(3)
           do iB = 1, nB
             B_val = B_min + (iB - 1) * B_step
             cfg%bdg%B_vec(3) = B_val
@@ -558,6 +547,7 @@ program kpfdm
               error stop 'zheevx diagonalization failed in B-sweep'
             end if
           end do
+          cfg%bdg%B_vec(3) = B_orig  ! restore original B field
 
           call ensure_output_dir()
           call get_unit(iounit)

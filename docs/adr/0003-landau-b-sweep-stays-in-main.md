@@ -23,3 +23,13 @@ Three options were considered:
 ## Why
 
 The B-sweep is 81 lines of specialized physics output (magnetic field parameterization, fan diagram formatting). Options B and C would move this complexity into `simulation_setup` without reducing it — they'd just relocate it. The method would be Landau-specific (violating the generic intent of simulation_setup) or over-generalized for a single caller. The real win of C1 is collapsing init + workspace query + k-sweep; the B-sweep is a separate concern that naturally belongs in the application layer.
+
+## Consequences
+
+### OpenMP k-sweep uses thread-local arrays, not setup
+
+The Landau k-sweep uses `!$omp parallel` with thread-private `HT_loc`, `work_loc`, etc. These are allocated inside the parallel region because each thread needs its own workspace. The `setup%HT` and `setup%work` fields cannot serve this role — they are single instances, not thread-local. This is why the k-sweep calls `ZB8bandLandau` directly instead of through `setup_build_H`. The `setup_build_H` method is designed for serial single-H builds (used by g-factor, SC loop); the parallel k-sweep has fundamentally different allocation requirements.
+
+### B-sweep mutates cfg%bdg%B_vec(3) temporarily
+
+The B-sweep updates `cfg%bdg%B_vec(3)` at each iteration so `ZB8bandLandau` reads the updated field strength. The original value is saved before the loop and restored after. Since the Landau block exits with `stop`, the restore is defensive — it ensures correctness if the block is ever restructured to not exit.
