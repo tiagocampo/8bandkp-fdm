@@ -2,7 +2,8 @@ module simulation_setup_mod
 
   use definitions
   use hamiltonianConstructor
-  use confinement_init, only: confinementInitialization, confinementInitialization_2d
+  use confinement_init, only: confinementInitialization, confinementInitialization_2d, &
+    & confinementInitialization_landau
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
     & wire_coo_cache, wire_coo_cache_free, ZB8bandGeneralized, &
     & build_velocity_matrices
@@ -11,7 +12,7 @@ module simulation_setup_mod
   use sc_loop, only: self_consistent_loop, self_consistent_loop_wire
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
     & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
-  use linalg, only: zheev, zheevd
+  use linalg, only: zheev, zheevd, zheevx
   use utils
   use sparse_matrices
   use geometry, only: init_wire_from_config
@@ -23,7 +24,7 @@ module simulation_setup_mod
   public :: simulation_setup_init, simulation_setup_free
   public :: setup_build_H, setup_solve_kpoint_serial
   public :: setup_build_velocity_matrices
-  public :: thread_workspace, setup_alloc_sweep
+  public :: thread_workspace
 
   type :: simulation_setup
     character(len=8) :: confinement = 'none'
@@ -282,6 +283,51 @@ contains
         end block
       end if
 
+    case('landau')
+      setup%N = cfg%landau%nx * 8
+      setup%il = NUM_VB_STATES * cfg%landau%nx - cfg%bands%num_vb + 1
+      setup%iuu = NUM_VB_STATES * cfg%landau%nx + cfg%bands%num_cb
+      allocate(setup%kpterms(cfg%landau%nx, cfg%landau%nx, 10))
+      setup%kpterms = 0.0_dp
+      call confinementInitialization_landau(cfg%grid%x, cfg%material_names(1:1), &
+        cfg%params(1:1), setup%profile, setup%kpterms, cfg%FDorder)
+      allocate(setup%HT(setup%N, setup%N))
+      setup%HT = 0.0_dp
+      ! zheevx workspace query: build H at k=0, query optimal lwork
+      block
+        type(wavevector) :: wv0
+        real(kind=dp), allocatable :: eig_tmp(:,:)
+        integer, allocatable :: ifail_tmp(:)
+        integer :: info_loc, M_loc
+        real(kind=dp) :: abstol_loc, vl_loc, vu_loc
+        wv0%kx = 0.0_dp; wv0%ky = 0.0_dp; wv0%kz = 0.0_dp
+        allocate(eig_tmp(setup%N, 1))
+        eig_tmp = 0.0_dp
+        allocate(setup%work(1))
+        allocate(setup%rwork(7 * setup%N))
+        allocate(setup%iwork(5 * setup%N))
+        allocate(ifail_tmp(setup%N))
+        call ZB8bandLandau(setup%HT, wv0, setup%profile, setup%kpterms, &
+          cfg%grid%x, cfg=cfg)
+        setup%lwork = -1
+        abstol_loc = 0.0_dp
+        vl_loc = 0.0_dp
+        vu_loc = 0.0_dp
+        call zheevx('V', 'I', 'U', setup%N, setup%HT, setup%N, vl_loc, vu_loc, &
+          setup%il, setup%iuu, abstol_loc, M_loc, eig_tmp(:, 1), &
+          setup%HT, setup%N, setup%work, setup%lwork, setup%rwork, setup%iwork, &
+          ifail_tmp, info_loc)
+        if (info_loc /= 0) then
+          error stop 'zheevx workspace query failed in simulation_setup_init (landau)'
+        end if
+        setup%lwork = int(real(setup%work(1)))
+        deallocate(setup%work)
+        allocate(setup%work(setup%lwork))
+        deallocate(eig_tmp, ifail_tmp)
+      end block
+      ! Reset HT for reuse by caller
+      setup%HT = 0.0_dp
+
     case default
       print *, 'Error: simulation_setup_init unsupported confinement=', cfg%confinement
       error stop 'simulation_setup_init: unsupported confinement'
@@ -310,6 +356,13 @@ contains
     case('wire')
       call ZB8bandGeneralized(setup%HT_csr_ptr, kvec%kz, &
         setup%profile_2d, setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
+    case('landau')
+      if (.not. present(HT_out)) then
+        print *, 'Error: setup_build_H landau requires HT_out'
+        error stop 'setup_build_H: landau requires HT_out'
+      end if
+      call ZB8bandLandau(HT_out, kvec, setup%profile, setup%kpterms, &
+        cfg%grid%x, cfg=cfg)
     case default
       print *, 'Error: setup_build_H unsupported confinement=', setup%confinement
       error stop 'setup_build_H: unsupported confinement'
@@ -491,23 +544,6 @@ contains
     type(simulation_setup), intent(inout) :: setup
     call simulation_setup_free(setup)
   end subroutine simulation_setup_finalize
-  subroutine setup_alloc_sweep(setup, nthreads, tws)
-    type(simulation_setup), intent(in) :: setup
-    integer, intent(in) :: nthreads
-    type(thread_workspace), allocatable, intent(out) :: tws(:)
-    integer :: t
-    if (setup%confinement /= 'wire') then
-      print *, "Error: setup_alloc_sweep requires confinement='wire'"
-      error stop "setup_alloc_sweep: requires confinement='wire'"
-    end if
-    allocate(tws(nthreads))
-    do t = 1, nthreads
-      call csr_clone_structure(setup%HT_csr_ptr, tws(t)%HT_step)
-      tws(t)%cfg = setup%eigen_cfg
-      tws(t)%solver = make_eigensolver(tws(t)%cfg)
-    end do
-  end subroutine setup_alloc_sweep
-
 
 
   subroutine thread_workspace_finalize(tw)

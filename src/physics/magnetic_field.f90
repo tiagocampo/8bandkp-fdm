@@ -5,7 +5,7 @@ module magnetic_field
   implicit none
   private
 
-  public :: add_zeeman_coo, add_peierls_coo, compute_zeeman_vz, compute_gauge_shifts
+  public :: add_peierls_coo, compute_zeeman_vz, compute_gauge_shifts
 
   ! 8x8 spin matrices in zinc-blende basis (HH↑,LH↑,LH↓,HH↓,SO↑,SO↓,CB↓,CB↑)
   ! Winkler ordering: bands 1-4 = valence (HH,LH,LH,HH), 5-6 = SO, 7-8 = CB
@@ -13,40 +13,6 @@ module magnetic_field
   ! mu_B = e * hbar / (2 * m0) = 5.7884e-5 eV/T
 
 contains
-
-  subroutine add_zeeman_coo(coo_vals, coo_row, coo_col, nnz_offset, &
-                             grid, B_vec, g_factor, coo_capacity)
-    ! Adds g*mu_B * B . sigma to the 8-band diagonal at each grid point.
-    ! Each grid point contributes 8 diagonal COO entries (one per band).
-    real(kind=dp), intent(inout), contiguous :: coo_vals(:)
-    integer, intent(inout), contiguous :: coo_row(:), coo_col(:)
-    integer, intent(inout) :: nnz_offset
-    type(spatial_grid), intent(in) :: grid
-    real(kind=dp), intent(in) :: B_vec(3), g_factor
-    integer, intent(in) :: coo_capacity
-
-    integer :: i, idx, n
-    real(kind=dp) :: Vz(8), B_mag
-
-    B_mag = sqrt(sum(B_vec**2))
-
-    n = grid%npoints()
-    do i = 1, n
-      call compute_zeeman_vz(g_factor, mu_B, B_mag, Vz)
-
-      do idx = 1, 8
-        nnz_offset = nnz_offset + 1
-        if (nnz_offset > coo_capacity) then
-          print *, 'ERROR: add_zeeman_coo: COO capacity exceeded'
-          print *, '  nnz_offset=', nnz_offset, ' capacity=', coo_capacity
-          stop 1
-        end if
-        coo_row(nnz_offset) = (i-1)*8 + idx
-        coo_col(nnz_offset) = (i-1)*8 + idx
-        coo_vals(nnz_offset) = Vz(idx)
-      end do
-    end do
-  end subroutine add_zeeman_coo
 
   subroutine add_peierls_coo(coo_vals, coo_row, coo_col, nnz_offset, &
                               grid, B_vec)

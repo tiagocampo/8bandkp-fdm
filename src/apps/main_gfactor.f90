@@ -269,7 +269,7 @@ program gfactor
 
     N = cfg%grid%npoints()*8
 
-    if (cfg%evnum /= N) stop 'evnum not equal to total matrix size'
+    if (cfg%evnum /= N) error stop 'evnum not equal to total matrix size'
 
     ! Initialize simulation setup (confinement, profile, kpterms, workspace)
     block

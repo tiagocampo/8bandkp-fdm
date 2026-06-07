@@ -173,7 +173,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
   <- scattering.f90          (phonon scattering rates, used by main.f90)
   <- outputFunctions.f90      (eigenvalue/eigenfunction file I/O)
   <- input_parser.f90         (TOML-based input.toml parser → simulation_config type, uses toml-f library)
-  <- simulation_setup.f90     (simulation orchestration: H-build, eigensolve, k-point sweep; used by all four executables)
+  <- simulation_setup.f90     (simulation orchestration: H-build, eigensolve, k-point sweep for all 4 confinement modes; used by all four executables)
 ```
 
 ### Key design concepts

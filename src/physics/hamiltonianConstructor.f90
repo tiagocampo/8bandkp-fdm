@@ -6,7 +6,6 @@ module hamiltonianConstructor
   use utils
   use strain_solver, only: compute_bp_scalar, bir_pikus_blocks_free, &
     get_strain_table, strain_entry, zeeman_entry, get_zeeman_table
-  use confinement_init
   use hamiltonian_wire
   use magnetic_field, only: compute_gauge_shifts
   use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &
