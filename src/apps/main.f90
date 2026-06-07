@@ -804,6 +804,10 @@ program kpfdm
                    eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
                    ifail_loc, info_loc)
         if (info_loc /= 0) then
+          !$omp critical
+          print *, "ERROR: diagonalization failed at k=", k, "info=", info_loc
+          if (info_loc < 0) print *, "  Parameter ", -info_loc, " had illegal value"
+          !$omp end critical
           error stop 'zheevx diagonalization failed'
         end if
 
