@@ -6,13 +6,75 @@ module magnetic_field
   private
 
   public :: add_peierls_coo, compute_zeeman_vz, compute_gauge_shifts
+  public :: zeeman_entry, get_zeeman_table, init_zeeman_cache
 
   ! 8x8 spin matrices in zinc-blende basis (HH↑,LH↑,LH↓,HH↓,SO↑,SO↓,CB↓,CB↑)
   ! Winkler ordering: bands 1-4 = valence (HH,LH,LH,HH), 5-6 = SO, 7-8 = CB
   ! Zeeman: Vz(b) = g_eff(b) * mu_B * B_mag, Kramers partners split opposite
   ! mu_B = e * hbar / (2 * m0) = 5.7884e-5 eV/T
 
+  ! ------------------------------------------------------------------
+  ! Zeeman diagonal table entry: describes the g_multiplier for one band.
+  ! band_index is 0-based (0-7). The Zeeman energy for band b is:
+  !   Vz(b) = g_factor * g_multiplier(b) * mu_B * B_mag
+  ! Coefficients from compute_zeeman_vz (magnetic_field.f90):
+  !   Band 0 (HH mJ=+3/2): -1.5,  Band 1 (LH mJ=+1/2): +0.5
+  !   Band 2 (LH mJ=-1/2): -0.5,  Band 3 (HH mJ=-3/2): +1.5
+  !   Band 4 (SO mJ=+1/2): -0.5,  Band 5 (SO mJ=-1/2): +0.5
+  !   Band 6 (CB mJ=-1/2): -1.0,  Band 7 (CB mJ=+1/2): +1.0
+  ! ------------------------------------------------------------------
+  type :: zeeman_entry
+    integer               :: band_index     ! 0-based band offset (0-7)
+    real(kind=dp)         :: g_multiplier   ! spin-dependent coefficient c_b
+  end type zeeman_entry
+
+  ! Module-level cache for the Zeeman table (8-entry compile-time constant)
+  logical, save :: zeeman_table_cached = .false.
+  type(zeeman_entry), save :: zeeman_table_cache(8)
+
 contains
+
+  ! ==================================================================
+  ! Build the 8-entry Zeeman diagonal table.
+  !
+  ! Each entry maps band_index to its g_multiplier coefficient c_b
+  ! such that the Zeeman energy for band b is:
+  !   Vz(b) = g_factor * c_b * mu_B * B_mag
+  !
+  ! Coefficients are g_J * m_J for each band in the Winkler basis
+  ! (single source of truth for Zeeman diagonal g-multipliers).
+  ! ==================================================================
+  function build_zeeman_table() result(table)
+    type(zeeman_entry) :: table(8)
+
+    table(1) = zeeman_entry(0, -1.5_dp)  ! HH  (mJ = +3/2)
+    table(2) = zeeman_entry(1,  0.5_dp)  ! LH  (mJ = +1/2)
+    table(3) = zeeman_entry(2, -0.5_dp)  ! LH  (mJ = -1/2)
+    table(4) = zeeman_entry(3,  1.5_dp)  ! HH  (mJ = -3/2)
+    table(5) = zeeman_entry(4, -0.5_dp)  ! SO  (mJ = +1/2)
+    table(6) = zeeman_entry(5,  0.5_dp)  ! SO  (mJ = -1/2)
+    table(7) = zeeman_entry(6, -1.0_dp)  ! CB  (mJ = -1/2)
+    table(8) = zeeman_entry(7,  1.0_dp)  ! CB  (mJ = +1/2)
+
+  end function build_zeeman_table
+
+  function get_zeeman_table() result(table)
+    type(zeeman_entry) :: table(8)
+    if (.not. zeeman_table_cached) then
+      zeeman_table_cache = build_zeeman_table()
+      zeeman_table_cached = .true.
+    end if
+    table = zeeman_table_cache
+  end function get_zeeman_table
+
+  ! ==================================================================
+  ! Pre-initialize the Zeeman table cache (thread-safety).
+  ! Call before OpenMP fork to avoid races on the SAVE cache.
+  ! ==================================================================
+  subroutine init_zeeman_cache()
+    type(zeeman_entry) :: dummy(8)
+    dummy = get_zeeman_table()
+  end subroutine init_zeeman_cache
 
   subroutine add_peierls_coo(coo_vals, coo_row, coo_col, nnz_offset, &
                               grid, B_vec)
@@ -109,26 +171,23 @@ contains
     end do
   end subroutine compute_gauge_shifts
 
-  pure subroutine compute_zeeman_vz(g_factor, mu_B_val, B_mag, Vz)
-    ! Computes the 8-component Zeeman splitting vector:
-    !   Vz(b) = g_factor * c_b * mu_B * B_mag
-    ! Coefficients c_b are g_J * m_J for each band in Winkler basis:
-    !   Band 1 (HH mJ=+3/2): -3/2,  Band 2 (LH mJ=+1/2): +1/2
-    !   Band 3 (LH mJ=-1/2): -1/2,  Band 4 (HH mJ=-3/2): +3/2
-    !   Band 5 (SO mJ=+1/2): -1/2,  Band 6 (SO mJ=-1/2): +1/2
-    !   Band 7 (CB mJ=-1/2): -1,    Band 8 (CB mJ=+1/2): +1
+  subroutine compute_zeeman_vz(g_factor, mu_B_val, B_mag, Vz)
+    ! Computes the 8-component Zeeman splitting vector by reading from the
+    ! Zeeman table (single source of truth). Each band gets:
+    !   Vz(b) = g_factor * g_multiplier(b) * mu_B * B_mag
+    ! Note: no longer pure — reads from SAVE cache via get_zeeman_table().
+    ! The cache is pre-warmed by init_zeeman_cache() before OpenMP fork.
     real(kind=dp), intent(in) :: g_factor, mu_B_val, B_mag
     real(kind=dp), intent(out) :: Vz(8)
+    type(zeeman_entry) :: ztable(8)
+    integer :: b
     real(kind=dp) :: E0
+
     E0 = g_factor * mu_B_val * B_mag
-    Vz(1) = -1.5_dp * E0  ! HH  (mJ = +3/2)
-    Vz(2) =  0.5_dp * E0  ! LH  (mJ = +1/2)
-    Vz(3) = -0.5_dp * E0  ! LH  (mJ = -1/2)
-    Vz(4) =  1.5_dp * E0  ! HH  (mJ = -3/2)
-    Vz(5) = -0.5_dp * E0  ! SO  (mJ = +1/2)
-    Vz(6) =  0.5_dp * E0  ! SO  (mJ = -1/2)
-    Vz(7) = -1.0_dp * E0  ! CB↓ (mJ = -1/2)
-    Vz(8) =  1.0_dp * E0  ! CB↑ (mJ = +1/2)
+    ztable = get_zeeman_table()
+    do b = 1, 8
+      Vz(b) = ztable(b)%g_multiplier * E0
+    end do
   end subroutine compute_zeeman_vz
 
 end module magnetic_field

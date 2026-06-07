@@ -9,7 +9,8 @@ program kpfdm
   use input_parser
   use sc_loop
   use eigensolver, only: eigensolver_result, eigensolver_result_free
-  use strain_solver, only: strain_result, strain_result_free, init_strain_cache, init_zeeman_cache
+  use strain_solver, only: strain_result, strain_result_free, init_strain_cache
+  use magnetic_field, only: init_zeeman_cache
   use exciton_solver
   use scattering_solver
   use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch

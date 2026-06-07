@@ -8,7 +8,8 @@ module hamiltonian_wire
     KP_PP, KP_PM, KP_PZ, KP_A, KP_DIFF, KP_HALF_SUM
   use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar, &
     & strain_entry, build_strain_table, get_strain_table, &
-    & zeeman_entry, get_zeeman_table
+    & lookup_bp_field
+  use magnetic_field, only: zeeman_entry, get_zeeman_table
   use confinement_init, only: confinementInitialization_2d
   use finitedifferences
 
@@ -1174,17 +1175,7 @@ module hamiltonian_wire
           g_row = table(e)%row_band * N + ii
           g_col = table(e)%col_band * N + ii
 
-          select case (table(e)%field_id)
-          case (1); field_val = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
-          case (2); field_val = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
-          case (3); field_val = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
-          case (4); field_val = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
-          case (5); field_val = bp%S_eps(ii)
-          case (6); field_val = bp%R_eps(ii)
-          case (7); field_val = bp%QT2_eps(ii)
-          case default
-            error stop "insert_strain_coo: invalid field_id"
-          end select
+          field_val = lookup_bp_field(bp, table(e)%field_id, ii)
 
           if (table(e)%use_conjg) field_val = conjg(field_val)
 

@@ -3,6 +3,7 @@ module test_strain_solver
   use definitions
   use parameters
   use strain_solver
+  use magnetic_field, only: zeeman_entry, get_zeeman_table
   use geometry
   use hamiltonianConstructor
   use hamiltonian_wire, only: insert_strain_coo
