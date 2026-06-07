@@ -82,7 +82,7 @@ Regression tests use shell scripts + Python (`tests/regression/compare_output.py
 ./build/src/topologicalAnalysis # Reads input.toml with [topology] section, outputs to output/
 ```
 
-**Parallelism:** OpenMP distributes the QW k-point sweep across threads (`main.f90:691-723`). MKL runs sequential internally to avoid oversubscription. Control thread count with `OMP_NUM_THREADS`:
+**Parallelism:** OpenMP distributes the QW k-point sweep across threads (`main.f90:778-810`). MKL runs sequential internally to avoid oversubscription. Control thread count with `OMP_NUM_THREADS`:
 
 ```bash
 OMP_NUM_THREADS=12 ./build/src/bandStructure   # use 12 of 24 cores
@@ -134,7 +134,7 @@ src/
   physics/    hamiltonian_blocks.f90, hamiltonianConstructor.f90, confinement_init.f90, hamiltonian_wire.f90, gfactor_functions.f90, optical_spectra.f90, spin_projection.f90, poisson.f90, charge_density.f90, sc_loop.f90, exciton.f90, strain_solver.f90, scattering.f90, magnetic_field.f90, topological_analysis.f90, bdg_hamiltonian.f90, green_functions.f90
   apps/       main.f90, main_gfactor.f90, main_optics.f90, main_topology.f90
 tests/
-  unit/       pFUnit .pf test files (34 tests: defs, FD, utils, parameters, Hamiltonian, Hamiltonian blocks, CSR, eigensolver, Poisson, charge density, SC loop, geometry, optical, topology, magnetic field, BdG, Landau, Z2, strain_solver, green_functions)
+  unit/       pFUnit .pf test files (35 tests: defs, FD, utils, parameters, Hamiltonian, Hamiltonian blocks, CSR, eigensolver, Poisson, charge density, SC loop, geometry, optical, topology, magnetic field, BdG, Landau, Z2, strain_solver, green_functions)
   support/    shared test-support library (CSR helpers, Krylov infrastructure, reference data)
   integration/  shell scripts + Python verification scripts for full-executable tests
   regression/   configs/, data/, compare_output.py

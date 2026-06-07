@@ -24,7 +24,7 @@ Called from `src/apps/` and `src/core/simulation_setup.f90`:
 | `hamiltonianConstructor.f90` | `hamiltonianConstructor` | 758 | Dense bulk/QW/Landau Hamiltonian + velocity matrices |
 | `hamiltonian_wire.f90` | `hamiltonian_wire` | 1357 | Sparse wire Hamiltonian (CSR/COO) + workspace cache |
 | `bdg_hamiltonian.f90` | `bdg_hamiltonian` | 432 | BdG Nambu-space (16N×16N) with s-wave pairing |
-| `magnetic_field.f90` | `magnetic_field` | 168 | Zeeman splitting + Peierls phase as COO insertions |
+| `magnetic_field.f90` | `magnetic_field` | 134 | Zeeman splitting + Peierls phase as COO insertions |
 | `strain_solver.f90` | `strain_solver` | 1206 | Biaxial strain, plane-strain PDE, Bir-Pikus, Zeeman table |
 | `gfactor_functions.f90` | `gfactorFunctions` | 1217 | Lowdin partitioning, spin matrices, optical matrix elements |
 | `optical_spectra.f90` | `optical_spectra` | 1058 | Absorption (TE/TM), gain, spontaneous emission, ISBT |
