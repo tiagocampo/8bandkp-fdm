@@ -85,7 +85,12 @@ module hamiltonian_wire
   public :: wire_workspace, wire_workspace_free
   public :: build_velocity_matrices
   public :: ZB8bandGeneralized
+  public :: insert_csr_block_scaled
+  public :: insert_main_blocks
+  public :: insert_profile_diagonal
   public :: insert_strain_coo
+  public :: insert_zeeman_coo
+  public :: finalize_coo_to_csr
 
   interface build_velocity_matrices
     module procedure build_velocity_matrices_2d

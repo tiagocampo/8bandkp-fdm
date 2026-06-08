@@ -20,6 +20,8 @@ program kpfdm
   use scattering_solver
   use linalg, only: zheevx, mkl_set_num_threads_local, dlamch
   use spin_projection, only: compute_band_parts
+  use sparse_matrices, only: csr_matrix, csr_free
+  use hamiltonian_qw, only: qw_workspace, qw_workspace_free, ZB8bandQW_csr
   use simulation_setup_mod
 
   implicit none
@@ -758,47 +760,79 @@ program kpfdm
       end do
 
     else if (conf_direction(cfg%confinement) == 'z') then
-      ! --- QUANTUM WELL (NxN, OpenMP parallel) ---
-      ! Disable MKL internal threading so each OpenMP thread calls
-      ! LAPACK in serial — avoids oversubscription.
-      info = mkl_set_num_threads_local(1)
+      ! --- QUANTUM WELL (NxN) ---
+      if (trim(ecfg_bs%method) == 'FEAST') then
+        ! ============================================================
+        ! QW FEAST path: CSR build + sparse solve, serial k-sweep
+        ! ============================================================
+        block
+          type(csr_matrix) :: HT_csr_loc
+          type(qw_workspace) :: qw_ws
 
-      print '(A,I0,A)', ' QW k-sweep: ', cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
+          ! Pre-initialize caches (thread-safety)
+          call init_kp_block_cache()
+          call init_strain_cache()
+          call init_zeeman_cache()
 
-      block
-        ! Thread-private temporaries for the parallel region
-        complex(kind=dp), allocatable :: HT_loc(:,:)
-        type(eigensolver_config) :: cfg_loc
-        class(eigensolver_base), allocatable :: solver_loc
+          print '(A,I0,A)', ' QW k-sweep (FEAST/CSR): ', cfg%wave_vector%nsteps, ' k-points'
 
-        ! Pre-initialize block table caches before OpenMP fork (thread-safety)
-        call init_kp_block_cache()
-        call init_strain_cache()
-        call init_zeeman_cache()
+          do k = 1, cfg%wave_vector%nsteps
+            call ZB8bandQW_csr(HT_csr_loc, smallk(k), profile, kpterms, &
+              cfg, ws=qw_ws)
+            call solver_bs%solve_sparse(HT_csr_loc, ecfg_bs, result_bs)
+            if (.not. result_bs%converged) error stop 'eigensolver failed in QW FEAST k-sweep'
+            eig(1:result_bs%nev_found, k) = result_bs%eigenvalues
+            eigv(:, 1:result_bs%nev_found, k) = result_bs%eigenvectors
+            call eigensolver_result_free(result_bs)
+            call csr_free(HT_csr_loc)
+          end do
+          call qw_workspace_free(qw_ws)
+        end block
+      else
+        ! ============================================================
+        ! QW DENSE path: dense build + LAPACK, OpenMP parallel
+        ! ============================================================
+        ! Disable MKL internal threading so each OpenMP thread calls
+        ! LAPACK in serial — avoids oversubscription.
+        info = mkl_set_num_threads_local(1)
 
-        !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, result_bs)
-        allocate(HT_loc(N, N))
-        HT_loc = (0.0_dp, 0.0_dp)
-        cfg_loc = ecfg_bs
-        solver_loc = make_eigensolver(cfg_loc)
+        print '(A,I0,A)', ' QW k-sweep: ', cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
 
-        !$omp do schedule(static)
-        do k = 1, cfg%wave_vector%nsteps
-          ! Build Hamiltonian for this k-point
-          call ZB8bandQW(HT_loc, smallk(k), profile, kpterms, cfg=cfg)
+        block
+          ! Thread-private temporaries for the parallel region
+          complex(kind=dp), allocatable :: HT_loc(:,:)
+          type(eigensolver_config) :: cfg_loc
+          class(eigensolver_base), allocatable :: solver_loc
 
-          ! Diagonalize via unified solver
-          call solver_loc%solve_dense(HT_loc, cfg_loc, result_bs)
-          if (.not. result_bs%converged) error stop 'eigensolver failed in QW k-sweep'
-          eig(1:result_bs%nev_found, k) = result_bs%eigenvalues
-          eigv(:, 1:result_bs%nev_found, k) = result_bs%eigenvectors
-          call eigensolver_result_free(result_bs)
-        end do
-        !$omp end do
+          ! Pre-initialize block table caches before OpenMP fork (thread-safety)
+          call init_kp_block_cache()
+          call init_strain_cache()
+          call init_zeeman_cache()
 
-        deallocate(HT_loc)
-        !$omp end parallel
-      end block
+          !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, result_bs)
+          allocate(HT_loc(N, N))
+          HT_loc = (0.0_dp, 0.0_dp)
+          cfg_loc = ecfg_bs
+          solver_loc = make_eigensolver(cfg_loc)
+
+          !$omp do schedule(static)
+          do k = 1, cfg%wave_vector%nsteps
+            ! Build Hamiltonian for this k-point
+            call ZB8bandQW(HT_loc, smallk(k), profile, kpterms, cfg=cfg)
+
+            ! Diagonalize via unified solver
+            call solver_loc%solve_dense(HT_loc, cfg_loc, result_bs)
+            if (.not. result_bs%converged) error stop 'eigensolver failed in QW k-sweep'
+            eig(1:result_bs%nev_found, k) = result_bs%eigenvalues
+            eigv(:, 1:result_bs%nev_found, k) = result_bs%eigenvectors
+            call eigensolver_result_free(result_bs)
+          end do
+          !$omp end do
+
+          deallocate(HT_loc)
+          !$omp end parallel
+        end block
+      end if
 
       ! Write QW eigenfunctions at start, middle, end k-points (serial)
       do k = 1, cfg%wave_vector%nsteps

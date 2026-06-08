@@ -8,6 +8,7 @@ module simulation_setup_mod
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
     & wire_coo_cache, wire_coo_cache_free, ZB8bandGeneralized, &
     & build_velocity_matrices
+  use hamiltonian_qw, only: qw_workspace, qw_workspace_free, ZB8bandQW_csr
   use strain_solver, only: compute_strain, compute_bir_pikus_blocks, &
     & strain_result, strain_result_free
   use sc_loop, only: self_consistent_loop, self_consistent_loop_wire
@@ -50,10 +51,12 @@ module simulation_setup_mod
     type(csr_matrix), allocatable :: HT_csr_ptr
     type(wire_coo_cache), allocatable :: coo_cache_ptr
     type(wire_workspace), allocatable :: wire_ws_ptr
+    type(qw_workspace), allocatable  :: qw_ws_ptr
     type(eigensolver_config)      :: eigen_cfg
     class(eigensolver_base), allocatable :: eigen_solver
     integer :: Ngrid = 0, Ntot = 0, nev_wire = 0
     logical :: was_freed = .false.
+    logical :: qw_sparse = .false.
   contains
     final :: simulation_setup_finalize
   end type simulation_setup
@@ -225,6 +228,30 @@ contains
       setup%eigen_cfg%iu = setup%iuu
       call eigensolver_config_validate(setup%eigen_cfg)
       setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
+
+      ! --- QW sparse path: if FEAST requested, set up CSR builder ---
+      if (trim(setup%eigen_cfg%method) == 'FEAST') then
+        setup%qw_sparse = .true.
+        allocate(setup%qw_ws_ptr)
+        allocate(setup%HT_csr_ptr)
+        ! Build preliminary CSR Hamiltonian at k=0 to estimate FEAST window
+        block
+          type(csr_matrix) :: HT_csr_tmp
+          call ZB8bandQW_csr(HT_csr_tmp, wavevector(0.0_dp, 0.0_dp, 0.0_dp), &
+            setup%profile, setup%kpterms, cfg, ws=setup%qw_ws_ptr)
+          if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+            setup%eigen_cfg%emin = cfg%solver%emin
+            setup%eigen_cfg%emax = cfg%solver%emax
+          else
+            call auto_compute_energy_window(HT_csr_tmp, &
+              setup%eigen_cfg%emin, setup%eigen_cfg%emax)
+            print *, '  Auto FEAST window (QW): [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
+          end if
+          call csr_free(HT_csr_tmp)
+        end block
+        call eigensolver_config_validate(setup%eigen_cfg)
+        setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
+      end if
 
     case('wire')
       if (.not. allocated(cfg%grid%x)) call init_wire_from_config(cfg)
@@ -399,11 +426,16 @@ contains
       end if
       call ZB8bandBulk(HT_out, kvec, cfg%params(1), cfg=cfg)
     case('qw')
-      if (.not. present(HT_out)) then
-        print *, 'Error: setup_build_H QW requires HT_out'
-        error stop 'setup_build_H: QW requires HT_out'
+      if (setup%qw_sparse) then
+        call ZB8bandQW_csr(setup%HT_csr_ptr, kvec, setup%profile, &
+          setup%kpterms, cfg, ws=setup%qw_ws_ptr)
+      else
+        if (.not. present(HT_out)) then
+          print *, 'Error: setup_build_H QW requires HT_out'
+          error stop 'setup_build_H: QW requires HT_out'
+        end if
+        call ZB8bandQW(HT_out, kvec, setup%profile, setup%kpterms, cfg=cfg)
       end if
-      call ZB8bandQW(HT_out, kvec, setup%profile, setup%kpterms, cfg=cfg)
     case('wire')
       call ZB8bandGeneralized(setup%HT_csr_ptr, kvec%kz, &
         setup%profile_2d, setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
@@ -453,10 +485,17 @@ contains
       call eigensolver_result_free(result)
 
     case('qw')
-      setup%HT = 0.0_dp
-      call ZB8bandQW(setup%HT, kvec, setup%profile, setup%kpterms, cfg=cfg)
-      call setup%eigen_solver%solve_dense(setup%HT, full_cfg, result)
-      if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (QW)'
+      if (setup%qw_sparse) then
+        call ZB8bandQW_csr(setup%HT_csr_ptr, kvec, setup%profile, &
+          setup%kpterms, cfg, ws=setup%qw_ws_ptr)
+        call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, full_cfg, result)
+        if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (QW sparse)'
+      else
+        setup%HT = 0.0_dp
+        call ZB8bandQW(setup%HT, kvec, setup%profile, setup%kpterms, cfg=cfg)
+        call setup%eigen_solver%solve_dense(setup%HT, full_cfg, result)
+        if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (QW)'
+      end if
       nev_out = min(result%nev_found, size(evals))
       evals(1:nev_out) = result%eigenvalues(1:nev_out)
       evecs(:, 1:nev_out) = result%eigenvectors(:, 1:nev_out)
@@ -558,6 +597,10 @@ contains
       call wire_workspace_free(setup%wire_ws_ptr)
       deallocate(setup%wire_ws_ptr)
     end if
+    if (allocated(setup%qw_ws_ptr)) then
+      call qw_workspace_free(setup%qw_ws_ptr)
+      deallocate(setup%qw_ws_ptr)
+    end if
     if (allocated(setup%eigen_solver)) deallocate(setup%eigen_solver)
     if (setup%vel_built) then
       do i = 1, 3
@@ -576,6 +619,7 @@ contains
     setup%Ngrid = 0
     setup%Ntot = 0
     setup%nev_wire = 0
+    setup%qw_sparse = .false.
   end subroutine simulation_setup_free
 
 

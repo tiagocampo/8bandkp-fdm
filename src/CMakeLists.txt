@@ -14,6 +14,7 @@ set(COMMON_SOURCES
     physics/confinement_init.f90
     physics/hamiltonian_blocks.f90
     physics/hamiltonian_wire.f90
+    physics/hamiltonian_qw.f90
     physics/hamiltonianConstructor.f90
     physics/charge_density.f90
     physics/poisson.f90
@@ -65,6 +66,7 @@ set_source_files_properties(
     physics/confinement_init.f90
     physics/hamiltonian_blocks.f90
     physics/hamiltonian_wire.f90
+    physics/hamiltonian_qw.f90
     physics/hamiltonianConstructor.f90
     physics/charge_density.f90
     physics/poisson.f90
