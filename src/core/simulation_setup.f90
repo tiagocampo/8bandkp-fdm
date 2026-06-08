@@ -95,6 +95,25 @@ contains
       setup%il = 1
       setup%iuu = 8
       setup%lwork = 0
+      ! --- Allocate solver for bulk: DENSE + FULL ---
+      if (cfg%solver%method == 'AUTO') then
+        setup%eigen_cfg%method = 'DENSE'
+      else
+        setup%eigen_cfg%method = cfg%solver%method
+      end if
+      select case (trim(cfg%solver%mode))
+      case ('AUTO', 'FULL')
+        setup%eigen_cfg%mode = EIGEN_MODE_FULL
+      case ('INDEX')
+        setup%eigen_cfg%mode = EIGEN_MODE_INDEX
+      case ('ENERGY')
+        setup%eigen_cfg%mode = EIGEN_MODE_ENERGY
+      end select
+      setup%eigen_cfg%nev = 8
+      setup%eigen_cfg%il = 1
+      setup%eigen_cfg%iu = 8
+      call eigensolver_config_validate(setup%eigen_cfg)
+      setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
 
     case('qw')
       setup%N = cfg%grid%npoints() * 8
@@ -187,6 +206,25 @@ contains
         allocate(setup%iwork(liwork))
       end if
       deallocate(eig_tmp)
+      ! --- Allocate solver for QW: DENSE + INDEX ---
+      if (cfg%solver%method == 'AUTO') then
+        setup%eigen_cfg%method = 'DENSE'
+      else
+        setup%eigen_cfg%method = cfg%solver%method
+      end if
+      select case (trim(cfg%solver%mode))
+      case ('AUTO', 'INDEX')
+        setup%eigen_cfg%mode = EIGEN_MODE_INDEX
+      case ('FULL')
+        setup%eigen_cfg%mode = EIGEN_MODE_FULL
+      case ('ENERGY')
+        setup%eigen_cfg%mode = EIGEN_MODE_ENERGY
+      end select
+      setup%eigen_cfg%nev = min(setup%iuu - setup%il + 1, setup%N)
+      setup%eigen_cfg%il = setup%il
+      setup%eigen_cfg%iu = setup%iuu
+      call eigensolver_config_validate(setup%eigen_cfg)
+      setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
 
     case('wire')
       if (.not. allocated(cfg%grid%x)) call init_wire_from_config(cfg)
@@ -388,54 +426,43 @@ contains
     type(wavevector), intent(in) :: kvec
     real(kind=dp), intent(out), contiguous :: evals(:)
     complex(kind=dp), intent(out), contiguous :: evecs(:,:)
-    integer :: info
-    real(kind=dp), allocatable :: rwork_local(:)
+
+    type(eigensolver_result) :: result
+    type(eigensolver_config) :: full_cfg
+    integer :: nev_out
+
+    ! This subroutine returns ALL eigenvalues/eigenvectors (FULL mode).
+    ! Callers (gfactor) expect the complete spectrum regardless of the
+    ! stored eigen_cfg which may use INDEX mode for k-sweep filtering.
+    full_cfg = setup%eigen_cfg
+    full_cfg%mode = EIGEN_MODE_FULL
+    full_cfg%nev = setup%N
+    full_cfg%il = 1
+    full_cfg%iu = setup%N
 
     select case(setup%confinement)
     case('bulk')
       if (.not. allocated(setup%HT)) allocate(setup%HT(8, 8))
       setup%HT = 0.0_dp
       call ZB8bandBulk(setup%HT, kvec, cfg%params(1), cfg=cfg)
-      if (setup%lwork == 0) then
-        allocate(setup%work(1))
-        allocate(rwork_local(max(1, 3*8 - 2)))
-        call zheev('V', 'L', 8, setup%HT, 8, evals, setup%work, -1, rwork_local, info)
-        if (info /= 0) then
-          error stop 'zheev workspace query failed in setup_solve_kpoint_serial'
-        end if
-        setup%lwork = int(real(setup%work(1)))
-        deallocate(setup%work)
-        allocate(setup%work(setup%lwork))
-        deallocate(rwork_local)
-        allocate(setup%rwork(max(1, 3*8 - 2)))
-      end if
-      setup%HT = 0.0_dp
-      call ZB8bandBulk(setup%HT, kvec, cfg%params(1), cfg=cfg)
-      call zheev('V', 'L', 8, setup%HT, 8, evals, setup%work, setup%lwork, setup%rwork, info)
-      if (info /= 0) then
-        print *, 'Error: zheev failed in setup_solve_kpoint_serial, info =', info
-        error stop 'zheev failed in setup_solve_kpoint_serial'
-      end if
-      evecs = setup%HT
+      call setup%eigen_solver%solve_dense(setup%HT, full_cfg, result)
+      if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (bulk)'
+      nev_out = min(result%nev_found, size(evals))
+      evals(1:nev_out) = result%eigenvalues(1:nev_out)
+      evecs(:, 1:nev_out) = result%eigenvectors(:, 1:nev_out)
+      call eigensolver_result_free(result)
+
     case('qw')
       setup%HT = 0.0_dp
       call ZB8bandQW(setup%HT, kvec, setup%profile, setup%kpterms, cfg=cfg)
-      if (cfg%num_layers == 1) then
-        call zheev('V', 'L', setup%N, setup%HT, setup%N, evals, setup%work, setup%lwork, setup%rwork, info)
-        if (info /= 0) then
-          print *, 'Error: zheev failed in setup_solve_kpoint_serial, info =', info
-          error stop 'zheev failed in setup_solve_kpoint_serial (QW)'
-        end if
-      else
-        call zheevd('V', 'U', setup%N, setup%HT, setup%N, evals, setup%work, setup%lwork, setup%rwork, size(setup%rwork), setup%iwork, size(setup%iwork), info)
-        if (info /= 0) then
-          print *, 'Error: zheevd failed in setup_solve_kpoint_serial, info =', info
-          error stop 'zheevd failed in setup_solve_kpoint_serial (QW)'
-        end if
-      end if
-      evecs = setup%HT
+      call setup%eigen_solver%solve_dense(setup%HT, full_cfg, result)
+      if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (QW)'
+      nev_out = min(result%nev_found, size(evals))
+      evals(1:nev_out) = result%eigenvalues(1:nev_out)
+      evecs = result%eigenvectors
+      call eigensolver_result_free(result)
+
     case default
-      print *, 'Error: setup_solve_kpoint_serial unsupported confinement=', setup%confinement
       error stop 'setup_solve_kpoint_serial: unsupported confinement'
     end select
   end subroutine setup_solve_kpoint_serial

@@ -10,12 +10,15 @@ program kpfdm
   use utils, only: get_unit, ensure_output_dir
   use input_parser
   use sc_loop
-  use eigensolver, only: eigensolver_result, eigensolver_result_free
+  use eigensolver, only: eigensolver_result, eigensolver_result_free, &
+    eigensolver_config, eigensolver_base, make_eigensolver, &
+    eigensolver_config_validate, &
+    EIGEN_MODE_FULL, EIGEN_MODE_INDEX, EIGEN_MODE_ENERGY
   use strain_solver, only: strain_result, strain_result_free, init_strain_cache
   use magnetic_field, only: init_zeeman_cache
   use exciton_solver
   use scattering_solver
-  use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch
+  use linalg, only: zheevx, mkl_set_num_threads_local, dlamch
   use spin_projection, only: compute_band_parts
   use simulation_setup_mod
 
@@ -33,7 +36,7 @@ program kpfdm
   integer :: i, k, ii, jj
 
   ! hamiltonian and LAPACK/BLAS
-  integer :: info, NB, lwork, N, M, il, iuu
+  integer :: info, lwork, N, M, il, iuu
   real(kind=dp) :: abstol, vl, vu
   real(kind=dp), allocatable :: eig(:,:), rwork(:)
   complex(kind=dp), allocatable :: work(:)
@@ -618,36 +621,23 @@ program kpfdm
     print *, "Computing states from index", il, "to", iuu
   end if
 
-  NB = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
-  NB = MAX(NB,N)
-  ABSTOL = DLAMCH('P')
-
-  if (allocated(rwork)) deallocate(rwork)
-  allocate(rwork(7*N))  ! For ZHEEVX
-  if (allocated(iwork)) deallocate(iwork)
-  allocate(iwork(5*N))
-  if (allocated(ifail)) deallocate(ifail)
-  allocate(ifail(N))
+  ! Allocate eigenvalue/eigenvector storage
   if (allocated(eig)) deallocate(eig)
-  allocate(eig(iuu-il+1,cfg%wave_vector%nsteps))  ! Only store the states we want
+  allocate(eig(iuu-il+1,cfg%wave_vector%nsteps))
   if (allocated(eigv)) deallocate(eigv)
   if (conf_direction(cfg%confinement) == 'n') then
-    allocate(eigv(8,cfg%evnum,cfg%wave_vector%nsteps))  ! 8x8 for bulk
+    allocate(eigv(8,cfg%evnum,cfg%wave_vector%nsteps))
   else
-    allocate(eigv(N,iuu-il+1,cfg%wave_vector%nsteps))  ! Only store the states we want
+    allocate(eigv(N,iuu-il+1,cfg%wave_vector%nsteps))
   end if
 
   eig(:,:) = 0_dp
   eigv(:,:,:) = 0_dp
 
   allocate(HT(N,N))
-  allocate(HTmp(8,8))  ! Temporary array for bulk diagonalization
+  allocate(HTmp(8,8))
   HT = 0.0_dp
   HTmp = 0.0_dp
-
-  ! Initial workspace allocation
-  if (allocated(work)) deallocate(work)
-  allocate(work(N))  ! Will be resized after workspace query
 
   ! Print profile for QW mode
   if (conf_direction(cfg%confinement) == 'z') then
@@ -703,131 +693,124 @@ program kpfdm
   end if
 
   ! ====================================================================
-  ! Workspace query (serial, k=1) — determines lwork for zheevx
-  ! ====================================================================
-  if (conf_direction(cfg%confinement) == 'n') then
-    ! BULK: 8x8 workspace query
-    call ZB8bandBulk(HT, smallk(1), cfg%params(1), cfg=cfg)
-    HTmp = HT(1:8,1:8)
-    if (allocated(work)) deallocate(work)
-    allocate(work(1))
-    lwork = -1
-    call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:cfg%evnum,1), &
-               HTmp, 8, work, lwork, rwork, iwork, ifail, info)
-    if (info /= 0) then
-      print *, 'Error: zheevx bulk workspace query failed, info =', info
-      error stop 'zheevx parameter error'
-    end if
-    lwork = int(real(work(1)))
-    if (allocated(work)) deallocate(work)
-    allocate(work(lwork))
-  else if (conf_direction(cfg%confinement) == 'z') then
-    ! QW: NxN workspace query
-    call ZB8bandQW(HT, smallk(1), profile, kpterms, cfg=cfg)
-    if (allocated(work)) deallocate(work)
-    allocate(work(1))
-    lwork = -1
-    call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,1), &
-               HT, N, work, lwork, rwork, iwork, ifail, info)
-    if (info /= 0) then
-      print *, 'Error: zheevx QW workspace query failed, info =', info
-      error stop 'zheevx parameter error'
-    end if
-    lwork = int(real(work(1)))
-    if (allocated(work)) deallocate(work)
-    allocate(work(lwork))
-  end if
-
-  ! ====================================================================
   ! k-vector sweep: sequential for bulk, OpenMP parallel for QW
+  ! Uses unified eigensolver dispatch.
   ! ====================================================================
-  if (conf_direction(cfg%confinement) == 'n') then
-    ! --- BULK (8x8, trivially fast — no parallelization needed) ---
-    do k = 1, cfg%wave_vector%nsteps
-      call ZB8bandBulk(HT, smallk(k), cfg%params(1), cfg=cfg)
-      HTmp = HT(1:8,1:8)
+  block
+    type(eigensolver_result) :: result_bs
+    type(eigensolver_config) :: ecfg_bs
+    class(eigensolver_base), allocatable :: solver_bs
 
-      call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:cfg%evnum,k), &
-                 HTmp, 8, work, lwork, rwork, iwork, ifail, info)
-      if (info /= 0) then
-        print *, "Diagonalization error in bulk calculation, info = ", info
-        if (info < 0) print *, "Parameter ", -info, " had illegal value"
-        error stop "error diag"
-      end if
+    ! Build solver config: DENSE+FULL for bulk, DENSE+INDEX for QW
+    if (cfg%solver%method == 'AUTO') then
+      ecfg_bs%method = 'DENSE'
+    else
+      ecfg_bs%method = cfg%solver%method
+    end if
+    if (conf_direction(cfg%confinement) == 'n') then
+      ! Bulk: FULL mode (8x8, all eigenvalues)
+      select case (trim(cfg%solver%mode))
+      case ('AUTO', 'FULL')
+        ecfg_bs%mode = EIGEN_MODE_FULL
+      case ('INDEX')
+        ecfg_bs%mode = EIGEN_MODE_INDEX
+      case ('ENERGY')
+        ecfg_bs%mode = EIGEN_MODE_ENERGY
+      end select
+      ecfg_bs%nev = 8
+      ecfg_bs%il = 1
+      ecfg_bs%iu = 8
+    else
+      ! QW: INDEX mode (selected eigenvalue range)
+      select case (trim(cfg%solver%mode))
+      case ('AUTO', 'INDEX')
+        ecfg_bs%mode = EIGEN_MODE_INDEX
+      case ('FULL')
+        ecfg_bs%mode = EIGEN_MODE_FULL
+      case ('ENERGY')
+        ecfg_bs%mode = EIGEN_MODE_ENERGY
+      end select
+      ecfg_bs%nev = iuu - il + 1
+      ecfg_bs%il = il
+      ecfg_bs%iu = iuu
+    end if
+    solver_bs = make_eigensolver(ecfg_bs)
 
-      eigv(:,:,k) = HTmp(:,1:cfg%evnum)
-    end do
-
-    ! Write bulk eigenfunctions at start, middle, end k-points
-    do k = 1, cfg%wave_vector%nsteps
-      if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
-        call writeEigenfunctions(8, min(cfg%evnum,8), eigv(:,1:min(cfg%evnum,8),k), &
-          & k, cfg%grid%npoints(), cfg%z, .true., &
-          & k_magnitude=sqrt(smallk(k)%kx**2 + smallk(k)%ky**2 + smallk(k)%kz**2))
-      end if
-    end do
-
-  else if (conf_direction(cfg%confinement) == 'z') then
-    ! --- QUANTUM WELL (NxN, OpenMP parallel) ---
-    ! Disable MKL internal threading so each OpenMP thread calls
-    ! zheevx in serial — avoids oversubscription with intel_thread MKL.
-    ! mkl_set_num_threads_local returns previous setting (discarded).
-    info = mkl_set_num_threads_local(1)
-
-    print '(A,I0,A)', ' QW k-sweep: ', cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
-
-    block
-      ! Thread-private temporaries for the parallel region
-      complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
-      real(kind=dp), allocatable    :: rwork_loc(:)
-      integer, allocatable          :: iwork_loc(:), ifail_loc(:)
-      integer :: info_loc, M_loc
-
-      ! Pre-initialize block table caches before OpenMP fork (thread-safety)
-      call init_kp_block_cache()
-      call init_strain_cache()
-      call init_zeeman_cache()
-
-      !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
-      ! Each thread allocates its own workspace
-      allocate(HT_loc(N, N))
-      allocate(work_loc(lwork))
-      allocate(rwork_loc(7*N))
-      allocate(iwork_loc(5*N))
-      allocate(ifail_loc(N))
-      HT_loc = (0.0_dp, 0.0_dp)
-
-      !$omp do schedule(static)
+    if (conf_direction(cfg%confinement) == 'n') then
+      ! --- BULK (8x8, trivially fast — no parallelization needed) ---
       do k = 1, cfg%wave_vector%nsteps
-        ! Build Hamiltonian for this k-point
-        call ZB8bandQW(HT_loc, smallk(k), profile, kpterms, cfg=cfg)
-
-        ! Diagonalize
-        call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
-                   eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
-                   ifail_loc, info_loc)
-        if (info_loc /= 0) then
-          error stop 'zheevx diagonalization failed'
-        end if
-
-        ! Store eigenvectors (HT_loc now holds them, zheevx overwrites input)
-        eigv(:,:,k) = HT_loc(:, 1:iuu-il+1)
+        call ZB8bandBulk(HT, smallk(k), cfg%params(1), cfg=cfg)
+        HTmp = HT(1:8,1:8)
+        call solver_bs%solve_dense(HTmp, ecfg_bs, result_bs)
+        if (.not. result_bs%converged) error stop 'eigensolver failed in bulk k-sweep'
+        eig(1:result_bs%nev_found, k) = result_bs%eigenvalues(1:result_bs%nev_found)
+        eigv(:, 1:result_bs%nev_found, k) = result_bs%eigenvectors
+        call eigensolver_result_free(result_bs)
       end do
-      !$omp end do
 
-      deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
-      !$omp end parallel
-    end block
+      ! Write bulk eigenfunctions at start, middle, end k-points
+      do k = 1, cfg%wave_vector%nsteps
+        if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
+          call writeEigenfunctions(8, min(cfg%evnum,8), eigv(:,1:min(cfg%evnum,8),k), &
+            & k, cfg%grid%npoints(), cfg%z, .true., &
+            & k_magnitude=sqrt(smallk(k)%kx**2 + smallk(k)%ky**2 + smallk(k)%kz**2))
+        end if
+      end do
 
-    ! Write QW eigenfunctions at start, middle, end k-points (serial)
-    do k = 1, cfg%wave_vector%nsteps
-      if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
-        call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
-          & k, cfg%grid%npoints(), cfg%z, .false.)
-      end if
-    end do
+    else if (conf_direction(cfg%confinement) == 'z') then
+      ! --- QUANTUM WELL (NxN, OpenMP parallel) ---
+      ! Disable MKL internal threading so each OpenMP thread calls
+      ! LAPACK in serial — avoids oversubscription.
+      info = mkl_set_num_threads_local(1)
 
-  end if
+      print '(A,I0,A)', ' QW k-sweep: ', cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
+
+      block
+        ! Thread-private temporaries for the parallel region
+        complex(kind=dp), allocatable :: HT_loc(:,:)
+        type(eigensolver_config) :: cfg_loc
+        class(eigensolver_base), allocatable :: solver_loc
+
+        ! Pre-initialize block table caches before OpenMP fork (thread-safety)
+        call init_kp_block_cache()
+        call init_strain_cache()
+        call init_zeeman_cache()
+
+        !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, result_bs)
+        allocate(HT_loc(N, N))
+        HT_loc = (0.0_dp, 0.0_dp)
+        cfg_loc = ecfg_bs
+        solver_loc = make_eigensolver(cfg_loc)
+
+        !$omp do schedule(static)
+        do k = 1, cfg%wave_vector%nsteps
+          ! Build Hamiltonian for this k-point
+          call ZB8bandQW(HT_loc, smallk(k), profile, kpterms, cfg=cfg)
+
+          ! Diagonalize via unified solver
+          call solver_loc%solve_dense(HT_loc, cfg_loc, result_bs)
+          if (.not. result_bs%converged) error stop 'eigensolver failed in QW k-sweep'
+          eig(1:result_bs%nev_found, k) = result_bs%eigenvalues
+          eigv(:, 1:result_bs%nev_found, k) = result_bs%eigenvectors
+          call eigensolver_result_free(result_bs)
+        end do
+        !$omp end do
+
+        deallocate(HT_loc)
+        !$omp end parallel
+      end block
+
+      ! Write QW eigenfunctions at start, middle, end k-points (serial)
+      do k = 1, cfg%wave_vector%nsteps
+        if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
+          call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
+            & k, cfg%grid%npoints(), cfg%z, .false.)
+        end if
+      end do
+
+    end if
+
+  end block
   call writeEigenvalues(smallk, eig(:,:), cfg%wave_vector%nsteps)
 
 
