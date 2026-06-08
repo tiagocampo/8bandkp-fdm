@@ -206,7 +206,7 @@ def convert_cfg_to_toml(cfg_path, toml_path=None):
     eps_inf = None
     eps_0 = None
 
-    # FEAST
+    # Solver (converted from legacy FEAST)
     feast_emin = None
     feast_emax = None
     feast_m0 = None
@@ -838,15 +838,21 @@ def convert_cfg_to_toml(cfg_path, toml_path=None):
         if eps_0 is not None:
             out.append(f'eps_0 = {eps_0}')
 
-    # FEAST
+    # Solver (migrated from legacy FEAST)
     if feast_emin is not None or feast_emax is not None or feast_m0 is not None:
         out.append('')
-        out.append('[feast]')
+        out.append('[solver]')
+        # m0 = -1 means dense fallback
+        if feast_m0 is not None and feast_m0 == '-1':
+            out.append('method = "DENSE"')
+        else:
+            out.append('method = "FEAST"')
+        out.append('mode = "ENERGY"')
         if feast_emin is not None:
             out.append(f'emin = {feast_emin}')
         if feast_emax is not None:
             out.append(f'emax = {feast_emax}')
-        if feast_m0 is not None:
+        if feast_m0 is not None and feast_m0 != '-1':
             out.append(f'm0 = {feast_m0}')
 
     # Clean up trailing blank lines

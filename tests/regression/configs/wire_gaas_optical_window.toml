@@ -45,7 +45,9 @@ ISBT = false
 spontaneous = false
 spin_resolved = false
 
-[feast]
+[solver]
+method = "FEAST"
+mode = "ENERGY"
 emin = -4.0
 emax = 3.0
 m0 = 150

@@ -39,7 +39,8 @@ fermi_mode = "charge_neutrality"
 num_kpar = 5
 kpar_max = 0.5
 
-[feast]
+[solver]
+method = "DENSE"
+mode = "ENERGY"
 emin = -1.5
 emax = 2.0
-m0 = -1

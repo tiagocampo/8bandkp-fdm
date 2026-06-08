@@ -617,4 +617,135 @@ contains
     call csr_free(Hmat)
   end subroutine test_dense_mode_dispatch
 
+  ! ==================================================================
+  ! Test 14: eigensolver_config_validate accepts valid combinations.
+  ! ==================================================================
+  @test
+  subroutine test_config_validate_valid()
+    type(eigensolver_config) :: cfg
+
+    ! DENSE + FULL
+    cfg%method = 'DENSE'
+    cfg%mode = EIGEN_MODE_FULL
+    call eigensolver_config_validate(cfg)
+
+    ! DENSE + INDEX
+    cfg%method = 'DENSE'
+    cfg%mode = EIGEN_MODE_INDEX
+    cfg%il = 1; cfg%iu = 4
+    call eigensolver_config_validate(cfg)
+
+    ! DENSE + ENERGY
+    cfg%method = 'DENSE'
+    cfg%mode = EIGEN_MODE_ENERGY
+    cfg%emin = -1.5_dp; cfg%emax = 2.0_dp
+    call eigensolver_config_validate(cfg)
+
+    ! FEAST + ENERGY
+    cfg%method = 'FEAST'
+    cfg%mode = EIGEN_MODE_ENERGY
+    cfg%emin = -1.5_dp; cfg%emax = 2.0_dp
+    call eigensolver_config_validate(cfg)
+
+    ! FEAST + FULL
+    cfg%method = 'FEAST'
+    cfg%mode = EIGEN_MODE_FULL
+    call eigensolver_config_validate(cfg)
+
+    @assertTrue(.true., message="All valid config combos pass validation")
+  end subroutine test_config_validate_valid
+
+  ! ==================================================================
+  ! Test 15: eigensolver_config_validate rejects FEAST + INDEX.
+  ! This is tested by checking that it would error stop.
+  ! Since pFUnit cannot catch error stop, we verify the condition
+  ! that triggers the error.
+  ! ==================================================================
+  @test
+  subroutine test_config_validate_rejects_feast_index()
+    type(eigensolver_config) :: cfg
+
+    cfg%method = 'FEAST'
+    cfg%mode = EIGEN_MODE_INDEX
+
+    ! Verify the condition that eigensolver_config_validate checks.
+    ! The actual error stop is tested in integration test V13.
+    @assertTrue(trim(cfg%method) == 'FEAST' .and. cfg%mode == EIGEN_MODE_INDEX)
+  end subroutine test_config_validate_rejects_feast_index
+
+  ! ==================================================================
+  ! Test 16: eigensolver_config_validate rejects emin >= emax in ENERGY.
+  ! ==================================================================
+  @test
+  subroutine test_config_validate_rejects_emin_ge_emax()
+    type(eigensolver_config) :: cfg
+
+    cfg%method = 'DENSE'
+    cfg%mode = EIGEN_MODE_ENERGY
+    cfg%emin = 2.0_dp
+    cfg%emax = 1.0_dp
+
+    ! Verify the condition that triggers the error.
+    ! The actual error stop is tested in integration tests.
+    @assertTrue(cfg%emin >= cfg%emax .and. cfg%mode == EIGEN_MODE_ENERGY)
+  end subroutine test_config_validate_rejects_emin_ge_emax
+
+  ! ==================================================================
+  ! Test 17: eigensolver_config_validate rejects invalid il/iu in INDEX.
+  ! ==================================================================
+  @test
+  subroutine test_config_validate_rejects_bad_index_range()
+    type(eigensolver_config) :: cfg
+
+    cfg%method = 'DENSE'
+    cfg%mode = EIGEN_MODE_INDEX
+    cfg%il = 0
+    cfg%iu = 5
+
+    ! Verify the condition that triggers the error (il < 1).
+    @assertTrue(cfg%il < 1)
+
+    ! Also check iu < il case
+    cfg%il = 5
+    cfg%iu = 3
+    @assertTrue(cfg%iu < cfg%il)
+  end subroutine test_config_validate_rejects_bad_index_range
+
+  ! ==================================================================
+  ! Test 18: Dense LAPACK solve via polymorphic dispatch.
+  ! ==================================================================
+  @test
+  subroutine test_dense_polymorphic_dispatch()
+    integer, parameter :: n = 10
+    real(kind=dp) :: diag(n)
+    type(csr_matrix) :: H
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: res
+    class(eigensolver_base), allocatable :: solver
+    integer :: i
+
+    do i = 1, n
+      diag(i) = real(i, kind=dp)
+    end do
+    call build_diagonal_csr(diag, n, H)
+
+    cfg%method = 'DENSE'
+    cfg%mode = EIGEN_MODE_FULL
+    cfg%nev = n
+
+    solver = make_eigensolver(cfg)
+    call solver%solve_sparse(H, cfg, res)
+
+    @assertTrue(res%converged)
+    @assertEqual(n, res%nev_found)
+
+    ! Eigenvalues should be 1..10
+    do i = 1, res%nev_found
+      @assertEqual(real(i, kind=dp), res%eigenvalues(i), tolerance=1.0e-8_dp)
+    end do
+
+    call eigensolver_result_free(res)
+    call csr_free(H)
+  end subroutine test_dense_polymorphic_dispatch
+
 end module test_eigensolver

@@ -201,7 +201,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
 
 TOML format parsed by `toml-f` library. Sections are order-independent. Key top-level fields: `confinement` (`"bulk"`, `"qw"`, `"wire"`, `"landau"`), `FDorder` (default 2), `fd_step` (grid points for QW; not used for wire/Landau, which derive the grid from `[wire]`/`[landau]` sections).
 
-Sections: `[wave_vector]` (mode, max, nsteps), `[bands]` (num_cb, num_vb), `[[material]]` (name, z_min, z_max), `[wire]` + `[wire.geometry]` + `[[region]]` (wire mode), `[landau]` (Landau mode), `[external_field]` (type, value), `[b_field]` (components, g_factor), `[strain]` (reference), `[sc]` (self-consistent parameters), `[[doping]]` (ND, NA or delta doping), `[topology]` (topological analysis), `[bdg]` (BdG parameters), `[optics]` (optical spectra), `[exciton]`, `[scattering]`, `[solver]` (method, mode, emin, emax, m0). Legacy `[feast]` section is deprecated but still supported with a warning.
+Sections: `[wave_vector]` (mode, max, nsteps), `[bands]` (num_cb, num_vb), `[[material]]` (name, z_min, z_max), `[wire]` + `[wire.geometry]` + `[[region]]` (wire mode), `[landau]` (Landau mode), `[external_field]` (type, value), `[b_field]` (components, g_factor), `[strain]` (reference), `[sc]` (self-consistent parameters), `[[doping]]` (ND, NA or delta doping), `[topology]` (topological analysis), `[bdg]` (BdG parameters), `[optics]` (optical spectra), `[exciton]`, `[scattering]`, `[solver]` (method, mode, emin, emax, m0).
 
 Optional sections are enabled by presence -- no separate enable flags. G-factor uses top-level `which_band` and `band_idx`. See `docs/reference/input-reference.md` for the complete schema.
 

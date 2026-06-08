@@ -567,23 +567,88 @@ eps_0 = 12.9
 
 ---
 
-## 17. FEAST Eigensolver (`[feast]`)
+## 17. Eigensolver (`[solver]`)
 
-Optional. Tuning parameters for the FEAST eigensolver (used in wire mode).
+Optional. Configures the eigensolver method and parameters for all confinement
+modes (bulk, QW, wire, Landau). When omitted, the solver uses smart defaults
+based on the confinement mode.
 
-| Key | Type | Default | Valid range | Modes | Description |
-|---|---|---|---|---|---|
-| `emin` | float | `0.0` | any (eV) | W | Lower bound of the energy search interval. 0 = automatic. |
-| `emax` | float | `0.0` | any (eV) | W | Upper bound of the energy search interval. 0 = automatic. |
-| `m0` | integer | `0` | >= 0 | W | Initial subspace dimension. 0 = automatic (2 * number of eigenvalues sought). |
+| Key | Type | Default | Valid range | Description |
+|---|---|---|---|---|
+| `method` | string | `"AUTO"` | `AUTO`, `DENSE`, `FEAST` | Eigensolver algorithm. `AUTO` selects based on confinement mode and matrix size. |
+| `mode` | string | `"AUTO"` | `AUTO`, `FULL`, `INDEX`, `ENERGY` | Eigenvalue selection mode. `FULL` = all eigenvalues, `INDEX` = range il:iu, `ENERGY` = range [emin, emax]. |
+| `emin` | float | `0.0` | any (eV) | Lower bound of the energy search interval (ENERGY mode). 0 = automatic. |
+| `emax` | float | `0.0` | any (eV) | Upper bound of the energy search interval (ENERGY mode). 0 = automatic. |
+| `m0` | integer | `0` | >= 0 | Initial subspace dimension for FEAST. 0 = automatic (2 * number of eigenvalues sought). |
 
-Example:
+### Smart defaults (AUTO)
+
+When `method = "AUTO"` (the default), the code selects:
+
+| Confinement | Matrix size | Method chosen |
+|---|---|---|
+| bulk | 8 x 8 | `DENSE` (zheevx) |
+| QW | <= threshold | `DENSE` (zheevx) |
+| QW | > threshold | `FEAST` (sparse CSR) |
+| wire | any | `FEAST` (sparse CSR) |
+| Landau | any | `DENSE` (zheevx) |
+
+When `mode = "AUTO"` (the default), the code selects:
+
+| Confinement | Mode chosen |
+|---|---|
+| bulk | `FULL` |
+| QW | `ENERGY` (uses emin/emax or auto-computed window) |
+| wire | `ENERGY` (uses emin/emax or auto-computed window) |
+| Landau | `FULL` |
+
+### Valid combinations
+
+| method | mode | Notes |
+|---|---|---|
+| `DENSE` | `FULL` | Bulk/Landau default; all eigenvalues via zheevx |
+| `DENSE` | `ENERGY` | Dense solve with energy window filtering |
+| `FEAST` | `ENERGY` | Sparse FEAST with contour [emin, emax]; requires emin < emax |
+| `FEAST` | `FULL` | FEAST with auto-computed full energy window |
+| `FEAST` | `INDEX` | **Rejected** by validation (FEAST does not support index-based selection) |
+
+### Examples
+
+FEAST with explicit subspace dimension:
 ```toml
-[feast]
+[solver]
+method = "FEAST"
+mode = "ENERGY"
 emin = -1.5
 emax = 2.0
 m0 = 128
 ```
+
+Dense LAPACK with energy window:
+```toml
+[solver]
+method = "DENSE"
+mode = "ENERGY"
+emin = -1.5
+emax = 2.0
+```
+
+Minimal (uses smart defaults):
+```toml
+[solver]
+emin = -1.5
+emax = 2.0
+```
+
+### Migration from `[feast]`
+
+The legacy `[feast]` section is no longer supported. Migrate as follows:
+
+| Old `[feast]` | New `[solver]` |
+|---|---|
+| `m0 = -1` | `method = "DENSE"`, `mode = "ENERGY"` |
+| `m0 = 0` or absent | `method = "FEAST"`, `mode = "ENERGY"` |
+| `m0 > 0` | `method = "FEAST"`, `mode = "ENERGY"`, keep `m0` |
 
 ---
 
@@ -690,7 +755,9 @@ material = "GaAs"
 inner = 0.0
 outer = 100.0
 
-[feast]
+[solver]
+method = "FEAST"
+mode = "ENERGY"
 emin = -1.5
 emax = 2.0
 m0 = 128

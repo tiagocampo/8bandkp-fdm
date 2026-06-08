@@ -399,7 +399,7 @@ module definitions
     real(kind=dp) :: g_factor = 2.0_dp
   end type
 
-  ! Replaces flat feast_emin/feast_emax/feast_m0
+  ! Eigensolver configuration (parsed from [solver] TOML section)
   type :: solver_config
     character(len=10) :: method = 'AUTO'   ! AUTO, DENSE, FEAST
     character(len=10) :: mode   = 'AUTO'   ! AUTO, FULL, INDEX, ENERGY

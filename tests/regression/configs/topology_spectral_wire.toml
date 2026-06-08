@@ -49,7 +49,9 @@ spectral_E_max = 2.0
 spectral_nE = 101
 spectral_eta = 0.01
 
-[feast]
+[solver]
+method = "FEAST"
+mode = "ENERGY"
 emin = -2.0
 emax = 2.0
 m0 = 64

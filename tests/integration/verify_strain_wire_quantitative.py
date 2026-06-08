@@ -108,10 +108,11 @@ def make_wire_config(strain=True):
         'type = "EF"\n'
         "value = 0.0\n"
         "\n"
-        "[feast]\n"
+        "[solver]\n"
+        'method = "DENSE"\n'
+        'mode = "ENERGY"\n'
         "emin = -0.5\n"
         "emax = 1.0\n"
-        "m0 = -1\n"
         f"{strain_section}"
     )
 

@@ -364,10 +364,11 @@ num_vb = 16
 which_band = 0
 band_idx = 1
 
-[feast]
+[solver]
+method = "DENSE"
+mode = "ENERGY"
 emin = -1.5
 emax = 2.0
-m0 = -1
 ```
 
 ### 3.2 Structure walkthrough
@@ -376,7 +377,7 @@ This input defines a single-material GaAs rectangular wire with cross-section $6
 
 The single region `GaAs 0.0 100.0` means all grid points within distance 100 A from the grid center receive GaAs parameters. Since the grid extends only to $(10.5 \times 3) = 31.5$ A from center, all 441 points are GaAs. This is a homogeneous wire: there is no potential confinement from band offsets, only the hard-wall boundary at the grid edges. The confinement energy arises entirely from the Dirichlet boundary conditions at the wire perimeter.
 
-The Hamiltonian dimension is $8 \times 441 = 3528$. The FEAST parameters (`[feast] emin = -1.5`, `emax = 2.0`) specify the energy search window, and `m0 = -1` triggers automatic subspace dimension estimation. With 8 CB and 16 VB states requested, the code returns 24 eigenvalues per $k_z$ point. The dense LAPACK fallback is used for this small matrix.
+The Hamiltonian dimension is $8 \times 441 = 3528$. The solver parameters (`[solver] emin = -1.5`, `emax = 2.0`) specify the energy search window, and `method = "DENSE"` selects the dense LAPACK path. With 8 CB and 16 VB states requested, the code returns 24 eigenvalues per $k_z$ point.
 
 ### 3.3 Running the example
 
