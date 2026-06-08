@@ -42,8 +42,6 @@ module eigensolver
     integer            :: max_iter = 100
     real(kind=dp)      :: tol      = 1.0e-10_dp
     integer            :: feast_m0 = 0
-    integer            :: ncv      = 0
-    character(len=1)   :: which    = 'S'
   end type eigensolver_config
 
   ! ------------------------------------------------------------------
@@ -747,6 +745,7 @@ contains
       return
     end if
 
+    nb = 0
     lda = N
     ldz = N
     abstol = 0.0_dp
@@ -876,8 +875,7 @@ contains
       allocate(dense_lapack_solver_t :: solver)
 #endif
     case default
-      print *, 'ERROR: Unknown eigensolver method: ', trim(config%method)
-      stop 1
+      error stop 'make_eigensolver: Unknown eigensolver method: ' // trim(config%method)
     end select
   end function make_eigensolver
 
