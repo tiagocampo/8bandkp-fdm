@@ -173,6 +173,34 @@ name = "GaAs"
 EOF
 run_test "V10_bad_fermi_mode" "fermi_mode"
 
+# V11: [solver] with invalid method
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[bands]
+num_cb = 2
+num_vb = 6
+[solver]
+method = "INVALID"
+[[material]]
+name = "GaAs"
+EOF
+run_test "V11_bad_solver_method" "solver%method"
+
+# V12: [solver] with invalid mode
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[bands]
+num_cb = 2
+num_vb = 6
+[solver]
+mode = "INVALID"
+[[material]]
+name = "GaAs"
+EOF
+run_test "V12_bad_solver_mode" "solver%mode"
+
 echo ""
 echo "========================================"
 echo " Validation rejection: $PASS passed, $FAIL failed"

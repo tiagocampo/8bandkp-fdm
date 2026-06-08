@@ -19,7 +19,8 @@ module green_functions
   use confinement_init, only: confinementInitialization_2d
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, ZB8bandGeneralized
   use eigensolver, only: eigensolver_base, eigensolver_config, eigensolver_result, &
-    & eigensolver_result_free, make_eigensolver, auto_compute_energy_window
+    & eigensolver_result_free, make_eigensolver, auto_compute_energy_window, &
+    & EIGEN_MODE_ENERGY
 
   implicit none
   private
@@ -262,10 +263,11 @@ contains
     ngrid = grid_ngrid(cfg%grid)
     matrix_dim = 8 * ngrid
     eigen_cfg%method = 'FEAST'
+    eigen_cfg%mode = EIGEN_MODE_ENERGY
     eigen_cfg%nev = max(1, min(matrix_dim, cfg%bands%num_cb + cfg%bands%num_vb))
     eigen_cfg%max_iter = 200
     eigen_cfg%tol = 1.0e-10_dp
-    eigen_cfg%feast_m0 = min(matrix_dim, max(cfg%feast%m0, &
+    eigen_cfg%feast_m0 = min(matrix_dim, max(cfg%solver%m0, &
       & min(matrix_dim, max(4 * eigen_cfg%nev, 128))))
     solver = make_eigensolver(eigen_cfg)
 
@@ -274,9 +276,9 @@ contains
       call auto_compute_energy_window(H_csr, emin_auto, emax_auto)
       eigen_cfg%emin = minval(E_arr) - 5.0_dp * eta
       eigen_cfg%emax = maxval(E_arr) + 5.0_dp * eta
-      if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
-        eigen_cfg%emin = cfg%feast%emin
-        eigen_cfg%emax = cfg%feast%emax
+      if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+        eigen_cfg%emin = cfg%solver%emin
+        eigen_cfg%emax = cfg%solver%emax
       else if (eigen_cfg%emin >= eigen_cfg%emax) then
         eigen_cfg%emin = emin_auto
         eigen_cfg%emax = emax_auto

@@ -469,4 +469,152 @@ contains
     call csr_free(H_tri)
   end subroutine test_feast_workspace_rebuilds_on_pattern_change
 
+  ! ==================================================================
+  ! Test 11: FEAST solver with ENERGY mode on CSR tridiagonal.
+  ! Uses polymorphic dispatch through feast_solver_t%solve_sparse.
+  ! ==================================================================
+  @test
+  subroutine test_feast_energy_mode()
+    integer, parameter :: n = 20
+    real(kind=dp) :: diag(n)
+    type(csr_matrix) :: H
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: res
+    class(eigensolver_base), allocatable :: solver
+    integer :: i
+
+    do i = 1, n
+      diag(i) = real(i, kind=dp)
+    end do
+    call build_diagonal_csr(diag, n, H)
+
+    cfg%method = 'FEAST'
+    cfg%mode = EIGEN_MODE_ENERGY
+    cfg%emin = 0.5_dp
+    cfg%emax = 5.5_dp
+    cfg%nev = 5
+
+    solver = make_eigensolver(cfg)
+    call solver%solve_sparse(H, cfg, res)
+
+    @assertTrue(res%converged)
+    @assertEqual(5, res%nev_found)
+
+    ! Eigenvalues in [0.5, 5.5] are 1, 2, 3, 4, 5
+    do i = 1, res%nev_found
+      @assertEqual(real(i, kind=dp), res%eigenvalues(i), tolerance=1.0e-8_dp)
+    end do
+
+    call eigensolver_result_free(res)
+    call csr_free(H)
+  end subroutine test_feast_energy_mode
+
+  ! ==================================================================
+  ! Test 12: FEAST solver with FULL mode (Gershgorin-bounded window).
+  ! Verifies all eigenvalues are found for a small diagonal matrix.
+  ! ==================================================================
+  @test
+  subroutine test_feast_full_mode()
+    integer, parameter :: n = 10
+    real(kind=dp) :: diag(n)
+    type(csr_matrix) :: H
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: res
+    class(eigensolver_base), allocatable :: solver
+    integer :: i
+
+    do i = 1, n
+      diag(i) = real(i, kind=dp)
+    end do
+    call build_diagonal_csr(diag, n, H)
+
+    cfg%method = 'FEAST'
+    cfg%mode = EIGEN_MODE_FULL
+    cfg%nev = 10
+    cfg%feast_m0 = 12
+
+    solver = make_eigensolver(cfg)
+    call solver%solve_sparse(H, cfg, res)
+
+    @assertTrue(res%converged)
+    @assertEqual(10, res%nev_found)
+
+    ! All eigenvalues 1..10 should be present (sorted ascending)
+    do i = 1, res%nev_found
+      @assertEqual(real(i, kind=dp), res%eigenvalues(i), tolerance=1.0e-8_dp)
+    end do
+
+    call eigensolver_result_free(res)
+    call csr_free(H)
+  end subroutine test_feast_full_mode
+
+  ! ==================================================================
+  ! Test 13: Dense LAPACK solver with mode dispatch.
+  ! Tests all three modes (FULL, INDEX, ENERGY) on a tridiagonal matrix.
+  ! ==================================================================
+  @test
+  subroutine test_dense_mode_dispatch()
+    integer, parameter :: n = 20
+    real(kind=dp), parameter :: grid_dx = 1.0_dp
+    real(kind=dp), parameter :: pi = pi_dp
+    type(csr_matrix) :: Hmat
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: res
+    class(eigensolver_base), allocatable :: solver
+    real(kind=dp) :: expected
+    integer :: k
+
+    call build_tridiag_csr(2.0_dp/grid_dx**2, -1.0_dp/grid_dx**2, n, Hmat)
+
+    ! --- FULL mode: all eigenvalues ---
+    cfg%method = 'DENSE'
+    cfg%mode = EIGEN_MODE_FULL
+    cfg%nev = n
+
+    solver = make_eigensolver(cfg)
+    call solver%solve_sparse(Hmat, cfg, res)
+
+    @assertTrue(res%converged)
+    @assertEqual(n, res%nev_found)
+    ! First eigenvalue should match analytical Laplacian
+    expected = 2.0_dp * (1.0_dp - cos(1.0_dp * pi / real(n+1, kind=dp))) / grid_dx**2
+    @assertEqual(expected, res%eigenvalues(1), tolerance=1.0e-6_dp)
+
+    call eigensolver_result_free(res)
+
+    ! --- INDEX mode: first 3 eigenvalues ---
+    cfg%mode = EIGEN_MODE_INDEX
+    cfg%il = 1
+    cfg%iu = 3
+
+    solver = make_eigensolver(cfg)
+    call solver%solve_sparse(Hmat, cfg, res)
+
+    @assertTrue(res%converged)
+    @assertEqual(3, res%nev_found)
+    do k = 1, 3
+      expected = 2.0_dp * (1.0_dp - cos(real(k, kind=dp) * pi / real(n+1, kind=dp))) / grid_dx**2
+      @assertEqual(expected, res%eigenvalues(k), tolerance=1.0e-6_dp)
+    end do
+
+    call eigensolver_result_free(res)
+
+    ! --- ENERGY mode: eigenvalues in range ---
+    cfg%mode = EIGEN_MODE_ENERGY
+    cfg%emin = 0.01_dp
+    cfg%emax = 0.25_dp
+
+    solver = make_eigensolver(cfg)
+    call solver%solve_sparse(Hmat, cfg, res)
+
+    @assertTrue(res%converged)
+    @assertTrue(res%nev_found >= 2)
+    ! First eigenvalue should still match analytical
+    expected = 2.0_dp * (1.0_dp - cos(1.0_dp * pi / real(n+1, kind=dp))) / grid_dx**2
+    @assertEqual(expected, res%eigenvalues(1), tolerance=1.0e-6_dp)
+
+    call eigensolver_result_free(res)
+    call csr_free(Hmat)
+  end subroutine test_dense_mode_dispatch
+
 end module test_eigensolver

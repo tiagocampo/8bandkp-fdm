@@ -12,7 +12,8 @@ module simulation_setup_mod
     & strain_result, strain_result_free
   use sc_loop, only: self_consistent_loop, self_consistent_loop_wire
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
-    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
+    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window, &
+    & EIGEN_MODE_FULL, EIGEN_MODE_INDEX, EIGEN_MODE_ENERGY, eigensolver_config_validate
   use linalg, only: zheev, zheevd, zheevx
   use utils
   use sparse_matrices
@@ -219,24 +220,34 @@ contains
       nev = cfg%bands%num_cb + cfg%bands%num_vb
       if (nev > Ntot_local) nev = Ntot_local
       setup%nev_wire = nev
-      if (cfg%feast%m0 < 0) then
-        setup%eigen_cfg%method = 'DENSE'
+      ! Solver dispatch: method from config with smart defaults
+      if (cfg%solver%method == 'AUTO') then
+        setup%eigen_cfg%method = 'FEAST'  ! wire default
       else
-        setup%eigen_cfg%method = 'FEAST'
+        setup%eigen_cfg%method = cfg%solver%method
       end if
+      ! Mode dispatch
+      select case (trim(cfg%solver%mode))
+      case ('AUTO', 'ENERGY')
+        setup%eigen_cfg%mode = EIGEN_MODE_ENERGY
+      case ('FULL')
+        setup%eigen_cfg%mode = EIGEN_MODE_FULL
+      case ('INDEX')
+        setup%eigen_cfg%mode = EIGEN_MODE_INDEX
+      end select
       setup%eigen_cfg%nev = nev
       setup%eigen_cfg%max_iter = 100
       setup%eigen_cfg%tol = 1.0e-10_dp
-      setup%eigen_cfg%feast_m0 = cfg%feast%m0
+      setup%eigen_cfg%feast_m0 = cfg%solver%m0
       allocate(setup%HT_csr_ptr)
       allocate(setup%coo_cache_ptr)
       allocate(setup%wire_ws_ptr)
       ! Build preliminary Hamiltonian at kz=0 to estimate FEAST energy window
       call ZB8bandGeneralized(setup%HT_csr_ptr, 0.0_dp, setup%profile_2d, &
         setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
-      if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
-        setup%eigen_cfg%emin = cfg%feast%emin
-        setup%eigen_cfg%emax = cfg%feast%emax
+      if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+        setup%eigen_cfg%emin = cfg%solver%emin
+        setup%eigen_cfg%emax = cfg%solver%emax
       else
         call auto_compute_energy_window(setup%HT_csr_ptr, &
           setup%eigen_cfg%emin, setup%eigen_cfg%emax)
@@ -244,6 +255,7 @@ contains
       end if
       ! Free CSR data but preserve COO cache for fast rebuild by apps
       call csr_free(setup%HT_csr_ptr)
+      call eigensolver_config_validate(setup%eigen_cfg)
       setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
       if (cfg%sc%enabled == 1 .and. .not. do_skip_sc) then
         block

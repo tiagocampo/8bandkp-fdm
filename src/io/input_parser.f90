@@ -114,7 +114,11 @@ contains
     call parse_optics(table, cfg)
     call parse_exciton(table, cfg)
     call parse_scattering(table, cfg)
-    call parse_feast(table, cfg)
+    call parse_solver(table, cfg)
+    if (cfg%solver%method == 'AUTO') then
+      ! [solver] not found or left as AUTO — try [feast] for backward compat
+      call parse_feast(table, cfg)
+    end if
     call parse_strain(table, cfg)
     call parse_gfactor(table, cfg)
 
@@ -826,24 +830,69 @@ contains
   end subroutine parse_scattering
 
   ! ==================================================================
-  ! [feast] section
+  ! [solver] section — unified eigensolver configuration.
+  ! ==================================================================
+  subroutine parse_solver(table, cfg)
+    type(toml_table), intent(inout) :: table
+    type(simulation_config), intent(inout) :: cfg
+
+    type(toml_table), pointer :: solver_tbl => null()
+    character(len=:), allocatable :: method_val, mode_val
+    integer :: stat
+
+    call get_value(table, 'solver', solver_tbl, requested=.false., stat=stat)
+    if (.not. associated(solver_tbl)) return
+
+    call get_value(solver_tbl, 'method', method_val, 'AUTO', stat=stat)
+    call check_optional_stat(stat, 'method', 'solver')
+    if (allocated(method_val)) cfg%solver%method = trim(method_val)
+
+    call get_value(solver_tbl, 'mode', mode_val, 'AUTO', stat=stat)
+    call check_optional_stat(stat, 'mode', 'solver')
+    if (allocated(mode_val)) cfg%solver%mode = trim(mode_val)
+
+    call get_value(solver_tbl, 'emin', cfg%solver%emin, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'emin', 'solver')
+    call get_value(solver_tbl, 'emax', cfg%solver%emax, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'emax', 'solver')
+    call get_value(solver_tbl, 'm0', cfg%solver%m0, 0, stat=stat)
+    call check_optional_stat(stat, 'm0', 'solver')
+  end subroutine parse_solver
+
+  ! ==================================================================
+  ! [feast] section — deprecated, maps to [solver] for backward compat.
   ! ==================================================================
   subroutine parse_feast(table, cfg)
     type(toml_table), intent(inout) :: table
     type(simulation_config), intent(inout) :: cfg
 
     type(toml_table), pointer :: feast_tbl => null()
-    integer :: stat
+    integer :: stat, m0_val
+    real(kind=dp) :: emin_val, emax_val
 
     call get_value(table, 'feast', feast_tbl, requested=.false., stat=stat)
     if (.not. associated(feast_tbl)) return
 
-    call get_value(feast_tbl, 'emin', cfg%feast%emin, 0.0_dp, stat=stat)
+    print *, 'WARNING: [feast] section is deprecated. Use [solver] section instead.'
+
+    call get_value(feast_tbl, 'emin', emin_val, 0.0_dp, stat=stat)
     call check_optional_stat(stat, 'emin', 'feast')
-    call get_value(feast_tbl, 'emax', cfg%feast%emax, 0.0_dp, stat=stat)
+    call get_value(feast_tbl, 'emax', emax_val, 0.0_dp, stat=stat)
     call check_optional_stat(stat, 'emax', 'feast')
-    call get_value(feast_tbl, 'm0', cfg%feast%m0, 0, stat=stat)
+    call get_value(feast_tbl, 'm0', m0_val, 0, stat=stat)
     call check_optional_stat(stat, 'm0', 'feast')
+
+    cfg%solver%emin = emin_val
+    cfg%solver%emax = emax_val
+    cfg%solver%m0 = m0_val
+
+    ! Map m0 to method: m0 < 0 -> DENSE, else -> FEAST
+    if (m0_val < 0) then
+      cfg%solver%method = 'DENSE'
+    else
+      cfg%solver%method = 'FEAST'
+    end if
+    cfg%solver%mode = 'ENERGY'  ! feast section always used energy mode
   end subroutine parse_feast
 
   ! ==================================================================

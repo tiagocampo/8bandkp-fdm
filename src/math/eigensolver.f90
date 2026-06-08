@@ -1,8 +1,8 @@
 module eigensolver
 
   use definitions, only: dp
-  use sparse_matrices, only: csr_matrix
-  use linalg, only: zheevx
+  use sparse_matrices, only: csr_matrix, csr_free, csr_build_from_coo
+  use linalg, only: zheevx, zheev
 #ifdef USE_MKL_FEAST
   use linalg, only: feastinit, zfeast_hcsrev
 #endif
@@ -18,20 +18,32 @@ module eigensolver
   public :: feast_solver_t
 #endif
   public :: make_eigensolver
+  public :: eigensolver_config_validate
+  public :: EIGEN_MODE_FULL, EIGEN_MODE_INDEX, EIGEN_MODE_ENERGY
+
+  ! ------------------------------------------------------------------
+  ! Mode constants for eigensolver dispatch.
+  ! ------------------------------------------------------------------
+  integer, parameter :: EIGEN_MODE_FULL   = 1  ! all eigenvalues
+  integer, parameter :: EIGEN_MODE_INDEX  = 2  ! eigenvalues il:iu
+  integer, parameter :: EIGEN_MODE_ENERGY = 3  ! eigenvalues in [emin, emax]
 
   ! ------------------------------------------------------------------
   ! Configuration for the sparse eigensolver.
   ! ------------------------------------------------------------------
   type :: eigensolver_config
-    character(len=10)  :: method  = 'FEAST'
-    integer            :: nev     = 8
-    real(kind=dp)      :: emin    = -1.0_dp
-    real(kind=dp)      :: emax    =  1.0_dp
+    character(len=10)  :: method   = 'FEAST'
+    integer            :: mode     = EIGEN_MODE_INDEX  ! default: INDEX
+    integer            :: nev      = 8
+    integer            :: il       = 1
+    integer            :: iu       = 8
+    real(kind=dp)      :: emin     = -1.0_dp
+    real(kind=dp)      :: emax     =  1.0_dp
     integer            :: max_iter = 100
-    real(kind=dp)      :: tol     = 1.0e-10_dp
+    real(kind=dp)      :: tol      = 1.0e-10_dp
     integer            :: feast_m0 = 0
-    integer            :: ncv     = 0
-    character(len=1)   :: which   = 'S'
+    integer            :: ncv      = 0
+    character(len=1)   :: which    = 'S'
   end type eigensolver_config
 
   ! ------------------------------------------------------------------
@@ -54,6 +66,8 @@ module eigensolver
   type, abstract :: eigensolver_base
   contains
     procedure(solve_evp_interface), deferred :: solve
+    procedure(solve_dense_interface), deferred :: solve_dense
+    procedure(solve_sparse_interface), deferred :: solve_sparse
   end type eigensolver_base
 
   abstract interface
@@ -64,6 +78,22 @@ module eigensolver
       type(eigensolver_config), intent(in) :: config
       type(eigensolver_result), intent(out) :: result
     end subroutine solve_evp_interface
+
+    subroutine solve_dense_interface(self, H, config, result)
+      import :: eigensolver_base, dp, eigensolver_config, eigensolver_result
+      class(eigensolver_base), intent(inout) :: self
+      complex(kind=dp), contiguous, intent(in) :: H(:,:)
+      type(eigensolver_config), intent(in) :: config
+      type(eigensolver_result), intent(out) :: result
+    end subroutine solve_dense_interface
+
+    subroutine solve_sparse_interface(self, H_csr, config, result)
+      import :: eigensolver_base, csr_matrix, eigensolver_config, eigensolver_result
+      class(eigensolver_base), intent(inout) :: self
+      type(csr_matrix), intent(in) :: H_csr
+      type(eigensolver_config), intent(in) :: config
+      type(eigensolver_result), intent(out) :: result
+    end subroutine solve_sparse_interface
   end interface
 
   ! ------------------------------------------------------------------
@@ -89,14 +119,18 @@ module eigensolver
   type, extends(eigensolver_base) :: feast_solver_t
     type(feast_workspace) :: ws
   contains
-    procedure :: solve => feast_solve_dispatch
+    procedure :: solve => feast_solve_dispatch        ! legacy alias -> solve_sparse
+    procedure :: solve_dense => feast_solve_dense
+    procedure :: solve_sparse => feast_solve_sparse_dispatch
     final :: feast_solver_finalize
   end type feast_solver_t
 #endif
 
   type, extends(eigensolver_base) :: dense_lapack_solver_t
   contains
-    procedure :: solve => dense_lapack_solve_dispatch
+    procedure :: solve => dense_lapack_solve_dispatch       ! legacy alias -> solve_sparse
+    procedure :: solve_dense => dense_solve_dense_dispatch
+    procedure :: solve_sparse => dense_solve_sparse_dispatch
   end type dense_lapack_solver_t
 
 contains
@@ -568,9 +602,36 @@ contains
   end subroutine sort_eigenpairs_ascending
 
   ! ==================================================================
+  ! Validate eigensolver config — rejects invalid mode/method combos.
+  ! ==================================================================
+  subroutine eigensolver_config_validate(config)
+    type(eigensolver_config), intent(in) :: config
+    character(len=256) :: msg
+
+    if (trim(config%method) == 'FEAST' .and. config%mode == EIGEN_MODE_INDEX) then
+      error stop 'eigensolver_config_validate: FEAST solver does not support INDEX mode.'
+    end if
+    if (config%mode == EIGEN_MODE_ENERGY) then
+      if (config%emin >= config%emax) then
+        write(msg, '(A,ES12.4,A,ES12.4)') &
+          'emin (', config%emin, ') must be < emax (', config%emax, ')'
+        error stop 'eigensolver_config_validate: ' // trim(msg)
+      end if
+    end if
+    if (config%mode == EIGEN_MODE_INDEX) then
+      if (config%il < 1 .or. config%iu < config%il) then
+        error stop 'eigensolver_config_validate: invalid il/iu range for INDEX mode.'
+      end if
+    end if
+  end subroutine eigensolver_config_validate
+
+  ! ==================================================================
   ! Polymorphic dispatch implementations.
   ! ==================================================================
 
+  ! ------------------------------------------------------------------
+  ! FEAST solver: legacy solve -> solve_sparse
+  ! ------------------------------------------------------------------
 #ifdef USE_MKL_FEAST
   subroutine feast_solve_dispatch(self, H_csr, config, result)
     class(feast_solver_t), intent(inout) :: self
@@ -578,25 +639,226 @@ contains
     type(eigensolver_config), intent(in) :: config
     type(eigensolver_result), intent(out) :: result
 
-    call solve_feast(H_csr, config, result, fw=self%ws)
+    call self%solve_sparse(H_csr, config, result)
   end subroutine feast_solve_dispatch
+
+  ! ------------------------------------------------------------------
+  ! FEAST solver: solve_sparse with mode dispatch.
+  ! ------------------------------------------------------------------
+  subroutine feast_solve_sparse_dispatch(self, H_csr, config, result)
+    class(feast_solver_t), intent(inout) :: self
+    type(csr_matrix), intent(in) :: H_csr
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+    type(eigensolver_config) :: cfg_local
+
+    select case (config%mode)
+    case (EIGEN_MODE_ENERGY)
+      ! Native FEAST: energy window search
+      call solve_feast(H_csr, config, result, fw=self%ws)
+    case (EIGEN_MODE_FULL)
+      ! Gershgorin-bounded window -> FEAST energy search
+      cfg_local = config
+      call auto_compute_energy_window(H_csr, cfg_local%emin, cfg_local%emax)
+      call solve_feast(H_csr, cfg_local, result, fw=self%ws)
+    case (EIGEN_MODE_INDEX)
+      error stop 'feast_solve_sparse_dispatch: FEAST does not support INDEX mode.'
+    case default
+      error stop 'feast_solve_sparse_dispatch: unknown mode.'
+    end select
+  end subroutine feast_solve_sparse_dispatch
+
+  ! ------------------------------------------------------------------
+  ! FEAST solver: solve_dense converts dense -> CSR, then calls sparse.
+  ! ------------------------------------------------------------------
+  subroutine feast_solve_dense(self, H, config, result)
+    class(feast_solver_t), intent(inout) :: self
+    complex(kind=dp), contiguous, intent(in) :: H(:,:)
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+    type(csr_matrix) :: H_csr
+
+    call dense_to_csr_work(H, H_csr)
+    call self%solve_sparse(H_csr, config, result)
+    call csr_free(H_csr)
+  end subroutine feast_solve_dense
+
+  subroutine feast_solver_finalize(self)
+    type(feast_solver_t), intent(inout) :: self
+    ! ws component auto-finalizes via feast_workspace_finalize
+  end subroutine feast_solver_finalize
 #endif
 
+  ! ------------------------------------------------------------------
+  ! Dense LAPACK solver: legacy solve -> solve_sparse
+  ! ------------------------------------------------------------------
   subroutine dense_lapack_solve_dispatch(self, H_csr, config, result)
     class(dense_lapack_solver_t), intent(inout) :: self
     type(csr_matrix), intent(in) :: H_csr
     type(eigensolver_config), intent(in) :: config
     type(eigensolver_result), intent(out) :: result
 
-    call solve_dense_lapack(H_csr, config, result)
+    call self%solve_sparse(H_csr, config, result)
   end subroutine dense_lapack_solve_dispatch
 
-#ifdef USE_MKL_FEAST
-  subroutine feast_solver_finalize(self)
-    type(feast_solver_t), intent(inout) :: self
-    ! ws component auto-finalizes via feast_workspace_finalize
-  end subroutine feast_solver_finalize
-#endif
+  ! ------------------------------------------------------------------
+  ! Dense LAPACK solver: solve_sparse converts CSR -> dense.
+  ! ------------------------------------------------------------------
+  subroutine dense_solve_sparse_dispatch(self, H_csr, config, result)
+    class(dense_lapack_solver_t), intent(inout) :: self
+    type(csr_matrix), intent(in) :: H_csr
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+    integer :: N
+    complex(kind=dp), allocatable :: H_dense(:,:)
+
+    N = H_csr%nrows
+    if (N <= 0) then
+      result%converged = .false.
+      result%nev_found = 0
+      return
+    end if
+
+    allocate(H_dense(N, N))
+    call csr_to_dense_work(H_csr, H_dense, N)
+    call self%solve_dense(H_dense, config, result)
+    deallocate(H_dense)
+  end subroutine dense_solve_sparse_dispatch
+
+  ! ------------------------------------------------------------------
+  ! Dense LAPACK solver: solve_dense with mode dispatch.
+  ! ------------------------------------------------------------------
+  subroutine dense_solve_dense_dispatch(self, H, config, result)
+    class(dense_lapack_solver_t), intent(inout) :: self
+    complex(kind=dp), contiguous, intent(in) :: H(:,:)
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+
+    integer :: N, lda, ldz, lwork, info, nb, il_local, iu_local
+    complex(kind=dp), allocatable :: A(:,:), Z(:,:), work(:)
+    real(kind=dp), allocatable :: rwork(:), W(:)
+    integer, allocatable :: iwork(:), ifail(:)
+    real(kind=dp) :: vl, vu, abstol
+
+    N = size(H, 1)
+    if (N <= 0) then
+      result%converged = .false.
+      result%nev_found = 0
+      return
+    end if
+
+    lda = N
+    ldz = N
+    abstol = 0.0_dp
+
+    ! Copy H (zheev/zheevx destroys input)
+    allocate(A(N, N))
+    A = H
+
+    allocate(W(N), Z(N, N), rwork(7*N), iwork(5*N), ifail(N))
+
+    select case (config%mode)
+    case (EIGEN_MODE_FULL)
+      ! zheev: all eigenvalues
+      allocate(work(1))
+      call zheev('V', 'U', N, A, lda, W, work, -1, rwork, info)
+      lwork = max(1, nint(real(work(1))))
+      deallocate(work)
+      allocate(work(lwork))
+      call zheev('V', 'U', N, A, lda, W, work, lwork, rwork, info)
+      if (info == 0) then
+        nb = N
+        Z = A  ! zheev returns eigenvectors in A
+      end if
+
+    case (EIGEN_MODE_INDEX)
+      ! zheevx range='I': eigenvalues il:iu
+      il_local = max(1, config%il)
+      iu_local = min(N, config%iu)
+      allocate(work(1))
+      call zheevx('V', 'I', 'U', N, A, lda, vl, vu, &
+                   il_local, iu_local, abstol, nb, W, Z, ldz, &
+                   work, -1, rwork, iwork, ifail, info)
+      lwork = max(1, nint(real(work(1))))
+      deallocate(work)
+      allocate(work(lwork))
+      call zheevx('V', 'I', 'U', N, A, lda, vl, vu, &
+                   il_local, iu_local, abstol, nb, W, Z, ldz, &
+                   work, lwork, rwork, iwork, ifail, info)
+
+    case (EIGEN_MODE_ENERGY)
+      ! zheevx range='V': eigenvalues in [emin, emax]
+      vl = config%emin
+      vu = config%emax
+      allocate(work(1))
+      call zheevx('V', 'V', 'U', N, A, lda, vl, vu, &
+                   1, N, abstol, nb, W, Z, ldz, &
+                   work, -1, rwork, iwork, ifail, info)
+      lwork = max(1, nint(real(work(1))))
+      deallocate(work)
+      allocate(work(lwork))
+      call zheevx('V', 'V', 'U', N, A, lda, vl, vu, &
+                   1, N, abstol, nb, W, Z, ldz, &
+                   work, lwork, rwork, iwork, ifail, info)
+
+    case default
+      error stop 'dense_solve_dense_dispatch: unknown mode.'
+    end select
+
+    if (info == 0 .and. nb > 0) then
+      result%converged = .true.
+      result%nev_found = nb
+      result%iterations = 1
+      allocate(result%eigenvalues(nb))
+      allocate(result%eigenvectors(N, nb))
+      result%eigenvalues(1:nb) = W(1:nb)
+      result%eigenvectors(:, 1:nb) = Z(:, 1:nb)
+    else
+      result%converged = .false.
+      result%nev_found = 0
+      if (info /= 0) then
+        print *, 'Dense eigensolver error: info =', info
+      end if
+    end if
+
+    deallocate(A, W, Z, work, rwork, iwork, ifail)
+  end subroutine dense_solve_dense_dispatch
+
+  ! ==================================================================
+  ! Internal: convert dense matrix to CSR.
+  ! ==================================================================
+  subroutine dense_to_csr_work(H, H_csr)
+    complex(kind=dp), contiguous, intent(in) :: H(:,:)
+    type(csr_matrix), intent(out) :: H_csr
+
+    integer :: N, nnz, i, j
+    integer, allocatable :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    N = size(H, 1)
+    nnz = 0
+    do j = 1, N
+      do i = 1, N
+        if (abs(H(i, j)) > 0.0_dp) nnz = nnz + 1
+      end do
+    end do
+
+    allocate(rows(nnz), cols(nnz), vals(nnz))
+    nnz = 0
+    do j = 1, N
+      do i = 1, N
+        if (abs(H(i, j)) > 0.0_dp) then
+          nnz = nnz + 1
+          rows(nnz) = i
+          cols(nnz) = j
+          vals(nnz) = H(i, j)
+        end if
+      end do
+    end do
+
+    call csr_build_from_coo(H_csr, N, N, nnz, rows, cols, vals)
+    deallocate(rows, cols, vals)
+  end subroutine dense_to_csr_work
 
   function make_eigensolver(config) result(solver)
     class(eigensolver_base), allocatable :: solver

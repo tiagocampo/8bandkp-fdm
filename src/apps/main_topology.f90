@@ -13,7 +13,8 @@ program topologicalAnalysis
   use input_parser
   use sparse_matrices
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
-    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
+    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window, &
+    & EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use topological_analysis
   use bdg_hamiltonian
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
@@ -350,6 +351,7 @@ contains
     ! small BHZ matrix (4*N = 400).  FEAST may miss eigenvalues in wide search
     ! windows; DENSE (zheev) is exact and reliable.
     eigen_cfg_local%method = 'DENSE'
+    eigen_cfg_local%mode = EIGEN_MODE_FULL
     eigen_cfg_local%emin = -100.0_dp
     eigen_cfg_local%emax = 100.0_dp
     eigen_cfg_local%nev = 4 * bhz_N_grid
@@ -513,6 +515,7 @@ contains
     ! Configure FEAST for BdG (search around zero energy for Majoranas)
     nev_local = cfg%bands%num_cb + cfg%bands%num_vb
     eigen_cfg_local%method = 'FEAST'
+    eigen_cfg_local%mode = EIGEN_MODE_ENERGY
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
@@ -521,9 +524,9 @@ contains
     ! Search near zero energy for Majorana modes.
     ! Use feast_emin/emax from config when set (for kz sweeps at finite kz),
     ! otherwise use the default ±10 meV window.
-    if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
-      emin_local = cfg%feast%emin
-      emax_local = cfg%feast%emax
+    if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+      emin_local = cfg%solver%emin
+      emax_local = cfg%solver%emax
     else
       emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
       emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
@@ -1303,6 +1306,7 @@ contains
 
     nev_local = max(2, cfg%bands%num_cb + cfg%bands%num_vb)
     eigen_cfg_local%method = 'FEAST'
+    eigen_cfg_local%mode = EIGEN_MODE_ENERGY
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp

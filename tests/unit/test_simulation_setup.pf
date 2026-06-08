@@ -517,7 +517,7 @@ contains
     cfg%external_field%value = 0.0_dp
     cfg%which_band = 0
     cfg%band_idx = 1
-    cfg%feast%m0 = -1
+    cfg%solver%m0 = -1
 
     ! Wire grid dimensions
     cfg%wire%nx = nx

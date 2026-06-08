@@ -24,7 +24,7 @@ module definitions
   public :: optical_transition, optics_config
   public :: exciton_config, scattering_config, bdg_config, topology_config, topological_result
   public :: wave_vector_config, bands_config, external_field_config
-  public :: b_field_config, feast_config, landau_config, wire_config
+  public :: b_field_config, solver_config, landau_config, wire_config
   public :: simulation_config, group
 
   ! Functions and subroutines
@@ -400,10 +400,12 @@ module definitions
   end type
 
   ! Replaces flat feast_emin/feast_emax/feast_m0
-  type :: feast_config
-    real(kind=dp) :: emin = 0.0_dp   ! 0 = auto
-    real(kind=dp) :: emax = 0.0_dp   ! 0 = auto
-    integer       :: m0 = 0          ! 0 = auto (2*nev)
+  type :: solver_config
+    character(len=10) :: method = 'AUTO'   ! AUTO, DENSE, FEAST
+    character(len=10) :: mode   = 'AUTO'   ! AUTO, FULL, INDEX, ENERGY
+    real(kind=dp)     :: emin   = 0.0_dp   ! 0 = auto
+    real(kind=dp)     :: emax   = 0.0_dp   ! 0 = auto
+    integer           :: m0     = 0         ! 0 = auto (FEAST subspace)
   end type
 
   ! Replaces scattered landau_* fields
@@ -437,7 +439,7 @@ module definitions
     type(external_field_config) :: external_field
     type(b_field_config)       :: b_field
     type(strain_config)        :: strain
-    type(feast_config)         :: feast
+    type(solver_config)        :: solver
 
     ! Mode-specific geometry
     type(wire_config)          :: wire              ! confinement = "wire"
@@ -761,30 +763,48 @@ module definitions
         end block
       end if
 
-      ! ---- I11: feast%emin < feast%emax when both nonzero ----
-      if (cfg%feast%emin /= 0.0_dp .and. cfg%feast%emax /= 0.0_dp) then
-        if (cfg%feast%emin >= cfg%feast%emax) then
+      ! ---- I11: solver%emin < solver%emax when both nonzero ----
+      if (cfg%solver%emin /= 0.0_dp .and. cfg%solver%emax /= 0.0_dp) then
+        if (cfg%solver%emin >= cfg%solver%emax) then
           block
             character(len=32) :: buf_emin, buf_emax
-            write(buf_emin, '(ES12.4)') cfg%feast%emin
-            write(buf_emax, '(ES12.4)') cfg%feast%emax
-            error stop 'validate_simulation_config: feast%emin (' // trim(buf_emin) // &
-              ') must be < feast%emax (' // trim(buf_emax) // ')'
+            write(buf_emin, '(ES12.4)') cfg%solver%emin
+            write(buf_emax, '(ES12.4)') cfg%solver%emax
+            error stop 'validate_simulation_config: solver%emin (' // trim(buf_emin) // &
+              ') must be < solver%emax (' // trim(buf_emax) // ')'
           end block
         end if
       end if
 
-      ! ---- I12: feast%m0 must be in [1, 1000] when explicitly set (> 0) ----
+      ! ---- I12: solver%m0 must be in [1, 1000] when explicitly set (> 0) ----
       ! m0 <= 0 is the "auto-detect" sentinel (eigensolver replaces with 2*nev).
-      if (cfg%feast%m0 > 0) then
-        if (cfg%feast%m0 > 1000) then
+      if (cfg%solver%m0 > 0) then
+        if (cfg%solver%m0 > 1000) then
           block
             character(len=16) :: buf
-            write(buf, '(I0)') cfg%feast%m0
-            error stop 'validate_simulation_config: feast%m0 must be in [1, 1000], got ' // trim(buf)
+            write(buf, '(I0)') cfg%solver%m0
+            error stop 'validate_simulation_config: solver%m0 must be in [1, 1000], got ' // trim(buf)
           end block
         end if
       end if
+
+      ! ---- I13: solver%method must be AUTO, DENSE, or FEAST ----
+      select case (trim(cfg%solver%method))
+      case ('AUTO', 'DENSE', 'FEAST')
+        ! ok
+      case default
+        error stop 'validate_simulation_config: solver%method must be AUTO, DENSE, or FEAST, got "' // &
+          trim(cfg%solver%method) // '"'
+      end select
+
+      ! ---- I14: solver%mode must be AUTO, FULL, INDEX, or ENERGY ----
+      select case (trim(cfg%solver%mode))
+      case ('AUTO', 'FULL', 'INDEX', 'ENERGY')
+        ! ok
+      case default
+        error stop 'validate_simulation_config: solver%mode must be AUTO, FULL, INDEX, or ENERGY, got "' // &
+          trim(cfg%solver%mode) // '"'
+      end select
 
     end associate
 
