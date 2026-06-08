@@ -166,6 +166,10 @@ program opticalProperties
 
     print '(a,i0,a)', ' Bulk optics k-sweep: ', npts, ' k-points'
 
+    ! NOTE: If magnetic field support is added to optics, init_zeeman_cache()
+    ! must be called before the OMP fork below to avoid races on the SAVE cache.
+    ! Currently unreachable because optics configs never set a non-zero B_vec.
+
     block
       complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
       real(kind=dp), allocatable    :: rwork_loc(:)

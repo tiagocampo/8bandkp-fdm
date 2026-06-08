@@ -166,7 +166,7 @@ module hamiltonianConstructor
       ! correct: spin splitting depends on total |B|, regardless of
       ! direction. Orbital effects (Landau levels) from B_perp are
       ! handled separately via Peierls substitution in wire mode.
-      ! Uses the data-driven Zeeman table from strain_solver.
+      ! Uses the data-driven Zeeman table from magnetic_field.
       ! ---------------------------------------------------------------
       if (present(cfg)) then
         if (.not. present(g)) then
@@ -381,7 +381,7 @@ module hamiltonianConstructor
       end do
 
       ! Zeeman splitting (full |B| magnitude)
-      ! Uses the data-driven Zeeman table from strain_solver.
+      ! Uses the data-driven Zeeman table from magnetic_field.
       if (present(cfg)) then
         if (B_mag > 1.0e-12_dp) then
           block
@@ -527,7 +527,7 @@ module hamiltonianConstructor
       ! spatial y-discretization. Bulk 8x8 at k=0 has no y information
       ! so only Zeeman (spin) is possible here. For orbital physics, use
       ! wire mode (confinement='wire') which has 2D grid and can do Peierls.
-      ! Uses the data-driven Zeeman table from strain_solver.
+      ! Uses the data-driven Zeeman table from magnetic_field.
       ! ---------------------------------------------------------------
       if (present(cfg)) then
         block

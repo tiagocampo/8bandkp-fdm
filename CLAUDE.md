@@ -159,9 +159,10 @@ docs/solutions/  documented solutions to past problems (bugs, best practices, pa
 ```
 defs.f90                      (kinds, constants, derived types — no deps)
   <- parameters.f90           (material parameter database for 25+ semiconductors)
-       <- utils.f90           (dense-to-sparse conversion, Simpson integration)
+       <- utils.f90           (dense-to-sparse conversion, Simpson integration, file utilities)
             <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices, Vandermonde derivative and interpolation solvers)
                  <- hamiltonian_blocks.f90     (8x8 k.p block structure as data: 52-entry table, named constants KP_Q..KP_A)
+                 <- magnetic_field.f90         (Zeeman table SSOT + splitting + Peierls phase as COO insertions)
                  <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian, commutator velocity matrices; reads kp/strain tables, Zeeman from magnetic_field)
                       <- hamiltonian_wire.f90     (2D wire Hamiltonian, CSR assembly, wire geometry; reads kp block table)
                       <- gfactor_functions.f90  (Lowdin partitioning, spin/momentum matrix elements)

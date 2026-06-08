@@ -1190,7 +1190,7 @@ module hamiltonian_wire
     ! ==================================================================
     ! Insert Zeeman splitting into COO diagonal entries.
     ! Each grid point contributes 8 diagonal entries (one per band).
-    ! Uses the data-driven Zeeman table from strain_solver.
+    ! Uses the data-driven Zeeman table from magnetic_field.
     ! ==================================================================
     subroutine insert_zeeman_coo(coo_r, coo_c, coo_v, coo_cap, &
         coo_idx, B_vec, g_factor, grid, N)

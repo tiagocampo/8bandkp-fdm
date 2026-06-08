@@ -111,21 +111,22 @@ contains
     end select
   end function rate_tolerance
 
-  ! --- Legacy API helpers ---
+  ! --- Interior convergence helpers (using public FD matrix API) ---
 
   subroutine compute_legacy_interior_error(N, dz, deriv_order, stencil_order, max_err)
-    ! Apply legacy FDstencil/FDmatrixDense to sin(2*pi*z) and compute max-norm error
+    ! Apply public FD matrix API to sin(2*pi*z) and compute max-norm error at interior points.
     integer, intent(in) :: N, deriv_order, stencil_order
     real(kind=dp), intent(in) :: dz
     real(kind=dp), intent(out) :: max_err
 
-    real(kind=dp), allocatable :: v(:), mat(:,:), z(:), f(:), exact(:), numerical(:)
+    real(kind=dp), allocatable :: mat(:,:), z(:), f(:), exact(:), numerical(:)
     integer :: i, half_bw
 
-    allocate(v(2*stencil_order + 1))
-    v = 0.0_dp
-    call FDstencil(deriv_order, stencil_order, dz, v)
-    call FDmatrixDense(N, dz, deriv_order, stencil_order, 0, mat)
+    if (deriv_order == 2) then
+      call buildFD2ndDerivMatrix(N, dz, stencil_order, mat)
+    else
+      call buildFD1stDerivMatrix(N, dz, stencil_order, mat)
+    end if
 
     allocate(z(N), f(N), exact(N), numerical(N))
     do i = 1, N
@@ -145,9 +146,6 @@ contains
 
     numerical = matmul(mat, f)
 
-    ! Legacy Toeplitz D1 gives -f'(x) due to antisymmetric stencil
-    if (deriv_order == 1) numerical = -numerical
-
     half_bw = stencil_order / 2
     max_err = 0.0_dp
     do i = half_bw + 1, N - half_bw
@@ -156,7 +154,7 @@ contains
       end if
     end do
 
-    deallocate(v, mat, z, f, exact, numerical)
+    deallocate(mat, z, f, exact, numerical)
   end subroutine compute_legacy_interior_error
 
   subroutine compute_legacy_convergence_rate(deriv_order, stencil_order, obs_rate)
@@ -521,9 +519,8 @@ contains
     @assertTrue(abs(obs_rate - 10.0_dp) < rate_tolerance(10))
   end subroutine test_legacy_d2_order10_convergence
 
-  ! --- Legacy API 1st-derivative tests ---
-  ! Legacy FDstencil only implements 1st-derivative at orders 2 and 8.
-  ! Orders 4, 6, 10 silently return zero vector — known gap, not tested.
+  ! --- 1st-derivative convergence tests ---
+  ! Convergence tested at orders 2 and 8; other orders not covered here.
 
   @test
   subroutine test_legacy_d1_order2_convergence()

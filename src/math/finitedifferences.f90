@@ -4,9 +4,8 @@ module finitedifferences
 
   implicit none
   private
-  public :: Identity, toeplitz, FDstencil, FDmatrixDense
+  public :: Identity
   public :: buildFD2ndDerivMatrix, buildFD1stDerivMatrix
-  public :: FDcentralCoeffs2nd, FDcentralCoeffs1st
   public :: buildStaggeredD1Inner, buildStaggeredD1Outer
   public :: interpolateToHalfPoints
 

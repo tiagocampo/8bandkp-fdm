@@ -26,12 +26,14 @@ src/physics/
     |-> finitedifferences  (FD stencil matrices)
     |-> hamiltonian_blocks  (k.p block table for dense builders)
     |-> sparse_matrices    (CSR operations for wire mode)
-    |-> strain_solver      (Bir-Pikus strain blocks via get_strain_table/get_zeeman_table)
+    |-> strain_solver      (Bir-Pikus strain blocks via get_strain_table)
+    |-> magnetic_field     (Zeeman blocks via get_zeeman_table)
     |-> utils              (dense-to-sparse conversion)
   hamiltonian_wire.f90
     |-> hamiltonian_blocks  (k.p block table for COO builder)
     |-> sparse_matrices     (CSR type and operations)
-    |-> strain_solver       (Bir-Pikus via get_strain_table/get_zeeman_table)
+    |-> strain_solver       (Bir-Pikus via get_strain_table)
+    |-> magnetic_field      (Zeeman blocks via get_zeeman_table)
     |-> confinement_init    (2D confinement initialization)
     |-> finitedifferences   (FD stencil matrices)
     |-> definitions         (kinds, constants)
@@ -49,7 +51,9 @@ src/physics/
     |-> charge_density
     |-> hamiltonianConstructor
   strain_solver.f90
-    |-> definitions        (types, constants only; exports get_strain_table, get_zeeman_table)
+    |-> definitions        (types, constants only; exports get_strain_table)
+  magnetic_field.f90
+    |-> definitions        (types, constants only; exports get_zeeman_table)
 
 src/math/
   finitedifferences.f90
@@ -216,7 +220,7 @@ If you need to change the kinetic terms or add new couplings, you must edit the 
 - **QW**: `ZB8bandQW` -- 8N x 8N block matrix, reads from the k.p block table. The `kpterms(:,:,:)` array holds the precomputed position-dependent FD operators. Index 1-4 are diagonal (gamma1, gamma2, gamma3, P), 5 is A times d^2/dz^2, 6 is P times d/dz, 7 is (gamma1-2gamma2) times d^2/dz^2, 8 is (gamma1+2gamma2) times d^2/dz^2, 9 is gamma3 times d/dz, 10 is A (diagonal).
 - **Wire**: `ZB8bandGeneralized` -- 8*grid%npoints() x 8*grid%npoints() sparse CSR, reads from the k.p block table. The `kpterms_2d(:)` array holds 17 CSR matrices (indices 1-17). Indices 1-4 diagonal, 5 A*Laplacian, 6 P*gradient, 7-8 Q/T kinetic terms, 9 gamma3*gradient (legacy), 10 A diagonal, 11 cross-derivative, 12-13 P*x/y gradients for g-factor, 14-15 gamma3*x/y gradients for S/SC terms and g-factor, 16 gamma2*(D2x-D2y) anisotropic Laplacian for R term, 17 placeholder (unused).
 - **Strain blocks**: `get_strain_table()` in `strain_solver.f90` defines which Bir-Pikus strain entries apply to which band pairs. Both dense and COO builders consume this table.
-- **Zeeman blocks**: `get_zeeman_table()` in `strain_solver.f90` defines which Zeeman magnetic entries apply to which band pairs. Both dense and COO builders consume this table.
+- **Zeeman blocks**: `get_zeeman_table()` in `magnetic_field.f90` defines which Zeeman magnetic entries apply to which band pairs. Both dense and COO builders consume this table.
 
 To add a new k.p term (say, a strain-induced coupling), you would:
 

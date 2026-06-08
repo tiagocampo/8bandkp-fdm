@@ -871,7 +871,7 @@ calculations against analytical Bir-Pikus formula values.
 | `bir_pikus_blocks_free` | `src/physics/strain_solver.f90` | Free Bir--Pikus arrays |
 | `compute_bp_scalar` | `src/physics/strain_solver.f90` | Pure function: BP shifts for single point |
 | `get_strain_table` | `src/physics/strain_solver.f90` | Strain block table: which BP entries apply to which band pairs |
-| `get_zeeman_table` | `src/physics/strain_solver.f90` | Zeeman block table: diagonal g-multipliers per band index (0-based) |
+| `get_zeeman_table` | `src/physics/magnetic_field.f90` | Zeeman block table: diagonal g-multipliers per band index (0-based) |
 | `strain_result` | `src/physics/strain_solver.f90` | Derived type: eps_xx, eps_yy, eps_zz, eps_yz |
 | `strain_config` | `src/core/defs.f90` | Configuration: enabled, reference, solver |
 | `paramStruct` | `src/core/defs.f90` | Deformation potentials: ac, av, b_dp, d_dp, C11, C12, C44, a0 |
