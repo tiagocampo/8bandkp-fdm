@@ -3,8 +3,10 @@ module topological_analysis
   use definitions, only: dp, pi_dp, simulation_config, spatial_grid, &
     topological_result, wavevector
   use sparse_matrices
-  use linalg, only: zheev, zgetrf
+  use linalg, only: zgetrf
   use hamiltonianConstructor, only: ZB8bandQW
+  use eigensolver, only: eigensolver_base, eigensolver_config, eigensolver_result, &
+    & eigensolver_result_free, make_eigensolver, EIGEN_MODE_FULL
   implicit none
   private
 
@@ -1080,7 +1082,7 @@ contains
     real(kind=dp), intent(out) :: min_gap
 
     integer :: N, dim_H, i_trim, istate, isite, ncol
-    integer :: info, lwork, n_pairs, ipair, j_best, jstate
+    integer :: n_pairs, ipair, j_best, jstate
     real(kind=dp), parameter :: parity_sign_tol = 1.0e-8_dp
     real(kind=dp) :: pair_sign, a_lat, dE_best, dE_try
     real(kind=dp) :: delta_trim(4)
@@ -1088,8 +1090,12 @@ contains
     type(wavevector) :: wv
 
     complex(kind=dp), allocatable :: HT(:,:)
-    real(kind=dp), allocatable :: evals(:), rwork(:)
-    complex(kind=dp), allocatable :: work(:)
+    real(kind=dp), allocatable :: evals(:)
+
+    ! Eigensolver for Z2 TRIM points
+    type(eigensolver_config) :: topo_cfg
+    class(eigensolver_base), allocatable :: topo_solver
+    type(eigensolver_result) :: topo_result
 
     ! Per-band parity eigenvalues and pairing workspace
     real(kind=dp), allocatable :: band_parity(:)
@@ -1122,23 +1128,14 @@ contains
     ky_trim = [0.0_dp, 0.0_dp, pi_dp / a_lat, pi_dp / a_lat]
     delta_trim = 1.0_dp
 
-    ! Workspace for zheev: query first, then allocate
+    ! Allocate solver: DENSE + FULL
+    topo_cfg%method = 'DENSE'
+    topo_cfg%mode = EIGEN_MODE_FULL
+    topo_cfg%nev = dim_H
+    topo_solver = make_eigensolver(topo_cfg)
+
     allocate(HT(dim_H, dim_H))
     allocate(evals(dim_H))
-    allocate(rwork(max(1, 3*dim_H - 2)))
-    allocate(work(1))
-
-    ! Workspace query
-    call zheev('V', 'U', dim_H, HT, dim_H, evals, work, -1, rwork, info)
-    if (info /= 0) then
-      status = topo_status_lapack
-      z2 = 0
-      deallocate(HT, evals, rwork, work)
-      return
-    end if
-    lwork = max(1, int(real(work(1), kind=dp)))
-    deallocate(work)
-    allocate(work(lwork))
 
     allocate(band_parity(n_occ))
     allocate(partner(n_occ))
@@ -1155,13 +1152,18 @@ contains
       call ZB8bandQW(HT, wv, profile, kpterms, cfg=cfg)
 
       ! Diagonalize: eigenvalues in evals, eigenvectors overwrite HT
-      call zheev('V', 'U', dim_H, HT, dim_H, evals, work, lwork, rwork, info)
-      if (info /= 0) then
+      call topo_solver%solve_dense(HT, topo_cfg, topo_result)
+      if (.not. topo_result%converged) then
         status = topo_status_lapack
         z2 = 0
-        deallocate(HT, evals, rwork, work, band_parity, partner, paired)
+        deallocate(HT, evals, band_parity, partner, paired)
+        call eigensolver_result_free(topo_result)
+        if (allocated(topo_solver)) deallocate(topo_solver)
         return
       end if
+      evals = topo_result%eigenvalues
+      HT = topo_result%eigenvectors
+      call eigensolver_result_free(topo_result)
 
       min_gap = min(min_gap, evals(n_occ + 1) - evals(n_occ))
 
@@ -1197,7 +1199,7 @@ contains
           ! No valid partner found — degeneracy structure broken
           status = topo_status_invalid
           z2 = 0
-          deallocate(HT, evals, rwork, work, band_parity, partner, paired)
+          deallocate(HT, evals, band_parity, partner, paired)
           return
         end if
         paired(istate) = .true.
@@ -1210,7 +1212,7 @@ contains
       if (n_pairs /= n_occ / 2) then
         status = topo_status_invalid
         z2 = 0
-        deallocate(HT, evals, rwork, work, band_parity, partner, paired)
+        deallocate(HT, evals, band_parity, partner, paired)
         return
       end if
 
@@ -1222,7 +1224,7 @@ contains
         if (abs(pair_sign) <= parity_sign_tol) then
           status = topo_status_invalid
           z2 = 0
-          deallocate(HT, evals, rwork, work, band_parity, partner, paired)
+          deallocate(HT, evals, band_parity, partner, paired)
           return
         end if
         if (pair_sign < 0.0_dp) then
@@ -1234,7 +1236,8 @@ contains
     z2 = z2_from_trim_parities(delta_trim)
     status = topo_status_ok
 
-    deallocate(HT, evals, rwork, work, band_parity, partner, paired)
+    deallocate(HT, evals, band_parity, partner, paired)
+    if (allocated(topo_solver)) deallocate(topo_solver)
 
   end subroutine compute_z2_fukane_qw_result
 

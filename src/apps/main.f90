@@ -18,7 +18,7 @@ program kpfdm
   use magnetic_field, only: init_zeeman_cache
   use exciton_solver
   use scattering_solver
-  use linalg, only: zheevx, mkl_set_num_threads_local, dlamch
+  use linalg, only: mkl_set_num_threads_local
   use spin_projection, only: compute_band_parts
   use sparse_matrices, only: csr_matrix, csr_free
   use hamiltonian_qw, only: qw_workspace, qw_workspace_free, ZB8bandQW_csr
@@ -38,13 +38,11 @@ program kpfdm
   integer :: i, k, ii, jj
 
   ! hamiltonian and LAPACK/BLAS
-  integer :: info, lwork, N, M, il, iuu
-  real(kind=dp) :: abstol, vl, vu
-  real(kind=dp), allocatable :: eig(:,:), rwork(:)
-  complex(kind=dp), allocatable :: work(:)
+  integer :: info, N, M, il, iuu
+  real(kind=dp) :: vl, vu
+  real(kind=dp), allocatable :: eig(:,:)
   complex(kind=dp), allocatable, dimension(:,:,:) :: eigv
   complex(kind=dp), allocatable, dimension(:,:) :: HT, HTmp
-  integer, allocatable :: iwork(:), ifail(:)
 
   ! file handling
   integer(kind=4) :: iounit
@@ -394,23 +392,19 @@ program kpfdm
   if (trim(cfg%confinement) == 'landau') then
     block
       type(simulation_setup) :: setup
-      integer :: N_loc, il_loc, iuu_loc, lwork_loc
+      type(eigensolver_config) :: landau_cfg
+      class(eigensolver_base), allocatable :: landau_solver
+      type(eigensolver_result) :: landau_result
 
       call simulation_setup_init(cfg, setup)
 
-      N_loc = setup%N
-      il_loc = setup%il
-      iuu_loc = setup%iuu
-      lwork_loc = setup%lwork
+      N = setup%N
+      il = setup%il
+      iuu = setup%iuu
 
       ! Move profile/kpterms from setup into module-level variables
       call move_alloc(setup%profile, profile)
       call move_alloc(setup%kpterms, kpterms)
-
-      N = N_loc
-      il = il_loc
-      iuu = iuu_loc
-      lwork = lwork_loc
 
       print '(A,I0,A)', ' Landau mode: N=', N, ' (single material)'
 
@@ -425,14 +419,7 @@ program kpfdm
 
       vl = 0.0_dp
       vu = 0.0_dp
-      abstol = DLAMCH('P')
 
-      if (allocated(rwork)) deallocate(rwork)
-      allocate(rwork(7*N))
-      if (allocated(iwork)) deallocate(iwork)
-      allocate(iwork(5*N))
-      if (allocated(ifail)) deallocate(ifail)
-      allocate(ifail(N))
       if (allocated(eig)) deallocate(eig)
       allocate(eig(iuu-il+1, cfg%wave_vector%nsteps))
       if (allocated(eigv)) deallocate(eigv)
@@ -440,24 +427,9 @@ program kpfdm
       eig(:,:) = 0_dp
       eigv(:,:,:) = 0_dp
 
-      if (allocated(HT)) deallocate(HT)
-      allocate(HT(N, N))
-      HT = 0.0_dp
-
-      ! Workspace query: build H at k=0, query optimal lwork via zheevx
-      if (allocated(work)) deallocate(work)
-      allocate(work(1))
-      call ZB8bandLandau(HT, smallk(1), profile, kpterms, cfg%grid%x, cfg=cfg)
-      lwork = -1
-      call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,1), &
-        HT, N, work, lwork, rwork, iwork, ifail, info)
-      if (info /= 0) then
-        print *, 'Error: zheevx Landau workspace query failed, info =', info
-        error stop 'zheevx parameter error'
-      end if
-      lwork = int(real(work(1)))
-      if (allocated(work)) deallocate(work)
-      allocate(work(lwork))
+      ! --- Solver config: DENSE + INDEX ---
+      landau_cfg = setup%eigen_cfg
+      landau_solver = make_eigensolver(landau_cfg)
 
       ! ================================================================
       ! Landau k-sweep (OpenMP parallel)
@@ -468,41 +440,38 @@ program kpfdm
         & cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
 
       block
-        complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
-        real(kind=dp), allocatable    :: rwork_loc(:)
-        integer, allocatable          :: iwork_loc(:), ifail_loc(:)
-        integer :: info_loc, M_loc
+        complex(kind=dp), allocatable :: HT_loc(:,:)
+        type(eigensolver_config) :: cfg_loc
+        class(eigensolver_base), allocatable :: solver_loc
 
         call init_kp_block_cache()
         call init_strain_cache()
         call init_zeeman_cache()
 
-        !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
+        !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, landau_result)
         allocate(HT_loc(N, N))
-        allocate(work_loc(lwork))
-        allocate(rwork_loc(7*N))
-        allocate(iwork_loc(5*N))
-        allocate(ifail_loc(N))
         HT_loc = (0.0_dp, 0.0_dp)
+        cfg_loc = landau_cfg
+        solver_loc = make_eigensolver(cfg_loc)
 
         !$omp do schedule(static)
         do k = 1, cfg%wave_vector%nsteps
           call ZB8bandLandau(HT_loc, smallk(k), profile, kpterms, cfg%grid%x, cfg=cfg)
-          call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
-            eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
-            ifail_loc, info_loc)
-          if (info_loc /= 0) then
+          call solver_loc%solve_dense(HT_loc, cfg_loc, landau_result)
+          if (.not. landau_result%converged) then
             !$omp critical
-            print *, "ERROR: Landau diagonalization failed at k=", k, "info=", info_loc
-            if (info_loc < 0) print *, "  Parameter ", -info_loc, " had illegal value"
+            print *, "ERROR: Landau diagonalization failed at k=", k
             !$omp end critical
-            error stop 'zheevx diagonalization failed'
+            error stop 'eigensolver failed in Landau k-sweep'
           end if
-          eigv(:,:,k) = HT_loc(:, 1:iuu-il+1)
+          M = landau_result%nev_found
+          eig(1:M, k) = landau_result%eigenvalues(1:M)
+          eigv(:, 1:M, k) = landau_result%eigenvectors(:, 1:M)
+          call eigensolver_result_free(landau_result)
         end do
         !$omp end do
 
-        deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
+        deallocate(HT_loc)
         !$omp end parallel
       end block
 
@@ -522,10 +491,7 @@ program kpfdm
           real(kind=dp) :: B_min, B_max, B_step, B_val
           integer :: nB, iB, nL
           real(kind=dp), allocatable :: eig_B(:,:)
-          complex(kind=dp), allocatable :: HT_B(:,:), work_B(:)
-          real(kind=dp), allocatable :: rwork_B(:)
-          integer, allocatable :: iwork_B(:), ifail_B(:)
-          integer :: info_B, M_B
+          complex(kind=dp), allocatable :: HT_B(:,:)
           character(len=64) :: fmt_str
           type(wavevector) :: wv0
 
@@ -547,24 +513,20 @@ program kpfdm
           wv0%kz = 0.0_dp
 
           allocate(HT_B(N, N))
-          allocate(work_B(lwork))
-          allocate(rwork_B(7*N))
-          allocate(iwork_B(5*N))
-          allocate(ifail_B(N))
           HT_B = (0.0_dp, 0.0_dp)
 
           do iB = 1, nB
             B_val = B_min + (iB - 1) * B_step
             cfg%bdg%B_vec(3) = B_val
             call ZB8bandLandau(HT_B, wv0, profile, kpterms, cfg%grid%x, cfg=cfg)
-            call zheevx('N', 'I', 'U', N, HT_B, N, vl, vu, il, iuu, abstol, M_B, &
-              eig_B(:, iB), HT_B, N, work_B, lwork, rwork_B, iwork_B, &
-              ifail_B, info_B)
-            if (info_B /= 0) then
-              print *, 'ERROR: B-sweep diagonalization failed at B=', B_val, &
-                & ' info=', info_B
-              error stop 'zheevx diagonalization failed in B-sweep'
+            call landau_solver%solve_dense(HT_B, landau_cfg, landau_result)
+            if (.not. landau_result%converged) then
+              print *, 'ERROR: B-sweep diagonalization failed at B=', B_val
+              error stop 'eigensolver failed in Landau B-sweep'
             end if
+            M = min(landau_result%nev_found, nL)
+            eig_B(1:M, iB) = landau_result%eigenvalues(1:M)
+            call eigensolver_result_free(landau_result)
           end do
 
           call ensure_output_dir()
@@ -582,7 +544,7 @@ program kpfdm
           end do
           close(iounit)
           print '(A,I0,A)', ' Landau fan diagram written to output/landau_fan.dat (', nB, ' B-points)'
-          deallocate(eig_B, HT_B, work_B, rwork_B, iwork_B, ifail_B)
+          deallocate(eig_B, HT_B)
         end block
       end if
 
@@ -880,10 +842,6 @@ program kpfdm
   if (allocated(HTmp)) deallocate(HTmp)
   if (allocated(eig)) deallocate(eig)
   if (allocated(eigv)) deallocate(eigv)
-  if (allocated(work)) deallocate(work)
-  if (allocated(iwork)) deallocate(iwork)
-  if (allocated(rwork)) deallocate(rwork)
-  if (allocated(ifail)) deallocate(ifail)
 
 
 contains

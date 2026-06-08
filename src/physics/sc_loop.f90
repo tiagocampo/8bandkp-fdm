@@ -18,9 +18,10 @@ module sc_loop
   use charge_density
   use poisson
   use eigensolver, only: eigensolver_config, eigensolver_result, &
-    & eigensolver_base, make_eigensolver, solve_sparse_evp, eigensolver_result_free
+    & eigensolver_base, make_eigensolver, solve_sparse_evp, eigensolver_result_free, &
+    & EIGEN_MODE_INDEX
   use sparse_matrices, only: csr_matrix, csr_clone_structure, csr_free
-  use linalg, only: zheevx, dgesv, ilaenv, dlamch
+  use linalg, only: dgesv
   implicit none
 
   private
@@ -85,12 +86,12 @@ contains
     real(kind=dp), allocatable :: kpar_grid(:)
 
     ! Eigensolver workspace
-    real(kind=dp), allocatable :: rwork(:), eig_kpar(:,:)
-    complex(kind=dp), allocatable :: work(:), eigv_kpar(:,:,:)
-    integer, allocatable :: iwork(:), ifail_arr(:)
-    integer :: M_out, lwork, k_idx
-    real(kind=dp) :: abstol
-    integer :: NB_val
+    real(kind=dp), allocatable :: eig_kpar(:,:)
+    complex(kind=dp), allocatable :: eigv_kpar(:,:,:)
+    integer :: M_out, k_idx
+    type(eigensolver_config) :: sc_cfg
+    class(eigensolver_base), allocatable :: sc_solver
+    type(eigensolver_result) :: sc_result
 
     ! DIIS history
     real(kind=dp), allocatable :: phi_history(:,:), res_history(:,:)
@@ -171,31 +172,19 @@ contains
     end if
 
     ! Eigensolver setup
-    NB_val = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
-    NB_val = max(NB_val, N)
-    abstol = DLAMCH('P')
-
-    allocate(rwork(7*N))
-    allocate(iwork(5*N))
-    allocate(ifail_arr(N))
     allocate(eig_kpar(num_subbands, nk_actual))
     allocate(eigv_kpar(N, num_subbands, nk_actual))
 
     eig_kpar = 0.0_dp
     eigv_kpar = cmplx(0.0_dp, 0.0_dp, kind=dp)
 
-    ! Initial workspace query via zheevx
-    allocate(work(1))
-    lwork = -1
-    call zheevx('V', 'I', 'U', N, HT, N, 0.0_dp, 0.0_dp, il, iuu, abstol, M_out, &
-      & eig_kpar(:,1), HT, N, work, lwork, rwork, iwork, ifail_arr, info)
-    if (info /= 0) then
-      print *, 'Error: zheevx workspace query failed in SC loop, info =', info
-      stop 1
-    end if
-    lwork = int(real(work(1)))
-    deallocate(work)
-    allocate(work(lwork))
+    ! Eigensolver: DENSE + INDEX
+    sc_cfg%method = 'DENSE'
+    sc_cfg%mode = EIGEN_MODE_INDEX
+    sc_cfg%il = il
+    sc_cfg%iu = iuu
+    sc_cfg%nev = num_subbands
+    sc_solver = make_eigensolver(sc_cfg)
 
     ! --- Main SC loop ---
     print *, '=== Self-Consistent Loop Start ==='
@@ -222,15 +211,16 @@ contains
 
         call ZB8bandQW(HT, wv, profile, kpterms, cfg=cfg)
 
-        call zheevx('V', 'I', 'U', N, HT, N, 0.0_dp, 0.0_dp, il, iuu, abstol, &
-          & M_out, eig_kpar(:, k_idx), HT, N, work, lwork, rwork, &
-          & iwork, ifail_arr, info)
-        if (info /= 0) then
-          print *, 'Error: diag failed at k_par =', kpar_grid(k_idx), 'info =', info
-          stop 1
+        call sc_solver%solve_dense(HT, sc_cfg, sc_result)
+        if (.not. sc_result%converged) then
+          print *, 'Error: eigensolver failed at k_par =', kpar_grid(k_idx)
+          error stop 'eigensolver failed in SC loop'
         end if
 
-        eigv_kpar(:, :, k_idx) = HT(:, 1:num_subbands)
+        M_out = sc_result%nev_found
+        eig_kpar(:, k_idx) = sc_result%eigenvalues(1:M_out)
+        eigv_kpar(:, :, k_idx) = sc_result%eigenvectors(:, 1:num_subbands)
+        call eigensolver_result_free(sc_result)
       end do
 
       ! Step 3: Find Fermi level (if charge neutrality mode)
@@ -324,7 +314,7 @@ contains
     deallocate(profile_base, rho_doping)
     deallocate(phi_history, res_history)
     deallocate(fermi_ne, fermi_nh)
-    deallocate(rwork, iwork, ifail_arr, work)
+    if (allocated(sc_solver)) deallocate(sc_solver)
     deallocate(eig_kpar, eigv_kpar)
 
   end subroutine self_consistent_loop

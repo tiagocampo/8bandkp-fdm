@@ -10,8 +10,10 @@ program opticalProperties
   use optical_spectra
   use exciton_solver, only: compute_exciton_binding, apply_excitonic_corrections
   use sparse_matrices
-  use eigensolver, only: eigensolver_result, eigensolver_result_free
-  use linalg, only: zheevx, ilaenv, dlamch, mkl_set_num_threads_local
+  use eigensolver, only: eigensolver_result, eigensolver_result_free, &
+    & eigensolver_config, eigensolver_base, make_eigensolver, &
+    & EIGEN_MODE_INDEX
+  use linalg, only: mkl_set_num_threads_local
   use utils, only: ensure_output_dir, get_unit
 
   implicit none
@@ -24,14 +26,12 @@ program opticalProperties
   ! Iteration
   integer :: i, k
 
-  ! Hamiltonian and LAPACK/BLAS
-  integer :: info, NB, lwork, N, M, il, iuu
-  real(kind=dp) :: abstol, vl, vu
-  real(kind=dp), allocatable :: eig(:,:), rwork(:)
-  complex(kind=dp), allocatable :: work(:)
+  ! Hamiltonian and eigensolver
+  integer :: info, N, il, iuu
+  real(kind=dp) :: vl, vu
+  real(kind=dp), allocatable :: eig(:,:)
   complex(kind=dp), allocatable, dimension(:,:,:) :: eigv
   complex(kind=dp), allocatable, dimension(:,:) :: HT
-  integer, allocatable :: iwork(:), ifail(:)
 
   ! k_par sweep
   type(wavevector), allocatable, dimension(:) :: smallk
@@ -76,17 +76,10 @@ program opticalProperties
     call setup_build_velocity_matrices(setup, cfg)
     print '(a)', ' Bulk velocity matrices built successfully'
 
-    ! LAPACK workspace query parameters
     vl = 0.0_dp
     vu = 0.0_dp
-    NB = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
-    NB = MAX(NB, N)
-    ABSTOL = DLAMCH('P')
 
-    ! Allocate workspace
-    allocate(rwork(7*N))
-    allocate(iwork(5*N))
-    allocate(ifail(N))
+    ! Allocate eigenvalue storage
     allocate(eig(iuu - il + 1, cfg%wave_vector%nsteps))
     allocate(eigv(N, iuu - il + 1, cfg%wave_vector%nsteps))
     eig(:,:) = 0.0_dp
@@ -105,22 +98,6 @@ program opticalProperties
       smallk(k)%kz = real(k - 1, kind=dp) * cfg%wave_vector%max &
         & / real(npts - 1, kind=dp)
     end do
-
-    ! ================================================================
-    ! Workspace query (k=1)
-    ! ================================================================
-    call ZB8bandBulk(HT, smallk(1), cfg%params(1:1), cfg=cfg)
-    allocate(work(1))
-    lwork = -1
-    call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, &
-      eig(:,1), HT, N, work, lwork, rwork, iwork, ifail, info)
-    if (info /= 0) then
-      print '(a,i0)', 'ERROR: zheevx workspace query failed, info = ', info
-      error stop 'zheevx workspace query failed'
-    end if
-    lwork = int(real(work(1)))
-    deallocate(work)
-    allocate(work(lwork))
 
     ! ================================================================
     ! Initialize optics accumulation
@@ -166,23 +143,23 @@ program opticalProperties
 
     print '(a,i0,a)', ' Bulk optics k-sweep: ', npts, ' k-points'
 
-    ! NOTE: If magnetic field support is added to optics, init_zeeman_cache()
-    ! must be called before the OMP fork below to avoid races on the SAVE cache.
-    ! Currently unreachable because optics configs never set a non-zero B_vec.
-
     block
-      complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
-      real(kind=dp), allocatable    :: rwork_loc(:)
-      integer, allocatable          :: iwork_loc(:), ifail_loc(:)
-      integer :: info_loc, M_loc
+      type(eigensolver_config) :: bulk_cfg
+      class(eigensolver_base), allocatable :: bulk_solver
+      type(eigensolver_result) :: bulk_result
+      complex(kind=dp), allocatable :: HT_loc(:,:)
+      integer :: M_loc
 
-      !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
+      bulk_cfg%method = 'DENSE'
+      bulk_cfg%mode = EIGEN_MODE_INDEX
+      bulk_cfg%il = il
+      bulk_cfg%iu = iuu
+      bulk_cfg%nev = iuu - il + 1
+
+      !$omp parallel firstprivate(bulk_cfg) private(k, HT_loc, bulk_solver, bulk_result, M_loc)
       allocate(HT_loc(N, N))
-      allocate(work_loc(lwork))
-      allocate(rwork_loc(7*N))
-      allocate(iwork_loc(5*N))
-      allocate(ifail_loc(N))
       HT_loc = (0.0_dp, 0.0_dp)
+      bulk_solver = make_eigensolver(bulk_cfg)
 
       !$omp do schedule(static)
       do k = 1, npts
@@ -190,22 +167,22 @@ program opticalProperties
         call ZB8bandBulk(HT_loc, smallk(k), cfg%params(1:1), cfg=cfg)
 
         ! Diagonalize all 8 eigenvalues
-        call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
-          eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
-          ifail_loc, info_loc)
-        if (info_loc /= 0) then
+        call bulk_solver%solve_dense(HT_loc, bulk_cfg, bulk_result)
+        if (.not. bulk_result%converged) then
           !$omp critical
-          print '(a,i0,a,i0)', ' ERROR: diagonalization failed at k=', k, ' info=', info_loc
+          print '(a,i0)', ' ERROR: diagonalization failed at k=', k
           !$omp end critical
-          error stop 'diagonalization failed during k-sweep'
+          error stop 'eigensolver failed in bulk optics k-sweep'
         end if
 
-        ! Store eigenvectors (zheevx overwrites HT_loc with them)
-        eigv(:,:,k) = HT_loc(:, 1:N)
+        M_loc = bulk_result%nev_found
+        eig(1:M_loc, k) = bulk_result%eigenvalues(1:M_loc)
+        eigv(:, 1:M_loc, k) = bulk_result%eigenvectors(:, 1:M_loc)
+        call eigensolver_result_free(bulk_result)
       end do
       !$omp end do
 
-      deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
+      deallocate(HT_loc)
       !$omp end parallel
     end block
 
@@ -265,17 +242,10 @@ program opticalProperties
     call setup_build_velocity_matrices(setup, cfg)
     print '(a)', ' Velocity matrices built successfully'
 
-    ! LAPACK workspace query parameters
     vl = 0.0_dp
     vu = 0.0_dp
-    NB = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
-    NB = MAX(NB, N)
-    ABSTOL = DLAMCH('P')
 
-    ! Allocate workspace
-    allocate(rwork(7*N))
-    allocate(iwork(5*N))
-    allocate(ifail(N))
+    ! Allocate eigenvalue storage
     allocate(eig(iuu-il+1, cfg%wave_vector%nsteps))
     allocate(eigv(N, iuu-il+1, cfg%wave_vector%nsteps))
     eig(:,:) = 0.0_dp
@@ -303,22 +273,6 @@ program opticalProperties
       write(iounit, *) cfg%z(i), setup%profile(i,1), setup%profile(i,2), setup%profile(i,3)
     end do
     close(iounit)
-
-    ! ================================================================
-    ! Workspace query (k=1)
-    ! ================================================================
-    call ZB8bandQW(HT, smallk(1), setup%profile, setup%kpterms, cfg=cfg)
-    allocate(work(1))
-    lwork = -1
-    call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, &
-      eig(:,1), HT, N, work, lwork, rwork, iwork, ifail, info)
-    if (info /= 0) then
-      print '(a,i0)', 'ERROR: zheevx workspace query failed, info = ', info
-      error stop 'zheevx workspace query failed'
-    end if
-    lwork = int(real(work(1)))
-    deallocate(work)
-    allocate(work(lwork))
 
     ! ================================================================
     ! Initialize optics accumulation
@@ -353,25 +307,28 @@ program opticalProperties
     ! ================================================================
     ! k_par sweep: diagonalize and accumulate spectra
     ! ================================================================
-    ! Disable MKL internal threading (serial zheevx per k-point)
+    ! Disable MKL internal threading (serial eigensolver per k-point)
     info = mkl_set_num_threads_local(1)
 
     print '(a,i0,a)', ' QW optics k-sweep: ', npts, ' k-points'
 
     block
-      ! Thread-private temporaries for OpenMP parallel region
-      complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
-      real(kind=dp), allocatable    :: rwork_loc(:)
-      integer, allocatable          :: iwork_loc(:), ifail_loc(:)
-      integer :: info_loc, M_loc
+      type(eigensolver_config) :: qw_cfg
+      class(eigensolver_base), allocatable :: qw_solver
+      type(eigensolver_result) :: qw_result
+      complex(kind=dp), allocatable :: HT_loc(:,:)
+      integer :: M_loc
 
-      !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
+      qw_cfg%method = 'DENSE'
+      qw_cfg%mode = EIGEN_MODE_INDEX
+      qw_cfg%il = il
+      qw_cfg%iu = iuu
+      qw_cfg%nev = iuu - il + 1
+
+      !$omp parallel firstprivate(qw_cfg) private(k, HT_loc, qw_solver, qw_result, M_loc)
       allocate(HT_loc(N, N))
-      allocate(work_loc(lwork))
-      allocate(rwork_loc(7*N))
-      allocate(iwork_loc(5*N))
-      allocate(ifail_loc(N))
       HT_loc = (0.0_dp, 0.0_dp)
+      qw_solver = make_eigensolver(qw_cfg)
 
       !$omp do schedule(static)
       do k = 1, npts
@@ -379,22 +336,22 @@ program opticalProperties
         call ZB8bandQW(HT_loc, smallk(k), setup%profile, setup%kpterms, cfg=cfg)
 
         ! Diagonalize
-        call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
-          eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
-          ifail_loc, info_loc)
-        if (info_loc /= 0) then
+        call qw_solver%solve_dense(HT_loc, qw_cfg, qw_result)
+        if (.not. qw_result%converged) then
           !$omp critical
-          print '(a,i0,a,i0)', ' ERROR: diagonalization failed at k=', k, ' info=', info_loc
+          print '(a,i0)', ' ERROR: diagonalization failed at k=', k
           !$omp end critical
-          error stop 'diagonalization failed during k-sweep'
+          error stop 'eigensolver failed in QW optics k-sweep'
         end if
 
-        ! Store eigenvectors (zheevx overwrites HT_loc with them)
-        eigv(:,:,k) = HT_loc(:, 1:iuu-il+1)
+        M_loc = qw_result%nev_found
+        eig(1:M_loc, k) = qw_result%eigenvalues(1:M_loc)
+        eigv(:, 1:M_loc, k) = qw_result%eigenvectors(:, 1:M_loc)
+        call eigensolver_result_free(qw_result)
       end do
       !$omp end do
 
-      deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
+      deallocate(HT_loc)
       !$omp end parallel
     end block
 
@@ -630,9 +587,5 @@ program opticalProperties
   if (allocated(HT))      deallocate(HT)
   if (allocated(eig))     deallocate(eig)
   if (allocated(eigv))    deallocate(eigv)
-  if (allocated(work))    deallocate(work)
-  if (allocated(iwork))   deallocate(iwork)
-  if (allocated(rwork))   deallocate(rwork)
-  if (allocated(ifail))   deallocate(ifail)
 
 end program opticalProperties

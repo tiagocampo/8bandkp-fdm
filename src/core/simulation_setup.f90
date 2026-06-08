@@ -15,7 +15,6 @@ module simulation_setup_mod
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
     & eigensolver_result, eigensolver_result_free, auto_compute_energy_window, &
     & EIGEN_MODE_FULL, EIGEN_MODE_INDEX, EIGEN_MODE_ENERGY, eigensolver_config_validate
-  use linalg, only: zheev, zheevd, zheevx
   use utils
   use sparse_matrices
   use geometry, only: init_wire_from_config
@@ -78,7 +77,7 @@ contains
     real(kind=dp), allocatable, intent(out), optional :: sc_phi_out(:,:), sc_ne_out(:,:), sc_nh_out(:,:)
     logical, intent(in), optional :: skip_sc
 
-    integer :: info, lrwork, liwork, Ngrid_local, Ntot_local, nev
+    integer :: Ngrid_local, Ntot_local, nev
     real(kind=dp), allocatable :: eig_tmp(:,:)
     logical :: do_skip_sc
 
@@ -175,40 +174,7 @@ contains
       if (.not. allocated(setup%HT)) then
         allocate(setup%HT(setup%N, setup%N))
       end if
-      allocate(setup%work(1))
-      allocate(setup%rwork(1))
-      allocate(setup%iwork(1))
       setup%HT = 0.0_dp
-      allocate(eig_tmp(setup%N, 1))
-      eig_tmp = 0.0_dp
-      if (cfg%num_layers == 1) then
-        call zheev('V', 'L', setup%N, setup%HT, setup%N, eig_tmp(:,1), &
-          setup%work, -1, setup%rwork, info)
-        if (info /= 0) then
-          error stop 'zheev workspace query failed in simulation_setup_init'
-        end if
-        setup%lwork = int(real(setup%work(1)))
-        deallocate(setup%work)
-        allocate(setup%work(setup%lwork))
-        deallocate(setup%rwork)
-        allocate(setup%rwork(max(1, 3*setup%N - 2)))
-      else
-        call zheevd('V', 'U', setup%N, setup%HT, setup%N, eig_tmp(:,1), &
-          setup%work, -1, setup%rwork, -1, setup%iwork, -1, info)
-        if (info /= 0) then
-          error stop 'zheevd workspace query failed in simulation_setup_init'
-        end if
-        setup%lwork = int(real(setup%work(1)))
-        lrwork = int(real(setup%rwork(1)))
-        liwork = setup%iwork(1)
-        deallocate(setup%work)
-        allocate(setup%work(setup%lwork))
-        deallocate(setup%rwork)
-        allocate(setup%rwork(lrwork))
-        deallocate(setup%iwork)
-        allocate(setup%iwork(liwork))
-      end if
-      deallocate(eig_tmp)
       ! --- Allocate solver for QW: DENSE + INDEX ---
       if (cfg%solver%method == 'AUTO') then
         setup%eigen_cfg%method = 'DENSE'
@@ -371,40 +337,18 @@ contains
         cfg%params(1:1), setup%profile, setup%kpterms, cfg%FDorder)
       allocate(setup%HT(setup%N, setup%N))
       setup%HT = 0.0_dp
-      ! zheevx workspace query: build H at k=0, query optimal lwork
-      block
-        type(wavevector) :: wv0
-        real(kind=dp), allocatable :: eig_tmp(:,:)
-        integer, allocatable :: ifail_tmp(:)
-        integer :: info_loc, M_loc
-        real(kind=dp) :: abstol_loc, vl_loc, vu_loc
-        wv0%kx = 0.0_dp; wv0%ky = 0.0_dp; wv0%kz = 0.0_dp
-        allocate(eig_tmp(setup%N, 1))
-        eig_tmp = 0.0_dp
-        allocate(setup%work(1))
-        allocate(setup%rwork(7 * setup%N))
-        allocate(setup%iwork(5 * setup%N))
-        allocate(ifail_tmp(setup%N))
-        call ZB8bandLandau(setup%HT, wv0, setup%profile, setup%kpterms, &
-          cfg%grid%x, cfg=cfg)
-        setup%lwork = -1
-        abstol_loc = 0.0_dp
-        vl_loc = 0.0_dp
-        vu_loc = 0.0_dp
-        call zheevx('V', 'I', 'U', setup%N, setup%HT, setup%N, vl_loc, vu_loc, &
-          setup%il, setup%iuu, abstol_loc, M_loc, eig_tmp(:, 1), &
-          setup%HT, setup%N, setup%work, setup%lwork, setup%rwork, setup%iwork, &
-          ifail_tmp, info_loc)
-        if (info_loc /= 0) then
-          error stop 'zheevx workspace query failed in simulation_setup_init (landau)'
-        end if
-        setup%lwork = int(real(setup%work(1)))
-        deallocate(setup%work)
-        allocate(setup%work(setup%lwork))
-        deallocate(eig_tmp, ifail_tmp)
-      end block
-      ! Reset HT for reuse by caller
-      setup%HT = 0.0_dp
+      ! --- Allocate solver for Landau: DENSE + INDEX ---
+      if (cfg%solver%method == 'AUTO') then
+        setup%eigen_cfg%method = 'DENSE'
+      else
+        setup%eigen_cfg%method = cfg%solver%method
+      end if
+      setup%eigen_cfg%mode = EIGEN_MODE_INDEX
+      setup%eigen_cfg%nev = setup%iuu - setup%il + 1
+      setup%eigen_cfg%il = setup%il
+      setup%eigen_cfg%iu = setup%iuu
+      call eigensolver_config_validate(setup%eigen_cfg)
+      setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
 
     case default
       print *, 'Error: simulation_setup_init unsupported confinement=', cfg%confinement

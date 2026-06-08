@@ -173,8 +173,8 @@ contains
     @assertTrue(allocated(setup%profile))
     @assertTrue(allocated(setup%kpterms))
     @assertTrue(allocated(setup%HT))
-    @assertTrue(allocated(setup%work))
-    @assertTrue(setup%lwork > 0)
+    ! Solver allocated (workspace managed internally by eigensolver)
+    @assertTrue(allocated(setup%eigen_solver))
 
     call simulation_setup_free(setup)
   end subroutine test_qw_init
