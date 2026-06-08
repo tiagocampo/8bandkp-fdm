@@ -24,8 +24,8 @@ Called from `src/apps/` and `src/core/simulation_setup.f90`:
 | `hamiltonianConstructor.f90` | `hamiltonianConstructor` | 758 | Dense bulk/QW/Landau Hamiltonian + velocity matrices |
 | `hamiltonian_wire.f90` | `hamiltonian_wire` | 1357 | Sparse wire Hamiltonian (CSR/COO) + workspace cache |
 | `bdg_hamiltonian.f90` | `bdg_hamiltonian` | 432 | BdG Nambu-space (16N×16N) with s-wave pairing |
-| `magnetic_field.f90` | `magnetic_field` | 168 | Zeeman splitting + Peierls phase as COO insertions |
-| `strain_solver.f90` | `strain_solver` | 1206 | Biaxial strain, plane-strain PDE, Bir-Pikus, Zeeman table |
+| `magnetic_field.f90` | `magnetic_field` | 193 | Zeeman table (SSOT) + splitting + Peierls phase as COO insertions |
+| `strain_solver.f90` | `strain_solver` | 1174 | Biaxial strain, plane-strain PDE, Bir-Pikus, lookup_bp_field |
 | `gfactor_functions.f90` | `gfactorFunctions` | 1217 | Lowdin partitioning, spin matrices, optical matrix elements |
 | `optical_spectra.f90` | `optical_spectra` | 1058 | Absorption (TE/TM), gain, spontaneous emission, ISBT |
 | `charge_density.f90` | `charge_density` | 437 | n(z), p(z) from eigenstates; output in cm⁻³ |
@@ -67,7 +67,7 @@ All modules: `idx = (band-1)*Ngrid + spatial_index`. Spatial recovered via `sp =
 - **k·p blocks**: `get_kp_block_table()` in `hamiltonian_blocks.f90` — 52 entries. Both dense and COO builders import this.
 - **Bir-Pikus**: `compute_bp_scalar()` in `strain_solver.f90` — `elemental pure`. Never duplicate.
 - **Strain table**: `get_strain_table()` in `strain_solver.f90` — band-pair topology.
-- **Zeeman table**: `get_zeeman_table()` in `strain_solver.f90` — g-multipliers per band.
+- **Zeeman table**: `get_zeeman_table()` in `magnetic_field.f90` — g-multipliers per band. `compute_zeeman_vz` reads from table (not pure).
 
 ### kpterms sign convention
 `kpterms(ii, jj, term_idx) = -result(ii, jj)` — stored with negative sign. All consumers must account for this.

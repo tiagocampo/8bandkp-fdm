@@ -1,6 +1,7 @@
 program opticalProperties
 
-  use definitions
+  use definitions, only: NUM_VB_STATES, dp, pi_dp, simulation_config, &
+    validate_semantic, wavevector
   use parameters
   use hamiltonianConstructor
   use input_parser, only: read_config
@@ -11,7 +12,7 @@ program opticalProperties
   use sparse_matrices
   use eigensolver, only: eigensolver_result, eigensolver_result_free
   use linalg, only: zheevx, ilaenv, dlamch, mkl_set_num_threads_local
-  use outputFunctions, only: ensure_output_dir, get_unit
+  use utils, only: ensure_output_dir, get_unit
 
   implicit none
 
@@ -164,6 +165,10 @@ program opticalProperties
     info = mkl_set_num_threads_local(1)
 
     print '(a,i0,a)', ' Bulk optics k-sweep: ', npts, ' k-points'
+
+    ! NOTE: If magnetic field support is added to optics, init_zeeman_cache()
+    ! must be called before the OMP fork below to avoid races on the SAVE cache.
+    ! Currently unreachable because optics configs never set a non-zero B_vec.
 
     block
       complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)

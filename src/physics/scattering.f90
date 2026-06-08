@@ -12,9 +12,10 @@ module scattering_solver
   ! Temperature is taken from cfg%sc%temperature when SC is active,
   ! otherwise defaults to 300 K.
 
-  use definitions
+  use definitions, only: dp, e, e0, hbar, hbar2O2m0, kB_eV, &
+    m0, paramStruct, pi_dp, simulation_config
   use parameters
-  use outputFunctions, only: ensure_output_dir, get_unit
+  use utils, only: ensure_output_dir, get_unit
   implicit none
 
   private

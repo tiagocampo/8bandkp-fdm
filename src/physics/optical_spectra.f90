@@ -1,10 +1,11 @@
 module optical_spectra
 
-  use definitions
+  use definitions, only: IU, ZERO, c, dp, e, e0, hbar, hbar2O2m0, &
+    kB_eV, m0, mu_B, optics_config, pi_dp
   use sparse_matrices, only: csr_matrix, csr_spmv
   use charge_density, only: fermi_dirac
   use spin_projection, only: spin_weights
-  use outputFunctions, only: ensure_output_dir, get_unit
+  use utils, only: ensure_output_dir, get_unit
   use linalg, only: zdotc
   implicit none
 

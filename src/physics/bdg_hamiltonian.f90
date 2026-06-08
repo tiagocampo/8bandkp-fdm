@@ -25,7 +25,8 @@ module bdg_hamiltonian
   ! Reference: Fu & Kane (2008), Supriyo Datta (2018) "Quantum Transport"
   ! ==============================================================================
 
-  use definitions
+  use definitions, only: IU, ZERO, dp, mu_B, simulation_config, &
+    spatial_grid, wavevector
   use sparse_matrices
   use hamiltonian_wire, only: ZB8bandGeneralized, wire_workspace
   use hamiltonianConstructor, only: ZB8bandQW

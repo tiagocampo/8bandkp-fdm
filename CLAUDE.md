@@ -18,7 +18,7 @@ Fortran 2018 code solving the **8-band zinc-blende k.p Hamiltonian** via finite 
 
 - Basis ordering: bands 1–4 = valence (HH, LH, LH, HH), 5–6 = split-off, 7–8 = conduction — never change
 - Unit system: Angstroms (length), eV (energy), eV·s (time)
-- Single source of truth: k.p block table (`hamiltonian_blocks.f90`), Bir-Pikus formulas (`strain_solver.f90`), Zeeman table (`strain_solver.f90`)
+- Single source of truth: k.p block table (`hamiltonian_blocks.f90`), Bir-Pikus formulas (`strain_solver.f90`), Zeeman table (`magnetic_field.f90`)
 - All config validation via `validate()` + `validate_semantic()` in `defs.f90` — no silent corrections
 
 ## Build Commands
@@ -159,10 +159,11 @@ docs/solutions/  documented solutions to past problems (bugs, best practices, pa
 ```
 defs.f90                      (kinds, constants, derived types — no deps)
   <- parameters.f90           (material parameter database for 25+ semiconductors)
-       <- utils.f90           (dense-to-sparse conversion, Simpson integration)
+       <- utils.f90           (dense-to-sparse conversion, Simpson integration, file utilities)
             <- finitedifferences.f90  (FD stencils/orders 2-10, Toeplitz matrices, Vandermonde derivative and interpolation solvers)
                  <- hamiltonian_blocks.f90     (8x8 k.p block structure as data: 52-entry table, named constants KP_Q..KP_A)
-                 <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian, commutator velocity matrices; reads kp/strain/Zeeman tables)
+                 <- magnetic_field.f90         (Zeeman table SSOT + splitting + Peierls phase as COO insertions)
+                 <- hamiltonianConstructor.f90  (8x8 bulk & 8NxN QW Hamiltonian, commutator velocity matrices; reads kp/strain tables, Zeeman from magnetic_field)
                       <- hamiltonian_wire.f90     (2D wire Hamiltonian, CSR assembly, wire geometry; reads kp block table)
                       <- gfactor_functions.f90  (Lowdin partitioning, spin/momentum matrix elements)
                       <- optical_spectra.f90    (absorption, gain, spontaneous emission, ISBT accumulation)
@@ -262,7 +263,7 @@ Always check for and follow applicable superpowers skills when working. In parti
 - **NEVER** modify material parameters in `parameters.f90` without verifying against published references (Vurgaftman 2001, Winkler 2003)
 - **NEVER** change the basis ordering (bands 1-4 valence, 5-6 split-off, 7-8 conduction) — it is hardcoded throughout
 - **NEVER** change the Bir-Pikus sign convention: `Q_eps = -(b_dp/2) * (eps_zz - 0.5*(eps_yy + eps_xx))` with the minus sign on b_dp matching the standard Chuang/Winkler convention. VB diagonal shifts are `delta_EHH = -P_eps + Q_eps`, `delta_ELH = -P_eps - Q_eps`, `delta_ESO = -P_eps` where `P_eps = -av * Tr(eps)`. Under compressive strain (Tr < 0, b < 0), HH shifts up and LH shifts down. Single source of truth: `compute_bp_scalar` in `strain_solver.f90`.
-- **NEVER** change the strain or Zeeman block tables: `get_strain_table()` and `get_zeeman_table()` in `strain_solver.f90` are the single source of truth for Bir-Pikus strain block topology (band pairs) and Zeeman diagonal g-multipliers (per band index), respectively. All dense and COO builders consume these tables.
+- **NEVER** change the strain or Zeeman block tables: `get_strain_table()` in `strain_solver.f90` is the single source of truth for Bir-Pikus strain block topology (band pairs). `get_zeeman_table()` in `magnetic_field.f90` is the single source of truth for Zeeman diagonal g-multipliers (per band index). All dense and COO builders consume these tables.
 - **NEVER** change the k.p block table: `get_kp_block_table()` in `hamiltonian_blocks.f90` is the single source of truth for the 52-entry block topology (band pairs, k.p terms, complex prefactors). Both dense and COO builders consume this table.
 - **NEVER** commit `input.toml` with personal test configs — use `tests/regression/configs/` for test configs
 - **Require approval** for: changes to `defs.f90` derived types, k.p block table in `hamiltonian_blocks.f90`, Hamiltonian construction in `hamiltonianConstructor.f90`, FD stencil coefficients in `finitedifferences.f90`, Poisson solver in `poisson.f90`, SC loop convergence logic in `sc_loop.f90`

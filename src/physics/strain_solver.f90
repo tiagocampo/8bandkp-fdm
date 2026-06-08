@@ -34,9 +34,7 @@ module strain_solver
   public :: build_strain_table
   public :: get_strain_table
   public :: init_strain_cache
-  public :: zeeman_entry
-  public :: get_zeeman_table
-  public :: init_zeeman_cache
+  public :: lookup_bp_field
 
   ! ------------------------------------------------------------------
   ! Strain COO insertion table entry: describes one of the 32 block
@@ -57,25 +55,6 @@ module strain_solver
   ! Module-level cache for the strain table (32-entry compile-time constant)
   logical, save :: strain_table_cached = .false.
   type(strain_entry), save :: strain_table_cache(32)
-
-  ! ------------------------------------------------------------------
-  ! Zeeman diagonal table entry: describes the g_multiplier for one band.
-  ! band_index is 0-based (0-7). The Zeeman energy for band b is:
-  !   Vz(b) = g_factor * g_multiplier(b) * mu_B * B_mag
-  ! Coefficients from compute_zeeman_vz (magnetic_field.f90):
-  !   Band 0 (HH mJ=+3/2): -1.5,  Band 1 (LH mJ=+1/2): +0.5
-  !   Band 2 (LH mJ=-1/2): -0.5,  Band 3 (HH mJ=-3/2): +1.5
-  !   Band 4 (SO mJ=+1/2): -0.5,  Band 5 (SO mJ=-1/2): +0.5
-  !   Band 6 (CB mJ=-1/2): -1.0,  Band 7 (CB mJ=+1/2): +1.0
-  ! ------------------------------------------------------------------
-  type :: zeeman_entry
-    integer               :: band_index     ! 0-based band offset (0-7)
-    real(kind=dp)         :: g_multiplier   ! spin-dependent coefficient c_b
-  end type zeeman_entry
-
-  ! Module-level cache for the Zeeman table (8-entry compile-time constant)
-  logical, save :: zeeman_table_cached = .false.
-  type(zeeman_entry), save :: zeeman_table_cache(8)
 
   ! ------------------------------------------------------------------
   ! Strain tensor at each grid point.
@@ -155,39 +134,6 @@ contains
   end function get_strain_table
 
   ! ==================================================================
-  ! Build the 8-entry Zeeman diagonal table.
-  !
-  ! Each entry maps band_index to its g_multiplier coefficient c_b
-  ! such that the Zeeman energy for band b is:
-  !   Vz(b) = g_factor * c_b * mu_B * B_mag
-  !
-  ! Coefficients are g_J * m_J for each band in the Winkler basis
-  ! (must match compute_zeeman_vz in magnetic_field.f90).
-  ! ==================================================================
-  function build_zeeman_table() result(table)
-    type(zeeman_entry) :: table(8)
-
-    table(1) = zeeman_entry(0, -1.5_dp)  ! HH  (mJ = +3/2)
-    table(2) = zeeman_entry(1,  0.5_dp)  ! LH  (mJ = +1/2)
-    table(3) = zeeman_entry(2, -0.5_dp)  ! LH  (mJ = -1/2)
-    table(4) = zeeman_entry(3,  1.5_dp)  ! HH  (mJ = -3/2)
-    table(5) = zeeman_entry(4, -0.5_dp)  ! SO  (mJ = +1/2)
-    table(6) = zeeman_entry(5,  0.5_dp)  ! SO  (mJ = -1/2)
-    table(7) = zeeman_entry(6, -1.0_dp)  ! CB  (mJ = -1/2)
-    table(8) = zeeman_entry(7,  1.0_dp)  ! CB  (mJ = +1/2)
-
-  end function build_zeeman_table
-
-  function get_zeeman_table() result(table)
-    type(zeeman_entry) :: table(8)
-    if (.not. zeeman_table_cached) then
-      zeeman_table_cache = build_zeeman_table()
-      zeeman_table_cached = .true.
-    end if
-    table = zeeman_table_cache
-  end function get_zeeman_table
-
-  ! ==================================================================
   ! Pre-initialize the strain table cache (thread-safety).
   ! Call before OpenMP fork to avoid races on the SAVE cache.
   ! ==================================================================
@@ -197,13 +143,35 @@ contains
   end subroutine init_strain_cache
 
   ! ==================================================================
-  ! Pre-initialize the Zeeman table cache (thread-safety).
-  ! Call before OpenMP fork to avoid races on the SAVE cache.
+  ! Pure function: look up a Bir-Pikus field value by field_id.
+  !
+  ! Encapsulates the 7-way select case mapping from strain table
+  ! field_id to the corresponding bp component. Used by both
+  ! hamiltonianConstructor (dense) and hamiltonian_wire (COO) to
+  ! avoid duplicating this dispatch logic.
+  !
+  ! field_id:  1=delta_EHH, 2=delta_ELH, 3=delta_ESO, 4=delta_Ec,
+  !            5=S_eps, 6=R_eps, 7=QT2_eps
   ! ==================================================================
-  subroutine init_zeeman_cache()
-    type(zeeman_entry) :: dummy(8)
-    dummy = get_zeeman_table()
-  end subroutine init_zeeman_cache
+  pure function lookup_bp_field(bp, field_id, ii) result(field_val)
+    type(bir_pikus_blocks), intent(in) :: bp
+    integer, intent(in) :: field_id, ii
+    complex(kind=dp) :: field_val
+
+    select case (field_id)
+    case (1); field_val = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
+    case (2); field_val = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
+    case (3); field_val = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
+    case (4); field_val = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
+    case (5); field_val = bp%S_eps(ii)
+    case (6); field_val = bp%R_eps(ii)
+    case (7); field_val = cmplx(bp%QT2_eps(ii), 0.0_dp, kind=dp)
+    case default
+      ! Cannot error stop in a pure function — return zero.
+      ! The caller validates field_id at the call site.
+      field_val = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    end select
+  end function lookup_bp_field
 
   ! ==================================================================
   ! Top-level strain computation dispatcher.

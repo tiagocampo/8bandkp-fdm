@@ -1,6 +1,7 @@
 module hamiltonian_wire
 
-  use definitions
+  use definitions, only: IU, RQS2, SQR3, UM, ZERO, bir_pikus_blocks, &
+    dp, grid_ngrid, mu_B, paramStruct, simulation_config, spatial_grid
   use sparse_matrices
   use utils
   use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &
@@ -8,7 +9,8 @@ module hamiltonian_wire
     KP_PP, KP_PM, KP_PZ, KP_A, KP_DIFF, KP_HALF_SUM
   use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar, &
     & strain_entry, build_strain_table, get_strain_table, &
-    & zeeman_entry, get_zeeman_table
+    & lookup_bp_field
+  use magnetic_field, only: zeeman_entry, get_zeeman_table
   use confinement_init, only: confinementInitialization_2d
   use finitedifferences
 
@@ -1174,17 +1176,7 @@ module hamiltonian_wire
           g_row = table(e)%row_band * N + ii
           g_col = table(e)%col_band * N + ii
 
-          select case (table(e)%field_id)
-          case (1); field_val = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
-          case (2); field_val = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
-          case (3); field_val = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
-          case (4); field_val = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
-          case (5); field_val = bp%S_eps(ii)
-          case (6); field_val = bp%R_eps(ii)
-          case (7); field_val = bp%QT2_eps(ii)
-          case default
-            error stop "insert_strain_coo: invalid field_id"
-          end select
+          field_val = lookup_bp_field(bp, table(e)%field_id, ii)
 
           if (table(e)%use_conjg) field_val = conjg(field_val)
 
@@ -1198,7 +1190,7 @@ module hamiltonian_wire
     ! ==================================================================
     ! Insert Zeeman splitting into COO diagonal entries.
     ! Each grid point contributes 8 diagonal entries (one per band).
-    ! Uses the data-driven Zeeman table from strain_solver.
+    ! Uses the data-driven Zeeman table from magnetic_field.
     ! ==================================================================
     subroutine insert_zeeman_coo(coo_r, coo_c, coo_v, coo_cap, &
         coo_idx, B_vec, g_factor, grid, N)

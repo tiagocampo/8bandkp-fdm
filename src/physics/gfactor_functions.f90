@@ -1,6 +1,8 @@
 module gfactorFunctions
 
-  use definitions
+  use definitions, only: IU, RQS2, RQS3, SQR2, SQR2o3, SQR3, UM, ZERO, &
+    dp, g_free, hbar2O2m0, optical_transition, paramStruct, &
+    simulation_config, spatial_grid, tolerance, wavevector
   use hamiltonianConstructor
   use utils, only: simpson
   use sparse_matrices, only: csr_matrix, csr_spmv

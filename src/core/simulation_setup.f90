@@ -1,6 +1,7 @@
 module simulation_setup_mod
 
-  use definitions
+  use definitions, only: NUM_VB_STATES, conf_direction, dp, &
+    grid_ngrid, simulation_config, spatial_grid, wavevector
   use hamiltonianConstructor
   use confinement_init, only: confinementInitialization, confinementInitialization_2d, &
     & confinementInitialization_landau

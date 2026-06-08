@@ -1,6 +1,7 @@
 module topological_analysis
 
-  use definitions
+  use definitions, only: dp, pi_dp, simulation_config, spatial_grid, &
+    topological_result, wavevector
   use sparse_matrices
   use linalg, only: zheev, zgetrf
   use hamiltonianConstructor, only: ZB8bandQW

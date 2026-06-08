@@ -1,13 +1,16 @@
 module hamiltonianConstructor
 
-  use definitions
+  use definitions, only: IU, RQS2, SQR3, ZERO, bir_pikus_blocks, &
+    bp_scalar, conf_direction, const, dp, hbar2O2m0, mu_B, &
+    paramStruct, pi_dp, simulation_config, spatial_grid, tolerance, &
+    wavevector
   use finitedifferences
   use sparse_matrices
   use utils
   use strain_solver, only: compute_bp_scalar, bir_pikus_blocks_free, &
-    get_strain_table, strain_entry, zeeman_entry, get_zeeman_table
+    get_strain_table, strain_entry, lookup_bp_field
   use hamiltonian_wire
-  use magnetic_field, only: compute_gauge_shifts
+  use magnetic_field, only: compute_gauge_shifts, zeeman_entry, get_zeeman_table
   use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &
     KP_Q, KP_T, KP_S, KP_SC, KP_R, KP_RC, KP_PP, KP_PM, KP_PZ, &
     KP_A, KP_DIFF, KP_HALF_SUM
@@ -163,7 +166,7 @@ module hamiltonianConstructor
       ! correct: spin splitting depends on total |B|, regardless of
       ! direction. Orbital effects (Landau levels) from B_perp are
       ! handled separately via Peierls substitution in wire mode.
-      ! Uses the data-driven Zeeman table from strain_solver.
+      ! Uses the data-driven Zeeman table from magnetic_field.
       ! ---------------------------------------------------------------
       if (present(cfg)) then
         if (.not. present(g)) then
@@ -378,7 +381,7 @@ module hamiltonianConstructor
       end do
 
       ! Zeeman splitting (full |B| magnitude)
-      ! Uses the data-driven Zeeman table from strain_solver.
+      ! Uses the data-driven Zeeman table from magnetic_field.
       if (present(cfg)) then
         if (B_mag > 1.0e-12_dp) then
           block
@@ -524,7 +527,7 @@ module hamiltonianConstructor
       ! spatial y-discretization. Bulk 8x8 at k=0 has no y information
       ! so only Zeeman (spin) is possible here. For orbital physics, use
       ! wire mode (confinement='wire') which has 2D grid and can do Peierls.
-      ! Uses the data-driven Zeeman table from strain_solver.
+      ! Uses the data-driven Zeeman table from magnetic_field.
       ! ---------------------------------------------------------------
       if (present(cfg)) then
         block
@@ -631,17 +634,7 @@ module hamiltonianConstructor
       do ii = 1, N
         do e = 1, 32
           ! Scalar field lookup from bir_pikus_blocks — no array temporaries
-          select case (table(e)%field_id)
-          case (1); field_val = cmplx(bp%delta_EHH(ii), 0.0_dp, kind=dp)
-          case (2); field_val = cmplx(bp%delta_ELH(ii), 0.0_dp, kind=dp)
-          case (3); field_val = cmplx(bp%delta_ESO(ii), 0.0_dp, kind=dp)
-          case (4); field_val = cmplx(bp%delta_Ec(ii), 0.0_dp, kind=dp)
-          case (5); field_val = bp%S_eps(ii)
-          case (6); field_val = bp%R_eps(ii)
-          case (7); field_val = cmplx(bp%QT2_eps(ii), 0.0_dp, kind=dp)
-          case default
-            error stop 'apply_strain_table_dense: unknown field_id'
-          end select
+          field_val = lookup_bp_field(bp, table(e)%field_id, ii)
 
           if (table(e)%use_conjg) field_val = conjg(field_val)
 

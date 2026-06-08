@@ -1,5 +1,5 @@
 module spin_projection
-  use definitions
+  use definitions, only: dp
   implicit none
   private
   public :: spin_weights

@@ -84,7 +84,7 @@ Each setup variant holds a strategy object for Hamiltonian construction, eigenso
 
 ### Dispatch seam for C4 Hamiltonian block table (COMPLETED)
 
-The `select case` dispatch in `setup_build_H` provided a clean seam for the C4 refactoring to a unified Hamiltonian block structure. This has been implemented: `hamiltonian_blocks.f90` defines a 52-entry k.p block table (`get_kp_block_table()`) consumed by both dense (`hamiltonianConstructor.f90`) and COO (`hamiltonian_wire.f90`) builders. Strain and Zeeman block tables (`get_strain_table()`, `get_zeeman_table()`) are defined in `strain_solver.f90`. The dispatch API (`setup_build_H(setup, cfg, kvec, HT_out)`) remains unchanged. No polymorphic types were needed.
+The `select case` dispatch in `setup_build_H` provided a clean seam for the C4 refactoring to a unified Hamiltonian block structure. This has been implemented: `hamiltonian_blocks.f90` defines a 52-entry k.p block table (`get_kp_block_table()`) consumed by both dense (`hamiltonianConstructor.f90`) and COO (`hamiltonian_wire.f90`) builders. Strain block table (`get_strain_table()`) is defined in `strain_solver.f90`. Zeeman block table (`get_zeeman_table()`) is defined in `magnetic_field.f90`. The dispatch API (`setup_build_H(setup, cfg, kvec, HT_out)`) remains unchanged. No polymorphic types were needed.
 
 ### `read_config` split rationale
 

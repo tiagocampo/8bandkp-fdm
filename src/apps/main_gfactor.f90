@@ -1,11 +1,13 @@
 program gfactor
 
-  use definitions
+  use definitions, only: NUM_CB_STATES, NUM_VB_STATES, conf_direction, &
+    dp, optical_transition, simulation_config, validate_semantic, &
+    wavevector
   use parameters
   use hamiltonianConstructor
   use outputFunctions
   use gfactorFunctions
-  use utils
+  use utils, only: get_unit, ensure_output_dir
   use input_parser
   use sparse_matrices
   use eigensolver, only: eigensolver_result, eigensolver_result_free

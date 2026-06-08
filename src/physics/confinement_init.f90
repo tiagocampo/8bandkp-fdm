@@ -1,6 +1,8 @@
 module confinement_init
 
-  use definitions
+  use definitions, only: conf_direction, const, dp, grid_ngrid, &
+    iknd, paramStruct, region_spec, simulation_config, spatial_grid, &
+    UM
   use finitedifferences
   use sparse_matrices
 
