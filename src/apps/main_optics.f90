@@ -1,6 +1,7 @@
 program opticalProperties
 
-  use definitions
+  use definitions, only: NUM_VB_STATES, dp, pi_dp, simulation_config, &
+    validate_semantic, wavevector
   use parameters
   use hamiltonianConstructor
   use input_parser, only: read_config
@@ -11,7 +12,7 @@ program opticalProperties
   use sparse_matrices
   use eigensolver, only: eigensolver_result, eigensolver_result_free
   use linalg, only: zheevx, ilaenv, dlamch, mkl_set_num_threads_local
-  use outputFunctions, only: ensure_output_dir, get_unit
+  use utils, only: ensure_output_dir, get_unit
 
   implicit none
 

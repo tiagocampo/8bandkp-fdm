@@ -1,6 +1,9 @@
 module hamiltonianConstructor
 
-  use definitions
+  use definitions, only: IU, RQS2, SQR3, ZERO, bir_pikus_blocks, &
+    bp_scalar, conf_direction, const, dp, hbar2O2m0, mu_B, &
+    paramStruct, pi_dp, simulation_config, spatial_grid, tolerance, &
+    wavevector
   use finitedifferences
   use sparse_matrices
   use utils

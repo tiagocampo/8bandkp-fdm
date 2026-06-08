@@ -1,6 +1,7 @@
 module hamiltonian_wire
 
-  use definitions
+  use definitions, only: IU, RQS2, SQR3, UM, ZERO, bir_pikus_blocks, &
+    dp, grid_ngrid, mu_B, paramStruct, simulation_config, spatial_grid
   use sparse_matrices
   use utils
   use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &

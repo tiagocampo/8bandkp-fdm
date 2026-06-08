@@ -1,6 +1,6 @@
 module utils
 
-use definitions
+use definitions, only: dp
 use sparse_matrices, only: csr_matrix, csr_build_from_coo
 
 implicit none
@@ -8,6 +8,7 @@ private
 public :: dnscsr_z_mkl, simpson, simpson_real
 public :: insertCOO_cmplx, finalizeCOO_cmplx
 public :: tick, tock
+public :: get_unit, ensure_output_dir
 
 contains
 
@@ -260,6 +261,54 @@ end function simpson_real
 
       tock = real(now - t, kind=dp) / real(clock_rate, kind=dp)
   end function tock
+
+  ! ==================================================================
+  ! Ensure the output directory exists (creates it if needed).
+  ! ==================================================================
+  subroutine ensure_output_dir()
+    character(len=*), parameter :: OUTPUT_DIR = 'output'
+    logical :: dir_exists
+
+    inquire(file=OUTPUT_DIR//'/.', exist=dir_exists)
+    if (.not. dir_exists) then
+      call execute_command_line('mkdir -p '//OUTPUT_DIR)
+    end if
+  end subroutine ensure_output_dir
+
+  ! ==================================================================
+  ! GET_UNIT returns a free FORTRAN unit number.
+  !
+  ! A "free" FORTRAN unit number is a value between 1 and 99 which
+  ! is not currently associated with an I/O device.
+  !
+  ! If IUNIT = 0, then no free FORTRAN unit could be found, although
+  ! all 99 units were checked (except for units 5, 6 and 9, which
+  ! are commonly reserved for console I/O).
+  !
+  ! Otherwise, IUNIT is a value between 1 and 99, representing a
+  ! free FORTRAN unit.  Note that GET_UNIT assumes that units 5 and 6
+  ! are special, and will never return those values.
+  ! ==================================================================
+  subroutine get_unit(iunit)
+    integer(kind=4), intent(out) :: iunit
+
+    integer(kind=4) :: i, ios
+    logical(kind=4) :: lopen
+
+    iunit = 0
+
+    do i = 1, 99
+      if (i /= 5 .and. i /= 6 .and. i /= 9) then
+        inquire(unit=i, opened=lopen, iostat=ios)
+        if (ios == 0) then
+          if (.not. lopen) then
+            iunit = i
+            return
+          end if
+        end if
+      end if
+    end do
+  end subroutine get_unit
 
 
 end module utils

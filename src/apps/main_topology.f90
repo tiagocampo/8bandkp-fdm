@@ -1,6 +1,7 @@
 program topologicalAnalysis
 
-  use definitions
+  use definitions, only: dp, grid_ngrid, pi_dp, simulation_config, &
+    spatial_grid, topological_result, validate_semantic, wavevector
   use parameters
   use hamiltonianConstructor
   use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free, &
@@ -8,6 +9,7 @@ program topologicalAnalysis
   use confinement_init, only: confinementInitialization, confinementInitialization_2d
   use finitedifferences
   use outputFunctions
+  use utils, only: get_unit, ensure_output_dir
   use input_parser
   use sparse_matrices
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &

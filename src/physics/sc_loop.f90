@@ -10,7 +10,9 @@ module sc_loop
   !   6. Check convergence |Delta Phi|_inf < tolerance
   !   7. Update profile and repeat
 
-  use definitions
+  use definitions, only: IU, dp, doping_spec, e, grid_ngrid, &
+    hbar2O2m0, mu_B, paramStruct, pi_dp, sc_config, simulation_config, &
+    spatial_grid, tolerance, wavevector
   use hamiltonianConstructor
   use hamiltonian_wire, only: wire_coo_cache, ZB8bandGeneralized
   use charge_density

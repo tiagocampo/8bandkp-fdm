@@ -1,9 +1,9 @@
 module input_parser
 
-  use definitions
+  use definitions, only: dp, iknd, init_grid_from_config, &
+    simulation_config
   use parameters
   use geometry
-  use outputFunctions
   use tomlf, only : get_value, set_value, toml_path, toml_parse, toml_load, &
     & toml_loads, toml_context, toml_parser_config, toml_level, &
     & toml_error, toml_stat, toml_serializer, toml_serialize, toml_dump, &

@@ -1,30 +1,17 @@
 module outputFunctions
 
-  use definitions
+  use definitions, only: dp, simulation_config, spatial_grid, &
+    wavevector
   use utils
 
   implicit NONE
 
   private
-  public :: writeEigenfunctions, writeEigenfunctions2d, writeParts2d, writeEigenvalues, get_unit, ensure_output_dir
+  public :: writeEigenfunctions, writeEigenfunctions2d, writeParts2d, writeEigenvalues
 
   character(len=*), parameter :: OUTPUT_DIR = 'output'
 
   CONTAINS
-
-    subroutine ensure_output_dir()
-      ! Local variables
-      logical :: dir_exists
-      integer :: status
-
-      ! Check if directory exists
-      inquire(file=OUTPUT_DIR//'/.', exist=dir_exists)
-      
-      ! Create directory if it doesn't exist
-      if (.not. dir_exists) then
-        call execute_command_line('mkdir -p '//OUTPUT_DIR)
-      end if
-    end subroutine
 
     subroutine writeEigenfunctions(N, evnum, A, k, fdstep, z, is_bulk, k_magnitude)
 
@@ -187,71 +174,6 @@ module outputFunctions
       close ( unit = iounit )
 
     end subroutine
-
-    subroutine get_unit ( iunit )
-
-    !*****************************************************************************80
-    !
-    !! GET_UNIT returns a free FORTRAN unit number.
-    !
-    !  Discussion:
-    !
-    !    A "free" FORTRAN unit number is a value between 1 and 99 which
-    !    is not currently associated with an I/O device.  A free FORTRAN unit
-    !    number is needed in order to open a file with the OPEN command.
-    !
-    !    If IUNIT = 0, then no free FORTRAN unit could be found, although
-    !    all 99 units were checked (except for units 5, 6 and 9, which
-    !    are commonly reserved for console I/O).
-    !
-    !    Otherwise, IUNIT is a value between 1 and 99, representing a
-    !    free FORTRAN unit.  Note that GET_UNIT assumes that units 5 and 6
-    !    are special, and will never return those values.
-    !
-    !  Licensing:
-    !
-    !    This code is distributed under the GNU LGPL license.
-    !
-    !  Modified:
-    !
-    !    26 October 2008
-    !
-    !  Author:
-    !
-    !    John Burkardt
-    !
-    !  Parameters:
-    !
-    !    Output, integer ( kind = 4 ) IUNIT, the free unit number.
-    !
-      implicit none
-
-      integer ( kind = 4 ) i
-      integer ( kind = 4 ) ios
-      integer ( kind = 4 ) iunit
-      logical ( kind = 4 ) lopen
-
-      iunit = 0
-
-      do i = 1, 99
-
-        if ( i /= 5 .and. i /= 6 .and. i /= 9 ) then
-
-          inquire ( unit = i, opened = lopen, iostat = ios )
-
-          if ( ios == 0 ) then
-            if ( .not. lopen ) then
-              iunit = i
-              return
-            end if
-          end if
-
-        end if
-
-      end do
-
-      return
-    end
 
     subroutine get_eigenvector_component(eigenvectors, eigenstate_index, band_index, fdstep, total_points, component)
       implicit none

@@ -1,6 +1,6 @@
 module parameters
 
-  use definitions
+  use definitions, only: const, dp, paramStruct, renormalization
 
   implicit none
   private

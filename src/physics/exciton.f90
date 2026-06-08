@@ -1,8 +1,9 @@
 module exciton_solver
 
-  use definitions
+  use definitions, only: c, dp, hbar, m0, optics_config, &
+    paramStruct, pi_dp
   use parameters
-  use outputFunctions, only: ensure_output_dir, get_unit
+  use utils, only: ensure_output_dir, get_unit
   implicit none
 
   private

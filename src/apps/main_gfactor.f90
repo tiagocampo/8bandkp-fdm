@@ -1,6 +1,8 @@
 program gfactor
 
-  use definitions
+  use definitions, only: NUM_CB_STATES, NUM_VB_STATES, conf_direction, &
+    dp, optical_transition, simulation_config, validate_semantic, &
+    wavevector
   use parameters
   use hamiltonianConstructor
   use outputFunctions

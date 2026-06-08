@@ -1,6 +1,6 @@
 module magnetic_field
 
-  use definitions
+  use definitions, only: dp, e, hbar, mu_B, spatial_grid
   use sparse_matrices
   implicit none
   private
