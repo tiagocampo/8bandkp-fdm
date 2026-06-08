@@ -310,6 +310,9 @@ contains
 
     ! ================================================================
     ! Workspace initialization
+    ! TODO: Implement fast-path value-only update using cloned CSR blocks
+    !       for subsequent k-points (avoid rebuilding from dense each time).
+    !       Currently the workspace stores structure but always rebuilds.
     ! ================================================================
     if (present(ws)) then
       if (.not. ws%initialized) then

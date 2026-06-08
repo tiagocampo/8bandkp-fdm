@@ -32,8 +32,8 @@ module eigensolver
   ! Configuration for the sparse eigensolver.
   ! ------------------------------------------------------------------
   type :: eigensolver_config
-    character(len=10)  :: method   = 'FEAST'
-    integer            :: mode     = EIGEN_MODE_INDEX  ! default: INDEX
+    character(len=10)  :: method   = 'DENSE'
+    integer            :: mode     = EIGEN_MODE_FULL   ! default: FULL (valid for all methods)
     integer            :: nev      = 8
     integer            :: il       = 1
     integer            :: iu       = 8

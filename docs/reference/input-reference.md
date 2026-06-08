@@ -598,7 +598,7 @@ When `mode = "AUTO"` (the default), the code selects:
 | Confinement | Mode chosen |
 |---|---|
 | bulk | `FULL` |
-| QW | `ENERGY` (uses emin/emax or auto-computed window) |
+| QW | `INDEX` (eigenvalues il:iu, defaulting to requested band range) |
 | wire | `ENERGY` (uses emin/emax or auto-computed window) |
 | Landau | `FULL` |
 
