@@ -459,7 +459,7 @@ contains
       if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (QW)'
       nev_out = min(result%nev_found, size(evals))
       evals(1:nev_out) = result%eigenvalues(1:nev_out)
-      evecs = result%eigenvectors
+      evecs(:, 1:nev_out) = result%eigenvectors(:, 1:nev_out)
       call eigensolver_result_free(result)
 
     case default
