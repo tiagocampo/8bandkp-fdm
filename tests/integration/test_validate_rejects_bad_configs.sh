@@ -201,6 +201,37 @@ name = "GaAs"
 EOF
 run_test "V12_bad_solver_mode" "solver%mode"
 
+# V13: FEAST solver + INDEX mode (wire — eigensolver_config_validate rejects)
+cat > input.toml << 'EOF'
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+[wave_vector]
+mode = "kz"
+max = 0.1
+nsteps = 21
+[bands]
+num_cb = 8
+num_vb = 16
+[wire]
+nx = 21
+ny = 21
+dx = 3.0
+dy = 3.0
+[wire.geometry]
+shape = "rectangle"
+width = 63.0
+height = 63.0
+[[region]]
+material = "GaAs"
+inner = 0.0
+outer = 100.0
+[solver]
+method = "FEAST"
+mode = "INDEX"
+EOF
+run_test "V13_feast_index_mode" "FEAST.*INDEX"
+
 echo ""
 echo "========================================"
 echo " Validation rejection: $PASS passed, $FAIL failed"
