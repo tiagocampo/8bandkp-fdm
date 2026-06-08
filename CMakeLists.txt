@@ -21,9 +21,6 @@ find_package(FFTW3 REQUIRED)
 # OpenMP for parallel regions
 find_package(OpenMP REQUIRED)
 
-# ARPACK-NG (optional sparse eigensolver fallback)
-find_package(ARPACK QUIET)
-
 # fortran_stdlib (optional — used selectively for string handling, error types, etc.)
 find_package(fortran_stdlib CONFIG QUIET)
 if(fortran_stdlib_FOUND)

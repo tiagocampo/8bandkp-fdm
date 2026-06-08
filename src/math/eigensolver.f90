@@ -18,9 +18,6 @@ module eigensolver
   public :: feast_solver_t
 #endif
   public :: make_eigensolver
-#ifdef USE_ARPACK
-  public :: solve_arpack
-#endif
 
   ! ------------------------------------------------------------------
   ! Configuration for the sparse eigensolver.
@@ -102,11 +99,6 @@ module eigensolver
     procedure :: solve => dense_lapack_solve_dispatch
   end type dense_lapack_solver_t
 
-  type, extends(eigensolver_base) :: arpack_solver_t
-  contains
-    procedure :: solve => arpack_solve_dispatch
-  end type arpack_solver_t
-
 contains
 
   ! ==================================================================
@@ -144,7 +136,7 @@ contains
   end function feast_workspace_matches_pattern
 
   ! ==================================================================
-  ! Main dispatch: select FEAST or ARPACK based on config.
+  ! Main dispatch: select FEAST or DENSE based on config.
   ! ==================================================================
   subroutine solve_sparse_evp(H_csr, config, result, feast_ws)
     type(csr_matrix), intent(in)          :: H_csr
@@ -158,10 +150,8 @@ contains
       call solve_feast(H_csr, config, result, fw=feast_ws)
     case ('DENSE')
       call solve_dense_lapack(H_csr, config, result)
-    case ('ARPACK')
-      call solve_arpack_dispatch(H_csr, config, result)
 #else
-    case ('FEAST', 'ARPACK', 'DENSE')
+    case ('FEAST', 'DENSE')
       ! FEAST unavailable: fall back to dense LAPACK
       print *, 'Using dense LAPACK eigensolver.'
       call solve_dense_lapack(H_csr, config, result)
@@ -330,303 +320,10 @@ contains
 #endif /* USE_MKL_FEAST */
 
   ! ==================================================================
-  ! ARPACK-NG solver dispatch.
-  !
-  ! When USE_ARPACK is defined, calls the proper ARPACK solver.
-  ! Otherwise falls back to dense LAPACK.
-  ! ==================================================================
-  subroutine solve_arpack_dispatch(H_csr, config, result)
-    type(csr_matrix), intent(in)          :: H_csr
-    type(eigensolver_config), intent(in)  :: config
-    type(eigensolver_result), intent(out) :: result
-
-#ifdef USE_ARPACK
-    print *, '  Eigensolver: ARPACK-NG (shift-invert)'
-    call solve_arpack(H_csr, config, result)
-#else
-    print *, '  ARPACK not available, using dense LAPACK fallback.'
-    call solve_dense_lapack(H_csr, config, result)
-#endif
-  end subroutine solve_arpack_dispatch
-
-#ifdef USE_ARPACK
-  ! ==================================================================
-  ! ARPACK-NG solver: shift-invert mode with MKL PARDISO.
-  !
-  ! Solves H*x = lambda*x for eigenvalues near sigma using:
-  !   OP = (H - sigma*I)^{-1}
-  !
-  ! ARPACK finds the largest-magnitude eigenvalues of OP, which
-  ! correspond to eigenvalues of H closest to sigma.
-  !
-  ! Phase 1: PARDISO factorisation of (H - sigma*I)
-  ! Phase 2: ARPACK reverse-communication loop (OP*x via PARDISO solve)
-  ! Phase 3: Extract Ritz values/vectors via zneupd
-  ! ==================================================================
-  subroutine solve_arpack(H_csr, config, result)
-    use sparse_matrices, only: csr_spmv
-    use linalg, only: znaupd, zneupd, pardiso_c
-    use, intrinsic :: iso_c_binding, only: c_intptr_t
-    type(csr_matrix), intent(in)          :: H_csr
-    type(eigensolver_config), intent(in)  :: config
-    type(eigensolver_result), intent(out) :: result
-
-    integer :: N, nev_want, ncv_loc, ldv, ldz, lworkl
-    integer :: ido, info, i, j, nconv
-    real(kind=dp) :: tol_loc, sigma_re
-    complex(kind=dp) :: sigma
-
-    ! ARPACK arrays
-    complex(kind=dp), allocatable :: resid(:), v(:,:), workd(:), workl(:)
-    complex(kind=dp), allocatable :: workev(:), d(:), z(:,:)
-    real(kind=dp), allocatable :: rwork(:)
-    logical, allocatable :: select(:)
-    integer :: iparam(11), ipntr(14)
-
-    ! PARDISO arrays for shift-invert
-    integer(kind=c_intptr_t) :: pt(64)
-    integer :: iparm(64), maxfct, mnum, mtype, phase, nrhs, msglvl, error_loc
-    complex(kind=dp), allocatable :: H_shifted_val(:)
-    integer, allocatable :: H_shifted_rowptr(:), H_shifted_colind(:)
-    complex(kind=dp), allocatable :: rhs(:), sol(:)
-    complex(kind=dp) :: dummy_bx(1)
-    integer :: nnz, k
-    integer, allocatable :: perm(:)
-
-    N = H_csr%nrows
-    if (N <= 0) then
-      result%converged = .false.
-      result%nev_found = 0
-      return
-    end if
-
-    nev_want = min(config%nev, N - 1)
-    if (nev_want <= 0) then
-      result%converged = .false.
-      result%nev_found = 0
-      return
-    end if
-
-    ! Shift = midpoint of energy window
-    sigma_re = 0.5_dp * (config%emin + config%emax)
-    sigma = cmplx(sigma_re, 0.0_dp, kind=dp)
-
-    ! --- Phase 1: Build (H - sigma*I) and factorize with PARDISO ---
-
-    ! Copy CSR and subtract sigma from diagonal
-    nnz = H_csr%rowptr(N + 1) - H_csr%rowptr(1)
-    allocate(H_shifted_val(nnz), H_shifted_rowptr(N+1), H_shifted_colind(nnz))
-    H_shifted_val = H_csr%values
-    H_shifted_colind = H_csr%colind
-    H_shifted_rowptr = H_csr%rowptr
-
-    ! Shift diagonal
-    do i = 1, N
-      do k = H_shifted_rowptr(i), H_shifted_rowptr(i+1) - 1
-        if (H_shifted_colind(k) == i) then
-          H_shifted_val(k) = H_shifted_val(k) - sigma
-          exit
-        end if
-      end do
-    end do
-
-    ! PARDISO init
-    pt = 0
-    iparm = 0
-    iparm(1) = 1   ! no solver default
-    iparm(2) = 2   ! OpenMP nested dissection
-    iparm(3) = 1   ! reserved
-    iparm(4) = 0   ! no CG iterations
-    iparm(8) = 2   ! max iterative refinement steps
-    iparm(10) = 13 ! perturb pivots with 1E-13
-    iparm(11) = 1  ! scaling
-    iparm(13) = 1  ! matching
-    iparm(18) = -1 ! report number of nonzeros
-    iparm(19) = -1 ! report flop count
-    iparm(27) = 1  ! check matrix consistency
-    iparm(40) = 1  ! distributed matrix input (CSR)
-    maxfct = 1
-    mnum = 1
-    mtype = 3  ! complex structurally symmetric (full CSR, not triangle-only)
-    nrhs = 1
-    msglvl = 0  ! no output
-
-    allocate(perm(N))
-    perm = 0
-
-    ! Symbolic factorization (phase=11)
-    phase = 11
-    dummy_bx = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
-                 H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
-                 perm, nrhs, iparm, msglvl, &
-                 dummy_bx, dummy_bx, error_loc)
-    if (error_loc /= 0) then
-      print *, 'ARPACK/PARDISO: symbolic factorization error', error_loc
-      result%converged = .false.
-      result%nev_found = 0
-      deallocate(H_shifted_val, H_shifted_rowptr, H_shifted_colind, perm)
-      return
-    end if
-
-    ! Numeric factorization (phase=22)
-    phase = 22
-    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
-                 H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
-                 perm, nrhs, iparm, msglvl, &
-                 dummy_bx, dummy_bx, error_loc)
-    if (error_loc /= 0) then
-      print *, 'ARPACK/PARDISO: numeric factorization error', error_loc
-      result%converged = .false.
-      result%nev_found = 0
-      ! Cleanup PARDISO
-      phase = -1
-      call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
-                   H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
-                   perm, nrhs, iparm, msglvl, &
-                   dummy_bx, dummy_bx, error_loc)
-      deallocate(H_shifted_val, H_shifted_rowptr, H_shifted_colind, perm)
-      return
-    end if
-
-    ! --- Phase 2: ARPACK reverse communication loop ---
-
-    ! Set ARPACK parameters
-    ncv_loc = config%ncv
-    if (ncv_loc <= 0) ncv_loc = min(max(2 * nev_want + 1, 20), N)
-    ncv_loc = max(ncv_loc, nev_want + 2)
-
-    ldv = N
-    ldz = N
-    lworkl = 3 * ncv_loc * ncv_loc + 5 * ncv_loc
-    tol_loc = config%tol
-    if (tol_loc <= 0.0_dp) tol_loc = 0.0_dp  ! machine precision
-
-    allocate(resid(N))
-    allocate(v(ldv, ncv_loc))
-    allocate(workd(3 * N))
-    allocate(workl(lworkl))
-    allocate(rwork(ncv_loc))
-    allocate(workev(2 * ncv_loc))
-    allocate(select(ncv_loc))
-    allocate(d(nev_want))
-    allocate(z(ldz, nev_want))
-    allocate(rhs(N), sol(N))
-
-    ! Initialize
-    resid = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    v = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    workd = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    workl = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    rwork = 0.0_dp
-    select = .false.
-
-    iparam = 0
-    iparam(1) = 1   ! exact shifts
-    iparam(3) = config%max_iter
-    iparam(4) = 1   ! block size (must be 1)
-    iparam(7) = 3   ! shift-invert mode: OP = (A - sigma*I)^{-1}
-
-    ido = 0
-    info = 0  ! random initial vector
-
-    ! Reverse communication loop
-    do while (ido /= 99)
-      call znaupd(ido, 'I', N, 'LM', nev_want, tol_loc, resid, ncv_loc, &
-                  v, ldv, iparam, ipntr, workd, workl, lworkl, rwork, info)
-
-      select case (ido)
-      case (-1, 1)
-        ! Compute Y = OP * X = (H - sigma*I)^{-1} * X
-        ! X = workd(ipntr(1) : ipntr(1)+N-1)
-        ! Y = workd(ipntr(2) : ipntr(2)+N-1)
-        rhs(1:N) = workd(ipntr(1) : ipntr(1) + N - 1)
-
-        ! PARDISO solve (phase=33)
-        phase = 33
-        call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
-                     H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
-                     perm, nrhs, iparm, msglvl, rhs, sol, error_loc)
-
-        if (error_loc /= 0) then
-          print *, 'ARPACK/PARDISO: solve error', error_loc
-          info = -999
-          exit
-        end if
-
-        workd(ipntr(2) : ipntr(2) + N - 1) = sol(1:N)
-
-      case (2)
-        ! B*x for standard problem (bmat='I'), should not happen
-        ! Just copy x to y
-        workd(ipntr(2) : ipntr(2) + N - 1) = &
-          workd(ipntr(1) : ipntr(1) + N - 1)
-
-      case (3)
-        ! User-supplied shifts (iparam(1)=1 means ARPACK handles this)
-        ! Should not reach here with default settings
-        continue
-
-      end select
-    end do
-
-    result%iterations = iparam(3)
-
-    ! --- Phase 3: Extract Ritz values and vectors ---
-
-    if (info == 0 .and. ido == 99) then
-      call zneupd(.true., 'A', select, d, z, ldz, sigma, workev, &
-                  'I', N, 'LM', nev_want, tol_loc, resid, ncv_loc, &
-                  v, ldv, iparam, ipntr, workd, workl, lworkl, rwork, info)
-
-      if (info == 0) then
-        nconv = iparam(5)
-        result%converged = .true.
-        result%nev_found = nev_want
-        allocate(result%eigenvalues(nev_want))
-        allocate(result%eigenvectors(N, nev_want))
-        ! For Hermitian matrix, eigenvalues are real (discard tiny imaginary parts)
-        do i = 1, nev_want
-          result%eigenvalues(i) = real(d(i), kind=dp)
-          result%eigenvectors(:, i) = z(:, i)
-        end do
-
-        ! Sort eigenvalues (and corresponding eigenvectors) in ascending order
-        call sort_eigenpairs_ascending(result%eigenvalues, result%eigenvectors)
-      else
-        print *, 'ARPACK zneupd error: info =', info
-        result%converged = .false.
-        result%nev_found = 0
-      end if
-    else
-      if (info == 1) then
-        print *, 'ARPACK: max iterations reached. Results may be inaccurate.'
-      else if (info /= 0) then
-        print *, 'ARPACK znaupd error: info =', info
-      end if
-      result%converged = .false.
-      result%nev_found = 0
-    end if
-
-    ! Cleanup PARDISO
-    phase = -1
-    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
-                 H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
-                 perm, nrhs, iparm, msglvl, &
-                 dummy_bx, dummy_bx, error_loc)
-
-    deallocate(resid, v, workd, workl, rwork, workev, select, d, z)
-    deallocate(rhs, sol)
-    deallocate(H_shifted_val, H_shifted_rowptr, H_shifted_colind, perm)
-  end subroutine solve_arpack
-#endif /* USE_ARPACK */
-
-  ! ==================================================================
   ! Dense fallback using LAPACK zheevx.
   !
   ! Converts CSR to dense, then calls zheevx for the N-smallest
-  ! eigenvalues.  Used as ARPACK placeholder until proper ARPACK
-  ! linking is set up.
+  ! eigenvalues.
   ! ==================================================================
   subroutine solve_dense_lapack(H_csr, config, result)
     type(csr_matrix), intent(in)          :: H_csr
@@ -894,15 +591,6 @@ contains
     call solve_dense_lapack(H_csr, config, result)
   end subroutine dense_lapack_solve_dispatch
 
-  subroutine arpack_solve_dispatch(self, H_csr, config, result)
-    class(arpack_solver_t), intent(inout) :: self
-    type(csr_matrix), intent(in) :: H_csr
-    type(eigensolver_config), intent(in) :: config
-    type(eigensolver_result), intent(out) :: result
-
-    call solve_arpack_dispatch(H_csr, config, result)
-  end subroutine arpack_solve_dispatch
-
 #ifdef USE_MKL_FEAST
   subroutine feast_solver_finalize(self)
     type(feast_solver_t), intent(inout) :: self
@@ -925,8 +613,6 @@ contains
       print *, 'WARNING: FEAST requested but not compiled; using dense LAPACK'
       allocate(dense_lapack_solver_t :: solver)
 #endif
-    case ('ARPACK')
-      allocate(arpack_solver_t :: solver)
     case default
       print *, 'ERROR: Unknown eigensolver method: ', trim(config%method)
       stop 1

@@ -746,9 +746,9 @@ contains
     cfg%sc%bc_right = 0.0_dp
 
     ! ---- Step 5: Eigensolver config ----
-    ! ARPACK falls back to dense LAPACK when FEAST is not compiled in
+    ! Dense LAPACK eigensolver
     num_subbands = cfg%bands%num_cb + cfg%bands%num_vb  ! 8
-    eigen_cfg%method = 'ARPACK'
+    eigen_cfg%method = 'DENSE'
     eigen_cfg%nev = num_subbands
     eigen_cfg%emin = -5.0_dp
     eigen_cfg%emax = 5.0_dp

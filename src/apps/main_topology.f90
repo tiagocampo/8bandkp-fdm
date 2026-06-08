@@ -16,10 +16,7 @@ program topologicalAnalysis
     & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
   use topological_analysis
   use bdg_hamiltonian
-#ifdef USE_ARPACK
-  use green_functions, only: compute_ldos_csr
-#endif
-  use green_functions, only: compute_spectral_function_bulk, compute_spectral_function_qw, &
+  use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
   use linalg, only: mkl_set_num_threads_local, zheev
   use simulation_setup_mod, only: simulation_setup, simulation_setup_init, simulation_setup_free

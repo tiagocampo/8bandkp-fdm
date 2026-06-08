@@ -3,10 +3,10 @@ module green_functions
   ! ==============================================================================
   ! Green function and spectral function utilities.
   !
-  ! LDOS(r, E) = -(1/pi) * Im[G(r, r, E + i*eta)]  (requires PARDISO/ARPACK)
+  ! LDOS(r, E) = -(1/pi) * Im[G(r, r, E + i*eta)]  (requires PARDISO)
   ! Spectral function A(k, E) = sum_n Lorentzian(E - E_n, eta)
   !
-  ! LDOS uses MKL PARDISO complex solver via pardiso_c (USE_ARPACK) to invert
+  ! LDOS uses MKL PARDISO complex solver via pardiso_c to invert
   ! the shifted matrix A = E + i*eta - H for each energy point.
   ! ==============================================================================
 
@@ -14,11 +14,7 @@ module green_functions
   use sparse_matrices
   use, intrinsic :: iso_c_binding, only: c_int, c_intptr_t
 
-#ifdef USE_ARPACK
-  use linalg, only: pardiso_c
-#endif
-
-  use linalg, only: zheev
+  use linalg, only: pardiso_c, zheev
   use hamiltonianConstructor, only: ZB8bandBulk, ZB8bandQW
   use confinement_init, only: confinementInitialization_2d
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, ZB8bandGeneralized
@@ -32,10 +28,7 @@ module green_functions
   public :: compute_spectral_function_qw
   public :: compute_spectral_function_wire
   public :: compute_landauer_transmission_1d
-
-#ifdef USE_ARPACK
   public :: compute_ldos_csr
-#endif
 
 contains
 
@@ -353,8 +346,6 @@ contains
 
   end subroutine compute_spectral_function_wire
 
-#ifdef USE_ARPACK
-
   ! ==============================================================================
   ! Compute LDOS at each grid point for a given energy E.
   !
@@ -362,10 +353,10 @@ contains
   ! where G = (E + i*eta - H)^-1
   !
   ! Args:
-    !   H          -- CSR Hamiltonian matrix (complex)
-    !   E          -- energy (real, eV)
-    !   eta        -- broadening (real, eV)
-    !   ldos       -- output LDOS at each grid point (real, 1/eV)
+  !   H          -- CSR Hamiltonian matrix (complex)
+  !   E          -- energy (real, eV)
+  !   eta        -- broadening (real, eV)
+  !   ldos       -- output LDOS at each grid point (real, 1/eV)
   !
   ! The shifted system is: A * x = b  with  A = E + i*eta - H
   ! For diagonal G(r,r) we solve A * e_r = e_r where e_r is unit vector at row r,
@@ -496,6 +487,5 @@ contains
 
     deallocate(a_val, ia, ja, perm, rhs, sol)
   end subroutine compute_ldos_csr
-#endif
 
 end module green_functions

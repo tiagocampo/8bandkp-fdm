@@ -1,6 +1,6 @@
 module linalg
   ! Centralized explicit interface blocks for LAPACK, BLAS, MKL utility,
-  ! MKL PARDISO, and (optionally) MKL FEAST routines.  Replaces loose
+  ! MKL PARDISO, and MKL FEAST routines.  Replaces loose
   ! `external` declarations scattered across the codebase, giving the
   ! compiler proper type-checking and eliminating gfortran strict-aliasing
   ! warnings.
@@ -28,20 +28,12 @@ module linalg
 
   ! MKL PARDISO
   public :: pardiso_real
-#ifdef USE_ARPACK
   public :: pardiso_c
-#endif
 
   ! MKL FEAST (guarded)
 #ifdef USE_MKL_FEAST
   public :: feastinit
   public :: zfeast_hcsrev
-#endif
-
-  ! ARPACK-NG (guarded)
-#ifdef USE_ARPACK
-  public :: znaupd
-  public :: zneupd
 #endif
 
   ! ================================================================
@@ -169,7 +161,6 @@ module linalg
     end subroutine
   end interface
 
-#ifdef USE_ARPACK
   ! pardiso_c - MKL PARDISO direct solver (iso_c_binding)
   !
   ! NOTE: Binds to "PARDISO" — same C symbol as pardiso_real.  MKL dispatches
@@ -188,18 +179,17 @@ module linalg
       integer(c_int), intent(out) :: error
     end subroutine pardiso_c
   end interface
-#endif
 
   ! pardiso_real - MKL PARDISO for real-valued matrices (iso_c_binding)
   !
-  ! NOTE: Both pardiso_real and pardiso_c (when ARPACK is enabled) bind to the
-  ! same C symbol "PARDISO".  MKL dispatches to the correct routine internally
-  ! based on the mtype argument (11=real symmetric, 13=complex Hermitian, etc.)
-  ! and the actual argument types at runtime.  The linker warning
-  ! -Wlto-type-mismatch is therefore benign: the type mismatch is intentional.
-  ! -fno-strict-aliasing (set in both CMAKE_Fortran_FLAGS and
-  ! CMAKE_Fortran_FLAGS_RELEASE) ensures the compiler does not assume distinct
-  ! pointers cannot alias, which is relevant for the void*-like a/b/x arrays.
+  ! NOTE: Both pardiso_real and pardiso_c bind to the same C symbol "PARDISO".
+  ! MKL dispatches to the correct routine internally based on the mtype argument
+  ! (11=real symmetric, 13=complex Hermitian, etc.) and the actual argument types
+  ! at runtime.  The linker warning -Wlto-type-mismatch is therefore benign: the
+  ! type mismatch is intentional.  -fno-strict-aliasing (set in both
+  ! CMAKE_Fortran_FLAGS and CMAKE_Fortran_FLAGS_RELEASE) ensures the compiler
+  ! does not assume distinct pointers cannot alias, which is relevant for the
+  ! void*-like a/b/x arrays.
   interface
     subroutine pardiso_real(pt, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, &
                          nrhs, iparm, msglvl, b, x, error) bind(C, name="PARDISO")
@@ -244,57 +234,6 @@ module linalg
       complex(c_double_complex), intent(inout) :: x(n, m0)
     end subroutine
   end interface
-#endif
-
-#ifdef USE_ARPACK
-  ! znaupd - ARPACK-NG reverse communication for complex eigenproblems
-  interface
-    subroutine znaupd(ido, bmat, n, which, nev, tol, resid, ncv, v, ldv, &
-                      iparam, ipntr, workd, workl, lworkl, rwork, info)
-      use definitions, only: dp
-      character(len=1), intent(in)    :: bmat
-      character(len=2), intent(in)    :: which
-      integer, intent(inout)          :: ido
-      integer, intent(in)             :: n, nev, ncv, ldv, lworkl
-      real(kind=dp), intent(in)       :: tol
-      complex(kind=dp), intent(inout) :: resid(n)
-      complex(kind=dp), intent(out)   :: v(ldv, ncv)
-      integer, intent(inout)          :: iparam(11)
-      integer, intent(out)            :: ipntr(14)
-      complex(kind=dp), intent(inout) :: workd(3*n)
-      complex(kind=dp), intent(inout) :: workl(lworkl)
-      real(kind=dp), intent(out)      :: rwork(ncv)
-      integer, intent(inout)          :: info
-    end subroutine
-  end interface
-
-  ! zneupd - ARPACK-NG post-processing for complex eigenproblems
-  interface
-    subroutine zneupd(rvec, howmny, select, d, z, ldz, sigma, workev, &
-                      bmat, n, which, nev, tol, resid, ncv, v, ldv, &
-                      iparam, ipntr, workd, workl, lworkl, rwork, info)
-      use definitions, only: dp
-      logical, intent(in)             :: rvec
-      character(len=1), intent(in)    :: howmny, bmat
-      character(len=2), intent(in)    :: which
-      integer, intent(in)             :: n, nev, ncv, ldz, ldv, lworkl
-      logical, intent(inout)          :: select(ncv)
-      real(kind=dp), intent(in)       :: tol
-      complex(kind=dp), intent(out)   :: d(nev)
-      complex(kind=dp), intent(out)   :: z(ldz, nev)
-      complex(kind=dp), intent(in)    :: sigma
-      complex(kind=dp), intent(inout) :: workev(2*ncv)
-      complex(kind=dp), intent(inout) :: resid(n)
-      complex(kind=dp), intent(inout) :: v(ldv, ncv)
-      integer, intent(inout)          :: iparam(11)
-      integer, intent(inout)          :: ipntr(14)
-      complex(kind=dp), intent(inout) :: workd(3*n)
-      complex(kind=dp), intent(inout) :: workl(lworkl)
-      real(kind=dp), intent(inout)    :: rwork(ncv)
-      integer, intent(out)            :: info
-    end subroutine
-  end interface
-
 #endif
 
 contains
