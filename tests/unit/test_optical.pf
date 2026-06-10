@@ -93,7 +93,7 @@ contains
     eigen_cfg%nev      = nev_wire
     eigen_cfg%max_iter = 100
     eigen_cfg%tol      = 1.0e-10_dp
-    eigen_cfg%feast_m0 = 4 * nev_wire  ! generous subspace
+    eigen_cfg%m0 = 4 * nev_wire  ! generous subspace
 
     call auto_compute_energy_window(H_csr, eigen_cfg%emin, eigen_cfg%emax)
     call solve_sparse_evp(H_csr, eigen_cfg, eigen_res)

@@ -519,7 +519,7 @@ contains
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
-    eigen_cfg_local%feast_m0 = min(max(8 * nev_local, 200), 16 * Ngrid_local)
+    eigen_cfg_local%m0 = min(max(8 * nev_local, 200), 16 * Ngrid_local)
 
     ! Search near zero energy for Majorana modes.
     ! Use feast_emin/emax from config when set (for kz sweeps at finite kz),
@@ -1317,7 +1317,7 @@ contains
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
-    eigen_cfg_local%feast_m0 = min(max(8 * nev_local, 200), Nbdg_local)
+    eigen_cfg_local%m0 = min(max(8 * nev_local, 200), Nbdg_local)
     eigen_cfg_local%emin = -5.0_dp * cfg%bdg%delta_0
     eigen_cfg_local%emax =  5.0_dp * cfg%bdg%delta_0
 
@@ -1328,10 +1328,10 @@ contains
       print *, 'ERROR: wire BdG sweep eigensolver failed or found no states'
       error stop 'wire BdG eigensolver failed'
     end if
-    if (eigen_res_local%nev_found >= eigen_cfg_local%feast_m0 .and. &
-        eigen_cfg_local%feast_m0 < Nbdg_local) then
+    if (eigen_res_local%nev_found >= eigen_cfg_local%m0 .and. &
+        eigen_cfg_local%m0 < Nbdg_local) then
       print *, 'ERROR: wire BdG sweep likely truncated FEAST subspace'
-      print *, '  nev_found=', eigen_res_local%nev_found, ' feast_m0=', eigen_cfg_local%feast_m0
+      print *, '  nev_found=', eigen_res_local%nev_found, ' m0=', eigen_cfg_local%m0
       error stop 'wire BdG FEAST subspace likely truncated'
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))

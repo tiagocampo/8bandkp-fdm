@@ -15,7 +15,7 @@ src/apps/
     |-> outputFunctions    (writes eigenvalues, eigenfunctions)
     |-> sc_loop            (self-consistent SP, only main.f90)
     |-> strain_solver      (elastic + Pikus-Bir, both mains)
-    |-> eigensolver        (unified eigensolver: dense LAPACK + FEAST)
+    |-> eigensolver        (unified eigensolver: `make_eigensolver` factory → `dense_solver_t` / `feast_solver_t`)
     |-> sparse_matrices    (CSR type, Kronecker, COO assembly)
     |-> linalg             (zheevx wrapper, ILAENV, DLAMCH)
 
@@ -62,7 +62,7 @@ src/math/
     |-> definitions
   linalg.f90                (zheevx wrapper, ILAENV, DLAMCH)
     |-> definitions
-  eigensolver.f90           (unified eigensolver: dense LAPACK + FEAST + mode dispatch)
+  eigensolver.f90           (unified eigensolver: `make_eigensolver` factory, polymorphic `eigensolver_base`; methods: DENSE/FEAST; modes: FULL/INDEX/ENERGY)
     |-> definitions
     |-> sparse_matrices
   geometry.f90              (wire grid, cut-cells, immersed boundary)
@@ -121,7 +121,7 @@ main.f90: k-vector sweep
          or ZB8bandGeneralized(HT_csr, kz, profile_2d, kpterms_2d, cfg)
     |
     v
-  solver: zheevx (dense, bulk/QW) or FEAST (sparse, wire/QW)
+  solver: `make_eigensolver(cfg%solver)` → `dense_solver_t` (bulk/QW) or `feast_solver_t` (wire)
     |
     v
   eigenvalues(:,:), eigenvectors(:,:,:)

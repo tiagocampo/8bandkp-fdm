@@ -268,7 +268,7 @@ contains
     eigen_cfg%nev = max(1, min(matrix_dim, cfg%bands%num_cb + cfg%bands%num_vb))
     eigen_cfg%max_iter = 200
     eigen_cfg%tol = 1.0e-10_dp
-    eigen_cfg%feast_m0 = min(matrix_dim, max(cfg%solver%m0, &
+    eigen_cfg%m0 = min(matrix_dim, max(cfg%solver%m0, &
       & min(matrix_dim, max(4 * eigen_cfg%nev, 128))))
     solver = make_eigensolver(eigen_cfg)
 
@@ -296,10 +296,10 @@ contains
         call fail_wire_spectral()
         return
       end if
-      if (eigen_res%nev_found >= eigen_cfg%feast_m0 .and. eigen_cfg%feast_m0 < matrix_dim) then
+      if (eigen_res%nev_found >= eigen_cfg%m0 .and. eigen_cfg%m0 < matrix_dim) then
         print *, 'ERROR: compute_spectral_function_wire: eigensolver returned ', &
-          & eigen_res%nev_found, ' states, reaching feast_m0=', eigen_cfg%feast_m0
-        print *, '  Increase feast_m0 or narrow the spectral energy window.'
+          & eigen_res%nev_found, ' states, reaching m0=', eigen_cfg%m0
+        print *, '  Increase m0 or narrow the spectral energy window.'
         call fail_wire_spectral()
         return
       end if

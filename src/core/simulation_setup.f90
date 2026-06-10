@@ -269,7 +269,7 @@ contains
       setup%eigen_cfg%nev = nev
       setup%eigen_cfg%max_iter = 100
       setup%eigen_cfg%tol = 1.0e-10_dp
-      setup%eigen_cfg%feast_m0 = cfg%solver%m0
+      setup%eigen_cfg%m0 = cfg%solver%m0
       allocate(setup%HT_csr_ptr)
       allocate(setup%coo_cache_ptr)
       allocate(setup%wire_ws_ptr)

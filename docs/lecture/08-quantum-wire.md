@@ -263,10 +263,12 @@ The optional `g` parameter enables perturbation mode for g-factor calculations:
 
 ### 2.6 Eigensolver: `eigensolver.f90`
 
-The sparse eigenvalue problem is dispatched through `solve_sparse_evp` in `src/math/eigensolver.f90`. Two backends are available:
+The eigenvalue problem is dispatched through `make_eigensolver(config)` in `src/math/eigensolver.f90`, which returns a polymorphic `eigensolver_base` pointer. The backend is selected by `cfg%solver%method` in the `[solver]` TOML section:
 
-- **FEAST** (MKL `zfeast_hcsrev`): contour-integral eigensolver that finds all eigenvalues within a user-specified energy window $[E_{\min}, E_{\max}]$. This is the preferred solver for large wire Hamiltonians because it avoids computing the full spectrum.
-- **Dense LAPACK fallback** (`zheevx`): converts the CSR matrix to dense and solves for the $n$ smallest eigenvalues. Used when FEAST is not available. The `auto_compute_energy_window` routine provides Gershgorin bounds for the energy window.
+- **`method = "FEAST"`** (`feast_solver_t`): contour-integral eigensolver that finds all eigenvalues within a user-specified energy window $[E_{\min}, E_{\max}]$. This is the preferred solver for large wire Hamiltonians because it avoids computing the full spectrum.
+- **`method = "DENSE"`** (`dense_lapack_solver_t`): converts the CSR matrix to dense and solves for the $n$ smallest eigenvalues via `zheevx`.
+
+Both backends are invoked via `solver%solve(...)` or `solver%solve_sparse(...)`. When `emin = 0` and `emax = 0` in `[solver]`, the solver uses Gershgorin bounds internally (`auto_compute_energy_window`).
 
 ### 2.7 Sparse matrix infrastructure: `sparse_matrices.f90`
 
@@ -635,13 +637,13 @@ For core-shell wires (e.g., InAs core with GaAs shell), multiple regions with di
 - The grid is uniform (no adaptive mesh refinement)
 - Self-consistent Schrodinger-Poisson for wires uses the 2D Poisson solver `solve_poisson_2d` with box integration and cut-cell support
 - Strain is handled by the strain solver module (`src/physics/strain_solver.f90`) but is not yet fully integrated into the wire pipeline
-- FEAST convergence warnings (`info=3`, subspace too small) can appear when the energy window contains many more eigenvalues than the estimated subspace dimension. Narrowing the energy window or increasing `feast_m0` resolves this
+- FEAST convergence warnings (`info=3`, subspace too small) can appear when the energy window contains many more eigenvalues than the estimated subspace dimension. Narrowing the energy window or increasing `m0` in the `[solver]` section resolves this
 - Boundary treatment uses hard-wall (Dirichlet) conditions at the grid edges. For wires where the wavefunction decays slowly (e.g., shallow confinement), the domain must be large enough to prevent artifacts
 
 **Tips for production calculations:**
 - Start with a coarse grid ($N_x = N_y = 20$) to verify the geometry and subband ordering, then refine
 - Use `FDorder = 2` for initial exploration; switch to `FDorder = 4` for final results
-- For the FEAST solver, set the energy window tightly around the expected subband energies to minimize computational cost; `auto_compute_energy_window` provides Gershgorin bounds as a starting point
+- For `method = "FEAST"`, set `emin`/`emax` in the `[solver]` section tightly around the expected subband energies. When `emin = 0` and `emax = 0` (auto), the solver uses Gershgorin bounds internally
 - For g-factor calculations, use at least `FDorder = 4` and $N_x, N_y \geq 40$ for converged results, since g-factors are sensitive to the wavefunction shape near interfaces
 - The COO cache is automatically enabled for $k_z$ sweeps; no user configuration is needed
 - When using non-rectangular shapes, verify that `cell_volume` and `face_fraction` arrays are correct by checking that the total active area matches the analytical cross-section area

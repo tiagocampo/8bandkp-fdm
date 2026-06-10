@@ -41,7 +41,7 @@ module eigensolver
     real(kind=dp)      :: emax     =  1.0_dp
     integer            :: max_iter = 100
     real(kind=dp)      :: tol      = 1.0e-10_dp
-    integer            :: feast_m0 = 0
+    integer            :: m0 = 0
   end type eigensolver_config
 
   ! ------------------------------------------------------------------
@@ -238,7 +238,7 @@ contains
     fpm(1) = 0  ! silent mode
     fpm(2) = 16 ! contour quadrature points (12-16 recommended for degenerate spectra)
 
-    M0 = config%feast_m0
+    M0 = config%m0
     if (M0 <= 0) M0 = 2 * config%nev
     M0 = max(M0, config%nev + 1)
     M0 = min(M0, N)  ! FEAST requires M0 <= N
@@ -331,7 +331,7 @@ contains
       print *, 'FEAST warning: max iterations reached, results may be inaccurate.'
     else if (info == 3) then
       print *, '  WARNING: FEAST subspace too small (info=3). Missing eigenvalues.'
-      print *, '  Increase feast_m0 or narrow the energy window.'
+      print *, '  Increase m0 or narrow the energy window.'
     end if
 
     if (M > 0 .and. M <= M0 .and. info >= 0) then

@@ -147,7 +147,7 @@ contains
     cfg%emin = 0.01_dp
     cfg%emax = 0.25_dp
     cfg%nev = 3
-    cfg%feast_m0 = 10
+    cfg%m0 = 10
 
     call solve_feast(Hmat, cfg, res)
 
@@ -445,7 +445,7 @@ contains
     cfg%emin = 2.82_dp
     cfg%emax = 2.85_dp
     cfg%nev = 3
-    cfg%feast_m0 = 8
+    cfg%m0 = 8
 
     ! Initialize cache with diagonal upper-triangle structure.
     call solve_feast(H_diag, cfg, cached, fw)
@@ -531,7 +531,7 @@ contains
     cfg%method = 'FEAST'
     cfg%mode = EIGEN_MODE_FULL
     cfg%nev = 10
-    cfg%feast_m0 = 12
+    cfg%m0 = 12
 
     solver = make_eigensolver(cfg)
     call solver%solve_sparse(H, cfg, res)
