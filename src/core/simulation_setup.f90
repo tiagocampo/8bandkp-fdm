@@ -198,6 +198,7 @@ contains
       ! --- QW sparse path: if FEAST requested, set up CSR builder ---
       if (trim(setup%eigen_cfg%method) == 'FEAST') then
         setup%qw_sparse = .true.
+        setup%eigen_cfg%m0 = cfg%solver%m0
         allocate(setup%qw_ws_ptr)
         allocate(setup%HT_csr_ptr)
         ! Build preliminary CSR Hamiltonian at k=0 to estimate FEAST window

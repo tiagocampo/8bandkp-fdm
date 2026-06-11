@@ -1,4 +1,7 @@
 module test_eigensolver
+  ! COVERAGE: observable=solver_dispatch_dense geometry=generic material=generic
+  ! COVERAGE: observable=solver_dispatch_feast geometry=generic material=generic
+  ! COVERAGE: observable=solver_config_validation geometry=generic material=generic
   use funit
   use definitions
   use sparse_matrices

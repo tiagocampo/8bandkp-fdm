@@ -5361,7 +5361,7 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
     """wire_inas_gaas_subbands.png: E(k_z) subband dispersion for InAs/GaAs wire."""
     print("[figure] wire_inas_gaas_subbands")
 
-    cfg_src = CONFIG_DIR / "wire_inas_gaas_strain.cfg"
+    cfg_src = CONFIG_DIR / "wire_inas_gaas_strain.toml"
     cfg_text = cfg_src.read_text()
 
     # Modify config for a kz sweep.  The 30x30 strained wire is expensive, so
@@ -5371,18 +5371,18 @@ def fig_wire_inas_gaas_subbands(output_dir: Path) -> None:
     modified_lines = []
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("waveVectorMax:"):
-            modified_lines.append("waveVectorMax: 0.05")
-        elif stripped.startswith("waveVectorStep:"):
-            modified_lines.append("waveVectorStep: 2")
-        elif stripped.startswith("feast_emin:"):
-            modified_lines.append("feast_emin: -0.8")
-        elif stripped.startswith("feast_emax:"):
-            modified_lines.append("feast_emax: 1.5")
-        elif stripped.startswith("numcb:"):
-            modified_lines.append("numcb: 8")
-        elif stripped.startswith("numvb:"):
-            modified_lines.append("numvb: 16")
+        if stripped.startswith("max ="):
+            modified_lines.append("max = 0.05")
+        elif stripped.startswith("nsteps ="):
+            modified_lines.append("nsteps = 2")
+        elif stripped.startswith("emin ="):
+            modified_lines.append("emin = -0.8")
+        elif stripped.startswith("emax ="):
+            modified_lines.append("emax = 1.5")
+        elif stripped.startswith("num_cb ="):
+            modified_lines.append("num_cb = 8")
+        elif stripped.startswith("num_vb ="):
+            modified_lines.append("num_vb = 16")
         else:
             modified_lines.append(line)
     modified_text = "\n".join(modified_lines) + "\n"
@@ -5654,34 +5654,49 @@ def fig_wire_gfactor_vs_size(output_dir: Path) -> None:
         ngrid = nx * nx
         numcb = 4
         numvb = 16
-        feast_m0 = max(768, 4 * (numcb + numvb))
+        solver_m0 = max(768, 4 * (numcb + numvb))
         cfg_text = (
-            "waveVector: k0\n"
-            "waveVectorMax: 0.1\n"
-            "waveVectorStep: 0\n"
-            f"confinement: 2\n"
-            "FDstep: 1\n"
-            "FDorder: 2\n"
-            "numLayers: 1\n"
-            f"wire_nx: {nx}\n"
-            f"wire_ny: {nx}\n"
-            f"wire_dx: {dx:.4f}\n"
-            f"wire_dy: {dx:.4f}\n"
-            "wire_shape: rectangle\n"
-            f"wire_width: {width:.1f}\n"
-            f"wire_height: {width:.1f}\n"
-            "numRegions: 1\n"
-            "region: InSbW 0.0 100.0\n"
-            f"numcb: {numcb}\n"
-            f"numvb: {numvb}\n"
-            "ExternalField: 0 EF\n"
-            "EFParams: 0.0005\n"
-            "whichBand: 0\n"
-            "bandIdx: 1\n"
-            "SC: 0\n"
-            "feast_emin: -3.0\n"
-            "feast_emax: 6.0\n"
-            f"feast_m0: {feast_m0}\n"
+            "confinement = \"wire\"\n"
+            "FDorder = 2\n"
+            "fd_step = 1\n"
+            "which_band = 0\n"
+            "band_idx = 1\n"
+            "\n"
+            "[wave_vector]\n"
+            "mode = \"k0\"\n"
+            "max = 0.1\n"
+            "nsteps = 0\n"
+            "\n"
+            "[bands]\n"
+            f"num_cb = {numcb}\n"
+            f"num_vb = {numvb}\n"
+            "\n"
+            "[wire]\n"
+            f"nx = {nx}\n"
+            f"ny = {nx}\n"
+            f"dx = {dx:.4f}\n"
+            f"dy = {dx:.4f}\n"
+            "\n"
+            "[wire.geometry]\n"
+            "shape = \"rectangle\"\n"
+            f"width = {width:.1f}\n"
+            f"height = {width:.1f}\n"
+            "\n"
+            "[[region]]\n"
+            "material = \"InSbW\"\n"
+            "inner = 0.0\n"
+            "outer = 100.0\n"
+            "\n"
+            "[external_field]\n"
+            "type = \"EF\"\n"
+            "value = 0.0005\n"
+            "\n"
+            "[solver]\n"
+            "method = \"FEAST\"\n"
+            "mode = \"ENERGY\"\n"
+            "emin = -3.0\n"
+            "emax = 6.0\n"
+            f"m0 = {solver_m0}\n"
         )
         tmp_cfg = REPO_ROOT / "input.toml"
         tmp_cfg.write_text(cfg_text)

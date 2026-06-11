@@ -480,32 +480,40 @@ def section_qw_gfactor_strain():
 # Section 7: Wire g-factor anisotropy (GaAs nanowire)
 # =========================================================================
 _WIRE_GFACTOR_CONFIG = """\
-waveVector: k0
-waveVectorMax: 0.1
-waveVectorStep: 0
-confinement:  2
-FDstep: 1
-FDorder: 2
-numLayers:  1
-wire_nx: 11
-wire_ny: 11
-wire_dx: 10.0
-wire_dy: 10.0
-wire_shape: rectangle
-wire_width: 100.0
-wire_height: 100.0
-numRegions: 1
-region: GaAs  0.0  100.0
-numcb: 2
-numvb: 4
-ExternalField: 0  EF
-EFParams: 0.0005
-whichBand: 0
-bandIdx: 1
-SC: 0
-feast_emin: -1.5
-feast_emax: 2.0
-feast_m0: -1
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "k0"
+max = 0.1
+nsteps = 0
+
+[bands]
+num_cb = 2
+num_vb = 4
+
+[wire]
+nx = 11
+ny = 11
+dx = 10.0
+dy = 10.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 100.0
+height = 100.0
+
+[[region]]
+material = "GaAs"
+inner = 0.0
+outer = 100.0
+
+[external_field]
+type = "EF"
+value = 0.0005
 """
 
 
