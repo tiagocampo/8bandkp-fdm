@@ -758,4 +758,52 @@ contains
     call csr_free(Hmat)
   end subroutine test_eigensolve_csr_helper
 
+  ! ==================================================================
+  ! Test: a dense solver reused across calls returns identical, correct
+  ! eigenvalues — verifies workspace caching does not corrupt results,
+  ! including the realloc path when N grows.
+  ! ==================================================================
+  @test
+  subroutine test_dense_solver_caches_workspace()
+    integer :: n
+    type(csr_matrix) :: H
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: res1, res2, res3
+    class(eigensolver_base), allocatable :: solver
+    real(kind=dp) :: expected
+
+    cfg%method = 'DENSE'
+    cfg%mode = EIGEN_MODE_INDEX
+    cfg%il = 1
+    cfg%iu = 1
+    solver = make_eigensolver(cfg)
+
+    ! First call: N = 20
+    n = 20
+    call build_tridiag_csr(2.0_dp, -1.0_dp, n, H)
+    call solver%solve_sparse(H, cfg, res1)
+    @assertTrue(res1%converged)
+    expected = 2.0_dp * (1.0_dp - cos(pi_dp / real(n+1, kind=dp)))
+    @assertEqual(expected, res1%eigenvalues(1), tolerance=1.0e-6_dp)
+    call eigensolver_result_free(res1)
+
+    ! Second call: same N — cached path, must match
+    call solver%solve_sparse(H, cfg, res2)
+    @assertTrue(res2%converged)
+    @assertEqual(expected, res2%eigenvalues(1), tolerance=1.0e-6_dp)
+    call eigensolver_result_free(res2)
+    call csr_free(H)
+
+    ! Third call: larger N — realloc path, must still be correct
+    n = 30
+    call build_tridiag_csr(2.0_dp, -1.0_dp, n, H)
+    call solver%solve_sparse(H, cfg, res3)
+    @assertTrue(res3%converged)
+    expected = 2.0_dp * (1.0_dp - cos(pi_dp / real(n+1, kind=dp)))
+    @assertEqual(expected, res3%eigenvalues(1), tolerance=1.0e-6_dp)
+    call eigensolver_result_free(res3)
+    call csr_free(H)
+    deallocate(solver)
+  end subroutine test_dense_solver_caches_workspace
+
 end module test_eigensolver

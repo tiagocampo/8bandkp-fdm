@@ -125,10 +125,18 @@ module eigensolver
 #endif
 
   type, extends(eigensolver_base) :: dense_lapack_solver_t
+    ! Cached LAPACK workspace — sized on first call (or when N grows),
+    ! reused thereafter. Thread-safe because each OpenMP thread allocates
+    ! its own solver instance (main.f90 QW sweep).
+    integer                       :: cached_n = 0
+    complex(kind=dp), allocatable :: A_buf(:,:), Z_buf(:,:), work(:)
+    real(kind=dp), allocatable    :: W_buf(:), rwork(:)
+    integer, allocatable          :: iwork(:), ifail(:)
   contains
     procedure :: solve => dense_lapack_solve_dispatch       ! legacy alias -> solve_sparse
     procedure :: solve_dense => dense_solve_dense_dispatch
     procedure :: solve_sparse => dense_solve_sparse_dispatch
+    final     :: dense_lapack_solver_finalize
   end type dense_lapack_solver_t
 
 contains
@@ -651,9 +659,7 @@ contains
     type(eigensolver_result), intent(out) :: result
 
     integer :: N, lda, ldz, lwork, info, nb, il_local, iu_local
-    complex(kind=dp), allocatable :: A(:,:), Z(:,:), work(:)
-    real(kind=dp), allocatable :: rwork(:), W(:)
-    integer, allocatable :: iwork(:), ifail(:)
+    complex(kind=dp), allocatable :: wq(:)   ! 1-element workspace-query scratch
     real(kind=dp) :: vl, vu, abstol
 
     N = size(H, 1)
@@ -663,60 +669,77 @@ contains
       return
     end if
 
-    nb = 0
     lda = N
     ldz = N
     abstol = 0.0_dp
+    nb = 0
+
+    ! (Re)allocate N-dependent buffers only when N grows
+    if (N > self%cached_n) then
+      if (allocated(self%A_buf)) then
+        deallocate(self%A_buf, self%Z_buf, self%W_buf, self%rwork, self%iwork, self%ifail)
+      end if
+      allocate(self%A_buf(N,N), self%Z_buf(N,N), self%W_buf(N))
+      allocate(self%rwork(7*N), self%iwork(5*N), self%ifail(N))
+      self%cached_n = N
+    end if
 
     ! Copy H (zheev/zheevx destroys input)
-    allocate(A(N, N))
-    A = H
-
-    allocate(W(N), Z(N, N), rwork(7*N), iwork(5*N), ifail(N))
+    self%A_buf = H
 
     select case (config%mode)
     case (EIGEN_MODE_FULL)
-      ! zheev: all eigenvalues
-      allocate(work(1))
-      call zheev('V', 'U', N, A, lda, W, work, -1, rwork, info)
-      lwork = max(1, nint(real(work(1))))
-      deallocate(work)
-      allocate(work(lwork))
-      call zheev('V', 'U', N, A, lda, W, work, lwork, rwork, info)
+      ! zheev: all eigenvalues. Workspace query -> reuse/grow work.
+      allocate(wq(1))
+      call zheev('V', 'U', N, self%A_buf, lda, self%W_buf, wq, -1, self%rwork, info)
+      if (info /= 0) error stop 'dense_solve_dense_dispatch: zheev workspace query failed.'
+      lwork = max(1, nint(real(wq(1))))
+      deallocate(wq)
+      if (.not. allocated(self%work) .or. size(self%work) < lwork) then
+        if (allocated(self%work)) deallocate(self%work)
+        allocate(self%work(lwork))
+      end if
+      call zheev('V', 'U', N, self%A_buf, lda, self%W_buf, self%work, lwork, self%rwork, info)
       if (info == 0) then
         nb = N
-        Z = A  ! zheev returns eigenvectors in A
+        self%Z_buf = self%A_buf   ! zheev returns eigenvectors in A
       end if
 
     case (EIGEN_MODE_INDEX)
-      ! zheevx range='I': eigenvalues il:iu
       il_local = max(1, config%il)
       iu_local = min(N, config%iu)
-      allocate(work(1))
-      call zheevx('V', 'I', 'U', N, A, lda, vl, vu, &
-                   il_local, iu_local, abstol, nb, W, Z, ldz, &
-                   work, -1, rwork, iwork, ifail, info)
-      lwork = max(1, nint(real(work(1))))
-      deallocate(work)
-      allocate(work(lwork))
-      call zheevx('V', 'I', 'U', N, A, lda, vl, vu, &
-                   il_local, iu_local, abstol, nb, W, Z, ldz, &
-                   work, lwork, rwork, iwork, ifail, info)
+      allocate(wq(1))
+      call zheevx('V', 'I', 'U', N, self%A_buf, lda, vl, vu, &
+                   il_local, iu_local, abstol, nb, self%W_buf, self%Z_buf, ldz, &
+                   wq, -1, self%rwork, self%iwork, self%ifail, info)
+      if (info /= 0) error stop 'dense_solve_dense_dispatch: zheevx(INDEX) workspace query failed.'
+      lwork = max(1, nint(real(wq(1))))
+      deallocate(wq)
+      if (.not. allocated(self%work) .or. size(self%work) < lwork) then
+        if (allocated(self%work)) deallocate(self%work)
+        allocate(self%work(lwork))
+      end if
+      call zheevx('V', 'I', 'U', N, self%A_buf, lda, vl, vu, &
+                   il_local, iu_local, abstol, nb, self%W_buf, self%Z_buf, ldz, &
+                   self%work, lwork, self%rwork, self%iwork, self%ifail, info)
 
     case (EIGEN_MODE_ENERGY)
-      ! zheevx range='V': eigenvalues in [emin, emax]
       vl = config%emin
       vu = config%emax
-      allocate(work(1))
-      call zheevx('V', 'V', 'U', N, A, lda, vl, vu, &
-                   1, N, abstol, nb, W, Z, ldz, &
-                   work, -1, rwork, iwork, ifail, info)
-      lwork = max(1, nint(real(work(1))))
-      deallocate(work)
-      allocate(work(lwork))
-      call zheevx('V', 'V', 'U', N, A, lda, vl, vu, &
-                   1, N, abstol, nb, W, Z, ldz, &
-                   work, lwork, rwork, iwork, ifail, info)
+      allocate(wq(1))
+      call zheevx('V', 'V', 'U', N, self%A_buf, lda, vl, vu, &
+                   1, N, abstol, nb, self%W_buf, self%Z_buf, ldz, &
+                   wq, -1, self%rwork, self%iwork, self%ifail, info)
+      if (info /= 0) error stop 'dense_solve_dense_dispatch: zheevx(ENERGY) workspace query failed.'
+      lwork = max(1, nint(real(wq(1))))
+      deallocate(wq)
+      if (.not. allocated(self%work) .or. size(self%work) < lwork) then
+        if (allocated(self%work)) deallocate(self%work)
+        allocate(self%work(lwork))
+      end if
+      call zheevx('V', 'V', 'U', N, self%A_buf, lda, vl, vu, &
+                   1, N, abstol, nb, self%W_buf, self%Z_buf, ldz, &
+                   self%work, lwork, self%rwork, self%iwork, self%ifail, info)
 
     case default
       error stop 'dense_solve_dense_dispatch: unknown mode.'
@@ -728,18 +751,31 @@ contains
       result%iterations = 1
       allocate(result%eigenvalues(nb))
       allocate(result%eigenvectors(N, nb))
-      result%eigenvalues(1:nb) = W(1:nb)
-      result%eigenvectors(:, 1:nb) = Z(:, 1:nb)
+      result%eigenvalues(1:nb) = self%W_buf(1:nb)
+      result%eigenvectors(:, 1:nb) = self%Z_buf(:, 1:nb)
     else
       result%converged = .false.
       result%nev_found = 0
-      if (info /= 0) then
-        print *, 'Dense eigensolver error: info =', info
-      end if
+      if (info /= 0) print *, 'Dense eigensolver error: info =', info
     end if
-
-    deallocate(A, W, Z, work, rwork, iwork, ifail)
   end subroutine dense_solve_dense_dispatch
+
+  ! ==================================================================
+  ! Finalizer: frees the cached LAPACK workspace buffers owned by the
+  ! solver object. Called automatically when the solver goes out of
+  ! scope; manual deallocate also triggers it.
+  ! ==================================================================
+  subroutine dense_lapack_solver_finalize(self)
+    type(dense_lapack_solver_t), intent(inout) :: self
+    if (allocated(self%A_buf))  deallocate(self%A_buf)
+    if (allocated(self%Z_buf))  deallocate(self%Z_buf)
+    if (allocated(self%work))   deallocate(self%work)
+    if (allocated(self%W_buf))  deallocate(self%W_buf)
+    if (allocated(self%rwork))  deallocate(self%rwork)
+    if (allocated(self%iwork))  deallocate(self%iwork)
+    if (allocated(self%ifail))  deallocate(self%ifail)
+    self%cached_n = 0
+  end subroutine dense_lapack_solver_finalize
 
   ! ==================================================================
   ! Internal: convert dense matrix to CSR.
