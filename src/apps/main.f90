@@ -746,6 +746,11 @@ program kpfdm
             if (.not. result_bs%converged) error stop 'eigensolver failed in QW FEAST k-sweep'
             ! Clamp to allocated array sizes (ENERGY mode may return more eigenvalues)
             M = min(result_bs%nev_found, iuu-il+1)
+            if (result_bs%nev_found > iuu-il+1) then
+              print '(A,I0,A,I0,A)', '  Warning: FEAST returned ', result_bs%nev_found, &
+                ' eigenvalues at k-point ', k, &
+                '; only the lowest will be kept (widen bands or narrow energy window).'
+            end if
             eig(1:M, k) = result_bs%eigenvalues(1:M)
             eigv(:, 1:M, k) = result_bs%eigenvectors(:, 1:M)
             call eigensolver_result_free(result_bs)
