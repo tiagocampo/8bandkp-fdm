@@ -166,6 +166,53 @@ contains
   end subroutine dense_to_csr_block
 
   ! ==================================================================
+  ! Compute the 10 dense kp-term blocks for a given (kx, ky).
+  ! Extracted from ZB8bandQW_csr so the workspace-init path can build
+  ! the cached CSR structure at a sentinel k that exposes the FULL
+  ! k-independent nonzero pattern (at k=0, the k-prefactor-dependent
+  ! blocks S, SC, R, RC, PP, PM collapse to zero and their structure
+  ! would be lost). Values are recomputed by update_kp_term_values on
+  ! the fast path; only the structure matters here.
+  ! ==================================================================
+  subroutine compute_dense_kp_blocks(kpterms, N, kx, ky, &
+      Q, T, S, SC, R, RC, PZ, PP, PM, A)
+    integer, intent(in) :: N
+    real(kind=dp), intent(in) :: kpterms(N, N, 10)
+    real(kind=dp), intent(in) :: kx, ky
+    complex(kind=dp), intent(out) :: Q(N,N), T(N,N), S(N,N), SC(N,N)
+    complex(kind=dp), intent(out) :: R(N,N), RC(N,N), PZ(N,N), PP(N,N), PM(N,N), A(N,N)
+
+    integer :: ii, jj
+    real(kind=dp) :: kx2, ky2, k2, kxky
+    complex(kind=dp) :: kminus, kplus
+
+    kx2 = kx**2; ky2 = ky**2; k2 = kx2 + ky2
+    kxky = kx * ky
+    kplus = kx + IU*ky; kminus = kx - IU*ky
+
+    Q = ZERO; T = ZERO; S = ZERO; SC = ZERO
+    R = ZERO; RC = ZERO; PZ = ZERO; PP = ZERO; PM = ZERO; A = ZERO
+
+    do jj = 1, N
+      do ii = 1, N
+        Q(ii,jj) = -((kpterms(ii,jj,1) + kpterms(ii,jj,2))*k2 + kpterms(ii,jj,7))
+        T(ii,jj) = -((kpterms(ii,jj,1) - kpterms(ii,jj,2))*k2 + kpterms(ii,jj,8))
+        S(ii,jj)  =  2.0_dp * SQR3 * kminus * kpterms(ii,jj,9)
+        SC(jj,ii) =  2.0_dp * SQR3 * kplus  * kpterms(ii,jj,9)
+        PZ(ii,jj) = kpterms(ii,jj,6) * (-IU)
+        A(ii,jj)  = cmplx(kpterms(ii,jj,5) + k2*kpterms(ii,jj,10), 0.0_dp, kind=dp)
+      end do
+    end do
+
+    do ii = 1, N
+      R(ii,ii)  = -SQR3 * (kpterms(ii,ii,2)*(kx2 - ky2) - 2.0_dp*IU*kpterms(ii,ii,3)*kxky)
+      RC(ii,ii) = -SQR3 * (kpterms(ii,ii,2)*(kx2 - ky2) + 2.0_dp*IU*kpterms(ii,ii,3)*kxky)
+      PP(ii,ii) = kpterms(ii,ii,4) * kplus  * RQS2
+      PM(ii,ii) = kpterms(ii,ii,4) * kminus * RQS2
+    end do
+  end subroutine compute_dense_kp_blocks
+
+  ! ==================================================================
   ! Fast-path value update for one cached kp-term CSR block.
   ! Walks blk%rowptr/colind (structure fixed) and recomputes each value
   ! from kpterms(i,j,·) and the current kx,ky. Formulas mirror the
@@ -268,6 +315,80 @@ contains
     kx2 = kx**2; ky2 = ky**2; k2 = kx2 + ky2
     kxky = kx * ky
     kplus = kx + IU*ky; kminus = kx - IU*ky
+
+    ! ================================================================
+    ! FAST PATH (subsequent k-points): structure is fixed from the
+    ! first (slow) call. Update kp-term block values in place, re-scatter
+    ! into the cached COO buffers, and rebuild HT_csr%values. No dense
+    ! matrices, no dense_to_csr_block O(N^2) scans.
+    !
+    ! COO scatter order is byte-identical to the slow path (driven by
+    ! the unchanged block sparsity), so the cached coo_to_csr map stays
+    ! valid. HT_csr may be freed between calls (main.f90 QW sweep frees
+    ! it each iteration); when HT_csr%nnz == 0 we rebuild the structure
+    ! via the cached map, when it persists we use the value-only path.
+    ! ================================================================
+    if (present(ws)) then
+      if (ws%initialized) then
+        ! Update the 10 cached kp-term blocks in place (O(NNZ) each)
+        call update_kp_term_values(ws%blk_Q,  kpterms, kx, ky, KP_Q)
+        call update_kp_term_values(ws%blk_T,  kpterms, kx, ky, KP_T)
+        call update_kp_term_values(ws%blk_S,  kpterms, kx, ky, KP_S)
+        call update_kp_term_values(ws%blk_SC, kpterms, kx, ky, KP_SC)
+        call update_kp_term_values(ws%blk_R,  kpterms, kx, ky, KP_R)
+        call update_kp_term_values(ws%blk_RC, kpterms, kx, ky, KP_RC)
+        call update_kp_term_values(ws%blk_PZ, kpterms, kx, ky, KP_PZ)
+        call update_kp_term_values(ws%blk_PP, kpterms, kx, ky, KP_PP)
+        call update_kp_term_values(ws%blk_PM, kpterms, kx, ky, KP_PM)
+        call update_kp_term_values(ws%blk_A,  kpterms, kx, ky, KP_A)
+
+        ! blk_diff = Q - T, blk_temp = 0.5*(Q + T).  csr_add reallocates
+        ! its output (intent(out)); ws%blk_diff/blk_temp are distinct
+        ! from blk_Q/blk_T so no aliasing.  Two tiny tridiagonal blocks
+        ! per call — negligible vs the 10 dense matrices eliminated.
+        call csr_add(ws%blk_Q, ws%blk_T, ws%blk_diff, UM, &
+                     cmplx(-1.0_dp, 0.0_dp, kind=dp))
+        call csr_add(ws%blk_Q, ws%blk_T, ws%blk_temp, &
+                     cmplx(0.5_dp, 0.0_dp, kind=dp), &
+                     cmplx(0.5_dp, 0.0_dp, kind=dp))
+
+        ! Re-scatter into cached COO buffers (reset index, overwrite in
+        ! place; same insertion order as the slow path).
+        coo_idx = 0
+        call insert_main_blocks(ws%coo_rows, ws%coo_cols, ws%coo_vals, &
+          ws%coo_capacity, coo_idx, ws%blk_Q, ws%blk_T, ws%blk_S, ws%blk_SC, &
+          ws%blk_R, ws%blk_RC, ws%blk_PZ, ws%blk_PP, ws%blk_PM, ws%blk_A, &
+          ws%blk_diff, ws%blk_temp, N)
+        call insert_profile_diagonal(ws%coo_rows, ws%coo_cols, ws%coo_vals, &
+          ws%coo_capacity, coo_idx, profile, N)
+        if (allocated(cfg%strain_blocks%delta_Ec)) then
+          call insert_strain_coo(ws%coo_rows, ws%coo_cols, ws%coo_vals, &
+            ws%coo_capacity, coo_idx, cfg%strain_blocks, N)
+        end if
+        if (any(abs(cfg%bdg%B_vec) > 1.0e-12_dp)) then
+          call insert_zeeman_coo(ws%coo_rows, ws%coo_cols, ws%coo_vals, &
+            ws%coo_capacity, coo_idx, cfg%bdg%B_vec, cfg%bdg%g_factor, &
+            cfg%grid, N)
+        end if
+
+        ! Rebuild HT_csr from the re-scattered COO. When HT_csr persists
+        ! (nnz > 0), use the value-only path via the cached sort map;
+        ! when it was freed between calls (nnz == 0, as in the main.f90
+        ! QW sweep), rebuild structure via csr_build_from_coo_cached
+        ! (the map is deterministic so repopulation is harmless).
+        if (HT_csr%nnz > 0 .and. ws%coo_cache%initialized) then
+          call csr_set_values_from_coo(HT_csr, coo_idx, &
+            ws%coo_cache%coo_to_csr(1:coo_idx), ws%coo_vals(1:coo_idx))
+        else
+          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
+            ws%coo_rows(1:coo_idx), ws%coo_cols(1:coo_idx), &
+            ws%coo_vals(1:coo_idx), ws%coo_cache%coo_to_csr)
+          ws%coo_cache%coo_nnz_in = coo_idx
+          ws%coo_cache%initialized = .true.
+        end if
+        return
+      end if
+    end if
 
     ! ================================================================
     ! Build dense kp-term matrices (exact same formulas as ZB8bandQW)
@@ -392,30 +513,134 @@ contains
     end if
 
     ! ================================================================
-    ! Workspace initialization
-    ! TODO: Implement fast-path value-only update using cloned CSR blocks
-    !       for subsequent k-points (avoid rebuilding from dense each time).
-    !       Currently the workspace stores structure but always rebuilds.
+    ! Workspace initialization: capture the k-INDEPENDENT CSR structure
+    ! for all cached blocks. Built at a sentinel k=(1,0) so the
+    ! k-prefactor-dependent blocks (S, SC, R, RC, PP, PM) expose their
+    ! full nonzero pattern — at k=0 these blocks are identically zero
+    ! and dense_to_csr_block would collapse them to empty structure,
+    ! silently dropping their contributions at k!=0 on the fast path.
+    ! Values are recomputed by update_kp_term_values; only structure
+    ! matters here.  blk_diff/blk_temp derive their structure from the
+    ! sentinel-k Q and T (same union pattern as any real k).
     ! ================================================================
     if (present(ws)) then
       if (.not. ws%initialized) then
-        call csr_clone_structure(blk_Q, ws%blk_Q)
-        call csr_clone_structure(blk_T, ws%blk_T)
-        call csr_clone_structure(blk_S, ws%blk_S)
-        call csr_clone_structure(blk_SC, ws%blk_SC)
-        call csr_clone_structure(blk_R, ws%blk_R)
-        call csr_clone_structure(blk_RC, ws%blk_RC)
-        call csr_clone_structure(blk_PZ, ws%blk_PZ)
-        call csr_clone_structure(blk_PP, ws%blk_PP)
-        call csr_clone_structure(blk_PM, ws%blk_PM)
-        call csr_clone_structure(blk_A, ws%blk_A)
-        call csr_clone_structure(blk_diff, ws%blk_diff)
-        call csr_clone_structure(blk_temp, ws%blk_temp)
+        block
+          ! Sentinel-k dense temporaries (structure capture only)
+          complex(kind=dp), allocatable :: sQ(:,:), sT(:,:), sS(:,:), sSC(:,:)
+          complex(kind=dp), allocatable :: sR(:,:), sRC(:,:), sPZ(:,:), sPP(:,:), sPM(:,:), sA(:,:)
+          type(csr_matrix) :: sblk_Q, sblk_T, sblk_S, sblk_SC
+          type(csr_matrix) :: sblk_R, sblk_RC, sblk_PZ, sblk_PP, sblk_PM, sblk_A
+          type(csr_matrix) :: sblk_diff, sblk_temp
 
-        ws%coo_capacity = coo_capacity
-        call move_alloc(coo_rows, ws%coo_rows)
-        call move_alloc(coo_cols, ws%coo_cols)
-        call move_alloc(coo_vals, ws%coo_vals)
+          ! kx=1, ky=0: makes k2=1, kplus=1, kminus=1, kx2-ky2=1, kxky=0.
+          ! All k-prefactors are nonzero, so every structurally-nonzero
+          ! entry of each block is exposed (no sparsity collapse).
+          allocate(sQ(N,N), sT(N,N), sS(N,N), sSC(N,N))
+          allocate(sR(N,N), sRC(N,N), sPZ(N,N), sPP(N,N), sPM(N,N), sA(N,N))
+          call compute_dense_kp_blocks(kpterms, N, 1.0_dp, 0.0_dp, &
+            sQ, sT, sS, sSC, sR, sRC, sPZ, sPP, sPM, sA)
+
+          call dense_to_csr_block(sQ, N, sparse_tol, sblk_Q)
+          call dense_to_csr_block(sT, N, sparse_tol, sblk_T)
+          call dense_to_csr_block(sS, N, sparse_tol, sblk_S)
+          call dense_to_csr_block(sSC, N, sparse_tol, sblk_SC)
+          call dense_to_csr_block(sR, N, sparse_tol, sblk_R)
+          call dense_to_csr_block(sRC, N, sparse_tol, sblk_RC)
+          call dense_to_csr_block(sPZ, N, sparse_tol, sblk_PZ)
+          call dense_to_csr_block(sPP, N, sparse_tol, sblk_PP)
+          call dense_to_csr_block(sPM, N, sparse_tol, sblk_PM)
+          call dense_to_csr_block(sA, N, sparse_tol, sblk_A)
+          deallocate(sQ, sT, sS, sSC, sR, sRC, sPZ, sPP, sPM, sA)
+
+          ! Derived blocks: structure = union of Q and T patterns.
+          call csr_add(sblk_Q, sblk_T, sblk_diff, UM, &
+                       cmplx(-1.0_dp, 0.0_dp, kind=dp))
+          call csr_add(sblk_Q, sblk_T, sblk_temp, &
+                       cmplx(0.5_dp, 0.0_dp, kind=dp), &
+                       cmplx(0.5_dp, 0.0_dp, kind=dp))
+
+          call csr_clone_structure(sblk_Q, ws%blk_Q)
+          call csr_clone_structure(sblk_T, ws%blk_T)
+          call csr_clone_structure(sblk_S, ws%blk_S)
+          call csr_clone_structure(sblk_SC, ws%blk_SC)
+          call csr_clone_structure(sblk_R, ws%blk_R)
+          call csr_clone_structure(sblk_RC, ws%blk_RC)
+          call csr_clone_structure(sblk_PZ, ws%blk_PZ)
+          call csr_clone_structure(sblk_PP, ws%blk_PP)
+          call csr_clone_structure(sblk_PM, ws%blk_PM)
+          call csr_clone_structure(sblk_A, ws%blk_A)
+          call csr_clone_structure(sblk_diff, ws%blk_diff)
+          call csr_clone_structure(sblk_temp, ws%blk_temp)
+
+          call csr_free(sblk_Q); call csr_free(sblk_T)
+          call csr_free(sblk_S); call csr_free(sblk_SC)
+          call csr_free(sblk_R); call csr_free(sblk_RC)
+          call csr_free(sblk_PZ); call csr_free(sblk_PP)
+          call csr_free(sblk_PM); call csr_free(sblk_A)
+          call csr_free(sblk_diff); call csr_free(sblk_temp)
+        end block
+
+        ! Size the cached COO buffers from the SENTINEL-k block nnz
+        ! (>= the real-k=0 nnz, since sentinel exposes the full k-
+        ! independent sparsity).  The slow path's local coo_rows/cols/
+        ! vals were sized for the k=0 pattern and may be too small for
+        ! the fast path's denser scatter, so we discard them and
+        ! allocate fresh at the sentinel capacity.
+        nnz_est = 2*ws%blk_Q%nnz + 2*ws%blk_T%nnz + 6*ws%blk_S%nnz + 6*ws%blk_SC%nnz
+        nnz_est = nnz_est + 5*ws%blk_R%nnz + 3*ws%blk_RC%nnz + 8*ws%blk_PZ%nnz
+        nnz_est = nnz_est + 6*ws%blk_PP%nnz + 5*ws%blk_PM%nnz + 2*ws%blk_A%nnz
+        nnz_est = nnz_est + 4*(ws%blk_Q%nnz + ws%blk_T%nnz)
+        nnz_est = nnz_est + 2*(ws%blk_Q%nnz + ws%blk_T%nnz)
+        nnz_est = nnz_est + 8 * N
+        if (allocated(cfg%strain_blocks%delta_Ec)) then
+          nnz_est = nnz_est + 32 * N
+        end if
+        if (any(abs(cfg%bdg%B_vec) > 1.0e-12_dp)) then
+          nnz_est = nnz_est + 8 * N
+        end if
+        ws%coo_capacity = nnz_est + nnz_est / 5
+        allocate(ws%coo_rows(ws%coo_capacity))
+        allocate(ws%coo_cols(ws%coo_capacity))
+        allocate(ws%coo_vals(ws%coo_capacity))
+
+        ! Record the COO→CSR sort map from the sentinel-k structure so
+        ! the fast path's re-scatter (same sentinel structure → same
+        ! (row,col) sequence) can use csr_set_values_from_coo /
+        ! csr_build_from_coo_cached without re-sorting.  The cached
+        ! blocks currently hold zero values (from csr_clone_structure);
+        ! only the (row,col) pattern drives the map, so values are
+        ! irrelevant here.  We scatter into the just-allocated ws COO
+        ! buffers and build a throwaway CSR to capture the map.
+        block
+          type(csr_matrix) :: map_scratch
+          integer :: map_idx
+
+          map_idx = 0
+          call insert_main_blocks(ws%coo_rows, ws%coo_cols, ws%coo_vals, &
+            ws%coo_capacity, map_idx, ws%blk_Q, ws%blk_T, ws%blk_S, ws%blk_SC, &
+            ws%blk_R, ws%blk_RC, ws%blk_PZ, ws%blk_PP, ws%blk_PM, ws%blk_A, &
+            ws%blk_diff, ws%blk_temp, N)
+          call insert_profile_diagonal(ws%coo_rows, ws%coo_cols, ws%coo_vals, &
+            ws%coo_capacity, map_idx, profile, N)
+          if (allocated(cfg%strain_blocks%delta_Ec)) then
+            call insert_strain_coo(ws%coo_rows, ws%coo_cols, ws%coo_vals, &
+              ws%coo_capacity, map_idx, cfg%strain_blocks, N)
+          end if
+          if (any(abs(cfg%bdg%B_vec) > 1.0e-12_dp)) then
+            call insert_zeeman_coo(ws%coo_rows, ws%coo_cols, ws%coo_vals, &
+              ws%coo_capacity, map_idx, cfg%bdg%B_vec, cfg%bdg%g_factor, &
+              cfg%grid, N)
+          end if
+
+          call csr_build_from_coo_cached(map_scratch, Ntot, Ntot, map_idx, &
+            ws%coo_rows(1:map_idx), ws%coo_cols(1:map_idx), &
+            ws%coo_vals(1:map_idx), ws%coo_cache%coo_to_csr)
+          ws%coo_cache%coo_nnz_in = map_idx
+          ws%coo_cache%initialized = .true.
+          call csr_free(map_scratch)
+        end block
+
         ws%initialized = .true.
       end if
     end if
