@@ -806,6 +806,17 @@ module definitions
           trim(cfg%solver%mode) // '"'
       end select
 
+      ! ---- I15: FEAST method cannot combine with INDEX mode ----
+      ! FEAST has no INDEX (range il:iu) interface; only ENERGY or FULL are
+      ! supported. Caught here at input validation so the user sees a clear
+      ! message before any eigensolver is constructed. The eigensolver.f90
+      ! guards (eigensolver_config_validate + feast_solve_sparse_dispatch)
+      ! remain as defense-in-depth for any code path that bypasses validate().
+      if (trim(cfg%solver%method) == 'FEAST' .and. trim(cfg%solver%mode) == 'INDEX') then
+        error stop 'validate_simulation_config: FEAST solver does not support INDEX mode ' // &
+          '(use mode = ENERGY or FULL)'
+      end if
+
     end associate
 
   end subroutine simulation_config_validate

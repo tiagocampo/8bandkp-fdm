@@ -244,6 +244,29 @@ emax = 2.0
 EOF
 run_test "V14_legacy_feast_section" "feast.*removed"
 
+# V15: FEAST + INDEX combination rejected at input validation (defs), not eigensolver
+cat > input.toml << 'EOF'
+confinement = "wire"
+FDorder = 2
+[wire]
+nx = 5
+ny = 5
+dx = 3.0
+dy = 3.0
+[wire.geometry]
+shape = "rectangle"
+width = 12.0
+height = 12.0
+[[region]]
+material = "GaAs"
+inner = 0.0
+outer = 100.0
+[solver]
+method = "FEAST"
+mode = "INDEX"
+EOF
+run_test "V15_feast_index_rejected" "FEAST.*INDEX"
+
 echo ""
 echo "========================================"
 echo " Validation rejection: $PASS passed, $FAIL failed"
