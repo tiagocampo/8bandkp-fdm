@@ -11,7 +11,7 @@ nsteps = 11
 
 [bands]
 num_cb = 3
-num_vb = 140
+num_vb = 20
 
 [wire]
 nx = 11

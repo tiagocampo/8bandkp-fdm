@@ -34,4 +34,5 @@ outer = 100.0
 method = "FEAST"
 mode = "ENERGY"
 emin = -1.5
-emax = 2.0
+emax = 3.0
+m0 = 64

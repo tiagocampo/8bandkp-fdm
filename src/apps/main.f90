@@ -448,7 +448,7 @@ program kpfdm
         call init_strain_cache()
         call init_zeeman_cache()
 
-        !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, landau_result)
+        !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, landau_result, M)
         allocate(HT_loc(N, N))
         HT_loc = (0.0_dp, 0.0_dp)
         cfg_loc = landau_cfg
@@ -698,6 +698,7 @@ program kpfdm
       ecfg_bs%il = il
       ecfg_bs%iu = iuu
     end if
+    call eigensolver_config_validate(ecfg_bs)
     solver_bs = make_eigensolver(ecfg_bs)
 
     if (conf_direction(cfg%confinement) == 'n') then
@@ -743,8 +744,10 @@ program kpfdm
               cfg, ws=qw_ws)
             call solver_bs%solve_sparse(HT_csr_loc, ecfg_bs, result_bs)
             if (.not. result_bs%converged) error stop 'eigensolver failed in QW FEAST k-sweep'
-            eig(1:result_bs%nev_found, k) = result_bs%eigenvalues
-            eigv(:, 1:result_bs%nev_found, k) = result_bs%eigenvectors
+            ! Clamp to allocated array sizes (ENERGY mode may return more eigenvalues)
+            M = min(result_bs%nev_found, iuu-il+1)
+            eig(1:M, k) = result_bs%eigenvalues(1:M)
+            eigv(:, 1:M, k) = result_bs%eigenvectors(:, 1:M)
             call eigensolver_result_free(result_bs)
             call csr_free(HT_csr_loc)
           end do
@@ -771,7 +774,7 @@ program kpfdm
           call init_strain_cache()
           call init_zeeman_cache()
 
-          !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, result_bs)
+          !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, result_bs, M)
           allocate(HT_loc(N, N))
           HT_loc = (0.0_dp, 0.0_dp)
           cfg_loc = ecfg_bs
@@ -785,8 +788,10 @@ program kpfdm
             ! Diagonalize via unified solver
             call solver_loc%solve_dense(HT_loc, cfg_loc, result_bs)
             if (.not. result_bs%converged) error stop 'eigensolver failed in QW k-sweep'
-            eig(1:result_bs%nev_found, k) = result_bs%eigenvalues
-            eigv(:, 1:result_bs%nev_found, k) = result_bs%eigenvectors
+            ! Clamp to allocated array sizes (ENERGY mode may return more eigenvalues)
+            M = min(result_bs%nev_found, iuu-il+1)
+            eig(1:M, k) = result_bs%eigenvalues(1:M)
+            eigv(:, 1:M, k) = result_bs%eigenvectors(:, 1:M)
             call eigensolver_result_free(result_bs)
           end do
           !$omp end do

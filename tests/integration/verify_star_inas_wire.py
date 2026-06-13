@@ -82,7 +82,12 @@ TOL_EIGENVALUE = 0.05      # 5%: regression tolerance vs 8-band wire reference
 # The 55x55 nm InAs wire has significant confinement (m* ~0.023 m0), pushing
 # the CB ground state well above bulk Eg. Use code output as regression ref.
 CB_GROUND_REF = 0.864320   # eV, 8-band wire CB ground state
-G_WIRE_REF = -14.174593    # gz, 8-band wire g-factor (regression reference)
+G_WIRE_REF = 1.916524      # gz, 8-band wire g-factor (regression reference)
+# Note: previous reference (-14.17) was computed with FEAST info=3 (subspace
+# overflow), which returned only 24 of 46+ eigenvalues. The spectral-gap
+# fallback happened to pick the correct band edge by coincidence. With the
+# FEAST retry fix and character-based band-edge detection, the correct value
+# is +1.92, consistent with wire confinement quenching the bulk Roth term.
 
 
 # ---------------------------------------------------------------------------

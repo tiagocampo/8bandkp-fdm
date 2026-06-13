@@ -220,6 +220,10 @@ contains
     complex(kind=dp), allocatable :: val_loc(:)
     integer, allocatable :: rowptr_loc(:), colind_loc(:)
     logical :: fw_match
+    ! Retry loop for info=3 (subspace too small)
+    integer, parameter :: MAX_RETRY = 3
+    integer :: retry, M0_initial
+    logical :: cache_is_fresh
 
     N = H_csr%nrows
     if (N <= 0) then
@@ -242,85 +246,116 @@ contains
     if (M0 <= 0) M0 = 2 * config%nev
     M0 = max(M0, config%nev + 1)
     M0 = min(M0, N)  ! FEAST requires M0 <= N
+    M0_initial = M0
 
-    allocate(E(M0))
-    allocate(X(N, M0))
-    allocate(res(M0))
-    E = 0.0_dp
-    X = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    res = 0.0_dp
-
-    ! Extract upper triangle only (FEAST UPLO='U' requires col >= row).
-    fw_match = .false.
-    if (present(fw)) fw_match = feast_workspace_matches_pattern(H_csr, fw, N, M0)
-    if (fw_match) then
-      ! Fast path: reuse cached upper-triangle structure, just update values
-      allocate(val_loc(fw%nnz_upper))
-      do i = 1, N
-        k = fw%rowptr_loc(i)
-        do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
-          if (H_csr%colind(j) >= i) then
-            val_loc(k) = H_csr%values(j)
-            k = k + 1
-          end if
-        end do
-      end do
-      ! Use cached rowptr and colind directly
-      call zfeast_hcsrev('U', N, val_loc, fw%rowptr_loc, fw%colind_loc, &
-                         fpm, epsout, loop, config%emin, config%emax, M0, &
-                         E, X, M, res, info)
-      deallocate(val_loc)
-    else
-      ! Free stale cache before rebuilding
-      if (present(fw)) then
-        if (fw%initialized) call feast_workspace_free(fw)
+    ! ------------------------------------------------------------------
+    ! Retry loop: on info=3 (subspace too small), double M0 and retry.
+    ! Free cached workspace on retry since the pattern no longer matches.
+    ! ------------------------------------------------------------------
+    cache_is_fresh = .false.
+    do retry = 1, MAX_RETRY
+      if (retry > 1) then
+        ! Double M0, capped at N
+        M0 = min(2 * M0, N)
+        print *, '  FEAST info=3 retry ', retry, '/', MAX_RETRY, ': M0 increased to ', M0
+        ! Invalidate workspace cache (M0 changed)
+        if (present(fw)) then
+          if (fw%initialized) call feast_workspace_free(fw)
+        end if
+        cache_is_fresh = .false.
       end if
-      ! Original path: count, allocate, fill
-      allocate(rowptr_loc(N+1))
-      rowptr_loc = 0
-      do i = 1, N
-        do k = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
-          if (H_csr%colind(k) >= i) then
-            rowptr_loc(i+1) = rowptr_loc(i+1) + 1
-          end if
+
+      ! Reallocate arrays if M0 changed
+      if (allocated(E)) deallocate(E)
+      if (allocated(X)) deallocate(X)
+      if (allocated(res)) deallocate(res)
+      allocate(E(M0))
+      allocate(X(N, M0))
+      allocate(res(M0))
+      E = 0.0_dp
+      X = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      res = 0.0_dp
+
+      ! Extract upper triangle only (FEAST UPLO='U' requires col >= row).
+      fw_match = .false.
+      if (present(fw)) fw_match = feast_workspace_matches_pattern(H_csr, fw, N, M0)
+      if (fw_match) then
+        ! Fast path: reuse cached upper-triangle structure, just update values
+        allocate(val_loc(fw%nnz_upper))
+        do i = 1, N
+          k = fw%rowptr_loc(i)
+          do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+            if (H_csr%colind(j) >= i) then
+              val_loc(k) = H_csr%values(j)
+              k = k + 1
+            end if
+          end do
         end do
-      end do
-      rowptr_loc(1) = 1
-      do i = 1, N
-        rowptr_loc(i+1) = rowptr_loc(i) + rowptr_loc(i+1)
-      end do
-      nnz = rowptr_loc(N+1) - 1
-
-      allocate(val_loc(nnz), colind_loc(nnz))
-      do i = 1, N
-        k = rowptr_loc(i)
-        do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
-          if (H_csr%colind(j) >= i) then
-            val_loc(k) = H_csr%values(j)
-            colind_loc(k) = H_csr%colind(j)
-            k = k + 1
-          end if
-        end do
-      end do
-
-      call zfeast_hcsrev('U', N, val_loc, rowptr_loc, colind_loc, &
-                         fpm, epsout, loop, config%emin, config%emax, M0, &
-                         E, X, M, res, info)
-
-      ! Cache for future calls
-      if (present(fw)) then
-        call move_alloc(rowptr_loc, fw%rowptr_loc)
-        call move_alloc(colind_loc, fw%colind_loc)
-        fw%nnz_upper = nnz
-        fw%M0 = M0
-        fw%N = N
-        fw%initialized = .true.
+        ! Use cached rowptr and colind directly
+        call zfeast_hcsrev('U', N, val_loc, fw%rowptr_loc, fw%colind_loc, &
+                           fpm, epsout, loop, config%emin, config%emax, M0, &
+                           E, X, M, res, info)
+        deallocate(val_loc)
+        cache_is_fresh = .true.
       else
-        deallocate(rowptr_loc, colind_loc)
+        ! Free stale cache before rebuilding
+        if (present(fw)) then
+          if (fw%initialized .and. .not. cache_is_fresh) call feast_workspace_free(fw)
+        end if
+        ! Original path: count, allocate, fill
+        allocate(rowptr_loc(N+1))
+        rowptr_loc = 0
+        do i = 1, N
+          do k = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+            if (H_csr%colind(k) >= i) then
+              rowptr_loc(i+1) = rowptr_loc(i+1) + 1
+            end if
+          end do
+        end do
+        rowptr_loc(1) = 1
+        do i = 1, N
+          rowptr_loc(i+1) = rowptr_loc(i) + rowptr_loc(i+1)
+        end do
+        nnz = rowptr_loc(N+1) - 1
+
+        allocate(val_loc(nnz), colind_loc(nnz))
+        do i = 1, N
+          k = rowptr_loc(i)
+          do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+            if (H_csr%colind(j) >= i) then
+              val_loc(k) = H_csr%values(j)
+              colind_loc(k) = H_csr%colind(j)
+              k = k + 1
+            end if
+          end do
+        end do
+
+        call zfeast_hcsrev('U', N, val_loc, rowptr_loc, colind_loc, &
+                           fpm, epsout, loop, config%emin, config%emax, M0, &
+                           E, X, M, res, info)
+
+        ! Cache for future calls
+        if (present(fw)) then
+          call move_alloc(rowptr_loc, fw%rowptr_loc)
+          call move_alloc(colind_loc, fw%colind_loc)
+          fw%nnz_upper = nnz
+          fw%M0 = M0
+          fw%N = N
+          fw%initialized = .true.
+          cache_is_fresh = .true.
+        else
+          deallocate(rowptr_loc, colind_loc)
+        end if
+
+        deallocate(val_loc)
       end if
 
-      deallocate(val_loc)
-    end if
+      ! Check convergence: exit loop unless info=3 (subspace too small)
+      if (info /= 3) exit
+
+      ! If M0 already equals N, no point retrying
+      if (M0 >= N) exit
+    end do
 
     result%iterations = loop
     result%converged = (info == 0) .or. (info == 2)
@@ -330,8 +365,13 @@ contains
     else if (info == 2) then
       print *, 'FEAST warning: max iterations reached, results may be inaccurate.'
     else if (info == 3) then
-      print *, '  WARNING: FEAST subspace too small (info=3). Missing eigenvalues.'
-      print *, '  Increase m0 or narrow the energy window.'
+      if (M0_initial /= M0) then
+        print *, '  WARNING: FEAST subspace still too small after retries.'
+        print *, '  M0 grew from ', M0_initial, ' to ', M0, '. Increase m0 or narrow energy window.'
+      else
+        print *, '  WARNING: FEAST subspace too small (info=3). Missing eigenvalues.'
+        print *, '  Increase m0 or narrow the energy window.'
+      end if
     end if
 
     if (M > 0 .and. M <= M0 .and. info >= 0) then
