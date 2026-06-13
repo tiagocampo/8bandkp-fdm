@@ -232,6 +232,18 @@ mode = "INDEX"
 EOF
 run_test "V13_feast_index_mode" "FEAST.*INDEX"
 
+# V14: legacy [feast] section must be rejected with a migration message
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[[material]]
+name = "GaAs"
+[feast]
+emin = -1.5
+emax = 2.0
+EOF
+run_test "V14_legacy_feast_section" "feast.*removed"
+
 echo ""
 echo "========================================"
 echo " Validation rejection: $PASS passed, $FAIL failed"

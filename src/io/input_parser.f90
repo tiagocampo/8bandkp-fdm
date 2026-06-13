@@ -115,6 +115,14 @@ contains
     call parse_exciton(table, cfg)
     call parse_scattering(table, cfg)
     call parse_solver(table, cfg)
+
+    ! ---- Reject legacy [feast] section (removed; renamed to [solver]) ----
+    call get_value(table, 'feast', child, requested=.false., stat=stat)
+    if (stat == 0 .and. associated(child)) then
+      error stop '[feast] section removed — rename to [solver] ' // &
+        '(fields: method/mode/emin/emax/m0). See docs/reference/input-reference.md'
+    end if
+
     call parse_strain(table, cfg)
     call parse_gfactor(table, cfg)
 
