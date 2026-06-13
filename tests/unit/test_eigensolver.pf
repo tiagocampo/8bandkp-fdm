@@ -6,6 +6,7 @@ module test_eigensolver
   use definitions
   use sparse_matrices
   use eigensolver
+  use csr_test_helpers, only: eigensolve_csr
   implicit none
 
 contains
@@ -750,5 +751,39 @@ contains
     call eigensolver_result_free(res)
     call csr_free(H)
   end subroutine test_dense_polymorphic_dispatch
+
+  ! ==================================================================
+  ! Test: eigensolve_csr helper dispatches through the polymorphic
+  ! solver and returns correct eigenvalues (INDEX path, emin=emax=0).
+  ! ==================================================================
+  @test
+  subroutine test_eigensolve_csr_helper()
+    integer, parameter :: n = 20
+    real(kind=dp), parameter :: pi = pi_dp
+    type(csr_matrix) :: Hmat
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: res
+    real(kind=dp) :: expected
+    integer :: k
+
+    call build_tridiag_csr(2.0_dp, -1.0_dp, n, Hmat)
+
+    cfg%method = 'DENSE'
+    cfg%emin = 0.0_dp
+    cfg%emax = 0.0_dp
+    cfg%nev = 3
+
+    call eigensolve_csr(Hmat, cfg, res)
+
+    @assertTrue(res%converged)
+    @assertEqual(3, res%nev_found)
+    do k = 1, 3
+      expected = 2.0_dp * (1.0_dp - cos(real(k, kind=dp) * pi / real(n+1, kind=dp)))
+      @assertEqual(expected, res%eigenvalues(k), tolerance=1.0e-6_dp)
+    end do
+
+    call eigensolver_result_free(res)
+    call csr_free(Hmat)
+  end subroutine test_eigensolve_csr_helper
 
 end module test_eigensolver
