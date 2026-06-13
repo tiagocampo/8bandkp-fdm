@@ -616,6 +616,9 @@ contains
 
   ! ------------------------------------------------------------------
   ! Dense LAPACK solver: solve_sparse converts CSR -> dense.
+  ! Convenience path for CSR inputs; not a hot path (no current caller
+  ! routes a large dense matrix through CSR). All large dense solves go
+  ! via solve_dense directly; all large CSR solves use FEAST.
   ! ------------------------------------------------------------------
   subroutine dense_solve_sparse_dispatch(self, H_csr, config, result)
     class(dense_lapack_solver_t), intent(inout) :: self
