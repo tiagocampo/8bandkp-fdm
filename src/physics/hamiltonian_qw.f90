@@ -48,6 +48,9 @@ module hamiltonian_qw
     type(csr_matrix) :: blk_R, blk_RC, blk_PZ, blk_PP, blk_PM, blk_A
     type(csr_matrix) :: blk_diff, blk_temp
 
+    ! COO→CSR sort cache (populated on slow path, reused on fast path)
+    type(wire_coo_cache) :: coo_cache
+
     ! Pre-allocated COO buffers
     integer, allocatable          :: coo_rows(:), coo_cols(:)
     complex(kind=dp), allocatable :: coo_vals(:)
@@ -89,6 +92,7 @@ contains
     if (allocated(ws%coo_cols)) deallocate(ws%coo_cols)
     if (allocated(ws%coo_vals)) deallocate(ws%coo_vals)
     if (allocated(ws%coo_to_csr)) deallocate(ws%coo_to_csr)
+    call wire_coo_cache_free(ws%coo_cache)
     ws%coo_nnz_in = 0
     ws%coo_cache_valid = .false.
     ws%coo_capacity = 0
@@ -160,6 +164,61 @@ contains
     end if
     deallocate(rows, cols, vals)
   end subroutine dense_to_csr_block
+
+  ! ==================================================================
+  ! Fast-path value update for one cached kp-term CSR block.
+  ! Walks blk%rowptr/colind (structure fixed) and recomputes each value
+  ! from kpterms(i,j,·) and the current kx,ky. Formulas mirror the
+  ! dense build (ZB8bandQW_csr slow path) exactly — verified by the
+  ! verify_qw_sparse_solver.py fast-vs-slow equivalence test.
+  ! ==================================================================
+  subroutine update_kp_term_values(blk, kpterms, kx, ky, term_id)
+    type(csr_matrix), intent(inout) :: blk
+    real(kind=dp), intent(in)       :: kpterms(:,:,:)
+    real(kind=dp), intent(in)       :: kx, ky
+    integer, intent(in)             :: term_id
+
+    integer :: i, j, p, n
+    real(kind=dp) :: kx2, ky2, k2, kxky
+    complex(kind=dp) :: kplus, kminus, val
+
+    n = blk%nrows
+    kx2 = kx**2; ky2 = ky**2; k2 = kx2 + ky2; kxky = kx*ky
+    kplus  = cmplx(kx,  ky, kind=dp)
+    kminus = cmplx(kx, -ky, kind=dp)
+
+    do i = 1, n
+      do p = blk%rowptr(i), blk%rowptr(i+1) - 1
+        j = blk%colind(p)
+        select case (term_id)
+        case (KP_Q)
+          val = -((kpterms(i,j,1) + kpterms(i,j,2))*k2 + kpterms(i,j,7))
+        case (KP_T)
+          val = -((kpterms(i,j,1) - kpterms(i,j,2))*k2 + kpterms(i,j,8))
+        case (KP_S)
+          val = 2.0_dp*SQR3*kminus*kpterms(i,j,9)
+        case (KP_SC)
+          ! SC is the conjugate transpose of S: stored at (j,i) of S's formula
+          val = 2.0_dp*SQR3*kplus*kpterms(j,i,9)
+        case (KP_R)
+          val = -SQR3*(kpterms(i,j,2)*(kx2 - ky2) - 2.0_dp*IU*kpterms(i,j,3)*kxky)
+        case (KP_RC)
+          val = -SQR3*(kpterms(i,j,2)*(kx2 - ky2) + 2.0_dp*IU*kpterms(i,j,3)*kxky)
+        case (KP_PZ)
+          val = kpterms(i,j,6)*(-IU)
+        case (KP_PP)
+          val = kpterms(i,j,4)*kplus*RQS2
+        case (KP_PM)
+          val = kpterms(i,j,4)*kminus*RQS2
+        case (KP_A)
+          val = cmplx(kpterms(i,j,5) + k2*kpterms(i,j,10), 0.0_dp, kind=dp)
+        case default
+          error stop 'update_kp_term_values: unknown term_id'
+        end select
+        blk%values(p) = val
+      end do
+    end do
+  end subroutine update_kp_term_values
 
   ! ==================================================================
   ! Main entry point: build QW Hamiltonian in CSR format.
@@ -304,9 +363,33 @@ contains
 
     ! ================================================================
     ! Build final CSR from COO
+    ! Route through the workspace's COO→CSR sort cache when ws is present
+    ! so the sort map is recorded on the first (slow) call and reused on
+    ! subsequent calls. The values-only path (csr_set_values_from_coo) is
+    ! only safe when HT_csr already holds the matching structure; callers
+    ! that free HT_csr between calls (HT_csr%nnz == 0) must rebuild from
+    ! scratch. This mirrors the wire path's HT_csr%nnz > 0 guard.
     ! ================================================================
-    call finalize_coo_to_csr(HT_csr, Ntot, coo_rows, coo_cols, coo_vals, &
-      coo_idx, coo_cache=coo_cache)
+    if (present(ws)) then
+      if (ws%coo_cache%initialized .and. HT_csr%nnz > 0) then
+        call finalize_coo_to_csr(HT_csr, Ntot, coo_rows, coo_cols, coo_vals, &
+          coo_idx, coo_cache=ws%coo_cache)
+      else if (.not. ws%coo_cache%initialized) then
+        call finalize_coo_to_csr(HT_csr, Ntot, coo_rows, coo_cols, coo_vals, &
+          coo_idx, coo_cache=ws%coo_cache)
+      else
+        ! Cache initialized but HT_csr was freed between calls: rebuild
+        ! from scratch (the cached map stays valid for future reuse).
+        call finalize_coo_to_csr(HT_csr, Ntot, coo_rows, coo_cols, coo_vals, &
+          coo_idx)
+      end if
+    else if (present(coo_cache)) then
+      call finalize_coo_to_csr(HT_csr, Ntot, coo_rows, coo_cols, coo_vals, &
+        coo_idx, coo_cache=coo_cache)
+    else
+      call finalize_coo_to_csr(HT_csr, Ntot, coo_rows, coo_cols, coo_vals, &
+        coo_idx)
+    end if
 
     ! ================================================================
     ! Workspace initialization
