@@ -18,7 +18,7 @@ module sc_loop
   use charge_density
   use poisson
   use eigensolver, only: eigensolver_config, eigensolver_result, &
-    & eigensolver_base, make_eigensolver, solve_sparse_evp, eigensolver_result_free, &
+    & eigensolver_base, make_eigensolver, eigensolver_result_free, &
     & EIGEN_MODE_INDEX
   use sparse_matrices, only: csr_matrix, csr_clone_structure, csr_free
   use linalg, only: dgesv

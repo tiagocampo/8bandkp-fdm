@@ -11,7 +11,7 @@ module eigensolver
   private
   public :: eigensolver_config, eigensolver_result
   public :: feast_workspace, feast_workspace_free
-  public :: solve_sparse_evp, solve_feast, solve_dense_lapack
+  public :: solve_feast
   public :: auto_compute_energy_window, eigensolver_result_free
   public :: eigensolver_base, dense_lapack_solver_t
 #ifdef USE_MKL_FEAST
@@ -166,34 +166,6 @@ contains
 
     feast_workspace_matches_pattern = .true.
   end function feast_workspace_matches_pattern
-
-  ! ==================================================================
-  ! Main dispatch: select FEAST or DENSE based on config.
-  ! ==================================================================
-  subroutine solve_sparse_evp(H_csr, config, result, feast_ws)
-    type(csr_matrix), intent(in)          :: H_csr
-    type(eigensolver_config), intent(in)  :: config
-    type(eigensolver_result), intent(out) :: result
-    type(feast_workspace), intent(inout), optional :: feast_ws
-
-    select case (trim(config%method))
-#ifdef USE_MKL_FEAST
-    case ('FEAST')
-      call solve_feast(H_csr, config, result, fw=feast_ws)
-    case ('DENSE')
-      call solve_dense_lapack(H_csr, config, result)
-#else
-    case ('FEAST', 'DENSE')
-      ! FEAST unavailable: fall back to dense LAPACK
-      print *, 'Using dense LAPACK eigensolver.'
-      call solve_dense_lapack(H_csr, config, result)
-#endif
-    case default
-      print *, 'Error: unknown eigensolver method "', trim(config%method), '"'
-      result%converged = .false.
-      result%nev_found = 0
-    end select
-  end subroutine solve_sparse_evp
 
 #ifdef USE_MKL_FEAST
   ! ==================================================================
@@ -390,103 +362,6 @@ contains
     deallocate(E, X, res)
   end subroutine solve_feast
 #endif /* USE_MKL_FEAST */
-
-  ! ==================================================================
-  ! Dense fallback using LAPACK zheevx.
-  !
-  ! Converts CSR to dense, then calls zheevx for the N-smallest
-  ! eigenvalues.
-  ! ==================================================================
-  subroutine solve_dense_lapack(H_csr, config, result)
-    type(csr_matrix), intent(in)          :: H_csr
-    type(eigensolver_config), intent(in)  :: config
-    type(eigensolver_result), intent(out) :: result
-
-    integer :: N, lda, ldz, lwork, info, nev_want, nb
-    complex(kind=dp), allocatable :: A(:,:), Z(:,:), work(:)
-    real(kind=dp), allocatable :: rwork(:), W(:)
-    integer, allocatable :: iwork(:), ifail(:)
-    real(kind=dp) :: vl, vu, abstol
-
-    N = H_csr%nrows
-    if (N <= 0) then
-      result%converged = .false.
-      result%nev_found = 0
-      return
-    end if
-
-    nev_want = min(config%nev, N)
-    lda = N
-    ldz = N
-    abstol = 0.0_dp
-
-    ! Convert CSR to dense
-    allocate(A(N, N))
-    A = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    call csr_to_dense_work(H_csr, A, N)
-
-    ! Allocate output arrays — Z must hold all eigenvalues in range mode
-    allocate(W(N))
-    allocate(Z(N, N))
-    allocate(rwork(7 * N))
-    allocate(iwork(5 * N))
-    allocate(ifail(N))
-
-    ! Use range mode 'V' when emin/emax are set (non-zero), otherwise index mode 'I'
-    if (config%emin /= 0.0_dp .and. config%emax /= 0.0_dp) then
-      ! Range mode: return eigenvalues in [emin, emax]
-      vl = config%emin
-      vu = config%emax
-      ! Workspace query
-      allocate(work(1))
-      call zheevx('V', 'V', 'U', N, A, lda, vl, vu, &
-                  1, N, abstol, nb, W, Z, ldz, &
-                  work, -1, rwork, iwork, ifail, info)
-      lwork = max(1, nint(real(work(1))))
-      deallocate(work)
-      allocate(work(lwork))
-
-      ! Solve
-      call zheevx('V', 'V', 'U', N, A, lda, vl, vu, &
-                  1, N, abstol, nb, W, Z, ldz, &
-                  work, lwork, rwork, iwork, ifail, info)
-      ! Return all eigenvalues in the energy window (no trimming)
-      ! Range mode already selects the desired eigenvalue range.
-    else
-      ! Index mode: return nev_want smallest eigenvalues
-      ! Workspace query
-      allocate(work(1))
-      call zheevx('V', 'I', 'U', N, A, lda, vl, vu, &
-                  1, nev_want, abstol, nb, W, Z, ldz, &
-                  work, -1, rwork, iwork, ifail, info)
-      lwork = max(1, nint(real(work(1))))
-      deallocate(work)
-      allocate(work(lwork))
-
-      ! Solve
-      call zheevx('V', 'I', 'U', N, A, lda, vl, vu, &
-                  1, nev_want, abstol, nb, W, Z, ldz, &
-                  work, lwork, rwork, iwork, ifail, info)
-    end if
-
-    if (info == 0 .and. nb > 0) then
-      result%converged = .true.
-      result%nev_found = nb
-      result%iterations = 1
-      allocate(result%eigenvalues(nb))
-      allocate(result%eigenvectors(N, nb))
-      result%eigenvalues(1:nb) = W(1:nb)
-      result%eigenvectors(:, 1:nb) = Z(:, 1:nb)
-    else
-      result%converged = .false.
-      result%nev_found = 0
-      if (info /= 0) then
-        print *, 'Dense eigensolver error: info =', info
-      end if
-    end if
-
-    deallocate(A, W, Z, work, rwork, iwork, ifail)
-  end subroutine solve_dense_lapack
 
   ! ==================================================================
   ! Gershgorin energy window estimation.
