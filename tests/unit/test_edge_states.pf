@@ -5,6 +5,7 @@ module test_edge_states
   use sparse_matrices
   use linalg
   use eigensolver
+  use csr_test_helpers, only: eigensolve_csr
   implicit none
 
 contains
@@ -33,7 +34,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     @assertTrue(result%converged)
     @assertTrue(allocated(result%eigenvalues))
@@ -69,7 +70,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     @assertTrue(result%converged)
     @assertTrue(allocated(result%eigenvalues))
@@ -186,7 +187,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     edge_info = extract_edge_states_wire(result%eigenvalues, result%eigenvectors, &
                                         grid, 5.0_dp)
@@ -227,7 +228,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     grid%ndim = 1
     grid%ny = params%N
@@ -277,7 +278,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     grid%ndim = 1
     grid%ny = params%N
@@ -326,7 +327,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     grid%ndim = 1
     grid%ny = params%N

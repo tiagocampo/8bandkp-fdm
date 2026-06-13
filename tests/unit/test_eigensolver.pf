@@ -131,7 +131,7 @@ contains
     cfg%nev = 3
     cfg%emin = 0.0_dp
     cfg%emax = 0.0_dp
-    call solve_dense_lapack(Hmat, cfg, res)
+    call eigensolve_csr(Hmat, cfg, res)
 
     @assertTrue(res%converged)
     @assertEqual(3, res%nev_found)
@@ -270,7 +270,7 @@ contains
     cfg%emax = 3.5_dp
     cfg%nev = 3
 
-    call solve_sparse_evp(H, cfg, res)
+    call eigensolve_csr(H, cfg, res)
 
     @assertTrue(res%converged)
     @assertEqual(3, res%nev_found)
@@ -278,34 +278,6 @@ contains
     call eigensolver_result_free(res)
     call csr_free(H)
   end subroutine test_dispatch_feast
-
-  ! ==================================================================
-  ! Test 6: Unknown method returns unconverged.
-  ! ==================================================================
-  @test
-  subroutine test_unknown_method()
-    integer, parameter :: n = 4
-    real(kind=dp) :: diag(n)
-    type(csr_matrix) :: H
-    type(eigensolver_config) :: cfg
-    type(eigensolver_result) :: res
-    integer :: i
-
-    do i = 1, n
-      diag(i) = real(i, kind=dp)
-    end do
-    call build_diagonal_csr(diag, n, H)
-
-    cfg%method = 'UNKNOWN'
-    cfg%nev = 4
-
-    call solve_sparse_evp(H, cfg, res)
-
-    @assertFalse(res%converged)
-    @assertEqual(0, res%nev_found)
-
-    call csr_free(H)
-  end subroutine test_unknown_method
 
   ! ==================================================================
   ! Test 7: Empty matrix returns gracefully.

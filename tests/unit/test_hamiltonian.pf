@@ -10,7 +10,8 @@ module test_hamiltonian
   use magnetic_field, only: compute_zeeman_vz
   use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar
   use eigensolver, only: eigensolver_result, eigensolver_result_free, eigensolver_config, &
-    EIGEN_MODE_FULL, solve_dense_lapack
+    EIGEN_MODE_FULL
+  use csr_test_helpers, only: eigensolve_csr
   implicit none
 
 contains
