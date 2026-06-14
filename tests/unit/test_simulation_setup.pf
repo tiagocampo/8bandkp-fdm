@@ -82,7 +82,7 @@ contains
     kv%ky = 0.0_dp
     kv%kz = 0.0_dp
 
-    call setup_solve_kpoint_serial(setup, cfg, kv, evals, evecs)
+    call setup_solve_gamma_point(setup, cfg, kv, evals, evecs)
 
     ! GaAs bandgap ~1.519 eV (Vurgaftman 2001)
     ! CB minimum = evals(7) (7th eigenvalue sorted ascending)
@@ -447,7 +447,7 @@ contains
 
 
   ! Vertical slice 10: Full bulk pipeline integration — GaAs bandgap at Gamma
-  ! Exercises: simulation_setup_init → setup_build_H → setup_solve_kpoint_serial
+  ! Exercises: simulation_setup_init → setup_build_H → setup_solve_gamma_point
   ! Validates that the CB-VB gap matches Vurgaftman 2001 Eg(GaAs) = 1.519 eV.
   @test
   subroutine test_gaas_bulk_pipeline()
@@ -474,10 +474,10 @@ contains
     ! CB diagonal should be nonzero at k=0
     @assertTrue(abs(real(setup%HT(7,7))) > 0.1_dp)
 
-    ! Step 3: Solve at k=0 via setup_solve_kpoint_serial
+    ! Step 3: Solve at k=0 via setup_solve_gamma_point
     allocate(evals(8))
     allocate(evecs(8, 8))
-    call setup_solve_kpoint_serial(setup, cfg, kv, evals, evecs)
+    call setup_solve_gamma_point(setup, cfg, kv, evals, evecs)
 
     ! Step 4: Verify GaAs bandgap at Gamma (Vurgaftman 2001: Eg = 1.519 eV)
     ! Eigenvalues are sorted ascending: bands 1-6 = VB, 7-8 = CB

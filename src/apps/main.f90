@@ -1,7 +1,7 @@
 program kpfdm
 
   use definitions, only: NUM_CB_STATES, NUM_VB_STATES, conf_direction, &
-    dp, simulation_config, validate_semantic, wavevector, resolve_solver_defaults
+    dp, simulation_config, validate_semantic, wavevector
   use parameters
   use hamiltonianConstructor
   use hamiltonian_blocks, only: init_kp_block_cache
@@ -666,50 +666,45 @@ program kpfdm
     type(eigensolver_result) :: result_bs
     type(eigensolver_config) :: ecfg_bs
     class(eigensolver_base), allocatable :: solver_bs
-    character(len=10) :: res_method, res_mode   ! resolved by resolve_solver_defaults
+    integer :: N_bs, il_bs, iu_bs, nev_bs
 
-    ! Build solver config via the single source of truth: bulk resolves
-    ! DENSE+FULL, QW resolves DENSE+INDEX (exact same (method,mode) as
-    ! before, now centralized in resolve_solver_defaults). The
-    ! confinement-specific nev/il/iu bookkeeping stays per-branch.
-    call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
-                                 res_method, res_mode)
-    ecfg_bs%method = res_method
-    ecfg_bs%mode   = eigen_mode_from_string(res_mode)
-    ! Propagate the user's [solver] window/subspace so FEAST honors it instead
-    ! of falling back to the eigensolver_config type default [-1,+1] eV.
-    ecfg_bs%emin = cfg%solver%emin
-    ecfg_bs%emax = cfg%solver%emax
-    ecfg_bs%m0   = cfg%solver%m0
+    ! Build the k-sweep solver via the single derivation seam (issue #02):
+    ! method/mode from the method-aware AUTO resolver, then nev/il/iu,
+    ! window/subspace propagation, validation, and construction — all in
+    ! one place shared with the four confinement init blocks. The
+    ! geometry-specific N/il/iu/nev bookkeeping stays per-branch here.
     if (conf_direction(cfg%confinement) == 'n') then
       ! Bulk: 8x8, all eigenvalues
-      ecfg_bs%nev = 8
-      ecfg_bs%il = 1
-      ecfg_bs%iu = 8
+      N_bs = 8; il_bs = 1; iu_bs = 8; nev_bs = 8
     else
       ! QW: selected eigenvalue range
-      ecfg_bs%nev = iuu - il + 1
-      ecfg_bs%il = il
-      ecfg_bs%iu = iuu
-      ! QW + FEAST needs a valid energy window. Honor [solver] emin/emax; if
-      ! unset (auto sentinel emin >= emax), estimate from the max-k Hamiltonian
-      ! so the window covers the whole sweep (DENSE ignores emin/emax).
-      if (trim(ecfg_bs%method) == 'FEAST' .and. ecfg_bs%emin >= ecfg_bs%emax) then
-        block
-          type(csr_matrix) :: HT_csr_k0
-          type(qw_workspace) :: qw_ws_k0
-          call ZB8bandQW_csr(HT_csr_k0, smallk(cfg%wave_vector%nsteps), &
-            profile, kpterms, cfg, ws=qw_ws_k0)
-          call auto_compute_energy_window(HT_csr_k0, ecfg_bs%emin, ecfg_bs%emax)
-          call csr_free(HT_csr_k0)
-          call qw_workspace_free(qw_ws_k0)
-          print '(A,ES12.4,A,ES12.4,A)', ' QW k-sweep auto FEAST window: [', &
-            ecfg_bs%emin, ',', ecfg_bs%emax, ']'
-        end block
-      end if
+      N_bs = N; il_bs = il; iu_bs = iuu; nev_bs = iuu - il + 1
     end if
-    call eigensolver_config_validate(ecfg_bs)
-    solver_bs = make_eigensolver(ecfg_bs)
+    call derive_eigensolver(cfg, N=N_bs, il=il_bs, iu=iu_bs, nev=nev_bs, &
+                            eigen_cfg=ecfg_bs, solver=solver_bs)
+
+    ! QW + FEAST needs a valid energy window covering the whole sweep.
+    ! This is geometry-specific Hamiltonian construction (needs a CSR
+    ! build at the max-k point), so it stays local rather than in the
+    ! derivation. DENSE ignores emin/emax. Only re-estimate when the user
+    ! left the window at the parser's auto sentinel (emin >= emax).
+    if (conf_direction(cfg%confinement) /= 'n' .and. &
+        trim(ecfg_bs%method) == 'FEAST' .and. ecfg_bs%emin >= ecfg_bs%emax) then
+      block
+        type(csr_matrix) :: HT_csr_k0
+        type(qw_workspace) :: qw_ws_k0
+        call ZB8bandQW_csr(HT_csr_k0, smallk(cfg%wave_vector%nsteps), &
+          profile, kpterms, cfg, ws=qw_ws_k0)
+        call auto_compute_energy_window(HT_csr_k0, ecfg_bs%emin, ecfg_bs%emax)
+        call csr_free(HT_csr_k0)
+        call qw_workspace_free(qw_ws_k0)
+        print '(A,ES12.4,A,ES12.4,A)', ' QW k-sweep auto FEAST window: [', &
+          ecfg_bs%emin, ',', ecfg_bs%emax, ']'
+      end block
+      ! Re-validate + reconstruct after window update.
+      call eigensolver_config_validate(ecfg_bs)
+      solver_bs = make_eigensolver(ecfg_bs)
+    end if
 
     if (conf_direction(cfg%confinement) == 'n') then
       ! --- BULK (8x8, trivially fast — no parallelization needed) ---

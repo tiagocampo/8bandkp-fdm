@@ -846,7 +846,7 @@ module definitions
         error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
       end if
       ! gfactor needs the FULL spectrum for Lowdin partitioning. For QW,
-      ! setup_solve_kpoint_serial forces FULL mode, which would route an
+      ! setup_solve_gamma_point forces FULL mode, which would route an
       ! explicit QW+FEAST through solve_sparse and silently truncate the
       ! spectrum (FEAST is a partial-spectrum contour solver). Reject that
       ! one combo up front. Bulk resolves DENSE; wire uses FEAST through its

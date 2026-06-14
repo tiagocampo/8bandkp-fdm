@@ -301,7 +301,7 @@ program gfactor
       HT = 0.0_dp
       eig = 0.0_dp
 
-      call setup_solve_kpoint_serial(setup, cfg, smallk(1), eig(:,1), HT)
+      call setup_solve_gamma_point(setup, cfg, smallk(1), eig(:,1), HT)
 
       ! Write eigenfunctions for multi-layer QW
       if (cfg%num_layers > 1) call writeEigenfunctions(N, N, HT, 1, cfg%grid%npoints(), cfg%z, cfg%num_layers==1)

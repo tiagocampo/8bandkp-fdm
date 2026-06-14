@@ -24,10 +24,11 @@ module simulation_setup_mod
   private
   public :: simulation_setup
   public :: simulation_setup_init, simulation_setup_free
-  public :: setup_build_H, setup_solve_kpoint_serial
+  public :: setup_build_H, setup_solve_gamma_point
   public :: setup_build_velocity_matrices
   public :: thread_workspace
   public :: eigen_mode_from_string
+  public :: derive_eigensolver
 
   type :: simulation_setup
     character(len=8) :: confinement = 'none'
@@ -94,6 +95,83 @@ contains
     end select
   end function eigen_mode_from_string
 
+  ! ------------------------------------------------------------------
+  ! derive_eigensolver: the SINGLE entry point that turns a parsed
+  ! [solver] config + a geometry-shaped band window into a built,
+  ! validated eigensolver_config and the constructed solver object.
+  !
+  ! This is the derivation seam for issue #02 (architecture-deepening).
+  ! It owns the config ASSEMBLY: calling the method-aware AUTO resolver
+  ! (resolve_solver_defaults, defs.f90, ADR 0004) for method/mode, mapping
+  ! the mode string to its integer constant, nev/il/iu bookkeeping, the
+  ! [solver] window/subspace propagation, validation, and construction.
+  !
+  ! Two layers, not two functions racing to own AUTO:
+  !   - resolve_solver_defaults (defs.f90) owns the (method,mode) contract
+  !     and the no-invalid-combo invariant. This routine CALLS it; it does
+  !     not reimplement or move it.
+  !   - derive_eigensolver owns everything else (nev/il/iu, emin/emax/m0
+  !     propagation, validate, construct).
+  !
+  ! All four confinement dispatch blocks (bulk/QW/wire/Landau) and the
+  ! band-structure sweep cross this seam, so they cannot drift apart.
+  !
+  ! Bit-identical to the prior per-block assembly on every shipped
+  ! configuration: DENSE backends ignore emin/emax/m0, so propagating
+  ! them uniformly is harmless; the conditional emin/emax propagation
+  ! preserves the eigensolver_config type default [-1,+1] eV when the
+  ! user left the window at the parser's [0,0] auto-sentinel. Geometry-
+  ! specific Hamiltonian construction (e.g. the wire's preliminary CSR
+  ! build to estimate the FEAST energy window) stays in each dispatch
+  ! block — it is not config derivation.
+  !
+  ! Inputs:
+  !   cfg       — parsed simulation_config (only confinement + solver
+  !               sub-config are read).
+  !   N, il, iu — geometry-shaped matrix dimension and requested band
+  !               window (computed by each caller from cfg%grid / cfg%bands).
+  !   nev       — number of eigenvalues to compute in the window.
+  ! Outputs:
+  !   eigen_cfg — built, validated eigensolver_config.
+  !   solver    — constructed polymorphic solver (backend fixed).
+  ! ------------------------------------------------------------------
+  subroutine derive_eigensolver(cfg, N, il, iu, nev, eigen_cfg, solver)
+    type(simulation_config), intent(in) :: cfg
+    integer, intent(in) :: N, il, iu, nev
+    type(eigensolver_config), intent(out) :: eigen_cfg
+    class(eigensolver_base), allocatable, intent(out) :: solver
+
+    character(len=10) :: res_method, res_mode
+
+    ! --- Method/mode via the method-aware AUTO resolver (ADR 0004) ---
+    call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                 res_method, res_mode)
+    eigen_cfg%method = res_method
+    eigen_cfg%mode   = eigen_mode_from_string(res_mode)
+
+    ! --- Geometry-shaped band window (caller-computed) ---
+    ! N is the total matrix dimension (defensive clamp on nev; a no-op for
+    ! every current caller, which already passes nev <= N).
+    eigen_cfg%nev = min(nev, N)
+    eigen_cfg%il  = il
+    eigen_cfg%iu  = iu
+
+    ! --- [solver] window/subspace propagation ---
+    ! m0 is FEAST-only (DENSE ignores it); propagate unconditionally.
+    eigen_cfg%m0 = cfg%solver%m0
+    ! emin/emax: propagate only when the user set a window, so the
+    ! eigensolver_config type default [-1,+1] eV is kept when the parser
+    ! left the window at its [0,0] auto-sentinel.
+    if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+      eigen_cfg%emin = cfg%solver%emin
+      eigen_cfg%emax = cfg%solver%emax
+    end if
+
+    ! --- Validate + construct ---
+    call eigensolver_config_validate(eigen_cfg)
+    solver = make_eigensolver(eigen_cfg)
+  end subroutine derive_eigensolver
+
   subroutine simulation_setup_init(cfg, setup, strain_out, sc_phi_out, sc_ne_out, sc_nh_out, skip_sc)
     type(simulation_config), intent(inout) :: cfg
     type(simulation_setup), intent(inout) :: setup
@@ -104,7 +182,6 @@ contains
     integer :: Ngrid_local, Ntot_local, nev
     real(kind=dp), allocatable :: eig_tmp(:,:)
     logical :: do_skip_sc
-    character(len=10) :: res_method, res_mode   ! resolved by resolve_solver_defaults
 
     do_skip_sc = .false.
     if (present(skip_sc)) do_skip_sc = skip_sc
@@ -122,16 +199,9 @@ contains
       setup%il = 1
       setup%iuu = 8
       setup%lwork = 0
-      ! --- Allocate solver for bulk (DENSE native; AUTO mode -> FULL) ---
-      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
-                                   res_method, res_mode)
-      setup%eigen_cfg%method = res_method
-      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
-      setup%eigen_cfg%nev = 8
-      setup%eigen_cfg%il = 1
-      setup%eigen_cfg%iu = 8
-      call eigensolver_config_validate(setup%eigen_cfg)
-      setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
+      ! --- Build solver via the single derivation seam (issue #02). ---
+      call derive_eigensolver(cfg, N=8, il=1, iu=8, nev=8, &
+                              eigen_cfg=setup%eigen_cfg, solver=setup%eigen_solver)
 
     case('qw')
       setup%N = cfg%grid%npoints() * 8
@@ -191,32 +261,20 @@ contains
         allocate(setup%HT(setup%N, setup%N))
       end if
       setup%HT = 0.0_dp
-      ! --- Allocate solver for QW (DENSE native; AUTO mode -> INDEX) ---
-      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
-                                   res_method, res_mode)
-      setup%eigen_cfg%method = res_method
-      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
-      setup%eigen_cfg%nev = min(setup%iuu - setup%il + 1, setup%N)
-      setup%eigen_cfg%il = setup%il
-      setup%eigen_cfg%iu = setup%iuu
-      ! Propagate the user's [solver] energy window / subspace size so ENERGY
-      ! and FEAST dispatches honor it (e.g. Landau+ENERGY). When unset (both
-      ! emin/emax == 0, the parser auto-sentinel) the type defaults are kept.
-      if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
-        setup%eigen_cfg%emin = cfg%solver%emin
-        setup%eigen_cfg%emax = cfg%solver%emax
-      end if
-      setup%eigen_cfg%m0 = cfg%solver%m0
-      call eigensolver_config_validate(setup%eigen_cfg)
-      setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
+      ! --- Build solver via the single derivation seam (issue #02). ---
+      ! QW: nev is the window count (clamped to N); il/iu the band window.
+      call derive_eigensolver(cfg, N=setup%N, il=setup%il, iu=setup%iuu, &
+                              nev=min(setup%iuu - setup%il + 1, setup%N), &
+                              eigen_cfg=setup%eigen_cfg, solver=setup%eigen_solver)
 
       ! --- QW sparse path: if FEAST requested, set up CSR builder ---
       if (trim(setup%eigen_cfg%method) == 'FEAST') then
         setup%qw_sparse = .true.
-        setup%eigen_cfg%m0 = cfg%solver%m0
         allocate(setup%qw_ws_ptr)
         allocate(setup%HT_csr_ptr)
-        ! Build preliminary CSR Hamiltonian at k=0 to estimate FEAST window
+        ! Build preliminary CSR Hamiltonian at k=0 to estimate FEAST window.
+        ! This is geometry-specific Hamiltonian construction (not config
+        ! derivation), so it stays here rather than in derive_eigensolver.
         block
           type(csr_matrix) :: HT_csr_tmp
           call ZB8bandQW_csr(HT_csr_tmp, wavevector(0.0_dp, 0.0_dp, 0.0_dp), &
@@ -267,19 +325,16 @@ contains
       nev = cfg%bands%num_cb + cfg%bands%num_vb
       if (nev > Ntot_local) nev = Ntot_local
       setup%nev_wire = nev
-      ! Solver dispatch (FEAST native for wire; AUTO mode -> ENERGY).
-      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
-                                   res_method, res_mode)
-      setup%eigen_cfg%method = res_method
-      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
-      setup%eigen_cfg%nev = nev
-      setup%eigen_cfg%max_iter = 100
-      setup%eigen_cfg%tol = 1.0e-10_dp
-      setup%eigen_cfg%m0 = cfg%solver%m0
+      ! --- Build solver via the single derivation seam (issue #02). ---
+      ! Wire: FEAST native, AUTO mode -> ENERGY; full window il=1..Ntot.
+      call derive_eigensolver(cfg, N=Ntot_local, il=1, iu=Ntot_local, nev=nev, &
+                              eigen_cfg=setup%eigen_cfg, solver=setup%eigen_solver)
       allocate(setup%HT_csr_ptr)
       allocate(setup%coo_cache_ptr)
       allocate(setup%wire_ws_ptr)
-      ! Build preliminary Hamiltonian at kz=0 to estimate FEAST energy window
+      ! Build preliminary Hamiltonian at kz=0 to estimate FEAST energy window.
+      ! This is geometry-specific Hamiltonian construction (not config
+      ! derivation), so it stays here rather than in derive_eigensolver.
       call ZB8bandGeneralized(setup%HT_csr_ptr, 0.0_dp, setup%profile_2d, &
         setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
       if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
@@ -343,17 +398,11 @@ contains
         cfg%params(1:1), setup%profile, setup%kpterms, cfg%FDorder)
       allocate(setup%HT(setup%N, setup%N))
       setup%HT = 0.0_dp
-      ! --- Allocate solver for Landau (DENSE native; AUTO mode -> INDEX,
-      ! --- but an explicit mode is now honored, not forced to INDEX). ---
-      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
-                                   res_method, res_mode)
-      setup%eigen_cfg%method = res_method
-      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
-      setup%eigen_cfg%nev = setup%iuu - setup%il + 1
-      setup%eigen_cfg%il = setup%il
-      setup%eigen_cfg%iu = setup%iuu
-      call eigensolver_config_validate(setup%eigen_cfg)
-      setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
+      ! --- Build solver via the single derivation seam (issue #02). ---
+      ! Landau: DENSE native; AUTO mode -> INDEX (explicit mode honored).
+      call derive_eigensolver(cfg, N=setup%N, il=setup%il, iu=setup%iuu, &
+                              nev=setup%iuu - setup%il + 1, &
+                              eigen_cfg=setup%eigen_cfg, solver=setup%eigen_solver)
 
     case default
       print *, 'Error: simulation_setup_init unsupported confinement=', cfg%confinement
@@ -401,7 +450,7 @@ contains
     end select
   end subroutine setup_build_H
 
-  subroutine setup_solve_kpoint_serial(setup, cfg, kvec, evals, evecs)
+  subroutine setup_solve_gamma_point(setup, cfg, kvec, evals, evecs)
     type(simulation_setup), intent(inout) :: setup
     type(simulation_config), intent(in) :: cfg
     type(wavevector), intent(in) :: kvec
@@ -413,8 +462,10 @@ contains
     integer :: nev_out
 
     ! This subroutine returns ALL eigenvalues/eigenvectors (FULL mode).
-    ! Callers (gfactor) expect the complete spectrum regardless of the
-    ! stored eigen_cfg which may use INDEX mode for k-sweep filtering.
+    ! It is the g-factor Gamma-point solver: its only caller is the g-factor
+    ! app (main_gfactor.f90), which needs the complete spectrum for Lowdin
+    ! partitioning regardless of the stored eigen_cfg that may use INDEX
+    ! mode for k-sweep filtering. The name reflects that role (issue #02).
     full_cfg = setup%eigen_cfg
     full_cfg%mode = EIGEN_MODE_FULL
     full_cfg%nev = setup%N
@@ -427,7 +478,7 @@ contains
       setup%HT = 0.0_dp
       call ZB8bandBulk(setup%HT, kvec, cfg%params(1), cfg=cfg)
       call setup%eigen_solver%solve_dense(setup%HT, full_cfg, result)
-      if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (bulk)'
+      if (.not. result%converged) error stop 'eigensolver failed in setup_solve_gamma_point (bulk)'
       nev_out = min(result%nev_found, size(evals))
       evals(1:nev_out) = result%eigenvalues(1:nev_out)
       evecs(:, 1:nev_out) = result%eigenvectors(:, 1:nev_out)
@@ -438,12 +489,12 @@ contains
         call ZB8bandQW_csr(setup%HT_csr_ptr, kvec, setup%profile, &
           setup%kpterms, cfg, ws=setup%qw_ws_ptr)
         call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, full_cfg, result)
-        if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (QW sparse)'
+        if (.not. result%converged) error stop 'eigensolver failed in setup_solve_gamma_point (QW sparse)'
       else
         setup%HT = 0.0_dp
         call ZB8bandQW(setup%HT, kvec, setup%profile, setup%kpterms, cfg=cfg)
         call setup%eigen_solver%solve_dense(setup%HT, full_cfg, result)
-        if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (QW)'
+        if (.not. result%converged) error stop 'eigensolver failed in setup_solve_gamma_point (QW)'
       end if
       nev_out = min(result%nev_found, size(evals))
       evals(1:nev_out) = result%eigenvalues(1:nev_out)
@@ -451,9 +502,9 @@ contains
       call eigensolver_result_free(result)
 
     case default
-      error stop 'setup_solve_kpoint_serial: unsupported confinement'
+      error stop 'setup_solve_gamma_point: unsupported confinement'
     end select
-  end subroutine setup_solve_kpoint_serial
+  end subroutine setup_solve_gamma_point
 
   subroutine setup_build_velocity_matrices(setup, cfg)
     type(simulation_setup), intent(inout) :: setup

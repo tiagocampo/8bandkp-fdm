@@ -1,0 +1,310 @@
+module test_solver_derivation
+  ! COVERAGE: observable=solver_config_derivation geometry=generic material=generic
+  ! COVERAGE: observable=solver_defaults_resolution geometry=generic material=generic
+  !
+  ! Issue #02 (architecture-deepening): drives the solver-config DERIVATION
+  ! entry point directly across every (geometry x method x mode) combination,
+  ! WITHOUT running a full executable. The case currently untestable through
+  ! simulation_setup_init (which needs a full materials/grid config and only
+  ! exercises the single method/mode set in cfg%solver).
+  !
+  ! Two layers are verified here:
+  !   1. The derivation CALLS the existing method-aware AUTO resolver
+  !      (resolve_solver_defaults in defs.f90, ADR 0004). The resolved
+  !      (method, mode) produced by the derivation must match the AUTO
+  !      resolver's contract for every combination.
+  !   2. The derivation's nev/il/iu bookkeeping is correct per geometry.
+  !
+  ! The no-invalid-combination invariant (AUTO never yields FEAST+INDEX) is
+  ! asserted on the derivation's output config, not just on the raw resolver.
+  use funit
+  use definitions
+  use eigensolver
+  use simulation_setup_mod, only: derive_eigensolver, eigen_mode_from_string
+  implicit none
+
+  ! 4 confinements x 3 methods x 4 modes = 48 derivation combos.
+  integer, parameter :: NCOMBOS = 48
+
+  ! Tiny matrix dimension for each geometry (the derivation only does config
+  ! bookkeeping; it does NOT build a Hamiltonian, so small N is fine).
+  ! Bulk is always 8; the others use multiples of 8.
+  integer, parameter :: NBULK = 8
+
+contains
+
+  ! ==================================================================
+  ! Helper: the AUTO-resolver contract, mirrored as an independent oracle.
+  ! Returns the expected resolved (method, mode) for a (confinement, method,
+  ! mode) triple per ADR 0004. Returns .false. if a triple is outside the
+  ! contract. This is the same oracle shape as test_eigensolver.pf's
+  ! resolve_expected, kept independent so the derivation is cross-checked
+  ! rather than tautologically compared to the resolver it calls.
+  ! ==================================================================
+  function expected_resolution(confinement, method, mode, out_method, out_mode) result(ok)
+    character(len=*), intent(in)  :: confinement, method, mode
+    character(len=*), intent(out) :: out_method, out_mode
+    logical :: ok
+    character(len=:), allocatable :: rmeth
+
+    ok = .true.
+    out_method = ''
+    out_mode = ''
+
+    select case (trim(adjustl(upper(method))))
+    case ('AUTO')
+      select case (trim(adjustl(upper(confinement))))
+      case ('BULK', 'QW', 'LANDAU')
+        rmeth = 'DENSE'
+      case ('WIRE')
+        rmeth = 'FEAST'
+      case default
+        ok = .false.; return
+      end select
+    case ('DENSE', 'FEAST')
+      rmeth = trim(adjustl(upper(method)))
+    case default
+      ok = .false.; return
+    end select
+
+    select case (trim(adjustl(upper(mode))))
+    case ('AUTO')
+      select case (rmeth)
+      case ('FEAST')
+        out_mode = 'ENERGY'
+      case ('DENSE')
+        select case (trim(adjustl(upper(confinement))))
+        case ('BULK')
+          out_mode = 'FULL'
+        case ('QW', 'LANDAU')
+          out_mode = 'INDEX'
+        case ('WIRE')
+          out_mode = 'ENERGY'
+        case default
+          ok = .false.; return
+        end select
+      end select
+    case ('FULL', 'INDEX', 'ENERGY')
+      out_mode = trim(adjustl(upper(mode)))
+    case default
+      ok = .false.; return
+    end select
+
+    out_method = rmeth
+  end function expected_resolution
+
+  pure function upper(s) result(u)
+    character(len=*), intent(in) :: s
+    character(len=len(s)) :: u
+    integer :: i, c
+    u = s
+    do i = 1, len(s)
+      c = iachar(s(i:i))
+      if (c >= iachar('a') .and. c <= iachar('z')) then
+        u(i:i) = achar(c - 32)
+      end if
+    end do
+  end function upper
+
+  ! ==================================================================
+  ! Helper: build a MINIMAL simulation_config carrying only the fields the
+  ! derivation reads (confinement + solver sub-config). No materials, no
+  ! grid, no strain — the derivation does pure config bookkeeping. This is
+  ! exactly what makes the AUTO-resolution per-geometry directly testable
+  ! without a full executable (the case untestable through init).
+  ! ==================================================================
+  subroutine make_minimal_solver_config(confinement, method, mode, emin, emax, m0, cfg)
+    character(len=*), intent(in) :: confinement, method, mode
+    real(kind=dp), intent(in) :: emin, emax
+    integer, intent(in) :: m0
+    type(simulation_config), intent(out) :: cfg
+
+    cfg%confinement = confinement
+    cfg%solver%method = method
+    cfg%solver%mode = mode
+    cfg%solver%emin = emin
+    cfg%solver%emax = emax
+    cfg%solver%m0 = m0
+    ! bands_config defaults (num_cb=2, num_vb=6) are fine; the derivation
+    ! takes N/il/iu/nev as explicit arguments, not from cfg%bands.
+  end subroutine make_minimal_solver_config
+
+  ! ==================================================================
+  ! Test: table-driven contract — for every (geometry x method x mode) the
+  ! derivation produces a built config whose resolved (method, mode) matches
+  ! the AUTO resolver contract, AND whose mode integer maps correctly.
+  !
+  ! The explicit FEAST+INDEX cell is skipped here (it is an invalid combo
+  ! that validate() / eigensolver_config_validate rejects via error stop;
+  ! it is covered by integration test V13). Every other cell — including
+  ! all AUTO cells, where the invariant bites — is exercised.
+  ! ==================================================================
+  @test
+  subroutine test_derive_eigensolver_table()
+    character(len=8), parameter :: confinements(4) = ['bulk   ', 'qw     ', 'wire   ', 'landau ']
+    character(len=8), parameter :: methods(3)      = ['AUTO   ', 'DENSE  ', 'FEAST  ']
+    character(len=8), parameter :: modes(4)        = ['AUTO   ', 'FULL   ', 'INDEX  ', 'ENERGY ']
+    type(simulation_config) :: cfg
+    type(eigensolver_config) :: ecfg
+    class(eigensolver_base), allocatable :: solver
+    character(len=10) :: exp_method, exp_mode
+    character(len=64) :: combo
+    integer :: ic, im, imo, n, skipped
+    logical :: ok, is_invalid_combo
+    integer :: N_in, il_in, iu_in, nev_in
+
+    n = 0
+    skipped = 0
+    do ic = 1, size(confinements)
+      do im = 1, size(methods)
+        do imo = 1, size(modes)
+          ! Skip any combination whose RESOLVED (method, mode) is FEAST+INDEX.
+          ! Per ADR 0004, AUTO guarantees no invalid combo only when MODE is
+          ! AUTO; an explicit INDEX mode paired with a method (incl. AUTO)
+          ! that resolves to FEAST still yields FEAST+INDEX, which the
+          ! derivation rejects via eigensolver_config_validate (error stop).
+          ! Use the independent oracle (not the resolver) to decide.
+          ok = expected_resolution(confinements(ic), methods(im), modes(imo), &
+                                   exp_method, exp_mode)
+          is_invalid_combo = (ok .and. trim(exp_method) == 'FEAST' .and. &
+                              trim(exp_mode) == 'INDEX')
+          if (is_invalid_combo) then
+            skipped = skipped + 1
+            cycle
+          end if
+
+          ! Provide a geometry-shaped matrix dimension and band window.
+          ! Bulk is 8x8 (FULL); the others use a small multiple of 8 with
+          ! a 2 CB / 6 VB window (INDEX/ENERGY). The derivation only does
+          ! bookkeeping on these integers; it never builds a matrix.
+          call geometry_dims(confinements(ic), N_in, il_in, iu_in, nev_in)
+
+          call make_minimal_solver_config(confinements(ic), methods(im), modes(imo), &
+                                          -1.0_dp, 1.0_dp, 0, cfg)
+          call derive_eigensolver(cfg, N_in, il_in, iu_in, nev_in, ecfg, solver)
+
+          n = n + 1
+          write(combo, '(A,1x,A,1x,A,1x,A)') 'conf=', trim(confinements(ic)), &
+                                             'm='//trim(methods(im)), 'mo='//trim(modes(imo))
+          @assertTrue(ok, message=trim(combo))
+          @assertEqual(trim(exp_method), trim(ecfg%method), message=trim(combo))
+          @assertEqual(eigen_mode_from_string(exp_mode), ecfg%mode, message=trim(combo))
+
+          ! nev/il/iu bookkeeping per geometry
+          @assertEqual(nev_in, ecfg%nev, message=trim(combo)//' nev')
+          if (ecfg%mode == EIGEN_MODE_INDEX) then
+            @assertEqual(il_in, ecfg%il, message=trim(combo)//' il')
+            @assertEqual(iu_in, ecfg%iu, message=trim(combo)//' iu')
+          end if
+
+          deallocate(solver)
+        end do
+      end do
+    end do
+    ! 48 combos total. Skipped = those resolving to FEAST+INDEX:
+    !   bulk  FEAST+INDEX (explicit)             = 1
+    !   qw    FEAST+INDEX (explicit)             = 1
+    !   wire  AUTO+INDEX (->FEAST) + FEAST+INDEX = 2
+    !   landau FEAST+INDEX (explicit)            = 1
+    !   total skipped = 5, exercised = 43.
+    @assertEqual(NCOMBOS - 5, n, message="exercised combos")
+    @assertEqual(5, skipped, message="skipped FEAST+INDEX combos")
+  end subroutine test_derive_eigensolver_table
+
+  ! ==================================================================
+  ! Test: the no-invalid-combination INVARIANT on the derivation's output.
+  ! Every AUTO-mode cell must produce a config that is NOT FEAST+INDEX.
+  ! (This is the method-aware AUTO contract from ADR 0004, asserted on the
+  ! derivation layer, not just the raw resolver.)
+  ! ==================================================================
+  @test
+  subroutine test_derive_eigensolver_no_feast_index_via_auto()
+    character(len=8), parameter :: confinements(4) = ['bulk   ', 'qw     ', 'wire   ', 'landau ']
+    character(len=8), parameter :: methods(3)      = ['AUTO   ', 'DENSE  ', 'FEAST  ']
+    character(len=8), parameter :: auto_mode(1)    = ['AUTO   ']
+    type(simulation_config) :: cfg
+    type(eigensolver_config) :: ecfg
+    class(eigensolver_base), allocatable :: solver
+    integer :: ic, im, N_in, il_in, iu_in, nev_in
+
+    do ic = 1, size(confinements)
+      do im = 1, size(methods)
+        call geometry_dims(confinements(ic), N_in, il_in, iu_in, nev_in)
+        call make_minimal_solver_config(confinements(ic), methods(im), auto_mode(1), &
+                                        -1.0_dp, 1.0_dp, 0, cfg)
+        call derive_eigensolver(cfg, N_in, il_in, iu_in, nev_in, ecfg, solver)
+        ! Invariant: AUTO mode must never yield FEAST+INDEX.
+        if (trim(ecfg%method) == 'FEAST') then
+          @assertTrue(ecfg%mode /= EIGEN_MODE_INDEX, message="AUTO must not yield FEAST+INDEX")
+        end if
+        deallocate(solver)
+      end do
+    end do
+  end subroutine test_derive_eigensolver_no_feast_index_via_auto
+
+  ! ==================================================================
+  ! Test: the derivation propagates the user's [solver] energy window and
+  ! subspace size into the built config (so FEAST/ENERGY dispatches honor
+  ! them instead of falling back to type defaults).
+  ! ==================================================================
+  @test
+  subroutine test_derive_eigensolver_propagates_window()
+    type(simulation_config) :: cfg
+    type(eigensolver_config) :: ecfg
+    class(eigensolver_base), allocatable :: solver
+
+    call make_minimal_solver_config('qw', 'FEAST', 'ENERGY', &
+                                    -0.5_dp, 2.5_dp, 42, cfg)
+    ! FEAST+ENERGY is valid; window should propagate.
+    call derive_eigensolver(cfg, 80, 7, 80, 8, ecfg, solver)
+    @assertEqual(-0.5_dp, ecfg%emin, tolerance=1.0e-12_dp)
+    @assertEqual( 2.5_dp, ecfg%emax, tolerance=1.0e-12_dp)
+    @assertEqual(42, ecfg%m0)
+    deallocate(solver)
+  end subroutine test_derive_eigensolver_propagates_window
+
+  ! ==================================================================
+  ! Test: bulk derivation produces the canonical 8x8 FULL config
+  ! (nev=8, il=1, iu=8, DENSE+FULL) regardless of the AUTO resolution,
+  ! because bulk is always 8x8 dense by nature.
+  ! ==================================================================
+  @test
+  subroutine test_derive_eigensolver_bulk_canonical()
+    type(simulation_config) :: cfg
+    type(eigensolver_config) :: ecfg
+    class(eigensolver_base), allocatable :: solver
+
+    call make_minimal_solver_config('bulk', 'AUTO', 'AUTO', 0.0_dp, 0.0_dp, 0, cfg)
+    call derive_eigensolver(cfg, NBULK, 1, 8, 8, ecfg, solver)
+    @assertEqual('DENSE', trim(ecfg%method))
+    @assertEqual(EIGEN_MODE_FULL, ecfg%mode)
+    @assertEqual(8, ecfg%nev)
+    @assertEqual(1, ecfg%il)
+    @assertEqual(8, ecfg%iu)
+    deallocate(solver)
+  end subroutine test_derive_eigensolver_bulk_canonical
+
+  ! ==================================================================
+  ! Helper: geometry-shaped (N, il, iu, nev) inputs for the derivation.
+  ! Bulk = 8 (FULL); the others use a small multiple of 8 with a window.
+  ! The derivation only reads these as integers; no matrix is built.
+  ! ==================================================================
+  subroutine geometry_dims(confinement, N_in, il_in, iu_in, nev_in)
+    character(len=*), intent(in) :: confinement
+    integer, intent(out) :: N_in, il_in, iu_in, nev_in
+
+    select case (trim(adjustl(upper(confinement))))
+    case ('BULK')
+      N_in = 8; il_in = 1; iu_in = 8; nev_in = 8
+    case ('QW', 'LANDAU')
+      ! Small QW/Landau: 40 grid points x 8 bands = 320; window 2 CB + 6 VB.
+      N_in = 320; il_in = 7; iu_in = 320; nev_in = 8
+    case ('WIRE')
+      ! Small wire: similar shape; wire defaults to ENERGY.
+      N_in = 320; il_in = 1; iu_in = 320; nev_in = 8
+    case default
+      N_in = 8; il_in = 1; iu_in = 8; nev_in = 8
+    end select
+  end subroutine geometry_dims
+
+end module test_solver_derivation

@@ -205,6 +205,15 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    # Issue #02: drives the solver-config derivation entry point directly
+    # across every (geometry x method x mode) combination without running a
+    # full executable (the case untestable through simulation_setup_init).
+    add_pfunit_ctest(test_solver_derivation
+        TEST_SOURCES unit/test_solver_derivation.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_optical_spectra
         TEST_SOURCES unit/test_optical_spectra.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
