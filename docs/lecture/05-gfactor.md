@@ -256,7 +256,7 @@ The g-factor calculation is driven by program `gfactor`. The workflow is:
 2. **Validate**: g-factor requires $k=0$ only (`[wave_vector] mode = "k0"`, `nsteps = 0`).
 3. **Build Hamiltonian** at $\mathbf{k} = 0$ and diagonalize fully:
    - Bulk/QW: dense LAPACK (`zheev`/`zheevd`)
-   - Wire: sparse FEAST eigensolver (`solve_sparse_evp`)
+   - Wire: sparse eigensolver via `make_eigensolver(config)` with `method = "FEAST"`
 4. **Sort eigenstates**: VB states stored in descending energy order, CB states in ascending order.
 5. **Select doublet**: the Kramers pair at `bandIdx` and `bandIdx+1`.
 6. **Compute spin matrix** $\Sigma^{(d)}_{ij}$ between doublet states (3 directions).
@@ -326,7 +326,7 @@ For wire mode (`confinement = "wire"`), the program follows a different branch i
 1. Build the 2D sparse k.p terms via `confinementInitialization_2d`.
 2. Optionally compute and apply strain via `compute_strain` + `compute_bir_pikus_blocks`.
 3. Build the full wire Hamiltonian at $k_z = 0$ with `ZB8bandGeneralized`.
-4. Solve with FEAST (`solve_sparse_evp`) using an auto-computed energy window.
+4. Solve via the unified eigensolver (`method = "FEAST"`) with auto-computed energy window.
 5. Extract CB/VB states from sorted eigenvalues.
 6. Call `gfactorCalculation_wire`, which uses `sigmaElem_2d` for spin integration (uniform $dx \cdot dy$ summation over the 2D grid) and `pMatrixEleCalc_2d` for momentum matrix elements (builds per-direction CSR perturbation matrices with `g1`/`g2`/`g3` flags).
 
@@ -522,7 +522,7 @@ These results are consistent with the general discussion in Section 5.4.3 and co
 
 For a quantum wire with confinement in the $x$-$y$ plane and free propagation along $z$, the g-factor is generally anisotropic in all three directions. The wire computation uses `gfactorCalculation_wire`, which:
 
-1. Solves the wire Hamiltonian at $k_z = 0$ using FEAST.
+1. Solves the wire Hamiltonian at $k_z = 0$ using the unified eigensolver (`method = "FEAST"`).
 2. Computes `sigmaElem_2d` over the full 2D grid ($nx \times ny$ points).
 3. Computes the velocity operator via the commutator formula $v_\alpha = -i [r_\alpha, H]$, element-wise in CSR: $(dH/dk_\alpha)_{ij} = -i (r_{\alpha,i} - r_{\alpha,j}) H_{ij}$. For $z$, the existing $dH/dk_z$ perturbation (`g='g3'`) is used since $[z, H] = 0$ in the wire geometry (all points share the same $z$).
 4. Sums the Lowdin contributions over VB and CB intermediates.

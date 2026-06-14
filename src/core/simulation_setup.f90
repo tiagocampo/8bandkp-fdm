@@ -1,19 +1,20 @@
 module simulation_setup_mod
 
   use definitions, only: NUM_VB_STATES, conf_direction, dp, &
-    grid_ngrid, simulation_config, spatial_grid, wavevector
+    grid_ngrid, simulation_config, spatial_grid, wavevector, resolve_solver_defaults
   use hamiltonianConstructor
   use confinement_init, only: confinementInitialization, confinementInitialization_2d, &
     & confinementInitialization_landau
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, &
     & wire_coo_cache, wire_coo_cache_free, ZB8bandGeneralized, &
     & build_velocity_matrices
+  use hamiltonian_qw, only: qw_workspace, qw_workspace_free, ZB8bandQW_csr
   use strain_solver, only: compute_strain, compute_bir_pikus_blocks, &
     & strain_result, strain_result_free
   use sc_loop, only: self_consistent_loop, self_consistent_loop_wire
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
-    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
-  use linalg, only: zheev, zheevd, zheevx
+    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window, &
+    & EIGEN_MODE_FULL, EIGEN_MODE_INDEX, EIGEN_MODE_ENERGY, eigensolver_config_validate
   use utils
   use sparse_matrices
   use geometry, only: init_wire_from_config
@@ -26,6 +27,7 @@ module simulation_setup_mod
   public :: setup_build_H, setup_solve_kpoint_serial
   public :: setup_build_velocity_matrices
   public :: thread_workspace
+  public :: eigen_mode_from_string
 
   type :: simulation_setup
     character(len=8) :: confinement = 'none'
@@ -49,10 +51,12 @@ module simulation_setup_mod
     type(csr_matrix), allocatable :: HT_csr_ptr
     type(wire_coo_cache), allocatable :: coo_cache_ptr
     type(wire_workspace), allocatable :: wire_ws_ptr
+    type(qw_workspace), allocatable  :: qw_ws_ptr
     type(eigensolver_config)      :: eigen_cfg
     class(eigensolver_base), allocatable :: eigen_solver
     integer :: Ngrid = 0, Ntot = 0, nev_wire = 0
     logical :: was_freed = .false.
+    logical :: qw_sparse = .false.
   contains
     final :: simulation_setup_finalize
   end type simulation_setup
@@ -67,6 +71,29 @@ module simulation_setup_mod
 
 contains
 
+  ! ------------------------------------------------------------------
+  ! Map a resolved UPPERCASE mode string ('FULL'/'INDEX'/'ENERGY') from
+  ! resolve_solver_defaults to its EIGEN_MODE_* integer constant. Single
+  ! mapping point shared by every dispatch block (bulk/qw/wire/landau) and
+  ! by main.f90's band-structure sweep, so the (method,mode) resolution is
+  ! defined in exactly one place (defs.f90) and the string->int mapping in
+  ! exactly one place (here). Returns EIGEN_MODE_FULL on any unrecognized
+  ! string (the safe all-eigenvalues default).
+  ! ------------------------------------------------------------------
+  pure function eigen_mode_from_string(s) result(mode_int)
+    character(len=*), intent(in) :: s
+    integer :: mode_int
+
+    select case (trim(adjustl(s)))
+    case ('INDEX')
+      mode_int = EIGEN_MODE_INDEX
+    case ('ENERGY')
+      mode_int = EIGEN_MODE_ENERGY
+    case default
+      mode_int = EIGEN_MODE_FULL
+    end select
+  end function eigen_mode_from_string
+
   subroutine simulation_setup_init(cfg, setup, strain_out, sc_phi_out, sc_ne_out, sc_nh_out, skip_sc)
     type(simulation_config), intent(inout) :: cfg
     type(simulation_setup), intent(inout) :: setup
@@ -74,9 +101,10 @@ contains
     real(kind=dp), allocatable, intent(out), optional :: sc_phi_out(:,:), sc_ne_out(:,:), sc_nh_out(:,:)
     logical, intent(in), optional :: skip_sc
 
-    integer :: info, lrwork, liwork, Ngrid_local, Ntot_local, nev
+    integer :: Ngrid_local, Ntot_local, nev
     real(kind=dp), allocatable :: eig_tmp(:,:)
     logical :: do_skip_sc
+    character(len=10) :: res_method, res_mode   ! resolved by resolve_solver_defaults
 
     do_skip_sc = .false.
     if (present(skip_sc)) do_skip_sc = skip_sc
@@ -94,6 +122,16 @@ contains
       setup%il = 1
       setup%iuu = 8
       setup%lwork = 0
+      ! --- Allocate solver for bulk (DENSE native; AUTO mode -> FULL) ---
+      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                   res_method, res_mode)
+      setup%eigen_cfg%method = res_method
+      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
+      setup%eigen_cfg%nev = 8
+      setup%eigen_cfg%il = 1
+      setup%eigen_cfg%iu = 8
+      call eigensolver_config_validate(setup%eigen_cfg)
+      setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
 
     case('qw')
       setup%N = cfg%grid%npoints() * 8
@@ -152,40 +190,50 @@ contains
       if (.not. allocated(setup%HT)) then
         allocate(setup%HT(setup%N, setup%N))
       end if
-      allocate(setup%work(1))
-      allocate(setup%rwork(1))
-      allocate(setup%iwork(1))
       setup%HT = 0.0_dp
-      allocate(eig_tmp(setup%N, 1))
-      eig_tmp = 0.0_dp
-      if (cfg%num_layers == 1) then
-        call zheev('V', 'L', setup%N, setup%HT, setup%N, eig_tmp(:,1), &
-          setup%work, -1, setup%rwork, info)
-        if (info /= 0) then
-          error stop 'zheev workspace query failed in simulation_setup_init'
-        end if
-        setup%lwork = int(real(setup%work(1)))
-        deallocate(setup%work)
-        allocate(setup%work(setup%lwork))
-        deallocate(setup%rwork)
-        allocate(setup%rwork(max(1, 3*setup%N - 2)))
-      else
-        call zheevd('V', 'U', setup%N, setup%HT, setup%N, eig_tmp(:,1), &
-          setup%work, -1, setup%rwork, -1, setup%iwork, -1, info)
-        if (info /= 0) then
-          error stop 'zheevd workspace query failed in simulation_setup_init'
-        end if
-        setup%lwork = int(real(setup%work(1)))
-        lrwork = int(real(setup%rwork(1)))
-        liwork = setup%iwork(1)
-        deallocate(setup%work)
-        allocate(setup%work(setup%lwork))
-        deallocate(setup%rwork)
-        allocate(setup%rwork(lrwork))
-        deallocate(setup%iwork)
-        allocate(setup%iwork(liwork))
+      ! --- Allocate solver for QW (DENSE native; AUTO mode -> INDEX) ---
+      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                   res_method, res_mode)
+      setup%eigen_cfg%method = res_method
+      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
+      setup%eigen_cfg%nev = min(setup%iuu - setup%il + 1, setup%N)
+      setup%eigen_cfg%il = setup%il
+      setup%eigen_cfg%iu = setup%iuu
+      ! Propagate the user's [solver] energy window / subspace size so ENERGY
+      ! and FEAST dispatches honor it (e.g. Landau+ENERGY). When unset (both
+      ! emin/emax == 0, the parser auto-sentinel) the type defaults are kept.
+      if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+        setup%eigen_cfg%emin = cfg%solver%emin
+        setup%eigen_cfg%emax = cfg%solver%emax
       end if
-      deallocate(eig_tmp)
+      setup%eigen_cfg%m0 = cfg%solver%m0
+      call eigensolver_config_validate(setup%eigen_cfg)
+      setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
+
+      ! --- QW sparse path: if FEAST requested, set up CSR builder ---
+      if (trim(setup%eigen_cfg%method) == 'FEAST') then
+        setup%qw_sparse = .true.
+        setup%eigen_cfg%m0 = cfg%solver%m0
+        allocate(setup%qw_ws_ptr)
+        allocate(setup%HT_csr_ptr)
+        ! Build preliminary CSR Hamiltonian at k=0 to estimate FEAST window
+        block
+          type(csr_matrix) :: HT_csr_tmp
+          call ZB8bandQW_csr(HT_csr_tmp, wavevector(0.0_dp, 0.0_dp, 0.0_dp), &
+            setup%profile, setup%kpterms, cfg, ws=setup%qw_ws_ptr)
+          if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+            setup%eigen_cfg%emin = cfg%solver%emin
+            setup%eigen_cfg%emax = cfg%solver%emax
+          else
+            call auto_compute_energy_window(HT_csr_tmp, &
+              setup%eigen_cfg%emin, setup%eigen_cfg%emax)
+            print *, '  Auto FEAST window (QW): [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
+          end if
+          call csr_free(HT_csr_tmp)
+        end block
+        call eigensolver_config_validate(setup%eigen_cfg)
+        setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
+      end if
 
     case('wire')
       if (.not. allocated(cfg%grid%x)) call init_wire_from_config(cfg)
@@ -219,24 +267,24 @@ contains
       nev = cfg%bands%num_cb + cfg%bands%num_vb
       if (nev > Ntot_local) nev = Ntot_local
       setup%nev_wire = nev
-      if (cfg%feast%m0 < 0) then
-        setup%eigen_cfg%method = 'DENSE'
-      else
-        setup%eigen_cfg%method = 'FEAST'
-      end if
+      ! Solver dispatch (FEAST native for wire; AUTO mode -> ENERGY).
+      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                   res_method, res_mode)
+      setup%eigen_cfg%method = res_method
+      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
       setup%eigen_cfg%nev = nev
       setup%eigen_cfg%max_iter = 100
       setup%eigen_cfg%tol = 1.0e-10_dp
-      setup%eigen_cfg%feast_m0 = cfg%feast%m0
+      setup%eigen_cfg%m0 = cfg%solver%m0
       allocate(setup%HT_csr_ptr)
       allocate(setup%coo_cache_ptr)
       allocate(setup%wire_ws_ptr)
       ! Build preliminary Hamiltonian at kz=0 to estimate FEAST energy window
       call ZB8bandGeneralized(setup%HT_csr_ptr, 0.0_dp, setup%profile_2d, &
         setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
-      if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
-        setup%eigen_cfg%emin = cfg%feast%emin
-        setup%eigen_cfg%emax = cfg%feast%emax
+      if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+        setup%eigen_cfg%emin = cfg%solver%emin
+        setup%eigen_cfg%emax = cfg%solver%emax
       else
         call auto_compute_energy_window(setup%HT_csr_ptr, &
           setup%eigen_cfg%emin, setup%eigen_cfg%emax)
@@ -244,6 +292,7 @@ contains
       end if
       ! Free CSR data but preserve COO cache for fast rebuild by apps
       call csr_free(setup%HT_csr_ptr)
+      call eigensolver_config_validate(setup%eigen_cfg)
       setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
       if (cfg%sc%enabled == 1 .and. .not. do_skip_sc) then
         block
@@ -294,40 +343,17 @@ contains
         cfg%params(1:1), setup%profile, setup%kpterms, cfg%FDorder)
       allocate(setup%HT(setup%N, setup%N))
       setup%HT = 0.0_dp
-      ! zheevx workspace query: build H at k=0, query optimal lwork
-      block
-        type(wavevector) :: wv0
-        real(kind=dp), allocatable :: eig_tmp(:,:)
-        integer, allocatable :: ifail_tmp(:)
-        integer :: info_loc, M_loc
-        real(kind=dp) :: abstol_loc, vl_loc, vu_loc
-        wv0%kx = 0.0_dp; wv0%ky = 0.0_dp; wv0%kz = 0.0_dp
-        allocate(eig_tmp(setup%N, 1))
-        eig_tmp = 0.0_dp
-        allocate(setup%work(1))
-        allocate(setup%rwork(7 * setup%N))
-        allocate(setup%iwork(5 * setup%N))
-        allocate(ifail_tmp(setup%N))
-        call ZB8bandLandau(setup%HT, wv0, setup%profile, setup%kpterms, &
-          cfg%grid%x, cfg=cfg)
-        setup%lwork = -1
-        abstol_loc = 0.0_dp
-        vl_loc = 0.0_dp
-        vu_loc = 0.0_dp
-        call zheevx('V', 'I', 'U', setup%N, setup%HT, setup%N, vl_loc, vu_loc, &
-          setup%il, setup%iuu, abstol_loc, M_loc, eig_tmp(:, 1), &
-          setup%HT, setup%N, setup%work, setup%lwork, setup%rwork, setup%iwork, &
-          ifail_tmp, info_loc)
-        if (info_loc /= 0) then
-          error stop 'zheevx workspace query failed in simulation_setup_init (landau)'
-        end if
-        setup%lwork = int(real(setup%work(1)))
-        deallocate(setup%work)
-        allocate(setup%work(setup%lwork))
-        deallocate(eig_tmp, ifail_tmp)
-      end block
-      ! Reset HT for reuse by caller
-      setup%HT = 0.0_dp
+      ! --- Allocate solver for Landau (DENSE native; AUTO mode -> INDEX,
+      ! --- but an explicit mode is now honored, not forced to INDEX). ---
+      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                   res_method, res_mode)
+      setup%eigen_cfg%method = res_method
+      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
+      setup%eigen_cfg%nev = setup%iuu - setup%il + 1
+      setup%eigen_cfg%il = setup%il
+      setup%eigen_cfg%iu = setup%iuu
+      call eigensolver_config_validate(setup%eigen_cfg)
+      setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
 
     case default
       print *, 'Error: simulation_setup_init unsupported confinement=', cfg%confinement
@@ -349,11 +375,16 @@ contains
       end if
       call ZB8bandBulk(HT_out, kvec, cfg%params(1), cfg=cfg)
     case('qw')
-      if (.not. present(HT_out)) then
-        print *, 'Error: setup_build_H QW requires HT_out'
-        error stop 'setup_build_H: QW requires HT_out'
+      if (setup%qw_sparse) then
+        call ZB8bandQW_csr(setup%HT_csr_ptr, kvec, setup%profile, &
+          setup%kpterms, cfg, ws=setup%qw_ws_ptr)
+      else
+        if (.not. present(HT_out)) then
+          print *, 'Error: setup_build_H QW requires HT_out'
+          error stop 'setup_build_H: QW requires HT_out'
+        end if
+        call ZB8bandQW(HT_out, kvec, setup%profile, setup%kpterms, cfg=cfg)
       end if
-      call ZB8bandQW(HT_out, kvec, setup%profile, setup%kpterms, cfg=cfg)
     case('wire')
       call ZB8bandGeneralized(setup%HT_csr_ptr, kvec%kz, &
         setup%profile_2d, setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
@@ -376,54 +407,50 @@ contains
     type(wavevector), intent(in) :: kvec
     real(kind=dp), intent(out), contiguous :: evals(:)
     complex(kind=dp), intent(out), contiguous :: evecs(:,:)
-    integer :: info
-    real(kind=dp), allocatable :: rwork_local(:)
+
+    type(eigensolver_result) :: result
+    type(eigensolver_config) :: full_cfg
+    integer :: nev_out
+
+    ! This subroutine returns ALL eigenvalues/eigenvectors (FULL mode).
+    ! Callers (gfactor) expect the complete spectrum regardless of the
+    ! stored eigen_cfg which may use INDEX mode for k-sweep filtering.
+    full_cfg = setup%eigen_cfg
+    full_cfg%mode = EIGEN_MODE_FULL
+    full_cfg%nev = setup%N
+    full_cfg%il = 1
+    full_cfg%iu = setup%N
 
     select case(setup%confinement)
     case('bulk')
       if (.not. allocated(setup%HT)) allocate(setup%HT(8, 8))
       setup%HT = 0.0_dp
       call ZB8bandBulk(setup%HT, kvec, cfg%params(1), cfg=cfg)
-      if (setup%lwork == 0) then
-        allocate(setup%work(1))
-        allocate(rwork_local(max(1, 3*8 - 2)))
-        call zheev('V', 'L', 8, setup%HT, 8, evals, setup%work, -1, rwork_local, info)
-        if (info /= 0) then
-          error stop 'zheev workspace query failed in setup_solve_kpoint_serial'
-        end if
-        setup%lwork = int(real(setup%work(1)))
-        deallocate(setup%work)
-        allocate(setup%work(setup%lwork))
-        deallocate(rwork_local)
-        allocate(setup%rwork(max(1, 3*8 - 2)))
-      end if
-      setup%HT = 0.0_dp
-      call ZB8bandBulk(setup%HT, kvec, cfg%params(1), cfg=cfg)
-      call zheev('V', 'L', 8, setup%HT, 8, evals, setup%work, setup%lwork, setup%rwork, info)
-      if (info /= 0) then
-        print *, 'Error: zheev failed in setup_solve_kpoint_serial, info =', info
-        error stop 'zheev failed in setup_solve_kpoint_serial'
-      end if
-      evecs = setup%HT
+      call setup%eigen_solver%solve_dense(setup%HT, full_cfg, result)
+      if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (bulk)'
+      nev_out = min(result%nev_found, size(evals))
+      evals(1:nev_out) = result%eigenvalues(1:nev_out)
+      evecs(:, 1:nev_out) = result%eigenvectors(:, 1:nev_out)
+      call eigensolver_result_free(result)
+
     case('qw')
-      setup%HT = 0.0_dp
-      call ZB8bandQW(setup%HT, kvec, setup%profile, setup%kpterms, cfg=cfg)
-      if (cfg%num_layers == 1) then
-        call zheev('V', 'L', setup%N, setup%HT, setup%N, evals, setup%work, setup%lwork, setup%rwork, info)
-        if (info /= 0) then
-          print *, 'Error: zheev failed in setup_solve_kpoint_serial, info =', info
-          error stop 'zheev failed in setup_solve_kpoint_serial (QW)'
-        end if
+      if (setup%qw_sparse) then
+        call ZB8bandQW_csr(setup%HT_csr_ptr, kvec, setup%profile, &
+          setup%kpterms, cfg, ws=setup%qw_ws_ptr)
+        call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, full_cfg, result)
+        if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (QW sparse)'
       else
-        call zheevd('V', 'U', setup%N, setup%HT, setup%N, evals, setup%work, setup%lwork, setup%rwork, size(setup%rwork), setup%iwork, size(setup%iwork), info)
-        if (info /= 0) then
-          print *, 'Error: zheevd failed in setup_solve_kpoint_serial, info =', info
-          error stop 'zheevd failed in setup_solve_kpoint_serial (QW)'
-        end if
+        setup%HT = 0.0_dp
+        call ZB8bandQW(setup%HT, kvec, setup%profile, setup%kpterms, cfg=cfg)
+        call setup%eigen_solver%solve_dense(setup%HT, full_cfg, result)
+        if (.not. result%converged) error stop 'eigensolver failed in setup_solve_kpoint_serial (QW)'
       end if
-      evecs = setup%HT
+      nev_out = min(result%nev_found, size(evals))
+      evals(1:nev_out) = result%eigenvalues(1:nev_out)
+      evecs(:, 1:nev_out) = result%eigenvectors(:, 1:nev_out)
+      call eigensolver_result_free(result)
+
     case default
-      print *, 'Error: setup_solve_kpoint_serial unsupported confinement=', setup%confinement
       error stop 'setup_solve_kpoint_serial: unsupported confinement'
     end select
   end subroutine setup_solve_kpoint_serial
@@ -519,6 +546,10 @@ contains
       call wire_workspace_free(setup%wire_ws_ptr)
       deallocate(setup%wire_ws_ptr)
     end if
+    if (allocated(setup%qw_ws_ptr)) then
+      call qw_workspace_free(setup%qw_ws_ptr)
+      deallocate(setup%qw_ws_ptr)
+    end if
     if (allocated(setup%eigen_solver)) deallocate(setup%eigen_solver)
     if (setup%vel_built) then
       do i = 1, 3
@@ -537,6 +568,7 @@ contains
     setup%Ngrid = 0
     setup%Ntot = 0
     setup%nev_wire = 0
+    setup%qw_sparse = .false.
   end subroutine simulation_setup_free
 
 

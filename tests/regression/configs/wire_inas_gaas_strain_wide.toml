@@ -39,7 +39,8 @@ reference = "GaAs"
 solver = "pardiso"
 piezoelectric = false
 
-[feast]
+[solver]
+method = "DENSE"
+mode = "ENERGY"
 emin = -1.5
 emax = 2.0
-m0 = -1

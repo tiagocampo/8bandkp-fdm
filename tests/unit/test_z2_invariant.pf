@@ -5,6 +5,7 @@ module test_z2_invariant
   use sparse_matrices
   use linalg
   use eigensolver
+  use csr_test_helpers, only: eigensolve_csr
   implicit none
 
 contains
@@ -33,7 +34,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     z2 = compute_z2_gap(result%eigenvalues, 1.0_dp)
 
@@ -66,7 +67,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     z2 = compute_z2_gap(result%eigenvalues, 40.0_dp)
 
@@ -226,7 +227,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     @assertTrue(allocated(result%eigenvalues))
     @assertTrue(size(result%eigenvalues) > 0)
@@ -259,7 +260,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     z2 = compute_z2_gap(result%eigenvalues, 1.0_dp)
     @assertEqual(0, z2, message="BHZ near boundary (M=+5) must be trivial: Z2=0")
@@ -292,7 +293,7 @@ contains
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
 
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
 
     z2 = compute_z2_gap(result%eigenvalues, 40.0_dp)
     @assertEqual(1, z2, message="BHZ near boundary (M=-5) must be topological: Z2=1")
@@ -323,7 +324,7 @@ contains
     cfg%emin = -100.0_dp
     cfg%emax = 100.0_dp
     cfg%nev = 4 * params%N
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
     z2_trivial = compute_z2_gap(result%eigenvalues, 1.0_dp)
     call csr_free(H_csr)
 
@@ -334,7 +335,7 @@ contains
 
     call build_bhz_wire_hamiltonian(H_csr, params)
     cfg%nev = 4 * params%N
-    call solve_sparse_evp(H_csr, cfg, result)
+    call eigensolve_csr(H_csr, cfg, result)
     z2_topo = compute_z2_gap(result%eigenvalues, 40.0_dp)
     call csr_free(H_csr)
 

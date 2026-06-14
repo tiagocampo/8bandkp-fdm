@@ -160,8 +160,10 @@ program gfactor
       end do
 
       used_character_gap = .false.
-      if (first_cb_idx > 0 .and. first_cb_idx - cfg%bands%num_vb >= 1 .and. &
-        & first_cb_idx + cfg%bands%num_cb - 1 <= eigen_res%nev_found) then
+      if (first_cb_idx > 0) then
+        ! Character-based detection: CB edge identified at first_cb_idx.
+        ! Use this as the band edge regardless of whether num_vb/num_cb fit
+        ! exactly — the g-factor should use states nearest the edge.
         gap_idx = first_cb_idx - 1
         used_character_gap = .true.
       else

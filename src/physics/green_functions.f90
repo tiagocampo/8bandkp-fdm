@@ -3,10 +3,10 @@ module green_functions
   ! ==============================================================================
   ! Green function and spectral function utilities.
   !
-  ! LDOS(r, E) = -(1/pi) * Im[G(r, r, E + i*eta)]  (requires PARDISO/ARPACK)
+  ! LDOS(r, E) = -(1/pi) * Im[G(r, r, E + i*eta)]  (requires PARDISO)
   ! Spectral function A(k, E) = sum_n Lorentzian(E - E_n, eta)
   !
-  ! LDOS uses MKL PARDISO complex solver via pardiso_c (USE_ARPACK) to invert
+  ! LDOS uses MKL PARDISO complex solver via pardiso_c to invert
   ! the shifted matrix A = E + i*eta - H for each energy point.
   ! ==============================================================================
 
@@ -14,16 +14,13 @@ module green_functions
   use sparse_matrices
   use, intrinsic :: iso_c_binding, only: c_int, c_intptr_t
 
-#ifdef USE_ARPACK
   use linalg, only: pardiso_c
-#endif
-
-  use linalg, only: zheev
   use hamiltonianConstructor, only: ZB8bandBulk, ZB8bandQW
   use confinement_init, only: confinementInitialization_2d
   use hamiltonian_wire, only: wire_workspace, wire_workspace_free, ZB8bandGeneralized
   use eigensolver, only: eigensolver_base, eigensolver_config, eigensolver_result, &
-    & eigensolver_result_free, make_eigensolver, auto_compute_energy_window
+    & eigensolver_result_free, make_eigensolver, auto_compute_energy_window, &
+    & EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
 
   implicit none
   private
@@ -32,10 +29,7 @@ module green_functions
   public :: compute_spectral_function_qw
   public :: compute_spectral_function_wire
   public :: compute_landauer_transmission_1d
-
-#ifdef USE_ARPACK
   public :: compute_ldos_csr
-#endif
 
 contains
 
@@ -120,12 +114,15 @@ contains
     real(kind=dp), intent(in) :: eta
     real(kind=dp), allocatable, intent(out) :: A_kE(:,:)
 
-    integer :: Ngrid, nk, nE, ik, iE, lwork, info, i
+    integer :: Ngrid, nk, nE, ik, iE, i
     integer :: dim
-    complex(kind=dp), allocatable :: H(:,:), work(:)
-    real(kind=dp), allocatable :: evals(:), rwork(:)
+    complex(kind=dp), allocatable :: H(:,:)
+    real(kind=dp), allocatable :: evals(:)
     real(kind=dp) :: lorentz
     type(wavevector) :: wv
+    type(eigensolver_config) :: spec_cfg
+    class(eigensolver_base), allocatable :: spec_solver
+    type(eigensolver_result) :: spec_result
 
     Ngrid = size(profile, 1)
     dim = 8 * Ngrid
@@ -142,18 +139,12 @@ contains
 
     allocate(H(dim, dim))
     allocate(evals(dim))
-    allocate(rwork(max(1, 3*dim - 2)))
-    allocate(work(1))
 
-    ! Query optimal work size
-    call zheev('N', 'U', dim, H, dim, evals, work, -1, rwork, info)
-    if (info /= 0) then
-      A_kE = 0.0_dp
-      return
-    end if
-    lwork = nint(real(work(1)))
-    deallocate(work)
-    allocate(work(max(1, lwork)))
+    ! Eigensolver: DENSE + FULL (need all eigenvalues for spectral function)
+    spec_cfg%method = 'DENSE'
+    spec_cfg%mode = EIGEN_MODE_FULL
+    spec_cfg%nev = dim
+    spec_solver = make_eigensolver(spec_cfg)
 
     do ik = 1, nk
       wv%kx = k_arr(ik)
@@ -164,11 +155,14 @@ contains
       call ZB8bandQW(H, wv, profile, kpterms, cfg=cfg)
 
       ! Diagonalize
-      call zheev('N', 'U', dim, H, dim, evals, work, size(work), rwork, info)
-      if (info /= 0) then
+      call spec_solver%solve_dense(H, spec_cfg, spec_result)
+      if (.not. spec_result%converged) then
         A_kE = 0.0_dp
+        call eigensolver_result_free(spec_result)
         return
       end if
+      evals = spec_result%eigenvalues
+      call eigensolver_result_free(spec_result)
 
       ! Compute A(k, E) = sum_n delta_eta(E - E_n)
       do iE = 1, nE
@@ -179,7 +173,8 @@ contains
       end do
     end do
 
-    deallocate(H, evals, rwork, work)
+    deallocate(H, evals)
+    if (allocated(spec_solver)) deallocate(spec_solver)
   end subroutine compute_spectral_function_qw
 
   subroutine compute_spectral_function_bulk(cfg, k_arr, E_arr, eta, A_kE)
@@ -188,11 +183,13 @@ contains
     real(kind=dp), intent(in) :: eta
     real(kind=dp), allocatable, intent(out) :: A_kE(:,:)
 
-    integer :: nk, nE, ik, iE, i, lwork, info
+    integer :: nk, nE, ik, iE, i
     complex(kind=dp) :: H(8, 8)
-    complex(kind=dp), allocatable :: work(:)
-    real(kind=dp) :: evals(8), rwork(22)
+    real(kind=dp) :: evals(8)
     type(wavevector) :: wv
+    type(eigensolver_config) :: bulk_spec_cfg
+    class(eigensolver_base), allocatable :: bulk_spec_solver
+    type(eigensolver_result) :: bulk_spec_result
 
     nk = size(k_arr)
     nE = size(E_arr)
@@ -205,26 +202,24 @@ contains
     allocate(A_kE(nk, nE))
     A_kE = 0.0_dp
 
-    H = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    allocate(work(1))
-    call zheev('N', 'U', 8, H, 8, evals, work, -1, rwork, info)
-    if (info /= 0) then
-      A_kE = 0.0_dp
-      return
-    end if
-    lwork = max(1, nint(real(work(1), kind=dp)))
-    deallocate(work)
-    allocate(work(lwork))
+    ! Eigensolver: DENSE + FULL
+    bulk_spec_cfg%method = 'DENSE'
+    bulk_spec_cfg%mode = EIGEN_MODE_FULL
+    bulk_spec_cfg%nev = 8
+    bulk_spec_solver = make_eigensolver(bulk_spec_cfg)
 
     do ik = 1, nk
       wv = spectral_wavevector(cfg, k_arr(ik))
       H = cmplx(0.0_dp, 0.0_dp, kind=dp)
       call ZB8bandBulk(H, wv, cfg%params(1:1), cfg=cfg)
-      call zheev('N', 'U', 8, H, 8, evals, work, lwork, rwork, info)
-      if (info /= 0) then
+      call bulk_spec_solver%solve_dense(H, bulk_spec_cfg, bulk_spec_result)
+      if (.not. bulk_spec_result%converged) then
         A_kE = 0.0_dp
+        call eigensolver_result_free(bulk_spec_result)
         return
       end if
+      evals = bulk_spec_result%eigenvalues
+      call eigensolver_result_free(bulk_spec_result)
 
       do iE = 1, nE
         do i = 1, 8
@@ -233,7 +228,7 @@ contains
       end do
     end do
 
-    deallocate(work)
+    if (allocated(bulk_spec_solver)) deallocate(bulk_spec_solver)
   end subroutine compute_spectral_function_bulk
 
   subroutine compute_spectral_function_wire(cfg, k_arr, E_arr, eta, A_kE)
@@ -269,10 +264,11 @@ contains
     ngrid = grid_ngrid(cfg%grid)
     matrix_dim = 8 * ngrid
     eigen_cfg%method = 'FEAST'
+    eigen_cfg%mode = EIGEN_MODE_ENERGY
     eigen_cfg%nev = max(1, min(matrix_dim, cfg%bands%num_cb + cfg%bands%num_vb))
     eigen_cfg%max_iter = 200
     eigen_cfg%tol = 1.0e-10_dp
-    eigen_cfg%feast_m0 = min(matrix_dim, max(cfg%feast%m0, &
+    eigen_cfg%m0 = min(matrix_dim, max(cfg%solver%m0, &
       & min(matrix_dim, max(4 * eigen_cfg%nev, 128))))
     solver = make_eigensolver(eigen_cfg)
 
@@ -281,9 +277,9 @@ contains
       call auto_compute_energy_window(H_csr, emin_auto, emax_auto)
       eigen_cfg%emin = minval(E_arr) - 5.0_dp * eta
       eigen_cfg%emax = maxval(E_arr) + 5.0_dp * eta
-      if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
-        eigen_cfg%emin = cfg%feast%emin
-        eigen_cfg%emax = cfg%feast%emax
+      if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+        eigen_cfg%emin = cfg%solver%emin
+        eigen_cfg%emax = cfg%solver%emax
       else if (eigen_cfg%emin >= eigen_cfg%emax) then
         eigen_cfg%emin = emin_auto
         eigen_cfg%emax = emax_auto
@@ -300,10 +296,11 @@ contains
         call fail_wire_spectral()
         return
       end if
-      if (eigen_res%nev_found >= eigen_cfg%feast_m0 .and. eigen_cfg%feast_m0 < matrix_dim) then
+      if (eigen_res%m0_used > 0 .and. eigen_res%nev_found >= eigen_res%m0_used .and. &
+          eigen_res%m0_used < matrix_dim) then
         print *, 'ERROR: compute_spectral_function_wire: eigensolver returned ', &
-          & eigen_res%nev_found, ' states, reaching feast_m0=', eigen_cfg%feast_m0
-        print *, '  Increase feast_m0 or narrow the spectral energy window.'
+          & eigen_res%nev_found, ' states, reaching m0=', eigen_res%m0_used
+        print *, '  Increase m0 or narrow the spectral energy window.'
         call fail_wire_spectral()
         return
       end if
@@ -353,8 +350,6 @@ contains
 
   end subroutine compute_spectral_function_wire
 
-#ifdef USE_ARPACK
-
   ! ==============================================================================
   ! Compute LDOS at each grid point for a given energy E.
   !
@@ -362,10 +357,10 @@ contains
   ! where G = (E + i*eta - H)^-1
   !
   ! Args:
-    !   H          -- CSR Hamiltonian matrix (complex)
-    !   E          -- energy (real, eV)
-    !   eta        -- broadening (real, eV)
-    !   ldos       -- output LDOS at each grid point (real, 1/eV)
+  !   H          -- CSR Hamiltonian matrix (complex)
+  !   E          -- energy (real, eV)
+  !   eta        -- broadening (real, eV)
+  !   ldos       -- output LDOS at each grid point (real, 1/eV)
   !
   ! The shifted system is: A * x = b  with  A = E + i*eta - H
   ! For diagonal G(r,r) we solve A * e_r = e_r where e_r is unit vector at row r,
@@ -496,6 +491,5 @@ contains
 
     deallocate(a_val, ia, ja, perm, rhs, sol)
   end subroutine compute_ldos_csr
-#endif
 
 end module green_functions

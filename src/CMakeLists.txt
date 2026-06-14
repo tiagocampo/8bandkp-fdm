@@ -14,6 +14,7 @@ set(COMMON_SOURCES
     physics/confinement_init.f90
     physics/hamiltonian_blocks.f90
     physics/hamiltonian_wire.f90
+    physics/hamiltonian_qw.f90
     physics/hamiltonianConstructor.f90
     physics/charge_density.f90
     physics/poisson.f90
@@ -44,12 +45,6 @@ target_include_directories(8bandkp_common PUBLIC
 # Enable MKL FEAST eigensolver (available when building with Intel MKL)
 target_compile_definitions(8bandkp_common PUBLIC USE_MKL_FEAST)
 
-# Enable ARPACK-NG eigensolver (optional, provides shift-invert sparse solver)
-if(ARPACK_FOUND)
-    target_compile_definitions(8bandkp_common PUBLIC USE_ARPACK)
-    target_link_libraries(8bandkp_common PUBLIC ARPACK::ARPACK)
-endif()
-
 # fortran_stdlib (optional — string handling, error types, etc.)
 if(fortran_stdlib_FOUND)
     target_link_libraries(8bandkp_common PUBLIC fortran_stdlib::fortran_stdlib)
@@ -71,6 +66,7 @@ set_source_files_properties(
     physics/confinement_init.f90
     physics/hamiltonian_blocks.f90
     physics/hamiltonian_wire.f90
+    physics/hamiltonian_qw.f90
     physics/hamiltonianConstructor.f90
     physics/charge_density.f90
     physics/poisson.f90

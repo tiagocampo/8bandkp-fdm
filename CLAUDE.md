@@ -55,8 +55,8 @@ cmake -G Ninja -B build -DMKL_DIR=$MKLROOT/lib/cmake/mkl \
 cmake --build build
 
 # Run tests
-ctest --test-dir build                    # all tests (113: 35 unit + 44 regression + 18 verification + 9 standard-star (incl. 2 dual-labeled) + 6 convergence + 2 strain + 1 coverage + misc)
-ctest --test-dir build -j4                # parallel: 4 test jobs concurrently (cuts ~21min to ~8min)
+ctest --test-dir build                    # all tests (115: 35 unit + 44 regression + 18 verification + 9 standard-star (incl. 2 dual-labeled) + 6 convergence + 2 strain + 1 coverage + misc)
+OMP_NUM_THREADS=$(( $(nproc)/4 )) ctest --test-dir build -j4 --output-on-failure   # parallel — cap OMP to nproc/4 or slow tests time out (see gotcha)
 ctest --test-dir build -L unit            # pFUnit unit tests only
 ctest --test-dir build -L regression      # regression/golden-output tests only
 ctest --test-dir build -L verification    # 8-band verification ladder (4 rungs)
@@ -66,8 +66,10 @@ ctest --test-dir build -L coverage        # validation coverage matrix
 ctest --test-dir build -V                 # verbose output
 
 # With OpenMP threading for QW k-point sweeps:
-OMP_NUM_THREADS=12 ctest --test-dir build -j4 --output-on-failure
+OMP_NUM_THREADS=6 ctest --test-dir build -j4 --output-on-failure   # -j4 on 24 cores → 4×6=24 (no oversubscription)
 ```
+
+**Gotcha — `ctest -jN` oversubscription:** OpenMP defaults to all cores, so `ctest -jN` runs N×nproc threads; slow standard-star/convergence tests (e.g. `verification_sc_benchmark` ~393 s, `convergence_sc` ~1247 s) then blow past their per-process timeout and **fail spuriously**. Cap threads to `nproc/N`: `OMP_NUM_THREADS=$(( $(nproc)/N )) ctest --test-dir build -jN --output-on-failure` (e.g. `-j4` on 24 cores → `OMP_NUM_THREADS=6` → 115/115 green; uncapped → spurious `verification_sc_benchmark` timeout).
 
 pFUnit installs as **uppercase `PFUNIT`** — use `-DPFUNIT_DIR=.../PFUNIT-<ver>/cmake`. Built from source: `git clone https://github.com/Goddard-Fortran-Ecosystem/pFUnit`.
 
@@ -182,7 +184,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
 - **Basis ordering** (fixed throughout): bands 1-4 = valence (HH, LH, LH, HH), bands 5-6 = split-off, bands 7-8 = conduction
 - **Dual mode**: `confinement = "bulk"` → bulk (8x8), `confinement = "qw"` → quantum well (8N x 8N, N = grid%npoints())
 - **QW Hamiltonian**: 8x8 block matrix, each block NxN. Block structure defined in `hamiltonian_blocks.f90` as a 52-entry table (`get_kp_block_table()`) with named constants (KP_Q, KP_R, etc.). Both dense (`hamiltonianConstructor.f90`) and COO (`hamiltonian_wire.f90`) builders read this table instead of hard-coding the block topology. Blocks: k.p terms (Q, R, S, T, P) + band offsets
-- **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it from `input.toml` using sub-types mirroring TOML sections (`wave_vector_config`, `bands_config`, `external_field_config`, `b_field_config`, `wire_config`, `landau_config`, `feast_config`)
+- **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it from `input.toml` using sub-types mirroring TOML sections (`wave_vector_config`, `bands_config`, `external_field_config`, `b_field_config`, `wire_config`, `landau_config`, `solver_config`)
 - **`conf_direction()`** function returns the confinement direction character: bulk → `'n'` (none), QW → `'z'`, wire → `'z'`, Landau → `'x'`. Replaces the old `conf_dir` stored field.
 - **`grid%npoints()`** accessor returns the total number of spatial grid points: bulk → 1, QW → `fd_step`, wire → `nx * ny`, Landau → `landau.nx`. Replaces the old `ngrid` computed field.
 - **`num_layers`** counts `[[material]]` entries (material layers for bulk/QW). Wire mode uses `cfg%wire%num_regions` for `[[region]]` entries instead.
@@ -201,7 +203,7 @@ defs.f90                      (kinds, constants, derived types — no deps)
 
 TOML format parsed by `toml-f` library. Sections are order-independent. Key top-level fields: `confinement` (`"bulk"`, `"qw"`, `"wire"`, `"landau"`), `FDorder` (default 2), `fd_step` (grid points for QW; not used for wire/Landau, which derive the grid from `[wire]`/`[landau]` sections).
 
-Sections: `[wave_vector]` (mode, max, nsteps), `[bands]` (num_cb, num_vb), `[[material]]` (name, z_min, z_max), `[wire]` + `[wire.geometry]` + `[[region]]` (wire mode), `[landau]` (Landau mode), `[external_field]` (type, value), `[b_field]` (components, g_factor), `[strain]` (reference), `[sc]` (self-consistent parameters), `[[doping]]` (ND, NA or delta doping), `[topology]` (topological analysis), `[bdg]` (BdG parameters), `[optics]` (optical spectra), `[exciton]`, `[scattering]`, `[feast]`.
+Sections: `[wave_vector]` (mode, max, nsteps), `[bands]` (num_cb, num_vb), `[[material]]` (name, z_min, z_max), `[wire]` + `[wire.geometry]` + `[[region]]` (wire mode), `[landau]` (Landau mode), `[external_field]` (type, value), `[b_field]` (components, g_factor), `[strain]` (reference), `[sc]` (self-consistent parameters), `[[doping]]` (ND, NA or delta doping), `[topology]` (topological analysis), `[bdg]` (BdG parameters), `[optics]` (optical spectra), `[exciton]`, `[scattering]`, `[solver]` (method, mode, emin, emax, m0). Legacy `[feast]` sections are rejected with a hard `error stop` (migration message) — rename to `[solver]`.
 
 Optional sections are enabled by presence -- no separate enable flags. G-factor uses top-level `which_band` and `band_idx`. See `docs/reference/input-reference.md` for the complete schema.
 
@@ -226,14 +228,14 @@ Optional sections are enabled by presence -- no separate enable flags. G-factor 
   - **Known gaps** (will be fixed when touching those routines): `dns(:,:)` in `utils.f90:19`, `psi(:)` in `spin_projection.f90:14`
 - `spatial_grid%npoints()` accessor preferred over raw `grid%nx * grid%ny` for total grid size.
 - `iso_c_binding` used for all MKL C APIs: PARDISO as `pardiso_c`, FEAST wrappers, `mkl_set_num_threads_local`. PARDISO/FEAST scalars passed by reference (MKL C API passes pointers). `mkl_set_num_threads_local` uses `value` since the C function takes `int` by value.
-- PARDISO has two `iso_c_binding` interfaces: `pardiso_c` (complex, used by ARPACK eigensolver) and `pardiso_real` (real-valued, used by Poisson solver). Both use `c_intptr_t` for the `pt` handle array.
-- Polymorphic eigensolver: `make_eigensolver(config)` factory returns a polymorphic solver; dispatch via `solver%solve(...)`. Existing `solve_sparse_evp` remains available as a direct interface.
+- PARDISO has two `iso_c_binding` interfaces: `pardiso_c` (complex, used by topology/LDOS eigensolver) and `pardiso_real` (real-valued, used by Poisson solver). Both use `c_intptr_t` for the `pt` handle array.
+- Polymorphic eigensolver: `make_eigensolver(config)` factory returns a polymorphic solver; dispatch via `solver%solve(...)`, `solver%solve_sparse(...)`, or `solver%solve_dense(...)`. Three mode constants: `EIGEN_MODE_FULL` (all eigenvalues), `EIGEN_MODE_INDEX` (range il:iu), `EIGEN_MODE_ENERGY` (range [emin, emax]). Invalid combos (e.g., FEAST+INDEX) are rejected at config-validation time in `validate()` (defs check I15); `eigensolver_config_validate` is retained as defense-in-depth.
 - `fortran-stdlib` as optional dependency: CMake uses `find_package(fortran_stdlib CONFIG QUIET)`; code compiles without it.
 - `fpm.toml` exists as experimental alternative build system (documented as such in README). CMake/Ninja remains the primary build.
 - `g='g3'` derivative builds must stay isolated from `wire_workspace` cache.
 - `feast_workspace` reuse must remain pattern-validated.
 - `zdotc` declared as function-return ABI in `linalg.f90` — MKL on this platform returns `complex(dp)` by value, not via subroutine hidden argument. Do not change to subroutine form.
-- Eigensolver variants guarded by preprocessor: `#ifdef USE_MKL_FEAST` for FEAST solver, `#ifdef USE_ARPACK` for ARPACK solver. `make_eigensolver(config)` factory dispatches on string; add new variants behind their own `#ifdef` guard.
+- Eigensolver variants guarded by preprocessor: `#ifdef USE_MKL_FEAST` for FEAST solver. `make_eigensolver(config)` factory dispatches on string; add new variants behind their own `#ifdef` guard.
 - Scalar `pure` functions upgraded to `elemental pure`: `kronij`, `fermi_dirac`, `flat_idx`, `wire_flat_idx`, `compute_bp_scalar`, `segment_circle_fraction`.
 - Precision kinds in `defs.f90`: `sp` (real32), `dp` (real64), `qp` (real128), `iknd` (int32) — aliased from `iso_fortran_env`
 - k-vectors and wavevector sweeps use `real(dp)` throughout

@@ -1,9 +1,9 @@
 #!/bin/bash
 # COVERAGE: observable=CB_ground_state geometry=wire material=GaAs
 # Integration test: optional optics/exciton/scattering sections must not
-# consume subsequent FEAST or strain settings in wire configs.
+# consume subsequent solver or strain settings in wire configs.
 #
-# Verifies that [feast] emin/emax are used (via "Manual energy window" print)
+# Verifies that [solver] emin/emax are used (via "Manual energy window" print)
 # and that strain computation runs (strain.dat produced).
 #
 # Args:
@@ -33,22 +33,22 @@ run_case() {
 WORKDIR_DENSE=$(run_case "$DENSE_CFG")
 trap 'rm -rf "$WORKDIR_DENSE" "${WORKDIR_STRAIN:-}"' EXIT
 
-# Verify FEAST energy window was parsed by checking the "Manual energy window"
-# print which includes the feast emin/emax values.
+# Verify solver energy window was parsed by checking the "Manual energy window"
+# print which includes the solver emin/emax values.
 if ! grep -q "Manual energy window" "$WORKDIR_DENSE/test_output.log"; then
-    echo "FAIL: feast emin/emax not used (no Manual energy window print)"
+    echo "FAIL: solver emin/emax not used (no Manual energy window print)"
     cat "$WORKDIR_DENSE/test_output.log"
     exit 1
 fi
 
-# Verify the energy window contains the expected feast values [-1.5, 2.0]
+# Verify the energy window contains the expected solver values [-1.5, 2.0]
 if ! grep -q "\[  -1.5000000000000000      ,   2.0000000000000000" "$WORKDIR_DENSE/test_output.log"; then
-    echo "FAIL: feast emin/emax values incorrect in energy window"
+    echo "FAIL: solver emin/emax values incorrect in energy window"
     cat "$WORKDIR_DENSE/test_output.log"
     exit 1
 fi
 
-# Negative feast_m0 selects dense LAPACK path (not FEAST), which prints
+# method = "DENSE" selects dense LAPACK path (not FEAST), which prints
 # "Dense eigensolver" or runs through the dense path without FEAST.
 # The "Manual energy window" print itself confirms dense path was taken.
 
@@ -69,4 +69,4 @@ if [ "$STRAIN_LINES" -lt 1 ]; then
     exit 1
 fi
 
-echo "PASS: wire optional-section parsing preserves FEAST and strain settings"
+echo "PASS: wire optional-section parsing preserves solver and strain settings"

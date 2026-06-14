@@ -173,6 +173,113 @@ name = "GaAs"
 EOF
 run_test "V10_bad_fermi_mode" "fermi_mode"
 
+# V11: [solver] with invalid method
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[bands]
+num_cb = 2
+num_vb = 6
+[solver]
+method = "INVALID"
+[[material]]
+name = "GaAs"
+EOF
+run_test "V11_bad_solver_method" "solver%method"
+
+# V12: [solver] with invalid mode
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[bands]
+num_cb = 2
+num_vb = 6
+[solver]
+mode = "INVALID"
+[[material]]
+name = "GaAs"
+EOF
+run_test "V12_bad_solver_mode" "solver%mode"
+
+# V13: FEAST solver + INDEX mode (wire — eigensolver_config_validate rejects)
+cat > input.toml << 'EOF'
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+[wave_vector]
+mode = "kz"
+max = 0.1
+nsteps = 21
+[bands]
+num_cb = 8
+num_vb = 16
+[wire]
+nx = 21
+ny = 21
+dx = 3.0
+dy = 3.0
+[wire.geometry]
+shape = "rectangle"
+width = 63.0
+height = 63.0
+[[region]]
+material = "GaAs"
+inner = 0.0
+outer = 100.0
+[solver]
+method = "FEAST"
+mode = "INDEX"
+EOF
+run_test "V13_feast_index_mode" "FEAST.*INDEX"
+
+# V14: legacy [feast] section must be rejected with a migration message
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[[material]]
+name = "GaAs"
+[feast]
+emin = -1.5
+emax = 2.0
+EOF
+run_test "V14_legacy_feast_section" "feast.*removed"
+
+# V15: FEAST + INDEX combination rejected at input validation (defs), not eigensolver
+cat > input.toml << 'EOF'
+confinement = "wire"
+FDorder = 2
+[wire]
+nx = 5
+ny = 5
+dx = 3.0
+dy = 3.0
+[wire.geometry]
+shape = "rectangle"
+width = 12.0
+height = 12.0
+[[region]]
+material = "GaAs"
+inner = 0.0
+outer = 100.0
+[solver]
+method = "FEAST"
+mode = "INDEX"
+EOF
+run_test "V15_feast_index_rejected" "FEAST.*INDEX"
+
+# V16: bulk band count must equal 8 (bulk is fully diagonalized; window < 8
+# would write out of bounds). A bulk evnum of 7 (num_cb=2 + num_vb=5) is rejected.
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[bands]
+num_cb = 2
+num_vb = 5
+[[material]]
+name = "GaAs"
+EOF
+run_test "V16_bulk_band_count_ne8" "bulk band count"
+
 echo ""
 echo "========================================"
 echo " Validation rejection: $PASS passed, $FAIL failed"

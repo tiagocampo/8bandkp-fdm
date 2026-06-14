@@ -173,8 +173,8 @@ contains
     @assertTrue(allocated(setup%profile))
     @assertTrue(allocated(setup%kpterms))
     @assertTrue(allocated(setup%HT))
-    @assertTrue(allocated(setup%work))
-    @assertTrue(setup%lwork > 0)
+    ! Solver allocated (workspace managed internally by eigensolver)
+    @assertTrue(allocated(setup%eigen_solver))
 
     call simulation_setup_free(setup)
   end subroutine test_qw_init
@@ -517,7 +517,7 @@ contains
     cfg%external_field%value = 0.0_dp
     cfg%which_band = 0
     cfg%band_idx = 1
-    cfg%feast%m0 = -1
+    cfg%solver%method = 'DENSE'
 
     ! Wire grid dimensions
     cfg%wire%nx = nx

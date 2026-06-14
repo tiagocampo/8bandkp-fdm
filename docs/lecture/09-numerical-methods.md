@@ -315,11 +315,18 @@ analog of a symbolic factorization reused across numerical factorizations.
 
 ## 9.5 Eigensolvers
 
-### 9.5.1 Dense LAPACK: `zheevx` (Quantum Wells)
+The codebase uses a **unified polymorphic eigensolver** interface. The `make_eigensolver(config)` factory in `src/math/eigensolver.f90` returns a polymorphic `eigensolver_base` pointer. The backend is selected by `method` in the `[solver]` TOML section:
+
+- `method = "DENSE"` → `dense_lapack_solver_t` (calls `zheevx`)
+- `method = "FEAST"` → `feast_solver_t` (calls MKL `zfeast_hcsrev`)
+
+Both backends are invoked via `solver%solve(...)`, `solver%solve_dense(...)`, or `solver%solve_sparse(...)`. Three mode constants control the eigenvalue selection: `EIGEN_MODE_FULL` (all eigenvalues), `EIGEN_MODE_INDEX` (range `il:iu`), and `EIGEN_MODE_ENERGY` (range `[emin, emax]`). The `[solver]` TOML section maps `mode = "FULL"`, `"INDEX"`, or `"ENERGY"` to these constants.
+
+### 9.5.1 Dense LAPACK Backend (`dense_lapack_solver_t`)
 
 For 1D-confined quantum wells, the Hamiltonian is of moderate size
-($8N_z \times 8N_z$, typically $N_z < 500$). The code uses the LAPACK
-routine `zheevx` to solve the complex Hermitian eigenvalue problem:
+($8N_z \times 8N_z$, typically $N_z < 500$). The `dense_lapack_solver_t`
+uses the LAPACK routine `zheevx` to solve the complex Hermitian eigenvalue problem:
 
 $$
 \mathbf{H}\psi = E\psi
@@ -337,12 +344,12 @@ uses OpenMP parallelism: each thread handles a subset of k-points, calling
 `zheevx` independently. This is "embarrassingly parallel" and scales linearly
 with the number of cores.
 
-### 9.5.2 Sparse FEAST: `zfeast_hcsrev` (Quantum Wires)
+### 9.5.2 Sparse FEAST Backend (`feast_solver_t`)
 
 For 2D-confined quantum wires, the Hamiltonian can be very large
 ($8N_xN_y \times 8N_xN_y$, easily $10^4$--$10^5$), and converting to dense
-storage is impractical. The code uses the **MKL FEAST** algorithm
-(when compiled with `-DUSE_MKL_FEAST`), which is a contour-based eigensolver
+storage is impractical. The `feast_solver_t` uses the **MKL FEAST** algorithm
+(enabled at compile time with `-DUSE_MKL_FEAST`), which is a contour-based eigensolver
 that finds all eigenvalues within a user-specified energy window $[E_{\min},
 E_{\max}]$.
 
@@ -358,18 +365,19 @@ each quadrature point requires solving a linear system $(z_j I - H) x = b$.
 For sparse $H$, these solves are performed via sparse direct factorization
 (MKL PARDISO internally).
 
-The code calls FEAST with key parameters: `M0` (subspace dimension, must
-satisfy $M_0 \ge M + 1$; code sets `M0 = max(2*nev, nev+1)`), `fpm(4)` (max
-iterations), `fpm(3)` (convergence tolerance), and the energy window
-$[E_{\min}, E_{\max}]$. FEAST returns `M` eigenvalues in `E(1:M)` and
-eigenvectors in `X(:,1:M)`. The convergence flag `info = 0` indicates
-success; `info = 3` warns the subspace is too small and eigenvalues may be
-missing.
+The solver reads configuration from the `[solver]` TOML section: `m0` (subspace
+dimension, must satisfy $M_0 \ge M + 1$; auto-set to `max(2*nev, nev+1)` when
+`m0 = 0`), `max_iter` (max FEAST refinement iterations), `tol` (convergence
+tolerance), and `emin`/`emax` (energy window). FEAST returns `M` eigenvalues in
+`E(1:M)` and eigenvectors in `X(:,1:M)`. The convergence flag `info = 0`
+indicates success; `info = 3` warns the subspace is too small — increase `m0`
+or narrow the energy window.
 
 ### 9.5.3 Energy Window Estimation: Gershgorin Bounds
 
-The FEAST solver requires an energy window $[E_{\min}, E_{\max}]$. The code
-provides `auto_compute_energy_window` which estimates bounds using
+The FEAST backend requires an energy window $[E_{\min}, E_{\max}]$. When `emin = 0`
+and `emax = 0` in the `[solver]` section, the solver calls
+`auto_compute_energy_window` which estimates bounds using
 **Gershgorin's circle theorem**: every eigenvalue $\lambda$ of $H$ satisfies
 
 $$
@@ -386,13 +394,6 @@ $$
 and adds a safety margin of $\max(0.1 |E_{\text{bound}}|, \; 0.5\;\text{eV})$.
 This is cheap ($O(\text{nnz})$) and guarantees that all eigenvalues are
 captured.
-
-### 9.5.4 Dense Fallback
-
-When FEAST is not available, the code falls back to converting CSR to dense
-and using `zheevx`. This works for small matrices ($N \lesssim 5000$) but
-becomes impractical beyond that due to $O(N^2)$ storage and $O(N^3)$
-computation.
 
 ---
 
@@ -632,7 +633,7 @@ MKL PARDISO, using the same box-integration discretization on a 2D grid.
 | Component | 1D (QW) | 2D (Wire) |
 |-----------|---------|-----------|
 | FD matrix | Dense (Toeplitz or full) | CSR via Kronecker products |
-| Eigensolver | `zheevx` (dense LAPACK) | `zfeast_hcsrev` (sparse FEAST) |
+| Eigensolver | `dense_lapack_solver_t` (`zheevx`) | `feast_solver_t` (`zfeast_hcsrev`) via `make_eigensolver` |
 | Hamiltonian size | $8N_z$ | $8N_xN_y$ |
 | Typical $N$ | 50--500 | 2500--50000 |
 | Variable coefficients | `applyVariableCoeffStaggered` (staggered grid) | `csr_apply_variable_coeff` (CSR with face fractions) |

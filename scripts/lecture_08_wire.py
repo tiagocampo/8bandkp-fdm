@@ -51,7 +51,7 @@ def test_gaas_21x21_wire():
     expected_hdim = 8 * nx * ny  # 3528
     expected_numcb = 8
     expected_numvb = 16
-    # FEAST with feast_m0=-1 auto-detects; expect >= numcb + numvb
+    # FEAST solver with auto subspace; expect >= numcb + numvb
     min_expected_nev = expected_numcb + expected_numvb  # 24
 
     with tempfile.TemporaryDirectory(prefix="lecture08_gaas21_") as work:

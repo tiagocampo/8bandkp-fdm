@@ -24,11 +24,13 @@ module definitions
   public :: optical_transition, optics_config
   public :: exciton_config, scattering_config, bdg_config, topology_config, topological_result
   public :: wave_vector_config, bands_config, external_field_config
-  public :: b_field_config, feast_config, landau_config, wire_config
+  public :: b_field_config, solver_config, landau_config, wire_config
   public :: simulation_config, group
 
   ! Functions and subroutines
   public :: conf_direction
+  public :: resolve_solver_defaults
+  public :: to_upper_trim
   public :: kronij, grid_ngrid, init_grid_from_config
   public :: validate_semantic
 
@@ -399,11 +401,13 @@ module definitions
     real(kind=dp) :: g_factor = 2.0_dp
   end type
 
-  ! Replaces flat feast_emin/feast_emax/feast_m0
-  type :: feast_config
-    real(kind=dp) :: emin = 0.0_dp   ! 0 = auto
-    real(kind=dp) :: emax = 0.0_dp   ! 0 = auto
-    integer       :: m0 = 0          ! 0 = auto (2*nev)
+  ! Eigensolver configuration (parsed from [solver] TOML section)
+  type :: solver_config
+    character(len=10) :: method = 'AUTO'   ! AUTO, DENSE, FEAST
+    character(len=10) :: mode   = 'AUTO'   ! AUTO, FULL, INDEX, ENERGY
+    real(kind=dp)     :: emin   = 0.0_dp   ! 0 = auto
+    real(kind=dp)     :: emax   = 0.0_dp   ! 0 = auto
+    integer           :: m0     = 0         ! 0 = auto (FEAST subspace)
   end type
 
   ! Replaces scattered landau_* fields
@@ -437,7 +441,7 @@ module definitions
     type(external_field_config) :: external_field
     type(b_field_config)       :: b_field
     type(strain_config)        :: strain
-    type(feast_config)         :: feast
+    type(solver_config)        :: solver
 
     ! Mode-specific geometry
     type(wire_config)          :: wire              ! confinement = "wire"
@@ -661,14 +665,18 @@ module definitions
         error stop 'validate_simulation_config: params too small for num_layers'
       end if
 
-      ! ---- V1: bulk evnum must not exceed 8 (8x8 Hamiltonian) ----
+      ! ---- V1: bulk is fully diagonalized (8x8 Hamiltonian), so the
+      ! requested band window must equal 8. For bulk it is a display filter
+      ! only (see CONTEXT.md "requested band window"), not a compute
+      ! directive — sizing storage by a window < 8 would write out of bounds
+      ! because the bulk solve always returns all 8 eigenpairs.
       if (trim(cfg%confinement) == 'bulk') then
-        if (cfg%evnum > 8) then
+        if (cfg%evnum /= 8) then
           block
             character(len=16) :: buf
             write(buf, '(I0)') cfg%evnum
-            error stop 'validate_simulation_config: evnum (=' // trim(buf) // &
-              ') exceeds 8 for bulk confinement (8x8 Hamiltonian)'
+            error stop 'validate_simulation_config: bulk band count (evnum=' // &
+              trim(buf) // ') must equal 8 (8x8 Hamiltonian is fully diagonalized)'
           end block
         end if
       end if
@@ -761,29 +769,58 @@ module definitions
         end block
       end if
 
-      ! ---- I11: feast%emin < feast%emax when both nonzero ----
-      if (cfg%feast%emin /= 0.0_dp .and. cfg%feast%emax /= 0.0_dp) then
-        if (cfg%feast%emin >= cfg%feast%emax) then
+      ! ---- I11: solver%emin < solver%emax when both nonzero ----
+      if (cfg%solver%emin /= 0.0_dp .and. cfg%solver%emax /= 0.0_dp) then
+        if (cfg%solver%emin >= cfg%solver%emax) then
           block
             character(len=32) :: buf_emin, buf_emax
-            write(buf_emin, '(ES12.4)') cfg%feast%emin
-            write(buf_emax, '(ES12.4)') cfg%feast%emax
-            error stop 'validate_simulation_config: feast%emin (' // trim(buf_emin) // &
-              ') must be < feast%emax (' // trim(buf_emax) // ')'
+            write(buf_emin, '(ES12.4)') cfg%solver%emin
+            write(buf_emax, '(ES12.4)') cfg%solver%emax
+            error stop 'validate_simulation_config: solver%emin (' // trim(buf_emin) // &
+              ') must be < solver%emax (' // trim(buf_emax) // ')'
           end block
         end if
       end if
 
-      ! ---- I12: feast%m0 must be in [1, 1000] when explicitly set (> 0) ----
+      ! ---- I12: solver%m0 must be in [1, 1000] when explicitly set (> 0) ----
       ! m0 <= 0 is the "auto-detect" sentinel (eigensolver replaces with 2*nev).
-      if (cfg%feast%m0 > 0) then
-        if (cfg%feast%m0 > 1000) then
+      if (cfg%solver%m0 > 0) then
+        if (cfg%solver%m0 > 1000) then
           block
             character(len=16) :: buf
-            write(buf, '(I0)') cfg%feast%m0
-            error stop 'validate_simulation_config: feast%m0 must be in [1, 1000], got ' // trim(buf)
+            write(buf, '(I0)') cfg%solver%m0
+            error stop 'validate_simulation_config: solver%m0 must be in [1, 1000], got ' // trim(buf)
           end block
         end if
+      end if
+
+      ! ---- I13: solver%method must be AUTO, DENSE, or FEAST ----
+      select case (trim(cfg%solver%method))
+      case ('AUTO', 'DENSE', 'FEAST')
+        ! ok
+      case default
+        error stop 'validate_simulation_config: solver%method must be AUTO, DENSE, or FEAST, got "' // &
+          trim(cfg%solver%method) // '"'
+      end select
+
+      ! ---- I14: solver%mode must be AUTO, FULL, INDEX, or ENERGY ----
+      select case (trim(cfg%solver%mode))
+      case ('AUTO', 'FULL', 'INDEX', 'ENERGY')
+        ! ok
+      case default
+        error stop 'validate_simulation_config: solver%mode must be AUTO, FULL, INDEX, or ENERGY, got "' // &
+          trim(cfg%solver%mode) // '"'
+      end select
+
+      ! ---- I15: FEAST method cannot combine with INDEX mode ----
+      ! FEAST has no INDEX (range il:iu) interface; only ENERGY or FULL are
+      ! supported. Caught here at input validation so the user sees a clear
+      ! message before any eigensolver is constructed. The eigensolver.f90
+      ! guards (eigensolver_config_validate + feast_solve_sparse_dispatch)
+      ! remain as defense-in-depth for any code path that bypasses validate().
+      if (trim(cfg%solver%method) == 'FEAST' .and. trim(cfg%solver%mode) == 'INDEX') then
+        error stop 'validate_simulation_config: FEAST solver does not support INDEX mode ' // &
+          '(use mode = ENERGY or FULL)'
       end if
 
     end associate
@@ -807,6 +844,15 @@ module definitions
     case ('gfactor')
       if (cfg%wave_vector%nsteps /= 0 .and. cfg%wave_vector%mode /= 'k0') then
         error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
+      end if
+      ! gfactor needs the FULL spectrum for Lowdin partitioning. For QW,
+      ! setup_solve_kpoint_serial forces FULL mode, which would route an
+      ! explicit QW+FEAST through solve_sparse and silently truncate the
+      ! spectrum (FEAST is a partial-spectrum contour solver). Reject that
+      ! one combo up front. Bulk resolves DENSE; wire uses FEAST through its
+      ! own (non-FULL) path, so both are unaffected.
+      if (trim(cfg%confinement) == 'qw' .and. to_upper_trim(cfg%solver%method) == 'FEAST') then
+        error stop 'validate_semantic: gfactor requires the full spectrum; FEAST is unsupported for QW gfactor (use method = DENSE or AUTO)'
       end if
       ! S1: bandIdx in range for gfactor (bulk, QW, wire)
       ! CB (which_band=0): accesses cb_state(:, bandIdx:bandIdx+1) → range [1, num_cb-1]
@@ -973,6 +1019,102 @@ module definitions
       d = 'x'
     end select
   end function conf_direction
+
+  ! ------------------------------------------------------------------
+  ! resolve_solver_defaults: single source of truth for the
+  ! (confinement, method, mode) -> (resolved method, resolved mode)
+  ! mapping used by every eigensolver dispatch site.
+  !
+  ! AUTO contract (CONTEXT.md):
+  !   1. METHOD resolves first. AUTO -> confinement default
+  !      (bulk/qw/landau -> DENSE, wire -> FEAST); otherwise the
+  !      user's method (trimmed, uppercased) is honored.
+  !   2. MODE then resolves METHOD-AWARE. AUTO -> a default compatible
+  !      with the resolved method (FEAST -> ENERGY; DENSE -> the
+  !      confinement's native mode: bulk FULL, qw/landau INDEX,
+  !      wire ENERGY). An explicit mode is honored (trimmed, uppercased).
+  !
+  ! INVARIANT: AUTO never yields an invalid combination; FEAST+INDEX is
+  ! unreachable through AUTO. Explicit FEAST+INDEX set by the user is
+  ! still returned faithfully (the caller / validate() rejects it).
+  !
+  ! defs.f90 is the root module and cannot 'use' the eigensolver module
+  ! (which depends on it), so this returns UPPERCASE character strings
+  ! ('DENSE'/'FEAST' and 'FULL'/'INDEX'/'ENERGY'), not EIGEN_MODE_*
+  ! integer constants. Each dispatch site maps the mode string to its
+  ! integer constant via eigen_mode_from_string() in simulation_setup.
+  ! ------------------------------------------------------------------
+  pure subroutine resolve_solver_defaults(confinement, method, mode, out_method, out_mode)
+    character(len=*), intent(in)  :: confinement, method, mode
+    character(len=*), intent(out) :: out_method, out_mode
+
+    character(len=len(out_method)) :: rmeth
+    character(len=len(out_mode))   :: rmode
+
+    ! --- Resolve METHOD first (confinement default unless overridden) ---
+    select case (to_upper_trim(method))
+    case ('AUTO')
+      select case (to_upper_trim(confinement))
+      case ('BULK', 'QW', 'LANDAU')
+        rmeth = 'DENSE'
+      case ('WIRE')
+        rmeth = 'FEAST'
+      case default
+        ! Unknown confinement: fall back to DENSE. validate() is the
+        ! primary gatekeeper for invalid confinement values; this keeps
+        ! the resolver total (never error-stops inside a pure routine).
+        rmeth = 'DENSE'
+      end select
+    case ('DENSE', 'FEAST')
+      rmeth = to_upper_trim(method)
+    case default
+      ! Unknown method: fall back to DENSE (validate() rejects upstream).
+      rmeth = 'DENSE'
+    end select
+
+    ! --- Resolve MODE method-aware ---
+    select case (to_upper_trim(mode))
+    case ('AUTO')
+      select case (rmeth)
+      case ('FEAST')
+        rmode = 'ENERGY'
+      case ('DENSE')
+        select case (to_upper_trim(confinement))
+        case ('BULK')
+          rmode = 'FULL'
+        case ('QW', 'LANDAU')
+          rmode = 'INDEX'
+        case ('WIRE')
+          rmode = 'ENERGY'
+        case default
+          rmode = 'FULL'
+        end select
+      end select
+    case ('FULL', 'INDEX', 'ENERGY')
+      rmode = to_upper_trim(mode)
+    case default
+      rmode = 'FULL'
+    end select
+
+    out_method = rmeth
+    out_mode   = rmode
+  end subroutine resolve_solver_defaults
+
+  ! Uppercase + trim a short ASCII string (defs.f90 cannot use downstream
+  ! helpers; this is the canonical local normalizer).
+  pure function to_upper_trim(s) result(u)
+    character(len=*), intent(in) :: s
+    character(len=len(s)) :: u
+    integer :: i, c
+    u = s
+    do i = 1, len(s)
+      c = iachar(s(i:i))
+      if (c >= iachar('a') .and. c <= iachar('z')) then
+        u(i:i) = achar(c - 32)
+      end if
+    end do
+    u = trim(u)
+  end function to_upper_trim
 
   elemental pure function kronij(i,j)
     integer, intent(in) :: i,j

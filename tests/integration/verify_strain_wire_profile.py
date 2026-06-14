@@ -94,10 +94,11 @@ def make_wire_config(nx=20, ny=20, dx=5.0, dy=5.0,
         "which_band = 0\n"
         "band_idx = 1\n"
         "\n"
-        "[feast]\n"
+        "[solver]\n"
+        'method = "DENSE"\n'
+        'mode = "ENERGY"\n'
         "emin = -1.5\n"
         "emax = 2.0\n"
-        "m0 = -1\n"
         f"{strain_section}"
     )
 

@@ -1,7 +1,7 @@
 program kpfdm
 
   use definitions, only: NUM_CB_STATES, NUM_VB_STATES, conf_direction, &
-    dp, simulation_config, validate_semantic, wavevector
+    dp, simulation_config, validate_semantic, wavevector, resolve_solver_defaults
   use parameters
   use hamiltonianConstructor
   use hamiltonian_blocks, only: init_kp_block_cache
@@ -10,13 +10,17 @@ program kpfdm
   use utils, only: get_unit, ensure_output_dir
   use input_parser
   use sc_loop
-  use eigensolver, only: eigensolver_result, eigensolver_result_free
+  use eigensolver, only: eigensolver_result, eigensolver_result_free, &
+    eigensolver_config, eigensolver_base, make_eigensolver, &
+    eigensolver_config_validate, auto_compute_energy_window
   use strain_solver, only: strain_result, strain_result_free, init_strain_cache
   use magnetic_field, only: init_zeeman_cache
   use exciton_solver
   use scattering_solver
-  use linalg, only: zheevx, mkl_set_num_threads_local, ilaenv, dlamch
+  use linalg, only: mkl_set_num_threads_local
   use spin_projection, only: compute_band_parts
+  use sparse_matrices, only: csr_matrix, csr_free
+  use hamiltonian_qw, only: qw_workspace, qw_workspace_free, ZB8bandQW_csr
   use simulation_setup_mod
 
   implicit none
@@ -33,13 +37,11 @@ program kpfdm
   integer :: i, k, ii, jj
 
   ! hamiltonian and LAPACK/BLAS
-  integer :: info, NB, lwork, N, M, il, iuu
-  real(kind=dp) :: abstol, vl, vu
-  real(kind=dp), allocatable :: eig(:,:), rwork(:)
-  complex(kind=dp), allocatable :: work(:)
+  integer :: info, N, M, il, iuu
+  real(kind=dp) :: vl, vu
+  real(kind=dp), allocatable :: eig(:,:)
   complex(kind=dp), allocatable, dimension(:,:,:) :: eigv
   complex(kind=dp), allocatable, dimension(:,:) :: HT, HTmp
-  integer, allocatable :: iwork(:), ifail(:)
 
   ! file handling
   integer(kind=4) :: iounit
@@ -267,7 +269,7 @@ program kpfdm
 
       call setup_build_H(setup, cfg, smallk(1))
 
-      if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
+      if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
         print *, '  Manual energy window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
       else
         print *, '  Auto energy window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
@@ -389,23 +391,19 @@ program kpfdm
   if (trim(cfg%confinement) == 'landau') then
     block
       type(simulation_setup) :: setup
-      integer :: N_loc, il_loc, iuu_loc, lwork_loc
+      type(eigensolver_config) :: landau_cfg
+      class(eigensolver_base), allocatable :: landau_solver
+      type(eigensolver_result) :: landau_result
 
       call simulation_setup_init(cfg, setup)
 
-      N_loc = setup%N
-      il_loc = setup%il
-      iuu_loc = setup%iuu
-      lwork_loc = setup%lwork
+      N = setup%N
+      il = setup%il
+      iuu = setup%iuu
 
       ! Move profile/kpterms from setup into module-level variables
       call move_alloc(setup%profile, profile)
       call move_alloc(setup%kpterms, kpterms)
-
-      N = N_loc
-      il = il_loc
-      iuu = iuu_loc
-      lwork = lwork_loc
 
       print '(A,I0,A)', ' Landau mode: N=', N, ' (single material)'
 
@@ -420,14 +418,7 @@ program kpfdm
 
       vl = 0.0_dp
       vu = 0.0_dp
-      abstol = DLAMCH('P')
 
-      if (allocated(rwork)) deallocate(rwork)
-      allocate(rwork(7*N))
-      if (allocated(iwork)) deallocate(iwork)
-      allocate(iwork(5*N))
-      if (allocated(ifail)) deallocate(ifail)
-      allocate(ifail(N))
       if (allocated(eig)) deallocate(eig)
       allocate(eig(iuu-il+1, cfg%wave_vector%nsteps))
       if (allocated(eigv)) deallocate(eigv)
@@ -435,24 +426,9 @@ program kpfdm
       eig(:,:) = 0_dp
       eigv(:,:,:) = 0_dp
 
-      if (allocated(HT)) deallocate(HT)
-      allocate(HT(N, N))
-      HT = 0.0_dp
-
-      ! Workspace query: build H at k=0, query optimal lwork via zheevx
-      if (allocated(work)) deallocate(work)
-      allocate(work(1))
-      call ZB8bandLandau(HT, smallk(1), profile, kpterms, cfg%grid%x, cfg=cfg)
-      lwork = -1
-      call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,1), &
-        HT, N, work, lwork, rwork, iwork, ifail, info)
-      if (info /= 0) then
-        print *, 'Error: zheevx Landau workspace query failed, info =', info
-        error stop 'zheevx parameter error'
-      end if
-      lwork = int(real(work(1)))
-      if (allocated(work)) deallocate(work)
-      allocate(work(lwork))
+      ! --- Solver config: DENSE + INDEX ---
+      landau_cfg = setup%eigen_cfg
+      landau_solver = make_eigensolver(landau_cfg)
 
       ! ================================================================
       ! Landau k-sweep (OpenMP parallel)
@@ -463,41 +439,38 @@ program kpfdm
         & cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
 
       block
-        complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
-        real(kind=dp), allocatable    :: rwork_loc(:)
-        integer, allocatable          :: iwork_loc(:), ifail_loc(:)
-        integer :: info_loc, M_loc
+        complex(kind=dp), allocatable :: HT_loc(:,:)
+        type(eigensolver_config) :: cfg_loc
+        class(eigensolver_base), allocatable :: solver_loc
 
         call init_kp_block_cache()
         call init_strain_cache()
         call init_zeeman_cache()
 
-        !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
+        !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, landau_result, M)
         allocate(HT_loc(N, N))
-        allocate(work_loc(lwork))
-        allocate(rwork_loc(7*N))
-        allocate(iwork_loc(5*N))
-        allocate(ifail_loc(N))
         HT_loc = (0.0_dp, 0.0_dp)
+        cfg_loc = landau_cfg
+        solver_loc = make_eigensolver(cfg_loc)
 
         !$omp do schedule(static)
         do k = 1, cfg%wave_vector%nsteps
           call ZB8bandLandau(HT_loc, smallk(k), profile, kpterms, cfg%grid%x, cfg=cfg)
-          call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
-            eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
-            ifail_loc, info_loc)
-          if (info_loc /= 0) then
+          call solver_loc%solve_dense(HT_loc, cfg_loc, landau_result)
+          if (.not. landau_result%converged) then
             !$omp critical
-            print *, "ERROR: Landau diagonalization failed at k=", k, "info=", info_loc
-            if (info_loc < 0) print *, "  Parameter ", -info_loc, " had illegal value"
+            print *, "ERROR: Landau diagonalization failed at k=", k
             !$omp end critical
-            error stop 'zheevx diagonalization failed'
+            error stop 'eigensolver failed in Landau k-sweep'
           end if
-          eigv(:,:,k) = HT_loc(:, 1:iuu-il+1)
+          M = landau_result%nev_found
+          eig(1:M, k) = landau_result%eigenvalues(1:M)
+          eigv(:, 1:M, k) = landau_result%eigenvectors(:, 1:M)
+          call eigensolver_result_free(landau_result)
         end do
         !$omp end do
 
-        deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
+        deallocate(HT_loc)
         !$omp end parallel
       end block
 
@@ -517,10 +490,7 @@ program kpfdm
           real(kind=dp) :: B_min, B_max, B_step, B_val
           integer :: nB, iB, nL
           real(kind=dp), allocatable :: eig_B(:,:)
-          complex(kind=dp), allocatable :: HT_B(:,:), work_B(:)
-          real(kind=dp), allocatable :: rwork_B(:)
-          integer, allocatable :: iwork_B(:), ifail_B(:)
-          integer :: info_B, M_B
+          complex(kind=dp), allocatable :: HT_B(:,:)
           character(len=64) :: fmt_str
           type(wavevector) :: wv0
 
@@ -542,24 +512,20 @@ program kpfdm
           wv0%kz = 0.0_dp
 
           allocate(HT_B(N, N))
-          allocate(work_B(lwork))
-          allocate(rwork_B(7*N))
-          allocate(iwork_B(5*N))
-          allocate(ifail_B(N))
           HT_B = (0.0_dp, 0.0_dp)
 
           do iB = 1, nB
             B_val = B_min + (iB - 1) * B_step
             cfg%bdg%B_vec(3) = B_val
             call ZB8bandLandau(HT_B, wv0, profile, kpterms, cfg%grid%x, cfg=cfg)
-            call zheevx('N', 'I', 'U', N, HT_B, N, vl, vu, il, iuu, abstol, M_B, &
-              eig_B(:, iB), HT_B, N, work_B, lwork, rwork_B, iwork_B, &
-              ifail_B, info_B)
-            if (info_B /= 0) then
-              print *, 'ERROR: B-sweep diagonalization failed at B=', B_val, &
-                & ' info=', info_B
-              error stop 'zheevx diagonalization failed in B-sweep'
+            call landau_solver%solve_dense(HT_B, landau_cfg, landau_result)
+            if (.not. landau_result%converged) then
+              print *, 'ERROR: B-sweep diagonalization failed at B=', B_val
+              error stop 'eigensolver failed in Landau B-sweep'
             end if
+            M = min(landau_result%nev_found, nL)
+            eig_B(1:M, iB) = landau_result%eigenvalues(1:M)
+            call eigensolver_result_free(landau_result)
           end do
 
           call ensure_output_dir()
@@ -577,7 +543,7 @@ program kpfdm
           end do
           close(iounit)
           print '(A,I0,A)', ' Landau fan diagram written to output/landau_fan.dat (', nB, ' B-points)'
-          deallocate(eig_B, HT_B, work_B, rwork_B, iwork_B, ifail_B)
+          deallocate(eig_B, HT_B)
         end block
       end if
 
@@ -609,7 +575,7 @@ program kpfdm
   vu = 0.0_dp
   if (trim(cfg%confinement) == 'bulk') then
     il = 1
-    iuu = cfg%evnum
+    iuu = 8
   else
     ! For quantum well, select the right range of states
     ! We want the highest numvb valence states and lowest numcb conduction states
@@ -618,36 +584,23 @@ program kpfdm
     print *, "Computing states from index", il, "to", iuu
   end if
 
-  NB = ILAENV(1, 'ZHETRD', 'UPLO', N, N, -1, -1)
-  NB = MAX(NB,N)
-  ABSTOL = DLAMCH('P')
-
-  if (allocated(rwork)) deallocate(rwork)
-  allocate(rwork(7*N))  ! For ZHEEVX
-  if (allocated(iwork)) deallocate(iwork)
-  allocate(iwork(5*N))
-  if (allocated(ifail)) deallocate(ifail)
-  allocate(ifail(N))
+  ! Allocate eigenvalue/eigenvector storage
   if (allocated(eig)) deallocate(eig)
-  allocate(eig(iuu-il+1,cfg%wave_vector%nsteps))  ! Only store the states we want
+  allocate(eig(iuu-il+1,cfg%wave_vector%nsteps))
   if (allocated(eigv)) deallocate(eigv)
   if (conf_direction(cfg%confinement) == 'n') then
-    allocate(eigv(8,cfg%evnum,cfg%wave_vector%nsteps))  ! 8x8 for bulk
+    allocate(eigv(8,8,cfg%wave_vector%nsteps))
   else
-    allocate(eigv(N,iuu-il+1,cfg%wave_vector%nsteps))  ! Only store the states we want
+    allocate(eigv(N,iuu-il+1,cfg%wave_vector%nsteps))
   end if
 
   eig(:,:) = 0_dp
   eigv(:,:,:) = 0_dp
 
   allocate(HT(N,N))
-  allocate(HTmp(8,8))  ! Temporary array for bulk diagonalization
+  allocate(HTmp(8,8))
   HT = 0.0_dp
   HTmp = 0.0_dp
-
-  ! Initial workspace allocation
-  if (allocated(work)) deallocate(work)
-  allocate(work(N))  ! Will be resized after workspace query
 
   ! Print profile for QW mode
   if (conf_direction(cfg%confinement) == 'z') then
@@ -703,131 +656,179 @@ program kpfdm
   end if
 
   ! ====================================================================
-  ! Workspace query (serial, k=1) — determines lwork for zheevx
-  ! ====================================================================
-  if (conf_direction(cfg%confinement) == 'n') then
-    ! BULK: 8x8 workspace query
-    call ZB8bandBulk(HT, smallk(1), cfg%params(1), cfg=cfg)
-    HTmp = HT(1:8,1:8)
-    if (allocated(work)) deallocate(work)
-    allocate(work(1))
-    lwork = -1
-    call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:cfg%evnum,1), &
-               HTmp, 8, work, lwork, rwork, iwork, ifail, info)
-    if (info /= 0) then
-      print *, 'Error: zheevx bulk workspace query failed, info =', info
-      error stop 'zheevx parameter error'
-    end if
-    lwork = int(real(work(1)))
-    if (allocated(work)) deallocate(work)
-    allocate(work(lwork))
-  else if (conf_direction(cfg%confinement) == 'z') then
-    ! QW: NxN workspace query
-    call ZB8bandQW(HT, smallk(1), profile, kpterms, cfg=cfg)
-    if (allocated(work)) deallocate(work)
-    allocate(work(1))
-    lwork = -1
-    call zheevx('V', 'I', 'U', N, HT, N, vl, vu, il, iuu, abstol, M, eig(:,1), &
-               HT, N, work, lwork, rwork, iwork, ifail, info)
-    if (info /= 0) then
-      print *, 'Error: zheevx QW workspace query failed, info =', info
-      error stop 'zheevx parameter error'
-    end if
-    lwork = int(real(work(1)))
-    if (allocated(work)) deallocate(work)
-    allocate(work(lwork))
-  end if
-
-  ! ====================================================================
   ! k-vector sweep: sequential for bulk, OpenMP parallel for QW
+  ! Uses unified eigensolver dispatch.
   ! ====================================================================
-  if (conf_direction(cfg%confinement) == 'n') then
-    ! --- BULK (8x8, trivially fast — no parallelization needed) ---
-    do k = 1, cfg%wave_vector%nsteps
-      call ZB8bandBulk(HT, smallk(k), cfg%params(1), cfg=cfg)
-      HTmp = HT(1:8,1:8)
+  block
+    type(eigensolver_result) :: result_bs
+    type(eigensolver_config) :: ecfg_bs
+    class(eigensolver_base), allocatable :: solver_bs
+    character(len=10) :: res_method, res_mode   ! resolved by resolve_solver_defaults
 
-      call zheevx('V', 'I', 'U', 8, HTmp, 8, vl, vu, il, iuu, abstol, M, eig(1:cfg%evnum,k), &
-                 HTmp, 8, work, lwork, rwork, iwork, ifail, info)
-      if (info /= 0) then
-        print *, "Diagonalization error in bulk calculation, info = ", info
-        if (info < 0) print *, "Parameter ", -info, " had illegal value"
-        error stop "error diag"
+    ! Build solver config via the single source of truth: bulk resolves
+    ! DENSE+FULL, QW resolves DENSE+INDEX (exact same (method,mode) as
+    ! before, now centralized in resolve_solver_defaults). The
+    ! confinement-specific nev/il/iu bookkeeping stays per-branch.
+    call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                 res_method, res_mode)
+    ecfg_bs%method = res_method
+    ecfg_bs%mode   = eigen_mode_from_string(res_mode)
+    ! Propagate the user's [solver] window/subspace so FEAST honors it instead
+    ! of falling back to the eigensolver_config type default [-1,+1] eV.
+    ecfg_bs%emin = cfg%solver%emin
+    ecfg_bs%emax = cfg%solver%emax
+    ecfg_bs%m0   = cfg%solver%m0
+    if (conf_direction(cfg%confinement) == 'n') then
+      ! Bulk: 8x8, all eigenvalues
+      ecfg_bs%nev = 8
+      ecfg_bs%il = 1
+      ecfg_bs%iu = 8
+    else
+      ! QW: selected eigenvalue range
+      ecfg_bs%nev = iuu - il + 1
+      ecfg_bs%il = il
+      ecfg_bs%iu = iuu
+      ! QW + FEAST needs a valid energy window. Honor [solver] emin/emax; if
+      ! unset (auto sentinel emin >= emax), estimate from the max-k Hamiltonian
+      ! so the window covers the whole sweep (DENSE ignores emin/emax).
+      if (trim(ecfg_bs%method) == 'FEAST' .and. ecfg_bs%emin >= ecfg_bs%emax) then
+        block
+          type(csr_matrix) :: HT_csr_k0
+          type(qw_workspace) :: qw_ws_k0
+          call ZB8bandQW_csr(HT_csr_k0, smallk(cfg%wave_vector%nsteps), &
+            profile, kpterms, cfg, ws=qw_ws_k0)
+          call auto_compute_energy_window(HT_csr_k0, ecfg_bs%emin, ecfg_bs%emax)
+          call csr_free(HT_csr_k0)
+          call qw_workspace_free(qw_ws_k0)
+          print '(A,ES12.4,A,ES12.4,A)', ' QW k-sweep auto FEAST window: [', &
+            ecfg_bs%emin, ',', ecfg_bs%emax, ']'
+        end block
       end if
+    end if
+    call eigensolver_config_validate(ecfg_bs)
+    solver_bs = make_eigensolver(ecfg_bs)
 
-      eigv(:,:,k) = HTmp(:,1:cfg%evnum)
-    end do
-
-    ! Write bulk eigenfunctions at start, middle, end k-points
-    do k = 1, cfg%wave_vector%nsteps
-      if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
-        call writeEigenfunctions(8, min(cfg%evnum,8), eigv(:,1:min(cfg%evnum,8),k), &
-          & k, cfg%grid%npoints(), cfg%z, .true., &
-          & k_magnitude=sqrt(smallk(k)%kx**2 + smallk(k)%ky**2 + smallk(k)%kz**2))
-      end if
-    end do
-
-  else if (conf_direction(cfg%confinement) == 'z') then
-    ! --- QUANTUM WELL (NxN, OpenMP parallel) ---
-    ! Disable MKL internal threading so each OpenMP thread calls
-    ! zheevx in serial — avoids oversubscription with intel_thread MKL.
-    ! mkl_set_num_threads_local returns previous setting (discarded).
-    info = mkl_set_num_threads_local(1)
-
-    print '(A,I0,A)', ' QW k-sweep: ', cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
-
-    block
-      ! Thread-private temporaries for the parallel region
-      complex(kind=dp), allocatable :: HT_loc(:,:), work_loc(:)
-      real(kind=dp), allocatable    :: rwork_loc(:)
-      integer, allocatable          :: iwork_loc(:), ifail_loc(:)
-      integer :: info_loc, M_loc
-
-      ! Pre-initialize block table caches before OpenMP fork (thread-safety)
-      call init_kp_block_cache()
-      call init_strain_cache()
-      call init_zeeman_cache()
-
-      !$omp parallel private(k, HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc, info_loc, M_loc)
-      ! Each thread allocates its own workspace
-      allocate(HT_loc(N, N))
-      allocate(work_loc(lwork))
-      allocate(rwork_loc(7*N))
-      allocate(iwork_loc(5*N))
-      allocate(ifail_loc(N))
-      HT_loc = (0.0_dp, 0.0_dp)
-
-      !$omp do schedule(static)
+    if (conf_direction(cfg%confinement) == 'n') then
+      ! --- BULK (8x8, trivially fast — no parallelization needed) ---
       do k = 1, cfg%wave_vector%nsteps
-        ! Build Hamiltonian for this k-point
-        call ZB8bandQW(HT_loc, smallk(k), profile, kpterms, cfg=cfg)
-
-        ! Diagonalize
-        call zheevx('V', 'I', 'U', N, HT_loc, N, vl, vu, il, iuu, abstol, M_loc, &
-                   eig(:,k), HT_loc, N, work_loc, lwork, rwork_loc, iwork_loc, &
-                   ifail_loc, info_loc)
-        if (info_loc /= 0) then
-          error stop 'zheevx diagonalization failed'
-        end if
-
-        ! Store eigenvectors (HT_loc now holds them, zheevx overwrites input)
-        eigv(:,:,k) = HT_loc(:, 1:iuu-il+1)
+        call ZB8bandBulk(HT, smallk(k), cfg%params(1), cfg=cfg)
+        HTmp = HT(1:8,1:8)
+        call solver_bs%solve_dense(HTmp, ecfg_bs, result_bs)
+        if (.not. result_bs%converged) error stop 'eigensolver failed in bulk k-sweep'
+        eig(1:result_bs%nev_found, k) = result_bs%eigenvalues(1:result_bs%nev_found)
+        eigv(:, 1:result_bs%nev_found, k) = result_bs%eigenvectors
+        call eigensolver_result_free(result_bs)
       end do
-      !$omp end do
 
-      deallocate(HT_loc, work_loc, rwork_loc, iwork_loc, ifail_loc)
-      !$omp end parallel
-    end block
+      ! Write bulk eigenfunctions at start, middle, end k-points
+      do k = 1, cfg%wave_vector%nsteps
+        if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
+          call writeEigenfunctions(8, min(cfg%evnum,8), eigv(:,1:min(cfg%evnum,8),k), &
+            & k, cfg%grid%npoints(), cfg%z, .true., &
+            & k_magnitude=sqrt(smallk(k)%kx**2 + smallk(k)%ky**2 + smallk(k)%kz**2))
+        end if
+      end do
 
-    ! Write QW eigenfunctions at start, middle, end k-points (serial)
-    do k = 1, cfg%wave_vector%nsteps
-      if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
-        call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
-          & k, cfg%grid%npoints(), cfg%z, .false.)
+    else if (conf_direction(cfg%confinement) == 'z') then
+      ! --- QUANTUM WELL (NxN) ---
+      if (trim(ecfg_bs%method) == 'FEAST') then
+        ! ============================================================
+        ! QW FEAST path: CSR build + sparse solve, serial k-sweep
+        ! ============================================================
+        block
+          type(csr_matrix) :: HT_csr_loc
+          type(qw_workspace) :: qw_ws
+
+          ! Pre-initialize caches (thread-safety)
+          call init_kp_block_cache()
+          call init_strain_cache()
+          call init_zeeman_cache()
+
+          print '(A,I0,A)', ' QW k-sweep (FEAST/CSR): ', cfg%wave_vector%nsteps, ' k-points'
+
+          do k = 1, cfg%wave_vector%nsteps
+            call ZB8bandQW_csr(HT_csr_loc, smallk(k), profile, kpterms, &
+              cfg, ws=qw_ws)
+            call solver_bs%solve_sparse(HT_csr_loc, ecfg_bs, result_bs)
+            if (.not. result_bs%converged) error stop 'eigensolver failed in QW FEAST k-sweep'
+            ! Clamp to allocated array sizes (ENERGY mode may return more eigenvalues)
+            M = min(result_bs%nev_found, iuu-il+1)
+            if (result_bs%nev_found > iuu-il+1) then
+              print '(A,I0,A,I0,A)', '  Warning: FEAST returned ', result_bs%nev_found, &
+                ' eigenvalues at k-point ', k, &
+                '; only the lowest will be kept (widen bands or narrow energy window).'
+            end if
+            if (result_bs%nev_found < (iuu - il + 1)) then
+              print '(A,I0,A,I0,A,I0,A)', '  Warning: FEAST returned only ', &
+                result_bs%nev_found, ' eigenvalues at k-point ', k, ' of ', iuu - il + 1, &
+                ' requested; missing bands zero-filled (widen energy window).'
+            end if
+            eig(1:M, k) = result_bs%eigenvalues(1:M)
+            eigv(:, 1:M, k) = result_bs%eigenvectors(:, 1:M)
+            call eigensolver_result_free(result_bs)
+            call csr_free(HT_csr_loc)
+          end do
+          call qw_workspace_free(qw_ws)
+        end block
+      else
+        ! ============================================================
+        ! QW DENSE path: dense build + LAPACK, OpenMP parallel
+        ! ============================================================
+        ! Disable MKL internal threading so each OpenMP thread calls
+        ! LAPACK in serial — avoids oversubscription.
+        info = mkl_set_num_threads_local(1)
+
+        print '(A,I0,A)', ' QW k-sweep: ', cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
+
+        block
+          ! Thread-private temporaries for the parallel region
+          complex(kind=dp), allocatable :: HT_loc(:,:)
+          type(eigensolver_config) :: cfg_loc
+          class(eigensolver_base), allocatable :: solver_loc
+
+          ! Pre-initialize block table caches before OpenMP fork (thread-safety)
+          call init_kp_block_cache()
+          call init_strain_cache()
+          call init_zeeman_cache()
+
+          !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, result_bs, M)
+          allocate(HT_loc(N, N))
+          HT_loc = (0.0_dp, 0.0_dp)
+          cfg_loc = ecfg_bs
+          solver_loc = make_eigensolver(cfg_loc)
+
+          !$omp do schedule(static)
+          do k = 1, cfg%wave_vector%nsteps
+            ! Build Hamiltonian for this k-point
+            call ZB8bandQW(HT_loc, smallk(k), profile, kpterms, cfg=cfg)
+
+            ! Diagonalize via unified solver
+            call solver_loc%solve_dense(HT_loc, cfg_loc, result_bs)
+            if (.not. result_bs%converged) error stop 'eigensolver failed in QW k-sweep'
+            ! Clamp to allocated array sizes (ENERGY mode may return more eigenvalues)
+            M = min(result_bs%nev_found, iuu-il+1)
+            eig(1:M, k) = result_bs%eigenvalues(1:M)
+            eigv(:, 1:M, k) = result_bs%eigenvectors(:, 1:M)
+            call eigensolver_result_free(result_bs)
+          end do
+          !$omp end do
+
+          deallocate(HT_loc)
+          !$omp end parallel
+        end block
       end if
-    end do
 
-  end if
+      ! Write QW eigenfunctions at start, middle, end k-points (serial)
+      do k = 1, cfg%wave_vector%nsteps
+        if (k == 1 .or. k == int(cfg%wave_vector%nsteps/2) .or. k == cfg%wave_vector%nsteps) then
+          call writeEigenfunctions(N, iuu-il+1, eigv(:,1:iuu-il+1,k), &
+            & k, cfg%grid%npoints(), cfg%z, .false.)
+        end if
+      end do
+
+    end if
+
+  end block
   call writeEigenvalues(smallk, eig(:,:), cfg%wave_vector%nsteps)
 
 
@@ -863,10 +864,6 @@ program kpfdm
   if (allocated(HTmp)) deallocate(HTmp)
   if (allocated(eig)) deallocate(eig)
   if (allocated(eigv)) deallocate(eigv)
-  if (allocated(work)) deallocate(work)
-  if (allocated(iwork)) deallocate(iwork)
-  if (allocated(rwork)) deallocate(rwork)
-  if (allocated(ifail)) deallocate(ifail)
 
 
 contains

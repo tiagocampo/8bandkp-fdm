@@ -226,8 +226,8 @@ with $H_0$ the single-particle Hamiltonian, $\mu$ the chemical potential, and
 $\Delta$ the pairing matrix.
 
 **Critical property:** $H_{\mathrm{BdG}}$ is Hermitian (not anti-Hermitian),
-which means eigenvalue solvers like FEAST can be used directly without
-modification.
+which means eigenvalue solvers (e.g., `method = "FEAST"` via the unified
+`eigensolver` module) can be used directly without modification.
 
 ### 13.5.2 Pairing Matrix Structure
 
@@ -276,7 +276,7 @@ with $|u| = |v|$ for a normalized Majorana.
 At a topological phase boundary, the BdG spectrum develops a zero-energy
 eigenstate. The detection algorithm:
 
-1. Compute the eigenspectrum of $H_{\mathrm{BdG}}$ via FEAST
+1. Compute the eigenspectrum of $H_{\mathrm{BdG}}$ via the eigensolver (`method = "FEAST"` in `[solver]`)
 2. Identify eigenvalues within $|\epsilon| < \delta$ of zero
 3. If such a state exists, extract its spatial profile
 
@@ -480,8 +480,8 @@ to apply Peierls phase factors to the bulk Hamiltonian for Landau level quantiza
 | Chern -1 | QWZ u=0.5 | PASS | Correctly identifies topological phase |
 | Chern 0 | QWZ u=2.5 | PASS | Fixed by nk=50 grid resolution |
 | BHZ Z2 trivial | BHZ d=58Å M=+10meV | PASS | Z2=0 correctly detected |
-| BHZ Z2 topological | BHZ d=70Å M=-10meV | PASS | Z2=1 correctly detected with feast_m0=280 |
-| Majorana phase diagram | InAs Rashba wire | PASS | FEAST auto-window fallback; B_crit≈1.22 T |
+| BHZ Z2 topological | BHZ d=70Å M=-10meV | PASS | Z2=1 correctly detected with `m0=280` in `[solver]` |
+| Majorana phase diagram | InAs Rashba wire | PASS | Auto energy-window fallback via Gershgorin bounds; B_crit≈1.22 T |
 | Landau levels | InAs B=5T | PENDING | Peierls substitution integration incomplete |
 
 ---

@@ -64,10 +64,11 @@ WIRE_TEMPLATE = (
     "inner = 50.0\n"
     "outer = 100.0\n"
     "\n"
-    "[feast]\n"
+    "[solver]\n"
+    'method = "DENSE"\n'
+    'mode = "ENERGY"\n'
     "emin = -1.0\n"
     "emax = 2.0\n"
-    "m0 = -1\n"
 )
 
 WIRE_GF_TEMPLATE = (
@@ -111,10 +112,11 @@ WIRE_GF_TEMPLATE = (
     "which_band = 0\n"
     "band_idx = 1\n"
     "\n"
-    "[feast]\n"
+    "[solver]\n"
+    'method = "DENSE"\n'
+    'mode = "ENERGY"\n'
     "emin = -1.0\n"
     "emax = 2.0\n"
-    "m0 = -1\n"
 )
 
 # Grid levels: fixed wire 55x55 nm, varying grid spacing

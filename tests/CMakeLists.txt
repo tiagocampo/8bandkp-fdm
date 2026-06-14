@@ -885,6 +885,32 @@ set_tests_properties(
     PROPERTIES LABELS "verification" TIMEOUT 600
 )
 
+# --- Solver Smart Defaults Verification ---
+add_test(
+    NAME verification_solver_defaults
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_solver_defaults.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_solver_defaults
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
+# --- QW Dense vs Sparse (FEAST) Solver Agreement ---
+add_test(
+    NAME verification_qw_sparse_solver
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_sparse_solver.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_qw_sparse_solver
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
 # --- Wire Strain Validation ---
 add_test(
     NAME strain_validation_wire

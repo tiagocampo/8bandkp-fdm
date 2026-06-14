@@ -1,8 +1,8 @@
 module eigensolver
 
   use definitions, only: dp
-  use sparse_matrices, only: csr_matrix
-  use linalg, only: zheevx
+  use sparse_matrices, only: csr_matrix, csr_free, csr_build_from_coo
+  use linalg, only: zheevx, zheev
 #ifdef USE_MKL_FEAST
   use linalg, only: feastinit, zfeast_hcsrev
 #endif
@@ -11,30 +11,37 @@ module eigensolver
   private
   public :: eigensolver_config, eigensolver_result
   public :: feast_workspace, feast_workspace_free
-  public :: solve_sparse_evp, solve_feast, solve_dense_lapack
+  public :: solve_feast
   public :: auto_compute_energy_window, eigensolver_result_free
   public :: eigensolver_base, dense_lapack_solver_t
 #ifdef USE_MKL_FEAST
   public :: feast_solver_t
 #endif
   public :: make_eigensolver
-#ifdef USE_ARPACK
-  public :: solve_arpack
-#endif
+  public :: eigensolver_config_validate
+  public :: EIGEN_MODE_FULL, EIGEN_MODE_INDEX, EIGEN_MODE_ENERGY
+
+  ! ------------------------------------------------------------------
+  ! Mode constants for eigensolver dispatch.
+  ! ------------------------------------------------------------------
+  integer, parameter :: EIGEN_MODE_FULL   = 1  ! all eigenvalues
+  integer, parameter :: EIGEN_MODE_INDEX  = 2  ! eigenvalues il:iu
+  integer, parameter :: EIGEN_MODE_ENERGY = 3  ! eigenvalues in [emin, emax]
 
   ! ------------------------------------------------------------------
   ! Configuration for the sparse eigensolver.
   ! ------------------------------------------------------------------
   type :: eigensolver_config
-    character(len=10)  :: method  = 'FEAST'
-    integer            :: nev     = 8
-    real(kind=dp)      :: emin    = -1.0_dp
-    real(kind=dp)      :: emax    =  1.0_dp
+    character(len=10)  :: method   = 'DENSE'
+    integer            :: mode     = EIGEN_MODE_FULL   ! default: FULL (valid for all methods)
+    integer            :: nev      = 8
+    integer            :: il       = 1
+    integer            :: iu       = 8
+    real(kind=dp)      :: emin     = -1.0_dp
+    real(kind=dp)      :: emax     =  1.0_dp
     integer            :: max_iter = 100
-    real(kind=dp)      :: tol     = 1.0e-10_dp
-    integer            :: feast_m0 = 0
-    integer            :: ncv     = 0
-    character(len=1)   :: which   = 'S'
+    real(kind=dp)      :: tol      = 1.0e-10_dp
+    integer            :: m0 = 0
   end type eigensolver_config
 
   ! ------------------------------------------------------------------
@@ -42,6 +49,7 @@ module eigensolver
   ! ------------------------------------------------------------------
   type :: eigensolver_result
     integer                       :: nev_found = 0
+    integer                       :: m0_used = 0
     real(kind=dp), allocatable    :: eigenvalues(:)
     complex(kind=dp), allocatable :: eigenvectors(:,:)
     integer                       :: iterations = 0
@@ -57,6 +65,8 @@ module eigensolver
   type, abstract :: eigensolver_base
   contains
     procedure(solve_evp_interface), deferred :: solve
+    procedure(solve_dense_interface), deferred :: solve_dense
+    procedure(solve_sparse_interface), deferred :: solve_sparse
   end type eigensolver_base
 
   abstract interface
@@ -67,6 +77,22 @@ module eigensolver
       type(eigensolver_config), intent(in) :: config
       type(eigensolver_result), intent(out) :: result
     end subroutine solve_evp_interface
+
+    subroutine solve_dense_interface(self, H, config, result)
+      import :: eigensolver_base, dp, eigensolver_config, eigensolver_result
+      class(eigensolver_base), intent(inout) :: self
+      complex(kind=dp), contiguous, intent(in) :: H(:,:)
+      type(eigensolver_config), intent(in) :: config
+      type(eigensolver_result), intent(out) :: result
+    end subroutine solve_dense_interface
+
+    subroutine solve_sparse_interface(self, H_csr, config, result)
+      import :: eigensolver_base, csr_matrix, eigensolver_config, eigensolver_result
+      class(eigensolver_base), intent(inout) :: self
+      type(csr_matrix), intent(in) :: H_csr
+      type(eigensolver_config), intent(in) :: config
+      type(eigensolver_result), intent(out) :: result
+    end subroutine solve_sparse_interface
   end interface
 
   ! ------------------------------------------------------------------
@@ -81,6 +107,12 @@ module eigensolver
     integer                       :: N = 0
     logical                       :: initialized = .false.
     logical                       :: was_freed = .false.
+    ! Persisted subspace seed: the M0 that last produced a converged solve.
+    ! A subsequent call seeds M0 from this value (capped at N, >= nev+1) so the
+    ! info=3 retry tax is not re-paid on every k-point of a sweep where the
+    ! eigenvalue count in the fixed energy window is ~constant. The existing
+    ! info=3 retry loop remains as the backstop for any point needing more.
+    integer                       :: last_successful_m0 = 0
   contains
     final :: feast_workspace_finalize
   end type feast_workspace
@@ -92,20 +124,27 @@ module eigensolver
   type, extends(eigensolver_base) :: feast_solver_t
     type(feast_workspace) :: ws
   contains
-    procedure :: solve => feast_solve_dispatch
+    procedure :: solve => feast_solve_dispatch        ! legacy alias -> solve_sparse
+    procedure :: solve_dense => feast_solve_dense
+    procedure :: solve_sparse => feast_solve_sparse_dispatch
     final :: feast_solver_finalize
   end type feast_solver_t
 #endif
 
   type, extends(eigensolver_base) :: dense_lapack_solver_t
+    ! Cached LAPACK workspace — sized on first call (or when N grows),
+    ! reused thereafter. Thread-safe because each OpenMP thread allocates
+    ! its own solver instance (main.f90 QW sweep).
+    integer                       :: cached_n = 0
+    complex(kind=dp), allocatable :: A_buf(:,:), Z_buf(:,:), work(:)
+    real(kind=dp), allocatable    :: W_buf(:), rwork(:)
+    integer, allocatable          :: iwork(:), ifail(:)
   contains
-    procedure :: solve => dense_lapack_solve_dispatch
+    procedure :: solve => dense_lapack_solve_dispatch       ! legacy alias -> solve_sparse
+    procedure :: solve_dense => dense_solve_dense_dispatch
+    procedure :: solve_sparse => dense_solve_sparse_dispatch
+    final     :: dense_lapack_solver_finalize
   end type dense_lapack_solver_t
-
-  type, extends(eigensolver_base) :: arpack_solver_t
-  contains
-    procedure :: solve => arpack_solve_dispatch
-  end type arpack_solver_t
 
 contains
 
@@ -143,36 +182,6 @@ contains
     feast_workspace_matches_pattern = .true.
   end function feast_workspace_matches_pattern
 
-  ! ==================================================================
-  ! Main dispatch: select FEAST or ARPACK based on config.
-  ! ==================================================================
-  subroutine solve_sparse_evp(H_csr, config, result, feast_ws)
-    type(csr_matrix), intent(in)          :: H_csr
-    type(eigensolver_config), intent(in)  :: config
-    type(eigensolver_result), intent(out) :: result
-    type(feast_workspace), intent(inout), optional :: feast_ws
-
-    select case (trim(config%method))
-#ifdef USE_MKL_FEAST
-    case ('FEAST')
-      call solve_feast(H_csr, config, result, fw=feast_ws)
-    case ('DENSE')
-      call solve_dense_lapack(H_csr, config, result)
-    case ('ARPACK')
-      call solve_arpack_dispatch(H_csr, config, result)
-#else
-    case ('FEAST', 'ARPACK', 'DENSE')
-      ! FEAST unavailable: fall back to dense LAPACK
-      print *, 'Using dense LAPACK eigensolver.'
-      call solve_dense_lapack(H_csr, config, result)
-#endif
-    case default
-      print *, 'Error: unknown eigensolver method "', trim(config%method), '"'
-      result%converged = .false.
-      result%nev_found = 0
-    end select
-  end subroutine solve_sparse_evp
-
 #ifdef USE_MKL_FEAST
   ! ==================================================================
   ! MKL FEAST wrapper for complex Hermitian CSR matrix.
@@ -198,6 +207,10 @@ contains
     complex(kind=dp), allocatable :: val_loc(:)
     integer, allocatable :: rowptr_loc(:), colind_loc(:)
     logical :: fw_match
+    ! Retry loop for info=3 (subspace too small)
+    integer, parameter :: MAX_RETRY = 3
+    integer :: retry, M0_initial
+    logical :: cache_is_fresh
 
     N = H_csr%nrows
     if (N <= 0) then
@@ -216,100 +229,160 @@ contains
     fpm(1) = 0  ! silent mode
     fpm(2) = 16 ! contour quadrature points (12-16 recommended for degenerate spectra)
 
-    M0 = config%feast_m0
+    M0 = config%m0
     if (M0 <= 0) M0 = 2 * config%nev
     M0 = max(M0, config%nev + 1)
     M0 = min(M0, N)  ! FEAST requires M0 <= N
 
-    allocate(E(M0))
-    allocate(X(N, M0))
-    allocate(res(M0))
-    E = 0.0_dp
-    X = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    res = 0.0_dp
-
-    ! Extract upper triangle only (FEAST UPLO='U' requires col >= row).
-    fw_match = .false.
-    if (present(fw)) fw_match = feast_workspace_matches_pattern(H_csr, fw, N, M0)
-    if (fw_match) then
-      ! Fast path: reuse cached upper-triangle structure, just update values
-      allocate(val_loc(fw%nnz_upper))
-      do i = 1, N
-        k = fw%rowptr_loc(i)
-        do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
-          if (H_csr%colind(j) >= i) then
-            val_loc(k) = H_csr%values(j)
-            k = k + 1
-          end if
-        end do
-      end do
-      ! Use cached rowptr and colind directly
-      call zfeast_hcsrev('U', N, val_loc, fw%rowptr_loc, fw%colind_loc, &
-                         fpm, epsout, loop, config%emin, config%emax, M0, &
-                         E, X, M, res, info)
-      deallocate(val_loc)
-    else
-      ! Free stale cache before rebuilding
-      if (present(fw)) then
-        if (fw%initialized) call feast_workspace_free(fw)
+    ! Seed from a previously-converged subspace size (if any) so a k-sweep does
+    ! not re-pay the info=3 retry tax on every point. Never smaller than the
+    ! user's setting (M0 is already >= that here), never larger than N. The
+    ! persisted seed is only used when the caller passed a reusable workspace.
+    if (present(fw)) then
+      if (fw%last_successful_m0 > M0) then
+        M0 = fw%last_successful_m0
+        M0 = max(M0, config%nev + 1)
+        M0 = min(M0, N)
       end if
-      ! Original path: count, allocate, fill
-      allocate(rowptr_loc(N+1))
-      rowptr_loc = 0
-      do i = 1, N
-        do k = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
-          if (H_csr%colind(k) >= i) then
-            rowptr_loc(i+1) = rowptr_loc(i+1) + 1
-          end if
-        end do
-      end do
-      rowptr_loc(1) = 1
-      do i = 1, N
-        rowptr_loc(i+1) = rowptr_loc(i) + rowptr_loc(i+1)
-      end do
-      nnz = rowptr_loc(N+1) - 1
-
-      allocate(val_loc(nnz), colind_loc(nnz))
-      do i = 1, N
-        k = rowptr_loc(i)
-        do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
-          if (H_csr%colind(j) >= i) then
-            val_loc(k) = H_csr%values(j)
-            colind_loc(k) = H_csr%colind(j)
-            k = k + 1
-          end if
-        end do
-      end do
-
-      call zfeast_hcsrev('U', N, val_loc, rowptr_loc, colind_loc, &
-                         fpm, epsout, loop, config%emin, config%emax, M0, &
-                         E, X, M, res, info)
-
-      ! Cache for future calls
-      if (present(fw)) then
-        call move_alloc(rowptr_loc, fw%rowptr_loc)
-        call move_alloc(colind_loc, fw%colind_loc)
-        fw%nnz_upper = nnz
-        fw%M0 = M0
-        fw%N = N
-        fw%initialized = .true.
-      else
-        deallocate(rowptr_loc, colind_loc)
-      end if
-
-      deallocate(val_loc)
     end if
 
+    M0_initial = M0
+
+    ! ------------------------------------------------------------------
+    ! Retry loop: on info=3 (subspace too small), double M0 and retry.
+    ! Free cached workspace on retry since the pattern no longer matches.
+    ! ------------------------------------------------------------------
+    cache_is_fresh = .false.
+    do retry = 1, MAX_RETRY
+      if (retry > 1) then
+        ! Double M0, capped at N
+        M0 = min(2 * M0, N)
+        print *, '  FEAST info=3 retry ', retry, '/', MAX_RETRY, ': M0 increased to ', M0
+        ! Invalidate workspace cache (M0 changed)
+        if (present(fw)) then
+          if (fw%initialized) call feast_workspace_free(fw)
+        end if
+        cache_is_fresh = .false.
+      end if
+
+      ! Reallocate arrays if M0 changed
+      if (allocated(E)) deallocate(E)
+      if (allocated(X)) deallocate(X)
+      if (allocated(res)) deallocate(res)
+      allocate(E(M0))
+      allocate(X(N, M0))
+      allocate(res(M0))
+      E = 0.0_dp
+      X = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      res = 0.0_dp
+
+      ! Extract upper triangle only (FEAST UPLO='U' requires col >= row).
+      fw_match = .false.
+      if (present(fw)) fw_match = feast_workspace_matches_pattern(H_csr, fw, N, M0)
+      if (fw_match) then
+        ! Fast path: reuse cached upper-triangle structure, just update values
+        allocate(val_loc(fw%nnz_upper))
+        do i = 1, N
+          k = fw%rowptr_loc(i)
+          do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+            if (H_csr%colind(j) >= i) then
+              val_loc(k) = H_csr%values(j)
+              k = k + 1
+            end if
+          end do
+        end do
+        ! Use cached rowptr and colind directly
+        call zfeast_hcsrev('U', N, val_loc, fw%rowptr_loc, fw%colind_loc, &
+                           fpm, epsout, loop, config%emin, config%emax, M0, &
+                           E, X, M, res, info)
+        deallocate(val_loc)
+        cache_is_fresh = .true.
+      else
+        ! Free stale cache before rebuilding
+        if (present(fw)) then
+          if (fw%initialized .and. .not. cache_is_fresh) call feast_workspace_free(fw)
+        end if
+        ! Original path: count, allocate, fill
+        allocate(rowptr_loc(N+1))
+        rowptr_loc = 0
+        do i = 1, N
+          do k = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+            if (H_csr%colind(k) >= i) then
+              rowptr_loc(i+1) = rowptr_loc(i+1) + 1
+            end if
+          end do
+        end do
+        rowptr_loc(1) = 1
+        do i = 1, N
+          rowptr_loc(i+1) = rowptr_loc(i) + rowptr_loc(i+1)
+        end do
+        nnz = rowptr_loc(N+1) - 1
+
+        allocate(val_loc(nnz), colind_loc(nnz))
+        do i = 1, N
+          k = rowptr_loc(i)
+          do j = H_csr%rowptr(i), H_csr%rowptr(i+1) - 1
+            if (H_csr%colind(j) >= i) then
+              val_loc(k) = H_csr%values(j)
+              colind_loc(k) = H_csr%colind(j)
+              k = k + 1
+            end if
+          end do
+        end do
+
+        call zfeast_hcsrev('U', N, val_loc, rowptr_loc, colind_loc, &
+                           fpm, epsout, loop, config%emin, config%emax, M0, &
+                           E, X, M, res, info)
+
+        ! Cache for future calls
+        if (present(fw)) then
+          call move_alloc(rowptr_loc, fw%rowptr_loc)
+          call move_alloc(colind_loc, fw%colind_loc)
+          fw%nnz_upper = nnz
+          fw%M0 = M0
+          fw%N = N
+          fw%initialized = .true.
+          fw%was_freed = .false.
+          cache_is_fresh = .true.
+        else
+          deallocate(rowptr_loc, colind_loc)
+        end if
+
+        deallocate(val_loc)
+      end if
+
+      ! Check convergence: exit loop unless info=3 (subspace too small)
+      if (info /= 3) exit
+
+      ! If M0 already equals N, no point retrying
+      if (M0 >= N) exit
+    end do
+
     result%iterations = loop
+    result%m0_used = M0
     result%converged = (info == 0) .or. (info == 2)
+
+    ! Persist the subspace size that actually produced a converged solve, so
+    ! the next call can seed from it and avoid re-paying the retry tax. The
+    ! energy window is fixed across a k-sweep, so the needed subspace is
+    ! ~constant; seeding avoids repeated info=3 retries without changing which
+    ! eigenpairs FEAST returns.
+    if (present(fw)) then
+      if (result%converged) fw%last_successful_m0 = M0
+    end if
 
     if (info < 0) then
       print *, 'FEAST error: info =', info
     else if (info == 2) then
       print *, 'FEAST warning: max iterations reached, results may be inaccurate.'
     else if (info == 3) then
-      print *, '  WARNING: FEAST subspace too small (info=3). Missing eigenvalues.'
-      print *, '  Increase feast_m0 or narrow the energy window.'
+      if (M0_initial /= M0) then
+        print *, '  WARNING: FEAST subspace still too small after retries.'
+        print *, '  M0 grew from ', M0_initial, ' to ', M0, '. Increase m0 or narrow energy window.'
+      else
+        print *, '  WARNING: FEAST subspace too small (info=3). Missing eigenvalues.'
+        print *, '  Increase m0 or narrow the energy window.'
+      end if
     end if
 
     if (M > 0 .and. M <= M0 .and. info >= 0) then
@@ -328,396 +401,6 @@ contains
     deallocate(E, X, res)
   end subroutine solve_feast
 #endif /* USE_MKL_FEAST */
-
-  ! ==================================================================
-  ! ARPACK-NG solver dispatch.
-  !
-  ! When USE_ARPACK is defined, calls the proper ARPACK solver.
-  ! Otherwise falls back to dense LAPACK.
-  ! ==================================================================
-  subroutine solve_arpack_dispatch(H_csr, config, result)
-    type(csr_matrix), intent(in)          :: H_csr
-    type(eigensolver_config), intent(in)  :: config
-    type(eigensolver_result), intent(out) :: result
-
-#ifdef USE_ARPACK
-    print *, '  Eigensolver: ARPACK-NG (shift-invert)'
-    call solve_arpack(H_csr, config, result)
-#else
-    print *, '  ARPACK not available, using dense LAPACK fallback.'
-    call solve_dense_lapack(H_csr, config, result)
-#endif
-  end subroutine solve_arpack_dispatch
-
-#ifdef USE_ARPACK
-  ! ==================================================================
-  ! ARPACK-NG solver: shift-invert mode with MKL PARDISO.
-  !
-  ! Solves H*x = lambda*x for eigenvalues near sigma using:
-  !   OP = (H - sigma*I)^{-1}
-  !
-  ! ARPACK finds the largest-magnitude eigenvalues of OP, which
-  ! correspond to eigenvalues of H closest to sigma.
-  !
-  ! Phase 1: PARDISO factorisation of (H - sigma*I)
-  ! Phase 2: ARPACK reverse-communication loop (OP*x via PARDISO solve)
-  ! Phase 3: Extract Ritz values/vectors via zneupd
-  ! ==================================================================
-  subroutine solve_arpack(H_csr, config, result)
-    use sparse_matrices, only: csr_spmv
-    use linalg, only: znaupd, zneupd, pardiso_c
-    use, intrinsic :: iso_c_binding, only: c_intptr_t
-    type(csr_matrix), intent(in)          :: H_csr
-    type(eigensolver_config), intent(in)  :: config
-    type(eigensolver_result), intent(out) :: result
-
-    integer :: N, nev_want, ncv_loc, ldv, ldz, lworkl
-    integer :: ido, info, i, j, nconv
-    real(kind=dp) :: tol_loc, sigma_re
-    complex(kind=dp) :: sigma
-
-    ! ARPACK arrays
-    complex(kind=dp), allocatable :: resid(:), v(:,:), workd(:), workl(:)
-    complex(kind=dp), allocatable :: workev(:), d(:), z(:,:)
-    real(kind=dp), allocatable :: rwork(:)
-    logical, allocatable :: select(:)
-    integer :: iparam(11), ipntr(14)
-
-    ! PARDISO arrays for shift-invert
-    integer(kind=c_intptr_t) :: pt(64)
-    integer :: iparm(64), maxfct, mnum, mtype, phase, nrhs, msglvl, error_loc
-    complex(kind=dp), allocatable :: H_shifted_val(:)
-    integer, allocatable :: H_shifted_rowptr(:), H_shifted_colind(:)
-    complex(kind=dp), allocatable :: rhs(:), sol(:)
-    complex(kind=dp) :: dummy_bx(1)
-    integer :: nnz, k
-    integer, allocatable :: perm(:)
-
-    N = H_csr%nrows
-    if (N <= 0) then
-      result%converged = .false.
-      result%nev_found = 0
-      return
-    end if
-
-    nev_want = min(config%nev, N - 1)
-    if (nev_want <= 0) then
-      result%converged = .false.
-      result%nev_found = 0
-      return
-    end if
-
-    ! Shift = midpoint of energy window
-    sigma_re = 0.5_dp * (config%emin + config%emax)
-    sigma = cmplx(sigma_re, 0.0_dp, kind=dp)
-
-    ! --- Phase 1: Build (H - sigma*I) and factorize with PARDISO ---
-
-    ! Copy CSR and subtract sigma from diagonal
-    nnz = H_csr%rowptr(N + 1) - H_csr%rowptr(1)
-    allocate(H_shifted_val(nnz), H_shifted_rowptr(N+1), H_shifted_colind(nnz))
-    H_shifted_val = H_csr%values
-    H_shifted_colind = H_csr%colind
-    H_shifted_rowptr = H_csr%rowptr
-
-    ! Shift diagonal
-    do i = 1, N
-      do k = H_shifted_rowptr(i), H_shifted_rowptr(i+1) - 1
-        if (H_shifted_colind(k) == i) then
-          H_shifted_val(k) = H_shifted_val(k) - sigma
-          exit
-        end if
-      end do
-    end do
-
-    ! PARDISO init
-    pt = 0
-    iparm = 0
-    iparm(1) = 1   ! no solver default
-    iparm(2) = 2   ! OpenMP nested dissection
-    iparm(3) = 1   ! reserved
-    iparm(4) = 0   ! no CG iterations
-    iparm(8) = 2   ! max iterative refinement steps
-    iparm(10) = 13 ! perturb pivots with 1E-13
-    iparm(11) = 1  ! scaling
-    iparm(13) = 1  ! matching
-    iparm(18) = -1 ! report number of nonzeros
-    iparm(19) = -1 ! report flop count
-    iparm(27) = 1  ! check matrix consistency
-    iparm(40) = 1  ! distributed matrix input (CSR)
-    maxfct = 1
-    mnum = 1
-    mtype = 3  ! complex structurally symmetric (full CSR, not triangle-only)
-    nrhs = 1
-    msglvl = 0  ! no output
-
-    allocate(perm(N))
-    perm = 0
-
-    ! Symbolic factorization (phase=11)
-    phase = 11
-    dummy_bx = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
-                 H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
-                 perm, nrhs, iparm, msglvl, &
-                 dummy_bx, dummy_bx, error_loc)
-    if (error_loc /= 0) then
-      print *, 'ARPACK/PARDISO: symbolic factorization error', error_loc
-      result%converged = .false.
-      result%nev_found = 0
-      deallocate(H_shifted_val, H_shifted_rowptr, H_shifted_colind, perm)
-      return
-    end if
-
-    ! Numeric factorization (phase=22)
-    phase = 22
-    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
-                 H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
-                 perm, nrhs, iparm, msglvl, &
-                 dummy_bx, dummy_bx, error_loc)
-    if (error_loc /= 0) then
-      print *, 'ARPACK/PARDISO: numeric factorization error', error_loc
-      result%converged = .false.
-      result%nev_found = 0
-      ! Cleanup PARDISO
-      phase = -1
-      call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
-                   H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
-                   perm, nrhs, iparm, msglvl, &
-                   dummy_bx, dummy_bx, error_loc)
-      deallocate(H_shifted_val, H_shifted_rowptr, H_shifted_colind, perm)
-      return
-    end if
-
-    ! --- Phase 2: ARPACK reverse communication loop ---
-
-    ! Set ARPACK parameters
-    ncv_loc = config%ncv
-    if (ncv_loc <= 0) ncv_loc = min(max(2 * nev_want + 1, 20), N)
-    ncv_loc = max(ncv_loc, nev_want + 2)
-
-    ldv = N
-    ldz = N
-    lworkl = 3 * ncv_loc * ncv_loc + 5 * ncv_loc
-    tol_loc = config%tol
-    if (tol_loc <= 0.0_dp) tol_loc = 0.0_dp  ! machine precision
-
-    allocate(resid(N))
-    allocate(v(ldv, ncv_loc))
-    allocate(workd(3 * N))
-    allocate(workl(lworkl))
-    allocate(rwork(ncv_loc))
-    allocate(workev(2 * ncv_loc))
-    allocate(select(ncv_loc))
-    allocate(d(nev_want))
-    allocate(z(ldz, nev_want))
-    allocate(rhs(N), sol(N))
-
-    ! Initialize
-    resid = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    v = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    workd = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    workl = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    rwork = 0.0_dp
-    select = .false.
-
-    iparam = 0
-    iparam(1) = 1   ! exact shifts
-    iparam(3) = config%max_iter
-    iparam(4) = 1   ! block size (must be 1)
-    iparam(7) = 3   ! shift-invert mode: OP = (A - sigma*I)^{-1}
-
-    ido = 0
-    info = 0  ! random initial vector
-
-    ! Reverse communication loop
-    do while (ido /= 99)
-      call znaupd(ido, 'I', N, 'LM', nev_want, tol_loc, resid, ncv_loc, &
-                  v, ldv, iparam, ipntr, workd, workl, lworkl, rwork, info)
-
-      select case (ido)
-      case (-1, 1)
-        ! Compute Y = OP * X = (H - sigma*I)^{-1} * X
-        ! X = workd(ipntr(1) : ipntr(1)+N-1)
-        ! Y = workd(ipntr(2) : ipntr(2)+N-1)
-        rhs(1:N) = workd(ipntr(1) : ipntr(1) + N - 1)
-
-        ! PARDISO solve (phase=33)
-        phase = 33
-        call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
-                     H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
-                     perm, nrhs, iparm, msglvl, rhs, sol, error_loc)
-
-        if (error_loc /= 0) then
-          print *, 'ARPACK/PARDISO: solve error', error_loc
-          info = -999
-          exit
-        end if
-
-        workd(ipntr(2) : ipntr(2) + N - 1) = sol(1:N)
-
-      case (2)
-        ! B*x for standard problem (bmat='I'), should not happen
-        ! Just copy x to y
-        workd(ipntr(2) : ipntr(2) + N - 1) = &
-          workd(ipntr(1) : ipntr(1) + N - 1)
-
-      case (3)
-        ! User-supplied shifts (iparam(1)=1 means ARPACK handles this)
-        ! Should not reach here with default settings
-        continue
-
-      end select
-    end do
-
-    result%iterations = iparam(3)
-
-    ! --- Phase 3: Extract Ritz values and vectors ---
-
-    if (info == 0 .and. ido == 99) then
-      call zneupd(.true., 'A', select, d, z, ldz, sigma, workev, &
-                  'I', N, 'LM', nev_want, tol_loc, resid, ncv_loc, &
-                  v, ldv, iparam, ipntr, workd, workl, lworkl, rwork, info)
-
-      if (info == 0) then
-        nconv = iparam(5)
-        result%converged = .true.
-        result%nev_found = nev_want
-        allocate(result%eigenvalues(nev_want))
-        allocate(result%eigenvectors(N, nev_want))
-        ! For Hermitian matrix, eigenvalues are real (discard tiny imaginary parts)
-        do i = 1, nev_want
-          result%eigenvalues(i) = real(d(i), kind=dp)
-          result%eigenvectors(:, i) = z(:, i)
-        end do
-
-        ! Sort eigenvalues (and corresponding eigenvectors) in ascending order
-        call sort_eigenpairs_ascending(result%eigenvalues, result%eigenvectors)
-      else
-        print *, 'ARPACK zneupd error: info =', info
-        result%converged = .false.
-        result%nev_found = 0
-      end if
-    else
-      if (info == 1) then
-        print *, 'ARPACK: max iterations reached. Results may be inaccurate.'
-      else if (info /= 0) then
-        print *, 'ARPACK znaupd error: info =', info
-      end if
-      result%converged = .false.
-      result%nev_found = 0
-    end if
-
-    ! Cleanup PARDISO
-    phase = -1
-    call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
-                 H_shifted_val, H_shifted_rowptr, H_shifted_colind, &
-                 perm, nrhs, iparm, msglvl, &
-                 dummy_bx, dummy_bx, error_loc)
-
-    deallocate(resid, v, workd, workl, rwork, workev, select, d, z)
-    deallocate(rhs, sol)
-    deallocate(H_shifted_val, H_shifted_rowptr, H_shifted_colind, perm)
-  end subroutine solve_arpack
-#endif /* USE_ARPACK */
-
-  ! ==================================================================
-  ! Dense fallback using LAPACK zheevx.
-  !
-  ! Converts CSR to dense, then calls zheevx for the N-smallest
-  ! eigenvalues.  Used as ARPACK placeholder until proper ARPACK
-  ! linking is set up.
-  ! ==================================================================
-  subroutine solve_dense_lapack(H_csr, config, result)
-    type(csr_matrix), intent(in)          :: H_csr
-    type(eigensolver_config), intent(in)  :: config
-    type(eigensolver_result), intent(out) :: result
-
-    integer :: N, lda, ldz, lwork, info, nev_want, nb
-    complex(kind=dp), allocatable :: A(:,:), Z(:,:), work(:)
-    real(kind=dp), allocatable :: rwork(:), W(:)
-    integer, allocatable :: iwork(:), ifail(:)
-    real(kind=dp) :: vl, vu, abstol
-
-    N = H_csr%nrows
-    if (N <= 0) then
-      result%converged = .false.
-      result%nev_found = 0
-      return
-    end if
-
-    nev_want = min(config%nev, N)
-    lda = N
-    ldz = N
-    abstol = 0.0_dp
-
-    ! Convert CSR to dense
-    allocate(A(N, N))
-    A = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    call csr_to_dense_work(H_csr, A, N)
-
-    ! Allocate output arrays — Z must hold all eigenvalues in range mode
-    allocate(W(N))
-    allocate(Z(N, N))
-    allocate(rwork(7 * N))
-    allocate(iwork(5 * N))
-    allocate(ifail(N))
-
-    ! Use range mode 'V' when emin/emax are set (non-zero), otherwise index mode 'I'
-    if (config%emin /= 0.0_dp .and. config%emax /= 0.0_dp) then
-      ! Range mode: return eigenvalues in [emin, emax]
-      vl = config%emin
-      vu = config%emax
-      ! Workspace query
-      allocate(work(1))
-      call zheevx('V', 'V', 'U', N, A, lda, vl, vu, &
-                  1, N, abstol, nb, W, Z, ldz, &
-                  work, -1, rwork, iwork, ifail, info)
-      lwork = max(1, nint(real(work(1))))
-      deallocate(work)
-      allocate(work(lwork))
-
-      ! Solve
-      call zheevx('V', 'V', 'U', N, A, lda, vl, vu, &
-                  1, N, abstol, nb, W, Z, ldz, &
-                  work, lwork, rwork, iwork, ifail, info)
-      ! Return all eigenvalues in the energy window (no trimming)
-      ! Range mode already selects the desired eigenvalue range.
-    else
-      ! Index mode: return nev_want smallest eigenvalues
-      ! Workspace query
-      allocate(work(1))
-      call zheevx('V', 'I', 'U', N, A, lda, vl, vu, &
-                  1, nev_want, abstol, nb, W, Z, ldz, &
-                  work, -1, rwork, iwork, ifail, info)
-      lwork = max(1, nint(real(work(1))))
-      deallocate(work)
-      allocate(work(lwork))
-
-      ! Solve
-      call zheevx('V', 'I', 'U', N, A, lda, vl, vu, &
-                  1, nev_want, abstol, nb, W, Z, ldz, &
-                  work, lwork, rwork, iwork, ifail, info)
-    end if
-
-    if (info == 0 .and. nb > 0) then
-      result%converged = .true.
-      result%nev_found = nb
-      result%iterations = 1
-      allocate(result%eigenvalues(nb))
-      allocate(result%eigenvectors(N, nb))
-      result%eigenvalues(1:nb) = W(1:nb)
-      result%eigenvectors(:, 1:nb) = Z(:, 1:nb)
-    else
-      result%converged = .false.
-      result%nev_found = 0
-      if (info /= 0) then
-        print *, 'Dense eigensolver error: info =', info
-      end if
-    end if
-
-    deallocate(A, W, Z, work, rwork, iwork, ifail)
-  end subroutine solve_dense_lapack
 
   ! ==================================================================
   ! Gershgorin energy window estimation.
@@ -814,6 +497,7 @@ contains
     fw%M0 = 0
     fw%N = 0
     fw%initialized = .false.
+    fw%last_successful_m0 = 0
   end subroutine feast_workspace_free
 
   ! ==================================================================
@@ -871,9 +555,36 @@ contains
   end subroutine sort_eigenpairs_ascending
 
   ! ==================================================================
+  ! Validate eigensolver config — rejects invalid mode/method combos.
+  ! ==================================================================
+  subroutine eigensolver_config_validate(config)
+    type(eigensolver_config), intent(in) :: config
+    character(len=256) :: msg
+
+    if (trim(config%method) == 'FEAST' .and. config%mode == EIGEN_MODE_INDEX) then
+      error stop 'eigensolver_config_validate: FEAST solver does not support INDEX mode.'
+    end if
+    if (config%mode == EIGEN_MODE_ENERGY) then
+      if (config%emin >= config%emax) then
+        write(msg, '(A,ES12.4,A,ES12.4)') &
+          'emin (', config%emin, ') must be < emax (', config%emax, ')'
+        error stop 'eigensolver_config_validate: ' // trim(msg)
+      end if
+    end if
+    if (config%mode == EIGEN_MODE_INDEX) then
+      if (config%il < 1 .or. config%iu < config%il) then
+        error stop 'eigensolver_config_validate: invalid il/iu range for INDEX mode.'
+      end if
+    end if
+  end subroutine eigensolver_config_validate
+
+  ! ==================================================================
   ! Polymorphic dispatch implementations.
   ! ==================================================================
 
+  ! ------------------------------------------------------------------
+  ! FEAST solver: legacy solve -> solve_sparse
+  ! ------------------------------------------------------------------
 #ifdef USE_MKL_FEAST
   subroutine feast_solve_dispatch(self, H_csr, config, result)
     class(feast_solver_t), intent(inout) :: self
@@ -881,34 +592,259 @@ contains
     type(eigensolver_config), intent(in) :: config
     type(eigensolver_result), intent(out) :: result
 
-    call solve_feast(H_csr, config, result, fw=self%ws)
+    call self%solve_sparse(H_csr, config, result)
   end subroutine feast_solve_dispatch
+
+  ! ------------------------------------------------------------------
+  ! FEAST solver: solve_sparse with mode dispatch.
+  ! ------------------------------------------------------------------
+  subroutine feast_solve_sparse_dispatch(self, H_csr, config, result)
+    class(feast_solver_t), intent(inout) :: self
+    type(csr_matrix), intent(in) :: H_csr
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+    type(eigensolver_config) :: cfg_local
+
+    select case (config%mode)
+    case (EIGEN_MODE_ENERGY)
+      ! Native FEAST: energy window search
+      call solve_feast(H_csr, config, result, fw=self%ws)
+    case (EIGEN_MODE_FULL)
+      ! Gershgorin-bounded window -> FEAST energy search
+      cfg_local = config
+      call auto_compute_energy_window(H_csr, cfg_local%emin, cfg_local%emax)
+      call solve_feast(H_csr, cfg_local, result, fw=self%ws)
+    case (EIGEN_MODE_INDEX)
+      error stop 'feast_solve_sparse_dispatch: FEAST does not support INDEX mode.'
+    case default
+      error stop 'feast_solve_sparse_dispatch: unknown mode.'
+    end select
+  end subroutine feast_solve_sparse_dispatch
+
+  ! ------------------------------------------------------------------
+  ! FEAST solver: solve_dense converts dense -> CSR, then calls sparse.
+  ! ------------------------------------------------------------------
+  subroutine feast_solve_dense(self, H, config, result)
+    class(feast_solver_t), intent(inout) :: self
+    complex(kind=dp), contiguous, intent(in) :: H(:,:)
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+    type(csr_matrix) :: H_csr
+
+    call dense_to_csr_work(H, H_csr)
+    call self%solve_sparse(H_csr, config, result)
+    call csr_free(H_csr)
+  end subroutine feast_solve_dense
+
+  subroutine feast_solver_finalize(self)
+    type(feast_solver_t), intent(inout) :: self
+    ! ws component auto-finalizes via feast_workspace_finalize
+  end subroutine feast_solver_finalize
 #endif
 
+  ! ------------------------------------------------------------------
+  ! Dense LAPACK solver: legacy solve -> solve_sparse
+  ! ------------------------------------------------------------------
   subroutine dense_lapack_solve_dispatch(self, H_csr, config, result)
     class(dense_lapack_solver_t), intent(inout) :: self
     type(csr_matrix), intent(in) :: H_csr
     type(eigensolver_config), intent(in) :: config
     type(eigensolver_result), intent(out) :: result
 
-    call solve_dense_lapack(H_csr, config, result)
+    call self%solve_sparse(H_csr, config, result)
   end subroutine dense_lapack_solve_dispatch
 
-  subroutine arpack_solve_dispatch(self, H_csr, config, result)
-    class(arpack_solver_t), intent(inout) :: self
+  ! ------------------------------------------------------------------
+  ! Dense LAPACK solver: solve_sparse converts CSR -> dense.
+  ! Convenience path for CSR inputs; not a hot path (no current caller
+  ! routes a large dense matrix through CSR). All large dense solves go
+  ! via solve_dense directly; all large CSR solves use FEAST.
+  ! ------------------------------------------------------------------
+  subroutine dense_solve_sparse_dispatch(self, H_csr, config, result)
+    class(dense_lapack_solver_t), intent(inout) :: self
     type(csr_matrix), intent(in) :: H_csr
     type(eigensolver_config), intent(in) :: config
     type(eigensolver_result), intent(out) :: result
+    integer :: N
+    complex(kind=dp), allocatable :: H_dense(:,:)
 
-    call solve_arpack_dispatch(H_csr, config, result)
-  end subroutine arpack_solve_dispatch
+    N = H_csr%nrows
+    if (N <= 0) then
+      result%converged = .false.
+      result%nev_found = 0
+      return
+    end if
 
-#ifdef USE_MKL_FEAST
-  subroutine feast_solver_finalize(self)
-    type(feast_solver_t), intent(inout) :: self
-    ! ws component auto-finalizes via feast_workspace_finalize
-  end subroutine feast_solver_finalize
-#endif
+    allocate(H_dense(N, N))
+    call csr_to_dense_work(H_csr, H_dense, N)
+    call self%solve_dense(H_dense, config, result)
+    deallocate(H_dense)
+  end subroutine dense_solve_sparse_dispatch
+
+  ! ------------------------------------------------------------------
+  ! Dense LAPACK solver: solve_dense with mode dispatch.
+  ! ------------------------------------------------------------------
+  subroutine dense_solve_dense_dispatch(self, H, config, result)
+    class(dense_lapack_solver_t), intent(inout) :: self
+    complex(kind=dp), contiguous, intent(in) :: H(:,:)
+    type(eigensolver_config), intent(in) :: config
+    type(eigensolver_result), intent(out) :: result
+
+    integer :: N, lda, ldz, lwork, info, nb, il_local, iu_local
+    complex(kind=dp), allocatable :: wq(:)   ! 1-element workspace-query scratch
+    real(kind=dp) :: vl, vu, abstol
+
+    N = size(H, 1)
+    if (N <= 0) then
+      result%converged = .false.
+      result%nev_found = 0
+      return
+    end if
+
+    lda = N
+    ldz = N
+    abstol = 0.0_dp
+    nb = 0
+
+    ! (Re)allocate N-dependent buffers only when N grows
+    if (N > self%cached_n) then
+      if (allocated(self%A_buf)) then
+        deallocate(self%A_buf, self%Z_buf, self%W_buf, self%rwork, self%iwork, self%ifail)
+      end if
+      allocate(self%A_buf(N,N), self%Z_buf(N,N), self%W_buf(N))
+      allocate(self%rwork(7*N), self%iwork(5*N), self%ifail(N))
+      self%cached_n = N
+    end if
+
+    ! Copy H (zheev/zheevx destroys input)
+    self%A_buf = H
+
+    select case (config%mode)
+    case (EIGEN_MODE_FULL)
+      ! zheev: all eigenvalues. Workspace query -> reuse/grow work.
+      allocate(wq(1))
+      call zheev('V', 'U', N, self%A_buf, lda, self%W_buf, wq, -1, self%rwork, info)
+      if (info /= 0) error stop 'dense_solve_dense_dispatch: zheev workspace query failed.'
+      lwork = max(1, nint(real(wq(1))))
+      deallocate(wq)
+      if (.not. allocated(self%work) .or. size(self%work) < lwork) then
+        if (allocated(self%work)) deallocate(self%work)
+        allocate(self%work(lwork))
+      end if
+      call zheev('V', 'U', N, self%A_buf, lda, self%W_buf, self%work, lwork, self%rwork, info)
+      if (info == 0) then
+        nb = N
+        self%Z_buf = self%A_buf   ! zheev returns eigenvectors in A
+      end if
+
+    case (EIGEN_MODE_INDEX)
+      il_local = max(1, config%il)
+      iu_local = min(N, config%iu)
+      allocate(wq(1))
+      call zheevx('V', 'I', 'U', N, self%A_buf, lda, vl, vu, &
+                   il_local, iu_local, abstol, nb, self%W_buf, self%Z_buf, ldz, &
+                   wq, -1, self%rwork, self%iwork, self%ifail, info)
+      if (info /= 0) error stop 'dense_solve_dense_dispatch: zheevx(INDEX) workspace query failed.'
+      lwork = max(1, nint(real(wq(1))))
+      deallocate(wq)
+      if (.not. allocated(self%work) .or. size(self%work) < lwork) then
+        if (allocated(self%work)) deallocate(self%work)
+        allocate(self%work(lwork))
+      end if
+      call zheevx('V', 'I', 'U', N, self%A_buf, lda, vl, vu, &
+                   il_local, iu_local, abstol, nb, self%W_buf, self%Z_buf, ldz, &
+                   self%work, lwork, self%rwork, self%iwork, self%ifail, info)
+
+    case (EIGEN_MODE_ENERGY)
+      vl = config%emin
+      vu = config%emax
+      allocate(wq(1))
+      call zheevx('V', 'V', 'U', N, self%A_buf, lda, vl, vu, &
+                   1, N, abstol, nb, self%W_buf, self%Z_buf, ldz, &
+                   wq, -1, self%rwork, self%iwork, self%ifail, info)
+      if (info /= 0) error stop 'dense_solve_dense_dispatch: zheevx(ENERGY) workspace query failed.'
+      lwork = max(1, nint(real(wq(1))))
+      deallocate(wq)
+      if (.not. allocated(self%work) .or. size(self%work) < lwork) then
+        if (allocated(self%work)) deallocate(self%work)
+        allocate(self%work(lwork))
+      end if
+      call zheevx('V', 'V', 'U', N, self%A_buf, lda, vl, vu, &
+                   1, N, abstol, nb, self%W_buf, self%Z_buf, ldz, &
+                   self%work, lwork, self%rwork, self%iwork, self%ifail, info)
+
+    case default
+      error stop 'dense_solve_dense_dispatch: unknown mode.'
+    end select
+
+    if (info == 0 .and. nb > 0) then
+      result%converged = .true.
+      result%nev_found = nb
+      result%m0_used = size(H, 1)
+      result%iterations = 1
+      allocate(result%eigenvalues(nb))
+      allocate(result%eigenvectors(N, nb))
+      result%eigenvalues(1:nb) = self%W_buf(1:nb)
+      result%eigenvectors(:, 1:nb) = self%Z_buf(:, 1:nb)
+    else
+      result%converged = .false.
+      result%nev_found = 0
+      if (info /= 0) print *, 'Dense eigensolver error: info =', info
+    end if
+  end subroutine dense_solve_dense_dispatch
+
+  ! ==================================================================
+  ! Finalizer: frees the cached LAPACK workspace buffers owned by the
+  ! solver object. Called automatically when the solver goes out of
+  ! scope; manual deallocate also triggers it.
+  ! ==================================================================
+  subroutine dense_lapack_solver_finalize(self)
+    type(dense_lapack_solver_t), intent(inout) :: self
+    if (allocated(self%A_buf))  deallocate(self%A_buf)
+    if (allocated(self%Z_buf))  deallocate(self%Z_buf)
+    if (allocated(self%work))   deallocate(self%work)
+    if (allocated(self%W_buf))  deallocate(self%W_buf)
+    if (allocated(self%rwork))  deallocate(self%rwork)
+    if (allocated(self%iwork))  deallocate(self%iwork)
+    if (allocated(self%ifail))  deallocate(self%ifail)
+    self%cached_n = 0
+  end subroutine dense_lapack_solver_finalize
+
+  ! ==================================================================
+  ! Internal: convert dense matrix to CSR.
+  ! ==================================================================
+  subroutine dense_to_csr_work(H, H_csr)
+    complex(kind=dp), contiguous, intent(in) :: H(:,:)
+    type(csr_matrix), intent(out) :: H_csr
+
+    integer :: N, nnz, i, j
+    integer, allocatable :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    N = size(H, 1)
+    nnz = 0
+    do j = 1, N
+      do i = 1, N
+        if (abs(H(i, j)) > 0.0_dp) nnz = nnz + 1
+      end do
+    end do
+
+    allocate(rows(nnz), cols(nnz), vals(nnz))
+    nnz = 0
+    do j = 1, N
+      do i = 1, N
+        if (abs(H(i, j)) > 0.0_dp) then
+          nnz = nnz + 1
+          rows(nnz) = i
+          cols(nnz) = j
+          vals(nnz) = H(i, j)
+        end if
+      end do
+    end do
+
+    call csr_build_from_coo(H_csr, N, N, nnz, rows, cols, vals)
+    deallocate(rows, cols, vals)
+  end subroutine dense_to_csr_work
 
   function make_eigensolver(config) result(solver)
     class(eigensolver_base), allocatable :: solver
@@ -925,11 +861,8 @@ contains
       print *, 'WARNING: FEAST requested but not compiled; using dense LAPACK'
       allocate(dense_lapack_solver_t :: solver)
 #endif
-    case ('ARPACK')
-      allocate(arpack_solver_t :: solver)
     case default
-      print *, 'ERROR: Unknown eigensolver method: ', trim(config%method)
-      stop 1
+      error stop 'make_eigensolver: Unknown eigensolver method: ' // trim(config%method)
     end select
   end function make_eigensolver
 

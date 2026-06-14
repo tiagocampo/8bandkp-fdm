@@ -1,21 +1,3 @@
- waveVector:k0  
- waveVectorMax:  0.10000000000000001     
- waveVectorStep:           0
- confinement:           1
- FDstep:         101
- FDorder:           2
- numLayers:           3
- material1:AlSbW  -250.00000000000000        250.00000000000000     
- material2:GaSbW  -135.00000000000000        135.00000000000000     
- material3:InAsW  -35.000000000000000        35.000000000000000     
- numcb:          32
- numvb:          32
- ExternalField:           0 EF
- EFParams:   5.0000000000000001E-004
- whichBand           1
- bandIdx           1
- bandIdx           0
-  
  Material: AlSbW
  Parameters
  EP :   18.800000000000001     
@@ -46,31 +28,31 @@
  adjusting numcb and numvb to get all states
  gfactor for valence band
  sigma
-   0.0000    0.0000  -0.0000    0.0000
-  -0.0000   -0.0000  -0.0000   -0.0000
+   0.0000    0.0000   0.0000   -0.0000
+   0.0000    0.0000   0.0000   -0.0000
   
-   0.0000    0.0000  -0.0000   -0.0000
-  -0.0000    0.0000   0.0000    0.0000
+   0.0000    0.0000   0.0000    0.0000
+   0.0000   -0.0000  -0.0000   -0.0000
   
    1.0002    0.0000   0.0000    0.0000
-   0.0000    0.0000  -1.0002   -0.0000
- WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=   1.6375789613221059E-015
+   0.0000    0.0000  -1.0002    0.0000
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           2 denom=   8.3266726846886741E-017
  WARNING: near-zero energy denominator, n=           1 m=           1 l=           3 denom=   7.1044618521476366E-009
- WARNING: near-zero energy denominator, n=           1 m=           1 l=           4 denom=   7.1044633509487198E-009
- WARNING: near-zero energy denominator, n=           1 m=           2 l=           3 denom=   7.1044610333581559E-009
- WARNING: near-zero energy denominator, n=           1 m=           2 l=           4 denom=   7.1044625321592392E-009
+ WARNING: near-zero energy denominator, n=           1 m=           1 l=           4 denom=   7.1044618521476366E-009
+ WARNING: near-zero energy denominator, n=           1 m=           2 l=           3 denom=   7.1044618105142732E-009
+ WARNING: near-zero energy denominator, n=           1 m=           2 l=           4 denom=   7.1044618105142732E-009
  Total skipped contributions:          10
  Total skipped contributions:          20
  Total skipped contributions:          30
  tensor
-   0.0000   -0.0000  -0.0000    0.0000
+  -0.0000   -0.0000   0.0000   -0.0000
+   0.0000    0.0000  -0.0000    0.0000
+  
   -0.0000   -0.0000   0.0000    0.0000
+   0.0000   -0.0000  -0.0000    0.0000
   
-   0.0000   -0.0000  -0.0000   -0.0000
-  -0.0000    0.0000  -0.0000    0.0000
-  
-  10.9659   -0.0000   0.0000    0.0000
-   0.0000   -0.0000 -10.9659    0.0000
+  10.9659    0.0000  -0.0000   -0.0000
+  -0.0000    0.0000 -10.9659    0.0000
  gx
    0.0000000000000000     
    0.0000000000000000     
@@ -79,4 +61,4 @@
    0.0000000000000000     
  gz
    0.0000000000000000     
-  -21.927071971190635     
+  -21.927071971190550     

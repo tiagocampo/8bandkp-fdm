@@ -6,8 +6,12 @@ module test_hamiltonian
   use hamiltonianConstructor
   use confinement_init, only: confinementInitialization_raw
   use hamiltonian_wire, only: build_velocity_matrices
+  use hamiltonian_qw, only: qw_workspace, qw_workspace_free, ZB8bandQW_csr
   use magnetic_field, only: compute_zeeman_vz
   use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar
+  use eigensolver, only: eigensolver_result, eigensolver_result_free, eigensolver_config, &
+    EIGEN_MODE_FULL
+  use csr_test_helpers, only: eigensolve_csr
   implicit none
 
 contains
@@ -1008,5 +1012,233 @@ contains
 
     deallocate(HT, profile, kpterms)
   end subroutine test_qw_zeeman_hermitian
+
+  ! ==================================================================
+  ! H4: test_qw_csr_vs_dense
+  ! Build QW Hamiltonian via both dense and CSR paths.
+  ! Compare all eigenvalues — must match within 1e-10 tolerance.
+  ! Tests at both k=0 and k!=0 to verify k-dependent terms.
+  ! ==================================================================
+  @test
+  subroutine test_qw_csr_vs_dense()
+    integer, parameter :: ngrid = 21
+    real(kind=dp), parameter :: dz_val = 2.5_dp  ! Angstrom
+    integer :: matSize, info, lwork, lrwork, liwork, idx
+
+    ! Grid
+    real(kind=dp) :: z(ngrid)
+
+    ! Materials: 2-layer AlGaAs/GaAs
+    integer, parameter :: nlayers = 2
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: int_start_pos(nlayers), int_end_pos(nlayers)
+
+    ! Confinement
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+
+    ! Dense Hamiltonian
+    complex(kind=dp), allocatable :: HT(:,:), work(:)
+    real(kind=dp), allocatable :: eig_dense(:), rwork(:)
+    integer, allocatable :: iwork(:)
+
+    ! CSR Hamiltonian
+    type(csr_matrix) :: HT_csr
+    type(qw_workspace) :: qw_ws
+    type(eigensolver_config) :: cfg_eig
+    type(eigensolver_result) :: res_csr
+    type(simulation_config) :: cfg
+
+    real(kind=dp) :: max_err
+    type(wavevector) :: wv
+
+    matSize = ngrid * 8
+
+    ! ---- Setup grid ----
+    do idx = 1, ngrid
+      z(idx) = -25.0_dp + real(idx - 1, kind=dp) * dz_val
+    end do
+
+    ! 2-layer: AlGaAs(-50,-12.5) | GaAs(-12.5,25)
+    int_start_pos(1) = 1;   int_end_pos(1) = 5
+    int_start_pos(2) = 6;   int_end_pos(2) = 21
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    ! ---- Confinement initialization ----
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, int_start_pos, int_end_pos, material, &
+      & nlayers, params, 'z', profile, kpterms, FDorder=2)
+
+    ! ---- Minimal simulation_config for CSR builder ----
+    cfg%confinement = 'qw'
+    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 0.0_dp]
+    cfg%bdg%g_factor = 0.0_dp
+    cfg%grid%ny = ngrid
+    cfg%grid%nx = 1
+    cfg%grid%ndim = 1
+
+    ! ---- Test 1: k=0 ----
+    wv%kx = 0.0_dp; wv%ky = 0.0_dp; wv%kz = 0.0_dp
+
+    ! Dense path
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wv, profile, kpterms)
+
+    allocate(eig_dense(matSize), work(1), rwork(1), iwork(1))
+    call zheevd('N', 'U', matSize, HT, matSize, eig_dense, work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', matSize, HT, matSize, eig_dense, work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+    deallocate(work, rwork, iwork, HT)
+    @assertTrue(info == 0, message="Dense diagonalization at k=0 succeeded")
+
+    ! CSR path
+    call ZB8bandQW_csr(HT_csr, wv, profile, kpterms, cfg, ws=qw_ws)
+
+    ! Debug: check CSR matrix size and compare elements
+    block
+      integer :: nnz_dense, row_d, col_d, k_d, nmismatch
+      real(kind=dp) :: max_elem_err
+      complex(kind=dp), allocatable :: HT_ref(:,:), HT_csr_dense(:,:)
+      allocate(HT_ref(matSize, matSize), HT_csr_dense(matSize, matSize))
+      HT_ref = cmplx(0.0_dp, kind=dp)
+      call ZB8bandQW(HT_ref, wv, profile, kpterms)
+      HT_csr_dense = cmplx(0.0_dp, kind=dp)
+      do row_d = 1, HT_csr%nrows
+        do k_d = HT_csr%rowptr(row_d), HT_csr%rowptr(row_d + 1) - 1
+          col_d = HT_csr%colind(k_d)
+          HT_csr_dense(row_d, col_d) = HT_csr%values(k_d)
+        end do
+      end do
+      nnz_dense = 0
+      max_elem_err = 0.0_dp
+      nmismatch = 0
+      do row_d = 1, matSize
+        do col_d = 1, matSize
+          if (abs(HT_ref(row_d, col_d)) > 0.0_dp) nnz_dense = nnz_dense + 1
+          if (abs(HT_ref(row_d, col_d) - HT_csr_dense(row_d, col_d)) > 1.0e-10_dp) then
+            if (nmismatch < 5) then
+              print '(A,I4,A,I4,4(A,ES12.4))', '  (', row_d, ',', col_d, &
+                ') dense=', real(HT_ref(row_d, col_d)), '+i', aimag(HT_ref(row_d, col_d)), &
+                ' csr=', real(HT_csr_dense(row_d, col_d)), '+i', aimag(HT_csr_dense(row_d, col_d))
+            end if
+            nmismatch = nmismatch + 1
+          end if
+          max_elem_err = max(max_elem_err, abs(HT_ref(row_d, col_d) - HT_csr_dense(row_d, col_d)))
+        end do
+      end do
+      print *, 'CSR: nnz=', HT_csr%nnz, 'nrows=', HT_csr%nrows
+      print *, 'Dense nnz=', nnz_dense, 'max_elem_err=', max_elem_err, 'nmismatch=', nmismatch
+      deallocate(HT_ref, HT_csr_dense)
+    end block
+
+    ! CSR path: convert to dense and solve via zheevd
+    block
+      complex(kind=dp), allocatable :: HT_csr_dense(:,:), work_s(:)
+      real(kind=dp), allocatable :: eig_csr(:), rwork_s(:)
+      integer, allocatable :: iwork_s(:)
+      integer :: info_s, lwork_s, lrwork_s, liwork_s, row_d, col_d, k_d
+
+      allocate(HT_csr_dense(matSize, matSize))
+      HT_csr_dense = cmplx(0.0_dp, kind=dp)
+      do row_d = 1, HT_csr%nrows
+        do k_d = HT_csr%rowptr(row_d), HT_csr%rowptr(row_d + 1) - 1
+          col_d = HT_csr%colind(k_d)
+          HT_csr_dense(row_d, col_d) = HT_csr%values(k_d)
+        end do
+      end do
+
+      allocate(eig_csr(matSize), work_s(1), rwork_s(1), iwork_s(1))
+      call zheevd('N', 'U', matSize, HT_csr_dense, matSize, eig_csr, &
+        work_s, -1, rwork_s, -1, iwork_s, -1, info_s)
+      lwork_s = int(real(work_s(1))); lrwork_s = int(rwork_s(1)); liwork_s = iwork_s(1)
+      deallocate(work_s, rwork_s, iwork_s)
+      allocate(work_s(lwork_s), rwork_s(lrwork_s), iwork_s(liwork_s))
+      call zheevd('N', 'U', matSize, HT_csr_dense, matSize, eig_csr, &
+        work_s, lwork_s, rwork_s, lrwork_s, iwork_s, liwork_s, info_s)
+      @assertTrue(info_s == 0, message="CSR zheevd at k=0 succeeded")
+
+      ! Compare eigenvalues
+      max_err = 0.0_dp
+      do idx = 1, matSize
+        max_err = max(max_err, abs(eig_dense(idx) - eig_csr(idx)))
+      end do
+      if (max_err > 1.0e-10_dp) then
+        print *, 'Max eigenvalue error at k=0:', max_err
+        print *, 'Dense E1:', eig_dense(1), 'CSR E1:', eig_csr(1)
+        print *, 'Dense EN:', eig_dense(matSize), 'CSR EN:', eig_csr(matSize)
+      end if
+      @assertTrue(max_err < 1.0e-10_dp, message="CSR vs dense eigenvalues match at k=0")
+
+      deallocate(HT_csr_dense, eig_csr, work_s, rwork_s, iwork_s)
+    end block
+    call csr_free(HT_csr)
+    deallocate(eig_dense)
+
+    ! ---- Test 2: k != 0 (finite kx, ky) ----
+    wv%kx = 0.05_dp; wv%ky = 0.03_dp; wv%kz = 0.0_dp
+
+    ! Dense path
+    allocate(HT(matSize, matSize), eig_dense(matSize), work(1), rwork(1), iwork(1))
+    HT = cmplx(0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wv, profile, kpterms)
+    call zheevd('N', 'U', matSize, HT, matSize, eig_dense, work, -1, rwork, -1, iwork, -1, info)
+    lwork = int(real(work(1))); lrwork = int(rwork(1)); liwork = iwork(1)
+    deallocate(work, rwork, iwork)
+    allocate(work(lwork), rwork(lrwork), iwork(liwork))
+    call zheevd('N', 'U', matSize, HT, matSize, eig_dense, work, lwork, rwork, lrwork, &
+      & iwork, liwork, info)
+    deallocate(work, rwork, iwork, HT)
+    @assertTrue(info == 0, message="Dense diagonalization at k!=0 succeeded")
+
+    ! CSR path: convert to dense and solve via zheevd
+    block
+      complex(kind=dp), allocatable :: HT_csr_dense(:,:), work_s(:)
+      real(kind=dp), allocatable :: eig_csr(:), rwork_s(:)
+      integer, allocatable :: iwork_s(:)
+      integer :: info_s, lwork_s, lrwork_s, liwork_s, row_d, col_d, k_d
+
+      call ZB8bandQW_csr(HT_csr, wv, profile, kpterms, cfg, ws=qw_ws)
+
+      allocate(HT_csr_dense(matSize, matSize))
+      HT_csr_dense = cmplx(0.0_dp, kind=dp)
+      do row_d = 1, HT_csr%nrows
+        do k_d = HT_csr%rowptr(row_d), HT_csr%rowptr(row_d + 1) - 1
+          col_d = HT_csr%colind(k_d)
+          HT_csr_dense(row_d, col_d) = HT_csr%values(k_d)
+        end do
+      end do
+
+      allocate(eig_csr(matSize), work_s(1), rwork_s(1), iwork_s(1))
+      call zheevd('N', 'U', matSize, HT_csr_dense, matSize, eig_csr, &
+        work_s, -1, rwork_s, -1, iwork_s, -1, info_s)
+      lwork_s = int(real(work_s(1))); lrwork_s = int(rwork_s(1)); liwork_s = iwork_s(1)
+      deallocate(work_s, rwork_s, iwork_s)
+      allocate(work_s(lwork_s), rwork_s(lrwork_s), iwork_s(liwork_s))
+      call zheevd('N', 'U', matSize, HT_csr_dense, matSize, eig_csr, &
+        work_s, lwork_s, rwork_s, lrwork_s, iwork_s, liwork_s, info_s)
+      @assertTrue(info_s == 0, message="CSR zheevd at k!=0 succeeded")
+
+      ! Compare eigenvalues
+      max_err = 0.0_dp
+      do idx = 1, matSize
+        max_err = max(max_err, abs(eig_dense(idx) - eig_csr(idx)))
+      end do
+      @assertTrue(max_err < 1.0e-10_dp, message="CSR vs dense eigenvalues match at k!=0")
+
+      deallocate(HT_csr_dense, eig_csr, work_s, rwork_s, iwork_s)
+    end block
+    call csr_free(HT_csr)
+    call qw_workspace_free(qw_ws)
+
+    deallocate(eig_dense, profile, kpterms)
+
+  end subroutine test_qw_csr_vs_dense
 
 end module test_hamiltonian

@@ -2,6 +2,8 @@ module csr_test_helpers
 
   use definitions, only: dp
   use sparse_matrices, only: csr_matrix, csr_free
+  use eigensolver, only: eigensolver_config, eigensolver_result, &
+    eigensolver_base, make_eigensolver, EIGEN_MODE_ENERGY, EIGEN_MODE_INDEX
   implicit none
 
   private
@@ -15,6 +17,7 @@ module csr_test_helpers
   public :: csr_hermitian_error
   public :: csr_interior_symmetric_error
   public :: csr_interior_hermitian_error
+  public :: eigensolve_csr
 
 contains
 
@@ -253,5 +256,38 @@ contains
 
     deallocate(dense)
   end function csr_interior_hermitian_error
+
+  ! ==================================================================
+  ! Test-only eigensolve wrapper: derives cfg%mode from the legacy
+  ! emin/emax+nev heuristic, then dispatches through the polymorphic
+  ! solver. Preserves the call ergonomics of the removed
+  ! solve_sparse_evp/solve_dense_lapack so test configs need no change.
+  ! Not a production interface — test infrastructure only.
+  ! ==================================================================
+  subroutine eigensolve_csr(H_csr, cfg, result)
+    type(csr_matrix), intent(in) :: H_csr
+    type(eigensolver_config), intent(in) :: cfg
+    type(eigensolver_result), intent(out) :: result
+
+    type(eigensolver_config) :: cfg_local
+    class(eigensolver_base), allocatable :: solver
+    integer :: N
+
+    N = H_csr%nrows
+    cfg_local = cfg
+    ! Legacy heuristic (matches the removed solve_dense_lapack branch):
+    ! ENERGY when an energy window is set, else INDEX for nev smallest.
+    if (cfg_local%emin /= 0.0_dp .and. cfg_local%emax /= 0.0_dp) then
+      cfg_local%mode = EIGEN_MODE_ENERGY
+    else
+      cfg_local%mode = EIGEN_MODE_INDEX
+      cfg_local%il = 1
+      cfg_local%iu = min(max(cfg_local%nev, 1), N)
+    end if
+
+    solver = make_eigensolver(cfg_local)
+    call solver%solve_sparse(H_csr, cfg_local, result)
+    deallocate(solver)
+  end subroutine eigensolve_csr
 
 end module csr_test_helpers

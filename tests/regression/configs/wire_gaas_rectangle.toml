@@ -30,7 +30,8 @@ inner = 0.0
 outer = 100.0
 
 
-[feast]
+[solver]
+method = "DENSE"
+mode = "ENERGY"
 emin = -1.5
 emax = 2.0
-m0 = -1

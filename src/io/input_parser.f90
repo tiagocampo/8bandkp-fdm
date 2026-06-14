@@ -1,7 +1,7 @@
 module input_parser
 
   use definitions, only: dp, iknd, init_grid_from_config, &
-    simulation_config
+    simulation_config, to_upper_trim
   use parameters
   use geometry
   use tomlf, only : get_value, set_value, toml_path, toml_parse, toml_load, &
@@ -114,7 +114,15 @@ contains
     call parse_optics(table, cfg)
     call parse_exciton(table, cfg)
     call parse_scattering(table, cfg)
-    call parse_feast(table, cfg)
+    call parse_solver(table, cfg)
+
+    ! ---- Reject legacy [feast] section (removed; renamed to [solver]) ----
+    call get_value(table, 'feast', child, requested=.false., stat=stat)
+    if (stat == 0 .and. associated(child)) then
+      error stop '[feast] section removed — rename to [solver] ' // &
+        '(fields: method/mode/emin/emax/m0). See docs/reference/input-reference.md'
+    end if
+
     call parse_strain(table, cfg)
     call parse_gfactor(table, cfg)
 
@@ -826,25 +834,34 @@ contains
   end subroutine parse_scattering
 
   ! ==================================================================
-  ! [feast] section
+  ! [solver] section — unified eigensolver configuration.
   ! ==================================================================
-  subroutine parse_feast(table, cfg)
+  subroutine parse_solver(table, cfg)
     type(toml_table), intent(inout) :: table
     type(simulation_config), intent(inout) :: cfg
 
-    type(toml_table), pointer :: feast_tbl => null()
+    type(toml_table), pointer :: solver_tbl => null()
+    character(len=:), allocatable :: method_val, mode_val
     integer :: stat
 
-    call get_value(table, 'feast', feast_tbl, requested=.false., stat=stat)
-    if (.not. associated(feast_tbl)) return
+    call get_value(table, 'solver', solver_tbl, requested=.false., stat=stat)
+    if (.not. associated(solver_tbl)) return
 
-    call get_value(feast_tbl, 'emin', cfg%feast%emin, 0.0_dp, stat=stat)
-    call check_optional_stat(stat, 'emin', 'feast')
-    call get_value(feast_tbl, 'emax', cfg%feast%emax, 0.0_dp, stat=stat)
-    call check_optional_stat(stat, 'emax', 'feast')
-    call get_value(feast_tbl, 'm0', cfg%feast%m0, 0, stat=stat)
-    call check_optional_stat(stat, 'm0', 'feast')
-  end subroutine parse_feast
+    call get_value(solver_tbl, 'method', method_val, 'AUTO', stat=stat)
+    call check_optional_stat(stat, 'method', 'solver')
+    if (allocated(method_val)) cfg%solver%method = to_upper_trim(method_val)
+
+    call get_value(solver_tbl, 'mode', mode_val, 'AUTO', stat=stat)
+    call check_optional_stat(stat, 'mode', 'solver')
+    if (allocated(mode_val)) cfg%solver%mode = to_upper_trim(mode_val)
+
+    call get_value(solver_tbl, 'emin', cfg%solver%emin, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'emin', 'solver')
+    call get_value(solver_tbl, 'emax', cfg%solver%emax, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'emax', 'solver')
+    call get_value(solver_tbl, 'm0', cfg%solver%m0, 0, stat=stat)
+    call check_optional_stat(stat, 'm0', 'solver')
+  end subroutine parse_solver
 
   ! ==================================================================
   ! [strain] section

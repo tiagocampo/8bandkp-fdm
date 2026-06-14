@@ -4,8 +4,8 @@
 Validates:
   R14: Wire-to-QW convergence -- ground-state CB energy decreases monotonically
        as transverse wire dimensions increase (constant grid spacing dx=dy=3 A).
-  R15: Dense vs sparse solver agreement -- eigenvalues from dense LAPACK (feast_m0=-1)
-       and FEAST (feast_m0=64) agree within 1e-8 for a small grid.
+  R15: Dense vs sparse solver agreement -- eigenvalues from dense LAPACK
+       and FEAST (m0=64) agree within 1e-8 for a small grid.
   R16: Eigenvalue count -- number of eigenvalues matches numcb + numvb per k-point.
 
 Usage: verify_8band_rung4_wire.py <build_dir> <test_dir>
@@ -110,18 +110,34 @@ def run_bandstructure(exe_path, config_path, workdir):
 
 
 def make_sparse_config(dense_config_path, tmpdir):
-    """Create a FEAST (sparse) variant of the dense config by setting feast_m0=64.
+    """Create a FEAST (sparse) variant of the dense config by setting solver
+    method=FEAST and m0=64.
 
     Returns path to the new config file.
     """
     with open(dense_config_path) as f:
         lines = f.readlines()
     sparse_lines = []
+    in_solver = False
     for line in lines:
-        if line.strip().startswith('feast_m0:'):
-            sparse_lines.append('feast_m0: 64\n')
-        else:
-            sparse_lines.append(line)
+        stripped = line.strip()
+        if stripped == '[solver]':
+            in_solver = True
+        elif stripped.startswith('[') and stripped != '[solver]':
+            in_solver = False
+        if in_solver:
+            if stripped.startswith('method'):
+                line = 'method = "FEAST"\n'
+            elif stripped.startswith('m0'):
+                line = 'm0 = 64\n'
+        sparse_lines.append(line)
+    # Ensure solver section has m0 if not present
+    has_m0 = any(l.strip().startswith('m0') for l in sparse_lines)
+    if not has_m0:
+        for i, l in enumerate(sparse_lines):
+            if l.strip() == '[solver]':
+                sparse_lines.insert(i + 1, 'm0 = 64\n')
+                break
     sparse_path = os.path.join(tmpdir, 'sparse_config.toml')
     with open(sparse_path, 'w') as f:
         f.writelines(sparse_lines)
@@ -241,7 +257,7 @@ def check_r15_dense_sparse(exe_path, configs_dir):
     failures = []
 
     # Run dense
-    print(f"\n  Running dense solver (feast_m0=-1)...")
+    print(f"\n  Running dense solver...")
     with tempfile.TemporaryDirectory() as dense_dir:
         dense_eig = run_bandstructure(exe_path, dense_cfg, dense_dir)
         if dense_eig is None:
@@ -251,7 +267,7 @@ def check_r15_dense_sparse(exe_path, configs_dir):
             return ["R15: No dense eigenvalue data"]
 
     # Run sparse (FEAST)
-    print(f"  Running FEAST solver (feast_m0=64)...")
+    print(f"  Running FEAST solver (m0=64)...")
     with tempfile.TemporaryDirectory() as sparse_dir:
         sparse_eig = run_bandstructure(exe_path, sparse_cfg, sparse_dir)
         if sparse_eig is None:
@@ -346,7 +362,7 @@ def check_r16_eigenvalue_count(exe_path, configs_dir):
             k, evals = rows[0]
             n_evals = len(evals)
 
-            # Wire mode with feast_m0=-1 (dense fallback) returns ALL eigenvalues
+            # Wire mode with dense solver returns ALL eigenvalues
             # in the FEAST energy window, not just numcb+numvb. The total is
             # determined by the matrix size (8*nx*ny) and the energy window.
             # Verify that we get a reasonable number: at least numcb+numvb,

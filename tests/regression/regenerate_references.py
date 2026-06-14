@@ -16,39 +16,39 @@ import tempfile
 # Maps test name -> (executable, config, ref_data_dir, output_files)
 REGENERATION_MAP = [
     # Bulk band structure
-    ("bandStructure", "bulk_gaas_kx.cfg", "bulk_gaas_kx", ["eigenvalues.dat"]),
-    ("bandStructure", "bulk_inas_kx.cfg", "bulk_inas_kx", ["eigenvalues.dat"]),
+    ("bandStructure", "bulk_gaas_kx.toml", "bulk_gaas_kx", ["eigenvalues.dat"]),
+    ("bandStructure", "bulk_inas_kx.toml", "bulk_inas_kx", ["eigenvalues.dat"]),
     # QW band structure
-    ("bandStructure", "qw_alsbw_gasbw_inasw.cfg", "qw_alsb_gasb_inas", ["eigenvalues.dat"]),
+    ("bandStructure", "qw_alsbw_gasbw_inasw.toml", "qw_alsb_gasb_inas", ["eigenvalues.dat"]),
     # Gfactor (compares stdout, captured as output.txt)
-    ("gfactorCalculation", "gfactor_qw_cb.cfg", "gfactor_qw_cb", ["output.txt"]),
-    ("gfactorCalculation", "gfactor_bulk_gaas_vb.cfg", "gfactor_bulk_gaas_vb", ["output.txt"]),
-    ("gfactorCalculation", "gfactor_bulk_gaasw_cb.cfg", "gfactor_bulk_gaasw_cb", ["output.txt"]),
-    ("gfactorCalculation", "gfactor_qw_vb.cfg", "gfactor_qw_vb", ["output.txt"]),
+    ("gfactorCalculation", "gfactor_qw_cb.toml", "gfactor_qw_cb", ["output.txt"]),
+    ("gfactorCalculation", "gfactor_bulk_gaas_vb.toml", "gfactor_bulk_gaas_vb", ["output.txt"]),
+    ("gfactorCalculation", "gfactor_bulk_gaasw_cb.toml", "gfactor_bulk_gaasw_cb", ["output.txt"]),
+    ("gfactorCalculation", "gfactor_qw_vb.toml", "gfactor_qw_vb", ["output.txt"]),
     # Landau
-    ("bandStructure", "landau_bulk_GaAs.cfg", "landau_bulk_GaAs", ["eigenvalues.dat"]),
-    ("bandStructure", "landau_bulk_InAs.cfg", "landau_bulk_InAs", ["eigenvalues.dat"]),
-    ("bandStructure", "landau_bulk_InAs_Bsweep.cfg", "landau_bulk_InAs_Bsweep", ["eigenvalues.dat"]),
+    ("bandStructure", "landau_bulk_GaAs.toml", "landau_bulk_GaAs", ["eigenvalues.dat"]),
+    ("bandStructure", "landau_bulk_InAs.toml", "landau_bulk_InAs", ["eigenvalues.dat"]),
+    ("bandStructure", "landau_bulk_InAs_Bsweep.toml", "landau_bulk_InAs_Bsweep", ["eigenvalues.dat"]),
     # SC loop
-    ("bandStructure", "sc_gaas_alas_qw.cfg", "sc_gaas_alas_qw", ["eigenvalues.dat"]),
-    ("bandStructure", "sc_qw_inas_alsb.cfg", "sc_qw_inas_alsb", ["eigenvalues.dat"]),
-    ("bandStructure", "sc_bulk_gaas_doped.cfg", "sc_bulk_gaas_doped",
+    ("bandStructure", "sc_gaas_alas_qw.toml", "sc_gaas_alas_qw", ["eigenvalues.dat"]),
+    ("bandStructure", "sc_qw_inas_alsb.toml", "sc_qw_inas_alsb", ["eigenvalues.dat"]),
+    ("bandStructure", "sc_bulk_gaas_doped.toml", "sc_bulk_gaas_doped",
      ["eigenvalues.dat", "sc_charge.dat", "sc_potential_profile.dat"]),
-    ("bandStructure", "sc_mod_doped_gaas_algaas.cfg", "sc_mod_doped_gaas_algaas", ["eigenvalues.dat"]),
-    ("bandStructure", "sc_qcse_gaas_algaas.cfg", "sc_qcse_gaas_algaas", ["eigenvalues.dat"]),
-    ("bandStructure", "sc_qcse_gaas_algaas_ef.cfg", "sc_qcse_gaas_algaas_ef", ["eigenvalues.dat"]),
+    ("bandStructure", "sc_mod_doped_gaas_algaas.toml", "sc_mod_doped_gaas_algaas", ["eigenvalues.dat"]),
+    ("bandStructure", "sc_qcse_gaas_algaas.toml", "sc_qcse_gaas_algaas", ["eigenvalues.dat"]),
+    ("bandStructure", "sc_qcse_gaas_algaas_ef.toml", "sc_qcse_gaas_algaas_ef", ["eigenvalues.dat"]),
     # Wire
-    ("bandStructure", "wire_gaas_rectangle.cfg", "wire_gaas_rectangle", ["eigenvalues.dat"]),
-    ("bandStructure", "wire_inas_gaas_strain.cfg", "wire_inas_gaas_core_shell", ["eigenvalues.dat"]),
-    ("bandStructure", "wire_gaas_hexagon.cfg", "wire_gaas_hexagon",
+    ("bandStructure", "wire_gaas_rectangle.toml", "wire_gaas_rectangle", ["eigenvalues.dat"]),
+    ("bandStructure", "wire_inas_gaas_strain.toml", "wire_inas_gaas_core_shell", ["eigenvalues.dat"]),
+    ("bandStructure", "wire_gaas_hexagon.toml", "wire_gaas_hexagon",
      ["eigenvalues.dat", "output.txt"]),
     # SC wire
-    ("bandStructure", "sc_wire_gaas.cfg", "sc_wire_gaas",
+    ("bandStructure", "sc_wire_gaas.toml", "sc_wire_gaas",
      ["eigenvalues.dat", "output.txt"]),
     # Wire gfactor
-    ("gfactorCalculation", "wire_insb_gfactor.cfg", "wire_insb_gfactor", ["output.txt"]),
+    ("gfactorCalculation", "wire_insb_gfactor.toml", "wire_insb_gfactor", ["output.txt"]),
     # Optics
-    ("opticalProperties", "qw_optics_commutator.cfg", "qw_optics_commutator",
+    ("opticalProperties", "qw_optics_commutator.toml", "qw_optics_commutator",
      ["absorption_TE.dat", "absorption_TM.dat"]),
 ]
 

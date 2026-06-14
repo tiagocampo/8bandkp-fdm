@@ -13,15 +13,13 @@ program topologicalAnalysis
   use input_parser
   use sparse_matrices
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
-    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window
+    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window, &
+    & EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use topological_analysis
   use bdg_hamiltonian
-#ifdef USE_ARPACK
-  use green_functions, only: compute_ldos_csr
-#endif
-  use green_functions, only: compute_spectral_function_bulk, compute_spectral_function_qw, &
+  use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
-  use linalg, only: mkl_set_num_threads_local, zheev
+  use linalg, only: mkl_set_num_threads_local
   use simulation_setup_mod, only: simulation_setup, simulation_setup_init, simulation_setup_free
 
   implicit none
@@ -353,6 +351,7 @@ contains
     ! small BHZ matrix (4*N = 400).  FEAST may miss eigenvalues in wide search
     ! windows; DENSE (zheev) is exact and reliable.
     eigen_cfg_local%method = 'DENSE'
+    eigen_cfg_local%mode = EIGEN_MODE_FULL
     eigen_cfg_local%emin = -100.0_dp
     eigen_cfg_local%emax = 100.0_dp
     eigen_cfg_local%nev = 4 * bhz_N_grid
@@ -516,17 +515,18 @@ contains
     ! Configure FEAST for BdG (search around zero energy for Majoranas)
     nev_local = cfg%bands%num_cb + cfg%bands%num_vb
     eigen_cfg_local%method = 'FEAST'
+    eigen_cfg_local%mode = EIGEN_MODE_ENERGY
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
-    eigen_cfg_local%feast_m0 = min(max(8 * nev_local, 200), 16 * Ngrid_local)
+    eigen_cfg_local%m0 = min(max(8 * nev_local, 200), 16 * Ngrid_local)
 
     ! Search near zero energy for Majorana modes.
     ! Use feast_emin/emax from config when set (for kz sweeps at finite kz),
     ! otherwise use the default ±10 meV window.
-    if (cfg%feast%emin /= 0.0_dp .or. cfg%feast%emax /= 0.0_dp) then
-      emin_local = cfg%feast%emin
-      emax_local = cfg%feast%emax
+    if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+      emin_local = cfg%solver%emin
+      emax_local = cfg%solver%emax
     else
       emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
       emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
@@ -698,10 +698,13 @@ contains
     real(kind=dp), contiguous, intent(in) :: kpterms_in(:,:,:)
     type(topological_result), intent(inout) :: result
 
-    complex(kind=dp), allocatable :: H_bdg(:,:), work_local(:)
-    real(kind=dp), allocatable :: eigvals_bdg(:), rwork_local(:), profile_majorana(:)
+    complex(kind=dp), allocatable :: H_bdg(:,:)
+    real(kind=dp), allocatable :: eigvals_bdg(:), profile_majorana(:)
     type(spatial_grid) :: qw_grid
-    integer :: N_local, Ntot_local, Nbdg_local, lwork_local, info_local
+    type(eigensolver_config) :: bdg_cfg
+    class(eigensolver_base), allocatable :: bdg_solver
+    type(eigensolver_result) :: bdg_result
+    integer :: N_local, Ntot_local, Nbdg_local
     integer :: i, j, n_zero, n_fit_ok, n_fit_failed
     integer :: iounit_ev, iounit_prof, status_ev, status_prof
     real(kind=dp) :: zero_tol, xi_val, dz_local, k_par_val
@@ -727,18 +730,22 @@ contains
       & k_par_val, cfg_in%bdg%mu, cfg_in%bdg%delta_0, &
       & cfg_in%bdg%B_vec, cfg_in%bdg%g_factor)
 
-    allocate(eigvals_bdg(Nbdg_local), rwork_local(max(1, 3 * Nbdg_local - 2)), work_local(1))
-    call zheev('V', 'U', Nbdg_local, H_bdg, Nbdg_local, eigvals_bdg, &
-      & work_local, -1, rwork_local, info_local)
-    lwork_local = max(1, nint(real(work_local(1), kind=dp)))
-    deallocate(work_local)
-    allocate(work_local(lwork_local))
-    call zheev('V', 'U', Nbdg_local, H_bdg, Nbdg_local, eigvals_bdg, &
-      & work_local, lwork_local, rwork_local, info_local)
-    if (info_local /= 0) then
-      print *, 'Error: QW BdG zheev failed with info=', info_local
-      error stop 'QW BdG zheev failed'
+    allocate(eigvals_bdg(Nbdg_local))
+
+    ! Solve BdG eigenvalue problem via unified dispatch
+    bdg_cfg%method = 'DENSE'
+    bdg_cfg%mode = EIGEN_MODE_FULL
+    bdg_cfg%nev = Nbdg_local
+    bdg_solver = make_eigensolver(bdg_cfg)
+    call bdg_solver%solve_dense(H_bdg, bdg_cfg, bdg_result)
+    if (.not. bdg_result%converged) then
+      error stop 'QW BdG eigensolver failed'
     end if
+    eigvals_bdg = bdg_result%eigenvalues
+    ! H_bdg now holds eigenvectors (needed for Majorana profile extraction)
+    H_bdg = bdg_result%eigenvectors
+    call eigensolver_result_free(bdg_result)
+    if (allocated(bdg_solver)) deallocate(bdg_solver)
 
     result%min_gap = 2.0_dp * minval(abs(eigvals_bdg))
 
@@ -888,7 +895,7 @@ contains
     print *, '  Zero-energy BdG gap: ', result%min_gap, ' eV'
 
     if (allocated(qw_grid%z)) deallocate(qw_grid%z)
-    deallocate(H_bdg, eigvals_bdg, rwork_local, work_local)
+    deallocate(H_bdg, eigvals_bdg)
 
   end subroutine run_bdg_qw
 
@@ -1306,10 +1313,11 @@ contains
 
     nev_local = max(2, cfg%bands%num_cb + cfg%bands%num_vb)
     eigen_cfg_local%method = 'FEAST'
+    eigen_cfg_local%mode = EIGEN_MODE_ENERGY
     eigen_cfg_local%nev = nev_local
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
-    eigen_cfg_local%feast_m0 = min(max(8 * nev_local, 200), Nbdg_local)
+    eigen_cfg_local%m0 = min(max(8 * nev_local, 200), Nbdg_local)
     eigen_cfg_local%emin = -5.0_dp * cfg%bdg%delta_0
     eigen_cfg_local%emax =  5.0_dp * cfg%bdg%delta_0
 
@@ -1320,10 +1328,11 @@ contains
       print *, 'ERROR: wire BdG sweep eigensolver failed or found no states'
       error stop 'wire BdG eigensolver failed'
     end if
-    if (eigen_res_local%nev_found >= eigen_cfg_local%feast_m0 .and. &
-        eigen_cfg_local%feast_m0 < Nbdg_local) then
+    if (eigen_res_local%m0_used > 0 .and. &
+        eigen_res_local%nev_found >= eigen_res_local%m0_used .and. &
+        eigen_res_local%m0_used < Nbdg_local) then
       print *, 'ERROR: wire BdG sweep likely truncated FEAST subspace'
-      print *, '  nev_found=', eigen_res_local%nev_found, ' feast_m0=', eigen_cfg_local%feast_m0
+      print *, '  nev_found=', eigen_res_local%nev_found, ' m0=', eigen_res_local%m0_used
       error stop 'wire BdG FEAST subspace likely truncated'
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))

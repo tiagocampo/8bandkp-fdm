@@ -382,7 +382,7 @@ For a 2D quantum wire with $N_x \times N_y$ grid points and FD order $n$:
 | Matrix size | $8 N_x N_y \times 8 N_x N_y$ |
 | Nonzeros per row | $8 \times (2n + 1)$ |
 | CSR storage | $\sim 8 N_x N_y \times 8(2n+1)$ entries |
-| FEAST time | $O(\text{nnz} \times M_0 \times n_{\text{iter}})$ |
+| FEAST time | $O(\text{nnz} \times \texttt{m0} \times n_{\text{iter}})$ |
 | Memory (PARDISO) | $\sim 5 \times$ nnz for factorization |
 
 For wires, the FD order directly affects the number of nonzeros (bandwidth =
