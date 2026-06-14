@@ -1,7 +1,7 @@
 module input_parser
 
   use definitions, only: dp, iknd, init_grid_from_config, &
-    simulation_config
+    simulation_config, to_upper_trim
   use parameters
   use geometry
   use tomlf, only : get_value, set_value, toml_path, toml_parse, toml_load, &
@@ -849,11 +849,11 @@ contains
 
     call get_value(solver_tbl, 'method', method_val, 'AUTO', stat=stat)
     call check_optional_stat(stat, 'method', 'solver')
-    if (allocated(method_val)) cfg%solver%method = trim(method_val)
+    if (allocated(method_val)) cfg%solver%method = to_upper_trim(method_val)
 
     call get_value(solver_tbl, 'mode', mode_val, 'AUTO', stat=stat)
     call check_optional_stat(stat, 'mode', 'solver')
-    if (allocated(mode_val)) cfg%solver%mode = trim(mode_val)
+    if (allocated(mode_val)) cfg%solver%mode = to_upper_trim(mode_val)
 
     call get_value(solver_tbl, 'emin', cfg%solver%emin, 0.0_dp, stat=stat)
     call check_optional_stat(stat, 'emin', 'solver')

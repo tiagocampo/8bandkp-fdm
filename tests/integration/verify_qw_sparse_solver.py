@@ -87,7 +87,9 @@ mode = "INDEX"
 # ── QW multi-kpoint FEAST sweep config (exercises fast path) ─────────
 # nsteps=3 means k-points 2,3 take the value-only fast path
 # (qw_ws%initialized == .true. after k=1). The energy window must be
-# wide enough to retain the same eigenvalue count at every k-point.
+# wide enough to retain the same eigenvalue count at every k-point AND
+# must not place a contour edge on a band (e.g. emax ~= CB edge at k_max
+# trips a FEAST divide-by-zero); [-1, 2] clears the AlGaAs/GaAs CB safely.
 
 QW_FASTPATH_CONFIG = """\
 confinement = "qw"
@@ -116,8 +118,8 @@ z_max = 50
 [solver]
 method = "FEAST"
 mode = "ENERGY"
-emin = -0.5
-emax = 1.5
+emin = -1.0
+emax = 2.0
 """
 
 

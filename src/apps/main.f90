@@ -12,7 +12,7 @@ program kpfdm
   use sc_loop
   use eigensolver, only: eigensolver_result, eigensolver_result_free, &
     eigensolver_config, eigensolver_base, make_eigensolver, &
-    eigensolver_config_validate
+    eigensolver_config_validate, auto_compute_energy_window
   use strain_solver, only: strain_result, strain_result_free, init_strain_cache
   use magnetic_field, only: init_zeeman_cache
   use exciton_solver
@@ -673,6 +673,11 @@ program kpfdm
                                  res_method, res_mode)
     ecfg_bs%method = res_method
     ecfg_bs%mode   = eigen_mode_from_string(res_mode)
+    ! Propagate the user's [solver] window/subspace so FEAST honors it instead
+    ! of falling back to the eigensolver_config type default [-1,+1] eV.
+    ecfg_bs%emin = cfg%solver%emin
+    ecfg_bs%emax = cfg%solver%emax
+    ecfg_bs%m0   = cfg%solver%m0
     if (conf_direction(cfg%confinement) == 'n') then
       ! Bulk: 8x8, all eigenvalues
       ecfg_bs%nev = 8
@@ -683,6 +688,22 @@ program kpfdm
       ecfg_bs%nev = iuu - il + 1
       ecfg_bs%il = il
       ecfg_bs%iu = iuu
+      ! QW + FEAST needs a valid energy window. Honor [solver] emin/emax; if
+      ! unset (auto sentinel emin >= emax), estimate from the max-k Hamiltonian
+      ! so the window covers the whole sweep (DENSE ignores emin/emax).
+      if (trim(ecfg_bs%method) == 'FEAST' .and. ecfg_bs%emin >= ecfg_bs%emax) then
+        block
+          type(csr_matrix) :: HT_csr_k0
+          type(qw_workspace) :: qw_ws_k0
+          call ZB8bandQW_csr(HT_csr_k0, smallk(cfg%wave_vector%nsteps), &
+            profile, kpterms, cfg, ws=qw_ws_k0)
+          call auto_compute_energy_window(HT_csr_k0, ecfg_bs%emin, ecfg_bs%emax)
+          call csr_free(HT_csr_k0)
+          call qw_workspace_free(qw_ws_k0)
+          print '(A,ES12.4,A,ES12.4,A)', ' QW k-sweep auto FEAST window: [', &
+            ecfg_bs%emin, ',', ecfg_bs%emax, ']'
+        end block
+      end if
     end if
     call eigensolver_config_validate(ecfg_bs)
     solver_bs = make_eigensolver(ecfg_bs)
@@ -736,6 +757,11 @@ program kpfdm
               print '(A,I0,A,I0,A)', '  Warning: FEAST returned ', result_bs%nev_found, &
                 ' eigenvalues at k-point ', k, &
                 '; only the lowest will be kept (widen bands or narrow energy window).'
+            end if
+            if (result_bs%nev_found < (iuu - il + 1)) then
+              print '(A,I0,A,I0,A,I0,A)', '  Warning: FEAST returned only ', &
+                result_bs%nev_found, ' eigenvalues at k-point ', k, ' of ', iuu - il + 1, &
+                ' requested; missing bands zero-filled (widen energy window).'
             end if
             eig(1:M, k) = result_bs%eigenvalues(1:M)
             eigv(:, 1:M, k) = result_bs%eigenvectors(:, 1:M)

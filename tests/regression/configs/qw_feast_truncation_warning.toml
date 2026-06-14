@@ -1,15 +1,14 @@
 # QW FEAST config that triggers the truncation warning.
 #
-# The FEAST energy window [-0.5, 1.5] (the same window used by
-# QW_FASTPATH_CONFIG / verify_qw_sparse_solver) spans far more subbands of
-# this GaAs/AlGaAs QW than the requested band window retains: FEAST returns
-# ~38 eigenvalues at k_par=0 while only num_cb + num_vb = 12 are retained.
-# That exercises the "only the lowest will be kept" branch in main.f90
-# (QW FEAST k-sweep truncation warning).
+# The FEAST energy window [-1.0, 2.0] spans far more subbands of this
+# GaAs/AlGaAs QW than the requested band window retains: FEAST returns
+# well over num_cb + num_vb = 12 eigenvalues at k_par=0 while only 12 are
+# retained. That exercises the "only the lowest will be kept" branch in
+# main.f90 (QW FEAST k-sweep truncation warning).
 #
-# Retained bands are sized so the default FEAST subspace M0 = 2*nev = 24
-# retries up to 48 and converges (the ~38 eigenvalues fit), i.e. this is the
-# same proven-converging parameter set as the fast-path equivalence config.
+# The upper edge must clear the CB (~1.4 eV, which shifts past 1.5 eV at
+# k_par=0.1): a contour edge sitting on a band trips a FEAST divide-by-zero,
+# so emax = 2.0 (not 1.5) is used. Same window as QW_FASTPATH_CONFIG.
 #
 # COVERAGE: observable=truncation_warning geometry=qw material=GaAs
 
@@ -39,5 +38,5 @@ z_max = 50
 [solver]
 method = "FEAST"
 mode = "ENERGY"
-emin = -0.5
-emax = 1.5
+emin = -1.0
+emax = 2.0

@@ -49,6 +49,7 @@ module eigensolver
   ! ------------------------------------------------------------------
   type :: eigensolver_result
     integer                       :: nev_found = 0
+    integer                       :: m0_used = 0
     real(kind=dp), allocatable    :: eigenvalues(:)
     complex(kind=dp), allocatable :: eigenvectors(:,:)
     integer                       :: iterations = 0
@@ -341,6 +342,7 @@ contains
           fw%M0 = M0
           fw%N = N
           fw%initialized = .true.
+          fw%was_freed = .false.
           cache_is_fresh = .true.
         else
           deallocate(rowptr_loc, colind_loc)
@@ -357,6 +359,7 @@ contains
     end do
 
     result%iterations = loop
+    result%m0_used = M0
     result%converged = (info == 0) .or. (info == 2)
 
     ! Persist the subspace size that actually produced a converged solve, so
@@ -777,6 +780,7 @@ contains
     if (info == 0 .and. nb > 0) then
       result%converged = .true.
       result%nev_found = nb
+      result%m0_used = size(H, 1)
       result%iterations = 1
       allocate(result%eigenvalues(nb))
       allocate(result%eigenvectors(N, nb))

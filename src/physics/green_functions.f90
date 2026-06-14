@@ -296,9 +296,10 @@ contains
         call fail_wire_spectral()
         return
       end if
-      if (eigen_res%nev_found >= eigen_cfg%m0 .and. eigen_cfg%m0 < matrix_dim) then
+      if (eigen_res%m0_used > 0 .and. eigen_res%nev_found >= eigen_res%m0_used .and. &
+          eigen_res%m0_used < matrix_dim) then
         print *, 'ERROR: compute_spectral_function_wire: eigensolver returned ', &
-          & eigen_res%nev_found, ' states, reaching m0=', eigen_cfg%m0
+          & eigen_res%nev_found, ' states, reaching m0=', eigen_res%m0_used
         print *, '  Increase m0 or narrow the spectral energy window.'
         call fail_wire_spectral()
         return

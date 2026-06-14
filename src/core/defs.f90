@@ -30,6 +30,7 @@ module definitions
   ! Functions and subroutines
   public :: conf_direction
   public :: resolve_solver_defaults
+  public :: to_upper_trim
   public :: kronij, grid_ngrid, init_grid_from_config
   public :: validate_semantic
 
@@ -843,6 +844,15 @@ module definitions
     case ('gfactor')
       if (cfg%wave_vector%nsteps /= 0 .and. cfg%wave_vector%mode /= 'k0') then
         error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
+      end if
+      ! gfactor needs the FULL spectrum for Lowdin partitioning. For QW,
+      ! setup_solve_kpoint_serial forces FULL mode, which would route an
+      ! explicit QW+FEAST through solve_sparse and silently truncate the
+      ! spectrum (FEAST is a partial-spectrum contour solver). Reject that
+      ! one combo up front. Bulk resolves DENSE; wire uses FEAST through its
+      ! own (non-FULL) path, so both are unaffected.
+      if (trim(cfg%confinement) == 'qw' .and. to_upper_trim(cfg%solver%method) == 'FEAST') then
+        error stop 'validate_semantic: gfactor requires the full spectrum; FEAST is unsupported for QW gfactor (use method = DENSE or AUTO)'
       end if
       ! S1: bandIdx in range for gfactor (bulk, QW, wire)
       ! CB (which_band=0): accesses cb_state(:, bandIdx:bandIdx+1) → range [1, num_cb-1]

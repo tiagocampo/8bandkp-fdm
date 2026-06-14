@@ -1328,10 +1328,11 @@ contains
       print *, 'ERROR: wire BdG sweep eigensolver failed or found no states'
       error stop 'wire BdG eigensolver failed'
     end if
-    if (eigen_res_local%nev_found >= eigen_cfg_local%m0 .and. &
-        eigen_cfg_local%m0 < Nbdg_local) then
+    if (eigen_res_local%m0_used > 0 .and. &
+        eigen_res_local%nev_found >= eigen_res_local%m0_used .and. &
+        eigen_res_local%m0_used < Nbdg_local) then
       print *, 'ERROR: wire BdG sweep likely truncated FEAST subspace'
-      print *, '  nev_found=', eigen_res_local%nev_found, ' m0=', eigen_cfg_local%m0
+      print *, '  nev_found=', eigen_res_local%nev_found, ' m0=', eigen_res_local%m0_used
       error stop 'wire BdG FEAST subspace likely truncated'
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))

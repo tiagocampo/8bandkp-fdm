@@ -199,6 +199,14 @@ contains
       setup%eigen_cfg%nev = min(setup%iuu - setup%il + 1, setup%N)
       setup%eigen_cfg%il = setup%il
       setup%eigen_cfg%iu = setup%iuu
+      ! Propagate the user's [solver] energy window / subspace size so ENERGY
+      ! and FEAST dispatches honor it (e.g. Landau+ENERGY). When unset (both
+      ! emin/emax == 0, the parser auto-sentinel) the type defaults are kept.
+      if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+        setup%eigen_cfg%emin = cfg%solver%emin
+        setup%eigen_cfg%emax = cfg%solver%emax
+      end if
+      setup%eigen_cfg%m0 = cfg%solver%m0
       call eigensolver_config_validate(setup%eigen_cfg)
       setup%eigen_solver = make_eigensolver(setup%eigen_cfg)
 
