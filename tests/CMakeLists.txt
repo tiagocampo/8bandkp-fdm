@@ -1006,6 +1006,31 @@ set_tests_properties(
     PROPERTIES LABELS "verification" TIMEOUT 600
 )
 
+# --- Landau FEAST-enable regression (issue #10) ---
+# Runs the bandStructure executable on the SAME InAs Landau config twice -
+# method=DENSE (AUTO->DENSE+INDEX, the golden default) and method=FEAST+ENERGY
+# (AUTO sweep-envelope window) - and asserts (1) the FEAST path is actually
+# taken (dispatch gate: a FEAST/envelope diagnostic appears in stdout; at HEAD
+# method=FEAST hit a broken result-handling path that assumed INDEX sizing)
+# and (2) the eigenvalues.dat output matches within 1e-6 relative. Divergent
+# eigenvalues would mean the FEAST window truncated the spectrum, the
+# result-handling extracted the wrong slice, or the band indexing shifted
+# between INDEX and ENERGY mode. The config is the golden landau_InAs.toml
+# shape (InAs, nx=100, Bz=5T, ky-sweep nsteps=10) - a genuine in-plane
+# k-dispersion sweep at FIXED B (the B-sweep fan diagram is a separate
+# application-layer block, untouched by issue #10 per ADR 0003).
+add_test(
+    NAME verification_landau_dense_feast
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_landau_dense_feast.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_landau_dense_feast
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
 # --- Wire Strain Validation ---
 add_test(
     NAME strain_validation_wire

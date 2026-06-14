@@ -7,12 +7,12 @@ program kpfdm
   use hamiltonian_blocks, only: init_kp_block_cache
   use OMP_lib
   use outputFunctions
-  use utils, only: get_unit, ensure_output_dir
+  use utils, only: get_unit, ensure_output_dir, dnscsr_z_mkl
   use input_parser
   use sc_loop
   use eigensolver, only: eigensolver_result, eigensolver_result_free, &
     eigensolver_config, eigensolver_base, make_eigensolver, &
-    eigensolver_config_validate, apply_solver_window
+    eigensolver_config_validate, apply_solver_window, EIGEN_MODE_INDEX
   use strain_solver, only: strain_result, strain_result_free, init_strain_cache
   use magnetic_field, only: init_zeeman_cache
   use exciton_solver
@@ -429,28 +429,92 @@ program kpfdm
       eig(:,:) = 0_dp
       eigv(:,:,:) = 0_dp
 
-      ! --- Solver config: DENSE + INDEX ---
+      ! --- Solver config: DENSE+INDEX (golden default) or FEAST+ENERGY ---
+      ! derive_eigensolver (issue #02, called by simulation_setup_init)
+      ! already resolved AUTO->DENSE+INDEX for Landau (the golden default)
+      ! and propagated the user [solver] window/m0. An explicit
+      ! method=FEAST resolves to FEAST+ENERGY (resolve_solver_defaults,
+      ! ADR 0004) - the path enabled by issue #10.
       landau_cfg = setup%eigen_cfg
       landau_solver = make_eigensolver(landau_cfg)
+
+      ! --- Landau FEAST sweep-envelope window (ADR 0005, issue #10) ---
+      ! The Landau k-sweep is a genuine in-plane k-dispersion sweep at
+      ! FIXED B (smallk(k) varies k_y; the B-sweep fan diagram is a
+      ! separate application-layer block below - ADR 0003). FEAST needs an
+      ! energy window covering the full retained [il, iuu] band range
+      ! across the sweep; the window authority's dispersion-aware
+      ! envelope variant (asw_envelope, issue #03) unions the Gershgorin
+      ! bounds at the sweep's two endpoints (k=0 and k_max) into ONE
+      ! stable window per sweep. DENSE ignores emin/emax, so this block is
+      ! a no-op for the golden default. The authority honors a user-set
+      ! [solver] window verbatim (no envelope), so the envelope is derived
+      ! ONLY when the user left the window at the parser's [0,0] auto
+      ! sentinel. Landau builds dense (ZB8bandLandau has no CSR builder);
+      ! convert the endpoint dense matrices to CSR for the Gershgorin
+      ! bound (the conversion uses the same nonzero rule as the solver's
+      ! internal dense->CSR path, feast_solve_dense via dense_to_csr_work).
+      if (trim(landau_cfg%method) == 'FEAST' .and. &
+          cfg%solver%emin == 0.0_dp .and. cfg%solver%emax == 0.0_dp) then
+        block
+          complex(kind=dp), allocatable :: HT_env(:,:)
+          type(csr_matrix) :: HT_csr_a, HT_csr_b
+          integer :: nzmax_env
+
+          allocate(HT_env(N, N))
+          HT_env = (0.0_dp, 0.0_dp)
+          call init_kp_block_cache()
+          call init_strain_cache()
+          call init_zeeman_cache()
+          ! Endpoint k-points: smallk(1) = k=0, smallk(nsteps) = k_max.
+          call ZB8bandLandau(HT_env, smallk(1), profile, kpterms, &
+            cfg%grid%x, cfg=cfg)
+          nzmax_env = N * N
+          call dnscsr_z_mkl(nzmax_env, N, HT_env, HT_csr_a)
+          call ZB8bandLandau(HT_env, smallk(cfg%wave_vector%nsteps), &
+            profile, kpterms, cfg%grid%x, cfg=cfg)
+          nzmax_env = N * N
+          call dnscsr_z_mkl(nzmax_env, N, HT_env, HT_csr_b)
+          call apply_solver_window(HT_csr_a, HT_csr_b, &
+            user_emin=cfg%solver%emin, user_emax=cfg%solver%emax, &
+            emin_out=landau_cfg%emin, emax_out=landau_cfg%emax)
+          call csr_free(HT_csr_a)
+          call csr_free(HT_csr_b)
+          deallocate(HT_env)
+          print '(A,ES12.4,A,ES12.4,A)', ' Landau auto FEAST window '// &
+            '(sweep envelope): [', landau_cfg%emin, ',', &
+            landau_cfg%emax, ']'
+        end block
+        ! Re-validate + reconstruct after window update.
+        call eigensolver_config_validate(landau_cfg)
+        landau_solver = make_eigensolver(landau_cfg)
+      end if
 
       ! ================================================================
       ! Landau k-sweep (OpenMP parallel)
       ! ================================================================
       info = mkl_set_num_threads_local(1)
 
-      print '(A,I0,A,I0,A)', ' Landau: N=', cfg%landau%nx, ', ', &
-        & cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
+      print '(A,A,A,I0,A,I0,A)', ' Landau k-sweep (', &
+        landau_solver%backend_name(), '): N=', cfg%landau%nx, ', ', &
+        cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
 
       block
         complex(kind=dp), allocatable :: HT_loc(:,:)
         type(eigensolver_config) :: cfg_loc
         class(eigensolver_base), allocatable :: solver_loc
+        integer :: nev_target, idx_lo
+
+        ! Number of retained bands the output expects (top numvb valence +
+        ! bottom numcb conduction). eig/eigv are sized to exactly this
+        ! count; the result-handling below must never overrun it.
+        nev_target = iuu - il + 1
 
         call init_kp_block_cache()
         call init_strain_cache()
         call init_zeeman_cache()
 
-        !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, landau_result, M)
+        !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, landau_result, M, idx_lo)
         allocate(HT_loc(N, N))
         HT_loc = (0.0_dp, 0.0_dp)
         cfg_loc = landau_cfg
@@ -462,13 +526,42 @@ program kpfdm
           call solver_loc%solve_dense(HT_loc, cfg_loc, landau_result)
           if (.not. landau_result%converged) then
             !$omp critical
-            print *, "ERROR: Landau diagonalization failed at k=", k
+            print '(A,A,A,I0)', ' ERROR: ', solver_loc%backend_name(), &
+              ' diagonalization failed at k=', k
             !$omp end critical
             error stop 'eigensolver failed in Landau k-sweep'
           end if
+
           M = landau_result%nev_found
-          eig(1:M, k) = landau_result%eigenvalues(1:M)
-          eigv(:, 1:M, k) = landau_result%eigenvectors(:, 1:M)
+          if (M < nev_target) then
+            !$omp critical
+            print '(A,A,A,I0,A,I0,A,I0,A)', ' ERROR: ', &
+              solver_loc%backend_name(), ' returned only ', M, &
+              ' eigenvalues at k=', k, ' (need ', nev_target, &
+              '); widen the energy window'
+            !$omp end critical
+            error stop 'insufficient eigenvalues for Landau k-sweep'
+          end if
+
+          if (M == nev_target) then
+            ! DENSE+INDEX: the solver already returned exactly the
+            ! requested [il, iuu] slice (LAPACK zheevx range='I'); store
+            ! directly. Byte-identical to the pre-#10 path.
+            idx_lo = 1
+          else
+            ! FEAST+ENERGY: the solver returned the full in-window
+            ! spectrum (sorted ascending). Extract the gap-straddling
+            ! [il, iuu] slice by GLOBAL index - the same states DENSE+INDEX
+            ! would return. This requires the window to cover the full
+            ! spectral range below iuu (the sweep-envelope authority
+            ! guarantees this). Mirrors the QW optics reconciliation
+            ! (issue #09).
+            idx_lo = il
+          end if
+
+          eig(1:nev_target, k) = landau_result%eigenvalues(idx_lo:idx_lo+nev_target-1)
+          eigv(:, 1:nev_target, k) = &
+            landau_result%eigenvectors(:, idx_lo:idx_lo+nev_target-1)
           call eigensolver_result_free(landau_result)
         end do
         !$omp end do
@@ -487,6 +580,14 @@ program kpfdm
 
       ! ================================================================
       ! B-sweep fan diagram for Landau mode (landau_sweep='B')
+      ! APPLICATION-LAYER (ADR 0003): this block is NOT the k-solve. It
+      ! sweeps B at fixed k=0 to draw the Landau-level fan diagram. It
+      ! uses a DENSE+INDEX solver regardless of the k-sweep's method, so
+      ! the fan diagram is bit-identical to its golden reference and
+      ! robust to whatever backend the k-sweep used (the k-sweep's FEAST
+      ! window was derived at the config's original B and is not valid at
+      ! swept B values). DENSE is appropriate here: nB one-shot solves at
+      ! k=0, not a performance path.
       ! ================================================================
       if (trim(cfg%landau%sweep) == 'B') then
         block
@@ -496,6 +597,8 @@ program kpfdm
           complex(kind=dp), allocatable :: HT_B(:,:)
           character(len=64) :: fmt_str
           type(wavevector) :: wv0
+          type(eigensolver_config) :: fan_cfg
+          class(eigensolver_base), allocatable :: fan_solver
 
           B_min  = cfg%bdg%B_sweep(1)
           B_max  = cfg%bdg%B_sweep(2)
@@ -517,11 +620,18 @@ program kpfdm
           allocate(HT_B(N, N))
           HT_B = (0.0_dp, 0.0_dp)
 
+          ! Fan-diagram solver: always DENSE+INDEX (app-layer, ADR 0003).
+          fan_cfg = setup%eigen_cfg
+          fan_cfg%method = 'DENSE'
+          fan_cfg%mode = EIGEN_MODE_INDEX
+          call eigensolver_config_validate(fan_cfg)
+          fan_solver = make_eigensolver(fan_cfg)
+
           do iB = 1, nB
             B_val = B_min + (iB - 1) * B_step
             cfg%bdg%B_vec(3) = B_val
             call ZB8bandLandau(HT_B, wv0, profile, kpterms, cfg%grid%x, cfg=cfg)
-            call landau_solver%solve_dense(HT_B, landau_cfg, landau_result)
+            call fan_solver%solve_dense(HT_B, fan_cfg, landau_result)
             if (.not. landau_result%converged) then
               print *, 'ERROR: B-sweep diagonalization failed at B=', B_val
               error stop 'eigensolver failed in Landau B-sweep'
