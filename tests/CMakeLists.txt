@@ -937,6 +937,26 @@ set_tests_properties(
     PROPERTIES LABELS "verification" TIMEOUT 600
 )
 
+# --- QW dispersion-aware energy-window envelope (issue #03) ---
+# A wide-k QW FEAST sweep with AUTO window (emin = emax = 0). The envelope
+# authority (apply_solver_window) unions the Gershgorin bounds at the sweep
+# endpoints (k = 0 and k = k_max) into ONE stable window; asserts FEAST
+# delivers the requested eigenvalue count at every k-point, including the
+# dispersion extremum. At HEAD (pre-#03) the envelope block was unreachable
+# and the sweep fell through to the type-default [-1, +1] window, which
+# under-delivered at k_max.
+add_test(
+    NAME verification_qw_window_envelope
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_window_envelope.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_qw_window_envelope
+    PROPERTIES LABELS "verification" TIMEOUT 300
+)
+
 # --- Wire Strain Validation ---
 add_test(
     NAME strain_validation_wire

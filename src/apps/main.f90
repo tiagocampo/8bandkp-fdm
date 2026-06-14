@@ -12,7 +12,7 @@ program kpfdm
   use sc_loop
   use eigensolver, only: eigensolver_result, eigensolver_result_free, &
     eigensolver_config, eigensolver_base, make_eigensolver, &
-    eigensolver_config_validate, auto_compute_energy_window
+    eigensolver_config_validate, apply_solver_window
   use strain_solver, only: strain_result, strain_result_free, init_strain_cache
   use magnetic_field, only: init_zeeman_cache
   use exciton_solver
@@ -683,22 +683,36 @@ program kpfdm
     call derive_eigensolver(cfg, N=N_bs, il=il_bs, iu=iu_bs, nev=nev_bs, &
                             eigen_cfg=ecfg_bs, solver=solver_bs)
 
-    ! QW + FEAST needs a valid energy window covering the whole sweep.
-    ! This is geometry-specific Hamiltonian construction (needs a CSR
-    ! build at the max-k point), so it stays local rather than in the
-    ! derivation. DENSE ignores emin/emax. Only re-estimate when the user
-    ! left the window at the parser's auto sentinel (emin >= emax).
+    ! QW + FEAST needs a valid energy window covering the WHOLE sweep.
+    ! The dispersion-aware envelope (ADR 0005, issue #03): build the
+    ! Hamiltonian CSR at BOTH sweep endpoints (k=0 and k_max), then union
+    ! their Gershgorin bounds into ONE stable window per sweep. This is
+    ! the single source of [emin, emax] for the sweep — a per-k moving
+    ! window is rejected by design (it would break the wire kz-sweep's
+    ! per-k branch tracking). DENSE ignores emin/emax. The authority
+    ! honors a user-set [solver] window verbatim (no envelope), so the
+    ! envelope is derived ONLY when the user left the window at the
+    ! parser's [0,0] auto sentinel. (Wire and Landau branch away with
+    ! `stop` before reaching this block, so conf_direction /= 'n' here
+    ! is QW only — ZB8bandQW_csr is the correct builder.)
     if (conf_direction(cfg%confinement) /= 'n' .and. &
-        trim(ecfg_bs%method) == 'FEAST' .and. ecfg_bs%emin >= ecfg_bs%emax) then
+        trim(ecfg_bs%method) == 'FEAST' .and. &
+        cfg%solver%emin == 0.0_dp .and. cfg%solver%emax == 0.0_dp) then
       block
-        type(csr_matrix) :: HT_csr_k0
-        type(qw_workspace) :: qw_ws_k0
-        call ZB8bandQW_csr(HT_csr_k0, smallk(cfg%wave_vector%nsteps), &
-          profile, kpterms, cfg, ws=qw_ws_k0)
-        call auto_compute_energy_window(HT_csr_k0, ecfg_bs%emin, ecfg_bs%emax)
-        call csr_free(HT_csr_k0)
-        call qw_workspace_free(qw_ws_k0)
-        print '(A,ES12.4,A,ES12.4,A)', ' QW k-sweep auto FEAST window: [', &
+        type(csr_matrix) :: HT_csr_a, HT_csr_b
+        type(qw_workspace) :: qw_ws_env
+        ! Endpoint k-points: smallk(1) = k=0, smallk(nsteps) = k_max.
+        call ZB8bandQW_csr(HT_csr_a, smallk(1), profile, kpterms, cfg, &
+          ws=qw_ws_env)
+        call ZB8bandQW_csr(HT_csr_b, smallk(cfg%wave_vector%nsteps), &
+          profile, kpterms, cfg, ws=qw_ws_env)
+        call apply_solver_window(HT_csr_a, HT_csr_b, &
+          user_emin=cfg%solver%emin, user_emax=cfg%solver%emax, &
+          emin_out=ecfg_bs%emin, emax_out=ecfg_bs%emax)
+        call csr_free(HT_csr_a)
+        call csr_free(HT_csr_b)
+        call qw_workspace_free(qw_ws_env)
+        print '(A,ES12.4,A,ES12.4,A)', ' QW k-sweep auto FEAST window (envelope): [', &
           ecfg_bs%emin, ',', ecfg_bs%emax, ']'
       end block
       ! Re-validate + reconstruct after window update.

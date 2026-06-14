@@ -13,7 +13,7 @@ module simulation_setup_mod
     & strain_result, strain_result_free
   use sc_loop, only: self_consistent_loop, self_consistent_loop_wire
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
-    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window, &
+    & eigensolver_result, eigensolver_result_free, apply_solver_window, &
     & EIGEN_MODE_FULL, EIGEN_MODE_INDEX, EIGEN_MODE_ENERGY, eigensolver_config_validate
   use utils
   use sparse_matrices
@@ -279,12 +279,10 @@ contains
           type(csr_matrix) :: HT_csr_tmp
           call ZB8bandQW_csr(HT_csr_tmp, wavevector(0.0_dp, 0.0_dp, 0.0_dp), &
             setup%profile, setup%kpterms, cfg, ws=setup%qw_ws_ptr)
-          if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
-            setup%eigen_cfg%emin = cfg%solver%emin
-            setup%eigen_cfg%emax = cfg%solver%emax
-          else
-            call auto_compute_energy_window(HT_csr_tmp, &
-              setup%eigen_cfg%emin, setup%eigen_cfg%emax)
+          call apply_solver_window(HT_csr_tmp, &
+            user_emin=cfg%solver%emin, user_emax=cfg%solver%emax, &
+            emin_out=setup%eigen_cfg%emin, emax_out=setup%eigen_cfg%emax)
+          if (cfg%solver%emin == 0.0_dp .and. cfg%solver%emax == 0.0_dp) then
             print *, '  Auto FEAST window (QW): [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
           end if
           call csr_free(HT_csr_tmp)
@@ -337,12 +335,10 @@ contains
       ! derivation), so it stays here rather than in derive_eigensolver.
       call ZB8bandGeneralized(setup%HT_csr_ptr, 0.0_dp, setup%profile_2d, &
         setup%kpterms_2d, cfg, ws=setup%wire_ws_ptr)
-      if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
-        setup%eigen_cfg%emin = cfg%solver%emin
-        setup%eigen_cfg%emax = cfg%solver%emax
-      else
-        call auto_compute_energy_window(setup%HT_csr_ptr, &
-          setup%eigen_cfg%emin, setup%eigen_cfg%emax)
+      call apply_solver_window(setup%HT_csr_ptr, &
+        user_emin=cfg%solver%emin, user_emax=cfg%solver%emax, &
+        emin_out=setup%eigen_cfg%emin, emax_out=setup%eigen_cfg%emax)
+      if (cfg%solver%emin == 0.0_dp .and. cfg%solver%emax == 0.0_dp) then
         print *, '  Auto FEAST window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
       end if
       ! Free CSR data but preserve COO cache for fast rebuild by apps

@@ -13,6 +13,7 @@ module eigensolver
   public :: feast_workspace, feast_workspace_free
   public :: solve_feast
   public :: auto_compute_energy_window, eigensolver_result_free
+  public :: apply_solver_window
   public :: eigensolver_base, dense_lapack_solver_t
 #ifdef USE_MKL_FEAST
   public :: feast_solver_t
@@ -27,6 +28,35 @@ module eigensolver
   integer, parameter :: EIGEN_MODE_FULL   = 1  ! all eigenvalues
   integer, parameter :: EIGEN_MODE_INDEX  = 2  ! eigenvalues il:iu
   integer, parameter :: EIGEN_MODE_ENERGY = 3  ! eigenvalues in [emin, emax]
+
+  ! ------------------------------------------------------------------
+  ! Energy-window authority (ADR 0005, issue #03).
+  !
+  ! Single source of [emin, emax] for every FEAST consumer. The user
+  ! [solver] window (nonzero user_emin/user_emax) is honored verbatim;
+  ! otherwise the bound is derived from the supplied source:
+  !   - envelope (two CSR): the Gershgorin bounds at the sweep's two
+  !     endpoints (k=0 and k_max), UNIONED into ONE stable window per
+  !     sweep — the dispersion-aware envelope. Per-k moving windows are
+  !     REJECTED by design (ADR 0005): branch tracking needs a stable
+  !     eigenvalue set point-to-point.
+  !   - single (one CSR):   the one-k Gershgorin bound (g-factor Γ /
+  !     single-H init paths).
+  !   - evals (array):      min/max over an eigenvalue array already
+  !     held by the caller (optics accumulation, Green's LDOS).
+  !
+  ! The auto_compute_energy_window Gershgorin row-sum stays as the
+  ! primitive; this authority orchestrates it. The primitive already
+  ! pads with max(0.1*|bound|, 0.5 eV); the envelope unions the two
+  ! already-padded endpoint bounds (no double-padding), and the evals
+  ! variant applies the same margin convention so the sources are
+  ! interchangeable.
+  ! ------------------------------------------------------------------
+  interface apply_solver_window
+    module procedure :: asw_envelope
+    module procedure :: asw_single
+    module procedure :: asw_evals
+  end interface apply_solver_window
 
   ! ------------------------------------------------------------------
   ! Configuration for the sparse eigensolver.
@@ -455,6 +485,112 @@ contains
     emin = rmin - max(margin_frac * abs(rmin), margin_floor)
     emax = rmax + max(margin_frac * abs(rmax), margin_floor)
   end subroutine auto_compute_energy_window
+
+  ! ==================================================================
+  ! Energy-window authority implementations (ADR 0005, issue #03).
+  !
+  ! Three specific procedures, one generic interface (apply_solver_window
+  ! above). Each honors a user-override window (nonzero user_emin /
+  ! user_emax) directly; otherwise derives the bound from its source.
+  ! ==================================================================
+
+  ! ------------------------------------------------------------------
+  ! Apply the documented margin convention to a raw [lo, hi] spectral
+  ! extent. Used by the evals variant so it matches the Gershgorin
+  ! primitive's padding (max(10%, 0.5 eV)), keeping the two bound
+  ! sources interchangeable. Private helper.
+  ! ------------------------------------------------------------------
+  subroutine asw_apply_margin(lo, hi, emin_out, emax_out)
+    real(kind=dp), intent(in)  :: lo, hi
+    real(kind=dp), intent(out) :: emin_out, emax_out
+    real(kind=dp), parameter :: margin_frac  = 0.1_dp
+    real(kind=dp), parameter :: margin_floor = 0.5_dp  ! eV
+
+    emin_out = lo - max(margin_frac * abs(lo), margin_floor)
+    emax_out = hi + max(margin_frac * abs(hi), margin_floor)
+  end subroutine asw_apply_margin
+
+  ! ------------------------------------------------------------------
+  ! Variant 1 — sweep envelope (dispersion-aware).
+  !
+  ! Takes the Hamiltonian CSRs at the sweep's two endpoints (k=0 and
+  ! k_max). Computes the Gershgorin bound at each via the primitive
+  ! (which already pads each bound with the documented margin), then
+  ! UNIONS them: emin = min over endpoints, emax = max over endpoints.
+  ! The result is ONE stable window per sweep — the invariant that
+  ! lets the wire kz-sweep do per-k branch tracking (ADR 0005).
+  !
+  ! If the user set a window (both nonzero), honor it verbatim and do
+  ! not touch either matrix. This collapses the if-override boilerplate
+  ! that was previously copy-pasted across main.f90 / simulation_setup /
+  ! green_functions.
+  ! ------------------------------------------------------------------
+  subroutine asw_envelope(H_k0, H_kmax, user_emin, user_emax, emin_out, emax_out)
+    type(csr_matrix), intent(in) :: H_k0, H_kmax
+    real(kind=dp), intent(in)    :: user_emin, user_emax
+    real(kind=dp), intent(out)   :: emin_out, emax_out
+
+    real(kind=dp) :: emin_k0, emax_k0, emin_kmax, emax_kmax
+
+    if (user_emin /= 0.0_dp .or. user_emax /= 0.0_dp) then
+      emin_out = user_emin
+      emax_out = user_emax
+      return
+    end if
+
+    call auto_compute_energy_window(H_k0,   emin_k0,   emax_k0)
+    call auto_compute_energy_window(H_kmax, emin_kmax, emax_kmax)
+    emin_out = min(emin_k0, emin_kmax)
+    emax_out = max(emax_k0, emax_kmax)
+  end subroutine asw_envelope
+
+  ! ------------------------------------------------------------------
+  ! Variant 2 — single-k bound (one CSR).
+  !
+  ! The g-factor Γ path and every single-H init block. Reduces to the
+  ! one-k Gershgorin primitive (+ its margin). Override honored.
+  ! ------------------------------------------------------------------
+  subroutine asw_single(H, user_emin, user_emax, emin_out, emax_out)
+    type(csr_matrix), intent(in) :: H
+    real(kind=dp), intent(in)    :: user_emin, user_emax
+    real(kind=dp), intent(out)   :: emin_out, emax_out
+
+    if (user_emin /= 0.0_dp .or. user_emax /= 0.0_dp) then
+      emin_out = user_emin
+      emax_out = user_emax
+      return
+    end if
+    call auto_compute_energy_window(H, emin_out, emax_out)
+  end subroutine asw_single
+
+  ! ------------------------------------------------------------------
+  ! Variant 3 — spectral (eigenvalue-array) source.
+  !
+  ! Consumers that already hold an eigenvalue array (optics
+  ! accumulation, Green's-function LDOS) accept it as the bound source.
+  ! Applies the SAME margin convention as the Gershgorin primitive so
+  ! the two sources are interchangeable. Override honored.
+  ! ------------------------------------------------------------------
+  subroutine asw_evals(evals, user_emin, user_emax, emin_out, emax_out)
+    real(kind=dp), intent(in)  :: evals(:)
+    real(kind=dp), intent(in)  :: user_emin, user_emax
+    real(kind=dp), intent(out) :: emin_out, emax_out
+
+    if (user_emin /= 0.0_dp .or. user_emax /= 0.0_dp) then
+      emin_out = user_emin
+      emax_out = user_emax
+      return
+    end if
+    if (size(evals) == 0) then
+      ! Degenerate: no eigenvalues. Return a tiny window centered at 0
+      ! (the caller will see no eigenvalues in it either, which is the
+      ! honest result). Matches auto_compute_energy_window's empty guard.
+      emin_out = -1.0_dp
+      emax_out =  1.0_dp
+      return
+    end if
+    call asw_apply_margin(minval(evals), maxval(evals), emin_out, emax_out)
+  end subroutine asw_evals
 
   ! ==================================================================
   ! Finalizer: automatically called when an eigensolver_result goes out of scope.
