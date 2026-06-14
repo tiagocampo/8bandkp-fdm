@@ -82,9 +82,20 @@ Each setup variant holds a strategy object for Hamiltonian construction, eigenso
 - **Wide type interface**: The type exposes fields for all three geometries. Callers must know which fields are valid for their confinement.
 - **Allocatable wrapper pattern**: Wire components like `HT_csr_ptr` are allocatable types wrapping allocatable components. Double indirection is verbose but necessary for lifetime control.
 
-### Dispatch seam for C4 Hamiltonian block table (COMPLETED)
+### Dispatch seam for C4 Hamiltonian block table (DATA SSOT COMPLETE)
 
 The `select case` dispatch in `setup_build_H` provided a clean seam for the C4 refactoring to a unified Hamiltonian block structure. This has been implemented: `hamiltonian_blocks.f90` defines a 52-entry k.p block table (`get_kp_block_table()`) consumed by both dense (`hamiltonianConstructor.f90`) and COO (`hamiltonian_wire.f90`) builders. Strain block table (`get_strain_table()`) is defined in `strain_solver.f90`. Zeeman block table (`get_zeeman_table()`) is defined in `magnetic_field.f90`. The dispatch API (`setup_build_H(setup, cfg, kvec, HT_out)`) remains unchanged. No polymorphic types were needed.
+
+**Scope note (data vs interpretation).** What centralized here is the block-table
+*data* — the band-pair, `kp_term` tag, and complex prefactor for each of the 52
+k.p / 32 strain / 8 Zeeman entries. The *interpretation* — the per-builder
+`select case (kp_term)` that turns a tag into an actual block, including the
+derived `KP_DIFF = Q - T` and `KP_HALF_SUM = 0.5*(Q + T)` formulas — remains
+duplicated across the dense (`hamiltonianConstructor.f90`), COO
+(`hamiltonian_wire.f90`), and QW-CSR (`hamiltonian_qw.f90`) builders.
+Centralizing that interpretation (a shared `resolve_kp_term` descriptor, still
+no polymorphic builder types) is candidate U-B, gated on direct block-table
+unit tests (C7). The "COMPLETED" framing above refers to the data SSOT only.
 
 ### `read_config` split rationale
 

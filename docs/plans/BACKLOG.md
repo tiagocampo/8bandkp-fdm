@@ -2,7 +2,7 @@
 
 Consolidated from REVIEW.md on 2026-05-06. Updated 2026-06-03.
 Piezoelectric explicitly excluded (ZB [001] = zero by symmetry, wires = negligible).
-Phases 1-20 complete. Phase 21 in progress (PR #35). Phases 18-19 remain active backlog (architectural cleanup + extended cross-code).
+Phases 1-20 complete. Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architectural cleanup, extended cross-code, FEAST parity).
 
 ---
 
@@ -299,7 +299,7 @@ Source: Deferred review items from PR #27 (`/tmp/8bandkp-fdm-pr27-review-handoff
 
 | ID | What | Why Deferred | Effort | Priority |
 |----|------|-------------|--------|----------|
-| I1 | `main.f90` bypasses `simulation_setup` for Landau + k-sweep — refactor to route through it | Works correctly; refactor is architectural debt, not a bug | High | Medium |
+| I1 | ~~`main.f90` bypasses `simulation_setup` for Landau + k-sweep~~ → **REVISED** (grill session 2026-06-13): the Landau k-sweep is parallel/specialized and *correctly* stays in `main.f90` (ADR 0003 reasoning; `setup_solve_kpoint_serial` is the g-factor path only — 1 caller, `main_gfactor.f90`). The real gap is the **wire topology subroutines** bypassing setup → folded into **U-C5** (which also fixes a latent strain-omission bug). | See U-C5 | Medium | Medium |
 | I2 | `defs.f90` at ~1,089 lines — 3.6× the 300-line guideline — decompose toward guideline | Natural split point unclear; don't split without a clear decomposition | Medium | Medium |
 | I3 | Duplicate confinement string checks in multiple modules — deduplicate | Low priority — works correctly, just repetitive | Low | Medium |
 | I4 | `grid_ngrid`/`grid%npoints()` redundancy — migrate 6 remaining source files (~11 call sites) | Legacy wrapper still called; migration is gradual | Low | Medium |
@@ -318,6 +318,33 @@ Source: Deferred review items from PR #27 (`/tmp/8bandkp-fdm-pr27-review-handoff
 | I18 | ~~`hamiltonian_blocks` has no dedicated unit test~~ | DONE — `test_hamiltonian_blocks.pf` (177 lines, entry count, duplicate pairs) | — | — |
 | I19 | Expand convergence suite to cover all physics modules | Expanding incrementally per feature | Medium | Low |
 | I20 | Harden ISBT test assertions further (C8 improved; further hardening incremental) | C8 added proper physics tests; further hardening is incremental | Low | Low |
+
+### Architecture Review (2026-06-13) — candidate status
+
+Source: `/tmp/architecture-review-2026-06-04-deep.html` (C1–C10) + unified
+`/tmp/architecture-review-unified-20260613-184125.html` (U-A/B/C/D), reconciled
+against code on `refactor/eigensolver-standardization`. Decisions locked in the
+2026-06-13/14 grill session; strategic thread recorded in **ADR 0005**.
+
+| Cand. | Status | Decision |
+|-------|--------|----------|
+| **C3** Zeeman SSOT | DONE | `get_zeeman_table` in `magnetic_field.f90`; `add_zeeman_coo` deleted; `lookup_bp_field` extracted. |
+| **C4** namespace | DONE | `get_unit`/`ensure_output_dir` → `utils.f90`; broad `definitions` imports closed. |
+| **C6** dead code/errors | ~90% | Residual = backend-blind "FEAST did not converge" message → folded into **U-A**. |
+| **C1→C5** setup gaps + wire setup | → **U-C5** | Serial-solver wire/landau branches **dropped** (dead/regressive — `setup_solve_kpoint_serial` is g-factor-only). Real work: `wire_setup` type (init+free, pre-computed-data variant) for the 3 topology wire subroutines + `green_functions`; **fixes a latent strain-omission bug** (wire topology skips `compute_strain`). Rename `…_serial` → `setup_solve_gamma`. |
+| **C2** eigensolve/output | → **U-C2** | LAPACK-workspace sub-item superseded by solver-object caching. Remaining: output writers (profile/optical_transitions/SC/BdG) → `outputFunctions`; `simpson_weights` → `utils`. |
+| **U-C** solver-config derivation | RE-SCOPED | ADR 0004 already centralized AUTO resolution (`resolve_solver_defaults`). Remaining: `derive_solver` (calls resolve_solver_defaults + nev/il/iu/m0/validate/make) + `apply_solver_window` (absorbs the **#10** window). |
+| **U-A** eigensolver dispatch | (b) | **Mandatory:** message fix (print `eigen_cfg%method`, not hardcoded "FEAST"). **Then:** drop `solve` legacy alias (10 callers → `solve_sparse`); clean 2-method interface. CONTEXT.md now records format-vs-backend axes. |
+| **C7** confinement_init tests | GATE | Now the **gate for U-B** (physics-critical). Add direct `kp_term→block` formula tests (Q−T, 0.5·(Q+T)) as U-B safety net. **Prioritized.** |
+| **U-B** block-table interpreter | (a), gated | `resolve_kp_term` descriptor (option c, no polymorphism — respects ADR 0001); behind bit-identical regression. Pairs with **C8**. ADR 0001 "COMPLETED" wording corrected (data done; interpretation pending). |
+| **C8** split `strain_solver` (1174 lines) | pairs w/ U-B | → `bir_pikus` + `navier_cauchy`; strain-table interpreter moves into `bir_pikus`. Watch `warned_invalid_mat` SAVE coupling. |
+| **C9** pipeline-stage asserts | SKIP | Once U-C5 routes wire subroutines through `simulation_setup_init`, the confinement→EF→strain→SC→build ordering is structurally enforced; C9's value is absorbed by U-C5. |
+| **C10** reusable BdG COO workspace | DEFER | Perf claim unmeasured; revisit if BdG sweeps profile as a bottleneck. |
+| **U-D** dense↔CSR converters | fold into U-A | Small; supports U-A/U-B more than standalone. |
+
+**Sequencing:** U-A message fix (unblocks nothing, do anytime) → U-C (derive_solver +
+apply_solver_window, absorbs #10) → U-C5 (wire_setup + strain bug) → C7 (gate) →
+U-B+C8. **U-C2** parallel anytime. Strategic thread (**FEAST parity**) = Phase 22.
 
 ---
 
@@ -411,6 +438,45 @@ Publishable validation benchmarks — ISBT oscillator strength, SC Schrödinger-
 
 ---
 
+## Phase 22: FEAST Parity Everywhere Except Bulk (ADR 0005)
+
+Strategic direction (not cleanup): make the sparse FEAST solver a first-class,
+fully-working backend for **every consumer × geometry except bulk** (bulk is
+always 8×8, dense by nature). Recorded in **ADR 0005**.
+
+**Gate:** a dispersion-aware energy window in `apply_solver_window` — the
+Gershgorin *envelope* over a sweep's endpoints (k=0 and k_max), unioned with
+margin, giving one **stable window per sweep** (branch-tracking-safe). Fixes #10
+(the current k=0 Gershgorin window + fixed margin underestimates finite-k
+spread). `auto_compute_energy_window` stays as the Gershgorin primitive.
+
+**Flip-on order** — each behind a FEAST-vs-dense regression test (bit-identical
+eigenvalues within tolerance):
+
+1. **QW g-factor** (#2) — currently "rejected"; reword "not yet implemented".
+2. **QW optics** (#8) — currently silently overrides to DENSE; route through
+   `derive_solver`.
+3. **Landau** — currently DENSE-native; respect ADR 0003 (B-sweep + fan diagram
+   stay in `main.f90`; only the k-solve backend changes).
+
+**Permanent rejection:** explicit `FEAST + INDEX` only (validate I15 —
+structural: FEAST owns an energy window, not an index range).
+
+**CONTEXT.md** glossary updated: *eigensolver dispatch (format vs backend)*.
+
+**Post-merge currency note (e56ffc6 / PR #38, 2026-06-14):** a first cut of the
+window already landed — the QW-FEAST band-sweep + setup `eigen_cfg` now honor the
+user `[solver]` window with a **max-k auto-window fallback** when unset. The full
+**envelope (union of both endpoints)** above is still the target. The
+QW+FEAST+g-factor rejection (flip-on #1) is now a hard guard in `defs.f90`
+(`setup_solve_gamma` forces FULL → QW+FEAST would silently truncate); per ADR 0005
+it remains temporary until QW g-factor is FEAST-enabled. Dispatch truncation
+guards now compare `nev_found` vs `m0_used`, but the backend-blind **"FEAST"
+message string and the `solve` alias** (the rest of U-A) are still pending.
+`main_optics.f90` (#8) was untouched.
+
+---
+
 ## Minor Carry-Over Items
 
 | Source | What | Effort | Priority |
@@ -456,10 +522,11 @@ Items that were explicitly deferred or relaxed with documented justification:
 | 15. Validation tightening | — | Krylov 7/7, standard-star tightening, docs revamp re-scope | DONE |
 | 16. Integration + Rashba | — | Wire hexagon, SC wire, Rashba BdG calibrated | DONE |
 | 17. Post-completion fixes | — | 29 code review findings, fit-tail regression fix, NaN guard | DONE |
-| 18. Architectural cleanup | — | Landau refactor, defs decomposition, grid accessor migration, stop 1 replacement | PENDING |
+| 18. Architectural cleanup | — | Architecture review (U-C/U-A/U-C5/U-B/C7/C8/U-C2), defs decomposition, grid accessor migration, stop 1 replacement | PENDING |
 | 19. Extended cross-code | — | Wire/Landau/g-factor/strain/Berry/Chern cross-code validation | PENDING (blocked on kdotpy API) |
 | 20. Deep physics validation | — | TRK sum rule (7 tests), Hermiticity (20 tests), rungs 7-8 (g-factor + optical), wire strain quantitative | DONE |
 | 21. Publishable benchmarks | — | ISBT 6-config sweep (42 checks), SC benchmark (5 checks), exciton tightening + Bastard 1982 | IN_PROGRESS (PR #35) |
+| 22. FEAST parity | — | Sparse FEAST first-class for all geometries except bulk (ADR 0005); window gate (#10) → QW g-factor → QW optics → Landau | PENDING |
 
-**Phases 1-20 complete.** 113 tests pass. Phase 21 in progress (PR #35, branch `feat/publishable-benchmarks-phase21`). Phases 18-19 are active backlog.
+**Phases 1-20 complete.** 113 tests pass. Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architecture deepening + FEAST parity).
 Source of truth: `docs/plans/BACKLOG.md` (this file) and `docs/plans/REVIEW.md`.

@@ -26,3 +26,16 @@ that method* (FEAST → ENERGY; DENSE → the confinement's native mode). The
 contract is that `AUTO` never produces an invalid method×mode combination.
 _Avoid_: "default" unqualified — a method default and a mode default are two
 different resolutions and must not be picked independently.
+
+**Eigensolver dispatch** (format vs backend):
+At a solve call site, the caller selects the entry point by the **format of the
+matrix it holds** — a dense array or a CSR (sparse) matrix — never by which
+backend will run. The **backend** (dense LAPACK vs FEAST) is fixed when the
+solver is constructed (by `[solver].method`, resolved through `AUTO`) and is
+invisible at the call site; each backend accepts both formats, converting
+internally. Format and backend are **independent axes**: dense/CSR is what the
+caller holds, DENSE-LAPACK/FEAST is who does the work.
+_Avoid_: "the solve path" or "the eigensolver path" unqualified, and "solve is
+the legacy alias" — naming one axis without saying which has caused repeated
+confusion (the most-used entry point got mislabeled *legacy* because the two
+axes were conflated).
