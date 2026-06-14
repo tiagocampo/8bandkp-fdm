@@ -510,16 +510,18 @@ program opticalProperties
         call setup_build_H(setup, cfg, kv_sweep)
 
         ! Solve eigenvalue problem
-        call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
+        call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
         if (eigen_res%nev_found == 0) then
-          print '(a,i0,a)', ' WARNING: FEAST found no eigenvalues at kz-point ', k
+          print '(a,a,a,i0,a)', ' WARNING: ', setup%eigen_solver%backend_name(), &
+            ' found no eigenvalues at kz-point ', k
           call eigensolver_result_free(eigen_res)
           cycle
         end if
 
         if (eigen_res%nev_found < cfg%bands%num_cb + cfg%bands%num_vb) then
-          print '(a,i0,a,i0,a,i0)', ' WARNING: FEAST found only ', &
+          print '(a,a,a,i0,a,i0,a,i0,a)', ' WARNING: ', &
+            setup%eigen_solver%backend_name(), ' found only ', &
             eigen_res%nev_found, ' eigenvalues at kz-point ', k, &
             ' (need ', cfg%bands%num_cb + cfg%bands%num_vb, ')'
           call eigensolver_result_free(eigen_res)

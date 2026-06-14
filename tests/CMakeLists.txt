@@ -911,6 +911,23 @@ set_tests_properties(
     PROPERTIES LABELS "verification" TIMEOUT 600
 )
 
+# --- Dense vs Sparse eigenvalue agreement across all geometries ---
+# Extends the dense-vs-sparse rung to bulk/QW/wire/Landau. QW and wire
+# are the genuine dense-vs-FEAST cross-check; bulk and Landau verify
+# mode-dispatch consistency (FEAST invalid for 8x8 bulk; Landau FEAST
+# enablement is issue #10).
+add_test(
+    NAME verification_dense_sparse_all_geometries
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_dense_sparse_all_geometries.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_dense_sparse_all_geometries
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
 # --- Wire Strain Validation ---
 add_test(
     NAME strain_validation_wire

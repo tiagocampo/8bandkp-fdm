@@ -61,23 +61,21 @@ module eigensolver
 
   ! ------------------------------------------------------------------
   ! Abstract base type for polymorphic eigensolver dispatch.
+  !
+  ! One method per matrix format: solve_dense for a dense 2D array,
+  ! solve_sparse for a CSR matrix. The backend (FEAST vs dense LAPACK)
+  ! is fixed at construction (make_eigensolver) and never named at the
+  ! call site; backend_name() exposes the resolved backend for honest
+  ! diagnostics ("backend X did not converge").
   ! ------------------------------------------------------------------
   type, abstract :: eigensolver_base
   contains
-    procedure(solve_evp_interface), deferred :: solve
     procedure(solve_dense_interface), deferred :: solve_dense
     procedure(solve_sparse_interface), deferred :: solve_sparse
+    procedure(backend_name_interface), deferred :: backend_name
   end type eigensolver_base
 
   abstract interface
-    subroutine solve_evp_interface(self, H_csr, config, result)
-      import :: eigensolver_base, csr_matrix, eigensolver_config, eigensolver_result
-      class(eigensolver_base), intent(inout) :: self
-      type(csr_matrix), intent(in) :: H_csr
-      type(eigensolver_config), intent(in) :: config
-      type(eigensolver_result), intent(out) :: result
-    end subroutine solve_evp_interface
-
     subroutine solve_dense_interface(self, H, config, result)
       import :: eigensolver_base, dp, eigensolver_config, eigensolver_result
       class(eigensolver_base), intent(inout) :: self
@@ -93,6 +91,14 @@ module eigensolver
       type(eigensolver_config), intent(in) :: config
       type(eigensolver_result), intent(out) :: result
     end subroutine solve_sparse_interface
+
+    ! Returns the resolved backend name for honest diagnostics.
+    ! 'FEAST' or 'dense LAPACK' (fixed at construction).
+    function backend_name_interface(self) result(name)
+      import :: eigensolver_base
+      class(eigensolver_base), intent(in) :: self
+      character(len=:), allocatable :: name
+    end function backend_name_interface
   end interface
 
   ! ------------------------------------------------------------------
@@ -124,9 +130,9 @@ module eigensolver
   type, extends(eigensolver_base) :: feast_solver_t
     type(feast_workspace) :: ws
   contains
-    procedure :: solve => feast_solve_dispatch        ! legacy alias -> solve_sparse
     procedure :: solve_dense => feast_solve_dense
     procedure :: solve_sparse => feast_solve_sparse_dispatch
+    procedure :: backend_name => feast_backend_name
     final :: feast_solver_finalize
   end type feast_solver_t
 #endif
@@ -140,9 +146,9 @@ module eigensolver
     real(kind=dp), allocatable    :: W_buf(:), rwork(:)
     integer, allocatable          :: iwork(:), ifail(:)
   contains
-    procedure :: solve => dense_lapack_solve_dispatch       ! legacy alias -> solve_sparse
     procedure :: solve_dense => dense_solve_dense_dispatch
     procedure :: solve_sparse => dense_solve_sparse_dispatch
+    procedure :: backend_name => dense_lapack_backend_name
     final     :: dense_lapack_solver_finalize
   end type dense_lapack_solver_t
 
@@ -583,17 +589,14 @@ contains
   ! ==================================================================
 
   ! ------------------------------------------------------------------
-  ! FEAST solver: legacy solve -> solve_sparse
+  ! FEAST solver: backend_name.
   ! ------------------------------------------------------------------
 #ifdef USE_MKL_FEAST
-  subroutine feast_solve_dispatch(self, H_csr, config, result)
-    class(feast_solver_t), intent(inout) :: self
-    type(csr_matrix), intent(in) :: H_csr
-    type(eigensolver_config), intent(in) :: config
-    type(eigensolver_result), intent(out) :: result
-
-    call self%solve_sparse(H_csr, config, result)
-  end subroutine feast_solve_dispatch
+  function feast_backend_name(self) result(name)
+    class(feast_solver_t), intent(in) :: self
+    character(len=:), allocatable :: name
+    name = 'FEAST'
+  end function feast_backend_name
 
   ! ------------------------------------------------------------------
   ! FEAST solver: solve_sparse with mode dispatch.
@@ -643,16 +646,13 @@ contains
 #endif
 
   ! ------------------------------------------------------------------
-  ! Dense LAPACK solver: legacy solve -> solve_sparse
+  ! Dense LAPACK solver: backend_name.
   ! ------------------------------------------------------------------
-  subroutine dense_lapack_solve_dispatch(self, H_csr, config, result)
-    class(dense_lapack_solver_t), intent(inout) :: self
-    type(csr_matrix), intent(in) :: H_csr
-    type(eigensolver_config), intent(in) :: config
-    type(eigensolver_result), intent(out) :: result
-
-    call self%solve_sparse(H_csr, config, result)
-  end subroutine dense_lapack_solve_dispatch
+  function dense_lapack_backend_name(self) result(name)
+    class(dense_lapack_solver_t), intent(in) :: self
+    character(len=:), allocatable :: name
+    name = 'dense LAPACK'
+  end function dense_lapack_backend_name
 
   ! ------------------------------------------------------------------
   ! Dense LAPACK solver: solve_sparse converts CSR -> dense.

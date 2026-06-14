@@ -358,11 +358,11 @@ contains
 
     print *, '  Solving eigenvalue problem (DENSE method)...'
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
-    call eigen_solver_local%solve(H_csr_local, eigen_cfg_local, eigen_res_local)
+    call eigen_solver_local%solve_sparse(H_csr_local, eigen_cfg_local, eigen_res_local)
     print *, '  Eigenproblem solved, nev_found=', eigen_res_local%nev_found
 
     if (eigen_res_local%nev_found == 0) then
-      print *, 'Error: eigensolver found no eigenvalues'
+      print *, 'Error: ', eigen_solver_local%backend_name(), ' found no eigenvalues'
       error stop 'eigensolver found no eigenvalues'
     end if
 
@@ -534,17 +534,18 @@ contains
     eigen_cfg_local%emin = emin_local
     eigen_cfg_local%emax = emax_local
 
-    print *, '  FEAST energy window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
+    print *, '  ', eigen_cfg_local%method, ' energy window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
 
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
-    call eigen_solver_local%solve(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+    call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
 
     if (eigen_res_local%nev_found == 0) then
-      print *, 'Warning: FEAST found no eigenvalues in the search window'
+      print *, 'Warning: ', eigen_solver_local%backend_name(), &
+        ' found no eigenvalues in the search window'
       print *, '  Retrying with auto-computed energy window...'
       call auto_compute_energy_window(H_bdg_csr, eigen_cfg_local%emin, eigen_cfg_local%emax)
       print *, '  Auto window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
-      call eigen_solver_local%solve(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+      call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
     end if
 
     if (eigen_res_local%nev_found == 0) then
@@ -1322,18 +1323,20 @@ contains
     eigen_cfg_local%emax =  5.0_dp * cfg%bdg%delta_0
 
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
-    call eigen_solver_local%solve(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+    call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
 
     if (.not. eigen_res_local%converged .or. eigen_res_local%nev_found < 1) then
-      print *, 'ERROR: wire BdG sweep eigensolver failed or found no states'
+      print *, 'ERROR: wire BdG sweep ', eigen_solver_local%backend_name(), &
+        ' failed or found no states'
       error stop 'wire BdG eigensolver failed'
     end if
     if (eigen_res_local%m0_used > 0 .and. &
         eigen_res_local%nev_found >= eigen_res_local%m0_used .and. &
         eigen_res_local%m0_used < Nbdg_local) then
-      print *, 'ERROR: wire BdG sweep likely truncated FEAST subspace'
+      print *, 'ERROR: wire BdG sweep likely truncated ', &
+        eigen_solver_local%backend_name(), ' subspace'
       print *, '  nev_found=', eigen_res_local%nev_found, ' m0=', eigen_res_local%m0_used
-      error stop 'wire BdG FEAST subspace likely truncated'
+      error stop 'wire BdG eigensolver subspace likely truncated'
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues

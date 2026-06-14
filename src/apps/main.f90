@@ -275,15 +275,17 @@ program kpfdm
         print *, '  Auto energy window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
       end if
 
-      call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
+      call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
       if (.not. eigen_res%converged) then
         if (eigen_res%nev_found < nev_wire) then
-          print *, '  ERROR: FEAST did not converge at k-point 1 and found only', &
+          print *, '  ERROR: ', setup%eigen_solver%backend_name(), &
+            ' did not converge at k-point 1 and found only', &
             eigen_res%nev_found, 'eigenvalues (need', nev_wire, ')'
-          error stop 'FEAST convergence failed'
+          error stop 'eigensolver convergence failed'
         end if
-        print *, '  WARNING: FEAST subspace issue at k-point 1, but found enough eigenvalues'
+        print *, '  WARNING: ', setup%eigen_solver%backend_name(), &
+          ' subspace issue at k-point 1, but found enough eigenvalues'
       end if
       print *, '  Found ', eigen_res%nev_found, ' eigenvalues (requested ', &
         & nev_wire, ') iterations=', eigen_res%iterations
@@ -322,13 +324,14 @@ program kpfdm
           print *, 'k-point ', k, '/', cfg%wave_vector%nsteps, ' kz=', smallk(k)%kz
 
           call setup_build_H(setup, cfg, smallk(k))
-          call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
+          call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
           if (.not. eigen_res%converged) then
             if (eigen_res%nev_found < nev_wire) then
-              print *, '  ERROR: FEAST did not converge at k-point', k, &
+              print *, '  ERROR: ', setup%eigen_solver%backend_name(), &
+                ' did not converge at k-point', k, &
                 'and found only', eigen_res%nev_found, 'eigenvalues (need', nev_wire, ')'
-              error stop 'FEAST convergence failed'
+              error stop 'eigensolver convergence failed'
             end if
             print *, '  WARNING: eigensolver subspace issue at k-point', k, &
               ' but found enough eigenvalues'
@@ -744,22 +747,25 @@ program kpfdm
           call init_strain_cache()
           call init_zeeman_cache()
 
-          print '(A,I0,A)', ' QW k-sweep (FEAST/CSR): ', cfg%wave_vector%nsteps, ' k-points'
+          print '(A,A,A,I0,A)', ' QW k-sweep (', solver_bs%backend_name(), &
+            '/CSR): ', cfg%wave_vector%nsteps, ' k-points'
 
           do k = 1, cfg%wave_vector%nsteps
             call ZB8bandQW_csr(HT_csr_loc, smallk(k), profile, kpterms, &
               cfg, ws=qw_ws)
             call solver_bs%solve_sparse(HT_csr_loc, ecfg_bs, result_bs)
-            if (.not. result_bs%converged) error stop 'eigensolver failed in QW FEAST k-sweep'
+            if (.not. result_bs%converged) error stop 'eigensolver failed in QW k-sweep'
             ! Clamp to allocated array sizes (ENERGY mode may return more eigenvalues)
             M = min(result_bs%nev_found, iuu-il+1)
             if (result_bs%nev_found > iuu-il+1) then
-              print '(A,I0,A,I0,A)', '  Warning: FEAST returned ', result_bs%nev_found, &
+              print '(A,A,A,I0,A,I0,A)', '  Warning: ', solver_bs%backend_name(), &
+                ' returned ', result_bs%nev_found, &
                 ' eigenvalues at k-point ', k, &
                 '; only the lowest will be kept (widen bands or narrow energy window).'
             end if
             if (result_bs%nev_found < (iuu - il + 1)) then
-              print '(A,I0,A,I0,A,I0,A)', '  Warning: FEAST returned only ', &
+              print '(A,A,A,I0,A,I0,A,I0,A)', '  Warning: ', solver_bs%backend_name(), &
+                ' returned only ', &
                 result_bs%nev_found, ' eigenvalues at k-point ', k, ' of ', iuu - il + 1, &
                 ' requested; missing bands zero-filled (widen energy window).'
             end if

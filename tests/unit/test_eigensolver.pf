@@ -925,4 +925,39 @@ contains
     @assertEqual('ENERGY', trim(out_mode))
   end subroutine test_resolve_solver_defaults_normalizes_case
 
+  ! ==================================================================
+  ! Test: backend_name() returns the resolved backend string for each
+  ! concrete solver type. This is the contract that backend-aware
+  ! diagnostics in the apps rely on: a failure forced on dense LAPACK
+  ! must report "dense LAPACK", and one on FEAST must report "FEAST".
+  ! ==================================================================
+  ! COVERAGE: observable=backend_name geometry=generic material=generic
+  @test
+  subroutine test_backend_name_dense()
+    type(eigensolver_config) :: cfg
+    class(eigensolver_base), allocatable :: solver
+
+    cfg%method = 'DENSE'
+    cfg%mode = EIGEN_MODE_FULL
+    solver = make_eigensolver(cfg)
+
+    @assertEqual('dense LAPACK', trim(solver%backend_name()))
+    deallocate(solver)
+  end subroutine test_backend_name_dense
+
+  @test
+  subroutine test_backend_name_feast()
+    type(eigensolver_config) :: cfg
+    class(eigensolver_base), allocatable :: solver
+
+    cfg%method = 'FEAST'
+    cfg%mode = EIGEN_MODE_ENERGY
+    cfg%emin = -1.0_dp
+    cfg%emax = 1.0_dp
+    solver = make_eigensolver(cfg)
+
+    @assertEqual('FEAST', trim(solver%backend_name()))
+    deallocate(solver)
+  end subroutine test_backend_name_feast
+
 end module test_eigensolver

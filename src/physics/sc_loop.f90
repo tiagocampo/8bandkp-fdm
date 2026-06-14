@@ -727,10 +727,11 @@ contains
             & kpterms_2d, cfg, coo_cache)
         end if
 
-        call eigen_solver_sc%solve(HT_csr_sc, eigen_cfg, eigen_res_sc)
+        call eigen_solver_sc%solve_sparse(HT_csr_sc, eigen_cfg, eigen_res_sc)
 
         if (.not. eigen_res_sc%converged) then
-          print *, '  WARNING: eigensolver did not converge at kx=', kx_grid(k_idx)
+          print *, '  WARNING: ', eigen_solver_sc%backend_name(), &
+            ' did not converge at kx=', kx_grid(k_idx)
         end if
 
         num_subbands_actual = min(eigen_res_sc%nev_found, nev_sc)

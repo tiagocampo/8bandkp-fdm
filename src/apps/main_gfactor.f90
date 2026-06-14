@@ -108,23 +108,26 @@ program gfactor
       call setup_build_velocity_matrices(setup, cfg)
 
       ! Solve eigenvalue problem
-      call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
+      call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
       if (eigen_res%nev_found == 0) then
-        print *, 'Error: FEAST found no eigenvalues. Check energy window.'
+        print *, 'Error: ', setup%eigen_solver%backend_name(), &
+          ' found no eigenvalues. Check energy window.'
         print *, '  Window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
-        error stop 'FEAST found no eigenvalues'
+        error stop 'eigensolver found no eigenvalues'
       end if
 
       if (.not. eigen_res%converged) then
-        print *, 'Warning: FEAST did not converge for g-factor calculation'
+        print *, 'Warning: ', setup%eigen_solver%backend_name(), &
+          ' did not converge for g-factor calculation'
       end if
 
       if (eigen_res%nev_found < cfg%bands%num_cb + cfg%bands%num_vb) then
-        print *, 'Error: FEAST found', eigen_res%nev_found, &
+        print *, 'Error: ', setup%eigen_solver%backend_name(), ' found', &
+          eigen_res%nev_found, &
           ' eigenvalues but need', cfg%bands%num_cb + cfg%bands%num_vb
         print *, '  numcb=', cfg%bands%num_cb, ' numvb=', cfg%bands%num_vb
-        error stop 'FEAST eigenvalue count mismatch'
+        error stop 'eigensolver eigenvalue count mismatch'
       end if
 
       N = setup%Ntot

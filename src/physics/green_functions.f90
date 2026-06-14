@@ -285,14 +285,16 @@ contains
         eigen_cfg%emax = emax_auto
       end if
 
-      call solver%solve(H_csr, eigen_cfg, eigen_res)
+      call solver%solve_sparse(H_csr, eigen_cfg, eigen_res)
       if (.not. eigen_res%converged) then
-        print *, 'ERROR: compute_spectral_function_wire: eigensolver failed at k index ', ik
+        print *, 'ERROR: compute_spectral_function_wire: ', solver%backend_name(), &
+          ' failed at k index ', ik
         call fail_wire_spectral()
         return
       end if
       if (eigen_res%nev_found <= 0) then
-        print *, 'ERROR: compute_spectral_function_wire: no eigenvalues found at k index ', ik
+        print *, 'ERROR: compute_spectral_function_wire: ', solver%backend_name(), &
+          ' found no eigenvalues at k index ', ik
         call fail_wire_spectral()
         return
       end if
