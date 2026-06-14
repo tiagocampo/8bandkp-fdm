@@ -217,9 +217,19 @@ contains
           error stop 'eigensolver failed in SC loop'
         end if
 
-        M_out = sc_result%nev_found
-        eig_kpar(:, k_idx) = sc_result%eigenvalues(1:M_out)
-        eigv_kpar(:, :, k_idx) = sc_result%eigenvectors(:, 1:num_subbands)
+        ! Clamp the result write to min(found, requested) and zero-fill the
+        ! tail, matching every other dispatch site (band-structure sweep,
+        ! Landau, optics, and the wire SC path below).  In DENSE+INDEX mode
+        ! zheevx returns exactly the requested band count on the valid path
+        ! (so M_out == num_subbands and the tail is empty), but this guard
+        ! keeps the write in bounds if a future config yields fewer states.
+        M_out = min(sc_result%nev_found, num_subbands)
+        eig_kpar(1:M_out, k_idx) = sc_result%eigenvalues(1:M_out)
+        eigv_kpar(:, 1:M_out, k_idx) = sc_result%eigenvectors(:, 1:M_out)
+        if (M_out < num_subbands) then
+          eig_kpar(M_out+1:num_subbands, k_idx) = 0.0_dp
+          eigv_kpar(:, M_out+1:num_subbands, k_idx) = cmplx(0.0_dp, 0.0_dp, kind=dp)
+        end if
         call eigensolver_result_free(sc_result)
       end do
 

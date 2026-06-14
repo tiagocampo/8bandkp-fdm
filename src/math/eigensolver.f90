@@ -106,6 +106,12 @@ module eigensolver
     integer                       :: N = 0
     logical                       :: initialized = .false.
     logical                       :: was_freed = .false.
+    ! Persisted subspace seed: the M0 that last produced a converged solve.
+    ! A subsequent call seeds M0 from this value (capped at N, >= nev+1) so the
+    ! info=3 retry tax is not re-paid on every k-point of a sweep where the
+    ! eigenvalue count in the fixed energy window is ~constant. The existing
+    ! info=3 retry loop remains as the backstop for any point needing more.
+    integer                       :: last_successful_m0 = 0
   contains
     final :: feast_workspace_finalize
   end type feast_workspace
@@ -226,6 +232,19 @@ contains
     if (M0 <= 0) M0 = 2 * config%nev
     M0 = max(M0, config%nev + 1)
     M0 = min(M0, N)  ! FEAST requires M0 <= N
+
+    ! Seed from a previously-converged subspace size (if any) so a k-sweep does
+    ! not re-pay the info=3 retry tax on every point. Never smaller than the
+    ! user's setting (M0 is already >= that here), never larger than N. The
+    ! persisted seed is only used when the caller passed a reusable workspace.
+    if (present(fw)) then
+      if (fw%last_successful_m0 > M0) then
+        M0 = fw%last_successful_m0
+        M0 = max(M0, config%nev + 1)
+        M0 = min(M0, N)
+      end if
+    end if
+
     M0_initial = M0
 
     ! ------------------------------------------------------------------
@@ -339,6 +358,15 @@ contains
 
     result%iterations = loop
     result%converged = (info == 0) .or. (info == 2)
+
+    ! Persist the subspace size that actually produced a converged solve, so
+    ! the next call can seed from it and avoid re-paying the retry tax. The
+    ! energy window is fixed across a k-sweep, so the needed subspace is
+    ! ~constant; seeding avoids repeated info=3 retries without changing which
+    ! eigenpairs FEAST returns.
+    if (present(fw)) then
+      if (result%converged) fw%last_successful_m0 = M0
+    end if
 
     if (info < 0) then
       print *, 'FEAST error: info =', info
@@ -466,6 +494,7 @@ contains
     fw%M0 = 0
     fw%N = 0
     fw%initialized = .false.
+    fw%last_successful_m0 = 0
   end subroutine feast_workspace_free
 
   ! ==================================================================

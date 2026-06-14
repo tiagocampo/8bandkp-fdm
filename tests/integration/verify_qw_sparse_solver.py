@@ -11,9 +11,12 @@ polymorphic eigensolver and produces identical results to the smart defaults.
 Usage: verify_qw_sparse_solver.py <build_dir> <source_dir>
 
 # COVERAGE: observable=qw_solver_dispatch_index geometry=qw material=GaAs/AlGaAs
+# COVERAGE: observable=truncation_warning geometry=qw material=GaAs
 """
 
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -213,6 +216,63 @@ def verify_qw_fastpath_vs_dense(build_dir, source_dir):
         return True
 
 
+def verify_qw_feast_truncation_warning(build_dir, source_dir):
+    """Run a QW FEAST config with an energy window WIDER than the requested
+    band range, so FEAST returns more eigenvalues than iuu-il+1 and the
+    program prints its truncation warning. Assert the warning appears in
+    stdout.
+
+    The warning text (main.f90, QW FEAST k-sweep) is:
+        '  Warning: FEAST returned <N> eigenvalues at k-point <k>;
+         ; only the lowest will be kept (widen bands or narrow energy window).'
+    We grep for the stable substring 'only the lowest will be kept'. Because
+    the grep is a strict substring match, deleting the print statement makes
+    this check FAIL — it is a genuine regression guard on the warning."""
+    print("\n" + "=" * 60)
+    print("QW FEAST truncation warning: wide window vs narrow band range")
+    print("=" * 60)
+    # Config lives in tests/regression/configs/ per AGENTS.md (no runtime
+    # config creation in tests).
+    cfg_path = os.path.join(source_dir, "tests", "regression", "configs",
+                            "qw_feast_truncation_warning.toml")
+    if not os.path.isfile(cfg_path):
+        print(f"  FAIL: truncation config not found at {cfg_path}")
+        return False
+    exe = os.path.abspath(os.path.join(build_dir, "src", "bandStructure"))
+    if not os.path.isfile(exe):
+        print(f"  FAIL: bandStructure not found at {exe}")
+        return False
+    warning_substring = "only the lowest will be kept"
+    with tempfile.TemporaryDirectory(prefix="qw_trunc_") as work:
+        dst_cfg = os.path.join(work, "input.toml")
+        shutil.copy2(cfg_path, dst_cfg)
+        os.makedirs(os.path.join(work, "output"), exist_ok=True)
+        try:
+            result = subprocess.run(
+                [exe],
+                cwd=work,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired:
+            print("  FAIL: bandStructure timed out (truncation config)")
+            return False
+        stdout = result.stdout
+        if result.returncode != 0:
+            print(f"  FAIL: bandStructure exited {result.returncode} "
+                  f"(truncation config)")
+            print(f"  stderr: {result.stderr[-500:]}")
+            return False
+    if warning_substring in stdout:
+        print(f"  PASS: truncation warning present (matched '{warning_substring}')")
+        return True
+    print(f"  FAIL: truncation warning NOT found in stdout "
+          f"(expected substring '{warning_substring}')")
+    print(f"  stdout tail: ...{stdout[-500:]}")
+    return False
+
+
 def main():
     if len(sys.argv) < 3:
         print(f"Usage: {sys.argv[0]} <build_dir> <source_dir>")
@@ -300,6 +360,8 @@ def main():
     if not verify_qw_fastpath(build_dir, source_dir):
         sys.exit(1)
     if not verify_qw_fastpath_vs_dense(build_dir, source_dir):
+        sys.exit(1)
+    if not verify_qw_feast_truncation_warning(build_dir, source_dir):
         sys.exit(1)
 
     # ── Summary ────────────────────────────────────────────────────

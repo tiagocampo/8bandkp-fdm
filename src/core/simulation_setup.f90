@@ -1,7 +1,7 @@
 module simulation_setup_mod
 
   use definitions, only: NUM_VB_STATES, conf_direction, dp, &
-    grid_ngrid, simulation_config, spatial_grid, wavevector
+    grid_ngrid, simulation_config, spatial_grid, wavevector, resolve_solver_defaults
   use hamiltonianConstructor
   use confinement_init, only: confinementInitialization, confinementInitialization_2d, &
     & confinementInitialization_landau
@@ -27,6 +27,7 @@ module simulation_setup_mod
   public :: setup_build_H, setup_solve_kpoint_serial
   public :: setup_build_velocity_matrices
   public :: thread_workspace
+  public :: eigen_mode_from_string
 
   type :: simulation_setup
     character(len=8) :: confinement = 'none'
@@ -70,6 +71,29 @@ module simulation_setup_mod
 
 contains
 
+  ! ------------------------------------------------------------------
+  ! Map a resolved UPPERCASE mode string ('FULL'/'INDEX'/'ENERGY') from
+  ! resolve_solver_defaults to its EIGEN_MODE_* integer constant. Single
+  ! mapping point shared by every dispatch block (bulk/qw/wire/landau) and
+  ! by main.f90's band-structure sweep, so the (method,mode) resolution is
+  ! defined in exactly one place (defs.f90) and the string->int mapping in
+  ! exactly one place (here). Returns EIGEN_MODE_FULL on any unrecognized
+  ! string (the safe all-eigenvalues default).
+  ! ------------------------------------------------------------------
+  pure function eigen_mode_from_string(s) result(mode_int)
+    character(len=*), intent(in) :: s
+    integer :: mode_int
+
+    select case (trim(adjustl(s)))
+    case ('INDEX')
+      mode_int = EIGEN_MODE_INDEX
+    case ('ENERGY')
+      mode_int = EIGEN_MODE_ENERGY
+    case default
+      mode_int = EIGEN_MODE_FULL
+    end select
+  end function eigen_mode_from_string
+
   subroutine simulation_setup_init(cfg, setup, strain_out, sc_phi_out, sc_ne_out, sc_nh_out, skip_sc)
     type(simulation_config), intent(inout) :: cfg
     type(simulation_setup), intent(inout) :: setup
@@ -80,6 +104,7 @@ contains
     integer :: Ngrid_local, Ntot_local, nev
     real(kind=dp), allocatable :: eig_tmp(:,:)
     logical :: do_skip_sc
+    character(len=10) :: res_method, res_mode   ! resolved by resolve_solver_defaults
 
     do_skip_sc = .false.
     if (present(skip_sc)) do_skip_sc = skip_sc
@@ -97,20 +122,11 @@ contains
       setup%il = 1
       setup%iuu = 8
       setup%lwork = 0
-      ! --- Allocate solver for bulk: DENSE + FULL ---
-      if (cfg%solver%method == 'AUTO') then
-        setup%eigen_cfg%method = 'DENSE'
-      else
-        setup%eigen_cfg%method = cfg%solver%method
-      end if
-      select case (trim(cfg%solver%mode))
-      case ('AUTO', 'FULL')
-        setup%eigen_cfg%mode = EIGEN_MODE_FULL
-      case ('INDEX')
-        setup%eigen_cfg%mode = EIGEN_MODE_INDEX
-      case ('ENERGY')
-        setup%eigen_cfg%mode = EIGEN_MODE_ENERGY
-      end select
+      ! --- Allocate solver for bulk (DENSE native; AUTO mode -> FULL) ---
+      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                   res_method, res_mode)
+      setup%eigen_cfg%method = res_method
+      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
       setup%eigen_cfg%nev = 8
       setup%eigen_cfg%il = 1
       setup%eigen_cfg%iu = 8
@@ -175,20 +191,11 @@ contains
         allocate(setup%HT(setup%N, setup%N))
       end if
       setup%HT = 0.0_dp
-      ! --- Allocate solver for QW: DENSE + INDEX ---
-      if (cfg%solver%method == 'AUTO') then
-        setup%eigen_cfg%method = 'DENSE'
-      else
-        setup%eigen_cfg%method = cfg%solver%method
-      end if
-      select case (trim(cfg%solver%mode))
-      case ('AUTO', 'INDEX')
-        setup%eigen_cfg%mode = EIGEN_MODE_INDEX
-      case ('FULL')
-        setup%eigen_cfg%mode = EIGEN_MODE_FULL
-      case ('ENERGY')
-        setup%eigen_cfg%mode = EIGEN_MODE_ENERGY
-      end select
+      ! --- Allocate solver for QW (DENSE native; AUTO mode -> INDEX) ---
+      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                   res_method, res_mode)
+      setup%eigen_cfg%method = res_method
+      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
       setup%eigen_cfg%nev = min(setup%iuu - setup%il + 1, setup%N)
       setup%eigen_cfg%il = setup%il
       setup%eigen_cfg%iu = setup%iuu
@@ -252,21 +259,11 @@ contains
       nev = cfg%bands%num_cb + cfg%bands%num_vb
       if (nev > Ntot_local) nev = Ntot_local
       setup%nev_wire = nev
-      ! Solver dispatch: method from config with smart defaults
-      if (cfg%solver%method == 'AUTO') then
-        setup%eigen_cfg%method = 'FEAST'  ! wire default
-      else
-        setup%eigen_cfg%method = cfg%solver%method
-      end if
-      ! Mode dispatch
-      select case (trim(cfg%solver%mode))
-      case ('AUTO', 'ENERGY')
-        setup%eigen_cfg%mode = EIGEN_MODE_ENERGY
-      case ('FULL')
-        setup%eigen_cfg%mode = EIGEN_MODE_FULL
-      case ('INDEX')
-        setup%eigen_cfg%mode = EIGEN_MODE_INDEX
-      end select
+      ! Solver dispatch (FEAST native for wire; AUTO mode -> ENERGY).
+      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                   res_method, res_mode)
+      setup%eigen_cfg%method = res_method
+      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
       setup%eigen_cfg%nev = nev
       setup%eigen_cfg%max_iter = 100
       setup%eigen_cfg%tol = 1.0e-10_dp
@@ -338,13 +335,12 @@ contains
         cfg%params(1:1), setup%profile, setup%kpterms, cfg%FDorder)
       allocate(setup%HT(setup%N, setup%N))
       setup%HT = 0.0_dp
-      ! --- Allocate solver for Landau: DENSE + INDEX ---
-      if (cfg%solver%method == 'AUTO') then
-        setup%eigen_cfg%method = 'DENSE'
-      else
-        setup%eigen_cfg%method = cfg%solver%method
-      end if
-      setup%eigen_cfg%mode = EIGEN_MODE_INDEX
+      ! --- Allocate solver for Landau (DENSE native; AUTO mode -> INDEX,
+      ! --- but an explicit mode is now honored, not forced to INDEX). ---
+      call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                   res_method, res_mode)
+      setup%eigen_cfg%method = res_method
+      setup%eigen_cfg%mode   = eigen_mode_from_string(res_mode)
       setup%eigen_cfg%nev = setup%iuu - setup%il + 1
       setup%eigen_cfg%il = setup%il
       setup%eigen_cfg%iu = setup%iuu

@@ -267,6 +267,19 @@ mode = "INDEX"
 EOF
 run_test "V15_feast_index_rejected" "FEAST.*INDEX"
 
+# V16: bulk band count must equal 8 (bulk is fully diagonalized; window < 8
+# would write out of bounds). A bulk evnum of 7 (num_cb=2 + num_vb=5) is rejected.
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[bands]
+num_cb = 2
+num_vb = 5
+[[material]]
+name = "GaAs"
+EOF
+run_test "V16_bulk_band_count_ne8" "bulk band count"
+
 echo ""
 echo "========================================"
 echo " Validation rejection: $PASS passed, $FAIL failed"

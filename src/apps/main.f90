@@ -1,7 +1,7 @@
 program kpfdm
 
   use definitions, only: NUM_CB_STATES, NUM_VB_STATES, conf_direction, &
-    dp, simulation_config, validate_semantic, wavevector
+    dp, simulation_config, validate_semantic, wavevector, resolve_solver_defaults
   use parameters
   use hamiltonianConstructor
   use hamiltonian_blocks, only: init_kp_block_cache
@@ -12,8 +12,7 @@ program kpfdm
   use sc_loop
   use eigensolver, only: eigensolver_result, eigensolver_result_free, &
     eigensolver_config, eigensolver_base, make_eigensolver, &
-    eigensolver_config_validate, &
-    EIGEN_MODE_FULL, EIGEN_MODE_INDEX, EIGEN_MODE_ENERGY
+    eigensolver_config_validate
   use strain_solver, only: strain_result, strain_result_free, init_strain_cache
   use magnetic_field, only: init_zeeman_cache
   use exciton_solver
@@ -576,7 +575,7 @@ program kpfdm
   vu = 0.0_dp
   if (trim(cfg%confinement) == 'bulk') then
     il = 1
-    iuu = cfg%evnum
+    iuu = 8
   else
     ! For quantum well, select the right range of states
     ! We want the highest numvb valence states and lowest numcb conduction states
@@ -590,7 +589,7 @@ program kpfdm
   allocate(eig(iuu-il+1,cfg%wave_vector%nsteps))
   if (allocated(eigv)) deallocate(eigv)
   if (conf_direction(cfg%confinement) == 'n') then
-    allocate(eigv(8,cfg%evnum,cfg%wave_vector%nsteps))
+    allocate(eigv(8,8,cfg%wave_vector%nsteps))
   else
     allocate(eigv(N,iuu-il+1,cfg%wave_vector%nsteps))
   end if
@@ -664,36 +663,23 @@ program kpfdm
     type(eigensolver_result) :: result_bs
     type(eigensolver_config) :: ecfg_bs
     class(eigensolver_base), allocatable :: solver_bs
+    character(len=10) :: res_method, res_mode   ! resolved by resolve_solver_defaults
 
-    ! Build solver config: DENSE+FULL for bulk, DENSE+INDEX for QW
-    if (cfg%solver%method == 'AUTO') then
-      ecfg_bs%method = 'DENSE'
-    else
-      ecfg_bs%method = cfg%solver%method
-    end if
+    ! Build solver config via the single source of truth: bulk resolves
+    ! DENSE+FULL, QW resolves DENSE+INDEX (exact same (method,mode) as
+    ! before, now centralized in resolve_solver_defaults). The
+    ! confinement-specific nev/il/iu bookkeeping stays per-branch.
+    call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
+                                 res_method, res_mode)
+    ecfg_bs%method = res_method
+    ecfg_bs%mode   = eigen_mode_from_string(res_mode)
     if (conf_direction(cfg%confinement) == 'n') then
-      ! Bulk: FULL mode (8x8, all eigenvalues)
-      select case (trim(cfg%solver%mode))
-      case ('AUTO', 'FULL')
-        ecfg_bs%mode = EIGEN_MODE_FULL
-      case ('INDEX')
-        ecfg_bs%mode = EIGEN_MODE_INDEX
-      case ('ENERGY')
-        ecfg_bs%mode = EIGEN_MODE_ENERGY
-      end select
+      ! Bulk: 8x8, all eigenvalues
       ecfg_bs%nev = 8
       ecfg_bs%il = 1
       ecfg_bs%iu = 8
     else
-      ! QW: INDEX mode (selected eigenvalue range)
-      select case (trim(cfg%solver%mode))
-      case ('AUTO', 'INDEX')
-        ecfg_bs%mode = EIGEN_MODE_INDEX
-      case ('FULL')
-        ecfg_bs%mode = EIGEN_MODE_FULL
-      case ('ENERGY')
-        ecfg_bs%mode = EIGEN_MODE_ENERGY
-      end select
+      ! QW: selected eigenvalue range
       ecfg_bs%nev = iuu - il + 1
       ecfg_bs%il = il
       ecfg_bs%iu = iuu

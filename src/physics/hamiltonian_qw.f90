@@ -319,14 +319,19 @@ contains
     ! ================================================================
     ! FAST PATH (subsequent k-points): structure is fixed from the
     ! first (slow) call. Update kp-term block values in place, re-scatter
-    ! into the cached COO buffers, and rebuild HT_csr%values. No dense
-    ! matrices, no dense_to_csr_block O(N^2) scans.
+    ! into the cached COO buffers, and rebuild HT_csr via the cached
+    ! COO→CSR sort map. No dense matrices, no dense_to_csr_block O(N^2)
+    ! scans.
     !
     ! COO scatter order is byte-identical to the slow path (driven by
-    ! the unchanged block sparsity), so the cached coo_to_csr map stays
-    ! valid. HT_csr may be freed between calls (main.f90 QW sweep frees
-    ! it each iteration); when HT_csr%nnz == 0 we rebuild the structure
-    ! via the cached map, when it persists we use the value-only path.
+    ! the unchanged block sparsity), so the cached coo_to_csr sort map
+    ! stays valid across k-points. The map is reused every iteration
+    ! (the real O(NNZ) vs O(NNZ log NNZ) win); the rowptr/colind are
+    ! rebuilt unconditionally because the active QW FEAST sweep frees
+    ! HT_csr each iteration (HT_csr%nnz == 0 on entry). A value-only
+    ! path is intentionally omitted: it would be unsafe for a caller
+    ! reusing a persistent HT_csr across a Γ→off-Γ transition (Γ-point
+    ! structure is sparser than the sentinel-recorded map).
     ! ================================================================
     if (present(ws)) then
       if (ws%initialized) then
@@ -371,21 +376,21 @@ contains
             cfg%grid, N)
         end if
 
-        ! Rebuild HT_csr from the re-scattered COO. When HT_csr persists
-        ! (nnz > 0), use the value-only path via the cached sort map;
-        ! when it was freed between calls (nnz == 0, as in the main.f90
-        ! QW sweep), rebuild structure via csr_build_from_coo_cached
-        ! (the map is deterministic so repopulation is harmless).
-        if (HT_csr%nnz > 0 .and. ws%coo_cache%initialized) then
-          call csr_set_values_from_coo(HT_csr, coo_idx, &
-            ws%coo_cache%coo_to_csr(1:coo_idx), ws%coo_vals(1:coo_idx))
-        else
-          call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
-            ws%coo_rows(1:coo_idx), ws%coo_cols(1:coo_idx), &
-            ws%coo_vals(1:coo_idx), ws%coo_cache%coo_to_csr)
-          ws%coo_cache%coo_nnz_in = coo_idx
-          ws%coo_cache%initialized = .true.
-        end if
+        ! Rebuild HT_csr from the re-scattered COO via the cached COO→CSR
+        ! sort map (single rebuild path). The sort map is recorded once
+        ! (slow path / workspace init) and reused every iteration: this is
+        ! the O(NNZ) win over a fresh O(NNZ log NNZ) sort. We rebuild the
+        ! rowptr/colind unconditionally rather than value-only, because the
+        ! active QW FEAST sweep frees HT_csr each iteration (HT_csr%nnz == 0
+        ! on entry); a value-only path would be a latent footgun for any
+        ! future caller reusing a persistent HT_csr across a Γ→off-Γ
+        ! transition (Γ-point structure is sparser than the sentinel-recorded
+        ! map). The map is deterministic so repopulation is harmless.
+        call csr_build_from_coo_cached(HT_csr, Ntot, Ntot, coo_idx, &
+          ws%coo_rows(1:coo_idx), ws%coo_cols(1:coo_idx), &
+          ws%coo_vals(1:coo_idx), ws%coo_cache%coo_to_csr)
+        ws%coo_cache%coo_nnz_in = coo_idx
+        ws%coo_cache%initialized = .true.
         return
       end if
     end if
@@ -606,12 +611,12 @@ contains
 
         ! Record the COO→CSR sort map from the sentinel-k structure so
         ! the fast path's re-scatter (same sentinel structure → same
-        ! (row,col) sequence) can use csr_set_values_from_coo /
-        ! csr_build_from_coo_cached without re-sorting.  The cached
-        ! blocks currently hold zero values (from csr_clone_structure);
-        ! only the (row,col) pattern drives the map, so values are
-        ! irrelevant here.  We scatter into the just-allocated ws COO
-        ! buffers and build a throwaway CSR to capture the map.
+        ! (row,col) sequence) can reuse it via csr_build_from_coo_cached
+        ! without re-sorting.  The cached blocks currently hold zero
+        ! values (from csr_clone_structure); only the (row,col) pattern
+        ! drives the map, so values are irrelevant here.  We scatter
+        ! into the just-allocated ws COO buffers and build a throwaway
+        ! CSR to capture the map.
         block
           type(csr_matrix) :: map_scratch
           integer :: map_idx

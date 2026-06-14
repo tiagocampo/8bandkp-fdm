@@ -29,6 +29,7 @@ module definitions
 
   ! Functions and subroutines
   public :: conf_direction
+  public :: resolve_solver_defaults
   public :: kronij, grid_ngrid, init_grid_from_config
   public :: validate_semantic
 
@@ -663,14 +664,18 @@ module definitions
         error stop 'validate_simulation_config: params too small for num_layers'
       end if
 
-      ! ---- V1: bulk evnum must not exceed 8 (8x8 Hamiltonian) ----
+      ! ---- V1: bulk is fully diagonalized (8x8 Hamiltonian), so the
+      ! requested band window must equal 8. For bulk it is a display filter
+      ! only (see CONTEXT.md "requested band window"), not a compute
+      ! directive — sizing storage by a window < 8 would write out of bounds
+      ! because the bulk solve always returns all 8 eigenpairs.
       if (trim(cfg%confinement) == 'bulk') then
-        if (cfg%evnum > 8) then
+        if (cfg%evnum /= 8) then
           block
             character(len=16) :: buf
             write(buf, '(I0)') cfg%evnum
-            error stop 'validate_simulation_config: evnum (=' // trim(buf) // &
-              ') exceeds 8 for bulk confinement (8x8 Hamiltonian)'
+            error stop 'validate_simulation_config: bulk band count (evnum=' // &
+              trim(buf) // ') must equal 8 (8x8 Hamiltonian is fully diagonalized)'
           end block
         end if
       end if
@@ -1004,6 +1009,102 @@ module definitions
       d = 'x'
     end select
   end function conf_direction
+
+  ! ------------------------------------------------------------------
+  ! resolve_solver_defaults: single source of truth for the
+  ! (confinement, method, mode) -> (resolved method, resolved mode)
+  ! mapping used by every eigensolver dispatch site.
+  !
+  ! AUTO contract (CONTEXT.md):
+  !   1. METHOD resolves first. AUTO -> confinement default
+  !      (bulk/qw/landau -> DENSE, wire -> FEAST); otherwise the
+  !      user's method (trimmed, uppercased) is honored.
+  !   2. MODE then resolves METHOD-AWARE. AUTO -> a default compatible
+  !      with the resolved method (FEAST -> ENERGY; DENSE -> the
+  !      confinement's native mode: bulk FULL, qw/landau INDEX,
+  !      wire ENERGY). An explicit mode is honored (trimmed, uppercased).
+  !
+  ! INVARIANT: AUTO never yields an invalid combination; FEAST+INDEX is
+  ! unreachable through AUTO. Explicit FEAST+INDEX set by the user is
+  ! still returned faithfully (the caller / validate() rejects it).
+  !
+  ! defs.f90 is the root module and cannot 'use' the eigensolver module
+  ! (which depends on it), so this returns UPPERCASE character strings
+  ! ('DENSE'/'FEAST' and 'FULL'/'INDEX'/'ENERGY'), not EIGEN_MODE_*
+  ! integer constants. Each dispatch site maps the mode string to its
+  ! integer constant via eigen_mode_from_string() in simulation_setup.
+  ! ------------------------------------------------------------------
+  pure subroutine resolve_solver_defaults(confinement, method, mode, out_method, out_mode)
+    character(len=*), intent(in)  :: confinement, method, mode
+    character(len=*), intent(out) :: out_method, out_mode
+
+    character(len=len(out_method)) :: rmeth
+    character(len=len(out_mode))   :: rmode
+
+    ! --- Resolve METHOD first (confinement default unless overridden) ---
+    select case (to_upper_trim(method))
+    case ('AUTO')
+      select case (to_upper_trim(confinement))
+      case ('BULK', 'QW', 'LANDAU')
+        rmeth = 'DENSE'
+      case ('WIRE')
+        rmeth = 'FEAST'
+      case default
+        ! Unknown confinement: fall back to DENSE. validate() is the
+        ! primary gatekeeper for invalid confinement values; this keeps
+        ! the resolver total (never error-stops inside a pure routine).
+        rmeth = 'DENSE'
+      end select
+    case ('DENSE', 'FEAST')
+      rmeth = to_upper_trim(method)
+    case default
+      ! Unknown method: fall back to DENSE (validate() rejects upstream).
+      rmeth = 'DENSE'
+    end select
+
+    ! --- Resolve MODE method-aware ---
+    select case (to_upper_trim(mode))
+    case ('AUTO')
+      select case (rmeth)
+      case ('FEAST')
+        rmode = 'ENERGY'
+      case ('DENSE')
+        select case (to_upper_trim(confinement))
+        case ('BULK')
+          rmode = 'FULL'
+        case ('QW', 'LANDAU')
+          rmode = 'INDEX'
+        case ('WIRE')
+          rmode = 'ENERGY'
+        case default
+          rmode = 'FULL'
+        end select
+      end select
+    case ('FULL', 'INDEX', 'ENERGY')
+      rmode = to_upper_trim(mode)
+    case default
+      rmode = 'FULL'
+    end select
+
+    out_method = rmeth
+    out_mode   = rmode
+  end subroutine resolve_solver_defaults
+
+  ! Uppercase + trim a short ASCII string (defs.f90 cannot use downstream
+  ! helpers; this is the canonical local normalizer).
+  pure function to_upper_trim(s) result(u)
+    character(len=*), intent(in) :: s
+    character(len=len(s)) :: u
+    integer :: i, c
+    u = s
+    do i = 1, len(s)
+      c = iachar(s(i:i))
+      if (c >= iachar('a') .and. c <= iachar('z')) then
+        u(i:i) = achar(c - 32)
+      end if
+    end do
+    u = trim(u)
+  end function to_upper_trim
 
   elemental pure function kronij(i,j)
     integer, intent(in) :: i,j

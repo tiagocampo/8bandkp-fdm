@@ -2,12 +2,17 @@ module test_eigensolver
   ! COVERAGE: observable=solver_dispatch_dense geometry=generic material=generic
   ! COVERAGE: observable=solver_dispatch_feast geometry=generic material=generic
   ! COVERAGE: observable=solver_config_validation geometry=generic material=generic
+  ! COVERAGE: observable=solver_defaults_resolution geometry=generic material=generic
   use funit
   use definitions
   use sparse_matrices
   use eigensolver
   use csr_test_helpers, only: eigensolve_csr
   implicit none
+
+  ! Number of (confinement, method, mode) combos exercised by the
+  ! table-driven AUTO-resolution tests: 4 x 3 x 4 = 48.
+  integer, parameter :: NRESOLVE_COMBOS = 48
 
 contains
 
@@ -805,5 +810,164 @@ contains
     call csr_free(H)
     deallocate(solver)
   end subroutine test_dense_solver_caches_workspace
+
+  ! ==================================================================
+  ! resolve_solver_defaults: contract table.
+  !
+  ! Expects the resolved (out_method, out_mode) for each
+  ! (confinement, method, mode) triple, per the AUTO contract
+  ! (CONTEXT.md): method resolves first (confinement default unless
+  ! overridden); mode then resolves method-aware (FEAST->ENERGY,
+  ! DENSE->confinement native: bulk FULL, qw/landau INDEX, wire ENERGY).
+  !
+  ! Returns .false. if a triple has no contract entry (should never happen).
+  ! ==================================================================
+  function resolve_expected(confinement, method, mode, out_method, out_mode) result(ok)
+    character(len=*), intent(in)  :: confinement, method, mode
+    character(len=*), intent(out) :: out_method, out_mode
+    logical :: ok
+    character(len=:), allocatable :: rmeth   ! resolved method (uppercase)
+
+    ok = .true.
+    out_method = ''
+    out_mode = ''
+
+    ! --- Resolve METHOD first (confinement default unless overridden) ---
+    select case (trim(adjustl(upper(method))))
+    case ('AUTO')
+      select case (trim(adjustl(upper(confinement))))
+      case ('BULK', 'QW', 'LANDAU')
+        rmeth = 'DENSE'
+      case ('WIRE')
+        rmeth = 'FEAST'
+      case default
+        ok = .false.; return
+      end select
+    case ('DENSE', 'FEAST')
+      rmeth = trim(adjustl(upper(method)))
+    case default
+      ok = .false.; return
+    end select
+
+    ! --- Resolve MODE method-aware ---
+    select case (trim(adjustl(upper(mode))))
+    case ('AUTO')
+      select case (rmeth)
+      case ('FEAST')
+        out_mode = 'ENERGY'
+      case ('DENSE')
+        select case (trim(adjustl(upper(confinement))))
+        case ('BULK')
+          out_mode = 'FULL'
+        case ('QW', 'LANDAU')
+          out_mode = 'INDEX'
+        case ('WIRE')
+          out_mode = 'ENERGY'
+        case default
+          ok = .false.; return
+        end select
+      end select
+    case ('FULL', 'INDEX', 'ENERGY')
+      out_mode = trim(adjustl(upper(mode)))
+    case default
+      ok = .false.; return
+    end select
+
+    out_method = rmeth
+  end function resolve_expected
+
+  ! Uppercase a short ASCII string (independent oracle; does not call
+  ! the resolver's own to_upper_trim, so the test is a genuine cross-check).
+  pure function upper(s) result(u)
+    character(len=*), intent(in) :: s
+    character(len=len(s)) :: u
+    integer :: i, c
+    u = s
+    do i = 1, len(s)
+      c = iachar(s(i:i))
+      if (c >= iachar('a') .and. c <= iachar('z')) then
+        u(i:i) = achar(c - 32)
+      end if
+    end do
+  end function upper
+
+  ! ==================================================================
+  ! Test: table-driven contract for resolve_solver_defaults across
+  ! every confinement x method x mode combination.
+  ! ==================================================================
+  @test
+  subroutine test_resolve_solver_defaults_table()
+    character(len=8),  parameter :: confinements(4) = ['bulk   ', 'qw     ', 'wire   ', 'landau ']
+    character(len=8),  parameter :: methods(3)      = ['AUTO   ', 'DENSE  ', 'FEAST  ']
+    character(len=8),  parameter :: modes(4)        = ['AUTO   ', 'FULL   ', 'INDEX  ', 'ENERGY ']
+    character(len=10) :: out_method, out_mode
+    character(len=10) :: exp_method, exp_mode
+    character(len=48) :: combo
+    integer :: ic, im, imo, n
+    logical :: ok
+
+    n = 0
+    do ic = 1, size(confinements)
+      do im = 1, size(methods)
+        do imo = 1, size(modes)
+          n = n + 1
+          call resolve_solver_defaults(confinements(ic), methods(im), modes(imo), &
+                                       out_method, out_mode)
+          ok = resolve_expected(confinements(ic), methods(im), modes(imo), &
+                                exp_method, exp_mode)
+          write(combo, '(A,1x,A,1x,A,1x,A)') 'conf=', trim(confinements(ic)), &
+                                             'm='//trim(methods(im)), 'mo='//trim(modes(imo))
+          @assertTrue(ok, message=trim(combo))
+          @assertEqual(trim(exp_method), trim(out_method), message=trim(combo))
+          @assertEqual(trim(exp_mode), trim(out_mode), message=trim(combo))
+        end do
+      end do
+    end do
+    @assertEqual(NRESOLVE_COMBOS, n)
+  end subroutine test_resolve_solver_defaults_table
+
+  ! ==================================================================
+  ! Test: INVARIANT — AUTO mode never resolves to ('FEAST','INDEX').
+  ! (Explicit FEAST+INDEX set by the caller is the caller/validate's
+  ! responsibility to reject; the resolver faithfully honors it. This
+  ! test only checks the AUTO-mode branch.)
+  ! ==================================================================
+  @test
+  subroutine test_resolve_solver_defaults_no_feast_index_via_auto()
+    character(len=8),  parameter :: confinements(4) = ['bulk   ', 'qw     ', 'wire   ', 'landau ']
+    character(len=8),  parameter :: methods(3)      = ['AUTO   ', 'DENSE  ', 'FEAST  ']
+    character(len=8),  parameter :: auto_mode(1)    = ['AUTO   ']
+    character(len=10) :: out_method, out_mode
+    integer :: ic, im
+
+    do ic = 1, size(confinements)
+      do im = 1, size(methods)
+        call resolve_solver_defaults(confinements(ic), methods(im), auto_mode(1), &
+                                     out_method, out_mode)
+        ! The invariant: AUTO mode must never yield FEAST+INDEX.
+        if (trim(out_method) == 'FEAST') then
+          @assertTrue(trim(out_mode) /= 'INDEX', message="AUTO must not yield FEAST+INDEX")
+        end if
+      end do
+    end do
+  end subroutine test_resolve_solver_defaults_no_feast_index_via_auto
+
+  ! ==================================================================
+  ! Test: idempotency / uppercasing — resolve_solver_defaults must
+  ! normalize whitespace and case so a caller passing lowercase or
+  ! padded input gets the canonical uppercase output.
+  ! ==================================================================
+  @test
+  subroutine test_resolve_solver_defaults_normalizes_case()
+    character(len=10) :: out_method, out_mode
+
+    call resolve_solver_defaults('bulk', 'auto', 'auto', out_method, out_mode)
+    @assertEqual('DENSE', trim(out_method))
+    @assertEqual('FULL',  trim(out_mode))
+
+    call resolve_solver_defaults('WIRE', 'AUTO', 'auto', out_method, out_mode)
+    @assertEqual('FEAST',  trim(out_method))
+    @assertEqual('ENERGY', trim(out_mode))
+  end subroutine test_resolve_solver_defaults_normalizes_case
 
 end module test_eigensolver
