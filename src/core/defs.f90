@@ -846,14 +846,15 @@ module definitions
         error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
       end if
       ! gfactor needs the FULL spectrum for Lowdin partitioning. For QW,
-      ! setup_solve_gamma_point forces FULL mode, which would route an
-      ! explicit QW+FEAST through solve_sparse and silently truncate the
-      ! spectrum (FEAST is a partial-spectrum contour solver). Reject that
-      ! one combo up front. Bulk resolves DENSE; wire uses FEAST through its
-      ! own (non-FULL) path, so both are unaffected.
-      if (trim(cfg%confinement) == 'qw' .and. to_upper_trim(cfg%solver%method) == 'FEAST') then
-        error stop 'validate_semantic: gfactor requires the full spectrum; FEAST is unsupported for QW gfactor (use method = DENSE or AUTO)'
-      end if
+      ! setup_solve_gamma_point (simulation_setup.f90) routes the Gamma
+      ! solve through the dispersion-aware window authority (apply_solver_window,
+      ! issue #03) so a FEAST backend runs in ENERGY mode with a window that
+      ! covers the ENTIRE spectral range (Gershgorin-envelope bound), making
+      ! FEAST return all 8N eigenvalues and Lowdin see the full spectrum
+      ! (issue #08, ADR 0005). A DENSE backend still uses FULL mode (zheev
+      ! returns everything). FEAST+INDEX remains rejected up front at the
+      ! structural check I15 above (FEAST has no INDEX interface).
+
       ! S1: bandIdx in range for gfactor (bulk, QW, wire)
       ! CB (which_band=0): accesses cb_state(:, bandIdx:bandIdx+1) → range [1, num_cb-1]
       ! VB (which_band=1): accesses vb_state(:, bandIdx:bandIdx+1) → range [1, num_vb-1]

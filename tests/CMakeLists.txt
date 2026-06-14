@@ -963,6 +963,26 @@ set_tests_properties(
     PROPERTIES LABELS "verification" TIMEOUT 300
 )
 
+# --- QW g-factor FEAST-enable regression (issue #08) ---
+# Runs the gfactorCalculation executable on the SAME GaSbW/InAsW/AlSbW QW
+# twice - method=DENSE+FULL and method=FEAST+ENERGY (AUTO window) - and
+# asserts (1) the g-factor tensor matches within 1e-6 relative and (2)
+# BOTH backends return the FULL 8N spectrum (8*fd_step eigenfunctions).
+# Before #08 the QW+FEAST combo was rejected by a stopgap guard; this test
+# gates the removal of that guard. A truncated FEAST spectrum would move
+# the Lowdin g-factor, so the agreement check catches silent truncation.
+add_test(
+    NAME verification_qw_gfactor_dense_feast
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_gfactor_dense_feast.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_qw_gfactor_dense_feast
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
 # --- Wire Strain Validation ---
 add_test(
     NAME strain_validation_wire

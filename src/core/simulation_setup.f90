@@ -456,17 +456,34 @@ contains
     type(eigensolver_result) :: result
     type(eigensolver_config) :: full_cfg
     integer :: nev_out
+    logical :: is_feast
 
-    ! This subroutine returns ALL eigenvalues/eigenvectors (FULL mode).
-    ! It is the g-factor Gamma-point solver: its only caller is the g-factor
-    ! app (main_gfactor.f90), which needs the complete spectrum for Lowdin
-    ! partitioning regardless of the stored eigen_cfg that may use INDEX
-    ! mode for k-sweep filtering. The name reflects that role (issue #02).
+    ! This subroutine returns ALL eigenvalues/eigenvectors — the COMPLETE
+    ! spectrum. It is the g-factor Gamma-point solver: its only caller is
+    ! the g-factor app (main_gfactor.f90), which feeds the full spectrum
+    ! to Lowdin (quasi-degenerate) partitioning regardless of the stored
+    ! eigen_cfg that may use INDEX mode for k-sweep filtering. The name
+    ! reflects that role (issue #02).
+    !
+    ! Mode selection is backend-aware (issue #08, ADR 0005):
+    !   - DENSE backend: FULL mode (LAPACK zheev returns every eigenvalue).
+    !   - FEAST backend: ENERGY mode with a window set by the dispersion-
+    !     aware window authority (apply_solver_window / asw_single) to the
+    !     Gershgorin-envelope bound of the Hamiltonian at this k-point.
+    !     That bound brackets the ENTIRE spectrum, so FEAST — a partial-
+    !     spectrum contour solver — returns all 8N eigenvalues and Lowdin
+    !     sees the full subspace. FEAST+INDEX is rejected up front at
+    !     validate() (I15) and never reaches here.
     full_cfg = setup%eigen_cfg
-    full_cfg%mode = EIGEN_MODE_FULL
     full_cfg%nev = setup%N
     full_cfg%il = 1
     full_cfg%iu = setup%N
+    is_feast = (index(setup%eigen_solver%backend_name(), 'FEAST') /= 0)
+    if (is_feast) then
+      full_cfg%mode = EIGEN_MODE_ENERGY
+    else
+      full_cfg%mode = EIGEN_MODE_FULL
+    end if
 
     select case(setup%confinement)
     case('bulk')
@@ -484,8 +501,33 @@ contains
       if (setup%qw_sparse) then
         call ZB8bandQW_csr(setup%HT_csr_ptr, kvec, setup%profile, &
           setup%kpterms, cfg, ws=setup%qw_ws_ptr)
+        if (is_feast) then
+          ! Full-spectrum window via the window authority so FEAST returns
+          ! all 8N eigenvalues. asw_single honors a user-set window
+          ! (nonzero emin/emax); otherwise derives the Gershgorin-envelope
+          ! bound from this single-k CSR. nev = N and m0 = N let the
+          ! FEAST subspace hold the entire spectrum (the info=3 retry
+          ! loop in solve_feast also grows M0 up to N).
+          full_cfg%nev = setup%N
+          full_cfg%m0  = setup%N
+          call apply_solver_window(setup%HT_csr_ptr, &
+            user_emin=cfg%solver%emin, user_emax=cfg%solver%emax, &
+            emin_out=full_cfg%emin, emax_out=full_cfg%emax)
+          call eigensolver_config_validate(full_cfg)
+        end if
         call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, full_cfg, result)
-        if (.not. result%converged) error stop 'eigensolver failed in setup_solve_gamma_point (QW sparse)'
+        if (.not. result%converged) then
+          print *, 'Error: ', setup%eigen_solver%backend_name(), &
+            ' did not converge in setup_solve_gamma_point (QW sparse)'
+          error stop 'eigensolver failed in setup_solve_gamma_point (QW sparse)'
+        end if
+        if (result%nev_found < setup%N) then
+          print *, 'Error: ', setup%eigen_solver%backend_name(), ' returned', &
+            result%nev_found, 'eigenvalues; the g-factor Gamma solver needs', &
+            ' the full spectrum (', setup%N, ').'
+          print *, '  The FEAST energy window likely truncated the spectrum.'
+          error stop 'setup_solve_gamma_point: g-factor Gamma solve returned a truncated spectrum'
+        end if
       else
         setup%HT = 0.0_dp
         call ZB8bandQW(setup%HT, kvec, setup%profile, setup%kpterms, cfg=cfg)
