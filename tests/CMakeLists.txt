@@ -983,6 +983,29 @@ set_tests_properties(
     PROPERTIES LABELS "verification" TIMEOUT 600
 )
 
+# --- QW optics FEAST-enable regression (issue #09) ---
+# Runs the opticalProperties executable on the SAME Al30Ga70As/GaAs QW
+# twice - method=DENSE (AUTO->DENSE+INDEX, the golden default) and
+# method=FEAST+ENERGY (AUTO sweep-envelope window) - and asserts (1) the
+# FEAST path is actually taken (dispatch gate: a FEAST/envelope
+# diagnostic appears in stdout; at HEAD method=FEAST was silently
+# overridden to DENSE) and (2) the output spectra (absorption_TE/TM,
+# gain_TE/TM, spontaneous_TE/TM, ISBT - whichever the config enables)
+# match within 1e-6 relative. Divergent optics would mean the FEAST
+# window truncated the spectrum or the band indexing shifted between
+# INDEX and ENERGY mode.
+add_test(
+    NAME verification_qw_optics_dense_feast
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_optics_dense_feast.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_qw_optics_dense_feast
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
 # --- Wire Strain Validation ---
 add_test(
     NAME strain_validation_wire
