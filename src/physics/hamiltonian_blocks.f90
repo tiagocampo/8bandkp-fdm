@@ -44,6 +44,40 @@ module hamiltonian_blocks
   integer, parameter, public :: KP_HALF_SUM  = 12   ! 0.5*(Q + T)
 
   ! ------------------------------------------------------------------
+  ! Block-formula descriptor (Issue #06, ADR 0001 + 0005).
+  !
+  ! The block-tag -> block-formula INTERPRETATION — the mapping from a
+  ! tag (KP_Q, KP_DIFF, ...) to an actual matrix/scalar block, including
+  ! the DERIVED formulas (Q - T) and 0.5*(Q + T) — was historically
+  ! duplicated as select-case blocks inside every Hamiltonian builder
+  ! (dense matrix form, scalar bulk form, and the CSR pre-computes that
+  ! feed insert_main_blocks). This descriptor captures that interpretation
+  ! ONCE, as pure data, so each builder can apply it generically with a
+  ! single dispatch on kp_term_kind. No polymorphism, no builder-type
+  ! hierarchy (ADR 0001): one pure resolver + a data descriptor.
+  !
+  ! kp_term_kind values:
+  !   KP_KIND_IDENTITY : the tag IS one of the 10 base blocks; the value
+  !                      is operand_a's precomputed block.
+  !   KP_KIND_DIFF     : derived difference; value = blocks(operand_a) -
+  !                      blocks(operand_b).
+  !   KP_KIND_HALF_SUM : derived half-sum; value = 0.5 * (blocks(operand_a)
+  !                      + blocks(operand_b)).
+  !
+  ! For IDENTITY, operand_b is unused (set to 0). For DIFF and HALF_SUM,
+  ! operand_a = KP_Q and operand_b = KP_T under the current k.p topology.
+  ! ------------------------------------------------------------------
+  integer, parameter, public :: KP_KIND_IDENTITY  = 1
+  integer, parameter, public :: KP_KIND_DIFF      = 2
+  integer, parameter, public :: KP_KIND_HALF_SUM  = 3
+
+  type, public :: kp_term_descriptor
+    integer :: kind       = KP_KIND_IDENTITY   ! one of KP_KIND_*
+    integer :: operand_a  = 0                  ! base tag (IDENTITY) or first operand
+    integer :: operand_b  = 0                  ! second operand (DIFF / HALF_SUM only)
+  end type kp_term_descriptor
+
+  ! ------------------------------------------------------------------
   ! Table entry type: one block in the 8x8 band Hamiltonian.
   !
   ! row_band, col_band : 0-based band indices (0-7)
@@ -64,6 +98,7 @@ module hamiltonian_blocks
 
   public :: get_kp_block_table
   public :: init_kp_block_cache
+  public :: resolve_kp_term
 
   ! Module-level cache
   logical, save :: kp_table_cached = .false.
@@ -115,6 +150,52 @@ contains
     type(kp_entry) :: dummy(52)
     dummy = get_kp_block_table()
   end subroutine init_kp_block_cache
+
+  ! ==================================================================
+  ! Pure resolver: map a block tag to its formula descriptor.
+  !
+  ! This is the SINGLE source of truth for the block-tag -> block-formula
+  ! interpretation. The three Hamiltonian builders (dense matrix form in
+  ! apply_kp_table_dense, scalar form in apply_kp_table_bulk, and the CSR
+  ! pre-computes that feed insert_main_blocks) all dispatch on the
+  ! descriptor's kind and read its operands, instead of each open-coding
+  ! a 12-way select-case that hard-codes the Q-T / 0.5*(Q+T) formulas.
+  !
+  ! Adding a new derived combination means extending this resolver and
+  ! the descriptor; no builder changes are required (they already handle
+  ! every kp_term_kind generically).
+  !
+  ! Returns:
+  !   KP_KIND_IDENTITY with operand_a = tag  for the 10 base blocks.
+  !   KP_KIND_DIFF     with operands (KP_Q, KP_T)  for KP_DIFF.
+  !   KP_KIND_HALF_SUM with operands (KP_Q, KP_T)  for KP_HALF_SUM.
+  ! ==================================================================
+  pure function resolve_kp_term(kp_term) result(desc)
+    integer, intent(in) :: kp_term
+    type(kp_term_descriptor) :: desc
+
+    select case (kp_term)
+    case (KP_Q, KP_T, KP_S, KP_SC, KP_R, KP_RC, KP_PP, KP_PM, KP_PZ, KP_A)
+      desc%kind     = KP_KIND_IDENTITY
+      desc%operand_a = kp_term
+      desc%operand_b = 0
+    case (KP_DIFF)
+      desc%kind     = KP_KIND_DIFF
+      desc%operand_a = KP_Q
+      desc%operand_b = KP_T
+    case (KP_HALF_SUM)
+      desc%kind     = KP_KIND_HALF_SUM
+      desc%operand_a = KP_Q
+      desc%operand_b = KP_T
+    case default
+      ! Invalid tag: mark as IDENTITY with operand_a = 0 so callers that
+      ! apply the descriptor without a separate default branch index into
+      ! a clearly-out-of-range slot. Builders guard with an error stop.
+      desc%kind     = KP_KIND_IDENTITY
+      desc%operand_a = 0
+      desc%operand_b = 0
+    end select
+  end function resolve_kp_term
 
   function build_kp_table() result(table)
     type(kp_entry) :: table(52)
