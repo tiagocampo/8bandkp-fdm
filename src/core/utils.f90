@@ -5,7 +5,7 @@ use sparse_matrices, only: csr_matrix, csr_build_from_coo
 
 implicit none
 private
-public :: dnscsr_z_mkl, simpson, simpson_real
+public :: dnscsr_z_mkl, simpson, simpson_real, simpson_base_weights
 public :: insertCOO_cmplx, finalizeCOO_cmplx
 public :: tick, tock
 public :: get_unit, ensure_output_dir
@@ -244,6 +244,38 @@ real(kind=dp) function simpson_real(f, a, b)
   simpson_real = h * weighted_sum
 
 end function simpson_real
+
+
+  ! ------------------------------------------------------------------
+  ! Simpson 1/3 composite base weights (the 1, 4, 2, 4, ..., 1 pattern
+  ! multiplied by dk/3).  Each geometry multiplies this base by its own
+  ! Jacobian (4*pi*k^2/(2*pi)^3 for 3D spherical, 2*pi*k for 2D
+  ! cylindrical, 1/(2*pi) for 1D).  Sharing the base rule removes the
+  ! per-geometry inlined copies; the final integration weights are
+  ! identical to the originals.
+  !
+  ! The caller is responsible for ensuring npts is odd (Simpson 1/3).
+  ! ------------------------------------------------------------------
+  function simpson_base_weights(dk, npts) result(w)
+
+    real(kind=dp), intent(in) :: dk
+    integer, intent(in) :: npts
+    real(kind=dp), allocatable :: w(:)
+
+    integer :: i
+
+    allocate(w(npts))
+    do i = 1, npts
+      if (i == 1 .or. i == npts) then
+        w(i) = dk / 3.0_dp
+      else if (mod(i, 2) == 0) then
+        w(i) = 4.0_dp * dk / 3.0_dp
+      else
+        w(i) = 2.0_dp * dk / 3.0_dp
+      end if
+    end do
+
+  end function simpson_base_weights
 
 
   subroutine tick(t)

@@ -1,13 +1,14 @@
 module outputFunctions
 
   use definitions, only: dp, simulation_config, spatial_grid, &
-    wavevector
+    wavevector, optical_transition
   use utils
 
   implicit NONE
 
   private
   public :: writeEigenfunctions, writeEigenfunctions2d, writeParts2d, writeEigenvalues
+  public :: write_bdg_eigenvalues, write_optical_transitions, write_profile_1d
 
   character(len=*), parameter :: OUTPUT_DIR = 'output'
 
@@ -324,5 +325,101 @@ module outputFunctions
       deallocate(parts)
 
     end subroutine writeParts2d
+
+    ! ==================================================================
+    ! Write BdG eigenvalues to output/bdg_eigenvalues.dat.
+    !
+    ! Consolidates the two near-identical write blocks formerly inlined
+    ! in main_topology.f90 (BdG-wire and BdG-QW paths).  The two paths
+    ! differ only in the second header line label ("kz" vs "k_par") and
+    ! the scalar printed there; the remaining bytes (header text, count
+    ! line, column-order line, data format '(I6,ES20.12)', confirmation
+    ! message) are identical.  axis_label supplies the discriminator.
+    ! ==================================================================
+    subroutine write_bdg_eigenvalues(eigvals, axis_label, kval)
+
+      real(kind=dp), intent(in), contiguous :: eigvals(:)
+      character(len=*), intent(in) :: axis_label  ! e.g. 'kz' or 'k_par'
+      real(kind=dp), intent(in) :: kval
+
+      integer(kind=4) :: iounit, ios, status
+      integer :: i, nev
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/bdg_eigenvalues.dat', status='replace', &
+           action='write', iostat=status)
+      if (status /= 0) return
+
+      nev = size(eigvals)
+      write(iounit, '(A)') '# BdG eigenvalues (eV)'
+      write(iounit, '(A,ES16.8)') '# ' // axis_label // ' (1/A) = ', kval
+      write(iounit, '(A,I0)') '# n_eigenvalues = ', nev
+      write(iounit, '(A)') '# Columns: index, energy (eV)'
+      do i = 1, nev
+        write(iounit, '(I6,ES20.12)') i, eigvals(i)
+      end do
+      close(iounit)
+      print *, '  Eigenvalues written to output/bdg_eigenvalues.dat'
+
+    end subroutine write_bdg_eigenvalues
+
+    ! ==================================================================
+    ! Write optical transition table to output/optical_transitions.dat.
+    !
+    ! Consolidates the two byte-identical write blocks formerly inlined
+    ! in main_gfactor.f90 (wire path and QW path).  Format preserved
+    ! exactly: header comment, then '(2(I4,1x),5(g14.6,1x))' rows.
+    ! ==================================================================
+    subroutine write_optical_transitions(transitions)
+
+      type(optical_transition), intent(in), contiguous :: transitions(:)
+      integer(kind=4) :: iounit, ios
+      integer :: it, num_trans
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
+      write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
+      num_trans = size(transitions)
+      do it = 1, num_trans
+        write(iounit, '(2(I4,1x),5(g14.6,1x))') &
+          transitions(it)%cb_idx, transitions(it)%vb_idx, &
+          transitions(it)%energy, transitions(it)%px, &
+          transitions(it)%py, transitions(it)%pz, &
+          transitions(it)%oscillator_strength
+      end do
+      close(iounit)
+      print *, '  Optical transitions written to output/optical_transitions.dat'
+
+    end subroutine write_optical_transitions
+
+    ! ==================================================================
+    ! Write a 1D band-edge profile to output/potential_profile.dat.
+    !
+    ! Consolidates the byte-identical list-directed writes formerly
+    ! inlined in main.f90 (QW and Landau), main_gfactor.f90 (QW) and
+    ! main_optics.f90 (QW): one coordinate column + three profile
+    ! columns (EV, EV_DeltaSO, EC), written with 'write(unit,*)'.
+    ! The coordinate array (cfg%z for QW, cfg%grid%x for Landau) is
+    ! supplied by the caller.
+    ! ==================================================================
+    subroutine write_profile_1d(coord, profile)
+
+      real(kind=dp), intent(in), contiguous :: coord(:)
+      real(kind=dp), intent(in), contiguous :: profile(:,:)
+      integer(kind=4) :: iounit
+      integer :: i, n
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
+      n = size(coord)
+      do i = 1, n
+        write(iounit, *) coord(i), profile(i,1), profile(i,2), profile(i,3)
+      end do
+      close(iounit)
+
+    end subroutine write_profile_1d
 
 end module outputFunctions

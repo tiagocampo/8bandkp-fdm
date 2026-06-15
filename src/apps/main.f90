@@ -411,13 +411,7 @@ program kpfdm
       print '(A,I0,A)', ' Landau mode: N=', N, ' (single material)'
 
       ! --- Write Landau band edge profile ---
-      call ensure_output_dir()
-      call get_unit(iounit)
-      open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
-      do i = 1, cfg%landau%nx, 1
-        write(iounit,*) cfg%grid%x(i), profile(i,1), profile(i,2), profile(i,3)
-      end do
-      close(iounit)
+      call write_profile_1d(cfg%grid%x, profile)
 
       vl = 0.0_dp
       vu = 0.0_dp
@@ -717,13 +711,7 @@ program kpfdm
 
   ! Print profile for QW mode
   if (conf_direction(cfg%confinement) == 'z') then
-    call ensure_output_dir()
-    call get_unit(iounit)
-    open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
-    do i = 1, cfg%grid%npoints(), 1
-      write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
-    end do
-    close(iounit)
+    call write_profile_1d(cfg%z, profile)
   end if
 
   ! --- Self-consistent loop (QW only, after wave vector setup) ---

@@ -457,7 +457,7 @@ contains
     integer :: Ngrid_local, Ntot_local, nev_local
     real(kind=dp) :: emin_local, emax_local, kz_val
     real(kind=dp), allocatable :: eigvals_bdg(:)
-    integer :: i, j, iounit_ev, iounit_prof, status_ev
+    integer :: i, j, iounit_prof
 
     print *, '--- BdG wire mode: Majorana modes ---'
 
@@ -534,21 +534,7 @@ contains
       result%min_gap = 2.0_dp * bdg_zero_energy_gap(eigvals_bdg)
 
       ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
-      call ensure_output_dir()
-      call get_unit(iounit_ev)
-      open(unit=iounit_ev, file='output/bdg_eigenvalues.dat', status='replace', &
-           action='write', iostat=status_ev)
-      if (status_ev == 0) then
-        write(iounit_ev, '(A)') '# BdG eigenvalues (eV)'
-        write(iounit_ev, '(A,ES16.8)') '# kz (1/A) = ', kz_val
-        write(iounit_ev, '(A,I0)') '# n_eigenvalues = ', eigen_res_local%nev_found
-        write(iounit_ev, '(A)') '# Columns: index, energy (eV)'
-        do i = 1, eigen_res_local%nev_found
-          write(iounit_ev, '(I6,ES20.12)') i, eigvals_bdg(i)
-        end do
-        close(iounit_ev)
-        print *, '  Eigenvalues written to output/bdg_eigenvalues.dat'
-      end if
+      call write_bdg_eigenvalues(eigvals_bdg, 'kz', kz_val)
 
       ! Check for zero-energy Majorana modes
       block
@@ -674,7 +660,7 @@ contains
     type(eigensolver_result) :: bdg_result
     integer :: N_local, Ntot_local, Nbdg_local
     integer :: i, j, n_zero, n_fit_ok, n_fit_failed
-    integer :: iounit_ev, iounit_prof, status_ev, status_prof
+    integer :: iounit_prof, status_prof
     real(kind=dp) :: zero_tol, xi_val, dz_local, k_par_val
     real(kind=dp), allocatable :: majorana_xi(:)
 
@@ -718,21 +704,7 @@ contains
     result%min_gap = 2.0_dp * minval(abs(eigvals_bdg))
 
     ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
-    call ensure_output_dir()
-    call get_unit(iounit_ev)
-    open(unit=iounit_ev, file='output/bdg_eigenvalues.dat', status='replace', &
-         action='write', iostat=status_ev)
-    if (status_ev == 0) then
-      write(iounit_ev, '(A)') '# BdG eigenvalues (eV)'
-      write(iounit_ev, '(A,ES16.8)') '# k_par (1/A) = ', k_par_val
-      write(iounit_ev, '(A,I0)') '# n_eigenvalues = ', Nbdg_local
-      write(iounit_ev, '(A)') '# Columns: index, energy (eV)'
-      do i = 1, Nbdg_local
-        write(iounit_ev, '(I6,ES20.12)') i, eigvals_bdg(i)
-      end do
-      close(iounit_ev)
-      print *, '  Eigenvalues written to output/bdg_eigenvalues.dat'
-    end if
+    call write_bdg_eigenvalues(eigvals_bdg, 'k_par', k_par_val)
 
     n_zero = 0
     do i = 1, Nbdg_local

@@ -16,7 +16,8 @@ program opticalProperties
     & eigensolver_config_validate, apply_solver_window, EIGEN_MODE_INDEX
   use hamiltonian_qw, only: qw_workspace, qw_workspace_free, ZB8bandQW_csr
   use linalg, only: mkl_set_num_threads_local
-  use utils, only: ensure_output_dir, get_unit
+  use utils, only: ensure_output_dir, get_unit, simpson_base_weights
+  use outputFunctions, only: write_profile_1d
 
   implicit none
 
@@ -122,18 +123,10 @@ program opticalProperties
       print '(a,i0,a)', ' Warning: optics integration uses ', npts, &
         & ' k-points (Simpson requires odd count)'
     end if
-    allocate(simpson_w(npts))
     dk = cfg%wave_vector%max / real(cfg%wave_vector%nsteps - 1, kind=dp)
+    simpson_w = simpson_base_weights(dk, npts)
+    ! Multiply by 4*pi*k^2 / (2*pi)^3 for 3D spherical BZ integration
     do i = 1, npts
-      ! Base Simpson 1/3 rule weight
-      if (i == 1 .or. i == npts) then
-        simpson_w(i) = dk / 3.0_dp
-      else if (mod(i, 2) == 0) then
-        simpson_w(i) = 4.0_dp * dk / 3.0_dp
-      else
-        simpson_w(i) = 2.0_dp * dk / 3.0_dp
-      end if
-      ! Multiply by 4*pi*k^2 / (2*pi)^3 for 3D spherical BZ integration
       simpson_w(i) = simpson_w(i) * 4.0_dp * pi_dp &
         & * (real(i - 1, kind=dp) * dk)**2 / (2.0_dp * pi_dp)**3
     end do
@@ -268,13 +261,7 @@ program opticalProperties
     end do
 
     ! --- Write potential profile ---
-    call ensure_output_dir()
-    call get_unit(iounit)
-    open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
-    do i = 1, cfg%grid%npoints()
-      write(iounit, *) cfg%z(i), setup%profile(i,1), setup%profile(i,2), setup%profile(i,3)
-    end do
-    close(iounit)
+    call write_profile_1d(cfg%z, setup%profile)
 
     ! ================================================================
     ! Initialize optics accumulation
@@ -291,18 +278,10 @@ program opticalProperties
       print '(a,i0,a)', ' Warning: optics integration uses ', npts, &
         & ' k-points (Simpson requires odd count)'
     end if
-    allocate(simpson_w(npts))
     dk = cfg%wave_vector%max / real(cfg%wave_vector%nsteps - 1, kind=dp)
+    simpson_w = simpson_base_weights(dk, npts)
+    ! Multiply by 2*pi*k for 2D cylindrical integration
     do i = 1, npts
-      ! Base Simpson 1/3 rule weight
-      if (i == 1 .or. i == npts) then
-        simpson_w(i) = dk / 3.0_dp
-      else if (mod(i, 2) == 0) then
-        simpson_w(i) = 4.0_dp * dk / 3.0_dp
-      else
-        simpson_w(i) = 2.0_dp * dk / 3.0_dp
-      end if
-      ! Multiply by 2*pi*k for 2D cylindrical integration
       simpson_w(i) = simpson_w(i) * 2.0_dp * pi_dp * real(i - 1, kind=dp) * dk
     end do
 
@@ -557,20 +536,9 @@ program opticalProperties
       print '(a,i0,a)', ' Warning: optics integration uses ', npts, &
         & ' k-points (Simpson requires odd count)'
     end if
-    allocate(simpson_w(npts))
     dk = cfg%wave_vector%max / real(cfg%wave_vector%nsteps - 1, kind=dp)
-    do i = 1, npts
-      ! Base Simpson 1/3 rule weight
-      if (i == 1 .or. i == npts) then
-        simpson_w(i) = dk / 3.0_dp
-      else if (mod(i, 2) == 0) then
-        simpson_w(i) = 4.0_dp * dk / 3.0_dp
-      else
-        simpson_w(i) = 2.0_dp * dk / 3.0_dp
-      end if
-      ! 1D BZ: weight / (2*pi) normalization
-      simpson_w(i) = simpson_w(i) / (2.0_dp * pi_dp)
-    end do
+    ! 1D BZ: base Simpson weight / (2*pi) normalization (constant Jacobian)
+    simpson_w = simpson_base_weights(dk, npts) / (2.0_dp * pi_dp)
 
     ! ----------------------------------------------------------------
     ! kz sweep: build H(kz), diagonalize with FEAST, accumulate spectra

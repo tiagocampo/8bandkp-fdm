@@ -232,26 +232,14 @@ program gfactor
         ! Compute optical transitions only for optics-enabled runs.
         block
           type(optical_transition), allocatable :: transitions(:)
-          integer :: num_trans, it
+          integer :: num_trans
 
           call compute_optical_matrix_wire(transitions, num_trans, &
             cb_state, vb_state, cb_value, vb_value, cfg%bands%num_cb, cfg%bands%num_vb, &
             setup%vel)
 
           ! Write to file
-          call ensure_output_dir()
-          call get_unit(iounit)
-          open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
-          write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
-          do it = 1, num_trans
-            write(iounit, '(2(I4,1x),5(g14.6,1x))') &
-              transitions(it)%cb_idx, transitions(it)%vb_idx, &
-              transitions(it)%energy, transitions(it)%px, &
-              transitions(it)%py, transitions(it)%pz, &
-              transitions(it)%oscillator_strength
-          end do
-          close(iounit)
-          print *, '  Optical transitions written to output/optical_transitions.dat'
+          call write_optical_transitions(transitions)
 
           deallocate(transitions)
         end block
@@ -286,13 +274,7 @@ program gfactor
 
       ! Print profile for QW mode
       if (conf_direction(cfg%confinement) == 'z') then
-        call ensure_output_dir()
-        call get_unit(iounit)
-        open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
-        do i = 1, cfg%grid%npoints()
-          write(iounit, *) cfg%z(i), setup%profile(i,1), setup%profile(i,2), setup%profile(i,3)
-        end do
-        close(iounit)
+        call write_profile_1d(cfg%z, setup%profile)
       end if
 
       ! Solve at k=0
@@ -333,26 +315,14 @@ program gfactor
       if (cfg%optics%enabled .and. conf_direction(cfg%confinement) == 'z' .and. cfg%num_layers > 1) then
         block
           type(optical_transition), allocatable :: transitions(:)
-          integer :: num_trans, it
+          integer :: num_trans
 
           call compute_optical_matrix_qw(transitions, num_trans, &
             cb_state, vb_state, cb_value, vb_value, cfg%bands%num_cb, cfg%bands%num_vb, &
             cfg%num_layers, cfg%params, setup%profile, setup%kpterms, &
             cfg%z_min(1), cfg%z_max(1), cfg%dz)
 
-          call ensure_output_dir()
-          call get_unit(iounit)
-          open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
-          write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
-          do it = 1, num_trans
-            write(iounit, '(2(I4,1x),5(g14.6,1x))') &
-              transitions(it)%cb_idx, transitions(it)%vb_idx, &
-              transitions(it)%energy, transitions(it)%px, &
-              transitions(it)%py, transitions(it)%pz, &
-              transitions(it)%oscillator_strength
-          end do
-          close(iounit)
-          print *, '  Optical transitions written to output/optical_transitions.dat'
+          call write_optical_transitions(transitions)
           deallocate(transitions)
         end block
       end if
