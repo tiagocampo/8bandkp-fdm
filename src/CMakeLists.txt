@@ -28,6 +28,7 @@ set(COMMON_SOURCES
     physics/scattering.f90
     physics/spin_projection.f90
     physics/magnetic_field.f90
+    physics/wire_setup.f90
     physics/topological_analysis.f90
     physics/bdg_hamiltonian.f90
     physics/green_functions.f90
@@ -82,6 +83,7 @@ set_source_files_properties(
     physics/scattering.f90
     physics/spin_projection.f90
     physics/magnetic_field.f90
+    physics/wire_setup.f90
     physics/topological_analysis.f90
     physics/bdg_hamiltonian.f90
     physics/green_functions.f90

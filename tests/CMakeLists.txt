@@ -780,6 +780,22 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# Wire BdG strain-omission regression (#04):
+# Asserts the wire BdG spectrum SHIFTS when [strain] is applied. Before #04
+# the wire BdG driver skipped compute_strain, so strained/unstrained runs
+# were identical (the latent physics defect). Physically they must differ.
+add_test(
+    NAME regression_wire_bdg_strain_shift
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_bdg_strain_shift.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_strain_bdg.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_wire_bdg_strain_shift
+    PROPERTIES LABELS "regression;strain-validation" TIMEOUT 900
+)
+
 # Topological sweep mode regressions
 add_test(
     NAME regression_topology_sweep_bhz
