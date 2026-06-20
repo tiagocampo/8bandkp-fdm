@@ -633,7 +633,7 @@ For core-shell wires (e.g., InAs core with GaAs shell), multiple regions with di
 ### 6.5 Limitations and tips
 
 **Current limitations:**
-- The free propagation direction is fixed to $z$ (returned by `conf_direction()` for wire mode)
+- The free propagation direction is fixed to $z$ (the wire is 2D-confined in the $x$-$y$ plane; `conf_direction()` returns a `'w'` sentinel for wire mode, not an axis)
 - The grid is uniform (no adaptive mesh refinement)
 - Self-consistent Schrodinger-Poisson for wires uses the 2D Poisson solver `solve_poisson_2d` with box integration and cut-cell support
 - Strain is handled by the strain solver module (`src/physics/strain_solver.f90`) but is not yet fully integrated into the wire pipeline

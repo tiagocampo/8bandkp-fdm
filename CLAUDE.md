@@ -185,13 +185,13 @@ defs.f90                      (kinds, constants, derived types — no deps)
 - **Dual mode**: `confinement = "bulk"` → bulk (8x8), `confinement = "qw"` → quantum well (8N x 8N, N = grid%npoints())
 - **QW Hamiltonian**: 8x8 block matrix, each block NxN. Block structure defined in `hamiltonian_blocks.f90` as a 52-entry table (`get_kp_block_table()`) with named constants (KP_Q, KP_R, etc.). Both dense (`hamiltonianConstructor.f90`) and COO (`hamiltonian_wire.f90`) builders read this table instead of hard-coding the block topology. Blocks: k.p terms (Q, R, S, T, P) + band offsets
 - **`simulation_config`** derived type in `defs.f90` holds all parsed input parameters; `input_parser.f90` populates it from `input.toml` using sub-types mirroring TOML sections (`wave_vector_config`, `bands_config`, `external_field_config`, `b_field_config`, `wire_config`, `landau_config`, `solver_config`)
-- **`conf_direction()`** function returns the confinement direction character: bulk → `'n'` (none), QW → `'z'`, wire → `'z'`, Landau → `'x'`. Replaces the old `conf_dir` stored field.
+- **`conf_direction()`** function returns the confinement direction character: bulk → `'n'` (none), QW → `'z'`, wire → `'w'` (2D-confined; sentinel, not an axis — see ADR 0006), Landau → `'x'`. Replaces the old `conf_dir` stored field.
 - **`grid%npoints()`** accessor returns the total number of spatial grid points: bulk → 1, QW → `fd_step`, wire → `nx * ny`, Landau → `landau.nx`. Replaces the old `ngrid` computed field.
 - **`num_layers`** counts `[[material]]` entries (material layers for bulk/QW). Wire mode uses `cfg%wire%num_regions` for `[[region]]` entries instead.
 - **`confinementInitialization`** precomputes material parameters at each z-point into `kpterms(ny, ny, 10)`
 - **Last-layer-wins** in `confinement_init.f90`: later material layers overwrite earlier ones. Use 2-layer pattern (barrier covers full domain, well overwrites center). Avoid full-domain layers after a narrow well layer — they silently destroy the QW.
 - **Sparse vs dense**: g-factor uses MKL SpBLAS for large QW; band structure uses dense LAPACK (`zheevx`)
-- **Wire g-factor velocity operator**: commutator-based `build_velocity_matrices` computes $v_\alpha = -i [r_\alpha, H]$ element-wise on CSR. Generic interface dispatches to `_2d` (wire, 4 scalar CSR args) or `_1d` (QW, 3-element CSR array). For QW: z-velocity from commutator, in-plane from `ZB8bandQW(g='g')`. g='g3' still used for z-direction in wire. Old g='g1'/'g2' modes are dead code.
+- **Wire g-factor velocity operator**: commutator-based `build_velocity_matrices` computes $v_\alpha = -i [r_\alpha, H]$ element-wise on CSR. Generic interface dispatches to `_2d` (wire, 4 scalar CSR args) or `_1d` (QW, 3-element CSR array). For QW: z-velocity from commutator, in-plane from `ZB8bandQW(g='g')`. g='g3' is used for the wire's free-z direction. Only `g='g'` (k-derivative) and `g='g3'` exist — there are no g1/g2 modes in the source.
 - **Optical properties**: standalone `opticalProperties` executable computes absorption, gain, spontaneous emission, and ISBT spectra for bulk (8x8, spherical 3D k-integration), QW (dense, 2D cylindrical), and wire (CSR/FEAST, 1D kz-sweep). All use commutator-based velocity matrices via CSR SpMV + zdotc pattern. Unified accumulation framework in `optical_spectra.f90` shares velocity matrices across all quantities; only the occupation factor differs. Spin-resolved spectra via Clebsch-Gordan projection in `spin_projection.f90`.
 - **Foreman renormalization**: disabled by default (`renormalization = .False.` in defs.f90)
 - **Topological analysis**: standalone `topologicalAnalysis` executable supports QHE (Chern number via QWZ model), QSHE (Z2 invariant via BHZ wire or Fu-Kane), and BdG (Majorana modes in superconducting wire). Uses `[topology]` and `[bdg]` TOML sections. Chern number via Fukui-Hatsugai-Suzuki algorithm; Z2 via gap criterion in 1D or parity method in 2D. BdG builds 16N x 16N Nambu-space Hamiltonian with s-wave pairing and Zeeman splitting. LDOS computed via complex PARDISO. Design doc: `docs/plans/archive/2026-04-27-bdg-topological-superconductivity-design.md`
@@ -206,6 +206,21 @@ TOML format parsed by `toml-f` library. Sections are order-independent. Key top-
 Sections: `[wave_vector]` (mode, max, nsteps), `[bands]` (num_cb, num_vb), `[[material]]` (name, z_min, z_max), `[wire]` + `[wire.geometry]` + `[[region]]` (wire mode), `[landau]` (Landau mode), `[external_field]` (type, value), `[b_field]` (components, g_factor), `[strain]` (reference), `[sc]` (self-consistent parameters), `[[doping]]` (ND, NA or delta doping), `[topology]` (topological analysis), `[bdg]` (BdG parameters), `[optics]` (optical spectra), `[exciton]`, `[scattering]`, `[solver]` (method, mode, emin, emax, m0). Legacy `[feast]` sections are rejected with a hard `error stop` (migration message) — rename to `[solver]`.
 
 Optional sections are enabled by presence -- no separate enable flags. G-factor uses top-level `which_band` and `band_idx`. See `docs/reference/input-reference.md` for the complete schema.
+
+## Engineering Principles
+
+Apply KISS / DRY / YAGNI / SOLID as decision criteria for new code and refactors — not as slogans. Each is already instantiated in this repo; preserve and extend those instantiations rather than reinventing them.
+
+- **DRY — single source of truth.** Physics topology and formulas already live in four SSOTs: `get_kp_block_table()` + `resolve_kp_term()` (`hamiltonian_blocks.f90`), `get_strain_table()` + `compute_bp_scalar()` (`strain_solver.f90`), `get_zeeman_table()` (`magnetic_field.f90`). When logic touches block/strain/Zeeman topology or a known physics formula, extend the existing SSOT — never re-derive or hardcode the same expression in a second place. Rule: before writing any formula or constant a second time, extract it once and `use` it.
+- **YAGNI — ship the smallest thing that passes the test.** `fortran-stdlib` is an optional dependency (compiles without it); Foreman renormalization is off by default; new eigensolver variants sit behind `#ifdef USE_MKL_FEAST` until a path actually consumes them. Don't add config knobs, abstraction layers, or optional features speculatively — wait for a test or requirement that demands them.
+- **KISS — pick the simpler of two correct solutions.** The length budgets (300 lines/file, 50 lines/function) and the trailing "Minimal" in the priority order are simplicity signals, not targets. Avoid speculative generalization (a generic interface with one implementation) until a second implementation is concrete.
+- **SOLID — in Fortran / non-OOP terms:**
+  - **SRP:** one module, one concern. The module graph is acyclic and layered (L0 leaves → L3 hubs); splitting `strain_solver` into `strain_types` + `strain_pde` along a concern boundary (Issue #06, ADR 0005) is the canonical pattern. When a module exceeds its budget or mixes concerns, split along the natural seam into a new leaf.
+  - **OCP:** extend by adding a row to a SSOT table or a new variant behind a guard — not by editing scattered call sites. Block insertion applies the `kp_term_descriptor` generically (no per-tag `select case`).
+  - **ISP / encapsulation:** `private` default + explicit `public ::` exports; prefer deep modules with narrow interfaces (`grid%npoints()`, `conf_direction()`) over exposing internals.
+  - **DIP:** depend on the abstract descriptor/factory, not the concrete builder — `make_eigensolver(config)` returns a polymorphic solver; builders consume the `kp_term_descriptor` rather than hardcoding topology.
+
+When a change risks violating one of these, prefer the refactor that restores the principle (extract to SSOT, split the module, delete the speculative code) over a patch that adds another special case.
 
 ## Code Conventions
 
@@ -273,4 +288,4 @@ Always check for and follow applicable superpowers skills when working. In parti
 ## Known Issues
 
 - `bir_pikus_blocks` in `defs.f90:83` has no finalizer. This is intentional: the type contains only non-allocatable fixed-size arrays (no pointers or allocatable components), so no explicit finalizer is needed. Do not add one.
-- The wire g-factor was fixed using the commutator-based velocity operator (`build_velocity_matrices` in `hamiltonianConstructor.f90`). The transverse perturbation construction uses $-i [r_\alpha, H]$ element-wise on the CSR Hamiltonian, which correctly captures all k.p term contributions.
+- The wire g-factor was fixed using the commutator-based velocity operator (`build_velocity_matrices` in `hamiltonian_wire.f90`). The transverse perturbation construction uses $-i [r_\alpha, H]$ element-wise on the CSR Hamiltonian, which correctly captures all k.p term contributions.
