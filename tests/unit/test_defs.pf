@@ -62,7 +62,7 @@ contains
 
   @test
   subroutine test_conf_direction_wire()
-    @assertEqual('z', conf_direction('wire'))
+    @assertEqual('w', conf_direction('wire'))
   end subroutine test_conf_direction_wire
 
   @test

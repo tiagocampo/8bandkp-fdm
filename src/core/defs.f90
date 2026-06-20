@@ -1000,11 +1000,16 @@ module definitions
   end subroutine validate_semantic
 
   ! ------------------------------------------------------------------
-  ! Map confinement string to direction character.
-  !   'bulk'   -> 'n' (no confinement direction)
-  !   'qw'     -> 'z' (confinement along z)
-  !   'wire'   -> 'z' (confinement along z)
-  !   'landau' -> 'x' (confinement along x)
+  ! Map confinement string to a direction character.
+  !   'bulk'   -> 'n' (no confinement; bulk is fully diagonalized)
+  !   'qw'     -> 'z' (1D confinement along the z growth axis)
+  !   'landau' -> 'x' (1D confinement along x; Landau orbitals)
+  !   'wire'   -> 'w' (2D confinement in the x-y plane; there is NO single
+  !                    confinement axis, so this is a sentinel, not an axis.
+  !                    Every wire path branches to wire-specific code and
+  !                    never consumes this value. Do NOT add a generic
+  !                    `== 'z'` branch without a prior wire guard, and do
+  !                    not treat 'w' as 'n' — the wire IS confined.)
   !   other    -> 'n' (default; validator is the primary gatekeeper for
   !                     invalid confinement values)
   ! ------------------------------------------------------------------
@@ -1014,8 +1019,10 @@ module definitions
 
     d = 'n'
     select case(trim(conf))
-    case('qw','wire')
+    case('qw')
       d = 'z'
+    case('wire')
+      d = 'w'
     case('landau')
       d = 'x'
     end select
