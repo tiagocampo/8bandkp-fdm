@@ -12,7 +12,8 @@ program kpfdm
   use sc_loop
   use eigensolver, only: eigensolver_result, eigensolver_result_free, &
     eigensolver_config, eigensolver_base, make_eigensolver, &
-    eigensolver_config_validate, apply_solver_window, EIGEN_MODE_INDEX
+    eigensolver_config_validate, apply_solver_window, EIGEN_MODE_INDEX, &
+    reconcile_band_slice
   use strain_solver, only: strain_result, strain_result_free, init_strain_cache
   use magnetic_field, only: init_zeeman_cache
   use exciton_solver
@@ -537,21 +538,7 @@ program kpfdm
             error stop 'insufficient eigenvalues for Landau k-sweep'
           end if
 
-          if (M == nev_target) then
-            ! DENSE+INDEX: the solver already returned exactly the
-            ! requested [il, iuu] slice (LAPACK zheevx range='I'); store
-            ! directly. Byte-identical to the pre-#10 path.
-            idx_lo = 1
-          else
-            ! FEAST+ENERGY: the solver returned the full in-window
-            ! spectrum (sorted ascending). Extract the gap-straddling
-            ! [il, iuu] slice by GLOBAL index - the same states DENSE+INDEX
-            ! would return. This requires the window to cover the full
-            ! spectral range below iuu (the sweep-envelope authority
-            ! guarantees this). Mirrors the QW optics reconciliation
-            ! (issue #09).
-            idx_lo = il
-          end if
+          call reconcile_band_slice(landau_result%nev_found, il, iuu, idx_lo)
 
           eig(1:nev_target, k) = landau_result%eigenvalues(idx_lo:idx_lo+nev_target-1)
           eigv(:, 1:nev_target, k) = &
