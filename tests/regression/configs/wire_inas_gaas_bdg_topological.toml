@@ -1,0 +1,69 @@
+# U8 regression: topological open->close->reopen on the core/shell InAs/GaAs wire.
+# mu=0.6601 eV sits just inside the conduction subband edge (edge = +0.6586 eV,
+# located via a DENSE-FULL normal solve). transverse B_vec=[Bx,0,0] activates
+# Peierls orbital coupling + Zeeman (B along the wire gives Zeeman only).
+# Confirmed: minigap 2.9 meV (B=0) -> 0.019 meV (Bx=2.8T) -> 5.5 meV (Bx=6T).
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "kz"
+max = 0.0
+nsteps = 2
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[wire]
+nx = 13
+ny = 13
+dx = 5.0
+dy = 5.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 65.0
+height = 65.0
+
+[[region]]
+material = "GaAs"
+inner = 25.0
+outer = 65.0
+
+[[region]]
+material = "InAs"
+inner = 0.0
+outer = 25.0
+
+[strain]
+reference = "GaAs"
+solver = "pardiso"
+piezoelectric = false
+
+[bdg]
+mu = 0.6601
+delta_0 = 0.0002
+kz = 0.0
+B_vec = [0.0, 0.0, 0.0]
+g_factor = 15.0
+
+[topology]
+mode = "bdg"
+compute_chern = false
+compute_hall = false
+qwz_u = 0.0
+compute_z2 = false
+extract_edge_states = false
+edge_E_window = 0.01
+compute_ldos = false
+
+[solver]
+method = "FEAST"
+mode = "ENERGY"
+emin = -0.005
+emax = 0.005
+m0 = 128
