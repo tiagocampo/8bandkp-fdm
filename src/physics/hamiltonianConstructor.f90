@@ -774,7 +774,7 @@ module hamiltonianConstructor
     ! Scalar lookup: return one of the 10 scalar bulk kp terms by tag.
     ! Used by apply_kp_table_bulk to resolve the descriptor operands.
     ! ==================================================================
-    pure function kp_scalar_block(tag, Q, T, S, SC, R, RC, PP, PM, PZ, A) result(val)
+    function kp_scalar_block(tag, Q, T, S, SC, R, RC, PP, PM, PZ, A) result(val)
       integer, intent(in) :: tag
       complex(kind=dp), intent(in) :: Q, T, S, SC, R, RC, PP, PM, PZ, A
       complex(kind=dp) :: val
@@ -791,7 +791,7 @@ module hamiltonianConstructor
       case (KP_PZ); val = PZ
       case (KP_A);  val = A
       case default
-        val = cmplx(0.0_dp, 0.0_dp, kind=dp)
+        error stop 'kp_scalar_block: unknown base kp_term tag'
       end select
     end function kp_scalar_block
 
