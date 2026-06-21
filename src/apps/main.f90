@@ -835,6 +835,7 @@ program kpfdm
         block
           type(csr_matrix) :: HT_csr_loc
           type(qw_workspace) :: qw_ws
+          integer :: nev_target, idx_lo
 
           ! Pre-initialize caches (thread-safety)
           call init_kp_block_cache()
@@ -849,22 +850,21 @@ program kpfdm
               cfg, ws=qw_ws)
             call solver_bs%solve_sparse(HT_csr_loc, ecfg_bs, result_bs)
             if (.not. result_bs%converged) error stop 'eigensolver failed in QW k-sweep'
-            ! Clamp to allocated array sizes (ENERGY mode may return more eigenvalues)
-            M = min(result_bs%nev_found, iuu-il+1)
-            if (result_bs%nev_found > iuu-il+1) then
-              print '(A,A,A,I0,A,I0,A)', '  Warning: ', solver_bs%backend_name(), &
-                ' returned ', result_bs%nev_found, &
-                ' eigenvalues at k-point ', k, &
-                '; only the lowest will be kept (widen bands or narrow energy window).'
+            ! Extract the gap-straddling [il, iuu] band window. A partial
+            ! spectrum is a hard error (no silent zero-fill); the offset into
+            ! the solver result is decided by the shared reconcile_band_slice
+            ! helper (FEAST+ENERGY full spectrum -> offset il; the DENSE+INDEX
+            ! pre-sliced case -> offset 1). (Review finding #4.)
+            nev_target = iuu - il + 1
+            if (result_bs%nev_found < nev_target) then
+              print '(A,A,A,I0,A,I0,A)', ' ERROR: ', solver_bs%backend_name(), &
+                ' returned only ', result_bs%nev_found, ' eigenvalues at k-point ', k, &
+                '; widen the energy window'
+              error stop 'insufficient eigenvalues for QW band-structure k-sweep'
             end if
-            if (result_bs%nev_found < (iuu - il + 1)) then
-              print '(A,A,A,I0,A,I0,A,I0,A)', '  Warning: ', solver_bs%backend_name(), &
-                ' returned only ', &
-                result_bs%nev_found, ' eigenvalues at k-point ', k, ' of ', iuu - il + 1, &
-                ' requested; missing bands zero-filled (widen energy window).'
-            end if
-            eig(1:M, k) = result_bs%eigenvalues(1:M)
-            eigv(:, 1:M, k) = result_bs%eigenvectors(:, 1:M)
+            call reconcile_band_slice(result_bs%nev_found, il, iuu, idx_lo)
+            eig(1:nev_target, k) = result_bs%eigenvalues(idx_lo:idx_lo+nev_target-1)
+            eigv(:, 1:nev_target, k) = result_bs%eigenvectors(:, idx_lo:idx_lo+nev_target-1)
             call eigensolver_result_free(result_bs)
             call csr_free(HT_csr_loc)
           end do

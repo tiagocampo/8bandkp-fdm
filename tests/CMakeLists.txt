@@ -1022,6 +1022,23 @@ set_tests_properties(
     PROPERTIES LABELS "verification" TIMEOUT 600
 )
 
+# --- QW band-structure FEAST-enable regression (review #4) ---
+# Runs bandStructure on the SAME AlGaAs/GaAs QW twice - method=DENSE
+# (AUTO->DENSE+INDEX, the golden default) and method=FEAST+ENERGY (AUTO
+# sweep-envelope window) - and asserts the gap-straddling eigenvalue bands
+# agree within tolerance. Pre-#4 the QW FEAST CSR path returned the deepest
+# valence bands (lowest-M copy); this locks the corrected [il,iuu] slice.
+add_test(
+    NAME verification_qw_bandstructure_dense_feast
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_bandstructure_dense_feast.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    verification_qw_bandstructure_dense_feast
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
 # --- Landau FEAST-enable regression (issue #10) ---
 # Runs the bandStructure executable on the SAME InAs Landau config twice -
 # method=DENSE (AUTO->DENSE+INDEX, the golden default) and method=FEAST+ENERGY
