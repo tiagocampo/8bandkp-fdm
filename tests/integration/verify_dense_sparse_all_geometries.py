@@ -96,11 +96,19 @@ mode = "INDEX"
 """
 
 
-# -- QW (8N x 8N): DENSE+ENERGY vs FEAST+ENERGY (k=0) -----------------
-# Same matrix, same energy window, two backends. Both ENERGY mode so they
-# select the same eigenvalue set (FEAST on CSR, DENSE on dense array).
-# fd_step=41, window [-1,2] matches the proven verify_qw_sparse_solver
-# fast-path config. num_cb=4, num_vb=8 (12 bands retained).
+# -- QW (8N x 8N): DENSE+INDEX (default) vs FEAST+AUTO-envelope (k=0) ----
+# Both backends extract the gap-straddling [il, iu] bands via the QW
+# band-structure path (Task 7 / reconcile_band_slice). DENSE defaults to
+# DENSE+INDEX, which pre-slices via zheevx range 'I' so its lowest-M copy
+# IS exactly [il, iu]. FEAST uses the AUTO envelope (emin = emax = 0) so
+# apply_solver_window's dispersion-aware authority picks the window; m0 =
+# 8*fd_step = 328 is large enough for FEAST to converge on the wide
+# envelope. num_cb=4 + num_vb=8 -> 12 gap-straddling bands retained.
+# This mirrors verify_qw_bandstructure_dense_feast.py. Note: a narrow user
+# ENERGY window (e.g. [-1, 2]) is incompatible with the QW path's
+# global-index extraction (reconcile_band_slice needs nev_found >= iu to
+# offset into the full spectrum; a narrow window returns fewer), so the
+# two backends cannot be compared in ENERGY mode on a narrow window.
 QW_DENSE = """\
 confinement = "qw"
 FDorder = 2
@@ -127,9 +135,6 @@ z_max = 50
 
 [solver]
 method = "DENSE"
-mode = "ENERGY"
-emin = -1.0
-emax = 2.0
 """
 
 QW_FEAST = """\
@@ -158,9 +163,9 @@ z_max = 50
 
 [solver]
 method = "FEAST"
-mode = "ENERGY"
-emin = -1.0
-emax = 2.0
+emin = 0.0
+emax = 0.0
+m0 = 328
 """
 
 
@@ -384,7 +389,7 @@ def main():
 
     geometries = [
         ("bulk",   BULK_FULL,        BULK_INDEX,        "DENSE+FULL",  "DENSE+INDEX"),
-        ("qw",     QW_DENSE,         QW_FEAST,          "DENSE+ENERGY","FEAST+ENERGY"),
+        ("qw",     QW_DENSE,         QW_FEAST,          "DENSE+INDEX", "FEAST+AUTO"),
         ("wire",   WIRE_DENSE,       WIRE_FEAST,        "DENSE+ENERGY","FEAST+ENERGY"),
         ("landau", LANDAU_AUTO,      LANDAU_DENSE_INDEX,"AUTO",        "DENSE+INDEX"),
     ]
