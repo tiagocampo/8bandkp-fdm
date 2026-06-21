@@ -736,3 +736,18 @@ git commit -m "test: register verify_qw_bandstructure_dense_feast gate"  # if no
 **1. Spec coverage** — A1→Tasks 4-7; A2→Task 3; A3→Task 2; A4→Task 1; B2→Task 8; B3→Task 9; C1(#14+#11)→Task 10; full gate→Task 11. Deferred #9/#12/#15 are in BACKLOG, intentionally unimplemented. ✓
 **2. Placeholder scan** — Every code step shows the actual Fortran/Python/bash. The verify-script two-run scaffolding intentionally reuses `verify_qw_optics_dense_feast.py`'s `run_exe` section (named explicitly, with the differing parse/compare logic shown in full). No "TBD"/"add error handling". ✓
 **3. Type consistency** — `reconcile_band_slice(nev_found, il, iu, idx_lo)` signature is identical in Task 4 (definition) and Tasks 5/6/7 (call sites). `nev_target`, `idx_lo`, `iuu`/`il` names match across sites. ✓
+
+---
+
+## Post-Execution Outcomes (2026-06-21)
+
+Executed via subagent-driven development (one fresh subagent per task, controller-reviewed diffs) + systematic debugging for the regression investigation. **Final: 124/124 ctest green** (was 123; +1 new `verify_qw_bandstructure_dense_feast`); golden AUTO/DENSE outputs unchanged. Commits `1f851c2`→`303d6a6`.
+
+**Task status:**
+- Tasks 1, 2, 4, 5, 6, 8, 9 — landed as planned. ✓
+- Task 3 — **REVERTED** (`b045e7e`). See spec outcomes: #3 was a non-bug (callers gate on `converged`; truncated low bands are correct). Restored `info >= 0`, dropped the Task 3 unit test, restored `test_optical` (net-zero).
+- Task 7 — landed (`971eab4`) **+ test follow-up** (`303d6a6`): QW fast-path configs moved to the AUTO envelope (+`m0`), and `verify_qw_feast_truncation_warning` removed (guarded Task 7's removed warning behavior).
+- Task 10 — **scope reduced** (`49f3c08`): deleted only `wire_setup_adopt_precomputed`. `asw_evals`/`asw_apply_margin` kept (LIVE — two `@test`s use them via the generic interface; the plan's safety-gate grep missed generic-interface callers). **#11 therefore not resolved** → BACKLOG.
+- Task 11 — full gate green (124/124) after the Task 3 revert + Task 7 test follow-up fixed the 4 failures the narrow per-task filters had missed (`solver_defaults`, `wire_bdg_strain_shift`, `qw_sparse_solver`, `dense_sparse_all_geometries`).
+
+**Process lesson:** per-task `ctest -R <narrow>` filters missed regressions in sibling tests (e.g. Task 3 only ran `test_eigensolver`, missing `test_optical`). The full gate (Task 11) is what caught them. Future passes: run the full unit suite (`-L unit`) per task, not just the named test.

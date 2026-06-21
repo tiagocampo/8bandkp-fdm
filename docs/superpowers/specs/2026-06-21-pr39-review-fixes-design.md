@@ -209,3 +209,19 @@ convention (ADR 0002: no silent corrections). The two `validate()` additions
 - #9 — make `resolve_kp_term` truly drive the CSR formula.
 - #12 — decompose `compute_strain_wire` (~520 lines).
 - #15 — dedup the sweep-window derivation block across 5 sites.
+
+---
+
+## Post-Execution Outcomes (2026-06-21)
+
+Executed via subagent-driven development + systematic debugging. **Final: 124/124 ctest green** (was 123; +1 new `verify_qw_bandstructure_dense_feast`); `tests/regression/data/` empty diff (golden AUTO/DENSE outputs unchanged). Commits `1f851c2`→`303d6a6` on `refactor/architecture-deepening`.
+
+**Findings fixed:** #7, #5, #4, #1/#2/#10 (the `reconcile_band_slice` helper), #13, #8, #14.
+
+**#3 (A2) — REVERTED as a non-bug** (`b045e7e`). The locked premise was false: callers requiring full convergence already gate on `result%converged` (`main_gfactor.f90:120`, `sc_loop.f90:215,732`), and FEAST `info=3`'s truncated spectrum holds the correct LOW bands (the wide auto/Gershgorin window spans the full spectrum). Zeroing `nev_found` on `info=3` broke the wire band-structure sweep and the BdG solve. Confirmed by single-variable experiments (both pass with the guard reverted). Restored `info >= 0` with an inline comment documenting the design decision. **#3 is dropped from this pass.** Design lesson: FEAST `info=3` (subspace too small) is common here; the truncated low-M spectrum is usable; do not zero `nev_found`.
+
+**#11 — NOT resolved.** The duplicated `margin_frac`/`margin_floor` constants live in `asw_apply_margin`, which is LIVE — two `@test`s exercise it via the generic `apply_solver_window` interface (the plan's safety-gate grep missed generic-interface callers). Deleting it would break the build. Needs a constant-extraction refactor → BACKLOG. Consequently **C1's scope reduced**: only `wire_setup_adopt_precomputed` (genuinely dead) was deleted; `asw_evals`/`asw_apply_margin` kept.
+
+**Task 7 (A1d) test follow-up** (`303d6a6`). `reconcile_band_slice` requires a full-spectrum window (AUTO envelope, `emin=emax=0`) + `m0` large enough to converge; narrow user ENERGY windows can't honor global-index `[il,iu]` extraction. Updated `verify_qw_sparse_solver` and `verify_dense_sparse_all_geometries` QW cases to the AUTO envelope, and removed `verify_qw_feast_truncation_warning` (it guarded the "only the lowest will be kept" warning Task 7 replaced with exact `[il,iu]` extraction). The QW DENSE path retains lowest-M (correct for DENSE+INDEX pre-slice); DENSE+ENERGY vs FEAST+ENERGY would now differ but DENSE+ENERGY is not a production path.
+
+**Deferred remains:** #9, #12, #15 (BACKLOG), plus #11 (above).
