@@ -90,25 +90,16 @@ contains
     numvb = 6
     nev_wire = numcb + numvb
 
-    ! DENSE+INDEX: emin = emax = 0 makes eigensolve_csr return the nev_wire
-    ! smallest eigenvalues via dense LAPACK. (eigensolver_config defaults to
-    ! emin=-1, emax=1 -- a nonzero window that would select ENERGY mode -- so
-    ! both must be explicitly zeroed to get INDEX mode.) This test verifies
-    ! the optical matrix elements and CB/VB extraction, which are eigensolver-
-    ! independent. The wire's full Gershgorin window holds more eigenvalues
-    ! than any FEAST subspace <= N can converge on, so FEAST+ENERGY hits
-    ! info=3 here; DENSE+INDEX is robust. The FEAST+auto-window path is
-    ! exercised by test_optical_qw and the verify_*_dense_feast gates.
-    eigen_cfg%method   = 'DENSE'
+    eigen_cfg%method   = 'FEAST'
     eigen_cfg%nev      = nev_wire
-    eigen_cfg%emin     = 0.0_dp
-    eigen_cfg%emax     = 0.0_dp
     eigen_cfg%max_iter = 100
     eigen_cfg%tol      = 1.0e-10_dp
+    eigen_cfg%m0 = 4 * nev_wire  ! generous subspace
 
+    call auto_compute_energy_window(H_csr, eigen_cfg%emin, eigen_cfg%emax)
     call eigensolve_csr(H_csr, eigen_cfg, eigen_res)
 
-    @assertTrue(eigen_res%nev_found >= nev_wire, message="dense solve found enough eigenvalues")
+    @assertTrue(eigen_res%nev_found >= nev_wire, message="FEAST found enough eigenvalues")
 
     N = ntot
 

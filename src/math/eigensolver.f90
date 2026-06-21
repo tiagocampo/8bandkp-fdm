@@ -422,12 +422,14 @@ contains
       end if
     end if
 
-    ! Only genuine convergence (FEAST info 0 or 2) populates the result.
-    ! info = 3 means the subspace was too small even after retries, so the
-    ! returned M is incomplete; report nev_found = 0 instead of a truncated
-    ! spectrum callers might silently use. result%converged above already
-    ! reflects exactly (info == 0 .or. info == 2), so the two stay consistent.
-    if (M > 0 .and. M <= M0 .and. (info == 0 .or. info == 2)) then
+    ! info=3 (subspace too small even after retries) still returns the
+    ! converged-so-far spectrum: M eigenvalues with converged=.false. The wide
+    ! auto/Gershgorin window holds the full spectrum, so these are the correct
+    ! LOWEST M bands — what band-structure sweeps and g-factor need. Callers
+    ! requiring genuine full convergence gate on result%converged (g-factor,
+    ! SC loop). Do NOT zero nev_found on info=3: it discards correct low bands
+    ! and breaks the sweeps (review #3 was a non-bug — reverted).
+    if (M > 0 .and. M <= M0 .and. info >= 0) then
       result%nev_found = M
       allocate(result%eigenvalues(M))
       allocate(result%eigenvectors(N, M))
