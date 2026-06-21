@@ -20,12 +20,8 @@ module wire_setup_mod
   !
   ! Design:
   !   - Concrete type (ADR 0001: no polymorphic builder hierarchy).
-  !   - Two init entry points:
+  !   - Single init entry point:
   !       wire_setup_init             -- strain-applying (the canonical path).
-  !       wire_setup_adopt_precomputed -- wrap caller-supplied profile/terms
-  !                                       (for sink-style callers that already
-  !                                       hold strain-applied data; no
-  !                                       re-initialization, no strain step).
   !   - Idempotent free via was_freed flag (CLAUDE.md pattern).
   !   - finalizer delegates to wire_setup_free.
   !
@@ -47,7 +43,7 @@ module wire_setup_mod
   private
 
   public :: wire_setup
-  public :: wire_setup_init, wire_setup_adopt_precomputed, wire_setup_free
+  public :: wire_setup_init, wire_setup_free
 
   type :: wire_setup
     ! --- 2D-wire confinement state (mirrors simulation_setup wire fields) ---
@@ -114,49 +110,6 @@ contains
     allocate(self%coo_cache)
     allocate(self%ws)
   end subroutine wire_setup_init
-
-  ! ==============================================================================
-  ! wire_setup_adopt_precomputed: wrap caller-supplied, already-strain-applied
-  ! profile/terms for uniform cleanup. Used by sink-style callers that receive
-  ! that data as arguments and therefore must NOT re-initialize or re-apply
-  ! strain (the caller is responsible for having applied strain before passing
-  ! the data in).
-  !
-  ! Takes ownership (move_alloc) of the incoming arrays.
-  ! ==============================================================================
-  subroutine wire_setup_adopt_precomputed(self, cfg, profile_2d_in, kpterms_2d_in, &
-    & has_strain_in)
-    type(wire_setup), intent(inout) :: self
-    type(simulation_config), intent(inout) :: cfg
-    real(kind=dp), allocatable, intent(inout) :: profile_2d_in(:,:)
-    type(csr_matrix), allocatable, intent(inout) :: kpterms_2d_in(:)
-    logical, intent(in) :: has_strain_in
-
-    if (self%was_freed) then
-      print *, 'Error: wire_setup_adopt_precomputed called on a freed wire_setup'
-      error stop 'wire_setup_adopt_precomputed: instance already freed'
-    end if
-
-    if (.not. allocated(profile_2d_in)) then
-      print *, 'Error: wire_setup_adopt_precomputed: profile_2d_in not allocated'
-      error stop 'wire_setup_adopt_precomputed: profile_2d_in not allocated'
-    end if
-    if (.not. allocated(kpterms_2d_in)) then
-      print *, 'Error: wire_setup_adopt_precomputed: kpterms_2d_in not allocated'
-      error stop 'wire_setup_adopt_precomputed: kpterms_2d_in not allocated'
-    end if
-
-    call move_alloc(profile_2d_in, self%profile_2d)
-    call move_alloc(kpterms_2d_in, self%kpterms_2d)
-    self%has_strain = has_strain_in
-
-    ! Ensure the wire grid is built (needed by downstream Hamiltonian builders).
-    if (.not. allocated(cfg%grid%x)) call init_wire_from_config(cfg)
-
-    ! Workspace handles for uniform cleanup.
-    allocate(self%coo_cache)
-    allocate(self%ws)
-  end subroutine wire_setup_adopt_precomputed
 
   ! ==============================================================================
   ! wire_setup_free: idempotent cleanup of all wire state.
