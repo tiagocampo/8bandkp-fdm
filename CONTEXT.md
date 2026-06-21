@@ -4,6 +4,12 @@ Fortran solver for the 8-band zinc-blende k·p Hamiltonian across four confineme
 modes (bulk, quantum well, wire, Landau). This glossary fixes terms that are
 overloaded across those modes — it is a glossary only, not a spec.
 
+> **Companion file.** `UBIQUITOUS_LANGUAGE.md` is the **domain-language
+> backbone** (bands, confinement structures, k·p model, observables) this
+> ambiguity layer sits on top of. The two are a deliberate split: that file
+> defines the terms; this one disambiguates them where a word is overloaded
+> across modes.
+
 ## Language
 
 **Requested band window**:

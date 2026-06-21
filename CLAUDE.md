@@ -257,6 +257,15 @@ When a change risks violating one of these, prefer the refactor that restores th
 - File/function length guidelines: 300 lines/file, 50 lines/function
 - Prioritize: Correctness > Maintainability > Readability > Type-Exactness > Performance > Minimal
 
+## Domain Language
+
+Two glossaries pin down terminology — consult them before using a term in code, comments, or commits, and before touching solver/wire/`conf_direction` code:
+
+- **`UBIQUITOUS_LANGUAGE.md`** — the domain-language backbone (bands, confinement structures, k·p model, observables). Defines the terms.
+- **`CONTEXT.md`** — the ambiguity layer: terms overloaded across the four confinement modes (`block`, `mode`, `geometry`, `confinement direction`, `velocity operator`, eigensolver dispatch). Disambiguates them.
+
+These disambiguations are bug-prevention: `conf_direction('wire')` returns the sentinel `'w'` (not an axis, not `'n'`), only `g='g'`/`g='g3'` exist (no `g1`/`g2`), and "dense/CSR" (what the caller holds) is an axis independent from "DENSE-LAPACK/FEAST" (which backend runs). Read `CONTEXT.md` before branching on `conf_direction == 'z'` (a wire would be misread as a QW).
+
 ## Knowledge Store
 
 `docs/solutions/` contains documented solutions to past problems, organized by category (`logic-errors/`, `best-practices/`, `workflow/`, `patterns/`). Each doc has YAML frontmatter with `module`, `tags`, `problem_type`, and `component` fields for searchability. Search this directory before implementing features, debugging issues, or modifying FD operators — learnings cover bugs, convergence testing methodology, and workflow patterns.
