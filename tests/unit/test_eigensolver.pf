@@ -1183,4 +1183,26 @@ contains
     @assertEqual(20.0_dp, emax_out, tolerance=0.0_dp)
   end subroutine test_window_authority_override_evals
 
+  ! ==================================================================
+  ! Tests for reconcile_band_slice: the single source of the FEAST-full /
+  ! DENSE-INDEX reconciliation offset. (Review findings #1, #2, #4, #10.)
+  ! ==================================================================
+  @test
+  subroutine test_reconcile_band_slice_full_spectrum()
+    integer :: idx_lo
+    ! FEAST+ENERGY returned the full in-window spectrum (nev_found=20 >= iu=18):
+    ! extract the global [il=15, iu=18] slice.
+    call reconcile_band_slice(20, 15, 18, idx_lo)
+    @assertEqual(15, idx_lo)
+  end subroutine test_reconcile_band_slice_full_spectrum
+
+  @test
+  subroutine test_reconcile_band_slice_pre_sliced()
+    integer :: idx_lo
+    ! DENSE+INDEX already returned exactly [il, iu] (nev_found == nev_target = 4):
+    ! take it verbatim from offset 1.
+    call reconcile_band_slice(4, 15, 18, idx_lo)
+    @assertEqual(1, idx_lo)
+  end subroutine test_reconcile_band_slice_pre_sliced
+
 end module test_eigensolver

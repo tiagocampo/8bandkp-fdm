@@ -20,6 +20,7 @@ module eigensolver
 #endif
   public :: make_eigensolver
   public :: eigensolver_config_validate
+  public :: reconcile_band_slice
   public :: EIGEN_MODE_FULL, EIGEN_MODE_INDEX, EIGEN_MODE_ENERGY
 
   ! ------------------------------------------------------------------
@@ -724,6 +725,42 @@ contains
       end if
     end if
   end subroutine eigensolver_config_validate
+
+  ! ==================================================================
+  ! Reconcile a solver result to the DENSE+INDEX [il, iu] band window and
+  ! return the offset into result%eigenvalues/eigenvectors to copy from.
+  ! Single source of the reconciliation decision (was copy-pasted — and had
+  ! diverged into an OOB + a wrong-bands bug — across the three k-sweeps).
+  !
+  ! Two result shapes are handled:
+  !   - FEAST+ENERGY full in-window spectrum (nev_found >= iu): the global
+  !     [il, iu] slice lives at offset il.
+  !   - DENSE+INDEX pre-sliced result (nev_found == iu-il+1): already the
+  !     requested slice; offset 1.
+  !   - partial (nev_target < nev_found < iu): the FEAST window truncated
+  !     the spectrum — refuse rather than read out of bounds. (pFUnit 4.x
+  !     cannot assert error-stop; this branch is defense-in-depth, verified
+  !     by the call sites' nev_found < nev_target guards that fire first.)
+  ! ==================================================================
+  subroutine reconcile_band_slice(nev_found, il, iu, idx_lo)
+    integer, intent(in)  :: nev_found, il, iu
+    integer, intent(out) :: idx_lo
+    integer :: nev_target
+    character(len=160) :: msg
+
+    nev_target = iu - il + 1
+
+    if (nev_found >= iu) then
+      idx_lo = il
+    else if (nev_found == nev_target) then
+      idx_lo = 1
+    else
+      write(msg, '(A,I0,A,I0,A,I0,A,I0,A)') &
+        'solver returned ', nev_found, ' eigenvalues; need >= ', iu, &
+        ' to extract global bands [', il, ',', iu, ']. Widen the FEAST energy window.'
+      error stop 'reconcile_band_slice: FEAST window truncated — ' // trim(msg)
+    end if
+  end subroutine reconcile_band_slice
 
   ! ==================================================================
   ! Polymorphic dispatch implementations.
