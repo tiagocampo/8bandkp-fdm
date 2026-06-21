@@ -925,4 +925,247 @@ contains
     @assertEqual('ENERGY', trim(out_mode))
   end subroutine test_resolve_solver_defaults_normalizes_case
 
+  ! ==================================================================
+  ! Test: backend_name() returns the resolved backend string for each
+  ! concrete solver type. This is the contract that backend-aware
+  ! diagnostics in the apps rely on: a failure forced on dense LAPACK
+  ! must report "dense LAPACK", and one on FEAST must report "FEAST".
+  ! ==================================================================
+  ! COVERAGE: observable=backend_name geometry=generic material=generic
+  @test
+  subroutine test_backend_name_dense()
+    type(eigensolver_config) :: cfg
+    class(eigensolver_base), allocatable :: solver
+
+    cfg%method = 'DENSE'
+    cfg%mode = EIGEN_MODE_FULL
+    solver = make_eigensolver(cfg)
+
+    @assertEqual('dense LAPACK', trim(solver%backend_name()))
+    deallocate(solver)
+  end subroutine test_backend_name_dense
+
+  @test
+  subroutine test_backend_name_feast()
+    type(eigensolver_config) :: cfg
+    class(eigensolver_base), allocatable :: solver
+
+    cfg%method = 'FEAST'
+    cfg%mode = EIGEN_MODE_ENERGY
+    cfg%emin = -1.0_dp
+    cfg%emax = 1.0_dp
+    solver = make_eigensolver(cfg)
+
+    @assertEqual('FEAST', trim(solver%backend_name()))
+    deallocate(solver)
+  end subroutine test_backend_name_feast
+
+  ! ==================================================================
+  ! Tests 22-25: the dispersion-aware energy-window authority
+  ! (apply_solver_window, issue #03). Four variants share one generic
+  ! interface:
+  !   - envelope (two CSR): unions the Gershgorin bounds at the sweep
+  !     endpoints k=0 and k_max, yielding ONE stable window per sweep;
+  !   - single (one CSR):   the one-k bound (g-factor / single-H path);
+  !   - evals (array):      min/max over an eigenvalue array already held;
+  !   - override:           every variant honors a nonzero user window
+  !     directly (no envelope / no Gershgorin).
+  !
+  ! COVERAGE: observable=energy_window_authority geometry=generic material=generic
+  ! ==================================================================
+
+  ! ------------------------------------------------------------------
+  ! Variant: user override honored directly (no Gershgorin).
+  ! All three bound-source variants must return the user values verbatim
+  ! when user_emin / user_emax are both nonzero.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_window_authority_override_single()
+    type(csr_matrix) :: H
+    real(kind=dp) :: emin_out, emax_out
+    real(kind=dp), parameter :: diag(5) = [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp]
+
+    call build_diagonal_csr(diag, 5, H)
+    ! User window set -> honored directly, Gershgorin never consulted.
+    call apply_solver_window(H, user_emin=-2.0_dp, user_emax=9.0_dp, &
+                             emin_out=emin_out, emax_out=emax_out)
+    @assertEqual(-2.0_dp, emin_out, tolerance=0.0_dp)
+    @assertEqual( 9.0_dp, emax_out, tolerance=0.0_dp)
+    call csr_free(H)
+  end subroutine test_window_authority_override_single
+
+  ! ------------------------------------------------------------------
+  ! Variant: single-k auto bound from one CSR Hamiltonian.
+  ! For a diagonal matrix the Gershgorin bound equals the diagonal
+  ! extrema plus the primitive's documented margin. The authority must
+  ! reproduce the primitive (auto_compute_energy_window) exactly here.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_window_authority_single_auto_matches_primitive()
+    type(csr_matrix) :: H
+    real(kind=dp) :: emin_asw, emax_asw, emin_prim, emax_prim
+    real(kind=dp), parameter :: diag(5) = [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp]
+
+    call build_diagonal_csr(diag, 5, H)
+    call apply_solver_window(H, user_emin=0.0_dp, user_emax=0.0_dp, &
+                             emin_out=emin_asw, emax_out=emax_asw)
+    call auto_compute_energy_window(H, emin_prim, emax_prim)
+    @assertEqual(emin_prim, emin_asw, tolerance=0.0_dp)
+    @assertEqual(emax_prim, emax_asw, tolerance=0.0_dp)
+    ! Sanity: window must bracket the spectrum (with margin).
+    @assertTrue(emin_asw < 1.0_dp)
+    @assertTrue(emax_asw > 5.0_dp)
+    call csr_free(H)
+  end subroutine test_window_authority_single_auto_matches_primitive
+
+  ! ------------------------------------------------------------------
+  ! Variant: sweep envelope unions the k=0 and k_max Gershgorin bounds.
+  !
+  ! Two diagonal matrices whose spectra sit in disjoint regions emulate
+  ! finite-k dispersion outrunning a single-k window:
+  !   H_k0   has eigenvalues [ 1 .. 5 ]   (valence side)
+  !   H_kmax has eigenvalues [ 8 .. 12 ]  (dispersed conduction side)
+  ! A single-H bound at either endpoint MISSES the other's extrema.
+  ! The envelope must UNION both, covering [1-eps .. 12+eps].
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_window_authority_envelope_unions_endpoints()
+    type(csr_matrix) :: H_k0, H_kmax
+    real(kind=dp) :: emin_env, emax_env
+    real(kind=dp) :: emin_k0_only, emax_k0_only
+    real(kind=dp), parameter :: diag_k0(5)   = [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp]
+    real(kind=dp), parameter :: diag_kmax(5) = [8.0_dp, 9.0_dp, 10.0_dp, 11.0_dp, 12.0_dp]
+
+    call build_diagonal_csr(diag_k0, 5, H_k0)
+    call build_diagonal_csr(diag_kmax, 5, H_kmax)
+
+    call apply_solver_window(H_k0, H_kmax, user_emin=0.0_dp, user_emax=0.0_dp, &
+                             emin_out=emin_env, emax_out=emax_env)
+
+    ! Compare against the single-k bound at k=0: the envelope's emax
+    ! MUST strictly exceed it (it has to reach the k_max spectrum).
+    call auto_compute_energy_window(H_k0, emin_k0_only, emax_k0_only)
+    @assertTrue(emax_env > emax_k0_only)
+
+    ! The envelope must bracket BOTH spectra.
+    @assertTrue(emin_env < 1.0_dp,  'envelope must reach below min k0 eigenvalue')
+    @assertTrue(emax_env > 12.0_dp, 'envelope must reach above max k_max eigenvalue')
+
+    call csr_free(H_k0)
+    call csr_free(H_kmax)
+  end subroutine test_window_authority_envelope_unions_endpoints
+
+  ! ------------------------------------------------------------------
+  ! Variant: envelope is ONE stable window per sweep (the ADR-0005
+  ! invariant). Asserted structurally: the authority takes two CSR
+  ! inputs and returns a single [emin, emax] — there is no per-k API.
+  ! This test pins that the returned window is a function of the two
+  ! endpoints ONLY, so a mid-sweep matrix that lies inside the envelope
+  ! does not change the result (re-running with a third matrix inside
+  ! the band leaves the window identical).
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_window_authority_envelope_is_stable_per_sweep()
+    type(csr_matrix) :: H_k0, H_kmax, H_mid
+    real(kind=dp) :: em1, em2, em3, em4
+    real(kind=dp), parameter :: diag_k0(5)   = [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp]
+    real(kind=dp), parameter :: diag_kmax(5) = [8.0_dp, 9.0_dp, 10.0_dp, 11.0_dp, 12.0_dp]
+    real(kind=dp), parameter :: diag_mid(5)  = [3.0_dp, 4.0_dp, 5.0_dp, 6.0_dp, 7.0_dp]
+
+    call build_diagonal_csr(diag_k0, 5, H_k0)
+    call build_diagonal_csr(diag_kmax, 5, H_kmax)
+    call build_diagonal_csr(diag_mid, 5, H_mid)
+
+    ! The sweep window is defined by the endpoints; an interior matrix
+    ! cannot widen it (no per-k recomputation). Calling the single-H
+    ! variant on H_mid must yield a NARROWER-or-equal window than the
+    ! envelope of the two endpoints.
+    call apply_solver_window(H_k0, H_kmax, user_emin=0.0_dp, user_emax=0.0_dp, &
+                             emin_out=em1, emax_out=em2)
+    call apply_solver_window(H_mid, user_emin=0.0_dp, user_emax=0.0_dp, &
+                             emin_out=em3, emax_out=em4)
+    @assertTrue(em1 <= em3)
+    @assertTrue(em2 >= em4)
+
+    call csr_free(H_k0)
+    call csr_free(H_kmax)
+    call csr_free(H_mid)
+  end subroutine test_window_authority_envelope_is_stable_per_sweep
+
+  ! ------------------------------------------------------------------
+  ! Variant: spectral (eigenvalue-array) source.
+  ! Consumers that already hold an eigenvalue array (optics / Green's
+  ! LDOS) accept it as the bound source: emin = min(eval) - margin,
+  ! emax = max(eval) + margin, with the SAME margin convention as the
+  ! Gershgorin primitive so the two sources are interchangeable.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_window_authority_evals_array()
+    real(kind=dp), parameter :: evals(5) = [1.5_dp, 2.5_dp, 3.5_dp, 4.5_dp, 5.5_dp]
+    real(kind=dp) :: emin_out, emax_out
+
+    call apply_solver_window(evals, user_emin=0.0_dp, user_emax=0.0_dp, &
+                             emin_out=emin_out, emax_out=emax_out)
+    @assertTrue(emin_out < 1.5_dp, 'evals-window emin must lie below min eigenvalue')
+    @assertTrue(emax_out > 5.5_dp, 'evals-window emax must lie above max eigenvalue')
+  end subroutine test_window_authority_evals_array
+
+  ! ------------------------------------------------------------------
+  ! Variant: override honored in the envelope path too. If the user set
+  ! a window, the envelope variant returns it verbatim and never
+  ! consults either endpoint matrix.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_window_authority_override_envelope()
+    type(csr_matrix) :: H_k0, H_kmax
+    real(kind=dp) :: emin_out, emax_out
+    real(kind=dp), parameter :: diag_k0(5)   = [1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp]
+    real(kind=dp), parameter :: diag_kmax(5) = [8.0_dp, 9.0_dp, 10.0_dp, 11.0_dp, 12.0_dp]
+
+    call build_diagonal_csr(diag_k0, 5, H_k0)
+    call build_diagonal_csr(diag_kmax, 5, H_kmax)
+    call apply_solver_window(H_k0, H_kmax, user_emin=-0.5_dp, user_emax=0.5_dp, &
+                             emin_out=emin_out, emax_out=emax_out)
+    @assertEqual(-0.5_dp, emin_out, tolerance=0.0_dp)
+    @assertEqual( 0.5_dp, emax_out, tolerance=0.0_dp)
+    call csr_free(H_k0)
+    call csr_free(H_kmax)
+  end subroutine test_window_authority_override_envelope
+
+  ! ------------------------------------------------------------------
+  ! Variant: override honored in the evals path.
+  ! ------------------------------------------------------------------
+  @test
+  subroutine test_window_authority_override_evals()
+    real(kind=dp), parameter :: evals(5) = [1.5_dp, 2.5_dp, 3.5_dp, 4.5_dp, 5.5_dp]
+    real(kind=dp) :: emin_out, emax_out
+
+    call apply_solver_window(evals, user_emin=10.0_dp, user_emax=20.0_dp, &
+                             emin_out=emin_out, emax_out=emax_out)
+    @assertEqual(10.0_dp, emin_out, tolerance=0.0_dp)
+    @assertEqual(20.0_dp, emax_out, tolerance=0.0_dp)
+  end subroutine test_window_authority_override_evals
+
+  ! ==================================================================
+  ! Tests for reconcile_band_slice: the single source of the FEAST-full /
+  ! DENSE-INDEX reconciliation offset. (Review findings #1, #2, #4, #10.)
+  ! ==================================================================
+  @test
+  subroutine test_reconcile_band_slice_full_spectrum()
+    integer :: idx_lo
+    ! FEAST+ENERGY returned the full in-window spectrum (nev_found=20 >= iu=18):
+    ! extract the global [il=15, iu=18] slice.
+    call reconcile_band_slice(20, 15, 18, idx_lo)
+    @assertEqual(15, idx_lo)
+  end subroutine test_reconcile_band_slice_full_spectrum
+
+  @test
+  subroutine test_reconcile_band_slice_pre_sliced()
+    integer :: idx_lo
+    ! DENSE+INDEX already returned exactly [il, iu] (nev_found == nev_target = 4):
+    ! take it verbatim from offset 1.
+    call reconcile_band_slice(4, 15, 18, idx_lo)
+    @assertEqual(1, idx_lo)
+  end subroutine test_reconcile_band_slice_pre_sliced
+
 end module test_eigensolver

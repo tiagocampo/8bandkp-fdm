@@ -13,7 +13,9 @@ module hamiltonianConstructor
   use magnetic_field, only: compute_gauge_shifts, zeeman_entry, get_zeeman_table
   use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &
     KP_Q, KP_T, KP_S, KP_SC, KP_R, KP_RC, KP_PP, KP_PM, KP_PZ, &
-    KP_A, KP_DIFF, KP_HALF_SUM
+    KP_A, KP_DIFF, KP_HALF_SUM, &
+    kp_term_descriptor, resolve_kp_term, &
+    KP_KIND_IDENTITY, KP_KIND_DIFF, KP_KIND_HALF_SUM
 
   implicit none
 
@@ -652,17 +654,22 @@ module hamiltonianConstructor
     ! Reads the 52-entry k.p block table from get_kp_block_table() and
     ! writes all k.p terms into the dense 8N x 8N Hamiltonian.  The kp
     ! matrices (Q, T, S, SC, R, RC, PP, PM, PZ, A) must be precomputed;
-    ! derived terms KP_DIFF and KP_HALF_SUM are computed on the fly.
+    ! derived combinations (KP_DIFF = Q - T, KP_HALF_SUM = 0.5*(Q + T))
+    ! are interpreted generically from the block-formula descriptor
+    ! (resolve_kp_term) — the formula mapping lives in ONE place
+    ! (hamiltonian_blocks.f90), not duplicated here.
     ! ==================================================================
     subroutine apply_kp_table_dense(HT, N, Q, T, S, SC, R, RC, PP, PM, PZ, A)
       complex(kind=dp), intent(inout), contiguous :: HT(:,:)
       integer, intent(in) :: N
-      complex(kind=dp), intent(in), contiguous :: Q(:,:), T(:,:), S(:,:), SC(:,:)
-      complex(kind=dp), intent(in), contiguous :: R(:,:), RC(:,:)
-      complex(kind=dp), intent(in), contiguous :: PP(:,:), PM(:,:), PZ(:,:), A(:,:)
+      complex(kind=dp), intent(in), contiguous, target :: Q(:,:), T(:,:), S(:,:), SC(:,:)
+      complex(kind=dp), intent(in), contiguous, target :: R(:,:), RC(:,:)
+      complex(kind=dp), intent(in), contiguous, target :: PP(:,:), PM(:,:), PZ(:,:), A(:,:)
 
       type(kp_entry) :: table(52)
+      type(kp_term_descriptor) :: desc
       integer :: e, rb, cb, r1, r2, c1, c2
+      complex(kind=dp), pointer :: blk_a(:,:), blk_b(:,:)
 
       table = get_kp_block_table()
 
@@ -674,49 +681,68 @@ module hamiltonianConstructor
         c1 = cb * N + 1
         c2 = cb * N + N
 
-        select case (table(e)%kp_term)
-        case (KP_Q)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * Q
-        case (KP_T)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * T
-        case (KP_S)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * S
-        case (KP_SC)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * SC
-        case (KP_R)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * R
-        case (KP_RC)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * RC
-        case (KP_PP)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * PP
-        case (KP_PM)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * PM
-        case (KP_PZ)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * PZ
-        case (KP_A)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * A
-        case (KP_DIFF)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * (Q - T)
-        case (KP_HALF_SUM)
-          HT(r1:r2, c1:c2) = table(e)%prefactor * 0.5_dp * (Q + T)
+        desc = resolve_kp_term(table(e)%kp_term)
+        select case (desc%kind)
+        case (KP_KIND_IDENTITY)
+          blk_a => kp_block_dense(desc%operand_a, Q, T, S, SC, R, RC, PP, PM, PZ, A)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * blk_a
+        case (KP_KIND_DIFF)
+          blk_a => kp_block_dense(desc%operand_a, Q, T, S, SC, R, RC, PP, PM, PZ, A)
+          blk_b => kp_block_dense(desc%operand_b, Q, T, S, SC, R, RC, PP, PM, PZ, A)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * (blk_a - blk_b)
+        case (KP_KIND_HALF_SUM)
+          blk_a => kp_block_dense(desc%operand_a, Q, T, S, SC, R, RC, PP, PM, PZ, A)
+          blk_b => kp_block_dense(desc%operand_b, Q, T, S, SC, R, RC, PP, PM, PZ, A)
+          HT(r1:r2, c1:c2) = table(e)%prefactor * 0.5_dp * (blk_a + blk_b)
         case default
-          error stop 'apply_kp_table_dense: unknown kp_term'
+          error stop 'apply_kp_table_dense: unknown kp_term_kind'
         end select
       end do
     end subroutine apply_kp_table_dense
+
+    ! ==================================================================
+    ! Pointer lookup: return a pointer to the dense base block matrix
+    ! identified by its kp_term tag. Used by apply_kp_table_dense to
+    ! resolve the operand(s) of the block-formula descriptor.
+    ! ==================================================================
+    function kp_block_dense(tag, Q, T, S, SC, R, RC, PP, PM, PZ, A) result(ptr)
+      integer, intent(in) :: tag
+      complex(kind=dp), intent(in), contiguous, target :: Q(:,:), T(:,:), S(:,:), SC(:,:)
+      complex(kind=dp), intent(in), contiguous, target :: R(:,:), RC(:,:)
+      complex(kind=dp), intent(in), contiguous, target :: PP(:,:), PM(:,:), PZ(:,:), A(:,:)
+      complex(kind=dp), pointer :: ptr(:,:)
+
+      select case (tag)
+      case (KP_Q);  ptr => Q
+      case (KP_T);  ptr => T
+      case (KP_S);  ptr => S
+      case (KP_SC); ptr => SC
+      case (KP_R);  ptr => R
+      case (KP_RC); ptr => RC
+      case (KP_PP); ptr => PP
+      case (KP_PM); ptr => PM
+      case (KP_PZ); ptr => PZ
+      case (KP_A);  ptr => A
+      case default
+        error stop 'kp_block_dense: unknown base kp_term tag'
+      end select
+    end function kp_block_dense
 
     ! ==================================================================
     ! Table-driven k.p block insertion for bulk (8x8) Hamiltonian.
     !
     ! Scalar version of apply_kp_table_dense for the 8x8 bulk case.
     ! The kp terms are complex scalars.  Band indices in the table are
-    ! 0-based, so row = row_band + 1, col = col_band + 1.
+    ! 0-based, so row = row_band + 1, col = col_band + 1.  Derived
+    ! combinations are interpreted generically from the block-formula
+    ! descriptor (resolve_kp_term).
     ! ==================================================================
     subroutine apply_kp_table_bulk(HT, Q, T, S, SC, R, RC, PP, PM, PZ, A)
       complex(kind=dp), intent(inout) :: HT(8,8)
       complex(kind=dp), intent(in) :: Q, T, S, SC, R, RC, PP, PM, PZ, A
 
       type(kp_entry) :: table(52)
+      type(kp_term_descriptor) :: desc
       integer :: e, row, col
       complex(kind=dp) :: val
 
@@ -726,25 +752,47 @@ module hamiltonianConstructor
         row = table(e)%row_band + 1
         col = table(e)%col_band + 1
 
-        select case (table(e)%kp_term)
-        case (KP_Q);         val = Q
-        case (KP_T);         val = T
-        case (KP_S);         val = S
-        case (KP_SC);        val = SC
-        case (KP_R);         val = R
-        case (KP_RC);        val = RC
-        case (KP_PP);        val = PP
-        case (KP_PM);        val = PM
-        case (KP_PZ);        val = PZ
-        case (KP_A);         val = A
-        case (KP_DIFF);      val = Q - T
-        case (KP_HALF_SUM);  val = 0.5_dp * (Q + T)
+        desc = resolve_kp_term(table(e)%kp_term)
+        select case (desc%kind)
+        case (KP_KIND_IDENTITY)
+          val = kp_scalar_block(desc%operand_a, Q, T, S, SC, R, RC, PP, PM, PZ, A)
+        case (KP_KIND_DIFF)
+          val = kp_scalar_block(desc%operand_a, Q, T, S, SC, R, RC, PP, PM, PZ, A) &
+                - kp_scalar_block(desc%operand_b, Q, T, S, SC, R, RC, PP, PM, PZ, A)
+        case (KP_KIND_HALF_SUM)
+          val = 0.5_dp * (kp_scalar_block(desc%operand_a, Q, T, S, SC, R, RC, PP, PM, PZ, A) &
+                          + kp_scalar_block(desc%operand_b, Q, T, S, SC, R, RC, PP, PM, PZ, A))
         case default
-          error stop 'apply_kp_table_bulk: unknown kp_term'
+          error stop 'apply_kp_table_bulk: unknown kp_term_kind'
         end select
 
         HT(row, col) = table(e)%prefactor * val
       end do
     end subroutine apply_kp_table_bulk
+
+    ! ==================================================================
+    ! Scalar lookup: return one of the 10 scalar bulk kp terms by tag.
+    ! Used by apply_kp_table_bulk to resolve the descriptor operands.
+    ! ==================================================================
+    function kp_scalar_block(tag, Q, T, S, SC, R, RC, PP, PM, PZ, A) result(val)
+      integer, intent(in) :: tag
+      complex(kind=dp), intent(in) :: Q, T, S, SC, R, RC, PP, PM, PZ, A
+      complex(kind=dp) :: val
+
+      select case (tag)
+      case (KP_Q);  val = Q
+      case (KP_T);  val = T
+      case (KP_S);  val = S
+      case (KP_SC); val = SC
+      case (KP_R);  val = R
+      case (KP_RC); val = RC
+      case (KP_PP); val = PP
+      case (KP_PM); val = PM
+      case (KP_PZ); val = PZ
+      case (KP_A);  val = A
+      case default
+        error stop 'kp_scalar_block: unknown base kp_term tag'
+      end select
+    end function kp_scalar_block
 
 end module hamiltonianConstructor

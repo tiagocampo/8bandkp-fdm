@@ -16,11 +16,11 @@ module green_functions
 
   use linalg, only: pardiso_c
   use hamiltonianConstructor, only: ZB8bandBulk, ZB8bandQW
-  use confinement_init, only: confinementInitialization_2d
-  use hamiltonian_wire, only: wire_workspace, wire_workspace_free, ZB8bandGeneralized
+  use hamiltonian_wire, only: ZB8bandGeneralized
   use eigensolver, only: eigensolver_base, eigensolver_config, eigensolver_result, &
     & eigensolver_result_free, make_eigensolver, auto_compute_energy_window, &
     & EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
+  use wire_setup_mod, only: wire_setup, wire_setup_init, wire_setup_free
 
   implicit none
   private
@@ -237,14 +237,15 @@ contains
     real(kind=dp), intent(in) :: eta
     real(kind=dp), allocatable, intent(out) :: A_kE(:,:)
 
-    real(kind=dp), allocatable :: profile_2d(:,:)
-    type(csr_matrix), allocatable :: kpterms_2d(:)
+    ! Local mutable copy: wire_setup_init populates cfg_local%strain_blocks
+    ! when strain is enabled (the step the pre-#04 path omitted).
+    type(simulation_config) :: cfg_local
+    type(wire_setup) :: wsetup
     type(csr_matrix) :: H_csr
-    type(wire_workspace) :: wire_ws
     type(eigensolver_config) :: eigen_cfg
     class(eigensolver_base), allocatable :: solver
     type(eigensolver_result) :: eigen_res
-    integer :: nk, nE, ik, iE, i, ngrid, iterm, matrix_dim
+    integer :: nk, nE, ik, iE, i, ngrid, matrix_dim
     real(kind=dp) :: emin_auto, emax_auto
 
     nk = size(k_arr)
@@ -258,41 +259,48 @@ contains
     allocate(A_kE(nk, nE))
     A_kE = 0.0_dp
 
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
-      & profile_2d, kpterms_2d, cfg%FDorder)
+    ! Strain-aware wire init (Issue #04): run confinementInitialization_2d
+    ! + compute_strain + compute_bir_pikus_blocks so the wire spectral
+    ! function honors strain. Pre-#04 this site called
+    ! confinementInitialization_2d directly and silently dropped strain.
+    cfg_local = cfg
+    call wire_setup_init(wsetup, cfg_local)
 
-    ngrid = grid_ngrid(cfg%grid)
+    ngrid = grid_ngrid(cfg_local%grid)
     matrix_dim = 8 * ngrid
     eigen_cfg%method = 'FEAST'
     eigen_cfg%mode = EIGEN_MODE_ENERGY
-    eigen_cfg%nev = max(1, min(matrix_dim, cfg%bands%num_cb + cfg%bands%num_vb))
+    eigen_cfg%nev = max(1, min(matrix_dim, cfg_local%bands%num_cb + cfg_local%bands%num_vb))
     eigen_cfg%max_iter = 200
     eigen_cfg%tol = 1.0e-10_dp
-    eigen_cfg%m0 = min(matrix_dim, max(cfg%solver%m0, &
+    eigen_cfg%m0 = min(matrix_dim, max(cfg_local%solver%m0, &
       & min(matrix_dim, max(4 * eigen_cfg%nev, 128))))
     solver = make_eigensolver(eigen_cfg)
 
     do ik = 1, nk
-      call ZB8bandGeneralized(H_csr, k_arr(ik), profile_2d, kpterms_2d, cfg, ws=wire_ws)
+      call ZB8bandGeneralized(H_csr, k_arr(ik), wsetup%profile_2d, wsetup%kpterms_2d, &
+        & cfg_local, ws=wsetup%ws)
       call auto_compute_energy_window(H_csr, emin_auto, emax_auto)
       eigen_cfg%emin = minval(E_arr) - 5.0_dp * eta
       eigen_cfg%emax = maxval(E_arr) + 5.0_dp * eta
-      if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
-        eigen_cfg%emin = cfg%solver%emin
-        eigen_cfg%emax = cfg%solver%emax
+      if (cfg_local%solver%emin /= 0.0_dp .or. cfg_local%solver%emax /= 0.0_dp) then
+        eigen_cfg%emin = cfg_local%solver%emin
+        eigen_cfg%emax = cfg_local%solver%emax
       else if (eigen_cfg%emin >= eigen_cfg%emax) then
         eigen_cfg%emin = emin_auto
         eigen_cfg%emax = emax_auto
       end if
 
-      call solver%solve(H_csr, eigen_cfg, eigen_res)
+      call solver%solve_sparse(H_csr, eigen_cfg, eigen_res)
       if (.not. eigen_res%converged) then
-        print *, 'ERROR: compute_spectral_function_wire: eigensolver failed at k index ', ik
+        print *, 'ERROR: compute_spectral_function_wire: ', solver%backend_name(), &
+          ' failed at k index ', ik
         call fail_wire_spectral()
         return
       end if
       if (eigen_res%nev_found <= 0) then
-        print *, 'ERROR: compute_spectral_function_wire: no eigenvalues found at k index ', ik
+        print *, 'ERROR: compute_spectral_function_wire: ', solver%backend_name(), &
+          ' found no eigenvalues at k index ', ik
         call fail_wire_spectral()
         return
       end if
@@ -315,31 +323,15 @@ contains
     end do
 
     if (allocated(solver)) deallocate(solver)
-    call wire_workspace_free(wire_ws)
-    if (allocated(profile_2d)) deallocate(profile_2d)
-    if (allocated(kpterms_2d)) then
-      do iterm = 1, size(kpterms_2d)
-        call csr_free(kpterms_2d(iterm))
-      end do
-      deallocate(kpterms_2d)
-    end if
+    call wire_setup_free(wsetup)
 
   contains
 
     subroutine cleanup_wire_spectral()
-      integer :: jterm
-
       call eigensolver_result_free(eigen_res)
       call csr_free(H_csr)
       if (allocated(solver)) deallocate(solver)
-      call wire_workspace_free(wire_ws)
-      if (allocated(profile_2d)) deallocate(profile_2d)
-      if (allocated(kpterms_2d)) then
-        do jterm = 1, size(kpterms_2d)
-          call csr_free(kpterms_2d(jterm))
-        end do
-        deallocate(kpterms_2d)
-      end if
+      call wire_setup_free(wsetup)
     end subroutine cleanup_wire_spectral
 
     subroutine fail_wire_spectral()

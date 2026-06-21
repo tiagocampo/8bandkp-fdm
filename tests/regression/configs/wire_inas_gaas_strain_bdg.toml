@@ -1,0 +1,87 @@
+# Strained InAs/GaAs core/shell wire for the BdG strain-omission regression (#04).
+#
+# Two-region wire: InAs core (lattice-mismatched to GaAs barrier) so the
+# wire plane-strain PDE produces a nonzero strain field. BdG mode builds the
+# 16N x 16N Nambu Hamiltonian from the 8N x 8N ZB8bandGeneralized, which reads
+# cfg%strain_blocks. Before #04 the wire BdG driver in main_topology.f90
+# called confinementInitialization_2d WITHOUT compute_strain, so the strain
+# field was silently dropped and the spectrum was identical to the
+# unstrained run. This config is the STRAIN-ENABLED half of the pair; the
+# verifier (verify_wire_bdg_strain_shift.py) toggles the [strain] block on
+# and off and asserts the BdG eigenvalues shift.
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "kz"
+max = 0.0
+nsteps = 1
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[wire]
+nx = 13
+ny = 13
+dx = 5.0
+dy = 5.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 65.0
+height = 65.0
+
+[[region]]
+material = "GaAs"
+inner = 25.0
+outer = 65.0
+
+[[region]]
+material = "InAs"
+inner = 0.0
+outer = 25.0
+
+
+[strain]
+reference = "GaAs"
+solver = "pardiso"
+piezoelectric = false
+
+[bdg]
+mu = 0.05
+delta_0 = 0.001
+kz = 0.0
+B_vec = [0.0, 0.0, 0.0]
+g_factor = 0.0
+
+[topology]
+mode = "bdg"
+compute_chern = false
+compute_hall = false
+qwz_u = 0.0
+compute_z2 = false
+extract_edge_states = false
+edge_E_window = 0.01
+compute_ldos = false
+ldos_eta = 0.001
+ldos_E_range = [-0.1, 0.1]
+ldos_num_E = 20
+compute_spectral = false
+spectral_k_min = -0.01
+spectral_k_max = 0.01
+spectral_nk = 3
+spectral_E_min = -2.0
+spectral_E_max = 2.0
+spectral_nE = 51
+spectral_eta = 0.01
+
+[solver]
+method = "FEAST"
+mode = "ENERGY"
+emin = -0.5
+emax = 0.5
+m0 = 128

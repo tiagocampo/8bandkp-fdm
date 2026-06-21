@@ -13,12 +13,14 @@ module eigensolver
   public :: feast_workspace, feast_workspace_free
   public :: solve_feast
   public :: auto_compute_energy_window, eigensolver_result_free
+  public :: apply_solver_window
   public :: eigensolver_base, dense_lapack_solver_t
 #ifdef USE_MKL_FEAST
   public :: feast_solver_t
 #endif
   public :: make_eigensolver
   public :: eigensolver_config_validate
+  public :: reconcile_band_slice
   public :: EIGEN_MODE_FULL, EIGEN_MODE_INDEX, EIGEN_MODE_ENERGY
 
   ! ------------------------------------------------------------------
@@ -27,6 +29,35 @@ module eigensolver
   integer, parameter :: EIGEN_MODE_FULL   = 1  ! all eigenvalues
   integer, parameter :: EIGEN_MODE_INDEX  = 2  ! eigenvalues il:iu
   integer, parameter :: EIGEN_MODE_ENERGY = 3  ! eigenvalues in [emin, emax]
+
+  ! ------------------------------------------------------------------
+  ! Energy-window authority (ADR 0005, issue #03).
+  !
+  ! Single source of [emin, emax] for every FEAST consumer. The user
+  ! [solver] window (nonzero user_emin/user_emax) is honored verbatim;
+  ! otherwise the bound is derived from the supplied source:
+  !   - envelope (two CSR): the Gershgorin bounds at the sweep's two
+  !     endpoints (k=0 and k_max), UNIONED into ONE stable window per
+  !     sweep — the dispersion-aware envelope. Per-k moving windows are
+  !     REJECTED by design (ADR 0005): branch tracking needs a stable
+  !     eigenvalue set point-to-point.
+  !   - single (one CSR):   the one-k Gershgorin bound (g-factor Γ /
+  !     single-H init paths).
+  !   - evals (array):      min/max over an eigenvalue array already
+  !     held by the caller (optics accumulation, Green's LDOS).
+  !
+  ! The auto_compute_energy_window Gershgorin row-sum stays as the
+  ! primitive; this authority orchestrates it. The primitive already
+  ! pads with max(0.1*|bound|, 0.5 eV); the envelope unions the two
+  ! already-padded endpoint bounds (no double-padding), and the evals
+  ! variant applies the same margin convention so the sources are
+  ! interchangeable.
+  ! ------------------------------------------------------------------
+  interface apply_solver_window
+    module procedure :: asw_envelope
+    module procedure :: asw_single
+    module procedure :: asw_evals
+  end interface apply_solver_window
 
   ! ------------------------------------------------------------------
   ! Configuration for the sparse eigensolver.
@@ -61,23 +92,21 @@ module eigensolver
 
   ! ------------------------------------------------------------------
   ! Abstract base type for polymorphic eigensolver dispatch.
+  !
+  ! One method per matrix format: solve_dense for a dense 2D array,
+  ! solve_sparse for a CSR matrix. The backend (FEAST vs dense LAPACK)
+  ! is fixed at construction (make_eigensolver) and never named at the
+  ! call site; backend_name() exposes the resolved backend for honest
+  ! diagnostics ("backend X did not converge").
   ! ------------------------------------------------------------------
   type, abstract :: eigensolver_base
   contains
-    procedure(solve_evp_interface), deferred :: solve
     procedure(solve_dense_interface), deferred :: solve_dense
     procedure(solve_sparse_interface), deferred :: solve_sparse
+    procedure(backend_name_interface), deferred :: backend_name
   end type eigensolver_base
 
   abstract interface
-    subroutine solve_evp_interface(self, H_csr, config, result)
-      import :: eigensolver_base, csr_matrix, eigensolver_config, eigensolver_result
-      class(eigensolver_base), intent(inout) :: self
-      type(csr_matrix), intent(in) :: H_csr
-      type(eigensolver_config), intent(in) :: config
-      type(eigensolver_result), intent(out) :: result
-    end subroutine solve_evp_interface
-
     subroutine solve_dense_interface(self, H, config, result)
       import :: eigensolver_base, dp, eigensolver_config, eigensolver_result
       class(eigensolver_base), intent(inout) :: self
@@ -93,6 +122,14 @@ module eigensolver
       type(eigensolver_config), intent(in) :: config
       type(eigensolver_result), intent(out) :: result
     end subroutine solve_sparse_interface
+
+    ! Returns the resolved backend name for honest diagnostics.
+    ! 'FEAST' or 'dense LAPACK' (fixed at construction).
+    function backend_name_interface(self) result(name)
+      import :: eigensolver_base
+      class(eigensolver_base), intent(in) :: self
+      character(len=:), allocatable :: name
+    end function backend_name_interface
   end interface
 
   ! ------------------------------------------------------------------
@@ -124,9 +161,9 @@ module eigensolver
   type, extends(eigensolver_base) :: feast_solver_t
     type(feast_workspace) :: ws
   contains
-    procedure :: solve => feast_solve_dispatch        ! legacy alias -> solve_sparse
     procedure :: solve_dense => feast_solve_dense
     procedure :: solve_sparse => feast_solve_sparse_dispatch
+    procedure :: backend_name => feast_backend_name
     final :: feast_solver_finalize
   end type feast_solver_t
 #endif
@@ -140,9 +177,9 @@ module eigensolver
     real(kind=dp), allocatable    :: W_buf(:), rwork(:)
     integer, allocatable          :: iwork(:), ifail(:)
   contains
-    procedure :: solve => dense_lapack_solve_dispatch       ! legacy alias -> solve_sparse
     procedure :: solve_dense => dense_solve_dense_dispatch
     procedure :: solve_sparse => dense_solve_sparse_dispatch
+    procedure :: backend_name => dense_lapack_backend_name
     final     :: dense_lapack_solver_finalize
   end type dense_lapack_solver_t
 
@@ -385,6 +422,13 @@ contains
       end if
     end if
 
+    ! info=3 (subspace too small even after retries) still returns the
+    ! converged-so-far spectrum: M eigenvalues with converged=.false. The wide
+    ! auto/Gershgorin window holds the full spectrum, so these are the correct
+    ! LOWEST M bands — what band-structure sweeps and g-factor need. Callers
+    ! requiring genuine full convergence gate on result%converged (g-factor,
+    ! SC loop). Do NOT zero nev_found on info=3: it discards correct low bands
+    ! and breaks the sweeps (review #3 was a non-bug — reverted).
     if (M > 0 .and. M <= M0 .and. info >= 0) then
       result%nev_found = M
       allocate(result%eigenvalues(M))
@@ -449,6 +493,112 @@ contains
     emin = rmin - max(margin_frac * abs(rmin), margin_floor)
     emax = rmax + max(margin_frac * abs(rmax), margin_floor)
   end subroutine auto_compute_energy_window
+
+  ! ==================================================================
+  ! Energy-window authority implementations (ADR 0005, issue #03).
+  !
+  ! Three specific procedures, one generic interface (apply_solver_window
+  ! above). Each honors a user-override window (nonzero user_emin /
+  ! user_emax) directly; otherwise derives the bound from its source.
+  ! ==================================================================
+
+  ! ------------------------------------------------------------------
+  ! Apply the documented margin convention to a raw [lo, hi] spectral
+  ! extent. Used by the evals variant so it matches the Gershgorin
+  ! primitive's padding (max(10%, 0.5 eV)), keeping the two bound
+  ! sources interchangeable. Private helper.
+  ! ------------------------------------------------------------------
+  subroutine asw_apply_margin(lo, hi, emin_out, emax_out)
+    real(kind=dp), intent(in)  :: lo, hi
+    real(kind=dp), intent(out) :: emin_out, emax_out
+    real(kind=dp), parameter :: margin_frac  = 0.1_dp
+    real(kind=dp), parameter :: margin_floor = 0.5_dp  ! eV
+
+    emin_out = lo - max(margin_frac * abs(lo), margin_floor)
+    emax_out = hi + max(margin_frac * abs(hi), margin_floor)
+  end subroutine asw_apply_margin
+
+  ! ------------------------------------------------------------------
+  ! Variant 1 — sweep envelope (dispersion-aware).
+  !
+  ! Takes the Hamiltonian CSRs at the sweep's two endpoints (k=0 and
+  ! k_max). Computes the Gershgorin bound at each via the primitive
+  ! (which already pads each bound with the documented margin), then
+  ! UNIONS them: emin = min over endpoints, emax = max over endpoints.
+  ! The result is ONE stable window per sweep — the invariant that
+  ! lets the wire kz-sweep do per-k branch tracking (ADR 0005).
+  !
+  ! If the user set a window (both nonzero), honor it verbatim and do
+  ! not touch either matrix. This collapses the if-override boilerplate
+  ! that was previously copy-pasted across main.f90 / simulation_setup /
+  ! green_functions.
+  ! ------------------------------------------------------------------
+  subroutine asw_envelope(H_k0, H_kmax, user_emin, user_emax, emin_out, emax_out)
+    type(csr_matrix), intent(in) :: H_k0, H_kmax
+    real(kind=dp), intent(in)    :: user_emin, user_emax
+    real(kind=dp), intent(out)   :: emin_out, emax_out
+
+    real(kind=dp) :: emin_k0, emax_k0, emin_kmax, emax_kmax
+
+    if (user_emin /= 0.0_dp .or. user_emax /= 0.0_dp) then
+      emin_out = user_emin
+      emax_out = user_emax
+      return
+    end if
+
+    call auto_compute_energy_window(H_k0,   emin_k0,   emax_k0)
+    call auto_compute_energy_window(H_kmax, emin_kmax, emax_kmax)
+    emin_out = min(emin_k0, emin_kmax)
+    emax_out = max(emax_k0, emax_kmax)
+  end subroutine asw_envelope
+
+  ! ------------------------------------------------------------------
+  ! Variant 2 — single-k bound (one CSR).
+  !
+  ! The g-factor Γ path and every single-H init block. Reduces to the
+  ! one-k Gershgorin primitive (+ its margin). Override honored.
+  ! ------------------------------------------------------------------
+  subroutine asw_single(H, user_emin, user_emax, emin_out, emax_out)
+    type(csr_matrix), intent(in) :: H
+    real(kind=dp), intent(in)    :: user_emin, user_emax
+    real(kind=dp), intent(out)   :: emin_out, emax_out
+
+    if (user_emin /= 0.0_dp .or. user_emax /= 0.0_dp) then
+      emin_out = user_emin
+      emax_out = user_emax
+      return
+    end if
+    call auto_compute_energy_window(H, emin_out, emax_out)
+  end subroutine asw_single
+
+  ! ------------------------------------------------------------------
+  ! Variant 3 — spectral (eigenvalue-array) source.
+  !
+  ! Consumers that already hold an eigenvalue array (optics
+  ! accumulation, Green's-function LDOS) accept it as the bound source.
+  ! Applies the SAME margin convention as the Gershgorin primitive so
+  ! the two sources are interchangeable. Override honored.
+  ! ------------------------------------------------------------------
+  subroutine asw_evals(evals, user_emin, user_emax, emin_out, emax_out)
+    real(kind=dp), intent(in)  :: evals(:)
+    real(kind=dp), intent(in)  :: user_emin, user_emax
+    real(kind=dp), intent(out) :: emin_out, emax_out
+
+    if (user_emin /= 0.0_dp .or. user_emax /= 0.0_dp) then
+      emin_out = user_emin
+      emax_out = user_emax
+      return
+    end if
+    if (size(evals) == 0) then
+      ! Degenerate: no eigenvalues. Return a tiny window centered at 0
+      ! (the caller will see no eigenvalues in it either, which is the
+      ! honest result). Matches auto_compute_energy_window's empty guard.
+      emin_out = -1.0_dp
+      emax_out =  1.0_dp
+      return
+    end if
+    call asw_apply_margin(minval(evals), maxval(evals), emin_out, emax_out)
+  end subroutine asw_evals
 
   ! ==================================================================
   ! Finalizer: automatically called when an eigensolver_result goes out of scope.
@@ -579,21 +729,54 @@ contains
   end subroutine eigensolver_config_validate
 
   ! ==================================================================
+  ! Reconcile a solver result to the DENSE+INDEX [il, iu] band window and
+  ! return the offset into result%eigenvalues/eigenvectors to copy from.
+  ! Single source of the reconciliation decision (was copy-pasted — and had
+  ! diverged into an OOB + a wrong-bands bug — across the three k-sweeps).
+  !
+  ! Two result shapes are handled:
+  !   - FEAST+ENERGY full in-window spectrum (nev_found >= iu): the global
+  !     [il, iu] slice lives at offset il.
+  !   - DENSE+INDEX pre-sliced result (nev_found == iu-il+1): already the
+  !     requested slice; offset 1.
+  !   - partial (nev_target < nev_found < iu): the FEAST window truncated
+  !     the spectrum — refuse rather than read out of bounds. (pFUnit 4.x
+  !     cannot assert error-stop; this branch is defense-in-depth, verified
+  !     by the call sites' nev_found < nev_target guards that fire first.)
+  ! ==================================================================
+  subroutine reconcile_band_slice(nev_found, il, iu, idx_lo)
+    integer, intent(in)  :: nev_found, il, iu
+    integer, intent(out) :: idx_lo
+    integer :: nev_target
+    character(len=160) :: msg
+
+    nev_target = iu - il + 1
+
+    if (nev_found >= iu) then
+      idx_lo = il
+    else if (nev_found == nev_target) then
+      idx_lo = 1
+    else
+      write(msg, '(A,I0,A,I0,A,I0,A,I0,A)') &
+        'solver returned ', nev_found, ' eigenvalues; need >= ', iu, &
+        ' to extract global bands [', il, ',', iu, ']. Widen the FEAST energy window.'
+      error stop 'reconcile_band_slice: FEAST window truncated — ' // trim(msg)
+    end if
+  end subroutine reconcile_band_slice
+
+  ! ==================================================================
   ! Polymorphic dispatch implementations.
   ! ==================================================================
 
   ! ------------------------------------------------------------------
-  ! FEAST solver: legacy solve -> solve_sparse
+  ! FEAST solver: backend_name.
   ! ------------------------------------------------------------------
 #ifdef USE_MKL_FEAST
-  subroutine feast_solve_dispatch(self, H_csr, config, result)
-    class(feast_solver_t), intent(inout) :: self
-    type(csr_matrix), intent(in) :: H_csr
-    type(eigensolver_config), intent(in) :: config
-    type(eigensolver_result), intent(out) :: result
-
-    call self%solve_sparse(H_csr, config, result)
-  end subroutine feast_solve_dispatch
+  function feast_backend_name(self) result(name)
+    class(feast_solver_t), intent(in) :: self
+    character(len=:), allocatable :: name
+    name = 'FEAST'
+  end function feast_backend_name
 
   ! ------------------------------------------------------------------
   ! FEAST solver: solve_sparse with mode dispatch.
@@ -643,16 +826,13 @@ contains
 #endif
 
   ! ------------------------------------------------------------------
-  ! Dense LAPACK solver: legacy solve -> solve_sparse
+  ! Dense LAPACK solver: backend_name.
   ! ------------------------------------------------------------------
-  subroutine dense_lapack_solve_dispatch(self, H_csr, config, result)
-    class(dense_lapack_solver_t), intent(inout) :: self
-    type(csr_matrix), intent(in) :: H_csr
-    type(eigensolver_config), intent(in) :: config
-    type(eigensolver_result), intent(out) :: result
-
-    call self%solve_sparse(H_csr, config, result)
-  end subroutine dense_lapack_solve_dispatch
+  function dense_lapack_backend_name(self) result(name)
+    class(dense_lapack_solver_t), intent(in) :: self
+    character(len=:), allocatable :: name
+    name = 'dense LAPACK'
+  end function dense_lapack_backend_name
 
   ! ------------------------------------------------------------------
   ! Dense LAPACK solver: solve_sparse converts CSR -> dense.
@@ -706,8 +886,11 @@ contains
     abstol = 0.0_dp
     nb = 0
 
-    ! (Re)allocate N-dependent buffers only when N grows
-    if (N > self%cached_n) then
+    ! (Re)allocate N-dependent buffers whenever N changes (grow OR shrink).
+    ! The previous grow-only policy left oversized buffers and then did a
+    ! non-conformable A_buf = H assignment if a solver was ever reused at a
+    ! smaller N. Same-N (the hot sweep path) still reuses the buffers.
+    if (N /= self%cached_n) then
       if (allocated(self%A_buf)) then
         deallocate(self%A_buf, self%Z_buf, self%W_buf, self%rwork, self%iwork, self%ifail)
       end if

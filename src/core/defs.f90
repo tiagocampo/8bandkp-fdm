@@ -812,6 +812,25 @@ module definitions
           trim(cfg%solver%mode) // '"'
       end select
 
+      ! ---- I14b: a partial energy window is ambiguous ----
+      ! 0 is the auto sentinel for BOTH emin and emax. Setting exactly one
+      ! of them is ambiguous (is the 0 a literal bound or "auto"?), and the
+      ! window authority's OR-override would otherwise produce a degenerate
+      ! [emin, 0] window. Require both-or-neither. (Review finding #7.)
+      if ((cfg%solver%emin == 0.0_dp) .neqv. (cfg%solver%emax == 0.0_dp)) then
+        error stop 'validate_simulation_config: set both solver emin and emax, ' // &
+          'or neither (0 = auto). A partial energy window is ambiguous.'
+      end if
+
+      ! ---- I14c: bulk never offers FEAST (permanent rejection) ----
+      ! Bulk is always 8x8 dense by nature. AUTO resolves to DENSE for bulk,
+      ! but an explicit method=FEAST must be rejected outright (PRD inv 1).
+      ! Contrast FEAST+INDEX, rejected structurally at I15 below. (Review #5.)
+      if (trim(cfg%confinement) == 'bulk' .and. trim(cfg%solver%method) == 'FEAST') then
+        error stop 'validate_simulation_config: bulk is always 8x8 dense; FEAST ' // &
+          'is not supported for bulk (use method = AUTO or DENSE).'
+      end if
+
       ! ---- I15: FEAST method cannot combine with INDEX mode ----
       ! FEAST has no INDEX (range il:iu) interface; only ENERGY or FULL are
       ! supported. Caught here at input validation so the user sees a clear
@@ -846,14 +865,15 @@ module definitions
         error stop 'validate_semantic: gfactor requires k0 mode (wave_vector%nsteps=0 or mode=k0)'
       end if
       ! gfactor needs the FULL spectrum for Lowdin partitioning. For QW,
-      ! setup_solve_kpoint_serial forces FULL mode, which would route an
-      ! explicit QW+FEAST through solve_sparse and silently truncate the
-      ! spectrum (FEAST is a partial-spectrum contour solver). Reject that
-      ! one combo up front. Bulk resolves DENSE; wire uses FEAST through its
-      ! own (non-FULL) path, so both are unaffected.
-      if (trim(cfg%confinement) == 'qw' .and. to_upper_trim(cfg%solver%method) == 'FEAST') then
-        error stop 'validate_semantic: gfactor requires the full spectrum; FEAST is unsupported for QW gfactor (use method = DENSE or AUTO)'
-      end if
+      ! setup_solve_gamma_point (simulation_setup.f90) routes the Gamma
+      ! solve through the dispersion-aware window authority (apply_solver_window,
+      ! issue #03) so a FEAST backend runs in ENERGY mode with a window that
+      ! covers the ENTIRE spectral range (Gershgorin-envelope bound), making
+      ! FEAST return all 8N eigenvalues and Lowdin see the full spectrum
+      ! (issue #08, ADR 0005). A DENSE backend still uses FULL mode (zheev
+      ! returns everything). FEAST+INDEX remains rejected up front at the
+      ! structural check I15 above (FEAST has no INDEX interface).
+
       ! S1: bandIdx in range for gfactor (bulk, QW, wire)
       ! CB (which_band=0): accesses cb_state(:, bandIdx:bandIdx+1) → range [1, num_cb-1]
       ! VB (which_band=1): accesses vb_state(:, bandIdx:bandIdx+1) → range [1, num_vb-1]
@@ -999,11 +1019,16 @@ module definitions
   end subroutine validate_semantic
 
   ! ------------------------------------------------------------------
-  ! Map confinement string to direction character.
-  !   'bulk'   -> 'n' (no confinement direction)
-  !   'qw'     -> 'z' (confinement along z)
-  !   'wire'   -> 'z' (confinement along z)
-  !   'landau' -> 'x' (confinement along x)
+  ! Map confinement string to a direction character.
+  !   'bulk'   -> 'n' (no confinement; bulk is fully diagonalized)
+  !   'qw'     -> 'z' (1D confinement along the z growth axis)
+  !   'landau' -> 'x' (1D confinement along x; Landau orbitals)
+  !   'wire'   -> 'w' (2D confinement in the x-y plane; there is NO single
+  !                    confinement axis, so this is a sentinel, not an axis.
+  !                    Every wire path branches to wire-specific code and
+  !                    never consumes this value. Do NOT add a generic
+  !                    `== 'z'` branch without a prior wire guard, and do
+  !                    not treat 'w' as 'n' — the wire IS confined.)
   !   other    -> 'n' (default; validator is the primary gatekeeper for
   !                     invalid confinement values)
   ! ------------------------------------------------------------------
@@ -1013,8 +1038,10 @@ module definitions
 
     d = 'n'
     select case(trim(conf))
-    case('qw','wire')
+    case('qw')
       d = 'z'
+    case('wire')
+      d = 'w'
     case('landau')
       d = 'x'
     end select

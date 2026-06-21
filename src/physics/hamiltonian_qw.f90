@@ -28,7 +28,8 @@ module hamiltonian_qw
   use magnetic_field, only: zeeman_entry, get_zeeman_table
   use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free, &
     insert_main_blocks, insert_profile_diagonal, insert_strain_coo, &
-    insert_zeeman_coo, finalize_coo_to_csr
+    insert_zeeman_coo, finalize_coo_to_csr, &
+    build_kp_derived_csr_blocks, update_kp_derived_csr_values
 
   implicit none
 
@@ -349,13 +350,10 @@ contains
 
         ! blk_diff = Q - T, blk_temp = 0.5*(Q + T).  csr_add reallocates
         ! its output (intent(out)); ws%blk_diff/blk_temp are distinct
-        ! from blk_Q/blk_T so no aliasing.  Two tiny tridiagonal blocks
-        ! per call — negligible vs the 10 dense matrices eliminated.
-        call csr_add(ws%blk_Q, ws%blk_T, ws%blk_diff, UM, &
-                     cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        call csr_add(ws%blk_Q, ws%blk_T, ws%blk_temp, &
-                     cmplx(0.5_dp, 0.0_dp, kind=dp), &
-                     cmplx(0.5_dp, 0.0_dp, kind=dp))
+        ! from blk_Q/blk_T so no aliasing.  Driven by the centralized
+        ! block-formula descriptor via the shared CSR helper.
+        call build_kp_derived_csr_blocks(ws%blk_Q, ws%blk_T, &
+                                         ws%blk_diff, ws%blk_temp)
 
         ! Re-scatter into cached COO buffers (reset index, overwrite in
         ! place; same insertion order as the slow path).
@@ -438,9 +436,8 @@ contains
     deallocate(Q, T, S, SC, R, RC, PZ, PP, PM, A)
 
     ! blk_diff = Q - T, blk_temp = 0.5*(Q + T)
-    call csr_add(blk_Q, blk_T, blk_diff, UM, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-    call csr_add(blk_Q, blk_T, blk_temp, cmplx(0.5_dp, 0.0_dp, kind=dp), &
-      cmplx(0.5_dp, 0.0_dp, kind=dp))
+    ! (slow path: full CSR build via the centralized descriptor helper)
+    call build_kp_derived_csr_blocks(blk_Q, blk_T, blk_diff, blk_temp)
 
     ! ================================================================
     ! COO capacity estimation
@@ -559,11 +556,8 @@ contains
           deallocate(sQ, sT, sS, sSC, sR, sRC, sPZ, sPP, sPM, sA)
 
           ! Derived blocks: structure = union of Q and T patterns.
-          call csr_add(sblk_Q, sblk_T, sblk_diff, UM, &
-                       cmplx(-1.0_dp, 0.0_dp, kind=dp))
-          call csr_add(sblk_Q, sblk_T, sblk_temp, &
-                       cmplx(0.5_dp, 0.0_dp, kind=dp), &
-                       cmplx(0.5_dp, 0.0_dp, kind=dp))
+          ! (Centralized descriptor helper: Q - T and 0.5*(Q + T).)
+          call build_kp_derived_csr_blocks(sblk_Q, sblk_T, sblk_diff, sblk_temp)
 
           call csr_clone_structure(sblk_Q, ws%blk_Q)
           call csr_clone_structure(sblk_T, ws%blk_T)

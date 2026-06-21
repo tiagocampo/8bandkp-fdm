@@ -6,7 +6,9 @@ module hamiltonian_wire
   use utils
   use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &
     KP_Q, KP_T, KP_S, KP_SC, KP_R, KP_RC, &
-    KP_PP, KP_PM, KP_PZ, KP_A, KP_DIFF, KP_HALF_SUM
+    KP_PP, KP_PM, KP_PZ, KP_A, KP_DIFF, KP_HALF_SUM, &
+    kp_term_descriptor, resolve_kp_term, &
+    KP_KIND_IDENTITY, KP_KIND_DIFF, KP_KIND_HALF_SUM
   use strain_solver, only: bir_pikus_blocks_free, compute_bp_scalar, &
     & strain_entry, build_strain_table, get_strain_table, &
     & lookup_bp_field
@@ -91,6 +93,8 @@ module hamiltonian_wire
   public :: insert_strain_coo
   public :: insert_zeeman_coo
   public :: finalize_coo_to_csr
+  public :: build_kp_derived_csr_blocks
+  public :: update_kp_derived_csr_values
 
   interface build_velocity_matrices
     module procedure build_velocity_matrices_2d
@@ -268,8 +272,8 @@ module hamiltonian_wire
         coo_idx = 0
 
         ! Pre-compute blk_diff = Q - T and blk_temp = 0.5*(Q + T)
-        blk_diff%values = blk_Q%values - blk_T%values
-        blk_temp%values = cmplx(0.5_dp, 0.0_dp, kind=dp) * (blk_Q%values + blk_T%values)
+        ! (fast-path values-only update; structure was cloned at ws init)
+        call update_kp_derived_csr_values(blk_Q, blk_T, blk_diff, blk_temp)
 
         ! Insert the main 8x8 blocks
         call insert_main_blocks(coo_rows, coo_cols, coo_vals, coo_capacity, &
@@ -399,9 +403,8 @@ module hamiltonian_wire
         ! ==================================================================
 
         ! Pre-compute blk_diff = Q - T and blk_temp = 0.5*(Q + T)
-        call csr_add(blk_Q, blk_T, blk_diff, UM, cmplx(-1.0_dp, 0.0_dp, kind=dp))
-        call csr_add(blk_Q, blk_T, blk_temp, cmplx(0.5_dp, 0.0_dp, kind=dp), &
-          cmplx(0.5_dp, 0.0_dp, kind=dp))
+        ! (slow path: full CSR build via the centralized descriptor helper)
+        call build_kp_derived_csr_blocks(blk_Q, blk_T, blk_diff, blk_temp)
 
         ! Insert the main 8x8 blocks
         call insert_main_blocks(coo_rows, coo_cols, coo_vals, coo_capacity, &
@@ -1072,6 +1075,60 @@ module hamiltonian_wire
         nullify(ptr)
       end select
     end function kp_block_ptr
+
+    ! ==================================================================
+    ! Build the two DERIVED CSR blocks (KP_DIFF, KP_HALF_SUM) from the
+    ! base Q and T CSR blocks. Used by every CSR Hamiltonian builder
+    ! (wire zb8_generalized_fast/_slow, QW ZB8bandQW_csr) so the
+    ! Q - T / 0.5*(Q + T) formulas live in ONE place, driven by the
+    ! centralized block-formula descriptor (resolve_kp_term).
+    !
+    ! Full-structure build via csr_add (sparsifies the union of the Q
+    ! and T patterns). blk_diff and blk_temp are intent(out): they are
+    ! (re)allocated by csr_add; any prior structure is lost. For the
+    ! fast-path value-only update, call update_kp_derived_csr_values
+    ! instead (preserves structure, updates only %values).
+    ! ==================================================================
+    subroutine build_kp_derived_csr_blocks(blk_Q, blk_T, blk_diff, blk_temp)
+      type(csr_matrix), intent(in), target  :: blk_Q, blk_T
+      type(csr_matrix), intent(out), target :: blk_diff, blk_temp
+
+      type(kp_term_descriptor) :: desc_diff, desc_half
+
+      ! Resolve descriptors to pin the SSOT interpretation: KP_DIFF and
+      ! KP_HALF_SUM both read (KP_Q, KP_T). If the table topology ever
+      ! changes which tags these derive from, the formulas below track
+      ! automatically via the descriptor.
+      desc_diff = resolve_kp_term(KP_DIFF)
+      desc_half = resolve_kp_term(KP_HALF_SUM)
+
+      ! KP_DIFF = blk_Q - blk_T  (operands from descriptor: (KP_Q, KP_T))
+      call csr_add(blk_Q, blk_T, blk_diff, UM, cmplx(-1.0_dp, 0.0_dp, kind=dp))
+      ! KP_HALF_SUM = 0.5*(blk_Q + blk_T)
+      call csr_add(blk_Q, blk_T, blk_temp, &
+                   cmplx(0.5_dp, 0.0_dp, kind=dp), &
+                   cmplx(0.5_dp, 0.0_dp, kind=dp))
+    end subroutine build_kp_derived_csr_blocks
+
+    ! ==================================================================
+    ! Fast-path values-only update of the two derived CSR blocks.
+    ! blk_diff and blk_temp must already have structure matching the
+    ! union of blk_Q and blk_T sparsity (set up at workspace init via
+    ! csr_clone_structure of a build_kp_derived_csr_blocks result).
+    ! Updates only %values; no reallocation.
+    !
+    ! Same SSOT formulas as build_kp_derived_csr_blocks, driven by the
+    ! centralized descriptor. Inlined element-wise (no csr_add allocs)
+    ! to keep the fast path allocation-free.
+    ! ==================================================================
+    subroutine update_kp_derived_csr_values(blk_Q, blk_T, blk_diff, blk_temp)
+      type(csr_matrix), intent(in)    :: blk_Q, blk_T
+      type(csr_matrix), intent(inout) :: blk_diff, blk_temp
+
+      blk_diff%values = blk_Q%values - blk_T%values
+      blk_temp%values = cmplx(0.5_dp, 0.0_dp, kind=dp) * &
+                        (blk_Q%values + blk_T%values)
+    end subroutine update_kp_derived_csr_values
 
     ! ==================================================================
     ! Helper: Insert the main 8x8 blocks into COO arrays

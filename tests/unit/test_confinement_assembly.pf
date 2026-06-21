@@ -1,0 +1,745 @@
+module test_confinement_assembly
+  ! ======================================================================
+  ! C7 gate (Issue #05): direct unit tests of the FD k.p term assembly and
+  ! the block-tag -> block-formula INTERPRETATION in the dense Hamiltonian
+  ! builders (hamiltonianConstructor.f90).
+  !
+  ! These tests pin the CURRENT (un-refactored) behaviour so that issue #06
+  ! (block-formula descriptor centralisation) can prove it is preserved.
+  !
+  ! Coverage:
+  !   1. Known FD stencil coefficients (FDstencil, FDcentralCoeffs2nd).
+  !   2. buildFD2ndDerivMatrix interior stencil structure (order 2/4/6).
+  !   3. confinementInitialization_raw material placement:
+  !        - single-material GaAs: uniform profile + kpterms diagonals.
+  !        - 2-layer heterostructure: diagonal jump at the interface.
+  !   4. Hermiticity of the assembled QW Hamiltonian (entry-wise H == H^H).
+  !   5. FD-order 2/4/6 consistency for a uniform material:
+  !        the interior central-coefficient sum-to-zero property holds for
+  !        every order, and the assembled k=0 QW diagonal equals the known
+  !        (gamma1-2*gamma2) Laplacian diagonal at the interior.
+  !   6. DIRECT block-tag -> formula tests at the source:
+  !        KP_DIFF      = Q - T            (hamiltonianConstructor.f90:699,740)
+  !        KP_HALF_SUM  = 0.5 * (Q + T)    (hamiltonianConstructor.f90:701,741)
+  !      Asserted by inspecting specific Hamiltonian ELEMENTS (bulk scalar +
+  !      small-N QW matrix), NOT via eigenvalues.
+  !
+  ! TEST-ONLY: no source under src/ is modified by this file.
+  ! ======================================================================
+  use funit
+  use definitions
+  use parameters, only: paramDatabase
+  use finitedifferences, only: buildFD2ndDerivMatrix
+  use sparse_matrices
+  use confinement_init, only: confinementInitialization_raw
+  use hamiltonianConstructor, only: ZB8bandBulk, ZB8bandQW
+  use hamiltonian_blocks, only: kp_entry, get_kp_block_table, &
+    KP_Q, KP_T, KP_DIFF, KP_HALF_SUM
+  implicit none
+
+  ! Tolerances used across the suite. STENCIL_TOL is loose enough to absorb
+  ! the representation error of dz=0.1 in the order-4/6 coefficient values
+  ! (4/3/dz^2 etc.) while still pinning the exact rational coefficients.
+  real(kind=dp), parameter :: STENCIL_TOL = 1.0e-12_dp
+  real(kind=dp), parameter :: STRUCT_TOL  = 1.0e-12_dp
+  real(kind=dp), parameter :: HERM_TOL    = 1.0e-12_dp
+  real(kind=dp), parameter :: FORMULA_TOL = 1.0e-10_dp
+
+contains
+
+  ! ======================================================================
+  ! GROUP 1+2 — Known FD stencil coefficients via the public matrix API.
+  !
+  ! The internal FDstencil / FDcentralCoeffs2nd routines are private to the
+  ! finitedifferences module, so we exercise the central-stencil tables
+  ! through the PUBLIC buildFD2ndDerivMatrix: its interior rows reproduce
+  ! the hardcoded 2nd-derivative central stencil for orders 2/4/6 (the
+  ! orders the confinement-assembly gate exercises). These tests pin the
+  ! known coefficient VALUES that feed the kpterms operators.
+  ! ======================================================================
+
+  @test
+  subroutine test_FD2nd_order2_known_stencil_values()
+    ! Order-2 central 2nd-derivative kernel: [-1, 2, -1]/d^2.
+    ! Asserted at an interior row of the public buildFD2ndDerivMatrix.
+    integer, parameter :: N = 7
+    real(kind=dp), parameter :: dz = 0.25_dp
+    real(kind=dp), allocatable :: D2(:,:)
+    integer :: i
+    call buildFD2ndDerivMatrix(N, dz, 2, D2)
+    ! Interior row 4 (well away from boundary): central stencil
+    i = 4
+    @assertEqual(1.0_dp/(dz**2),  D2(i,i-1), tolerance=STENCIL_TOL)
+    @assertEqual(-2.0_dp/(dz**2), D2(i,i),   tolerance=STENCIL_TOL)
+    @assertEqual(1.0_dp/(dz**2),  D2(i,i+1), tolerance=STENCIL_TOL)
+    ! The order-2 central stencil sums to zero (annihilates constants).
+    @assertEqual(0.0_dp, D2(i,i-1) + D2(i,i) + D2(i,i+1), tolerance=STENCIL_TOL)
+  end subroutine test_FD2nd_order2_known_stencil_values
+
+  @test
+  subroutine test_FD2nd_order4_known_stencil_values()
+    ! Order-4 central 2nd-derivative kernel (d=1): [-1/12, 4/3, -5/2, 4/3, -1/12].
+    integer, parameter :: N = 11
+    real(kind=dp), parameter :: dz = 0.1_dp
+    real(kind=dp), allocatable :: D2(:,:)
+    integer :: i
+    call buildFD2ndDerivMatrix(N, dz, 4, D2)
+    i = 6  ! interior row (half_bw=2, so rows 3..N-2 are central)
+    @assertEqual(-1.0_dp/(12.0_dp*dz**2), D2(i,i-2), tolerance=STENCIL_TOL)
+    @assertEqual(4.0_dp/(3.0_dp*dz**2),   D2(i,i-1), tolerance=STENCIL_TOL)
+    @assertEqual(-5.0_dp/(2.0_dp*dz**2),  D2(i,i),   tolerance=STENCIL_TOL)
+    @assertEqual(4.0_dp/(3.0_dp*dz**2),   D2(i,i+1), tolerance=STENCIL_TOL)
+    @assertEqual(-1.0_dp/(12.0_dp*dz**2), D2(i,i+2), tolerance=STENCIL_TOL)
+    ! Sum to zero at the interior (annihilates constants).
+    @assertEqual(0.0_dp, D2(i,i-2)+D2(i,i-1)+D2(i,i)+D2(i,i+1)+D2(i,i+2), tolerance=STENCIL_TOL)
+  end subroutine test_FD2nd_order4_known_stencil_values
+
+  @test
+  subroutine test_FD2nd_order6_known_stencil_values()
+    ! Order-6 central 2nd-derivative kernel (d=1):
+    !   [1/90, -3/20, 3/2, -49/18, 3/2, -3/20, 1/90].
+    integer, parameter :: N = 13
+    real(kind=dp), parameter :: dz = 0.1_dp
+    real(kind=dp), allocatable :: D2(:,:)
+    integer :: i
+    real(kind=dp) :: s
+    call buildFD2ndDerivMatrix(N, dz, 6, D2)
+    i = 7  ! interior row (half_bw=3, so rows 4..N-3 are central)
+    @assertEqual(1.0_dp/(90.0_dp*dz**2),   D2(i,i-3), tolerance=STENCIL_TOL)
+    @assertEqual(-3.0_dp/(20.0_dp*dz**2),  D2(i,i-2), tolerance=STENCIL_TOL)
+    @assertEqual(3.0_dp/(2.0_dp*dz**2),    D2(i,i-1), tolerance=STENCIL_TOL)
+    @assertEqual(-49.0_dp/(18.0_dp*dz**2), D2(i,i),   tolerance=STENCIL_TOL)
+    @assertEqual(3.0_dp/(2.0_dp*dz**2),    D2(i,i+1), tolerance=STENCIL_TOL)
+    @assertEqual(-3.0_dp/(20.0_dp*dz**2),  D2(i,i+2), tolerance=STENCIL_TOL)
+    @assertEqual(1.0_dp/(90.0_dp*dz**2),   D2(i,i+3), tolerance=STENCIL_TOL)
+    s = D2(i,i-3)+D2(i,i-2)+D2(i,i-1)+D2(i,i)+D2(i,i+1)+D2(i,i+2)+D2(i,i+3)
+    @assertEqual(0.0_dp, s, tolerance=STENCIL_TOL)
+  end subroutine test_FD2nd_order6_known_stencil_values
+
+  ! ======================================================================
+  ! GROUP 2 — buildFD2ndDerivMatrix interior stencil structure (bandwidth).
+  ! Verifies the off-band elements are zero (tridiagonal / pentadiagonal /
+  ! heptadiagonal) and that the matrix is hardwall (no periodic wrap).
+  ! ======================================================================
+
+  @test
+  subroutine test_buildFD2ndDeriv_order2_structure()
+    integer, parameter :: N = 7
+    real(kind=dp), parameter :: dz = 0.25_dp
+    real(kind=dp), allocatable :: D2(:,:)
+    integer :: i, j
+    call buildFD2ndDerivMatrix(N, dz, 2, D2)
+    ! Interior rows 2..N-1: tridiagonal with the order-2 central stencil
+    do i = 2, N-1
+      @assertEqual(1.0_dp/(dz**2),  D2(i,i-1), tolerance=STRUCT_TOL)
+      @assertEqual(-2.0_dp/(dz**2), D2(i,i),   tolerance=STRUCT_TOL)
+      @assertEqual(1.0_dp/(dz**2),  D2(i,i+1), tolerance=STRUCT_TOL)
+    end do
+    ! Interior rows: strictly tridiagonal (beyond +/-1 off-diagonal is zero)
+    do i = 2, N-1
+      do j = 1, N
+        if (abs(j - i) > 1) then
+          @assertEqual(0.0_dp, D2(i,j), tolerance=STRUCT_TOL)
+        end if
+      end do
+    end do
+    ! Hardwall: no wrap-around coupling the two ends
+    @assertEqual(0.0_dp, D2(1,N), tolerance=STRUCT_TOL)
+    @assertEqual(0.0_dp, D2(N,1), tolerance=STRUCT_TOL)
+  end subroutine test_buildFD2ndDeriv_order2_structure
+
+  @test
+  subroutine test_buildFD2ndDeriv_order4_bandwidth_structure()
+    ! Order-4 interior rows are pentadiagonal: nonzero within +/-2, zero
+    ! beyond. The exact coefficient VALUES are pinned in
+    ! test_FD2nd_order4_known_stencil_values; here we assert the bandwidth.
+    integer, parameter :: N = 11
+    real(kind=dp), parameter :: dz = 0.1_dp
+    real(kind=dp), allocatable :: D2(:,:)
+    integer :: i, j
+    call buildFD2ndDerivMatrix(N, dz, 4, D2)
+    do i = 3, N-2
+      do j = 1, N
+        if (abs(j - i) > 2) then
+          @assertEqual(0.0_dp, D2(i,j), tolerance=STRUCT_TOL)
+        end if
+      end do
+    end do
+  end subroutine test_buildFD2ndDeriv_order4_bandwidth_structure
+
+  @test
+  subroutine test_buildFD2ndDeriv_order6_bandwidth_structure()
+    ! Order-6 interior rows are heptadiagonal: nonzero within +/-3, zero
+    ! beyond. Exact VALUES are pinned in test_FD2nd_order6_known_stencil_values.
+    integer, parameter :: N = 13
+    real(kind=dp), parameter :: dz = 0.1_dp
+    real(kind=dp), allocatable :: D2(:,:)
+    integer :: i, j
+    call buildFD2ndDerivMatrix(N, dz, 6, D2)
+    do i = 4, N-3
+      do j = 1, N
+        if (abs(j - i) > 3) then
+          @assertEqual(0.0_dp, D2(i,j), tolerance=STRUCT_TOL)
+        end if
+      end do
+    end do
+  end subroutine test_buildFD2ndDeriv_order6_bandwidth_structure
+
+  ! ======================================================================
+  ! GROUP 3 — confinementInitialization_raw material placement.
+  ! Single-material GaAs (uniform profile + kpterms diagonals) and a
+  ! 2-layer AlGaAs/GaAs heterostructure (diagonal jump at the interface).
+  ! ======================================================================
+
+  @test
+  subroutine test_confinement_single_material_gaas_profile()
+    integer, parameter :: ngrid = 5
+    real(kind=dp), parameter :: dz = 5.0_dp
+    real(kind=dp) :: z(ngrid)
+    integer, parameter :: nlayers = 1
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: isp(nlayers), iep(nlayers)
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    integer :: i
+
+    do i = 1, ngrid
+      z(i) = -10.0_dp + real(i-1, kind=dp) * dz
+    end do
+    isp(1) = 1; iep(1) = ngrid
+    material(1) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, isp, iep, material, nlayers, &
+      & params, 'z', profile, kpterms, FDorder=2)
+
+    ! profile(:,1) = EV  (same at every z for a single material)
+    do i = 1, ngrid
+      @assertEqual(params(1)%EV, profile(i,1), tolerance=STRUCT_TOL)
+    end do
+    ! profile(:,2) = EV - DeltaSO
+    do i = 1, ngrid
+      @assertEqual(params(1)%EV - params(1)%deltaSO, profile(i,2), tolerance=STRUCT_TOL)
+    end do
+    ! profile(:,3) = EC
+    do i = 1, ngrid
+      @assertEqual(params(1)%EC, profile(i,3), tolerance=STRUCT_TOL)
+    end do
+    ! kpterms diagonal: gamma1, gamma2, gamma3 (scaled by const), P, A (scaled)
+    do i = 1, ngrid
+      @assertEqual(params(1)%gamma1 * const, kpterms(i,i,1), tolerance=STRUCT_TOL)
+      @assertEqual(params(1)%gamma2 * const, kpterms(i,i,2), tolerance=STRUCT_TOL)
+      @assertEqual(params(1)%gamma3 * const, kpterms(i,i,3), tolerance=STRUCT_TOL)
+      @assertEqual(params(1)%P, kpterms(i,i,4), tolerance=STRUCT_TOL)
+      @assertEqual(params(1)%A * const, kpterms(i,i,10), tolerance=STRUCT_TOL)
+    end do
+
+    deallocate(profile, kpterms)
+  end subroutine test_confinement_single_material_gaas_profile
+
+  @test
+  subroutine test_confinement_heterostructure_profile_jump()
+    ! 2-layer Al30Ga70As | GaAs: profile diagonal must jump at the
+    ! interface between layer 1 (points 1..n1) and layer 2 (n1+1..ngrid).
+    integer, parameter :: ngrid = 9
+    real(kind=dp), parameter :: dz = 2.5_dp
+    real(kind=dp) :: z(ngrid)
+    integer, parameter :: nlayers = 2
+    integer, parameter :: n1 = 4   ! first-layer extent
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: isp(nlayers), iep(nlayers)
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    integer :: i
+
+    do i = 1, ngrid
+      z(i) = -10.0_dp + real(i-1, kind=dp) * dz
+    end do
+    isp(1) = 1;     iep(1) = n1
+    isp(2) = n1+1;  iep(2) = ngrid
+    material(1) = "Al30Ga70As"
+    material(2) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, isp, iep, material, nlayers, &
+      & params, 'z', profile, kpterms, FDorder=2)
+
+    ! Layer 1 points (1..n1): barrier EV
+    do i = 1, n1
+      @assertEqual(params(1)%EV, profile(i,1), tolerance=STRUCT_TOL)
+    end do
+    ! Layer 2 points (n1+1..ngrid): well (GaAs) EV
+    do i = n1+1, ngrid
+      @assertEqual(params(2)%EV, profile(i,1), tolerance=STRUCT_TOL)
+    end do
+    ! gamma1 diagonal jumps too
+    do i = 1, n1
+      @assertEqual(params(1)%gamma1 * const, kpterms(i,i,1), tolerance=STRUCT_TOL)
+    end do
+    do i = n1+1, ngrid
+      @assertEqual(params(2)%gamma1 * const, kpterms(i,i,1), tolerance=STRUCT_TOL)
+    end do
+    ! The two materials differ: sanity check that they really are distinct
+    @assertTrue(abs(params(1)%EV - params(2)%EV) > 0.1_dp)
+
+    deallocate(profile, kpterms)
+  end subroutine test_confinement_heterostructure_profile_jump
+
+  ! ======================================================================
+  ! GROUP 4 — Hermiticity of the assembled QW Hamiltonian.
+  ! Single-material GaAs, kx,ky != 0: every off-diagonal block entry must
+  ! satisfy H(i,j) == conjg(H(j,i)).
+  ! ======================================================================
+
+  @test
+  subroutine test_ZB8bandQW_hermitian_gaas()
+    integer, parameter :: ngrid = 5
+    real(kind=dp), parameter :: dz = 5.0_dp
+    integer, parameter :: matSize = 8 * ngrid
+    real(kind=dp) :: z(ngrid)
+    integer, parameter :: nlayers = 1
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: isp(nlayers), iep(nlayers)
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:)
+    type(wavevector) :: wv
+    integer :: i, j
+    real(kind=dp) :: max_err
+
+    do i = 1, ngrid
+      z(i) = -10.0_dp + real(i-1, kind=dp) * dz
+    end do
+    isp(1) = 1; iep(1) = ngrid
+    material(1) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, isp, iep, material, nlayers, &
+      & params, 'z', profile, kpterms, FDorder=2)
+
+    wv%kx = 0.05_dp
+    wv%ky = 0.03_dp
+    wv%kz = 0.0_dp
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wv, profile, kpterms)
+
+    max_err = 0.0_dp
+    do j = 1, matSize
+      do i = 1, matSize
+        max_err = max(max_err, abs(HT(i,j) - conjg(HT(j,i))))
+      end do
+    end do
+    @assertTrue(max_err < HERM_TOL, message="ZB8bandQW GaAs Hamiltonian is Hermitian")
+
+    deallocate(profile, kpterms, HT)
+  end subroutine test_ZB8bandQW_hermitian_gaas
+
+  ! ======================================================================
+  ! GROUP 5 — FD-order 2/4/6 consistency (uniform material).
+  ! For a single-material GaAs QW at k=0, the QW HH/LH block diagonal at
+  ! interior grid points must be the same (gamma1-2*gamma2)*const-weighted
+  ! 2nd-derivative diagonal regardless of FD order, because for a uniform
+  ! coefficient the higher-order variable-coefficient scheme collapses to
+  ! the constant-coefficient central stencil. We check the assembled matrix
+  ! diagonal equals the order-2 tridiagonal diagonal at interior points.
+  ! ======================================================================
+
+  @test
+  subroutine test_FD_order_consistency_qw_k0_interior()
+    ! For a single-material (uniform coefficient) GaAs QW at k=0, the
+    ! assembled HH-block diagonal HT(sp,sp) = Q_diag(sp) + EV at interior
+    ! points, where Q_diag(sp) = -kpterms(sp,sp,7) (the k=0 limit of
+    ! hamiltonianConstructor.f90:107). We read kpterms directly (no hand
+    ! arithmetic) so the test pins actual assembly behaviour.
+    !
+    ! CONSISTENCY PROPERTY: for a uniform material, the order-2 path
+    ! (build_kpterm_block, confinement_init.f90:38-53) and the order>=4
+    ! path (applyVariableCoeffStaggered, confinement_init.f90:687-725)
+    ! produce the SAME interior diagonal for kpterms(:,:,7). The
+    ! variable-coefficient staggered scheme D_outer.diag(g).D_inner
+    ! collapses to the constant-coefficient 2nd derivative when g is
+    ! uniform. This test pins that agreement directly at the kpterms
+    ! level (the downstream test_qw_variable_coeff_order4 only checks
+    ! eigenvalue agreement within 50 meV).
+    integer, parameter :: ngrid = 11
+    real(kind=dp), parameter :: dz = 2.5_dp
+    integer, parameter :: matSize = 8 * ngrid
+    real(kind=dp) :: z(ngrid)
+    integer, parameter :: nlayers = 1
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: isp(nlayers), iep(nlayers)
+    integer :: i, sp, order
+    real(kind=dp), allocatable :: profile_o(:,:), kpterms_o(:,:,:)
+    complex(kind=dp), allocatable :: HT2(:,:)
+    type(wavevector) :: wv
+    real(kind=dp) :: q_diag_o2, q_diag_o4, q_diag_o6
+    real(kind=dp) :: diag_ref, expected_diag, kpt_o2
+
+    do i = 1, ngrid
+      z(i) = -12.5_dp + real(i-1, kind=dp) * dz
+    end do
+    isp(1) = 1; iep(1) = ngrid
+    material(1) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    wv%kx = 0.0_dp
+    wv%ky = 0.0_dp
+    wv%kz = 0.0_dp
+
+    do order = 2, 6, 2
+      if (allocated(profile_o)) deallocate(profile_o)
+      if (allocated(kpterms_o)) deallocate(kpterms_o)
+      allocate(kpterms_o(ngrid, ngrid, 10))
+      kpterms_o = 0.0_dp
+      call confinementInitialization_raw(z, isp, iep, material, nlayers, &
+        & params, 'z', profile_o, kpterms_o, FDorder=order)
+
+      if (order == 2) q_diag_o2 = -kpterms_o(6, 6, 7)
+      if (order == 4) q_diag_o4 = -kpterms_o(6, 6, 7)
+      if (order == 6) q_diag_o6 = -kpterms_o(6, 6, 7)
+
+      allocate(HT2(matSize, matSize))
+      HT2 = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      call ZB8bandQW(HT2, wv, profile_o, kpterms_o)
+      deallocate(profile_o, kpterms_o)
+
+      ! Assembled HH diagonal at interior sp equals Q_diag + EV (profile col 1).
+      do sp = 4, ngrid-3
+        diag_ref = real(HT2(sp, sp), kind=dp)
+        if (order == 2) then
+          expected_diag = q_diag_o2 + params(1)%EV
+        else if (order == 4) then
+          expected_diag = q_diag_o4 + params(1)%EV
+        else
+          expected_diag = q_diag_o6 + params(1)%EV
+        end if
+        @assertEqual(expected_diag, diag_ref, tolerance=FORMULA_TOL)
+      end do
+      deallocate(HT2)
+    end do
+
+    ! --- Order-2 analytic value (constant-coefficient central stencil) ---
+    ! build_kpterm_block (confinement_init.f90:38-53) computes
+    !   diag(ii) = (central . profile_vec)(ii)
+    ! where central has diagonal 2 and first off-diagonals 1, so for a
+    ! uniform profile p the interior diagonal is 1*p + 2*p + 1*p = 4p.
+    ! Scaled by 1/(2 dz^2): kpterms(ii,ii,7) = 4p/(2 dz^2) = 2p/dz^2.
+    ! Q_diag = -kpterms (hamiltonianConstructor.f90:107 at k=0).
+    kpt_o2 = 2.0_dp * (params(1)%gamma1 - 2.0_dp*params(1)%gamma2) * const / (dz**2)
+    @assertEqual(-kpt_o2, q_diag_o2, tolerance=FORMULA_TOL)
+
+    ! --- Cross-order consistency: for a uniform material, the order>=4
+    ! variable-coefficient staggered path (applyVariableCoeffStaggered)
+    ! produces the SAME interior diagonal as the order-2 path. This is the
+    ! key FD-order consistency property: D_outer . diag(g) . D_inner at a
+    ! uniform g equals the constant-coefficient 2nd derivative. We assert
+    ! all three orders agree at the interior point.
+    @assertEqual(q_diag_o2, q_diag_o4, tolerance=FORMULA_TOL)
+    @assertEqual(q_diag_o2, q_diag_o6, tolerance=FORMULA_TOL)
+  end subroutine test_FD_order_consistency_qw_k0_interior
+
+  ! ======================================================================
+  ! GROUP 6a — DIRECT block-tag -> formula test (BULK scalar path).
+  !
+  ! Targets apply_kp_table_bulk (hamiltonianConstructor.f90:740-741):
+  !     KP_DIFF      val = Q - T
+  !     KP_HALF_SUM  val = 0.5 * (Q + T)
+  !
+  ! ZB8bandBulk computes scalar Q, T from gamma1, gamma2 and the k-vector
+  ! (hamiltonianConstructor.f90:480-481) and writes the 8x8 band matrix via
+  ! apply_kp_table_bulk. We inspect specific elements where the derived
+  ! identities are visible:
+  !
+  !   * SO diagonal block (5,5) and (6,6): table entries (4,4),(5,5) use
+  !     KP_HALF_SUM with prefactor 1. SOC then subtracts DeltaSO and the
+  !     CB block adds Eg. So HT(5,5) = 0.5*(Q+T) - DeltaSO.
+  !
+  !   * Off-diagonal (5,2): table entry (4,1) uses KP_DIFF with prefactor
+  !     -IU*RQS2 (entry #28). So HT(5,2) = (-IU*RQS2)*(Q-T).
+  !
+  ! We hand-compute Q and T from the same formulas the source uses and
+  ! assert equality. This is a SOURCE-level check of the formula applied
+  ! to the KP_DIFF / KP_HALF_SUM tags, NOT an eigenvalue check.
+  ! ======================================================================
+
+  @test
+  subroutine test_bulk_half_sum_formula_so_diagonal()
+    ! HT(5,5) = 0.5*(Q+T) - DeltaSO  pins KP_HALF_SUM at the source.
+    complex(kind=dp) :: HT(8,8)
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+    type(wavevector) :: wv
+    real(kind=dp) :: kx, ky, kz, kx2, ky2, kz2
+    real(kind=dp) :: g1, g2
+    real(kind=dp) :: Q_val, T_val, half_sum, expected55
+
+    material(1) = "GaAs"
+    call paramDatabase(material, 1, params)
+    kx = 0.05_dp; ky = 0.03_dp; kz = 0.02_dp
+    kx2 = kx**2; ky2 = ky**2; kz2 = kz**2
+    wv%kx = kx; wv%ky = ky; wv%kz = kz
+
+    ! Source formulas (hamiltonianConstructor.f90:480-481):
+    !   Q = -((gamma1+gamma2)*(kx2+ky2) + (gamma1-2*gamma2)*kz2)
+    !   T = -((gamma1-gamma2)*(kx2+ky2) + (gamma1+2*gamma2)*kz2)
+    g1 = params(1)%gamma1 * const
+    g2 = params(1)%gamma2 * const
+    Q_val = -((g1 + g2)*(kx2 + ky2) + (g1 - 2.0_dp*g2)*kz2)
+    T_val = -((g1 - g2)*(kx2 + ky2) + (g1 + 2.0_dp*g2)*kz2)
+    half_sum = 0.5_dp * (Q_val + T_val)
+
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandBulk(HT, wv, params)
+
+    ! HT(5,5) = 0.5*(Q+T) - DeltaSO  (KP_HALF_SUM + SOC)
+    expected55 = half_sum - params(1)%deltaSO
+    @assertEqual(expected55, real(HT(5,5), kind=dp), tolerance=FORMULA_TOL)
+    ! SO band 2 (index 6) uses the same KP_HALF_SUM tag -> identical value
+    @assertEqual(expected55, real(HT(6,6), kind=dp), tolerance=FORMULA_TOL)
+  end subroutine test_bulk_half_sum_formula_so_diagonal
+
+  @test
+  subroutine test_bulk_diff_formula_so_vb_offdiag()
+    ! HT(5,2) = (-IU*RQS2)*(Q - T)  pins KP_DIFF at the source (bulk).
+    ! Table entry #28: (row_band=4, col_band=1, KP_DIFF, pref=-IU*RQS2).
+    complex(kind=dp) :: HT(8,8)
+    type(paramStruct) :: params(1)
+    character(len=255) :: material(1)
+    type(wavevector) :: wv
+    real(kind=dp) :: kx, ky, kz, kx2, ky2, kz2
+    real(kind=dp) :: g1, g2
+    real(kind=dp) :: Q_val, T_val, diff_val
+    complex(kind=dp) :: expected52
+
+    material(1) = "GaAs"
+    call paramDatabase(material, 1, params)
+    kx = 0.05_dp; ky = 0.03_dp; kz = 0.02_dp
+    kx2 = kx**2; ky2 = ky**2; kz2 = kz**2
+    wv%kx = kx; wv%ky = ky; wv%kz = kz
+
+    g1 = params(1)%gamma1 * const
+    g2 = params(1)%gamma2 * const
+    Q_val = -((g1 + g2)*(kx2 + ky2) + (g1 - 2.0_dp*g2)*kz2)
+    T_val = -((g1 - g2)*(kx2 + ky2) + (g1 + 2.0_dp*g2)*kz2)
+    diff_val = Q_val - T_val
+
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandBulk(HT, wv, params)
+
+    ! HT(5,2): row 5 = band 4 (0-based) + 1, col 2 = band 1 (0-based) + 1
+    expected52 = (-IU*RQS2) * cmplx(diff_val, 0.0_dp, kind=dp)
+    @assertEqual(expected52, HT(5,2), tolerance=FORMULA_TOL)
+    ! Hermitian conjugate entry HT(2,5) = conjg(HT(5,2))
+    @assertEqual(conjg(expected52), HT(2,5), tolerance=FORMULA_TOL)
+  end subroutine test_bulk_diff_formula_so_vb_offdiag
+
+  ! ======================================================================
+  ! GROUP 6b — DIRECT block-tag -> formula test (QW matrix path).
+  !
+  ! Targets apply_kp_table_dense (hamiltonianConstructor.f90:698-701):
+  !     KP_DIFF      HT(r1:r2,c1:c2) = prefactor * (Q - T)
+  !     KP_HALF_SUM  HT(r1:r2,c1:c2) = prefactor * 0.5*(Q + T)
+  !
+  ! ZB8bandQW computes the N*N Q, T matrices from kpterms (lines 107-108)
+  ! and writes them into the 8N*8N band matrix via apply_kp_table_dense.
+  ! We hand-recompute Q(i,i) and T(i,i) at interior points for kx,ky != 0
+  ! and inspect specific block entries where the derived tags land:
+  !
+  !   * SO diagonal block, band 5 (0-based 4): table entry (4,4) KP_HALF_SUM
+  !     with prefactor 1 -> HT(4*N+i, 4*N+i) = 0.5*(Q(i,i)+T(i,i)).
+  !
+  !   * Off-diagonal (band1 x band4): table entry (1,4) KP_DIFF with
+  !     prefactor IU*RQS2 (entry #10) -> HT(N+i, 4*N+i) = IU*RQS2*(Q-T).
+  !
+  ! N=3 with FD order 2: middle point is the interior point we inspect.
+  ! ======================================================================
+
+  @test
+  subroutine test_qw_half_sum_formula_so_diagonal()
+    ! HT(4*N+i, 4*N+i) = 0.5*(Q(i,i)+T(i,i)) + profile_so(i)
+    ! at interior points -> pins KP_HALF_SUM (matrix path) at the source.
+    integer, parameter :: ngrid = 3
+    integer, parameter :: matSize = 8 * ngrid
+    real(kind=dp), parameter :: dz = 5.0_dp
+    real(kind=dp) :: z(ngrid)
+    integer, parameter :: nlayers = 1
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: isp(nlayers), iep(nlayers)
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:)
+    type(wavevector) :: wv
+    real(kind=dp) :: kx, ky, k2, g1, g2
+    real(kind=dp) :: Q_diag, T_diag, half_sum, expected, profile_so
+    integer :: i, sp, idx_so
+
+    do i = 1, ngrid
+      z(i) = -5.0_dp + real(i-1, kind=dp) * dz
+    end do
+    isp(1) = 1; iep(1) = ngrid
+    material(1) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, isp, iep, material, nlayers, &
+      & params, 'z', profile, kpterms, FDorder=2)
+
+    kx = 0.05_dp; ky = 0.03_dp; k2 = kx**2 + ky**2
+    wv%kx = kx; wv%ky = ky; wv%kz = 0.0_dp
+
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wv, profile, kpterms)
+
+    ! Inspect the INTERIOR point (sp = 2 of 3) where the order-2 stencil
+    ! diagonal is exactly -2/(2 dz^2) scaled by the gamma combination.
+    sp = 2
+    g1 = params(1)%gamma1 * const
+    g2 = params(1)%gamma2 * const
+
+    ! Q(sp,sp) = -((gamma1+gamma2)*const*k2 + kpterms(sp,sp,7))
+    ! kpterms(sp,sp,7) at the interior = -(gamma1-2g2)*const * 2/(2 dz^2)
+    ! (build_kpterm_block stores the diagonal as diag = (gamma1-2g2)*const *
+    !  2/(2 dz^2) but kpterms is the SIGNED operator; Q uses -kpterms).
+    ! We read kpterms directly so the test is independent of that detail.
+    Q_diag = -((g1 + g2)*k2 + kpterms(sp,sp,7))
+    T_diag = -((g1 - g2)*k2 + kpterms(sp,sp,8))
+    half_sum = 0.5_dp * (Q_diag + T_diag)
+
+    ! SO band (0-based 4) diagonal at sp = 4*N+sp; profile column 2 = EV-DeltaSO
+    idx_so = 4*ngrid + sp
+    profile_so = profile(sp, 2)
+    expected = half_sum + profile_so
+    @assertEqual(expected, real(HT(idx_so, idx_so), kind=dp), tolerance=FORMULA_TOL)
+
+    deallocate(profile, kpterms, HT)
+  end subroutine test_qw_half_sum_formula_so_diagonal
+
+  @test
+  subroutine test_qw_diff_formula_band1_band4()
+    ! HT(N+i, 4*N+i) = IU*RQS2*(Q(i,i)-T(i,i))  pins KP_DIFF (matrix path).
+    ! Table entry #10: (row_band=1, col_band=4, KP_DIFF, pref=IU*RQS2).
+    integer, parameter :: ngrid = 3
+    integer, parameter :: matSize = 8 * ngrid
+    real(kind=dp), parameter :: dz = 5.0_dp
+    real(kind=dp) :: z(ngrid)
+    integer, parameter :: nlayers = 1
+    character(len=255) :: material(nlayers)
+    type(paramStruct) :: params(nlayers)
+    integer :: isp(nlayers), iep(nlayers)
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: HT(:,:)
+    type(wavevector) :: wv
+    real(kind=dp) :: kx, ky, k2, g1, g2
+    real(kind=dp) :: Q_diag, T_diag, diff_val
+    complex(kind=dp) :: expected
+    integer :: i, sp, row_b1, col_b4
+
+    do i = 1, ngrid
+      z(i) = -5.0_dp + real(i-1, kind=dp) * dz
+    end do
+    isp(1) = 1; iep(1) = ngrid
+    material(1) = "GaAs"
+    call paramDatabase(material, nlayers, params)
+
+    allocate(kpterms(ngrid, ngrid, 10))
+    kpterms = 0.0_dp
+    call confinementInitialization_raw(z, isp, iep, material, nlayers, &
+      & params, 'z', profile, kpterms, FDorder=2)
+
+    kx = 0.05_dp; ky = 0.03_dp; k2 = kx**2 + ky**2
+    wv%kx = kx; wv%ky = ky; wv%kz = 0.0_dp
+
+    allocate(HT(matSize, matSize))
+    HT = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    call ZB8bandQW(HT, wv, profile, kpterms)
+
+    sp = 2  ! interior point
+    g1 = params(1)%gamma1 * const
+    g2 = params(1)%gamma2 * const
+    Q_diag = -((g1 + g2)*k2 + kpterms(sp,sp,7))
+    T_diag = -((g1 - g2)*k2 + kpterms(sp,sp,8))
+    diff_val = Q_diag - T_diag
+
+    ! Band 1 (0-based) diagonal block starts at row 1*N+1; band 4 at 4*N+1.
+    row_b1 = 1*ngrid + sp
+    col_b4 = 4*ngrid + sp
+    expected = IU*RQS2 * cmplx(diff_val, 0.0_dp, kind=dp)
+    @assertEqual(expected, HT(row_b1, col_b4), tolerance=FORMULA_TOL)
+    ! Hermitian conjugate: entry (4,1) has prefactor -IU*RQS2 (entry #28)
+    @assertEqual(conjg(expected), HT(col_b4, row_b1), tolerance=FORMULA_TOL)
+
+    deallocate(profile, kpterms, HT)
+  end subroutine test_qw_diff_formula_band1_band4
+
+  ! ======================================================================
+  ! GROUP 6c — Table-level cross-check of the KP_DIFF / KP_HALF_SUM entries.
+  ! Verify the block TABLE declares the derived tags where the bulk/QW
+  ! formula tests above assume them. This documents the contract between
+  ! the table (data) and the builder (interpretation) so a regression in
+  ! either is caught.
+  ! ======================================================================
+
+  @test
+  subroutine test_kp_table_diff_half_sum_entries()
+    type(kp_entry), allocatable :: table(:)
+    integer :: i
+    integer :: n_diff, n_half
+    table = get_kp_block_table()
+
+    ! KP_DIFF must appear exactly 4 times (rows 1,2,4,5 of band 0-based).
+    ! KP_HALF_SUM must appear exactly 2 times (SO diagonal rows 4,5).
+    n_diff = 0
+    n_half = 0
+    do i = 1, size(table)
+      if (table(i)%kp_term == KP_DIFF)     n_diff  = n_diff  + 1
+      if (table(i)%kp_term == KP_HALF_SUM) n_half = n_half + 1
+    end do
+    @assertEqual(4, n_diff)
+    @assertEqual(2, n_half)
+
+    ! KP_HALF_SUM sits on the SO diagonals (row==col==4 and row==col==5),
+    ! with prefactor 1.
+    do i = 1, size(table)
+      if (table(i)%kp_term == KP_HALF_SUM) then
+        @assertTrue(table(i)%row_band == table(i)%col_band)
+        @assertTrue(table(i)%row_band == 4 .or. table(i)%row_band == 5)
+        @assertEqual(UM, table(i)%prefactor, tolerance=STENCIL_TOL)
+      end if
+    end do
+
+    ! KP_DIFF Hermitian conjugate structure: for every (r,c) KP_DIFF entry
+    ! with prefactor p, there must be a (c,r) KP_DIFF entry with prefactor
+    ! conjg(p). This is what makes apply_kp_table_dense produce a Hermitian
+    ! HT when Q, T are Hermitian.
+    block
+      logical :: found_conj
+      integer :: j
+      do i = 1, size(table)
+        if (table(i)%kp_term /= KP_DIFF) cycle
+        if (table(i)%row_band == table(i)%col_band) cycle
+        found_conj = .false.
+        do j = 1, size(table)
+          if (table(j)%kp_term == KP_DIFF .and. &
+              table(j)%row_band == table(i)%col_band .and. &
+              table(j)%col_band == table(i)%row_band) then
+            @assertEqual(conjg(table(j)%prefactor), table(i)%prefactor, tolerance=STENCIL_TOL)
+            found_conj = .true.
+            exit
+          end if
+        end do
+        @assertTrue(found_conj)
+      end do
+    end block
+  end subroutine test_kp_table_diff_half_sum_entries
+
+end module test_confinement_assembly

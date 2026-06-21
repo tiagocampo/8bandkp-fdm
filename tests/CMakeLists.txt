@@ -85,6 +85,12 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    add_pfunit_ctest(test_confinement_assembly
+        TEST_SOURCES unit/test_confinement_assembly.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_csr_spmv
         TEST_SOURCES unit/test_csr_spmv.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
@@ -201,6 +207,15 @@ if(PFUNIT_FOUND)
 
     add_pfunit_ctest(test_simulation_setup
         TEST_SOURCES unit/test_simulation_setup.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Issue #02: drives the solver-config derivation entry point directly
+    # across every (geometry x method x mode) combination without running a
+    # full executable (the case untestable through simulation_setup_init).
+    add_pfunit_ctest(test_solver_derivation
+        TEST_SOURCES unit/test_solver_derivation.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
@@ -765,6 +780,22 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# Wire BdG strain-omission regression (#04):
+# Asserts the wire BdG spectrum SHIFTS when [strain] is applied. Before #04
+# the wire BdG driver skipped compute_strain, so strained/unstrained runs
+# were identical (the latent physics defect). Physically they must differ.
+add_test(
+    NAME regression_wire_bdg_strain_shift
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_bdg_strain_shift.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_strain_bdg.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_wire_bdg_strain_shift
+    PROPERTIES LABELS "regression;strain-validation" TIMEOUT 900
+)
+
 # Topological sweep mode regressions
 add_test(
     NAME regression_topology_sweep_bhz
@@ -908,6 +939,128 @@ add_test(
 
 set_tests_properties(
     verification_qw_sparse_solver
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
+# --- Dense vs Sparse eigenvalue agreement across all geometries ---
+# Extends the dense-vs-sparse rung to bulk/QW/wire/Landau. QW and wire
+# are the genuine dense-vs-FEAST cross-check; bulk and Landau verify
+# mode-dispatch consistency (FEAST invalid for 8x8 bulk; Landau FEAST
+# enablement is issue #10).
+add_test(
+    NAME verification_dense_sparse_all_geometries
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_dense_sparse_all_geometries.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_dense_sparse_all_geometries
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
+# --- QW dispersion-aware energy-window envelope (issue #03) ---
+# A wide-k QW FEAST sweep with AUTO window (emin = emax = 0). The envelope
+# authority (apply_solver_window) unions the Gershgorin bounds at the sweep
+# endpoints (k = 0 and k = k_max) into ONE stable window; asserts FEAST
+# delivers the requested eigenvalue count at every k-point, including the
+# dispersion extremum. At HEAD (pre-#03) the envelope block was unreachable
+# and the sweep fell through to the type-default [-1, +1] window, which
+# under-delivered at k_max.
+add_test(
+    NAME verification_qw_window_envelope
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_window_envelope.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_qw_window_envelope
+    PROPERTIES LABELS "verification" TIMEOUT 300
+)
+
+# --- QW g-factor FEAST-enable regression (issue #08) ---
+# Runs the gfactorCalculation executable on the SAME GaSbW/InAsW/AlSbW QW
+# twice - method=DENSE+FULL and method=FEAST+ENERGY (AUTO window) - and
+# asserts (1) the g-factor tensor matches within 1e-6 relative and (2)
+# BOTH backends return the FULL 8N spectrum (8*fd_step eigenfunctions).
+# Before #08 the QW+FEAST combo was rejected by a stopgap guard; this test
+# gates the removal of that guard. A truncated FEAST spectrum would move
+# the Lowdin g-factor, so the agreement check catches silent truncation.
+add_test(
+    NAME verification_qw_gfactor_dense_feast
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_gfactor_dense_feast.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_qw_gfactor_dense_feast
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
+# --- QW optics FEAST-enable regression (issue #09) ---
+# Runs the opticalProperties executable on the SAME Al30Ga70As/GaAs QW
+# twice - method=DENSE (AUTO->DENSE+INDEX, the golden default) and
+# method=FEAST+ENERGY (AUTO sweep-envelope window) - and asserts (1) the
+# FEAST path is actually taken (dispatch gate: a FEAST/envelope
+# diagnostic appears in stdout; at HEAD method=FEAST was silently
+# overridden to DENSE) and (2) the output spectra (absorption_TE/TM,
+# gain_TE/TM, spontaneous_TE/TM, ISBT - whichever the config enables)
+# match within 1e-6 relative. Divergent optics would mean the FEAST
+# window truncated the spectrum or the band indexing shifted between
+# INDEX and ENERGY mode.
+add_test(
+    NAME verification_qw_optics_dense_feast
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_optics_dense_feast.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_qw_optics_dense_feast
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
+# --- QW band-structure FEAST-enable regression (review #4) ---
+# Runs bandStructure on the SAME AlGaAs/GaAs QW twice - method=DENSE
+# (AUTO->DENSE+INDEX, the golden default) and method=FEAST+ENERGY (AUTO
+# sweep-envelope window) - and asserts the gap-straddling eigenvalue bands
+# agree within tolerance. Pre-#4 the QW FEAST CSR path returned the deepest
+# valence bands (lowest-M copy); this locks the corrected [il,iuu] slice.
+add_test(
+    NAME verification_qw_bandstructure_dense_feast
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_bandstructure_dense_feast.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    verification_qw_bandstructure_dense_feast
+    PROPERTIES LABELS "verification" TIMEOUT 600
+)
+
+# --- Landau FEAST-enable regression (issue #10) ---
+# Runs the bandStructure executable on the SAME InAs Landau config twice -
+# method=DENSE (AUTO->DENSE+INDEX, the golden default) and method=FEAST+ENERGY
+# (AUTO sweep-envelope window) - and asserts (1) the FEAST path is actually
+# taken (dispatch gate: a FEAST/envelope diagnostic appears in stdout; at HEAD
+# method=FEAST hit a broken result-handling path that assumed INDEX sizing)
+# and (2) the eigenvalues.dat output matches within 1e-6 relative. Divergent
+# eigenvalues would mean the FEAST window truncated the spectrum, the
+# result-handling extracted the wrong slice, or the band indexing shifted
+# between INDEX and ENERGY mode. The config is the golden landau_InAs.toml
+# shape (InAs, nx=100, Bz=5T, ky-sweep nsteps=10) - a genuine in-plane
+# k-dispersion sweep at FIXED B (the B-sweep fan diagram is a separate
+# application-layer block, untouched by issue #10 per ADR 0003).
+add_test(
+    NAME verification_landau_dense_feast
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_landau_dense_feast.py
+        ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+set_tests_properties(
+    verification_landau_dense_feast
     PROPERTIES LABELS "verification" TIMEOUT 600
 )
 

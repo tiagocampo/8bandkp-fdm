@@ -108,23 +108,26 @@ program gfactor
       call setup_build_velocity_matrices(setup, cfg)
 
       ! Solve eigenvalue problem
-      call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
+      call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
       if (eigen_res%nev_found == 0) then
-        print *, 'Error: FEAST found no eigenvalues. Check energy window.'
+        print *, 'Error: ', setup%eigen_solver%backend_name(), &
+          ' found no eigenvalues. Check energy window.'
         print *, '  Window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
-        error stop 'FEAST found no eigenvalues'
+        error stop 'eigensolver found no eigenvalues'
       end if
 
       if (.not. eigen_res%converged) then
-        print *, 'Warning: FEAST did not converge for g-factor calculation'
+        print *, 'Warning: ', setup%eigen_solver%backend_name(), &
+          ' did not converge for g-factor calculation'
       end if
 
       if (eigen_res%nev_found < cfg%bands%num_cb + cfg%bands%num_vb) then
-        print *, 'Error: FEAST found', eigen_res%nev_found, &
+        print *, 'Error: ', setup%eigen_solver%backend_name(), ' found', &
+          eigen_res%nev_found, &
           ' eigenvalues but need', cfg%bands%num_cb + cfg%bands%num_vb
         print *, '  numcb=', cfg%bands%num_cb, ' numvb=', cfg%bands%num_vb
-        error stop 'FEAST eigenvalue count mismatch'
+        error stop 'eigensolver eigenvalue count mismatch'
       end if
 
       N = setup%Ntot
@@ -229,26 +232,14 @@ program gfactor
         ! Compute optical transitions only for optics-enabled runs.
         block
           type(optical_transition), allocatable :: transitions(:)
-          integer :: num_trans, it
+          integer :: num_trans
 
           call compute_optical_matrix_wire(transitions, num_trans, &
             cb_state, vb_state, cb_value, vb_value, cfg%bands%num_cb, cfg%bands%num_vb, &
             setup%vel)
 
           ! Write to file
-          call ensure_output_dir()
-          call get_unit(iounit)
-          open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
-          write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
-          do it = 1, num_trans
-            write(iounit, '(2(I4,1x),5(g14.6,1x))') &
-              transitions(it)%cb_idx, transitions(it)%vb_idx, &
-              transitions(it)%energy, transitions(it)%px, &
-              transitions(it)%py, transitions(it)%pz, &
-              transitions(it)%oscillator_strength
-          end do
-          close(iounit)
-          print *, '  Optical transitions written to output/optical_transitions.dat'
+          call write_optical_transitions(transitions)
 
           deallocate(transitions)
         end block
@@ -283,13 +274,7 @@ program gfactor
 
       ! Print profile for QW mode
       if (conf_direction(cfg%confinement) == 'z') then
-        call ensure_output_dir()
-        call get_unit(iounit)
-        open(unit=iounit, file='output/potential_profile.dat', status='replace', action='write')
-        do i = 1, cfg%grid%npoints()
-          write(iounit, *) cfg%z(i), setup%profile(i,1), setup%profile(i,2), setup%profile(i,3)
-        end do
-        close(iounit)
+        call write_profile_1d(cfg%z, setup%profile)
       end if
 
       ! Solve at k=0
@@ -298,7 +283,7 @@ program gfactor
       HT = 0.0_dp
       eig = 0.0_dp
 
-      call setup_solve_kpoint_serial(setup, cfg, smallk(1), eig(:,1), HT)
+      call setup_solve_gamma_point(setup, cfg, smallk(1), eig(:,1), HT)
 
       ! Write eigenfunctions for multi-layer QW
       if (cfg%num_layers > 1) call writeEigenfunctions(N, N, HT, 1, cfg%grid%npoints(), cfg%z, cfg%num_layers==1)
@@ -330,26 +315,14 @@ program gfactor
       if (cfg%optics%enabled .and. conf_direction(cfg%confinement) == 'z' .and. cfg%num_layers > 1) then
         block
           type(optical_transition), allocatable :: transitions(:)
-          integer :: num_trans, it
+          integer :: num_trans
 
           call compute_optical_matrix_qw(transitions, num_trans, &
             cb_state, vb_state, cb_value, vb_value, cfg%bands%num_cb, cfg%bands%num_vb, &
             cfg%num_layers, cfg%params, setup%profile, setup%kpterms, &
             cfg%z_min(1), cfg%z_max(1), cfg%dz)
 
-          call ensure_output_dir()
-          call get_unit(iounit)
-          open(unit=iounit, file='output/optical_transitions.dat', status='replace', action='write')
-          write(iounit, '(A)') '# CB VB dE(eV) |px|^2 |py|^2 |pz|^2 f_osc'
-          do it = 1, num_trans
-            write(iounit, '(2(I4,1x),5(g14.6,1x))') &
-              transitions(it)%cb_idx, transitions(it)%vb_idx, &
-              transitions(it)%energy, transitions(it)%px, &
-              transitions(it)%py, transitions(it)%pz, &
-              transitions(it)%oscillator_strength
-          end do
-          close(iounit)
-          print *, '  Optical transitions written to output/optical_transitions.dat'
+          call write_optical_transitions(transitions)
           deallocate(transitions)
         end block
       end if

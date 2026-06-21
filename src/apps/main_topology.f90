@@ -4,9 +4,7 @@ program topologicalAnalysis
     spatial_grid, topological_result, validate_semantic, wavevector
   use parameters
   use hamiltonianConstructor
-  use hamiltonian_wire, only: wire_coo_cache, wire_coo_cache_free, &
-    & wire_workspace, wire_workspace_free, ZB8bandGeneralized
-  use confinement_init, only: confinementInitialization, confinementInitialization_2d
+  use confinement_init, only: confinementInitialization
   use finitedifferences
   use outputFunctions
   use utils, only: get_unit, ensure_output_dir
@@ -21,6 +19,7 @@ program topologicalAnalysis
     & compute_spectral_function_wire, compute_landauer_transmission_1d
   use linalg, only: mkl_set_num_threads_local
   use simulation_setup_mod, only: simulation_setup, simulation_setup_init, simulation_setup_free
+  use wire_setup_mod, only: wire_setup, wire_setup_init, wire_setup_free
 
   implicit none
 
@@ -46,14 +45,10 @@ program topologicalAnalysis
   integer(kind=4) :: iounit, status
 
   ! --- Wire mode (confinement='wire') variables ---
-  real(kind=dp), allocatable       :: profile_2d(:,:)
-  type(csr_matrix), allocatable    :: kpterms_2d(:)
-  type(csr_matrix)                 :: HT_csr
-  type(wire_coo_cache)             :: coo_cache
-  type(eigensolver_config)         :: eigen_cfg
-  class(eigensolver_base), allocatable :: eigen_solver
-  type(eigensolver_result)         :: eigen_res
-  integer                          :: Ngrid, Ntot, nev_wire
+  ! Wire init/cleanup is now owned by the wire_setup type (Issue #04).
+  ! The program-scope profile_2d/kpterms_2d/coo_cache/eigen_* boilerplate
+  ! was removed when run_bdg_wire / eval_wire_bdg_gap_app / run_qshe_wire
+  ! were routed through wire_setup_init / wire_setup_free.
 
   ! --- Topological result ---
   type(topological_result) :: topo_result
@@ -259,14 +254,6 @@ program topologicalAnalysis
   if (allocated(profile)) deallocate(profile)
   if (allocated(kpterms)) deallocate(kpterms)
 
-  if (allocated(profile_2d)) deallocate(profile_2d)
-  if (allocated(kpterms_2d)) then
-    do i = 1, size(kpterms_2d)
-      call csr_free(kpterms_2d(i))
-    end do
-    deallocate(kpterms_2d)
-  end if
-
 contains
 
   ! ==================================================================
@@ -277,11 +264,7 @@ contains
     type(topological_result), intent(inout) :: result
 
     type(simulation_config) :: cfg
-    type(csr_matrix), allocatable :: kpterms_2d_local(:)
-    real(kind=dp), allocatable :: profile_2d_local(:,:)
     type(csr_matrix) :: H_csr_local
-    type(wire_coo_cache) :: coo_cache_local
-    type(wire_workspace) :: wire_ws_local
     class(eigensolver_base), allocatable :: eigen_solver_local
     type(eigensolver_config) :: eigen_cfg_local
     type(eigensolver_result) :: eigen_res_local
@@ -299,10 +282,11 @@ contains
 
     cfg = cfg_in
 
-    ! Initialize 2D confinement
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
-      & profile_2d_local, kpterms_2d_local, cfg%FDorder)
-
+    ! NOTE: QSHE wire uses the 4-band BHZ model (build_bhz_wire_hamiltonian),
+    ! NOT the 8-band k.p wire Hamiltonian. The 8-band k.p profile_2d/kpterms_2d
+    ! and 8-band strain (Bir-Pikus) do not apply to the BHZ path. The pre-#04
+    ! copy-pasted confinementInitialization_2d here was dead boilerplate (its
+    ! outputs were never read by the BHZ builder); removed in Issue #04.
     Ngrid_local = grid_ngrid(cfg%grid)
     Ntot_local = 8 * Ngrid_local
     nev_local = cfg%bands%num_cb + cfg%bands%num_vb
@@ -358,11 +342,11 @@ contains
 
     print *, '  Solving eigenvalue problem (DENSE method)...'
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
-    call eigen_solver_local%solve(H_csr_local, eigen_cfg_local, eigen_res_local)
+    call eigen_solver_local%solve_sparse(H_csr_local, eigen_cfg_local, eigen_res_local)
     print *, '  Eigenproblem solved, nev_found=', eigen_res_local%nev_found
 
     if (eigen_res_local%nev_found == 0) then
-      print *, 'Error: eigensolver found no eigenvalues'
+      print *, 'Error: ', eigen_solver_local%backend_name(), ' found no eigenvalues'
       error stop 'eigensolver found no eigenvalues'
     end if
 
@@ -453,16 +437,7 @@ contains
     call csr_free(H_csr_local)
     call eigensolver_result_free(eigen_res_local)
     if (allocated(eigen_solver_local)) deallocate(eigen_solver_local)
-    call wire_coo_cache_free(coo_cache_local)
-    call wire_workspace_free(wire_ws_local)
     deallocate(eigvals_local)
-    if (allocated(profile_2d_local)) deallocate(profile_2d_local)
-    if (allocated(kpterms_2d_local)) then
-      do i = 1, size(kpterms_2d_local)
-        call csr_free(kpterms_2d_local(i))
-      end do
-      deallocate(kpterms_2d_local)
-    end if
 
   end subroutine run_qshe_wire
 
@@ -474,27 +449,27 @@ contains
     type(topological_result), intent(inout) :: result
 
     type(simulation_config) :: cfg
-    type(csr_matrix), allocatable :: kpterms_2d_local(:)
-    real(kind=dp), allocatable :: profile_2d_local(:,:)
+    type(wire_setup) :: wsetup
     type(csr_matrix) :: H_bdg_csr
-    type(wire_coo_cache) :: coo_cache_local
-    type(wire_workspace) :: wire_ws_local
     class(eigensolver_base), allocatable :: eigen_solver_local
     type(eigensolver_config) :: eigen_cfg_local
     type(eigensolver_result) :: eigen_res_local
     integer :: Ngrid_local, Ntot_local, nev_local
     real(kind=dp) :: emin_local, emax_local, kz_val
     real(kind=dp), allocatable :: eigvals_bdg(:)
-    integer :: i, j, iounit_ev, iounit_prof, status_ev
+    integer :: i, j, iounit_prof
 
     print *, '--- BdG wire mode: Majorana modes ---'
 
     cfg = cfg_in
     kz_val = cfg%bdg%kz
 
-    ! Initialize 2D confinement
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
-      & profile_2d_local, kpterms_2d_local, cfg%FDorder)
+    ! Initialize 2D confinement WITH strain (Issue #04): route through the
+    ! strain-aware wire_setup type so compute_strain + compute_bir_pikus_blocks
+    ! run when cfg%strain%enabled, populating cfg%strain_blocks and unblocking
+    ! the strain insertion in ZB8bandGeneralized. The pre-#04 path called
+    ! confinementInitialization_2d directly and silently dropped strain.
+    call wire_setup_init(wsetup, cfg)
 
     Ngrid_local = grid_ngrid(cfg%grid)
     Ntot_local = 8 * Ngrid_local
@@ -508,8 +483,8 @@ contains
     print *, '  B_vec=', cfg%bdg%B_vec
 
     ! Build BdG Hamiltonian at kz from config
-    call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d_local, kpterms_2d_local, &
-      & kz_val, cfg%bdg%mu, cfg%bdg%delta_0, wire_ws_local, &
+    call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, wsetup%profile_2d, wsetup%kpterms_2d, &
+      & kz_val, cfg%bdg%mu, cfg%bdg%delta_0, wsetup%ws, &
       & cfg%bdg%B_vec, cfg%bdg%g_factor)
 
     ! Configure FEAST for BdG (search around zero energy for Majoranas)
@@ -534,17 +509,18 @@ contains
     eigen_cfg_local%emin = emin_local
     eigen_cfg_local%emax = emax_local
 
-    print *, '  FEAST energy window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
+    print *, '  ', eigen_cfg_local%method, ' energy window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
 
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
-    call eigen_solver_local%solve(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+    call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
 
     if (eigen_res_local%nev_found == 0) then
-      print *, 'Warning: FEAST found no eigenvalues in the search window'
+      print *, 'Warning: ', eigen_solver_local%backend_name(), &
+        ' found no eigenvalues in the search window'
       print *, '  Retrying with auto-computed energy window...'
       call auto_compute_energy_window(H_bdg_csr, eigen_cfg_local%emin, eigen_cfg_local%emax)
       print *, '  Auto window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
-      call eigen_solver_local%solve(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+      call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
     end if
 
     if (eigen_res_local%nev_found == 0) then
@@ -558,21 +534,7 @@ contains
       result%min_gap = 2.0_dp * bdg_zero_energy_gap(eigvals_bdg)
 
       ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
-      call ensure_output_dir()
-      call get_unit(iounit_ev)
-      open(unit=iounit_ev, file='output/bdg_eigenvalues.dat', status='replace', &
-           action='write', iostat=status_ev)
-      if (status_ev == 0) then
-        write(iounit_ev, '(A)') '# BdG eigenvalues (eV)'
-        write(iounit_ev, '(A,ES16.8)') '# kz (1/A) = ', kz_val
-        write(iounit_ev, '(A,I0)') '# n_eigenvalues = ', eigen_res_local%nev_found
-        write(iounit_ev, '(A)') '# Columns: index, energy (eV)'
-        do i = 1, eigen_res_local%nev_found
-          write(iounit_ev, '(I6,ES20.12)') i, eigvals_bdg(i)
-        end do
-        close(iounit_ev)
-        print *, '  Eigenvalues written to output/bdg_eigenvalues.dat'
-      end if
+      call write_bdg_eigenvalues(eigvals_bdg, 'kz', kz_val)
 
       ! Check for zero-energy Majorana modes
       block
@@ -677,15 +639,7 @@ contains
     call csr_free(H_bdg_csr)
     call eigensolver_result_free(eigen_res_local)
     if (allocated(eigen_solver_local)) deallocate(eigen_solver_local)
-    call wire_coo_cache_free(coo_cache_local)
-    call wire_workspace_free(wire_ws_local)
-    if (allocated(profile_2d_local)) deallocate(profile_2d_local)
-    if (allocated(kpterms_2d_local)) then
-      do i = 1, size(kpterms_2d_local)
-        call csr_free(kpterms_2d_local(i))
-      end do
-      deallocate(kpterms_2d_local)
-    end if
+    call wire_setup_free(wsetup)
 
   end subroutine run_bdg_wire
 
@@ -706,7 +660,7 @@ contains
     type(eigensolver_result) :: bdg_result
     integer :: N_local, Ntot_local, Nbdg_local
     integer :: i, j, n_zero, n_fit_ok, n_fit_failed
-    integer :: iounit_ev, iounit_prof, status_ev, status_prof
+    integer :: iounit_prof, status_prof
     real(kind=dp) :: zero_tol, xi_val, dz_local, k_par_val
     real(kind=dp), allocatable :: majorana_xi(:)
 
@@ -750,21 +704,7 @@ contains
     result%min_gap = 2.0_dp * minval(abs(eigvals_bdg))
 
     ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
-    call ensure_output_dir()
-    call get_unit(iounit_ev)
-    open(unit=iounit_ev, file='output/bdg_eigenvalues.dat', status='replace', &
-         action='write', iostat=status_ev)
-    if (status_ev == 0) then
-      write(iounit_ev, '(A)') '# BdG eigenvalues (eV)'
-      write(iounit_ev, '(A,ES16.8)') '# k_par (1/A) = ', k_par_val
-      write(iounit_ev, '(A,I0)') '# n_eigenvalues = ', Nbdg_local
-      write(iounit_ev, '(A)') '# Columns: index, energy (eV)'
-      do i = 1, Nbdg_local
-        write(iounit_ev, '(I6,ES20.12)') i, eigvals_bdg(i)
-      end do
-      close(iounit_ev)
-      print *, '  Eigenvalues written to output/bdg_eigenvalues.dat'
-    end if
+    call write_bdg_eigenvalues(eigvals_bdg, 'k_par', k_par_val)
 
     n_zero = 0
     do i = 1, Nbdg_local
@@ -1286,29 +1226,29 @@ contains
     real(kind=dp), intent(out) :: gap
 
     type(simulation_config) :: cfg
-    type(csr_matrix), allocatable :: kpterms_2d_local(:)
-    real(kind=dp), allocatable :: profile_2d_local(:,:)
+    type(wire_setup) :: wsetup
     type(csr_matrix) :: H_bdg_csr
-    type(wire_workspace) :: wire_ws_local
     class(eigensolver_base), allocatable :: eigen_solver_local
     type(eigensolver_config) :: eigen_cfg_local
     type(eigensolver_result) :: eigen_res_local
     real(kind=dp), allocatable :: eigvals_bdg(:)
-    integer :: Ngrid_local, Ntot_local, Nbdg_local, nev_local, i
+    integer :: Ngrid_local, Ntot_local, Nbdg_local, nev_local
 
     cfg = cfg_in
     cfg%bdg%enabled = .true.
     cfg%bdg%mu = mu_val
     cfg%bdg%B_vec = [0.0_dp, 0.0_dp, B_val]
 
-    call confinementInitialization_2d(cfg%grid, cfg%params, cfg%wire%regions, &
-      & profile_2d_local, kpterms_2d_local, cfg%FDorder)
+    ! Strain-aware wire init (Issue #04): run compute_strain +
+    ! compute_bir_pikus_blocks when cfg%strain%enabled so the BdG sweep
+    ! honors strain. Pre-#04 this site skipped strain entirely.
+    call wire_setup_init(wsetup, cfg)
 
     Ngrid_local = grid_ngrid(cfg%grid)
     Ntot_local = 8 * Ngrid_local
     Nbdg_local = 2 * Ntot_local
-    call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d_local, kpterms_2d_local, &
-      & 0.0_dp, cfg%bdg%mu, cfg%bdg%delta_0, wire_ws_local, &
+    call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, wsetup%profile_2d, wsetup%kpterms_2d, &
+      & 0.0_dp, cfg%bdg%mu, cfg%bdg%delta_0, wsetup%ws, &
       & cfg%bdg%B_vec, cfg%bdg%g_factor)
 
     nev_local = max(2, cfg%bands%num_cb + cfg%bands%num_vb)
@@ -1322,18 +1262,20 @@ contains
     eigen_cfg_local%emax =  5.0_dp * cfg%bdg%delta_0
 
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
-    call eigen_solver_local%solve(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+    call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
 
     if (.not. eigen_res_local%converged .or. eigen_res_local%nev_found < 1) then
-      print *, 'ERROR: wire BdG sweep eigensolver failed or found no states'
+      print *, 'ERROR: wire BdG sweep ', eigen_solver_local%backend_name(), &
+        ' failed or found no states'
       error stop 'wire BdG eigensolver failed'
     end if
     if (eigen_res_local%m0_used > 0 .and. &
         eigen_res_local%nev_found >= eigen_res_local%m0_used .and. &
         eigen_res_local%m0_used < Nbdg_local) then
-      print *, 'ERROR: wire BdG sweep likely truncated FEAST subspace'
+      print *, 'ERROR: wire BdG sweep likely truncated ', &
+        eigen_solver_local%backend_name(), ' subspace'
       print *, '  nev_found=', eigen_res_local%nev_found, ' m0=', eigen_res_local%m0_used
-      error stop 'wire BdG FEAST subspace likely truncated'
+      error stop 'wire BdG eigensolver subspace likely truncated'
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues
@@ -1344,14 +1286,7 @@ contains
     call csr_free(H_bdg_csr)
     call eigensolver_result_free(eigen_res_local)
     if (allocated(eigen_solver_local)) deallocate(eigen_solver_local)
-    call wire_workspace_free(wire_ws_local)
-    if (allocated(profile_2d_local)) deallocate(profile_2d_local)
-    if (allocated(kpterms_2d_local)) then
-      do i = 1, size(kpterms_2d_local)
-        call csr_free(kpterms_2d_local(i))
-      end do
-      deallocate(kpterms_2d_local)
-    end if
+    call wire_setup_free(wsetup)
   end subroutine eval_wire_bdg_gap_app
 
 end program topologicalAnalysis

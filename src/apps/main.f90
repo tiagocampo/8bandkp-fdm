@@ -1,18 +1,19 @@
 program kpfdm
 
   use definitions, only: NUM_CB_STATES, NUM_VB_STATES, conf_direction, &
-    dp, simulation_config, validate_semantic, wavevector, resolve_solver_defaults
+    dp, simulation_config, validate_semantic, wavevector
   use parameters
   use hamiltonianConstructor
   use hamiltonian_blocks, only: init_kp_block_cache
   use OMP_lib
   use outputFunctions
-  use utils, only: get_unit, ensure_output_dir
+  use utils, only: get_unit, ensure_output_dir, dnscsr_z_mkl
   use input_parser
   use sc_loop
   use eigensolver, only: eigensolver_result, eigensolver_result_free, &
     eigensolver_config, eigensolver_base, make_eigensolver, &
-    eigensolver_config_validate, auto_compute_energy_window
+    eigensolver_config_validate, apply_solver_window, EIGEN_MODE_INDEX, &
+    reconcile_band_slice
   use strain_solver, only: strain_result, strain_result_free, init_strain_cache
   use magnetic_field, only: init_zeeman_cache
   use exciton_solver
@@ -275,15 +276,17 @@ program kpfdm
         print *, '  Auto energy window: [', setup%eigen_cfg%emin, ',', setup%eigen_cfg%emax, ']'
       end if
 
-      call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
+      call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
       if (.not. eigen_res%converged) then
         if (eigen_res%nev_found < nev_wire) then
-          print *, '  ERROR: FEAST did not converge at k-point 1 and found only', &
+          print *, '  ERROR: ', setup%eigen_solver%backend_name(), &
+            ' did not converge at k-point 1 and found only', &
             eigen_res%nev_found, 'eigenvalues (need', nev_wire, ')'
-          error stop 'FEAST convergence failed'
+          error stop 'eigensolver convergence failed'
         end if
-        print *, '  WARNING: FEAST subspace issue at k-point 1, but found enough eigenvalues'
+        print *, '  WARNING: ', setup%eigen_solver%backend_name(), &
+          ' subspace issue at k-point 1, but found enough eigenvalues'
       end if
       print *, '  Found ', eigen_res%nev_found, ' eigenvalues (requested ', &
         & nev_wire, ') iterations=', eigen_res%iterations
@@ -322,13 +325,14 @@ program kpfdm
           print *, 'k-point ', k, '/', cfg%wave_vector%nsteps, ' kz=', smallk(k)%kz
 
           call setup_build_H(setup, cfg, smallk(k))
-          call setup%eigen_solver%solve(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
+          call setup%eigen_solver%solve_sparse(setup%HT_csr_ptr, setup%eigen_cfg, eigen_res)
 
           if (.not. eigen_res%converged) then
             if (eigen_res%nev_found < nev_wire) then
-              print *, '  ERROR: FEAST did not converge at k-point', k, &
+              print *, '  ERROR: ', setup%eigen_solver%backend_name(), &
+                ' did not converge at k-point', k, &
                 'and found only', eigen_res%nev_found, 'eigenvalues (need', nev_wire, ')'
-              error stop 'FEAST convergence failed'
+              error stop 'eigensolver convergence failed'
             end if
             print *, '  WARNING: eigensolver subspace issue at k-point', k, &
               ' but found enough eigenvalues'
@@ -408,13 +412,7 @@ program kpfdm
       print '(A,I0,A)', ' Landau mode: N=', N, ' (single material)'
 
       ! --- Write Landau band edge profile ---
-      call ensure_output_dir()
-      call get_unit(iounit)
-      open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
-      do i = 1, cfg%landau%nx, 1
-        write(iounit,*) cfg%grid%x(i), profile(i,1), profile(i,2), profile(i,3)
-      end do
-      close(iounit)
+      call write_profile_1d(cfg%grid%x, profile)
 
       vl = 0.0_dp
       vu = 0.0_dp
@@ -426,28 +424,92 @@ program kpfdm
       eig(:,:) = 0_dp
       eigv(:,:,:) = 0_dp
 
-      ! --- Solver config: DENSE + INDEX ---
+      ! --- Solver config: DENSE+INDEX (golden default) or FEAST+ENERGY ---
+      ! derive_eigensolver (issue #02, called by simulation_setup_init)
+      ! already resolved AUTO->DENSE+INDEX for Landau (the golden default)
+      ! and propagated the user [solver] window/m0. An explicit
+      ! method=FEAST resolves to FEAST+ENERGY (resolve_solver_defaults,
+      ! ADR 0004) - the path enabled by issue #10.
       landau_cfg = setup%eigen_cfg
       landau_solver = make_eigensolver(landau_cfg)
+
+      ! --- Landau FEAST sweep-envelope window (ADR 0005, issue #10) ---
+      ! The Landau k-sweep is a genuine in-plane k-dispersion sweep at
+      ! FIXED B (smallk(k) varies k_y; the B-sweep fan diagram is a
+      ! separate application-layer block below - ADR 0003). FEAST needs an
+      ! energy window covering the full retained [il, iuu] band range
+      ! across the sweep; the window authority's dispersion-aware
+      ! envelope variant (asw_envelope, issue #03) unions the Gershgorin
+      ! bounds at the sweep's two endpoints (k=0 and k_max) into ONE
+      ! stable window per sweep. DENSE ignores emin/emax, so this block is
+      ! a no-op for the golden default. The authority honors a user-set
+      ! [solver] window verbatim (no envelope), so the envelope is derived
+      ! ONLY when the user left the window at the parser's [0,0] auto
+      ! sentinel. Landau builds dense (ZB8bandLandau has no CSR builder);
+      ! convert the endpoint dense matrices to CSR for the Gershgorin
+      ! bound (the conversion uses the same nonzero rule as the solver's
+      ! internal dense->CSR path, feast_solve_dense via dense_to_csr_work).
+      if (trim(landau_cfg%method) == 'FEAST' .and. &
+          cfg%solver%emin == 0.0_dp .and. cfg%solver%emax == 0.0_dp) then
+        block
+          complex(kind=dp), allocatable :: HT_env(:,:)
+          type(csr_matrix) :: HT_csr_a, HT_csr_b
+          integer :: nzmax_env
+
+          allocate(HT_env(N, N))
+          HT_env = (0.0_dp, 0.0_dp)
+          call init_kp_block_cache()
+          call init_strain_cache()
+          call init_zeeman_cache()
+          ! Endpoint k-points: smallk(1) = k=0, smallk(nsteps) = k_max.
+          call ZB8bandLandau(HT_env, smallk(1), profile, kpterms, &
+            cfg%grid%x, cfg=cfg)
+          nzmax_env = N * N
+          call dnscsr_z_mkl(nzmax_env, N, HT_env, HT_csr_a)
+          call ZB8bandLandau(HT_env, smallk(cfg%wave_vector%nsteps), &
+            profile, kpterms, cfg%grid%x, cfg=cfg)
+          nzmax_env = N * N
+          call dnscsr_z_mkl(nzmax_env, N, HT_env, HT_csr_b)
+          call apply_solver_window(HT_csr_a, HT_csr_b, &
+            user_emin=cfg%solver%emin, user_emax=cfg%solver%emax, &
+            emin_out=landau_cfg%emin, emax_out=landau_cfg%emax)
+          call csr_free(HT_csr_a)
+          call csr_free(HT_csr_b)
+          deallocate(HT_env)
+          print '(A,ES12.4,A,ES12.4,A)', ' Landau auto FEAST window '// &
+            '(sweep envelope): [', landau_cfg%emin, ',', &
+            landau_cfg%emax, ']'
+        end block
+        ! Re-validate + reconstruct after window update.
+        call eigensolver_config_validate(landau_cfg)
+        landau_solver = make_eigensolver(landau_cfg)
+      end if
 
       ! ================================================================
       ! Landau k-sweep (OpenMP parallel)
       ! ================================================================
       info = mkl_set_num_threads_local(1)
 
-      print '(A,I0,A,I0,A)', ' Landau: N=', cfg%landau%nx, ', ', &
-        & cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
+      print '(A,A,A,I0,A,I0,A)', ' Landau k-sweep (', &
+        landau_solver%backend_name(), '): N=', cfg%landau%nx, ', ', &
+        cfg%wave_vector%nsteps, ' k-points (OpenMP parallel)'
 
       block
         complex(kind=dp), allocatable :: HT_loc(:,:)
         type(eigensolver_config) :: cfg_loc
         class(eigensolver_base), allocatable :: solver_loc
+        integer :: nev_target, idx_lo
+
+        ! Number of retained bands the output expects (top numvb valence +
+        ! bottom numcb conduction). eig/eigv are sized to exactly this
+        ! count; the result-handling below must never overrun it.
+        nev_target = iuu - il + 1
 
         call init_kp_block_cache()
         call init_strain_cache()
         call init_zeeman_cache()
 
-        !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, landau_result, M)
+        !$omp parallel private(k, HT_loc, cfg_loc, solver_loc, landau_result, M, idx_lo)
         allocate(HT_loc(N, N))
         HT_loc = (0.0_dp, 0.0_dp)
         cfg_loc = landau_cfg
@@ -459,13 +521,28 @@ program kpfdm
           call solver_loc%solve_dense(HT_loc, cfg_loc, landau_result)
           if (.not. landau_result%converged) then
             !$omp critical
-            print *, "ERROR: Landau diagonalization failed at k=", k
+            print '(A,A,A,I0)', ' ERROR: ', solver_loc%backend_name(), &
+              ' diagonalization failed at k=', k
             !$omp end critical
             error stop 'eigensolver failed in Landau k-sweep'
           end if
+
           M = landau_result%nev_found
-          eig(1:M, k) = landau_result%eigenvalues(1:M)
-          eigv(:, 1:M, k) = landau_result%eigenvectors(:, 1:M)
+          if (M < nev_target) then
+            !$omp critical
+            print '(A,A,A,I0,A,I0,A,I0,A)', ' ERROR: ', &
+              solver_loc%backend_name(), ' returned only ', M, &
+              ' eigenvalues at k=', k, ' (need ', nev_target, &
+              '); widen the energy window'
+            !$omp end critical
+            error stop 'insufficient eigenvalues for Landau k-sweep'
+          end if
+
+          call reconcile_band_slice(landau_result%nev_found, il, iuu, idx_lo)
+
+          eig(1:nev_target, k) = landau_result%eigenvalues(idx_lo:idx_lo+nev_target-1)
+          eigv(:, 1:nev_target, k) = &
+            landau_result%eigenvectors(:, idx_lo:idx_lo+nev_target-1)
           call eigensolver_result_free(landau_result)
         end do
         !$omp end do
@@ -484,6 +561,14 @@ program kpfdm
 
       ! ================================================================
       ! B-sweep fan diagram for Landau mode (landau_sweep='B')
+      ! APPLICATION-LAYER (ADR 0003): this block is NOT the k-solve. It
+      ! sweeps B at fixed k=0 to draw the Landau-level fan diagram. It
+      ! uses a DENSE+INDEX solver regardless of the k-sweep's method, so
+      ! the fan diagram is bit-identical to its golden reference and
+      ! robust to whatever backend the k-sweep used (the k-sweep's FEAST
+      ! window was derived at the config's original B and is not valid at
+      ! swept B values). DENSE is appropriate here: nB one-shot solves at
+      ! k=0, not a performance path.
       ! ================================================================
       if (trim(cfg%landau%sweep) == 'B') then
         block
@@ -493,6 +578,8 @@ program kpfdm
           complex(kind=dp), allocatable :: HT_B(:,:)
           character(len=64) :: fmt_str
           type(wavevector) :: wv0
+          type(eigensolver_config) :: fan_cfg
+          class(eigensolver_base), allocatable :: fan_solver
 
           B_min  = cfg%bdg%B_sweep(1)
           B_max  = cfg%bdg%B_sweep(2)
@@ -514,11 +601,18 @@ program kpfdm
           allocate(HT_B(N, N))
           HT_B = (0.0_dp, 0.0_dp)
 
+          ! Fan-diagram solver: always DENSE+INDEX (app-layer, ADR 0003).
+          fan_cfg = setup%eigen_cfg
+          fan_cfg%method = 'DENSE'
+          fan_cfg%mode = EIGEN_MODE_INDEX
+          call eigensolver_config_validate(fan_cfg)
+          fan_solver = make_eigensolver(fan_cfg)
+
           do iB = 1, nB
             B_val = B_min + (iB - 1) * B_step
             cfg%bdg%B_vec(3) = B_val
             call ZB8bandLandau(HT_B, wv0, profile, kpterms, cfg%grid%x, cfg=cfg)
-            call landau_solver%solve_dense(HT_B, landau_cfg, landau_result)
+            call fan_solver%solve_dense(HT_B, fan_cfg, landau_result)
             if (.not. landau_result%converged) then
               print *, 'ERROR: B-sweep diagonalization failed at B=', B_val
               error stop 'eigensolver failed in Landau B-sweep'
@@ -604,13 +698,7 @@ program kpfdm
 
   ! Print profile for QW mode
   if (conf_direction(cfg%confinement) == 'z') then
-    call ensure_output_dir()
-    call get_unit(iounit)
-    open(unit=iounit, file='output/potential_profile.dat', status="replace", action="write")
-    do i = 1, cfg%grid%npoints(), 1
-      write(iounit,*) cfg%z(i), profile(i,1), profile(i,2), profile(i,3)
-    end do
-    close(iounit)
+    call write_profile_1d(cfg%z, profile)
   end if
 
   ! --- Self-consistent loop (QW only, after wave vector setup) ---
@@ -663,50 +751,59 @@ program kpfdm
     type(eigensolver_result) :: result_bs
     type(eigensolver_config) :: ecfg_bs
     class(eigensolver_base), allocatable :: solver_bs
-    character(len=10) :: res_method, res_mode   ! resolved by resolve_solver_defaults
+    integer :: N_bs, il_bs, iu_bs, nev_bs
 
-    ! Build solver config via the single source of truth: bulk resolves
-    ! DENSE+FULL, QW resolves DENSE+INDEX (exact same (method,mode) as
-    ! before, now centralized in resolve_solver_defaults). The
-    ! confinement-specific nev/il/iu bookkeeping stays per-branch.
-    call resolve_solver_defaults(cfg%confinement, cfg%solver%method, cfg%solver%mode, &
-                                 res_method, res_mode)
-    ecfg_bs%method = res_method
-    ecfg_bs%mode   = eigen_mode_from_string(res_mode)
-    ! Propagate the user's [solver] window/subspace so FEAST honors it instead
-    ! of falling back to the eigensolver_config type default [-1,+1] eV.
-    ecfg_bs%emin = cfg%solver%emin
-    ecfg_bs%emax = cfg%solver%emax
-    ecfg_bs%m0   = cfg%solver%m0
+    ! Build the k-sweep solver via the single derivation seam (issue #02):
+    ! method/mode from the method-aware AUTO resolver, then nev/il/iu,
+    ! window/subspace propagation, validation, and construction — all in
+    ! one place shared with the four confinement init blocks. The
+    ! geometry-specific N/il/iu/nev bookkeeping stays per-branch here.
     if (conf_direction(cfg%confinement) == 'n') then
       ! Bulk: 8x8, all eigenvalues
-      ecfg_bs%nev = 8
-      ecfg_bs%il = 1
-      ecfg_bs%iu = 8
+      N_bs = 8; il_bs = 1; iu_bs = 8; nev_bs = 8
     else
       ! QW: selected eigenvalue range
-      ecfg_bs%nev = iuu - il + 1
-      ecfg_bs%il = il
-      ecfg_bs%iu = iuu
-      ! QW + FEAST needs a valid energy window. Honor [solver] emin/emax; if
-      ! unset (auto sentinel emin >= emax), estimate from the max-k Hamiltonian
-      ! so the window covers the whole sweep (DENSE ignores emin/emax).
-      if (trim(ecfg_bs%method) == 'FEAST' .and. ecfg_bs%emin >= ecfg_bs%emax) then
-        block
-          type(csr_matrix) :: HT_csr_k0
-          type(qw_workspace) :: qw_ws_k0
-          call ZB8bandQW_csr(HT_csr_k0, smallk(cfg%wave_vector%nsteps), &
-            profile, kpterms, cfg, ws=qw_ws_k0)
-          call auto_compute_energy_window(HT_csr_k0, ecfg_bs%emin, ecfg_bs%emax)
-          call csr_free(HT_csr_k0)
-          call qw_workspace_free(qw_ws_k0)
-          print '(A,ES12.4,A,ES12.4,A)', ' QW k-sweep auto FEAST window: [', &
-            ecfg_bs%emin, ',', ecfg_bs%emax, ']'
-        end block
-      end if
+      N_bs = N; il_bs = il; iu_bs = iuu; nev_bs = iuu - il + 1
     end if
-    call eigensolver_config_validate(ecfg_bs)
-    solver_bs = make_eigensolver(ecfg_bs)
+    call derive_eigensolver(cfg, N=N_bs, il=il_bs, iu=iu_bs, nev=nev_bs, &
+                            eigen_cfg=ecfg_bs, solver=solver_bs)
+
+    ! QW + FEAST needs a valid energy window covering the WHOLE sweep.
+    ! The dispersion-aware envelope (ADR 0005, issue #03): build the
+    ! Hamiltonian CSR at BOTH sweep endpoints (k=0 and k_max), then union
+    ! their Gershgorin bounds into ONE stable window per sweep. This is
+    ! the single source of [emin, emax] for the sweep — a per-k moving
+    ! window is rejected by design (it would break the wire kz-sweep's
+    ! per-k branch tracking). DENSE ignores emin/emax. The authority
+    ! honors a user-set [solver] window verbatim (no envelope), so the
+    ! envelope is derived ONLY when the user left the window at the
+    ! parser's [0,0] auto sentinel. (Wire and Landau branch away with
+    ! `stop` before reaching this block, so conf_direction /= 'n' here
+    ! is QW only — ZB8bandQW_csr is the correct builder.)
+    if (conf_direction(cfg%confinement) /= 'n' .and. &
+        trim(ecfg_bs%method) == 'FEAST' .and. &
+        cfg%solver%emin == 0.0_dp .and. cfg%solver%emax == 0.0_dp) then
+      block
+        type(csr_matrix) :: HT_csr_a, HT_csr_b
+        type(qw_workspace) :: qw_ws_env
+        ! Endpoint k-points: smallk(1) = k=0, smallk(nsteps) = k_max.
+        call ZB8bandQW_csr(HT_csr_a, smallk(1), profile, kpterms, cfg, &
+          ws=qw_ws_env)
+        call ZB8bandQW_csr(HT_csr_b, smallk(cfg%wave_vector%nsteps), &
+          profile, kpterms, cfg, ws=qw_ws_env)
+        call apply_solver_window(HT_csr_a, HT_csr_b, &
+          user_emin=cfg%solver%emin, user_emax=cfg%solver%emax, &
+          emin_out=ecfg_bs%emin, emax_out=ecfg_bs%emax)
+        call csr_free(HT_csr_a)
+        call csr_free(HT_csr_b)
+        call qw_workspace_free(qw_ws_env)
+        print '(A,ES12.4,A,ES12.4,A)', ' QW k-sweep auto FEAST window (envelope): [', &
+          ecfg_bs%emin, ',', ecfg_bs%emax, ']'
+      end block
+      ! Re-validate + reconstruct after window update.
+      call eigensolver_config_validate(ecfg_bs)
+      solver_bs = make_eigensolver(ecfg_bs)
+    end if
 
     if (conf_direction(cfg%confinement) == 'n') then
       ! --- BULK (8x8, trivially fast — no parallelization needed) ---
@@ -738,33 +835,36 @@ program kpfdm
         block
           type(csr_matrix) :: HT_csr_loc
           type(qw_workspace) :: qw_ws
+          integer :: nev_target, idx_lo
 
           ! Pre-initialize caches (thread-safety)
           call init_kp_block_cache()
           call init_strain_cache()
           call init_zeeman_cache()
 
-          print '(A,I0,A)', ' QW k-sweep (FEAST/CSR): ', cfg%wave_vector%nsteps, ' k-points'
+          print '(A,A,A,I0,A)', ' QW k-sweep (', solver_bs%backend_name(), &
+            '/CSR): ', cfg%wave_vector%nsteps, ' k-points'
 
           do k = 1, cfg%wave_vector%nsteps
             call ZB8bandQW_csr(HT_csr_loc, smallk(k), profile, kpterms, &
               cfg, ws=qw_ws)
             call solver_bs%solve_sparse(HT_csr_loc, ecfg_bs, result_bs)
-            if (.not. result_bs%converged) error stop 'eigensolver failed in QW FEAST k-sweep'
-            ! Clamp to allocated array sizes (ENERGY mode may return more eigenvalues)
-            M = min(result_bs%nev_found, iuu-il+1)
-            if (result_bs%nev_found > iuu-il+1) then
-              print '(A,I0,A,I0,A)', '  Warning: FEAST returned ', result_bs%nev_found, &
-                ' eigenvalues at k-point ', k, &
-                '; only the lowest will be kept (widen bands or narrow energy window).'
+            if (.not. result_bs%converged) error stop 'eigensolver failed in QW k-sweep'
+            ! Extract the gap-straddling [il, iuu] band window. A partial
+            ! spectrum is a hard error (no silent zero-fill); the offset into
+            ! the solver result is decided by the shared reconcile_band_slice
+            ! helper (FEAST+ENERGY full spectrum -> offset il; the DENSE+INDEX
+            ! pre-sliced case -> offset 1). (Review finding #4.)
+            nev_target = iuu - il + 1
+            if (result_bs%nev_found < nev_target) then
+              print '(A,A,A,I0,A,I0,A)', ' ERROR: ', solver_bs%backend_name(), &
+                ' returned only ', result_bs%nev_found, ' eigenvalues at k-point ', k, &
+                '; widen the energy window'
+              error stop 'insufficient eigenvalues for QW band-structure k-sweep'
             end if
-            if (result_bs%nev_found < (iuu - il + 1)) then
-              print '(A,I0,A,I0,A,I0,A)', '  Warning: FEAST returned only ', &
-                result_bs%nev_found, ' eigenvalues at k-point ', k, ' of ', iuu - il + 1, &
-                ' requested; missing bands zero-filled (widen energy window).'
-            end if
-            eig(1:M, k) = result_bs%eigenvalues(1:M)
-            eigv(:, 1:M, k) = result_bs%eigenvectors(:, 1:M)
+            call reconcile_band_slice(result_bs%nev_found, il, iuu, idx_lo)
+            eig(1:nev_target, k) = result_bs%eigenvalues(idx_lo:idx_lo+nev_target-1)
+            eigv(:, 1:nev_target, k) = result_bs%eigenvectors(:, idx_lo:idx_lo+nev_target-1)
             call eigensolver_result_free(result_bs)
             call csr_free(HT_csr_loc)
           end do

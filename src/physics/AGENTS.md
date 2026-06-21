@@ -7,6 +7,7 @@ Owns the 8-band k·p Hamiltonian construction, all derived physical quantities (
 Called from `src/apps/` and `src/core/simulation_setup.f90`:
 - `ZB8bandQW`, `ZB8bandBulk`, `ZB8bandLandau` (`hamiltonianConstructor.f90`) — dense Hamiltonian
 - `ZB8bandGeneralized` (`hamiltonian_wire.f90`) — sparse wire Hamiltonian
+- `ZB8bandQW_csr` (`hamiltonian_qw.f90`) — sparse QW Hamiltonian (FEAST path)
 - `build_bdg_hamiltonian_1d` (`bdg_hamiltonian.f90`) — Nambu-space Hamiltonian
 - `self_consistent_loop`, `self_consistent_loop_wire` (`sc_loop.f90`) — SC iteration
 - `gfactorCalculation`, `gfactorCalculation_wire` (`gfactor_functions.f90`) — g-factor
@@ -15,17 +16,21 @@ Called from `src/apps/` and `src/core/simulation_setup.f90`:
 - `compute_exciton_binding` (`exciton.f90`) — variational exciton
 - `compute_phonon_scattering` (`scattering.f90`) — LO-phonon rates
 
-## Module Inventory (17 files)
+## Module Inventory (20 files)
 
 | File | Module | Lines | Role |
 |------|--------|------:|------|
-| `hamiltonian_blocks.f90` | `hamiltonian_blocks` | 260 | 52-entry k·p block table (KP_Q..KP_A). Single source of truth. |
+| `hamiltonian_blocks.f90` | `hamiltonian_blocks` | 341 | 52-entry k·p block table (KP_Q..KP_A) + block-formula descriptor (Issue #06). Single source of truth for both block TOPOLOGY and the tag→formula INTERPRETATION (`resolve_kp_term` → `kp_term_descriptor`). |
 | `confinement_init.f90` | `confinement_init` | 863 | kpterms FD operator matrices for QW/wire/Landau |
-| `hamiltonianConstructor.f90` | `hamiltonianConstructor` | 758 | Dense bulk/QW/Landau Hamiltonian + velocity matrices |
-| `hamiltonian_wire.f90` | `hamiltonian_wire` | 1357 | Sparse wire Hamiltonian (CSR/COO) + workspace cache |
+| `hamiltonianConstructor.f90` | `hamiltonianConstructor` | 798 | Dense bulk/QW/Landau Hamiltonian + velocity matrices. Block insertion (`apply_kp_table_dense`/`_bulk`) applies the descriptor generically — no per-tag select-case. |
+| `hamiltonian_wire.f90` | `hamiltonian_wire` | 1411 | Sparse wire Hamiltonian (CSR/COO) + workspace cache. Owns the shared CSR derived-block helpers `build_kp_derived_csr_blocks` / `update_kp_derived_csr_values` consumed by both wire and QW-CSR paths. |
+| `hamiltonian_qw.f90` | `hamiltonian_qw` | 666 | **QW-CSR Hamiltonian builder** (`ZB8bandQW_csr`). Sparse FEAST path for the quantum well: builds the 8N×8N QW Hamiltonian via COO assembly reusing the wire helpers, but from 1D `kpterms(N,N,10)` instead of 2D CSR kpterms. Fast path caches the k-independent CSR structure at a sentinel k=(1,0) and updates only block values per k-point. |
 | `bdg_hamiltonian.f90` | `bdg_hamiltonian` | 432 | BdG Nambu-space (16N×16N) with s-wave pairing |
 | `magnetic_field.f90` | `magnetic_field` | 193 | Zeeman table (SSOT) + splitting + Peierls phase as COO insertions |
-| `strain_solver.f90` | `strain_solver` | 1174 | Biaxial strain, plane-strain PDE, Bir-Pikus, lookup_bp_field |
+| `wire_setup.f90` | `wire_setup_mod` | 194 | Strain-aware wire init/cleanup type (`wire_setup`). Owns profile_2d, kpterms_2d, wire workspace, COO cache. `wire_setup_init` runs `confinementInitialization_2d` + the SAME strain step (`compute_strain` + `compute_bir_pikus_blocks`) as the canonical `simulation_setup` case('wire'), fixing the copy-paste strain-omission on the topology/BdG/spectral paths (Issue #04). `wire_setup_adopt_precomputed` variant wraps caller-supplied data for sinks. Idempotent `wire_setup_free` via `was_freed`. BHZ wire is NOT routed here (4-band model, no 8-band k.p strain). |
+| `strain_types.f90` | `strain_types` | 64 | Strain-tensor container (`strain_result`) + finalizer. Leaf module shared by `strain_solver` (Bir-Pikus) and `strain_pde` (Navier-Cauchy) to avoid a circular `use` (Issue #06, ADR 0005). |
+| `strain_pde.f90` | `strain_pde` | 749 | Wire plane-strain Navier-Cauchy PDE (`compute_strain_wire`): stiffness assembly + MKL PARDISO solve + strain-from-displacement recovery. Split out of `strain_solver` along the concern boundary. |
+| `strain_solver.f90` | `strain_solver` | 444 | Bir-Pikus formulas + strain table (SSOTs), QW biaxial strain, top-level dispatcher. Re-exports `strain_result`/`strain_result_free` from `strain_types`. |
 | `gfactor_functions.f90` | `gfactorFunctions` | 1217 | Lowdin partitioning, spin matrices, optical matrix elements |
 | `optical_spectra.f90` | `optical_spectra` | 1058 | Absorption (TE/TM), gain, spontaneous emission, ISBT |
 | `charge_density.f90` | `charge_density` | 437 | n(z), p(z) from eigenstates; output in cm⁻³ |
@@ -40,15 +45,19 @@ Called from `src/apps/` and `src/core/simulation_setup.f90`:
 ## Dependency DAG
 
 ```
-Layer 0 (leaves):  hamiltonian_blocks, strain_solver, magnetic_field,
-                   spin_projection, confinement_init, charge_density,
-                   poisson, exciton, scattering
-Layer 1:           hamiltonian_wire, optical_spectra, gfactorFunctions
-Layer 2 (hubs):    hamiltonianConstructor, green_functions, sc_loop
-Layer 3:           bdg_hamiltonian, topological_analysis
+Layer 0 (leaves):  hamiltonian_blocks, strain_types, strain_pde,
+                   magnetic_field, spin_projection, confinement_init,
+                   charge_density, poisson, exciton, scattering
+Layer 1:           strain_solver (uses strain_types + strain_pde),
+                   hamiltonian_wire, hamiltonian_qw (uses hamiltonian_wire),
+                   wire_setup_mod (uses confinement_init + hamiltonian_wire + strain_solver),
+                   optical_spectra, gfactorFunctions
+Layer 2 (hubs):    hamiltonianConstructor (uses hamiltonian_wire + strain_solver),
+                   green_functions (uses wire_setup_mod), sc_loop
+Layer 3:           bdg_hamiltonian, topological_analysis (main_topology app uses wire_setup_mod)
 ```
 
-No cycles. `hamiltonianConstructor` depends on `hamiltonian_wire` (not vice versa).
+No cycles. `hamiltonianConstructor` depends on `hamiltonian_wire` (not vice versa). `hamiltonian_qw` depends on `hamiltonian_wire` (imports `insert_main_blocks`, `build_kp_derived_csr_blocks`, etc.). `strain_solver` depends on the two strain leaves (`strain_types` for the result container, `strain_pde` for the wire PDE); the Bir-Pikus / strain-table concern stays in `strain_solver`.
 
 ## Contracts & Invariants
 
@@ -64,7 +73,8 @@ Band 7: |S,+1/2⟩  CB↑     Band 8: |S,-1/2⟩  CB↓
 All modules: `idx = (band-1)*Ngrid + spatial_index`. Spatial recovered via `sp = mod(idx-1, Ngrid) + 1`.
 
 ### Single source of truth tables
-- **k·p blocks**: `get_kp_block_table()` in `hamiltonian_blocks.f90` — 52 entries. Both dense and COO builders import this.
+- **k·p block topology**: `get_kp_block_table()` in `hamiltonian_blocks.f90` — 52 entries. Both dense and COO builders import this.
+- **k·p block-formula interpretation**: `resolve_kp_term()` in `hamiltonian_blocks.f90` (Issue #06) — maps a block tag (KP_Q, KP_DIFF, ...) to a `kp_term_descriptor` (identity / difference / half-sum + operand tags). All four Hamiltonian builders apply this descriptor generically; the derived formulas `Q − T` and `0.5·(Q + T)` have ONE source, not one per builder. CSR derived blocks go through `build_kp_derived_csr_blocks` / `update_kp_derived_csr_values` in `hamiltonian_wire.f90`.
 - **Bir-Pikus**: `compute_bp_scalar()` in `strain_solver.f90` — `elemental pure`. Never duplicate.
 - **Strain table**: `get_strain_table()` in `strain_solver.f90` — band-pair topology.
 - **Zeeman table**: `get_zeeman_table()` in `magnetic_field.f90` — g-multipliers per band. `compute_zeeman_vz` reads from table (not pure).
@@ -92,9 +102,10 @@ HH±3/2: ∓1.5, LH±1/2: ±0.5/∓0.5, SO±1/2: ∓0.5, CB±1/2: ±1.0/∓1.0
 4. Add `# COVERAGE:` annotations in corresponding test file
 5. Add golden-reference test in `tests/regression/`
 
-### Three Hamiltonian construction paths
-- Dense QW/bulk: `hamiltonianConstructor` → `ZB8bandQW`/`ZB8bandBulk`/`ZB8bandLandau`
-- Sparse wire: `hamiltonian_wire` → `ZB8bandGeneralized`
+### Four Hamiltonian construction paths
+- Dense QW/bulk/Landau: `hamiltonianConstructor` → `ZB8bandQW`/`ZB8bandBulk`/`ZB8bandLandau`. Block insertion via `apply_kp_table_dense` (matrix form) / `apply_kp_table_bulk` (scalar form), both driven by the centralized `kp_term_descriptor` from `hamiltonian_blocks`.
+- Sparse wire: `hamiltonian_wire` → `ZB8bandGeneralized`. CSR derived blocks (KP_DIFF, KP_HALF_SUM) computed via `build_kp_derived_csr_blocks` / `update_kp_derived_csr_values`.
+- **Sparse QW (FEAST)**: `hamiltonian_qw` → `ZB8bandQW_csr`. Same COO insertion helpers as the wire path, but from 1D `kpterms(N,N,10)`; reuses the wire's `build_kp_derived_csr_blocks` so the Q-T / 0.5*(Q+T) formulas have one source. Fast path caches the k-independent CSR structure at a sentinel k=(1,0) (Γ-point structure would drop the k-prefactor-dependent blocks S/SC/R/RC/PP/PM).
 - BdG Nambu: `bdg_hamiltonian` → `build_bdg_hamiltonian_1d`/`_qw` (wraps wire path)
 
 ### Velocity matrices
@@ -103,6 +114,7 @@ Commutator-based: `v_α = -i[r_α, H]` element-wise. Generic interface `build_ve
 ## Anti-patterns
 
 - Never hardcode k·p block indices — use `get_kp_block_table()` constants
+- Never duplicate the block-tag → formula interpretation — call `resolve_kp_term()` and apply the returned `kp_term_descriptor` generically. The derived formulas (`Q − T`, `0.5·(Q + T)`) live in `hamiltonian_blocks.f90` only. For CSR derived blocks, use `build_kp_derived_csr_blocks` / `update_kp_derived_csr_values` in `hamiltonian_wire.f90`.
 - Never duplicate Bir-Pikus formulas — call `compute_bp_scalar()`
 - Never bypass `wire_workspace` cache when building wire Hamiltonians across k-points
 - Never change spin matrix phase convention — `SIGMA_X/Y/Z` in `gfactor_functions.f90` match `ZB8bandBulk`
