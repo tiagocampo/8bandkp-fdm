@@ -884,8 +884,11 @@ contains
     abstol = 0.0_dp
     nb = 0
 
-    ! (Re)allocate N-dependent buffers only when N grows
-    if (N > self%cached_n) then
+    ! (Re)allocate N-dependent buffers whenever N changes (grow OR shrink).
+    ! The previous grow-only policy left oversized buffers and then did a
+    ! non-conformable A_buf = H assignment if a solver was ever reused at a
+    ! smaller N. Same-N (the hot sweep path) still reuses the buffers.
+    if (N /= self%cached_n) then
       if (allocated(self%A_buf)) then
         deallocate(self%A_buf, self%Z_buf, self%W_buf, self%rwork, self%iwork, self%ifail)
       end if
