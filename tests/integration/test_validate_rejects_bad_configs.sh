@@ -296,6 +296,22 @@ name = "GaAs"
 EOF
 run_test "Vnew1_partial_window_emin_only" "both solver emin and emax"
 
+# Vnew2: bulk + FEAST. Bulk is always 8x8 dense by nature; FEAST is
+# permanently unsupported for bulk (PRD invariant 1). AUTO->DENSE is fine,
+# but an explicit method=FEAST must be rejected.
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[bands]
+num_cb = 2
+num_vb = 6
+[solver]
+method = "FEAST"
+[[material]]
+name = "GaAs"
+EOF
+run_test "Vnew2_bulk_feast" "bulk is always"
+
 echo ""
 echo "========================================"
 echo " Validation rejection: $PASS passed, $FAIL failed"

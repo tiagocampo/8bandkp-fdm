@@ -822,6 +822,15 @@ module definitions
           'or neither (0 = auto). A partial energy window is ambiguous.'
       end if
 
+      ! ---- I14c: bulk never offers FEAST (permanent rejection) ----
+      ! Bulk is always 8x8 dense by nature. AUTO resolves to DENSE for bulk,
+      ! but an explicit method=FEAST must be rejected outright (PRD inv 1).
+      ! Contrast FEAST+INDEX, rejected structurally at I15 below. (Review #5.)
+      if (trim(cfg%confinement) == 'bulk' .and. trim(cfg%solver%method) == 'FEAST') then
+        error stop 'validate_simulation_config: bulk is always 8x8 dense; FEAST ' // &
+          'is not supported for bulk (use method = AUTO or DENSE).'
+      end if
+
       ! ---- I15: FEAST method cannot combine with INDEX mode ----
       ! FEAST has no INDEX (range il:iu) interface; only ENERGY or FULL are
       ! supported. Caught here at input validation so the user sees a clear
