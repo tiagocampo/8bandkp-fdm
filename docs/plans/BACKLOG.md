@@ -477,6 +477,21 @@ message string and the `solve` alias** (the rest of U-A) are still pending.
 
 ---
 
+## PR #39 Review — Deferred Refactors
+
+Larger refactors surfaced by the PR #39 max-effort code review, deliberately
+deferred from the review-fix pass (Groups A+B+safe-C) because each is a
+standalone change that deserves its own scope rather than being folded into a
+"fix the review" pass.
+
+| Refactor | What | Lineage | Effort | Priority |
+|----------|------|---------|--------|----------|
+| **`resolve_kp_term` drives the CSR formula** | `build_kp_derived_csr_blocks` / `update_kp_derived_csr_values` (`hamiltonian_wire.f90:1102,1128`) call `resolve_kp_term` but ignore `operand_a/operand_b`, hardcoding `csr_add(blk_Q, blk_T, …)`. Make the CSR path dispatch via the descriptor operands the way `apply_kp_table_dense` already does, so a k.p topology change propagates to both builders instead of only the dense one. | U-B (ADR 0001/0005); review finding #9 | Medium | Medium |
+| **Decompose `compute_strain_wire`** | `strain_pde.f90:57-577` is ~520 lines (~10× the 50-line/function budget): stiffness assembly + PARDISO solve + strain recovery all in one body. Split along its internal seams (assemble / solve / recover) into focused subroutines. Body is currently a verbatim move out of `strain_solver.f90`. | C8 strain split (ADR 0005); review finding #12 | Medium | Low |
+| **Dedup the FEAST sweep-window derivation** | The "if FEAST and window==auto: build endpoint CSR(s) → `apply_solver_window` → re-validate → reconstruct solver" block is copy-pasted across ~5 sites (`main.f90` Landau + QW, `main_optics.f90` QW, `simulation_setup.f90` QW + wire). The sites vary (single-endpoint `asw_single` vs two-endpoint `asw_envelope`; `ZB8bandQW_csr` vs dense+`dnscsr` vs `ZB8bandGeneralized`), so a clean shared helper needs a build-callback. Extract at least the common apply+validate+reconstruct tail; not currently buggy, so deferred rather than mixed into the review-fix pass. | ADR 0005 / issue #03 (window authority); review finding #15 | Medium | Low |
+
+---
+
 ## Minor Carry-Over Items
 
 | Source | What | Effort | Priority |
