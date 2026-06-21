@@ -421,7 +421,12 @@ contains
       end if
     end if
 
-    if (M > 0 .and. M <= M0 .and. info >= 0) then
+    ! Only genuine convergence (FEAST info 0 or 2) populates the result.
+    ! info = 3 means the subspace was too small even after retries, so the
+    ! returned M is incomplete; report nev_found = 0 instead of a truncated
+    ! spectrum callers might silently use. result%converged above already
+    ! reflects exactly (info == 0 .or. info == 2), so the two stay consistent.
+    if (M > 0 .and. M <= M0 .and. (info == 0 .or. info == 2)) then
       result%nev_found = M
       allocate(result%eigenvalues(M))
       allocate(result%eigenvectors(N, M))

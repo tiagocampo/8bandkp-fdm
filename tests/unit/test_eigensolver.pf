@@ -309,6 +309,43 @@ contains
   end subroutine test_feast_empty_matrix
 
   ! ==================================================================
+  ! Test: a FEAST solve whose energy window holds more eigenvalues than
+  ! the subspace can hold (info=3, retries exhausted) must report
+  ! converged=.false. AND nev_found=0 — never a truncated spectrum that a
+  ! caller might silently use. (Review finding #3.)
+  ! ==================================================================
+  @test
+  subroutine test_feast_subspace_saturated_yields_zero()
+    integer, parameter :: n = 20
+    real(kind=dp) :: diag(n)
+    type(csr_matrix) :: H
+    type(eigensolver_config) :: cfg
+    type(eigensolver_result) :: res
+    integer :: i
+
+    ! Diagonal eigenvalues 1..20. Window [0.5, 20.5] holds all 20.
+    do i = 1, n
+      diag(i) = real(i, kind=dp)
+    end do
+    call build_diagonal_csr(diag, n, H)
+
+    cfg%method = 'FEAST'
+    cfg%emin  = 0.5_dp
+    cfg%emax  = 20.5_dp
+    cfg%nev   = 1
+    cfg%m0    = 2           ! starts at 2; retries double — all remain < 20
+
+    call solve_feast(H, cfg, res)
+
+    @assertFalse(res%converged)
+    ! the #3 fix: no truncated spectrum
+    @assertEqual(0, res%nev_found)
+
+    call eigensolver_result_free(res)
+    call csr_free(H)
+  end subroutine test_feast_subspace_saturated_yields_zero
+
+  ! ==================================================================
   ! Test 8: Gershgorin energy window estimation.
   ! ==================================================================
   @test
