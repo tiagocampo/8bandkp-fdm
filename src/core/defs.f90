@@ -812,6 +812,16 @@ module definitions
           trim(cfg%solver%mode) // '"'
       end select
 
+      ! ---- I14b: a partial energy window is ambiguous ----
+      ! 0 is the auto sentinel for BOTH emin and emax. Setting exactly one
+      ! of them is ambiguous (is the 0 a literal bound or "auto"?), and the
+      ! window authority's OR-override would otherwise produce a degenerate
+      ! [emin, 0] window. Require both-or-neither. (Review finding #7.)
+      if ((cfg%solver%emin == 0.0_dp) .neqv. (cfg%solver%emax == 0.0_dp)) then
+        error stop 'validate_simulation_config: set both solver emin and emax, ' // &
+          'or neither (0 = auto). A partial energy window is ambiguous.'
+      end if
+
       ! ---- I15: FEAST method cannot combine with INDEX mode ----
       ! FEAST has no INDEX (range il:iu) interface; only ENERGY or FULL are
       ! supported. Caught here at input validation so the user sees a clear

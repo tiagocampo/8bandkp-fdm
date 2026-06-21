@@ -280,6 +280,22 @@ name = "GaAs"
 EOF
 run_test "V16_bulk_band_count_ne8" "bulk band count"
 
+# Vnew1: partial energy window — emin set, emax left at 0 (auto sentinel).
+# validate() must reject: a partial window is ambiguous (0 means auto).
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[bands]
+num_cb = 2
+num_vb = 6
+[solver]
+method = "DENSE"
+emin = -2.0
+[[material]]
+name = "GaAs"
+EOF
+run_test "Vnew1_partial_window_emin_only" "both solver emin and emax"
+
 echo ""
 echo "========================================"
 echo " Validation rejection: $PASS passed, $FAIL failed"
