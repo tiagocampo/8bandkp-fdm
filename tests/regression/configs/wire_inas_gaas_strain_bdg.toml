@@ -52,7 +52,13 @@ solver = "pardiso"
 piezoelectric = false
 
 [bdg]
-mu = 0.05
+# mu at the conduction subband edge (+0.659 eV for this core/shell wire, per
+# the U8 dense-full solve). mu=0.05 lands in a no-state region -- FEAST found
+# 0 BdG states in the +/-0.5 eV window, and this test only ever produced
+# eigenvalues via the (now-removed, U8) auto-window fallback's FD-Nyquist tail.
+# At the conduction edge, real low-energy BdG quasiparticles populate the
+# +/-0.5 eV window in BOTH the strained and unstrained runs.
+mu = 0.6601
 delta_0 = 0.001
 kz = 0.0
 B_vec = [0.0, 0.0, 0.0]
