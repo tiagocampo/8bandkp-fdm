@@ -12,7 +12,7 @@ program topologicalAnalysis
   use sparse_matrices
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
     & eigensolver_result, eigensolver_result_free, auto_compute_energy_window, &
-    & EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
+    & apply_solver_window, EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use topological_analysis
   use bdg_hamiltonian
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
@@ -506,25 +506,27 @@ contains
       emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
       emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
     end if
-    eigen_cfg_local%emin = emin_local
-    eigen_cfg_local%emax = emax_local
+    ! Route the physics-sized window through the window authority (ADR 0005 /
+    ! KTD6). apply_solver_window honors a nonzero user override verbatim, so
+    ! the physics window is preserved while window selection has one home.
+    ! NEVER the Gershgorin auto-window for BdG (samples the FD-Nyquist tail;
+    ! see docs/solutions/best-practices/2026-06-21-fd-nyquist-spurious-tail.md).
+    call apply_solver_window(H_bdg_csr, emin_local, emax_local, &
+                             eigen_cfg_local%emin, eigen_cfg_local%emax)
 
     print *, '  ', eigen_cfg_local%method, ' energy window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
 
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
     call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
 
+    ! U8: no auto-window fallback on the BdG path. If the physics window found
+    ! nothing, mu is in the band gap or the window is mis-sized -- fail loudly
+    ! with the sentinel rather than silently returning FD-Nyquist tail states.
     if (eigen_res_local%nev_found == 0) then
       print *, 'Warning: ', eigen_solver_local%backend_name(), &
         ' found no eigenvalues in the search window'
-      print *, '  Retrying with auto-computed energy window...'
-      call auto_compute_energy_window(H_bdg_csr, eigen_cfg_local%emin, eigen_cfg_local%emax)
-      print *, '  Auto window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
-      call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
-    end if
-
-    if (eigen_res_local%nev_found == 0) then
-      print *, 'Warning: auto-window retry also found no eigenvalues'
+      print *, '  mu=', cfg%bdg%mu, ' eV window=[', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
+      print *, '  (mu likely in the band gap, or the window is mis-sized; no auto-window retry on BdG)'
       result%min_gap = -1.0_dp
     else
       allocate(eigvals_bdg(eigen_res_local%nev_found))
