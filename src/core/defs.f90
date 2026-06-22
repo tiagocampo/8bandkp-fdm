@@ -946,6 +946,18 @@ module definitions
           error stop 'validate_semantic: BdG requires QW or wire confinement, got ''' // &
             trim(cfg%confinement) // ''''
         end if
+        ! U8: BdG solver window, if explicitly set, must be physics-sized.
+        ! Rejects Gershgorin-scale windows that sample the FD-Nyquist tail
+        ! (see docs/solutions/best-practices/2026-06-21-fd-nyquist-spurious-tail.md).
+        ! Bound 1 eV is generous (physics BdG windows are <=~50 meV) but rejects
+        ! the ±tens-of-eV auto/Gershgorin scale; does not reject the existing
+        ! strain-BdG regression config (±0.5 eV).
+        if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+          if (max(abs(cfg%solver%emin), abs(cfg%solver%emax)) > 1.0_dp) then
+            error stop 'validate_semantic: BdG solver window too wide ' // &
+              '(max(|emin|,|emax|) > 1 eV); use a physics-sized window around E=0'
+          end if
+        end if
       end if
 
       ! S5–S7: spectral function parameters

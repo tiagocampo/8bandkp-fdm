@@ -1274,3 +1274,12 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 set_tests_properties(validation_rejects_bad_configs PROPERTIES LABELS "validation" TIMEOUT 60)
+
+# U8: BdG solver-window validate guard rejection test.
+add_test(
+    NAME validation_rejects_bad_topology
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_validate_rejects.sh
+        $<TARGET_FILE:topologicalAnalysis>
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(validation_rejects_bad_topology PROPERTIES LABELS "validation" TIMEOUT 60)
