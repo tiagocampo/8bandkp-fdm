@@ -1223,6 +1223,17 @@ contains
       & cfg_in%topo%gap_sweep_mu_max, gap_threshold, transitions)
   end subroutine compute_wire_bdg_gap_sweep
 
+  subroutine bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
+    type(csr_matrix), intent(inout) :: H_bdg_csr
+    type(eigensolver_result), intent(inout) :: eigen_res_local
+    class(eigensolver_base), allocatable, intent(inout) :: eigen_solver_local
+    type(wire_setup), intent(inout) :: wsetup
+    call csr_free(H_bdg_csr)
+    call eigensolver_result_free(eigen_res_local)
+    if (allocated(eigen_solver_local)) deallocate(eigen_solver_local)
+    call wire_setup_free(wsetup)
+  end subroutine bdg_wire_cleanup
+
   subroutine eval_wire_bdg_gap_app(cfg_in, B_val, mu_val, gap_threshold, z2, gap)
     type(simulation_config), intent(in) :: cfg_in
     real(kind=dp), intent(in) :: B_val, mu_val, gap_threshold
@@ -1237,11 +1248,14 @@ contains
     type(eigensolver_result) :: eigen_res_local
     real(kind=dp), allocatable :: eigvals_bdg(:)
     integer :: Ngrid_local, Ntot_local, Nbdg_local, nev_local
+    real(kind=dp) :: emin_local, emax_local
 
     cfg = cfg_in
     cfg%bdg%enabled = .true.
     cfg%bdg%mu = mu_val
-    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, B_val]
+    ! U8-followup: transverse B for Peierls orbital coupling (design §1 second
+    ! root cause). Bx varies with B_val; By and Bz zero.
+    cfg%bdg%B_vec = [B_val, 0.0_dp, 0.0_dp]
 
     ! Strain-aware wire init (Issue #04): run compute_strain +
     ! compute_bir_pikus_blocks when cfg%strain%enabled so the BdG sweep
@@ -1262,24 +1276,41 @@ contains
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
     eigen_cfg_local%m0 = min(max(8 * nev_local, 200), Nbdg_local)
-    eigen_cfg_local%emin = -5.0_dp * cfg%bdg%delta_0
-    eigen_cfg_local%emax =  5.0_dp * cfg%bdg%delta_0
+
+    ! Use [solver] emin/emax as user override if set; otherwise ±5·δ₀ default.
+    if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+      emin_local = cfg%solver%emin
+      emax_local = cfg%solver%emax
+    else
+      emin_local = -5.0_dp * cfg%bdg%delta_0
+      emax_local =  5.0_dp * cfg%bdg%delta_0
+    end if
+    ! Route the physics-sized window through the window authority (ADR 0005 /
+    ! KTD6). apply_solver_window honors a nonzero user override verbatim, so
+    ! the physics window is preserved while window selection has one home.
+    ! NEVER the Gershgorin auto-window for BdG (samples the FD-Nyquist tail;
+    ! see docs/solutions/best-practices/2026-06-21-fd-nyquist-spurious-tail.md).
+    call apply_solver_window(H_bdg_csr, emin_local, emax_local, &
+                             eigen_cfg_local%emin, eigen_cfg_local%emax)
 
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
     call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
 
     if (.not. eigen_res_local%converged .or. eigen_res_local%nev_found < 1) then
-      print *, 'ERROR: wire BdG sweep ', eigen_solver_local%backend_name(), &
-        ' failed or found no states'
-      error stop 'wire BdG eigensolver failed'
+      call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
+      error stop 'eval_wire_bdg_gap_app: FEAST failed or found no states ' // &
+        '(mu likely in band gap or window mis-sized)'
     end if
     if (eigen_res_local%m0_used > 0 .and. &
         eigen_res_local%nev_found >= eigen_res_local%m0_used .and. &
         eigen_res_local%m0_used < Nbdg_local) then
-      print *, 'ERROR: wire BdG sweep likely truncated ', &
-        eigen_solver_local%backend_name(), ' subspace'
+      print *, 'WARNING: wire BdG sweep likely truncated ', &
+        eigen_solver_local%backend_name(), ' subspace; returning sentinel gap'
       print *, '  nev_found=', eigen_res_local%nev_found, ' m0=', eigen_res_local%m0_used
-      error stop 'wire BdG eigensolver subspace likely truncated'
+      gap = -1.0_dp
+      z2 = 0
+      call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
+      return
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues
@@ -1287,10 +1318,7 @@ contains
     z2 = compute_z2_gap(eigvals_bdg, gap_threshold)
     deallocate(eigvals_bdg)
 
-    call csr_free(H_bdg_csr)
-    call eigensolver_result_free(eigen_res_local)
-    if (allocated(eigen_solver_local)) deallocate(eigen_solver_local)
-    call wire_setup_free(wsetup)
+    call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
   end subroutine eval_wire_bdg_gap_app
 
 end program topologicalAnalysis
