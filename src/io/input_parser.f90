@@ -440,7 +440,7 @@ contains
 
     type(toml_table), pointer :: bf_tbl => null()
     type(toml_array), pointer :: comp_arr => null()
-    integer :: stat
+    integer :: stat, stat2
 
     call get_value(table, 'b_field', bf_tbl, requested=.false., stat=stat)
     if (.not. associated(bf_tbl)) return
@@ -448,12 +448,12 @@ contains
     ! Parse components array
     call get_value(bf_tbl, 'components', comp_arr, requested=.false., stat=stat)
     if (associated(comp_arr)) then
-      call get_value(comp_arr, 1, cfg%b_field%components(1), stat=stat)
-      if (stat /= 0) cfg%b_field%components(1) = 0.0_dp
-      call get_value(comp_arr, 2, cfg%b_field%components(2), stat=stat)
-      if (stat /= 0) cfg%b_field%components(2) = 0.0_dp
-      call get_value(comp_arr, 3, cfg%b_field%components(3), stat=stat)
-      if (stat /= 0) cfg%b_field%components(3) = 0.0_dp
+      call get_value(comp_arr, 1, cfg%b_field%components(1), stat=stat2)
+      call check_optional_stat(stat2, 'components[1]', 'b_field')
+      call get_value(comp_arr, 2, cfg%b_field%components(2), stat=stat2)
+      call check_optional_stat(stat2, 'components[2]', 'b_field')
+      call get_value(comp_arr, 3, cfg%b_field%components(3), stat=stat2)
+      call check_optional_stat(stat2, 'components[3]', 'b_field')
     end if
     call get_value(bf_tbl, 'g_factor', cfg%b_field%g_factor, 2.0_dp, stat=stat)
     call check_optional_stat(stat, 'g_factor', 'b_field')
