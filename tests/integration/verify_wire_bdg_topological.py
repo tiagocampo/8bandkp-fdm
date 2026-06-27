@@ -9,6 +9,13 @@ open->close->reopen: minigap(2.8) < 0.5*minigap(0) and minigap(5) > minigap(2.8)
 Part 2 (fallback removal, U8): a mu-in-gap run (mu=0.0) must NOT use the
 Gershgorin auto-window retry (run_bdg_wire no longer falls back).
 
+OMP thread cap: the OMP=4 setting is enforced via the OMP_NUM_THREADS
+env override in run(). For ctest -jN runs, set
+OMP_NUM_THREADS=$(( $(nproc)/N )) at the ctest invocation level
+per CLAUDE.md ctest gotcha. Without this, ctest -jN spawns N parallel
+FEAST solvers each using 4 threads = 4N total, which can exceed nproc
+and cause spurious timeouts.
+
 Args: <topologicalAnalysis_exe> <config_file>
 """
 import os

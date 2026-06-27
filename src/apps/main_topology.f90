@@ -47,7 +47,7 @@ program topologicalAnalysis
   ! --- Wire mode (confinement='wire') variables ---
   ! Wire init/cleanup is now owned by the wire_setup type (Issue #04).
   ! The program-scope profile_2d/kpterms_2d/coo_cache/eigen_* boilerplate
-  ! was removed when run_bdg_wire / eval_wire_bdg_gap_app / run_qshe_wire
+  ! was removed when run_bdg_wire / eval_wire_bdg_gap / run_qshe_wire
   ! were routed through wire_setup_init / wire_setup_free.
 
   ! --- Topological result ---
@@ -1213,7 +1213,7 @@ contains
       B_val = cfg_in%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * dB
       do iMu = 1, nMu
         mu_val = cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * dmu
-        call eval_wire_bdg_gap_app(cfg_in, B_val, mu_val, gap_threshold, &
+        call eval_wire_bdg_gap(cfg_in, B_val, mu_val, gap_threshold, &
           & z2_map(iMu, iB), gap_map(iMu, iB))
       end do
     end do
@@ -1234,7 +1234,7 @@ contains
     call wire_setup_free(wsetup)
   end subroutine bdg_wire_cleanup
 
-  subroutine eval_wire_bdg_gap_app(cfg_in, B_val, mu_val, gap_threshold, z2, gap)
+  subroutine eval_wire_bdg_gap(cfg_in, B_val, mu_val, gap_threshold, z2, gap)
     type(simulation_config), intent(in) :: cfg_in
     real(kind=dp), intent(in) :: B_val, mu_val, gap_threshold
     integer, intent(out) :: z2
@@ -1298,7 +1298,7 @@ contains
 
     if (.not. eigen_res_local%converged .or. eigen_res_local%nev_found < 1) then
       call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
-      error stop 'eval_wire_bdg_gap_app: FEAST failed or found no states ' // &
+      error stop 'eval_wire_bdg_gap: FEAST failed or found no states ' // &
         '(mu likely in band gap or window mis-sized)'
     end if
     if (eigen_res_local%m0_used > 0 .and. &
@@ -1319,6 +1319,6 @@ contains
     deallocate(eigvals_bdg)
 
     call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
-  end subroutine eval_wire_bdg_gap_app
+  end subroutine eval_wire_bdg_gap
 
 end program topologicalAnalysis
