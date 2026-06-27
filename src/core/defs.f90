@@ -53,6 +53,7 @@ module definitions
   real(kind=dp), parameter :: e0 = 8.854187817_dp*1E-12*(1E-9) ! C V-1 nm-1
   real(kind=dp), parameter :: kB_eV = 8.617333262e-5_dp        ! Boltzmann constant (eV/K)
   real(kind=dp), parameter :: mu_B = 5.7883818012e-5_dp       ! Bohr magneton (eV/T)
+  real(kind=dp), parameter :: BDG_WINDOW_BOUND = 1.0_dp  ! eV -- rejection ceiling for BdG [solver] emin/emax
   real(kind=dp), parameter :: tolerance=1e-7_dp
   real(kind=dp), parameter :: coord_tolerance=1e-12_dp  ! spatial coordinate zero-check threshold
   logical, parameter :: renormalization = .False.
@@ -953,9 +954,10 @@ module definitions
         ! the ±tens-of-eV auto/Gershgorin scale; does not reject the existing
         ! strain-BdG regression config (±0.5 eV).
         if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
-          if (max(abs(cfg%solver%emin), abs(cfg%solver%emax)) > 1.0_dp) then
+          if (max(abs(cfg%solver%emin), abs(cfg%solver%emax)) > BDG_WINDOW_BOUND) then
             error stop 'validate_semantic: BdG solver window too wide ' // &
-              '(max(|emin|,|emax|) > 1 eV); use a physics-sized window around E=0'
+              '(max(|emin|,|emax|) > BDG_WINDOW_BOUND eV); ' // &
+              'use a physics-sized window around E=0'
           end if
         end if
         ! U8-followup: BdG requires transverse B (Peierls orbital coupling).
