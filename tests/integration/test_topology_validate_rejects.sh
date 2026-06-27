@@ -58,6 +58,37 @@ emax = 70.0
 EOF
 run_test "T3_bdg_wide_window" "BdG solver window"
 
+# T4: BdG mode + axial B_vec (Peierls would silently early-return) -> reject
+cat > input.toml << 'EOF'
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+[bands]
+num_cb = 4
+num_vb = 8
+[wire]
+nx = 9
+ny = 9
+dx = 5.0
+dy = 5.0
+[wire.geometry]
+shape = "rectangle"
+width = 45.0
+height = 45.0
+[[region]]
+material = "InAs"
+inner = 0.0
+outer = 45.0
+[bdg]
+mu = 0.66
+delta_0 = 0.0002
+B_vec = [0.0, 0.0, 1.0]
+g_factor = 15.0
+[topology]
+mode = "bdg"
+EOF
+run_test "T4_bdg_axial_B" "transverse B"
+
 if [ "$FAIL" -ne 0 ]; then
   echo "FAIL: topology validate rejects ($FAIL failed)"
   exit 1

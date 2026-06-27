@@ -958,6 +958,16 @@ module definitions
               '(max(|emin|,|emax|) > 1 eV); use a physics-sized window around E=0'
           end if
         end if
+        ! U8-followup: BdG requires transverse B (Peierls orbital coupling).
+        ! add_peierls_coo (magnetic_field.f90) silently early-returns when
+        ! abs(Bx) < 1e-12_dp and abs(By) < 1e-12_dp, producing a gapless or
+        ! diagonal-Zeeman-only spectrum with no error. Reject axial B_vec.
+        if (abs(cfg%bdg%B_vec(1)) < 1.0e-12_dp .and. &
+            abs(cfg%bdg%B_vec(2)) < 1.0e-12_dp .and. &
+            abs(cfg%bdg%B_vec(3)) > 1.0e-12_dp) then
+          error stop 'validate_semantic: BdG requires transverse B ' // &
+            '(Bx or By nonzero) for Peierls orbital coupling'
+        end if
       end if
 
       ! S5–S7: spectral function parameters
