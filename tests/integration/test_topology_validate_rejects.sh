@@ -87,7 +87,7 @@ g_factor = 15.0
 [topology]
 mode = "bdg"
 EOF
-run_test "T4_bdg_axial_B" "transverse B"
+run_test "T4_bdg_axial_B" "Bx nonzero"
 
 if [ "$FAIL" -ne 0 ]; then
   echo "FAIL: topology validate rejects ($FAIL failed)"

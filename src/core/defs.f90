@@ -960,15 +960,18 @@ module definitions
               'use a physics-sized window around E=0'
           end if
         end if
-        ! U8-followup: BdG requires transverse B (Peierls orbital coupling).
-        ! add_peierls_coo (magnetic_field.f90) silently early-returns when
-        ! abs(Bx) < 1e-12_dp and abs(By) < 1e-12_dp, producing a gapless or
-        ! diagonal-Zeeman-only spectrum with no error. Reject axial B_vec.
+        ! U8-followup: BdG requires Bx (Peierls orbital coupling).
+        ! add_peierls_coo (magnetic_field.f90:107-108) silently early-returns
+        ! when abs(Bx) < 1e-12_dp. By Peierls path is NOT implemented
+        ! (build_bdg_hamiltonian_1d gates on B_vec(1) only). Reject configs
+        ! where Bx=0 AND (By or Bz is nonzero) — these would silently disable
+        ! orbital coupling. Code review P2 (PR40 inline).
         if (abs(cfg%bdg%B_vec(1)) < 1.0e-12_dp .and. &
-            abs(cfg%bdg%B_vec(2)) < 1.0e-12_dp .and. &
-            abs(cfg%bdg%B_vec(3)) > 1.0e-12_dp) then
-          error stop 'validate_semantic: BdG requires transverse B ' // &
-            '(Bx or By nonzero) for Peierls orbital coupling'
+            (abs(cfg%bdg%B_vec(2)) > 1.0e-12_dp .or. &
+             abs(cfg%bdg%B_vec(3)) > 1.0e-12_dp)) then
+          error stop 'validate_semantic: BdG requires Bx nonzero ' // &
+            'for Peierls orbital coupling; By-only and axial configs ' // &
+            'run Zeeman-only (By Peierls path not yet implemented)'
         end if
       end if
 
