@@ -975,6 +975,23 @@ module definitions
         end if
       end if
 
+      ! U8-followup: wire_bdg sweep mode runs eval_wire_bdg_gap per grid point,
+      ! which honors [solver] emin/emax via apply_solver_window. Without this
+      ! guard, a sweep config can set a Gershgorin-scale window, pass
+      ! validation (the BdG-mode guard above only fires when topo%mode=='bdg'),
+      ! and corrupt z2_map / gap_map with FD-Nyquist-tail states. Code review
+      ! P2 (PR40 inline). Mirrors the BdG-mode window guard above.
+      if (trim(cfg%topo%mode) == 'sweep' .and. &
+          trim(cfg%topo%sweep_model) == 'wire_bdg') then
+        if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+          if (max(abs(cfg%solver%emin), abs(cfg%solver%emax)) > BDG_WINDOW_BOUND) then
+            error stop 'validate_semantic: wire_bdg sweep solver window too wide ' // &
+              '(max(|emin|,|emax|) > BDG_WINDOW_BOUND eV); ' // &
+              'use a physics-sized window around E=0'
+          end if
+        end if
+      end if
+
       ! S5–S7: spectral function parameters
       ! Validate when mode='spectral' (dispatches to run_spectral) or
       ! compute_spectral=.true. (spectral computation requested for any mode).
