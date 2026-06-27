@@ -457,7 +457,7 @@ contains
     integer :: Ngrid_local, Ntot_local, nev_local
     real(kind=dp) :: emin_local, emax_local, kz_val
     real(kind=dp), allocatable :: eigvals_bdg(:)
-    integer :: i, j, iounit_prof
+    integer :: i, j, iounit_prof, ios
 
     print *, '--- BdG wire mode: Majorana modes ---'
 
@@ -521,119 +521,121 @@ contains
 
     ! U8: no auto-window fallback on the BdG path. If the physics window found
     ! nothing, mu is in the band gap or the window is mis-sized -- fail loudly
-    ! with the sentinel rather than silently returning FD-Nyquist tail states.
+    ! via error stop (CLAUDE.md "no silent corrections"). Delete any pre-existing
+    ! output/bdg_eigenvalues.dat so downstream readers don't see stale spectra
+    ! from a previous successful run (Codex P2 on PR40).
     if (eigen_res_local%nev_found == 0) then
-      print *, 'Warning: ', eigen_solver_local%backend_name(), &
-        ' found no eigenvalues in the search window'
-      print *, '  mu=', cfg%bdg%mu, ' eV window=[', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
-      print *, '  (mu likely in the band gap, or the window is mis-sized; no auto-window retry on BdG)'
-      result%min_gap = -1.0_dp
-    else
-      allocate(eigvals_bdg(eigen_res_local%nev_found))
-      eigvals_bdg = eigen_res_local%eigenvalues
+      ! Best-effort stale-file cleanup (ignore if file doesn't exist)
+      open(unit=11, file='output/bdg_eigenvalues.dat', status='old', iostat=ios)
+      if (ios == 0) close(11, status='delete')
+      error stop 'run_bdg_wire: ' // eigen_solver_local%backend_name() // &
+        ' found no eigenvalues in window; mu likely in the band gap, ' // &
+        'or the [solver] emin/emax is mis-sized'
+    end if
+    allocate(eigvals_bdg(eigen_res_local%nev_found))
+    eigvals_bdg = eigen_res_local%eigenvalues
 
-      ! Find minimum gap: full superconducting gap = 2 * min|E|
-      result%min_gap = 2.0_dp * bdg_zero_energy_gap(eigvals_bdg)
+    ! Find minimum gap: full superconducting gap = 2 * min|E|
+    result%min_gap = 2.0_dp * bdg_zero_energy_gap(eigvals_bdg)
 
-      ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
-      call write_bdg_eigenvalues(eigvals_bdg, 'kz', kz_val)
+    ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
+    call write_bdg_eigenvalues(eigvals_bdg, 'kz', kz_val)
 
-      ! Check for zero-energy Majorana modes
-      block
-        integer :: n_zero
-        real(kind=dp), allocatable :: majorana_xi(:)
-        integer :: n_majorana, n_fit_ok, n_fit_failed
-        real(kind=dp) :: xi_val
-        real(kind=dp), allocatable :: profile_rho(:)
-        integer :: nspatial, status_prof
+    ! Check for zero-energy Majorana modes
+    block
+      integer :: n_zero
+      real(kind=dp), allocatable :: majorana_xi(:)
+      integer :: n_majorana, n_fit_ok, n_fit_failed
+      real(kind=dp) :: xi_val
+      real(kind=dp), allocatable :: profile_rho(:)
+      integer :: nspatial, status_prof
 
-        n_zero = 0
+      n_zero = 0
+      do i = 1, eigen_res_local%nev_found
+        if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+          n_zero = n_zero + 1
+        end if
+      end do
+
+      print *, '  Eigenvalues found: ', eigen_res_local%nev_found
+      print *, '  Near-zero modes (|E| < 0.001*delta): ', n_zero
+      result%n_majorana = n_zero
+
+      if (n_zero > 0) then
+        print *, '  Majorana modes detected!'
+
+        ! Compute Majorana localization and profile for zero-energy states
+        allocate(majorana_xi(n_zero))
+        n_majorana = 0
+        n_fit_ok = 0
+        n_fit_failed = 0
+        nspatial = Ntot_local / 8
+
         do i = 1, eigen_res_local%nev_found
           if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
-            n_zero = n_zero + 1
+            n_majorana = n_majorana + 1
+            allocate(profile_rho(nspatial))
+            xi_val = compute_majorana_profile( &
+              & eigen_res_local%eigenvectors(:, i), cfg%grid, &
+              & cfg%bdg%delta_0 * 0.01_dp, Ntot_local, profile_rho)
+            if (xi_val > 0.0_dp) then
+              n_fit_ok = n_fit_ok + 1
+              majorana_xi(n_fit_ok) = xi_val
+            else
+              n_fit_failed = n_fit_failed + 1
+            end if
+
+            ! Write Majorana profile to file (first Majorana mode only)
+            if (n_majorana == 1) then
+              call get_unit(iounit_prof)
+              open(unit=iounit_prof, file='output/majorana_profile.dat', &
+                   status='replace', action='write', iostat=status_prof)
+              if (status_prof == 0) then
+                write(iounit_prof, '(A)') '# Majorana wavefunction spatial profile'
+                write(iounit_prof, '(A,ES16.8)') '# kz (1/A) = ', kz_val
+                write(iounit_prof, '(A,ES16.8)') '# xi (AA) = ', xi_val
+                write(iounit_prof, '(A,I0)') '# n_spatial = ', nspatial
+                write(iounit_prof, '(A)') '# Columns: index, x (AA), y (AA), rho'
+                do j = 1, nspatial
+                  write(iounit_prof, '(I6,2ES16.8,ES20.12)') j, &
+                    & cfg%grid%coords(1, j), cfg%grid%coords(2, j), profile_rho(j)
+                end do
+                close(iounit_prof)
+                print *, '  Majorana profile written to output/majorana_profile.dat'
+              end if
+            end if
+            deallocate(profile_rho)
           end if
         end do
 
-        print *, '  Eigenvalues found: ', eigen_res_local%nev_found
-        print *, '  Near-zero modes (|E| < 0.001*delta): ', n_zero
-        result%n_majorana = n_zero
-
-        if (n_zero > 0) then
-          print *, '  Majorana modes detected!'
-
-          ! Compute Majorana localization and profile for zero-energy states
-          allocate(majorana_xi(n_zero))
-          n_majorana = 0
-          n_fit_ok = 0
-          n_fit_failed = 0
-          nspatial = Ntot_local / 8
-
-          do i = 1, eigen_res_local%nev_found
-            if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
-              n_majorana = n_majorana + 1
-              allocate(profile_rho(nspatial))
-              xi_val = compute_majorana_profile( &
-                & eigen_res_local%eigenvectors(:, i), cfg%grid, &
-                & cfg%bdg%delta_0 * 0.01_dp, Ntot_local, profile_rho)
-              if (xi_val > 0.0_dp) then
-                n_fit_ok = n_fit_ok + 1
-                majorana_xi(n_fit_ok) = xi_val
-              else
-                n_fit_failed = n_fit_failed + 1
-              end if
-
-              ! Write Majorana profile to file (first Majorana mode only)
-              if (n_majorana == 1) then
-                call get_unit(iounit_prof)
-                open(unit=iounit_prof, file='output/majorana_profile.dat', &
-                     status='replace', action='write', iostat=status_prof)
-                if (status_prof == 0) then
-                  write(iounit_prof, '(A)') '# Majorana wavefunction spatial profile'
-                  write(iounit_prof, '(A,ES16.8)') '# kz (1/A) = ', kz_val
-                  write(iounit_prof, '(A,ES16.8)') '# xi (AA) = ', xi_val
-                  write(iounit_prof, '(A,I0)') '# n_spatial = ', nspatial
-                  write(iounit_prof, '(A)') '# Columns: index, x (AA), y (AA), rho'
-                  do j = 1, nspatial
-                    write(iounit_prof, '(I6,2ES16.8,ES20.12)') j, &
-                      & cfg%grid%coords(1, j), cfg%grid%coords(2, j), profile_rho(j)
-                  end do
-                  close(iounit_prof)
-                  print *, '  Majorana profile written to output/majorana_profile.dat'
-                end if
-              end if
-              deallocate(profile_rho)
-            end if
-          end do
-
-          if (n_fit_ok > 0) then
-            result%edge_xi = sum(majorana_xi(1:n_fit_ok)) / real(n_fit_ok, kind=dp)
-            result%edge_xi_min = minval(majorana_xi(1:n_fit_ok))
-            print *, '  Average Majorana localization length: ', result%edge_xi, ' AA'
-          else
-            result%edge_xi = 0.0_dp
-            result%edge_xi_min = 0.0_dp
-            print *, '  Average Majorana localization length: unavailable'
-          end if
-          if (n_fit_failed > 0) then
-            print *, '  Majorana localization fits failed: ', n_fit_failed
-          end if
-          result%n_majorana_fit_failed = n_fit_failed
-
-          allocate(result%edge_energies(n_zero))
-          j = 0
-          do i = 1, eigen_res_local%nev_found
-            if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
-              j = j + 1
-              result%edge_energies(j) = eigvals_bdg(i)
-            end if
-          end do
-
-          deallocate(majorana_xi)
+        if (n_fit_ok > 0) then
+          result%edge_xi = sum(majorana_xi(1:n_fit_ok)) / real(n_fit_ok, kind=dp)
+          result%edge_xi_min = minval(majorana_xi(1:n_fit_ok))
+          print *, '  Average Majorana localization length: ', result%edge_xi, ' AA'
+        else
+          result%edge_xi = 0.0_dp
+          result%edge_xi_min = 0.0_dp
+          print *, '  Average Majorana localization length: unavailable'
         end if
-      end block
+        if (n_fit_failed > 0) then
+          print *, '  Majorana localization fits failed: ', n_fit_failed
+        end if
+        result%n_majorana_fit_failed = n_fit_failed
 
-      deallocate(eigvals_bdg)
-    end if
+        allocate(result%edge_energies(n_zero))
+        j = 0
+        do i = 1, eigen_res_local%nev_found
+          if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+            j = j + 1
+            result%edge_energies(j) = eigvals_bdg(i)
+          end if
+        end do
+
+        deallocate(majorana_xi)
+      end if
+    end block
+
+    deallocate(eigvals_bdg)
 
     print *, '  Min gap: ', result%min_gap, ' eV'
 
