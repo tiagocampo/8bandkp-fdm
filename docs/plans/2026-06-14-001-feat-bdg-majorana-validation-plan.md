@@ -321,6 +321,8 @@ The pure-function seam, in miniature: the caller owns build + solve and hands a 
 
 **Verification:** The regenerated phase diagram is non-zero and traces the expected curve; `regression_wire_bdg_topological` is green (the curve + the removed auto-window fallback); `validation_rejects_bad_topology` is green (the guard); the wire rung matches the dense control.
 
+**Status (2026-06-27):** DONE. PR40 (`feat/bdg-u8-window-routing`, 22 commits, 126/126 ctest green, pushed) — U8 landed via commits `a4ade9d..6e9e097`. AE3 verified: open→close→reopen at B_crit≈2.8 T for μ=0.6601 eV + transverse B. R3 verification closed by C8 (PHS test `test_bdg_phs_at_finite_bx`). Closes the C9 follow-up spec §4 gap (parent plan U8 status footer was originally committed but lost in the `git mv` archive step — re-added here). Remaining units U1, U2, U9, U10, U11, U12 still open.
+
 ### U9. BdG spectral function + BdG LDOS
 
 **Goal:** Compute A(k,E) and LDOS on the BdG Hamiltonian, exposing the zero-energy Majorana peak, deepening the spectral-observable seam as the BdG variant is added.
