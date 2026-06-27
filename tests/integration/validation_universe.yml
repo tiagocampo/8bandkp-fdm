@@ -38,6 +38,7 @@ metadata:
     - subband_shift
     - potential_profile
     - exciton_Eb
+    - minigap
   geometries:
     - bulk
     - QW
@@ -473,3 +474,9 @@ cells:
     geometry: wire
     material: InAs/GaAs-core-shell
     tier: aspirational
+
+  - observable: minigap
+    geometry: wire
+    material: InAs
+    tier: required
+    reference: Lutchyn_Oreg2010 / topological_transition
