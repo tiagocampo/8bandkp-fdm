@@ -11,7 +11,7 @@ program topologicalAnalysis
   use input_parser
   use sparse_matrices
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
-    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window, &
+    & eigensolver_result, eigensolver_result_free, &
     & apply_solver_window, EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use topological_analysis
   use bdg_hamiltonian
