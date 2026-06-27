@@ -1304,13 +1304,14 @@ contains
     if (eigen_res_local%m0_used > 0 .and. &
         eigen_res_local%nev_found >= eigen_res_local%m0_used .and. &
         eigen_res_local%m0_used < Nbdg_local) then
-      print *, 'WARNING: wire BdG sweep likely truncated ', &
-        eigen_solver_local%backend_name(), ' subspace; returning sentinel gap'
+      print *, 'WARNING: wire BdG sweep FEAST subspace likely truncated ', &
+        eigen_solver_local%backend_name(), ' (m0 too small or window too broad)'
       print *, '  nev_found=', eigen_res_local%nev_found, ' m0=', eigen_res_local%m0_used
-      gap = -1.0_dp
-      z2 = 0
       call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
-      return
+      error stop 'eval_wire_bdg_gap: FEAST subspace likely truncated ' // &
+        '(increase m0 or narrow the window); ' // &
+        'fail-fast prevents sentinel leakage into the phase diagram ' // &
+        '(Codex review P2 on PR40)'
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues
