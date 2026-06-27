@@ -553,25 +553,12 @@ git commit -m "feat(validate): reject Gershgorin-scale BdG solver windows (U8 gu
 
 ---
 
-## Task 5: Correct the U8 text in the validation plan
+## Task 5 (retired) — Correct the U8 text in the validation plan
 
-**Files:**
-- Modify: `docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md` (U8 section, ~L299-318)
-
-- [ ] **Step 1: Correct the μ prescription**
-
-In the U8 section's Approach paragraph (~L309), replace the sentence containing "μ ≈ EC=+0.719 eV or EV=−0.8 eV" with:
-
-> The headline fix is μ + window: place μ at the conduction subband edge in the solver's EV=0/EC=Eg convention — located directly via a DENSE-FULL normal solve (`bandStructure`, read `output/eigenvalues.dat`; for the core/shell InAs/GaAs wire the edge is +0.659 eV) — and use transverse `B_vec=[Bx,0,0]` so Peierls orbital coupling activates (B along the wire gives diagonal Zeeman only). Confirmed 2026-06-21: μ=0.6601 eV + g=15 + transverse B gives open→close→reopen at B_crit≈2.8 T (gap closes to 0.019 meV ≈ 0.1·δ₀); μ-shift confirms B_crit tracks μ_eff.
-
-Also update the U8 result/verification bullets to reference `regression_wire_bdg_topological` and the removed auto-window fallback.
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md
-git commit -m "docs(plan): correct U8 mu prescription (conduction edge + transverse B)"
-```
+Originally asked to correct the parent validation plan's U8 μ prescription
+(μ ≈ EC=+0.719 eV → conduction subband edge + transverse B). Already applied
+in commit `1567d90` ("docs(plan): correct U8 mu prescription (conduction edge +
+transverse B)"); no further action needed here.
 
 ---
 
@@ -604,3 +591,7 @@ Summarize: T1 (open→close→reopen) green, T2 (no auto-window fallback) green,
 - Third KTD6 bypass `compute_spectral_function_wire` → **U9**.
 - Dead `[bdg] gauge` knob + principled `g_factor` → own small task.
 - Pure per-point evaluator extraction → **U2**; (B, μ) phase diagram → **U10/U11**.
+
+## Status (2026-06-27)
+
+Plan Tasks 3/4/5 landed via commits `a4ade9d`, `4c445c7`, `1567d90`, `f2840c4` (PR40 main). Plan Tasks 1/2/6 + the originally-deferred eval_wire_bdg_gap_app routing + doc/archive cleanup landed via 10 follow-up commits C1–C10 on PR40. See `docs/superpowers/plans/2026-06-26-u8-followup-reviews-and-codex.md`.

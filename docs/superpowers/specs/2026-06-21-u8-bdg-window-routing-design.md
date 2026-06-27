@@ -79,14 +79,15 @@ drivers `/tmp/bdg-probe/coreshell_uscan.py`, `coreshell_bsweep.py`.
 ## 4. Design
 
 ### 4.1 Window routing (KTD6) — `src/apps/main_topology.f90`
-In `run_bdg_wire` (~L490-525) and `eval_wire_bdg_gap_app` (~L1250-1265): replace
-the inline `eigen_cfg_local%emin/emax` assignment + manual fallback with
-`call apply_solver_window(H_bdg_csr, user_emin, user_emax, emin, emax)` (the
+In `run_bdg_wire` (~L490-525): replace the inline `eigen_cfg_local%emin/emax`
+assignment + manual fallback with `call apply_solver_window(H_bdg_csr, user_emin, user_emax, emin, emax)` (the
 `asw_single` variant, `src/math/eigensolver.f90:561`). Pass the physics window
 (default ±50·δ₀, or `cfg%solver%emin/emax` if set) as the user override, which
 `asw_single` honors verbatim (eigensolver.f90:566-570). Behavior-preserving for
 the window value; makes `apply_solver_window` the single authority and removes
-the manual `auto_compute_energy_window` bypass. The third KTD6 bypass
+the manual `auto_compute_energy_window` bypass. The companion
+`eval_wire_bdg_gap_app` (L1250-1265) was routed through the same authority in a
+follow-up commit on PR40 (C7) — the §6 deferral is retired. The third KTD6 bypass
 (`compute_spectral_function_wire`) is **deferred to U9**.
 
 ### 4.2 Fallback removal (i) — `src/apps/main_topology.f90`
@@ -124,12 +125,13 @@ CLAUDE.md; flag at implementation time.)*
   `observable=minigap geometry=wire material=InAs` and a ctest entry (label
   `regression` + `bdg`). ~3 solves × ~50 s ≈ 2-3 min ctest (within norms).
 
-### 4.5 Plan text correction — `docs/plans/2026-06-14-001-…md`
-Update the U8 section: replace "μ ≈ EC=+0.719 eV or EV=−0.8 eV" with "μ at the
-conduction subband edge in the solver's EV=0/EC=Eg convention, located via a
-DENSE-FULL normal solve (`bandStructure`, read `output/eigenvalues.dat`); for the
-core/shell wire the edge is +0.659 eV. Use transverse `B_vec=[Bx,0,0]` so Peierls
-orbital coupling activates (B along the wire gives Zeeman only)."
+### 4.5 (retired) Plan text correction
+The original §4.5 asked to correct the parent validation plan's U8 μ prescription
+(μ ≈ EC=+0.719 eV → conduction subband edge + transverse B). That correction was
+already applied in commit `1567d90` ("docs(plan): correct U8 mu prescription
+(conduction edge + transverse B)"); no further action needed here. See
+`docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md` U8 section for the
+corrected text.
 
 ## 5. Tests (TDD)
 
@@ -145,7 +147,7 @@ orbital coupling activates (B along the wire gives Zeeman only)."
 
 ## 6. Out of scope (deferred)
 
-- Third KTD6 bypass `compute_spectral_function_wire` → **U9**.
+- Third KTD6 bypass `compute_spectral_function_wire` (`src/physics/green_functions.f90:283,286-292`) → **U9**. Note: `eval_wire_bdg_gap_app` was originally listed here but was closed in the U8 follow-up (PR40 C7).
 - Dead `[bdg] gauge` knob cleanup + principled `g_factor` → own small task.
 - Pure per-point BdG evaluator extraction → **U2**.
 - (B, μ) phase diagram regeneration → **U10/U11** (needs the Pfaffian invariant).
@@ -162,3 +164,9 @@ orbital coupling activates (B along the wire gives Zeeman only)."
 - **Behavior change visibility:** removing the auto-fallback changes observable
   behavior for μ-in-gap configs (sentinel instead of tail minigap). This is
   intended and covered by T2; document in the commit message.
+
+---
+
+## Status (2026-06-27)
+
+Implementation complete via commits `a4ade9d`, `4c445c7`, `1567d90`, `f2840c4` (PR40 main) + 10 follow-up commits C1–C10 (PR40 follow-up). Spec §4.1/§4.2/§6 contradictions resolved at PR40 follow-up time (see `docs/superpowers/specs/2026-06-26-u8-followup-reviews-and-codex.md` and `docs/superpowers/plans/2026-06-26-u8-followup-reviews-and-codex.md`).
