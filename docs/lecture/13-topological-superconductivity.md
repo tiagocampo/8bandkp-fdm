@@ -37,10 +37,10 @@ gate (`tests/integration/test_lecture_13_acceptance_gate.sh`) will fail.
 
 | Rung | B_crit (T) | Method | Witness |
 |------|-----------|--------|---------|
-| Wire (1D curve) | see image | minigap closing | AE3 / Issue 07 |
-| Wire (2D colormap) | see image | minigap colormap | Issue 07 / U10 |
-| Wire (slim Pfaffian) | see image | projected Pfaffian | Issue 07 / U10 |
-| Dense QW | see image | Pfaffian flip at TRIM | Issue 05 / U7 |
+| Wire (1D curve) | 2.800 | minigap closing | AE3 / Issue 07 |
+| Wire (2D colormap) | 3.750 | minigap colormap | Issue 07 / U10 |
+| Wire (slim Pfaffian) | 2.800 | projected Pfaffian | Issue 07 / U10 |
+| Dense QW | 2.000 | Pfaffian flip at TRIM | Issue 05 / U7 |
 
 Run `python3 scripts/lecture_13_topological.py` to regenerate the
 table; the B_crit values will be re-extracted from the four
@@ -257,41 +257,74 @@ where $m^* = 0.026 m_0$ for InAs.
 
 ## 13.5 Bogoliubov-de Gennes: Nambu Space
 
-### 13.5.1 The BdG Hamiltonian
+### 13.5.1 The BdG Hamiltonian (canonical form, ADR 0007)
 
 For a superconducting system with s-wave pairing, the Bogoliubov-de Gennes (BdG)
-Hamiltonian operates in Nambu space $[H_0, \Delta]$, where:
+Hamiltonian operates in Nambu space $[H_0, \Delta]$. Per ADR 0007, the canonical
+form is:
 
 $$
-H_{\mathrm{BdG}} =
+H_{\mathrm{BdG}}(\mathbf{k}) =
 \begin{pmatrix}
-H_0 - \mu & \Delta \\
-\Delta^\dagger & -H_0^T + \mu
+H_0(\mathbf{k}) - \mu I & \Delta \\
+\Delta^\dagger & -\mathrm{conjg}(H_0(-\mathbf{k})) + \mu I
 \end{pmatrix},
 $$
 
 with $H_0$ the single-particle Hamiltonian, $\mu$ the chemical potential, and
-$\Delta$ the pairing matrix.
+$\Delta$ the pairing matrix. The hole block
+$-\mathrm{conjg}(H_0(-\mathbf{k}))$ is the Leijnse-Flensberg Eq. 38 form
+(valid for any $\mathbf{k} \neq 0$, not just $\mathbf{k}=0$); the older
+$-H_0^T$ form only equals $-\mathrm{conjg}(H_0(-\mathbf{k}))$ when $H_0$
+is real and symmetric (the bulk non-magnetic limit).
 
 **Critical property:** $H_{\mathrm{BdG}}$ is Hermitian (not anti-Hermitian),
 which means eigenvalue solvers (e.g., `method = "FEAST"` via the unified
-`eigensolver` module) can be used directly without modification.
+`eigensolver` module) can be used directly without modification. The class-D
+particle-hole symmetry holds by construction:
+
+$$
+\mathcal{C} \, H_{\mathrm{BdG}}(\mathbf{k}) \, \mathcal{C}^{-1} =
+- H_{\mathrm{BdG}}(-\mathbf{k}), \qquad \mathcal{C} = \tau_x \mathcal{K},
+$$
+
+where $\mathcal{K}$ is complex conjugation. The wire CSR builder and dense
+QW builder both route the hole block through the private wrapper
+`build_bdg_hole_block(H0_minus_k, H_hole)` in `src/physics/bdg_hamiltonian.f90`
+(ADR 0007 Layer B), guaranteeing the canonical form on every call path.
+
+**Symmetric Peierls convention** (ADR 0007 Layer A, Issue 03 fix3): under a
+magnetic field $\mathbf{B}$, the electron block applies the Peierls phase
+with $+\mathbf{B}_{\mathrm{vec}}$ and the hole block applies it with
+$-\mathbf{B}_{\mathrm{vec}}$. This sign flip restores PHS in the presence
+of the orbital Zeeman field, since the hole block represents $H_0(-\mathbf{k})$
+evaluated with the opposite momentum shift. Both blocks must be PHS-conjugate,
+so the Peierls phase must be conjugated too.
 
 ### 13.5.2 Pairing Matrix Structure
 
-The s-wave pairing in the zinc-blende basis has the antidiagonal form:
+The s-wave pairing in the zinc-blende basis has the antidiagonal block form
+$\Delta_{ij} = \Delta_0 \cdot s_i \cdot \delta_{i, p(j)}$, where $p$ and $s$
+are the module data arrays declared in `src/physics/bdg_hamiltonian.f90`:
 
-$$
-\Delta = \Delta_0 \cdot \mathrm{antidiag}(+1, -1, +1, -1, -1, +1, +1, -1),
-$$
+```fortran
+integer, parameter :: pairing_partner(8) = [4, 3, 2, 1, 6, 5, 8, 7]
+real(kind=dp), parameter :: pairing_sign(8)   = [+1, +1, -1, -1, +1, -1, +1, -1]
+```
 
-where the sign pattern reflects the spinor structure of the 8-band basis.
-The particle-hole symmetry guarantees that if $E$ is an eigenvalue, $-E$ is
-also an eigenvalue.
+Each Kramers pair $(1,4)$, $(2,3)$, $(5,6)$, $(7,8)$ in the basis
+$(\mathrm{HH}\uparrow, \mathrm{LH}\uparrow, \mathrm{LH}\downarrow, \mathrm{HH}\downarrow,
+\mathrm{SO}\uparrow, \mathrm{SO}\downarrow, \mathrm{CB}\uparrow, \mathrm{CB}\downarrow)$
+gets a $+1 / -1$ sign matching the $i\sigma_y \otimes I_4$ structure, with
+the spin-up bands (1, 2, 5, 7) carrying $+1$ and the spin-down bands (3, 4, 6, 8)
+carrying $-1$.
+
+The class-D particle-hole symmetry guarantees that if $E$ is an eigenvalue,
+$-E$ is also an eigenvalue.
 
 ### 13.5.3 Dimension Doubling
 
-For an 8$N$-dimensional single-particle Hilbert space (8 bands $\times$ $N$
+For an $8N$-dimensional single-particle Hilbert space (8 bands $\times$ $N$
 spatial points), the BdG Hamiltonian acts on a $16N$-dimensional space:
 
 $$
@@ -300,7 +333,69 @@ $$
 
 This doubling is implemented in CSR format with COO assembly of the four blocks.
 
+### 13.5.4 Particle-Hole Symmetry Oracle
+
+The class-D particle-hole symmetry $\mathcal{C} H_{\mathrm{BdG}}(\mathbf{k})
+\mathcal{C}^{-1} = -H_{\mathrm{BdG}}(-\mathbf{k})$ with $\mathcal{C} = \tau_x
+\mathcal{K}$ is the foundational constraint that pins down the sign convention
+for the hole block. The PHS oracle (`tests/unit/test_bdg_phs.pf`, Issue 02,
+extended in Issue 03 fix3) verifies this at generic $\mathbf{k}$ for all four
+field combinations:
+
+1. Zero field, real $H_0$: standard $\tau_x \mathcal{K}$ PHS
+2. Finite $B_x$ (electron $+B$, hole $-B$): symmetric Peierls preserves PHS
+3. Finite $B_z$ (Zeeman, no Peierls): sign flip in (2,2) restores PHS
+4. Finite $B_x + B_z$ (both): combined Peierls + Zeeman consistency
+
+The oracle is the authoritative witness for the canonical hole-block form
+(ADR 0007 Layer A). Both builders — wire CSR and dense QW — satisfy it by
+construction because they route through the shared `build_bdg_hole_block`
+wrapper.
+
 ## 13.6 Majorana Modes
+
+### 13.6.0 Kitaev Majorana Number and Pfaffian
+
+The Kitaev Majorana number $M$ discriminates trivial from topological 1D
+superconductors (and, by extension, the Pfaffian-sign-flip signature on
+class-D 2D lattices) without computing bulk topological invariants:
+
+$$
+M = \mathrm{sgn}\!\left[ \mathrm{Pf}\!\left( H(k{=}0) \cdot \omega \right) \cdot
+\mathrm{Pf}\!\left( H(k{=}\pi/a) \cdot \omega \right) \right],
+$$
+
+where $\omega$ is the symplectic form that takes a Hermitian antisymmetric
+matrix to its Pfaffian-friendly form. $M = -1$ signals a topological phase
+that hosts unpaired Majorana zero modes at the boundary; $M = +1$ signals
+trivial. The product vanishes at the gap-closing transition.
+
+The Pfaffian implementation lives in `src/math/pfaffian.f90` (Issue 01). It
+vendors Parlett-Reid tridiagonalization (from pfapack) for the real case
+and a Householder-based recursion for the complex case. Public entry points:
+
+- `real_pfaffian(A)` and `complex_pfaffian(A)` for generic antisymmetric inputs
+- `kitaev_majorana_number(H_k_array, k_par_values, omega_struct)` for the
+  spinless p-wave Kitaev chain (returns $\pm 1$ or $0$ at gap closure)
+
+The spinless p-wave Kitaev chain $H = -t \sum_i (c^\dagger_{i+1} c_i + h.c.)
+- \mu \sum_i c^\dagger_i c_i + \Delta_0 \sum_i (c^\dagger_{i+1} c^\dagger_i +
+h.c.)$ is exercised as a closed-form test fixture in
+`tests/unit/test_kitaev_majorana.pf` (AE1, Issue 01):
+
+- $|\mu| < 2t$: $M = -1$ (topological)
+- $|\mu| > 2t$: $M = +1$ (trivial)
+- $|\mu| = 2t$: gap closes, $M$ undefined
+
+**Note on degeneracy:** On the spinless chain's diagonal BdG at TRIM,
+$M = \pm 1$ discrimination is degenerate when $\mu$ sits exactly at the
+gap-closing point or when both TRIM Pfaffians are forced positive by
+symmetry. The full topological witness therefore lands on:
+
+- Dense-QW rung (§13.7.0): Pfaffian sign flip across $B_{\mathrm{crit}}$ at
+  the in-plane TRIM $k_\parallel \in \{0, \pi/a\}$
+- Wire rung (§13.X below): slim projected Pfaffian at the conduction-band
+  edge (Issue 07)
 
 ### 13.6.1 Majorana Condition
 
@@ -319,7 +414,37 @@ $$
 
 with $|u| = |v|$ for a normalized Majorana.
 
-### 13.6.2 Zero-Energy Mode Detection
+### 13.6.2 Sticlet Majorana Polarization
+
+Charge polarization $\langle \tau_z \rangle = (|u|^2 - |v|^2) / (|u|^2 + |v|^2)$
+vanishes at a true Majorana zero mode (MZM), but it is not a good
+topological witness because it collapses to zero for any equal-weight
+electron-hole superposition — including trivial mid-gap resonances. The
+Sticlet electron-hole coherence $P_M$ is the diagnostic that distinguishes
+a localized MZM from a delocalized in-gap resonance:
+
+$$
+P_M(n) = 2 \left| \sum_{\sigma} s_\sigma \, u_{n\sigma} \, v^*_{n\sigma} \right|,
+$$
+
+where $u_{n\sigma}$ and $v_{n\sigma}$ are the electron/hole amplitudes at
+site $n$ in spin sector $\sigma$, and $s_\sigma$ are the KTD7 Nambu-ordering
+signs (per ADR 0007) that compensate for the relative phases between
+electron and hole components. The factor of $2$ normalizes the bound to
+$0 \le P_M \le 1$.
+
+**Two-tier acceptance gate** for a topological MZM at $B = 2 B_{\mathrm{crit}}$:
+
+1. Per-site threshold: $P_M(n) > 0.95$ at the edge site
+2. Half-wire integral: $\sum_{n \in \mathrm{half}} P_M(n) > 0.4$
+
+The routine is implemented as a `pure function` named `majorana_polarization`
+in `src/physics/topological_analysis.f90` (Issue 04). It takes a BdG
+eigenvector `evec_bdg` and the half-system size `n_sites`, and returns the
+per-site polarization profile as a real array. Its purity guarantees it is
+side-effect free and trivially callable from pFUnit tests.
+
+### 13.6.3 Zero-Energy Mode Detection
 
 At a topological phase boundary, the BdG spectrum develops a zero-energy
 eigenstate. The detection algorithm:
@@ -327,8 +452,9 @@ eigenstate. The detection algorithm:
 1. Compute the eigenspectrum of $H_{\mathrm{BdG}}$ via the eigensolver (`method = "FEAST"` in `[solver]`)
 2. Identify eigenvalues within $|\epsilon| < \delta$ of zero
 3. If such a state exists, extract its spatial profile
+4. Confirm localization via $P_M > 0.95$ per site + half-wire integral $> 0.4$
 
-### 13.6.3 Localization Length
+### 13.6.4 Localization Length
 
 The edge localization length $\xi$ is extracted by:
 
@@ -351,15 +477,31 @@ PHS-invariant momenta are $k_\parallel \in \{0, \pi/a\}$ (the in-plane
 TRIM points); the verifier evaluates the BdG spectrum at both momenta
 across a B-field sweep.
 
+**Measured values (InAsW QW, $\mu$ at QW CB edge):**
+
+- $B_{\mathrm{crit}} = 2.0$ T (verified, U7)
+- Gap structure: $1.35 \to 0.003 \to 1.35$ meV (open $\to$ close $\to$ reopen)
+- Pfaffian flip at TRIM: signs differ at $k_\parallel = 0$ vs $k_\parallel = \pi/a$
+  across the transition, matching the Kitaev Majorana-number formula in §13.6.0
+
 The rung exhibits the textbook class-D signature:
 - $\pm E$ particle-hole pairing holds across the entire B-sweep
   (AE4, pinned by Issue 00 / 03).
 - Below $B_{\text{crit}}$: the SC minigap opens at $\sim 2\Delta_0$
   and shrinks monotonically as $B$ grows.
-- At $B_{\text{crit}} \sim 2$ T (InAsW, $\mu$ at the QW CB edge): the
-  minigap collapses by two orders of magnitude.
+- At $B_{\text{crit}} = 2.0$ T: the minigap collapses by two orders
+  of magnitude.
 - Above $B_{\text{crit}}$: the minigap REOPENS and grows with $B$ —
   the topological phase (AE2).
+
+**Library-level wiring (cross-references):**
+
+- `eval_bdg_point` (Issue 00, pure function in `src/physics/bdg_observables.f90`)
+  evaluates the BdG spectrum at any $(k_\parallel, B)$ point
+- `complex_pfaffian` and `kitaev_majorana_number` (Issue 01, `src/math/pfaffian.f90`)
+  compute the TRIM Pfaffian and Majorana number $M$
+- `majorana_polarization` (Issue 04, `src/physics/topological_analysis.f90`) computes
+  the per-site Sticlet electron-hole coherence $P_M(n)$
 
 The topological witness at the executable level is the gap-structure
 pattern (`open -> close -> reopen`), not `n_majorana` (the existing
@@ -408,6 +550,71 @@ elements of $G$ efficiently:
 
 The LDOS peaks at the eigenenergies of $H$, with peak height $\propto 1/\eta$
 and width $\propto \eta$.
+
+### 13.7.3 BdG Spectral Function, LDOS, and Nambu Resolution
+
+For the BdG Hamiltonian the LDOS, spectral function $A(\mathbf{k}, E)$, and
+Nambu-resolved LDOS are produced in a single PARDISO setup via the
+`bdq_spectral` enum value on `cfg%topo%mode`. Three outputs are emitted:
+
+1. `bdg_ldos.dat` — total LDOS, exhibits a zero-energy peak at the Majorana
+   mode when $B > B_{\mathrm{crit}}$
+2. `bdg_ldos_nambu.dat` — Nambu-resolved LDOS split into electron and hole
+   sectors (rows $1..N$ vs rows $N{+}1..2N$); a true MZM shows equal weight
+   in both sectors
+3. `bdg_spectral.dat` — $A(k, E)$ showing the gap and in-gap mode as a
+   ridge in the $(k_z, E)$ plane
+
+The implementation is **$H$-agnostic**: `compute_ldos_csr` is called with
+the BdG CSR (not the normal-state $H_0$), so the same solver handles both
+the single-particle and BdG Hamiltonians without specialized code paths.
+The Nambu block structure gives the electron/hole split for free because
+the BdG CSR naturally separates the $N$ electron rows from the $N$ hole
+rows.
+
+The module `src/physics/spectral_bdg_wire.f90` (Issue 06) hosts the
+sibling routine `compute_spectral_function_bdg_wire(H_bdg_csr, k_values,
+E_values, A_out)`, which produces $A(k_z, E)$ via a single PARDISO
+factorization reused across all $(k_z, E)$ grid points. The verifier
+`tests/integration/verify_bdg_spectral.py` exercises the three-output
+contract end-to-end and asserts:
+
+- Zero-energy LDOS peak present at the wire edge in the topological regime
+- $A(\mathbf{k}, E) \geq 0$ everywhere (spectral positivity)
+- Nambu electron/hole LDOS sectors split symmetrically at a true MZM
+
+### 13.7.4 Wire Phase Diagram and Slim Pfaffian Witness
+
+The wire rung measures $B_{\mathrm{crit}}$ via three independent witnesses:
+
+1. **1D minigap curve** (AE3): the BdG minigap collapses by two orders of
+   magnitude at $B_{\mathrm{crit}} \approx 2.8$ T (InAs/GaAs wire,
+   $\mu = 0.6601$ eV + transverse $B$, PR40 fix). The curve shows
+   `open -> close -> reopen` structure consistent with the dense-QW rung
+   but at a higher $B_{\mathrm{crit}}$ because the wire geometry couples
+   the field more weakly to the relevant bands.
+2. **2D minigap colormap** (Issue 07 / U10): the $(B, \mu)$ minigap is
+   non-flat; the topological region (open gap, large $B$, $\mu$ in
+   conduction band) is shaded.
+3. **Slim projected Pfaffian witness** (Issue 07): at the critical point
+   $(B_{\mathrm{crit}}, \mu = 0.6601$ eV$)$:
+   - **S1**: empirical diagonalize-once at reference $B$, project onto
+     the 2 lowest single-particle states at $k_z = 0$
+   - **S2**: analytical projection onto bands 7-8 (conduction-band edge)
+   - **Witness**: Pfaffian signs from S1 and S2 agree (or document a
+     strong-SOC flag if they disagree due to band mixing beyond
+     conduction-edge projection)
+
+The wire-rung $B_{\mathrm{crit}} = 2.8$ T (1D curve) differs from the
+dense-QW rung $B_{\mathrm{crit}} = 2.0$ T — the difference is rung-dependent,
+not a contradiction: the wire geometry has different Zeeman coupling and
+different effective mass to the relevant bands.
+
+**Defense-in-depth on solver windows:** `validate_semantic` rejects
+explicitly-set Gershgorin-scale BdG solver windows (Issue 07) — the BdG
+eigensolver must derive its energy window from Gershgorin bounds, not from
+a hand-tuned range. This guards against silent re-tuning that would
+mask band-crossing transitions.
 
 ## 13.8 Module Architecture
 
@@ -459,8 +666,17 @@ qwz_u = -0.8
 # Or for BdG mode:
 # mode = "bdg"
 
+# Or for BdG spectral-function / LDOS / Nambu mode (Issue 06):
+# mode = "bdq_spectral"
+
 [bdg]
-mu = 0.0005
+# PR40 fix: mu must be in the conduction band (mu > CB_edge) for the
+# minigap to be physically meaningful. The old mu = 0.0005 eV (deep in
+# the gap) gives an all-zero minigap because the BdG Hamiltonian
+# diagonalises against a vacuum reference rather than the SC pair
+# condensate. See PR40 (BdG all-zero = mu-placement + B-along-z) for
+# the full diagnosis.
+mu = 0.6601
 delta_0 = 0.0003
 g_factor = 2.0
 B_vec = [5.0, 0.0, 0.0]   # Bx By Bz in Tesla
@@ -685,6 +901,31 @@ Running `topology_qwz.toml` produces:
 - **BdG LDOS / A(k,E) / Nambu LDOS**: wire topological regime (Issue 06 / U9)
 - **Z2 phase diagram**: BHZ analytic sweep showing trivial/topological boundary
 - **Hall conductance**: sigma_xy = C * e^2/h for QWZ model
+
+**BdG/Majorana-specific verifier and regression anchors:**
+
+Unit tests (pFUnit):
+- `tests/unit/test_bdg_evaluator.pf` — Issue 00 pure-function evaluator
+- `tests/unit/test_bdg_phs.pf` — Issue 02 PHS oracle + Issue 03 fix3 (4 field combinations)
+- `tests/unit/test_kitaev_majorana.pf` — Issue 01 spinless p-wave harness
+- `tests/unit/test_pfaffian.pf` — Issue 01 Pfaffian math (real + complex)
+- `tests/unit/test_majorana_polarization.pf` — Issue 04 Sticlet polarization
+- `tests/unit/test_wire_pfaffian_witness.pf` — Issue 07 slim Pfaffian witness
+- `tests/unit/test_green_functions.pf` — Issue 06 BdG LDOS / KTD6 closure
+
+Integration verifiers (Python + shell wrappers):
+- `tests/integration/verify_dense_qw_bdg_rung.py` — Issue 05 (B_crit = 2.0 T)
+- `tests/integration/verify_bdg_spectral.py` — Issue 06 (bdq_spectral LDOS/A(k,E)/Nambu)
+- `tests/integration/test_dense_qw_bdg_rung.sh` — Issue 05 shell wrapper
+- `tests/integration/test_bdg_spectral.sh` — Issue 06 shell wrapper
+- `tests/integration/test_lecture_13_acceptance_gate.sh` — U12 4-witness gate
+
+Regression benchmarks (golden-output):
+- `tests/regression/regression_dense_qw_bdg_rung` — Issue 05
+- `tests/regression/regression_wire_bdg_topological` — PR40 AE3 (B_crit = 2.8 T)
+- `tests/regression/regression_wire_bdg_topological_2d` — Issue 07 2D colormap
+- `tests/regression/regression_bdq_spectral_wire` — Issue 06 BdG LDOS regression
+- `tests/regression/test_wire_bdg_topological_2d.sh` — Issue 07 2D colormap shell
 
 The historical "B_crit ~ 0.25 T" reference at the bottom of this list
 (pre-Issue 05) was a QW configuration with mu=-0.1413 eV that is now
