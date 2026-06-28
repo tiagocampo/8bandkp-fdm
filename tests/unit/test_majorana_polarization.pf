@@ -1,0 +1,275 @@
+module test_majorana_polarization
+  ! Issue 04 (PR-B, U6): Sticlet Majorana polarization as MZM discriminator.
+  ! Co-located with compute_majorana_profile (shares band_major_row indexing).
+  ! s_σ derived from KTD7 Nambu ordering per ADR 0007.
+  use funit
+  use definitions, only: dp
+  use topological_analysis, only: majorana_polarization, polarization_result_t
+  implicit none
+
+contains
+
+  ! Helper: build a synthetic BdG eigenvector of size 16*N with
+  ! band-major ordering. u(:half_n) is the electron block, v(:half_n) is the
+  ! hole block. half_n = 8*N.
+  pure subroutine build_bdg_evec(u_flat, v_flat, evec_bdg)
+    real(kind=dp), intent(in)  :: u_flat(:)
+    real(kind=dp), intent(in)  :: v_flat(:)
+    complex(kind=dp), intent(out) :: evec_bdg(:)
+    integer :: i
+    do i = 1, size(u_flat)
+      evec_bdg(i) = cmplx(u_flat(i), 0.0_dp, kind=dp)
+      evec_bdg(size(u_flat) + i) = cmplx(v_flat(i), 0.0_dp, kind=dp)
+    end do
+  end subroutine build_bdg_evec
+
+  @test
+  subroutine test_mzm_spinor_PM_saturates()
+    ! Sticlet Eq. 5 analytical MZM spinor -> P_M saturates to 1 per site,
+    ! half-wire integral ≈ N/2 (the headline "≈ 0.5 for a true MZM" value).
+    !
+    ! For an N-site wire, the half-wire integral sums P_M over the first half
+    ! of the wire (an end). For a true MZM localized at one end with unit
+    ! amplitude across both spin sectors, the half-wire integral equals
+    ! N/2 (per Sticlet Eq. 5 normalization). This test verifies saturation
+    ! for a synthetic uniform-amplitude MZM spinor that exercises the
+    ! constructive interference between spin sectors.
+    integer, parameter :: N = 8
+    real(kind=dp) :: u_flat(8*N), v_flat(8*N)
+    complex(kind=dp) :: evec_bdg(16*N)
+    type(polarization_result_t) :: pol
+
+    ! Sticlet Eq. 5: Majorana spinor with u_σ = +v_σ (real, same phase) for
+    ! spin-up σ=↑ (band 1, HH↑); u_σ = -v_σ for spin-down σ=↓ (band 4, HH↓).
+    ! Constructive interference via s_↑=+1, s_↓=-1 (per KTD7 derivation).
+    ! All electron and hole amplitudes real, equal magnitude.
+    u_flat = 0.0_dp
+    v_flat = 0.0_dp
+    ! Band 1 (HH↑): u = +v = 1
+    u_flat(1) = 1.0_dp
+    v_flat(1) = 1.0_dp
+    ! Band 4 (HH↓): u = +1, v = -1 (i.e., u = -v)
+    u_flat(3*N + 1) = 1.0_dp
+    v_flat(3*N + 1) = -1.0_dp
+
+    call build_bdg_evec(u_flat, v_flat, evec_bdg)
+    pol = majorana_polarization(evec_bdg, N)
+
+    ! Per-site P_M saturated to 1 at the two active sites (band-major
+    ! site 1 covers the active site for both spin-up and spin-down bands).
+    @assertTrue(pol%P_M(1) > 0.95_dp)
+    ! Total P_M (sanity): sum over full wire = 1 for our synthetic MZM
+    ! localized at one site (coherence contributes at site 1 only).
+    @assertEqual(1.0_dp, pol%total_P_M, tolerance=1.0e-12_dp)
+    ! Half-wire integral: with all amplitude at site 1 (which is in the
+    ! first half of the wire), this equals P_M(1) = 1.
+    @assertEqual(1.0_dp, pol%half_wire_integral, tolerance=1.0e-12_dp)
+  end subroutine test_mzm_spinor_PM_saturates
+
+  @test
+  subroutine test_pure_electron_near_zero_PM_zero()
+    ! A pure-electron near-zero state (v=0, u≠0) -> P_M ≈ 0.
+    ! The off-diagonal electron-hole coherence vanishes by construction.
+    integer, parameter :: N = 8
+    real(kind=dp) :: u_flat(8*N), v_flat(8*N)
+    complex(kind=dp) :: evec_bdg(16*N)
+    type(polarization_result_t) :: pol
+
+    u_flat = 0.0_dp
+    v_flat = 0.0_dp
+    ! Pure electron amplitude at bands 1 and 4, no hole amplitude.
+    u_flat(1) = 1.0_dp
+    u_flat(3*N + 1) = 1.0_dp
+
+    call build_bdg_evec(u_flat, v_flat, evec_bdg)
+    pol = majorana_polarization(evec_bdg, N)
+
+    @assertTrue(pol%half_wire_integral < 1.0e-12_dp)
+    @assertTrue(pol%total_P_M < 1.0e-12_dp)
+    ! Charge polarization <tau_z> = (|u|²-|v|²)/(|u|²+|v|²) = +1 for pure electron.
+    @assertEqual(1.0_dp, pol%tau_z(1), tolerance=1.0e-12_dp)
+  end subroutine test_pure_electron_near_zero_PM_zero
+
+  @test
+  subroutine test_pure_hole_near_zero_PM_zero()
+    ! A pure-hole near-zero state (u=0, v≠0) -> P_M ≈ 0.
+    integer, parameter :: N = 8
+    real(kind=dp) :: u_flat(8*N), v_flat(8*N)
+    complex(kind=dp) :: evec_bdg(16*N)
+    type(polarization_result_t) :: pol
+
+    u_flat = 0.0_dp
+    v_flat = 0.0_dp
+    ! Pure hole amplitude, no electron amplitude.
+    v_flat(1) = 1.0_dp
+    v_flat(3*N + 1) = 1.0_dp
+
+    call build_bdg_evec(u_flat, v_flat, evec_bdg)
+    pol = majorana_polarization(evec_bdg, N)
+
+    @assertTrue(pol%half_wire_integral < 1.0e-12_dp)
+    @assertTrue(pol%total_P_M < 1.0e-12_dp)
+    ! Charge polarization <tau_z> = -1 for pure hole.
+    @assertEqual(-1.0_dp, pol%tau_z(1), tolerance=1.0e-12_dp)
+  end subroutine test_pure_hole_near_zero_PM_zero
+
+  @test
+  subroutine test_mzm_peaks_at_wire_ends()
+    ! Site-resolved P_M is peaked at the two wire ends for a true MZM.
+    ! Synthetic MZM localized at both ends with equal amplitude.
+    integer, parameter :: N = 16
+    real(kind=dp) :: u_flat(8*N), v_flat(8*N)
+    complex(kind=dp) :: evec_bdg(16*N)
+    type(polarization_result_t) :: pol
+    integer :: i
+
+    ! Place amplitude at sites 1 and N (the wire ends), both spin sectors.
+    u_flat = 0.0_dp
+    v_flat = 0.0_dp
+    ! Band 1, site 1
+    u_flat(1) = 1.0_dp
+    v_flat(1) = 1.0_dp
+    ! Band 1, site N
+    u_flat(N) = 1.0_dp
+    v_flat(N) = 1.0_dp
+    ! Band 4, site 1 (3*N + 1)
+    u_flat(3*N + 1) = 1.0_dp
+    v_flat(3*N + 1) = -1.0_dp
+    ! Band 4, site N (4*N)
+    u_flat(4*N) = 1.0_dp
+    v_flat(4*N) = -1.0_dp
+
+    call build_bdg_evec(u_flat, v_flat, evec_bdg)
+    pol = majorana_polarization(evec_bdg, N)
+
+    ! P_M peaks at sites 1 and N (comparable magnitudes).
+    @assertTrue(pol%P_M(1) > 0.95_dp)
+    @assertTrue(pol%P_M(N) > 0.95_dp)
+
+    ! Interior sites have P_M = 0 (no amplitude there).
+    do i = 2, N - 1
+      @assertTrue(pol%P_M(i) < 1.0e-12_dp)
+    end do
+
+    ! The two ends have comparable magnitudes (within factor of 2).
+    @assertTrue(abs(pol%P_M(1) - pol%P_M(N)) / max(pol%P_M(1), pol%P_M(N)) < 0.5_dp)
+  end subroutine test_mzm_peaks_at_wire_ends
+
+  @test
+  subroutine test_half_wire_integral_discriminates()
+    ! Half-wire integral ≈ 0.5*N for true MZM (synthetic, all at one end);
+    ! ≈ 0 for an accidental near-zero mode (pure electron).
+    ! This is the discriminator the AC names.
+    integer, parameter :: N = 16
+    real(kind=dp) :: u_flat(8*N), v_flat(8*N)
+    complex(kind=dp) :: evec_bdg(16*N)
+    type(polarization_result_t) :: pol_mzm, pol_pure_e
+
+    ! --- True MZM: localized at site 1 with both spin sectors ---
+    u_flat = 0.0_dp
+    v_flat = 0.0_dp
+    u_flat(1) = 1.0_dp
+    v_flat(1) = 1.0_dp
+    u_flat(3*N + 1) = 1.0_dp
+    v_flat(3*N + 1) = -1.0_dp
+    call build_bdg_evec(u_flat, v_flat, evec_bdg)
+    pol_mzm = majorana_polarization(evec_bdg, N)
+
+    ! --- Accidental near-zero mode: pure electron at site 1 ---
+    u_flat = 0.0_dp
+    v_flat = 0.0_dp
+    u_flat(1) = 1.0_dp
+    u_flat(3*N + 1) = 1.0_dp
+    call build_bdg_evec(u_flat, v_flat, evec_bdg)
+    pol_pure_e = majorana_polarization(evec_bdg, N)
+
+    ! MZM has half_wire_integral > 0.4 (per AC, headline threshold).
+    ! The synthetic MZM has all amplitude at site 1 (a single site, fully
+    ! in the first half) with P_M(1) = 1, so half_wire_integral = 1.
+    @assertTrue(pol_mzm%half_wire_integral > 0.4_dp)
+    ! Pure electron has half_wire_integral ≈ 0 (no electron-hole coherence).
+    @assertTrue(pol_pure_e%half_wire_integral < 0.1_dp)
+  end subroutine test_half_wire_integral_discriminates
+
+  @test
+  subroutine test_tau_z_vanishes_at_mzm()
+    ! <tau_z>(n) = (|u_n|²-|v_n|²)/(|u_n|²+|v_n|²) -> 0 at a true MZM.
+    ! Documented contrast: <tau_z> is NOT the discriminator (it contradicts
+    ! AE2's "polarization ≈ 1" which refers to P_M, not <tau_z>).
+    integer, parameter :: N = 8
+    real(kind=dp) :: u_flat(8*N), v_flat(8*N)
+    complex(kind=dp) :: evec_bdg(16*N)
+    type(polarization_result_t) :: pol
+
+    ! MZM spinor with equal |u| and |v| at site 1.
+    u_flat = 0.0_dp
+    v_flat = 0.0_dp
+    u_flat(1) = 1.0_dp
+    v_flat(1) = 1.0_dp
+    u_flat(3*N + 1) = 1.0_dp
+    v_flat(3*N + 1) = -1.0_dp
+
+    call build_bdg_evec(u_flat, v_flat, evec_bdg)
+    pol = majorana_polarization(evec_bdg, N)
+
+    ! At the MZM site, |u|² = |v|² → <tau_z> = 0.
+    @assertEqual(0.0_dp, pol%tau_z(1), tolerance=1.0e-12_dp)
+  end subroutine test_tau_z_vanishes_at_mzm
+
+  @test
+  subroutine test_spin_sector_signs_match_pairing()
+    ! Spin-sector signs s_σ must match pairing_sign(σ) per KTD7 derivation
+    ! (s_↑=+1 for spin-up bands {1,2,5,7}; s_↓=-1 for spin-down bands {3,4,6,8}).
+    !
+    ! Construction: build an eigenvector with both spin sectors present
+    ! with opposite phases (u_↑=v_↑=+1, u_↓=v_↓=+1), then verify that
+    ! P_M = 2·|u_↑ v*_↑ - u_↓ v*_↓| (the relative minus sign between
+    ! spin sectors is what makes the MZM coherence constructive).
+    !
+    ! If s_σ is taken from pairing_sign(σ), then for u_σ = v_σ (real, same
+    ! phase), each sector contributes |u_σ|². Both contribute positively
+    ! to P_M at the site. The off-diagonal coherence is constructive.
+    !
+    ! To verify the relative sign, construct u_↑ = v_↑ = 1, u_↓ = v_↓ = 1
+    ! (same sign for both sectors). The contribution is:
+    !   Σ_σ s_σ u_σ v*_σ = (+1)(1)(1) + (-1)(1)(1) = 0
+    ! So P_M = 2·|0| = 0.
+    !
+    ! With opposite signs (u_↑ = v_↑ = 1, u_↓ = -v_↓ = 1, i.e. u_↓=1, v_↓=-1):
+    !   Σ_σ s_σ u_σ v*_σ = (+1)(1)(1) + (-1)(1)(-1) = +1 + 1 = 2
+    ! So P_M = 4, normalized by |u|²+|v|² = 4 gives P_M site = 1.
+    integer, parameter :: N = 8
+    real(kind=dp) :: u_flat(8*N), v_flat(8*N)
+    complex(kind=dp) :: evec_bdg(16*N)
+    type(polarization_result_t) :: pol_same, pol_opposite
+
+    ! Case 1: same sign for both sectors at site 1.
+    u_flat = 0.0_dp
+    v_flat = 0.0_dp
+    u_flat(1) = 1.0_dp
+    v_flat(1) = 1.0_dp
+    u_flat(3*N + 1) = 1.0_dp
+    v_flat(3*N + 1) = 1.0_dp
+    call build_bdg_evec(u_flat, v_flat, evec_bdg)
+    pol_same = majorana_polarization(evec_bdg, N)
+
+    ! Case 2: opposite sign for the down sector at site 1.
+    u_flat = 0.0_dp
+    v_flat = 0.0_dp
+    u_flat(1) = 1.0_dp
+    v_flat(1) = 1.0_dp
+    u_flat(3*N + 1) = 1.0_dp
+    v_flat(3*N + 1) = -1.0_dp
+    call build_bdg_evec(u_flat, v_flat, evec_bdg)
+    pol_opposite = majorana_polarization(evec_bdg, N)
+
+    ! For case 1 (same sign for both sectors), the polarization must be
+    ! ZERO (the spin sectors destructively interfere under s_σ=pairing_sign).
+    @assertTrue(pol_same%P_M(1) < 1.0e-12_dp)
+
+    ! For case 2 (opposite sign for down sector), the polarization must
+    ! be SATURATED (constructive interference between spin sectors).
+    @assertTrue(pol_opposite%P_M(1) > 0.95_dp)
+  end subroutine test_spin_sector_signs_match_pairing
+
+end module test_majorana_polarization

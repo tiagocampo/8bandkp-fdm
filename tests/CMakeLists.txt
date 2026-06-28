@@ -261,6 +261,16 @@ if(PFUNIT_FOUND)
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
+
+    # Issue 04 (U6): Sticlet Majorana polarization as MZM discriminator.
+    # Tests the pure function majorana_polarization + polarization_result_t
+    # added to src/physics/topological_analysis.f90. Spin-sector signs s_σ
+    # derived from KTD7 Nambu ordering per ADR 0007.
+    add_pfunit_ctest(test_majorana_polarization
+        TEST_SOURCES unit/test_majorana_polarization.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
 else()
     message(STATUS "pFUnit not found — unit tests disabled. Install pFUnit and set -DPFUNIT_DIR to enable.")
 endif()

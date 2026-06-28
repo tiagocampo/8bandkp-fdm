@@ -36,7 +36,7 @@ Called from `src/apps/` and `src/core/simulation_setup.f90`:
 | `charge_density.f90` | `charge_density` | 437 | n(z), p(z) from eigenstates; output in cm⁻³ |
 | `poisson.f90` | `poisson` | 517 | 1D Thomas + 2D PARDISO Poisson; box-integration |
 | `sc_loop.f90` | `sc_loop` | 1089 | SC Schrödinger-Poisson with DIIS; Fermi bisection |
-| `topological_analysis.f90` | `topological_analysis` | 1433 | Chern, Z2, Berry curvature, Majorana, BHZ wire |
+| `topological_analysis.f90` | `topological_analysis` | 1433 | Chern, Z2, Berry curvature, Majorana, BHZ wire. Issue 04 (U6): added `majorana_polarization` (pure) + `polarization_result_t` — Sticlet MZM discriminator with `s_σ` derived from KTD7 Nambu ordering per ADR 0007. |
 | `green_functions.f90` | `green_functions` | 501 | Spectral function, Landauer transmission, LDOS |
 | `exciton.f90` | `exciton_solver` | 529 | Variational exciton (Bastard), Sommerfeld enhancement |
 | `scattering.f90` | `scattering_solver` | 442 | LO-phonon Fröhlich intersubband scattering |
