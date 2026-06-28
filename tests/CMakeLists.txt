@@ -163,6 +163,16 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    # Issue 02 (U5, Layer A of U4): PHS oracle pinning the BdG hole-block
+    # canonical convention (-conjg(H0(-k)) per ADR 0007). Four-field matrix
+    # (no_Z/Z x no_P/P) at generic k + cross-builder spectral identity.
+    # RED on pre-Issue-03 code; GREEN post-Issue-03.
+    add_pfunit_ctest(test_bdg_phs
+        TEST_SOURCES unit/test_bdg_phs.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_bdg_config
         TEST_SOURCES unit/test_bdg_config.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
@@ -234,6 +244,20 @@ if(PFUNIT_FOUND)
 
     add_pfunit_ctest(test_trk_sum_rule
         TEST_SOURCES unit/test_trk_sum_rule.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Issue 01: Pfaffian math (Parlett-Reid tridiagonalization)
+    add_pfunit_ctest(test_pfaffian
+        TEST_SOURCES unit/test_pfaffian.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Issue 01: Kitaev-chain Majorana number harness
+    add_pfunit_ctest(test_kitaev_majorana
+        TEST_SOURCES unit/test_kitaev_majorana.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )

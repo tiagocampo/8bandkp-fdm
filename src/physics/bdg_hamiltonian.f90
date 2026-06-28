@@ -6,11 +6,25 @@ module bdg_hamiltonian
   ! The BdG Hamiltonian is a 16N x 16N matrix in Nambu space built from the
   ! 8N x 8N electron Hamiltonian:
   !
-  !   H_BdG = |  H0 - mu*I    Delta   |
-  !           |  Delta^dagger  -H0^T+mu*I |
+  !   H_BdG = |  H0(+k) - mu*I       Delta            |
+  !           |  Delta^dagger        -conjg(H0(-k)) + mu*I |
   !
-  ! where H0 is the 8N x 8N wire Hamiltonian (from ZB8bandGeneralized),
-  ! mu is the chemical potential, and Delta is the superconducting pairing.
+  ! where H0 is the 8N x 8N wire/QW Hamiltonian (from ZB8bandGeneralized or
+  ! ZB8bandQW), mu is the chemical potential, and Delta is the superconducting
+  ! pairing.
+  !
+  ! CANONICAL HOLE-BLOCK CONVENTION (per ADR 0007):
+  !   Hole block = -conjg(H0(-k))    [the QW dense form]
+  !
+  ! This is the time-reversed Nambu conjugate of the electron block. It is
+  ! the k!=0-general form (Leijnse-Flensberg Eq. 38) and is equivalent to
+  ! the wire-CSR's -H0^T(+k) form when H0 is Hermitian at k=0 in the absence
+  ! of Peierls phases, but it is the CORRECT form at generic k with Peierls
+  ! (where H0(+k) != H0(-k)^T).
+  !
+  ! Pinning oracle: tests/unit/test_bdg_phs.pf. RED on pre-Issue-03 wire
+  ! code (canonical hole-block residual ~0.13); GREEN once Issue 03's
+  ! shared wrapper extracts build_bdg_hole_block with this canonical form.
   !
   ! Key properties:
   !   - BdG matrix IS Hermitian (FEAST works directly, no non-Hermitian solver)
