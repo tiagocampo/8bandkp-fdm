@@ -53,6 +53,7 @@ module definitions
   real(kind=dp), parameter :: e0 = 8.854187817_dp*1E-12*(1E-9) ! C V-1 nm-1
   real(kind=dp), parameter :: kB_eV = 8.617333262e-5_dp        ! Boltzmann constant (eV/K)
   real(kind=dp), parameter :: mu_B = 5.7883818012e-5_dp       ! Bohr magneton (eV/T)
+  real(kind=dp), parameter :: BDG_WINDOW_BOUND = 1.0_dp  ! eV -- rejection ceiling for BdG [solver] emin/emax
   real(kind=dp), parameter :: tolerance=1e-7_dp
   real(kind=dp), parameter :: coord_tolerance=1e-12_dp  ! spatial coordinate zero-check threshold
   logical, parameter :: renormalization = .False.
@@ -945,6 +946,45 @@ module definitions
         if (trim(cfg%confinement) /= 'qw' .and. trim(cfg%confinement) /= 'wire') then
           error stop 'validate_semantic: BdG requires QW or wire confinement, got ''' // &
             trim(cfg%confinement) // ''''
+        end if
+        ! U8-followup: BdG requires Bx (Peierls orbital coupling).
+        ! add_peierls_coo (magnetic_field.f90:107-108) silently early-returns
+        ! when abs(Bx) < 1e-12_dp. By Peierls path is NOT implemented
+        ! (build_bdg_hamiltonian_1d gates on B_vec(1) only). Reject configs
+        ! where Bx=0 AND (By or Bz is nonzero) — these would silently disable
+        ! orbital coupling. Code review P2 (PR40 inline).
+        if (abs(cfg%bdg%B_vec(1)) < 1.0e-12_dp .and. &
+            (abs(cfg%bdg%B_vec(2)) > 1.0e-12_dp .or. &
+             abs(cfg%bdg%B_vec(3)) > 1.0e-12_dp)) then
+          error stop 'validate_semantic: BdG requires Bx nonzero ' // &
+            'for Peierls orbital coupling; By-only and axial configs ' // &
+            'run Zeeman-only (By Peierls path not yet implemented)'
+        end if
+      end if
+
+      ! U8: BdG solver window, if explicitly set, must be physics-sized.
+      ! Rejects Gershgorin-scale windows that sample the FD-Nyquist tail
+      ! (see docs/solutions/best-practices/2026-06-21-fd-nyquist-spurious-tail.md).
+      ! Bound 1 eV is generous (physics BdG windows are <=~50 meV) but rejects
+      ! the ±tens-of-eV auto/Gershgorin scale; does not reject the existing
+      ! strain-BdG regression config (±0.5 eV). Fires on mode='bdg' (eval_bdg)
+      ! and on mode='sweep'+sweep_model='wire_bdg' (eval_wire_bdg_gap), both
+      ! of which honor [solver] emin/emax via apply_solver_window.
+      if (trim(cfg%topo%mode) == 'bdg' .or. &
+          (trim(cfg%topo%mode) == 'sweep' .and. &
+           trim(cfg%topo%sweep_model) == 'wire_bdg')) then
+        if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+          if (max(abs(cfg%solver%emin), abs(cfg%solver%emax)) > BDG_WINDOW_BOUND) then
+            if (trim(cfg%topo%mode) == 'bdg') then
+              error stop 'validate_semantic: BdG solver window too wide ' // &
+                '(max(|emin|,|emax|) > BDG_WINDOW_BOUND eV); ' // &
+                'use a physics-sized window around E=0'
+            else
+              error stop 'validate_semantic: wire_bdg sweep solver window too wide ' // &
+                '(max(|emin|,|emax|) > BDG_WINDOW_BOUND eV); ' // &
+                'use a physics-sized window around E=0'
+            end if
+          end if
         end if
       end if
 

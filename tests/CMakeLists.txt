@@ -796,6 +796,22 @@ set_tests_properties(
     PROPERTIES LABELS "regression;strain-validation" TIMEOUT 900
 )
 
+# U8: wire BdG all-zero fix regression. mu at the conduction subband edge
+# (0.6601 eV, core/shell wire) + transverse B_vec=[Bx,0,0] gives the
+# topological open->close->reopen (B_crit~2.8T). Also asserts the auto-window
+# fallback is NOT used on the BdG path (U8 removes it).
+add_test(
+    NAME regression_wire_bdg_topological
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_bdg_topological.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_bdg_topological.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_wire_bdg_topological
+    PROPERTIES LABELS "regression;strain-validation" TIMEOUT 900
+)
+
 # Topological sweep mode regressions
 add_test(
     NAME regression_topology_sweep_bhz
@@ -1258,3 +1274,12 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 set_tests_properties(validation_rejects_bad_configs PROPERTIES LABELS "validation" TIMEOUT 60)
+
+# U8: BdG solver-window validate guard rejection test.
+add_test(
+    NAME validation_rejects_bad_topology
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_validate_rejects.sh
+        $<TARGET_FILE:topologicalAnalysis>
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(validation_rejects_bad_topology PROPERTIES LABELS "validation" TIMEOUT 60)

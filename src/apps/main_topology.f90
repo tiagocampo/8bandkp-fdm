@@ -11,8 +11,8 @@ program topologicalAnalysis
   use input_parser
   use sparse_matrices
   use eigensolver, only: eigensolver_base, make_eigensolver, eigensolver_config, &
-    & eigensolver_result, eigensolver_result_free, auto_compute_energy_window, &
-    & EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
+    & eigensolver_result, eigensolver_result_free, &
+    & apply_solver_window, EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use topological_analysis
   use bdg_hamiltonian
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
@@ -47,7 +47,7 @@ program topologicalAnalysis
   ! --- Wire mode (confinement='wire') variables ---
   ! Wire init/cleanup is now owned by the wire_setup type (Issue #04).
   ! The program-scope profile_2d/kpterms_2d/coo_cache/eigen_* boilerplate
-  ! was removed when run_bdg_wire / eval_wire_bdg_gap_app / run_qshe_wire
+  ! was removed when run_bdg_wire / eval_wire_bdg_gap / run_qshe_wire
   ! were routed through wire_setup_init / wire_setup_free.
 
   ! --- Topological result ---
@@ -457,7 +457,7 @@ contains
     integer :: Ngrid_local, Ntot_local, nev_local
     real(kind=dp) :: emin_local, emax_local, kz_val
     real(kind=dp), allocatable :: eigvals_bdg(:)
-    integer :: i, j, iounit_prof
+    integer :: i, j, iounit_prof, ios
 
     print *, '--- BdG wire mode: Majorana modes ---'
 
@@ -506,132 +506,131 @@ contains
       emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
       emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
     end if
-    eigen_cfg_local%emin = emin_local
-    eigen_cfg_local%emax = emax_local
+    ! Route the physics-sized window through the window authority (ADR 0005 /
+    ! KTD6). apply_solver_window honors a nonzero user override verbatim, so
+    ! the physics window is preserved while window selection has one home.
+    ! NEVER the Gershgorin auto-window for BdG (samples the FD-Nyquist tail;
+    ! see docs/solutions/best-practices/2026-06-21-fd-nyquist-spurious-tail.md).
+    call apply_solver_window(H_bdg_csr, emin_local, emax_local, &
+                             eigen_cfg_local%emin, eigen_cfg_local%emax)
 
     print *, '  ', eigen_cfg_local%method, ' energy window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
 
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
     call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
 
+    ! U8: no auto-window fallback on the BdG path. If the physics window found
+    ! nothing, mu is in the band gap or the window is mis-sized -- fail loudly
+    ! via error stop (CLAUDE.md "no silent corrections").
     if (eigen_res_local%nev_found == 0) then
-      print *, 'Warning: ', eigen_solver_local%backend_name(), &
-        ' found no eigenvalues in the search window'
-      print *, '  Retrying with auto-computed energy window...'
-      call auto_compute_energy_window(H_bdg_csr, eigen_cfg_local%emin, eigen_cfg_local%emax)
-      print *, '  Auto window: [', eigen_cfg_local%emin, ',', eigen_cfg_local%emax, ']'
-      call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+      error stop 'run_bdg_wire: ' // eigen_solver_local%backend_name() // &
+        ' found no eigenvalues in window; mu likely in the band gap, ' // &
+        'or the [solver] emin/emax is mis-sized'
     end if
+    allocate(eigvals_bdg(eigen_res_local%nev_found))
+    eigvals_bdg = eigen_res_local%eigenvalues
 
-    if (eigen_res_local%nev_found == 0) then
-      print *, 'Warning: auto-window retry also found no eigenvalues'
-      result%min_gap = -1.0_dp
-    else
-      allocate(eigvals_bdg(eigen_res_local%nev_found))
-      eigvals_bdg = eigen_res_local%eigenvalues
+    ! Find minimum gap: full superconducting gap = 2 * min|E|
+    result%min_gap = 2.0_dp * bdg_zero_energy_gap(eigvals_bdg)
 
-      ! Find minimum gap: full superconducting gap = 2 * min|E|
-      result%min_gap = 2.0_dp * bdg_zero_energy_gap(eigvals_bdg)
+    ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
+    call write_bdg_eigenvalues(eigvals_bdg, 'kz', kz_val)
 
-      ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
-      call write_bdg_eigenvalues(eigvals_bdg, 'kz', kz_val)
+    ! Check for zero-energy Majorana modes
+    block
+      integer :: n_zero
+      real(kind=dp), allocatable :: majorana_xi(:)
+      integer :: n_majorana, n_fit_ok, n_fit_failed
+      real(kind=dp) :: xi_val
+      real(kind=dp), allocatable :: profile_rho(:)
+      integer :: nspatial, status_prof
 
-      ! Check for zero-energy Majorana modes
-      block
-        integer :: n_zero
-        real(kind=dp), allocatable :: majorana_xi(:)
-        integer :: n_majorana, n_fit_ok, n_fit_failed
-        real(kind=dp) :: xi_val
-        real(kind=dp), allocatable :: profile_rho(:)
-        integer :: nspatial, status_prof
+      n_zero = 0
+      do i = 1, eigen_res_local%nev_found
+        if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+          n_zero = n_zero + 1
+        end if
+      end do
 
-        n_zero = 0
+      print *, '  Eigenvalues found: ', eigen_res_local%nev_found
+      print *, '  Near-zero modes (|E| < 0.001*delta): ', n_zero
+      result%n_majorana = n_zero
+
+      if (n_zero > 0) then
+        print *, '  Majorana modes detected!'
+
+        ! Compute Majorana localization and profile for zero-energy states
+        allocate(majorana_xi(n_zero))
+        n_majorana = 0
+        n_fit_ok = 0
+        n_fit_failed = 0
+        nspatial = Ntot_local / 8
+
         do i = 1, eigen_res_local%nev_found
           if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
-            n_zero = n_zero + 1
+            n_majorana = n_majorana + 1
+            allocate(profile_rho(nspatial))
+            xi_val = compute_majorana_profile( &
+              & eigen_res_local%eigenvectors(:, i), cfg%grid, &
+              & cfg%bdg%delta_0 * 0.01_dp, Ntot_local, profile_rho)
+            if (xi_val > 0.0_dp) then
+              n_fit_ok = n_fit_ok + 1
+              majorana_xi(n_fit_ok) = xi_val
+            else
+              n_fit_failed = n_fit_failed + 1
+            end if
+
+            ! Write Majorana profile to file (first Majorana mode only)
+            if (n_majorana == 1) then
+              call get_unit(iounit_prof)
+              open(unit=iounit_prof, file='output/majorana_profile.dat', &
+                   status='replace', action='write', iostat=status_prof)
+              if (status_prof == 0) then
+                write(iounit_prof, '(A)') '# Majorana wavefunction spatial profile'
+                write(iounit_prof, '(A,ES16.8)') '# kz (1/A) = ', kz_val
+                write(iounit_prof, '(A,ES16.8)') '# xi (AA) = ', xi_val
+                write(iounit_prof, '(A,I0)') '# n_spatial = ', nspatial
+                write(iounit_prof, '(A)') '# Columns: index, x (AA), y (AA), rho'
+                do j = 1, nspatial
+                  write(iounit_prof, '(I6,2ES16.8,ES20.12)') j, &
+                    & cfg%grid%coords(1, j), cfg%grid%coords(2, j), profile_rho(j)
+                end do
+                close(iounit_prof)
+                print *, '  Majorana profile written to output/majorana_profile.dat'
+              end if
+            end if
+            deallocate(profile_rho)
           end if
         end do
 
-        print *, '  Eigenvalues found: ', eigen_res_local%nev_found
-        print *, '  Near-zero modes (|E| < 0.001*delta): ', n_zero
-        result%n_majorana = n_zero
-
-        if (n_zero > 0) then
-          print *, '  Majorana modes detected!'
-
-          ! Compute Majorana localization and profile for zero-energy states
-          allocate(majorana_xi(n_zero))
-          n_majorana = 0
-          n_fit_ok = 0
-          n_fit_failed = 0
-          nspatial = Ntot_local / 8
-
-          do i = 1, eigen_res_local%nev_found
-            if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
-              n_majorana = n_majorana + 1
-              allocate(profile_rho(nspatial))
-              xi_val = compute_majorana_profile( &
-                & eigen_res_local%eigenvectors(:, i), cfg%grid, &
-                & cfg%bdg%delta_0 * 0.01_dp, Ntot_local, profile_rho)
-              if (xi_val > 0.0_dp) then
-                n_fit_ok = n_fit_ok + 1
-                majorana_xi(n_fit_ok) = xi_val
-              else
-                n_fit_failed = n_fit_failed + 1
-              end if
-
-              ! Write Majorana profile to file (first Majorana mode only)
-              if (n_majorana == 1) then
-                call get_unit(iounit_prof)
-                open(unit=iounit_prof, file='output/majorana_profile.dat', &
-                     status='replace', action='write', iostat=status_prof)
-                if (status_prof == 0) then
-                  write(iounit_prof, '(A)') '# Majorana wavefunction spatial profile'
-                  write(iounit_prof, '(A,ES16.8)') '# kz (1/A) = ', kz_val
-                  write(iounit_prof, '(A,ES16.8)') '# xi (AA) = ', xi_val
-                  write(iounit_prof, '(A,I0)') '# n_spatial = ', nspatial
-                  write(iounit_prof, '(A)') '# Columns: index, x (AA), y (AA), rho'
-                  do j = 1, nspatial
-                    write(iounit_prof, '(I6,2ES16.8,ES20.12)') j, &
-                      & cfg%grid%coords(1, j), cfg%grid%coords(2, j), profile_rho(j)
-                  end do
-                  close(iounit_prof)
-                  print *, '  Majorana profile written to output/majorana_profile.dat'
-                end if
-              end if
-              deallocate(profile_rho)
-            end if
-          end do
-
-          if (n_fit_ok > 0) then
-            result%edge_xi = sum(majorana_xi(1:n_fit_ok)) / real(n_fit_ok, kind=dp)
-            result%edge_xi_min = minval(majorana_xi(1:n_fit_ok))
-            print *, '  Average Majorana localization length: ', result%edge_xi, ' AA'
-          else
-            result%edge_xi = 0.0_dp
-            result%edge_xi_min = 0.0_dp
-            print *, '  Average Majorana localization length: unavailable'
-          end if
-          if (n_fit_failed > 0) then
-            print *, '  Majorana localization fits failed: ', n_fit_failed
-          end if
-          result%n_majorana_fit_failed = n_fit_failed
-
-          allocate(result%edge_energies(n_zero))
-          j = 0
-          do i = 1, eigen_res_local%nev_found
-            if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
-              j = j + 1
-              result%edge_energies(j) = eigvals_bdg(i)
-            end if
-          end do
-
-          deallocate(majorana_xi)
+        if (n_fit_ok > 0) then
+          result%edge_xi = sum(majorana_xi(1:n_fit_ok)) / real(n_fit_ok, kind=dp)
+          result%edge_xi_min = minval(majorana_xi(1:n_fit_ok))
+          print *, '  Average Majorana localization length: ', result%edge_xi, ' AA'
+        else
+          result%edge_xi = 0.0_dp
+          result%edge_xi_min = 0.0_dp
+          print *, '  Average Majorana localization length: unavailable'
         end if
-      end block
+        if (n_fit_failed > 0) then
+          print *, '  Majorana localization fits failed: ', n_fit_failed
+        end if
+        result%n_majorana_fit_failed = n_fit_failed
 
-      deallocate(eigvals_bdg)
-    end if
+        allocate(result%edge_energies(n_zero))
+        j = 0
+        do i = 1, eigen_res_local%nev_found
+          if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+            j = j + 1
+            result%edge_energies(j) = eigvals_bdg(i)
+          end if
+        end do
+
+        deallocate(majorana_xi)
+      end if
+    end block
+
+    deallocate(eigvals_bdg)
 
     print *, '  Min gap: ', result%min_gap, ' eV'
 
@@ -1209,7 +1208,7 @@ contains
       B_val = cfg_in%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * dB
       do iMu = 1, nMu
         mu_val = cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * dmu
-        call eval_wire_bdg_gap_app(cfg_in, B_val, mu_val, gap_threshold, &
+        call eval_wire_bdg_gap(cfg_in, B_val, mu_val, gap_threshold, &
           & z2_map(iMu, iB), gap_map(iMu, iB))
       end do
     end do
@@ -1219,7 +1218,18 @@ contains
       & cfg_in%topo%gap_sweep_mu_max, gap_threshold, transitions)
   end subroutine compute_wire_bdg_gap_sweep
 
-  subroutine eval_wire_bdg_gap_app(cfg_in, B_val, mu_val, gap_threshold, z2, gap)
+  subroutine bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
+    type(csr_matrix), intent(inout) :: H_bdg_csr
+    type(eigensolver_result), intent(inout) :: eigen_res_local
+    class(eigensolver_base), allocatable, intent(inout) :: eigen_solver_local
+    type(wire_setup), intent(inout) :: wsetup
+    call csr_free(H_bdg_csr)
+    call eigensolver_result_free(eigen_res_local)
+    if (allocated(eigen_solver_local)) deallocate(eigen_solver_local)
+    call wire_setup_free(wsetup)
+  end subroutine bdg_wire_cleanup
+
+  subroutine eval_wire_bdg_gap(cfg_in, B_val, mu_val, gap_threshold, z2, gap)
     type(simulation_config), intent(in) :: cfg_in
     real(kind=dp), intent(in) :: B_val, mu_val, gap_threshold
     integer, intent(out) :: z2
@@ -1233,11 +1243,14 @@ contains
     type(eigensolver_result) :: eigen_res_local
     real(kind=dp), allocatable :: eigvals_bdg(:)
     integer :: Ngrid_local, Ntot_local, Nbdg_local, nev_local
+    real(kind=dp) :: emin_local, emax_local
 
     cfg = cfg_in
     cfg%bdg%enabled = .true.
     cfg%bdg%mu = mu_val
-    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, B_val]
+    ! U8-followup: transverse B for Peierls orbital coupling (design §1 second
+    ! root cause). Bx varies with B_val; By and Bz zero.
+    cfg%bdg%B_vec = [B_val, 0.0_dp, 0.0_dp]
 
     ! Strain-aware wire init (Issue #04): run compute_strain +
     ! compute_bir_pikus_blocks when cfg%strain%enabled so the BdG sweep
@@ -1258,24 +1271,42 @@ contains
     eigen_cfg_local%max_iter = 200
     eigen_cfg_local%tol = 1.0e-10_dp
     eigen_cfg_local%m0 = min(max(8 * nev_local, 200), Nbdg_local)
-    eigen_cfg_local%emin = -5.0_dp * cfg%bdg%delta_0
-    eigen_cfg_local%emax =  5.0_dp * cfg%bdg%delta_0
+
+    ! Use [solver] emin/emax as user override if set; otherwise ±5·δ₀ default.
+    if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+      emin_local = cfg%solver%emin
+      emax_local = cfg%solver%emax
+    else
+      emin_local = -5.0_dp * cfg%bdg%delta_0
+      emax_local =  5.0_dp * cfg%bdg%delta_0
+    end if
+    ! Route the physics-sized window through the window authority (ADR 0005 /
+    ! KTD6). apply_solver_window honors a nonzero user override verbatim, so
+    ! the physics window is preserved while window selection has one home.
+    ! NEVER the Gershgorin auto-window for BdG (samples the FD-Nyquist tail;
+    ! see docs/solutions/best-practices/2026-06-21-fd-nyquist-spurious-tail.md).
+    call apply_solver_window(H_bdg_csr, emin_local, emax_local, &
+                             eigen_cfg_local%emin, eigen_cfg_local%emax)
 
     eigen_solver_local = make_eigensolver(eigen_cfg_local)
     call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
 
     if (.not. eigen_res_local%converged .or. eigen_res_local%nev_found < 1) then
-      print *, 'ERROR: wire BdG sweep ', eigen_solver_local%backend_name(), &
-        ' failed or found no states'
-      error stop 'wire BdG eigensolver failed'
+      call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
+      error stop 'eval_wire_bdg_gap: FEAST failed or found no states ' // &
+        '(mu likely in band gap or window mis-sized)'
     end if
     if (eigen_res_local%m0_used > 0 .and. &
         eigen_res_local%nev_found >= eigen_res_local%m0_used .and. &
         eigen_res_local%m0_used < Nbdg_local) then
-      print *, 'ERROR: wire BdG sweep likely truncated ', &
-        eigen_solver_local%backend_name(), ' subspace'
+      print *, 'WARNING: wire BdG sweep FEAST subspace likely truncated ', &
+        eigen_solver_local%backend_name(), ' (m0 too small or window too broad)'
       print *, '  nev_found=', eigen_res_local%nev_found, ' m0=', eigen_res_local%m0_used
-      error stop 'wire BdG eigensolver subspace likely truncated'
+      call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
+      error stop 'eval_wire_bdg_gap: FEAST subspace likely truncated ' // &
+        '(increase m0 or narrow the window); ' // &
+        'fail-fast prevents sentinel leakage into the phase diagram ' // &
+        '(Codex review P2 on PR40)'
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues
@@ -1283,10 +1314,7 @@ contains
     z2 = compute_z2_gap(eigvals_bdg, gap_threshold)
     deallocate(eigvals_bdg)
 
-    call csr_free(H_bdg_csr)
-    call eigensolver_result_free(eigen_res_local)
-    if (allocated(eigen_solver_local)) deallocate(eigen_solver_local)
-    call wire_setup_free(wsetup)
-  end subroutine eval_wire_bdg_gap_app
+    call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
+  end subroutine eval_wire_bdg_gap
 
 end program topologicalAnalysis

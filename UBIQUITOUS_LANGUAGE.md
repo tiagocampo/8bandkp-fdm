@@ -106,6 +106,16 @@ specific meanings they carry *here*.
 | **FD order** | The stencil order (2–10) controlling discretization accuracy | |
 | **Grid** | The discrete set of spatial points on which the Hamiltonian is built (`grid%npoints()` total) | Mesh |
 
+## Numerics
+
+- **Gershgorin bound**: the upper bound on |eigenvalue| of a matrix derived from the sum of absolute values in each row. For a CSR matrix with diagonal + off-diagonal pattern, the bound scales with the FD stencil coefficient and the grid spacing (typically ±tens of eV for the 8-band k.p Hamiltonian). When fed to FEAST as an energy window, the Gershgorin scale samples the FD-Nyquist tail (see below) and returns spurious states. Cross-reference: `docs/solutions/best-practices/2026-06-21-fd-nyquist-spurious-tail.md`.
+
+- **sentinel gap value**: the value `min_gap = -1.0_dp` (or, in error-stop variants, a non-zero exit) returned by `run_bdg_wire` / `eval_wire_bdg_gap` when the FEAST eigensolve finds 0 eigenvalues in the configured physics window. The sentinel means "no BdG modes found in this window" — typically caused by μ in the band gap or a mis-sized `[solver] emin/emax`. Consumers (lecture scripts, phase-diagram tools) MUST treat the sentinel as a configuration error, NOT as a real negative gap.
+
+- **FD-Nyquist tail**: spurious high-energy eigenstates produced when a wide energy window (e.g., the Gershgorin scale) is fed to FEAST on an FD-discretized Hamiltonian. The FD stencil introduces non-physical dispersion at high k that FEAST samples indiscriminately. Detection: `min_gap` near the window boundary rather than near the pairing gap. Mitigation: use a physics-sized window (≤ ~50 meV for BdG). Cross-reference: `docs/solutions/best-practices/2026-06-21-fd-nyquist-spurious-tail.md`.
+
+- **PHS operator (Xi = tau_x K)**: the particle-hole symmetry operator used in BdG cross-checks is `Xi = tau_x K = [[0, I_n], [I_n, 0]] K`, where K is complex conjugation. This is the correct operator for a wire-builder BdG of the form `H = [[H_ee, Delta], [Delta^*, -H_ee^T]]` — the swap-and-conjugate maps the electron block to the negated hole block. The simpler `C = diag(I_n, -I_n) K` does NOT satisfy PHS for this builder form. Verified numerically by `test_bdg_phs_at_finite_bx` (C8, commit `214acf4`).
+
 ## Relationships
 
 - A **Confinement** structure is one of **bulk**, **quantum well**, **quantum wire**, or **Landau**; it fixes the matrix size (8×8 for bulk, 8N×8N otherwise).

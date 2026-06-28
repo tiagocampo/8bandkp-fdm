@@ -1,8 +1,8 @@
 # Implementation Backlog — Ordered by Priority
 
-Consolidated from REVIEW.md on 2026-05-06. Updated 2026-06-03.
+Consolidated from REVIEW.md on 2026-05-06. Updated 2026-06-27.
 Piezoelectric explicitly excluded (ZB [001] = zero by symmetry, wires = negligible).
-Phases 1-20 complete. Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architectural cleanup, extended cross-code, FEAST parity).
+Phases 1-23 complete. Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architectural cleanup, extended cross-code, FEAST parity).
 
 ---
 
@@ -477,6 +477,60 @@ message string and the `solve` alias** (the rest of U-A) are still pending.
 
 ---
 
+## Phase 23: COMPLETED (2026-06-27)
+
+U8 wire BdG window routing — the all-zero minigap fix that killed the stale
+"PASS, B_crit≈1.22 T" claim from `docs/lecture/13-topological-superconductivity.md`.
+
+**Branch:** `feat/bdg-u8-window-routing` (PR40, OPEN awaiting merge)
+**Plan:** `docs/superpowers/plans/archive/2026-06-21-u8-bdg-window-routing.md`
+**Spec:** `docs/superpowers/specs/archive/2026-06-21-u8-bdg-window-routing-design.md`
+**Follow-up plan:** `docs/superpowers/plans/archive/2026-06-26-u8-followup-reviews-and-codex.md`
+**Commits:** 23 commits `dcdea33..84e238a` (10 PR40 main + 12 follow-up + 1 drift fix)
+**Tests:** 126/126 ctest green (was 126/126 before, with 1 follow-up test added)
+
+### Delivered (PR40 main)
+
+| Issue | What | Status |
+|-------|------|--------|
+| All-zero minigap root cause | μ mis-parameterization (mid-gap) + axial B (no Peierls); not a BdG-construction bug | **DIAGNOSED** by U1 (2026-06-15) |
+| Window routing via `apply_solver_window` | KTD6 — `run_bdg_wire` routes window through single authority (`a4ade9d`) | **DONE** |
+| Auto-window fallback removed | Gershgorin auto-retry silently returned FD-Nyquist tail states; removed on BdG path (`a4ade9d`) | **DONE** |
+| Gershgorin-scale window guard | `validate_semantic` rejects BdG `max(\|emin\|,\|emax\|) > BDG_WINDOW_BOUND=1.0` (`4c445c7`) | **DONE** |
+| μ prescription corrected | μ at conduction subband edge (0.6601 eV for 13×13/dx=dy=5 Å core/shell InAs/GaAs), transverse B (`1567d90` + `f2840c4`) | **DONE** |
+| Regression `regression_wire_bdg_topological` | open→close→reopen at Bx=2.8 T for μ=0.6601 + transverse B (`e3233f9` + `4bf649e`) | **DONE** |
+| FD-Nyquist tail best-practice doc | `docs/solutions/best-practices/2026-06-21-fd-nyquist-spurious-tail.md` (`c6dc762`) | **DONE** |
+
+### Delivered (PR40 follow-up, 2026-06-27)
+
+| Task | What | Status |
+|------|------|--------|
+| **C1** | `b_field%components` `check_optional_stat` (PR27 I2) + Vnew3 rejection test (`b479dae`) | **DONE** |
+| **C2** | Transverse-B guard: rejects BdG with `B_vec=[0,0,Bz]` (Peierls would silently early-return) + T4 test (`6d0c94c`) | **DONE** |
+| **C3** | Sentinel `error stop` + stale `bdg_eigenvalues.dat` cleanup (Codex P2) (`a1df39e`) | **DONE** |
+| **C4** | `BDG_WINDOW_BOUND = 1.0_dp` as named module parameter (`7d5952b`) | **DONE** |
+| **C5** | Drop unused `auto_compute_energy_window` import (`0f85c1f`) | **DONE** |
+| **C6** | Tighten T2 sentinel assertion + minigap coverage cell (`b9b351e`) | **DONE** |
+| **C7** | `eval_wire_bdg_gap_app` rewrite: `bdg_wire_cleanup` helper + transverse B + `apply_solver_window` routing + sentinel + memory-leak fix (`47cf227`) | **DONE** |
+| **C8** | PHS cross-check unit test (`test_bdg_phs_at_finite_bx`) — R3 verification gap closed. **Math note:** the spec's `C = diag(I_8,-I_8) K` was wrong for the wire builder; correct operator is `Xi = tau_x K = [[0,I_8],[I_8,0]] K` (swap + conjugate). phs_rel = 0 at finite Bx. (`214acf4`) | **DONE** |
+| **C9** | Design/plan status footers, brainstorm R3 annotation, §4.5/Task 5 (no-op) removal, §4.1/§6 contradiction resolution (`b35ad47`) | **DONE** |
+| **C10** | Rename `eval_wire_bdg_gap_app` → `eval_wire_bdg_gap` + 4 UBIQUITOUS_LANGUAGE entries (Gershgorin bound, sentinel gap value, FD-Nyquist tail, PHS operator `Xi = tau_x K`) + OMP docstring (`2192f37`) | **DONE** |
+| **C-fix1** | `topology_rashba_phase.toml` B_vec `[0,0,6.0]` → `[6.0,0,0]` (C2 guard caught silent axial-B bug; gap range 0.05-2.0 meV unchanged) (`d25152d`) | **DONE** |
+| **Doc-drift fix** | Parent plan U8 status footer (C9 spec'd it inline at L322 but it was missed — re-added) (`84e238a`) | **DONE** |
+
+### Archive + memory
+
+- `.scratch/pr27-review-fixes/` → `.scratch/archive/pr27-review-fixes/` (REVIEW.md status COMPLETE) — `6de7c67`
+- 4 U8 docs (plan + design + follow-up plan + follow-up spec) → `docs/superpowers/{plans,specs}/archive/` — `6e9e097`
+- Memory entry: `codebase-doc-drift-prevention` (saved in `~/.claude/projects/-data-8bandkp-fdm/memory/`, MEMORY.md pointer appended)
+
+### Deferred (out of scope, future PRs)
+
+- `compute_spectral_function_wire` window routing → U9 (per design §6)
+- U1, U2, U9, U10, U11, U12 of parent BdG validation plan still open
+
+---
+
 ## PR #39 Review — Deferred Refactors
 
 Larger refactors surfaced by the PR #39 max-effort code review, deliberately
@@ -489,6 +543,7 @@ standalone change that deserves its own scope rather than being folded into a
 | **`resolve_kp_term` drives the CSR formula** | `build_kp_derived_csr_blocks` / `update_kp_derived_csr_values` (`hamiltonian_wire.f90:1102,1128`) call `resolve_kp_term` but ignore `operand_a/operand_b`, hardcoding `csr_add(blk_Q, blk_T, …)`. Make the CSR path dispatch via the descriptor operands the way `apply_kp_table_dense` already does, so a k.p topology change propagates to both builders instead of only the dense one. | U-B (ADR 0001/0005); review finding #9 | Medium | Medium |
 | **Decompose `compute_strain_wire`** | `strain_pde.f90:57-577` is ~520 lines (~10× the 50-line/function budget): stiffness assembly + PARDISO solve + strain recovery all in one body. Split along its internal seams (assemble / solve / recover) into focused subroutines. Body is currently a verbatim move out of `strain_solver.f90`. | C8 strain split (ADR 0005); review finding #12 | Medium | Low |
 | **Dedup the FEAST sweep-window derivation** | The "if FEAST and window==auto: build endpoint CSR(s) → `apply_solver_window` → re-validate → reconstruct solver" block is copy-pasted across ~5 sites (`main.f90` Landau + QW, `main_optics.f90` QW, `simulation_setup.f90` QW + wire). The sites vary (single-endpoint `asw_single` vs two-endpoint `asw_envelope`; `ZB8bandQW_csr` vs dense+`dnscsr` vs `ZB8bandGeneralized`), so a clean shared helper needs a build-callback. Extract at least the common apply+validate+reconstruct tail; not currently buggy, so deferred rather than mixed into the review-fix pass. | ADR 0005 / issue #03 (window authority); review finding #15 | Medium | Low |
+| **Extract duplicated energy-window margin constants** | `margin_frac = 0.1_dp` / `margin_floor = 0.5_dp` are declared verbatim in two places with identical margin arithmetic — `auto_compute_energy_window` (`eigensolver.f90:461-462`) and `asw_apply_margin` (`:514-515`). Extract to module-level `parameter`s so both share one definition. The PR #39 review-fix pass (C1) intended to resolve this by deleting `asw_apply_margin`, but that routine is LIVE — two `@test`s exercise it via the generic `apply_solver_window` interface — so deletion broke the build; only `wire_setup_adopt_precomputed` was removed and #11 stayed open. | ADR 0005 (window authority); review finding #11 | Low | Low |
 
 ---
 
@@ -503,6 +558,7 @@ standalone change that deserves its own scope rather than being folded into a
 | Phase 21 PRD | US3/US4: Well-width monotonic trend + hard cross-material assertion | Low | Medium |
 | Phase 21 PRD | US18: Multi-width exciton sweep (30, 50, 80, 100, 150, 200 A) | Medium | Low |
 | Phase 21 PRD | US10/US11: Tighter Fermi/subband tolerances (need baseline 8-band values) | Low | Low |
+| BdG/wire spurious-solutions probe (2026-06-21) | **Foreman renormalization units bug (dormant).** The renormalization branch `parameters.f90:798-800,814` stores dimensional `const*(gamma - EP/(c*Eg))`, but the gamma consumer (`hamiltonianConstructor.f90:473` and `confinement_init.f90:130`) multiplies by `const` again expecting a *dimensionless* gamma — so enabling `renormalization` double-applies `const` and makes gamma ~3.8x too large (valence bands over-disperse, not fix). The branch guard `renormalization .or. A<0` is never hit today (`renormalization=.False.`, `A=1/meff>0`), so this is latent dead code, NOT the cause of any current spectrum. **Fix:** drop the leading `const*` in the branch so it stores the dimensionless Foreman-renormalized `gamma_tilde = gamma - EP/(c*Eg)`, matching the consumer's convention; add a unit test asserting renormalized gamma matches the analytical Foreman formula and that bulk k=0 energies are unchanged. Effort bumps to Medium if you also re-validate bulk/QW dispersion against kdotpy with renorm on. | Low | Low |
 
 ---
 
@@ -542,6 +598,7 @@ Items that were explicitly deferred or relaxed with documented justification:
 | 20. Deep physics validation | — | TRK sum rule (7 tests), Hermiticity (20 tests), rungs 7-8 (g-factor + optical), wire strain quantitative | DONE |
 | 21. Publishable benchmarks | — | ISBT 6-config sweep (42 checks), SC benchmark (5 checks), exciton tightening + Bastard 1982 | IN_PROGRESS (PR #35) |
 | 22. FEAST parity | — | Sparse FEAST first-class for all geometries except bulk (ADR 0005); window gate (#10) → QW g-factor → QW optics → Landau | PENDING |
+| 23. U8 wire BdG window routing (PR40) | — | All-zero minigap fix: window routing via `apply_solver_window`, auto-fallback removal, Gershgorin window guard, 10 follow-up C1–C10 (parser, validate, sentinel, named constant, sweep rewrite, PHS test, doc cleanup), C-fix1 rashba config, doc-drift fix. 23 commits `dcdea33..84e238a`. 126/126 ctest green; pushed, OPEN awaiting merge. | DONE |
 
-**Phases 1-20 complete.** 113 tests pass. Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architecture deepening + FEAST parity).
+**Phases 1-23 complete.** 126 tests pass. Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architecture deepening + FEAST parity).
 Source of truth: `docs/plans/BACKLOG.md` (this file) and `docs/plans/REVIEW.md`.

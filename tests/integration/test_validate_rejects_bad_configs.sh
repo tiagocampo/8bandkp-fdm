@@ -312,6 +312,17 @@ name = "GaAs"
 EOF
 run_test "Vnew2_bulk_feast" "bulk is always"
 
+# Vnew3: non-numeric [b_field] components must error (PR27 I2 — silent fallback fix)
+cat > input.toml << 'EOF'
+confinement = "bulk"
+FDorder = 2
+[[material]]
+name = "GaAs"
+[b_field]
+components = ["0.0", "0.0", "z"]
+EOF
+run_test "Vnew3_b_field_components_non_numeric" "b_field\|components"
+
 echo ""
 echo "========================================"
 echo " Validation rejection: $PASS passed, $FAIL failed"

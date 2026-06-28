@@ -9,7 +9,7 @@ module wire_setup_mod
   ! followed, when cfg%strain%enabled, by compute_strain + compute_bir_pikus_blocks.
   !
   ! Why this exists (Issue #04, ADRs 0001 + 0005):
-  !   The topology wire subroutines (run_bdg_wire, run_qshe_wire, eval_wire_bdg_gap_app
+  !   The topology wire subroutines (run_bdg_wire, run_qshe_wire, eval_wire_bdg_gap
   !   in main_topology.f90) and the spectral-function path (compute_spectral_function_wire
   !   in green_functions.f90) each copy-pasted confinementInitialization_2d but
   !   SKIPPED compute_strain + compute_bir_pikus_blocks. The strain insertion in

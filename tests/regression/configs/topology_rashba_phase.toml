@@ -47,6 +47,6 @@ ldos_num_E = 200
 mu = 0.637928
 delta_0 = 0.0002
 g_factor = 2.0
-B_vec = [0.0, 0.0, 6.0]
+B_vec = [6.0, 0.0, 0.0]
 gauge = "landau"
 kz = 0.0
