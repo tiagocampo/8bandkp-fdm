@@ -126,9 +126,10 @@ where $\sigma_i$ are Pauli matrices. The topological phase diagram:
 
 | Parameter $u$ | Chern Number $C$ | Phase |
 |---|---|---|
-| $u < -2$ | $+1$ | Topological |
-| $-2 < u < 0$ | $-1$ | Topological |
-| $u > 0$ | $0$ | Trivial |
+| $u < -2$ | $0$ | Trivial |
+| $-2 < u < 0$ | $+1$ | Topological |
+| $0 < u < 2$ | $-1$ | Topological |
+| $u > 2$ | $0$ | Trivial |
 
 **Verification:** For $u = -0.8$ (topological), $C = +1$; for $u = 0.5$
 (topological inverted), $C = -1$; for $u = 2.5$ (trivial), $C = 0$.
@@ -249,10 +250,10 @@ $$
 
 where $m^* = 0.026 m_0$ for InAs.
 
-**Verification:** At $B = 5$ T:
+**Verification:** At $B = 5$ T (InAs, CB edge = 417 meV):
 - $\hbar\omega_c = 22.26$ meV
-- $E_0 = 11.13$ meV (fundamental Landau level)
-- $E_1 = 33.40$ meV (first excited)
+- $E_0 = 428.13$ meV (fundamental Landau level; offset $\text{CB}_\text{edge} + 11.13$ meV)
+- $E_1 = 450.40$ meV (first excited; offset $\text{CB}_\text{edge} + 33.40$ meV)
 
 ## 13.5 Bogoliubov-de Gennes: Nambu Space
 
@@ -482,8 +483,8 @@ $$
 H(\mathbf{k}) = \sin k_x \sigma_x + \sin k_y \sigma_y + (u + \cos k_x + \cos k_y) \sigma_z
 $$
 
-The topological phase diagram gives C = +1 for u < -2, C = -1 for -2 < u < 0,
-and C = 0 for u > 0.
+The topological phase diagram gives C = 0 for u < -2 (trivial), C = +1 for -2 < u < 0,
+C = -1 for 0 < u < 2, and C = 0 for u > 2 (trivial).
 
 **ASCII Comparison Table:**
 
@@ -561,8 +562,6 @@ to apply Peierls phase factors to the bulk Hamiltonian for Landau level quantiza
 ### 13.12.3 Benchmark Summary
 
 ![BHZ Z2 Width Sweep](figures/verify_bhz_z2_width_sweep.png)
-![Rashba Majorana Phase Diagram](figures/rashba_majorana_phase_diagram.png)
-![Landau Levels InAs B=5T](figures/landau_levels_inas_b5t.png)
 
 | Test | Model | Status | Notes |
 |---|---|---|---|
@@ -576,7 +575,6 @@ to apply Peierls phase factors to the bulk Hamiltonian for Landau level quantiza
 | BdG Majorana (wire 2D) | InAs/GaAs wire | PASS | 2D minigap colormap non-flat (Issue 07 / U10) |
 | BdG Majorana (wire slim Pfaffian) | InAs/GaAs wire | PASS | Pfaffian witness s1=s2 at (B_crit, mu=0.6601) |
 | BdG LDOS / A(k,E) / Nambu | InAs/GaAs wire | PASS | Zero-bias LDOS peak, A>=0 (Issue 06 / U9) |
-| Landau levels | InAs B=5T | PENDING | Peierls substitution integration incomplete |
 
 ---
 
@@ -702,12 +700,6 @@ longer used for the reconciliation table.
 ![Majorana phase transition](figures/lecture_13_majorana.png)
 
 ![Landau levels](figures/lecture_13_landau.png)
-
-![Spectral function](figures/lecture_13_spectral.png)
-
-![Z2 phase diagram sweep](figures/lecture_13_phase_diagram.png)
-
-![Hall conductance](figures/lecture_13_conductance.png)
 
 ---
 
