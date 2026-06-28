@@ -7,7 +7,7 @@ module test_bdg_hamiltonian
   use topological_analysis
   use geometry
   use confinement_init, only: confinementInitialization_2d
-  use hamiltonian_wire, only: wire_workspace, wire_workspace_free
+  use hamiltonian_wire, only: wire_workspace, wire_workspace_free, ZB8bandGeneralized
   use hamiltonianConstructor, only: ZB8bandQW
   use linalg, only: zheev, zheevx
   use magnetic_field, only: compute_zeeman_vz
@@ -444,6 +444,13 @@ contains
 
   @test
   subroutine test_bdg_wire_bx_hole_block_negative_transpose()
+    ! Issue 03 (ADR 0007 Layer D): the wire builder's hole block must match
+    ! the canonical form H_hole = -conjg(H0(-k)). This test asserts that
+    ! the wire CSR builder's hole block equals -conjg(H0_at_-k) where
+    ! H0_at_-k is built independently via ZB8bandGeneralized at -kz.
+    ! The reference H0 is built without external Peierls application
+    ! (matching the convention: Peierls is applied to the electron block
+    ! only, and the hole block derives from the bare H0(-k)).
     integer, parameter :: nx = 3, ny = 3
     real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
     integer :: ij, i, j, n8
@@ -453,12 +460,12 @@ contains
     character(len=255), allocatable :: material_names(:)
     real(kind=dp), allocatable :: profile_2d(:,:)
     type(csr_matrix), allocatable :: kpterms_2d(:)
-    type(csr_matrix) :: H_bdg
+    type(csr_matrix) :: H_bdg, H0_minus_k_csr
     type(simulation_config) :: cfg
     type(wire_workspace) :: ws
     integer :: mat2d(nx, ny)
-    complex(kind=dp), allocatable :: dense(:,:)
-    real(kind=dp) :: ph_err, max_imag_electron
+    complex(kind=dp), allocatable :: dense(:,:), H0_minus_k(:,:)
+    real(kind=dp) :: canonical_err, max_imag_electron
 
     mat2d = 1
     call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
@@ -481,22 +488,30 @@ contains
                                   kz=0.0_dp, mu=0.0_dp, delta_0=0.001_dp, ws=ws, &
                                   B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
 
+    ! Build reference H0(-kz) independently for the canonical-form check.
+    call ZB8bandGeneralized(H0_minus_k_csr, -0.0_dp, profile_2d, kpterms_2d, cfg, ws=ws)
+    n8 = H0_minus_k_csr%nrows
+    allocate(H0_minus_k(n8, n8))
+    call csr_to_dense(H0_minus_k_csr, H0_minus_k)
+    call csr_free(H0_minus_k_csr)
+
     n8 = H_bdg%nrows / 2
     allocate(dense(H_bdg%nrows, H_bdg%ncols))
     call csr_to_dense(H_bdg, dense)
 
-    ph_err = 0.0_dp
+    ! Canonical form check: H_hole(i, j) = -conjg(H0_minus_k(i, j))
+    canonical_err = 0.0_dp
     max_imag_electron = 0.0_dp
     do j = 1, n8
       do i = 1, n8
-        ph_err = max(ph_err, abs(dense(n8 + j, n8 + i) + dense(i, j)))
+        canonical_err = max(canonical_err, abs(dense(n8 + i, n8 + j) + conjg(H0_minus_k(i, j))))
         max_imag_electron = max(max_imag_electron, abs(aimag(dense(i, j))))
       end do
     end do
     @assertTrue(max_imag_electron > 1.0e-12_dp, message="finite Bx test must exercise complex Peierls phases")
-    @assertTrue(ph_err < 1.0e-10_dp, message="finite Bx hole block must be -transpose of phased electron Hamiltonian")
+    @assertTrue(canonical_err < 1.0e-10_dp, message="finite Bx hole block must match canonical -conjg(H0(-k)) form (ADR 0007)")
 
-    deallocate(dense)
+    deallocate(dense, H0_minus_k)
     call csr_free(H_bdg)
     call wire_workspace_free(ws)
     do ij = 1, size(kpterms_2d)

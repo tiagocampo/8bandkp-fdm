@@ -89,7 +89,7 @@ All modules: `idx = (band-1)*Ngrid + spatial_index`. Spatial recovered via `sp =
 `kpterms(ii, jj, term_idx) = -result(ii, jj)` — stored with negative sign. All consumers must account for this.
 
 ### BdG Nambu structure
-`H_BdG = [[H₀-μI, Δ],[Δ†, -H₀ᵀ+μI]]`. IS Hermitian. Pairing: `Δ = δ₀(iσ_y⊗I₄)`. Kramers: 1↔4, 2↔3, 5↔6, 7↔8. Layout: 1..8N = electron, 8N+1..16N = hole.
+`H_BdG = [[H₀-μI, Δ],[Δ†, -conjg(H₀(-k))+μI]]` (ADR 0007 canonical form; Leijnse-Flensberg Eq. 38). IS Hermitian. Pairing: `Δ = δ₀(iσ_y⊗I₄)`. Kramers: 1↔4, 2↔3, 5↔6, 7↔8. Layout: 1..8N = electron, 8N+1..16N = hole. The hole block is produced by the shared `build_bdg_hole_block` wrapper in `bdg_hamiltonian.f90`; both the wire CSR and dense QW builders route through it. The mu-shift (+μI in the hole block, -μI in the electron block) and Zeeman (sign-flipped) are added at the call site since they differ in sign between blocks.
 
 ### Zeeman g-multipliers (0-based)
 HH±3/2: ∓1.5, LH±1/2: ±0.5/∓0.5, SO±1/2: ∓0.5, CB±1/2: ±1.0/∓1.0
