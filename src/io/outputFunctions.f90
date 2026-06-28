@@ -9,6 +9,7 @@ module outputFunctions
   private
   public :: writeEigenfunctions, writeEigenfunctions2d, writeParts2d, writeEigenvalues
   public :: write_bdg_eigenvalues, write_optical_transitions, write_profile_1d
+  public :: write_bdg_ldos, write_bdg_ldos_nambu, write_bdg_spectral
 
   character(len=*), parameter :: OUTPUT_DIR = 'output'
 
@@ -421,5 +422,107 @@ module outputFunctions
       close(iounit)
 
     end subroutine write_profile_1d
+
+    ! ==================================================================
+    ! Issue 06 / Unit U9: BdG LDOS at the specified energy grid.
+    !
+    ! Writes output/bdg_ldos.dat with three columns: r, E, ldos(r,E).
+    ! Header records the kz point. Append mode across multiple kz points
+    ! keeps a single multi-row file (the dispatch runs one kz per call).
+    ! ==================================================================
+    subroutine write_bdg_ldos(E_values, ldos, kz_val)
+
+      real(kind=dp), intent(in), contiguous :: E_values(:)
+      real(kind=dp), intent(in), contiguous :: ldos(:)
+      real(kind=dp), intent(in) :: kz_val
+      integer(kind=4) :: iounit, status
+      integer :: iE, n
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/bdg_ldos.dat', status='replace', action='write', &
+           iostat=status)
+      if (status /= 0) return
+
+      n = size(E_values)
+      write(iounit, '(A)') '# BdG LDOS (1/eV)'
+      write(iounit, '(A,ES16.8)') '# kz (1/A) = ', kz_val
+      write(iounit, '(A)') '# Columns: r, E (eV), LDOS (1/eV)'
+      do iE = 1, n
+        write(iounit, '(I6,1X,ES16.8,1X,ES16.8)') 1, E_values(iE), ldos(iE)
+      end do
+      close(iounit)
+
+    end subroutine write_bdg_ldos
+
+    ! ==================================================================
+    ! Issue 06 / Unit U9: Nambu-resolved LDOS at E=0 (Majorana peak).
+    !
+    ! Writes output/bdg_ldos_nambu.dat with three columns:
+    !   r, LDOS_electron(r, E=0), LDOS_hole(r, E=0)
+    ! Header records the kz point. Single-row per r for the Majorana
+    ! zero-energy slice.
+    ! ==================================================================
+    subroutine write_bdg_ldos_nambu(ldos_e, ldos_h, kz_val)
+
+      real(kind=dp), intent(in), contiguous :: ldos_e(:)
+      real(kind=dp), intent(in), contiguous :: ldos_h(:)
+      real(kind=dp), intent(in) :: kz_val
+      integer(kind=4) :: iounit, status
+      integer :: r, N
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/bdg_ldos_nambu.dat', status='replace', action='write', &
+           iostat=status)
+      if (status /= 0) return
+
+      N = size(ldos_e)
+      write(iounit, '(A)') '# BdG Nambu-resolved LDOS at E=0 (1/eV)'
+      write(iounit, '(A,ES16.8)') '# kz (1/A) = ', kz_val
+      write(iounit, '(A)') '# Columns: r, LDOS_electron, LDOS_hole'
+      do r = 1, N
+        write(iounit, '(I6,1X,ES16.8,1X,ES16.8)') r, ldos_e(r), ldos_h(r)
+      end do
+      close(iounit)
+
+    end subroutine write_bdg_ldos_nambu
+
+    ! ==================================================================
+    ! Issue 06 / Unit U9: BdG spectral function A(k,E).
+    !
+    ! Writes output/bdg_spectral.dat as a 2D-grid: rows are k-points,
+    ! columns are E-points. Header documents the k and E ranges.
+    ! Format: 'i, k_i, j, E_j, A_ij' per row.
+    ! ==================================================================
+    subroutine write_bdg_spectral(k_values, E_values, A_kE)
+
+      real(kind=dp), intent(in), contiguous :: k_values(:)
+      real(kind=dp), intent(in), contiguous :: E_values(:)
+      real(kind=dp), intent(in), contiguous :: A_kE(:,:)
+      integer(kind=4) :: iounit, status
+      integer :: ik, iE, nk, nE
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/bdg_spectral.dat', status='replace', action='write', &
+           iostat=status)
+      if (status /= 0) return
+
+      nk = size(k_values)
+      nE = size(E_values)
+      write(iounit, '(A)') '# BdG spectral function A(k, E) (1/eV)'
+      write(iounit, '(A,I0)') '# nk = ', nk
+      write(iounit, '(A,I0)') '# nE = ', nE
+      write(iounit, '(A)') '# Columns: ik, k (1/A), iE, E (eV), A(k,E)'
+      do ik = 1, nk
+        do iE = 1, nE
+          write(iounit, '(I6,1X,ES16.8,1X,I6,1X,ES16.8,1X,ES16.8)') &
+            ik, k_values(ik), iE, E_values(iE), A_kE(ik, iE)
+        end do
+      end do
+      close(iounit)
+
+    end subroutine write_bdg_spectral
 
 end module outputFunctions

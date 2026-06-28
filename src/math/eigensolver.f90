@@ -14,6 +14,7 @@ module eigensolver
   public :: solve_feast
   public :: auto_compute_energy_window, eigensolver_result_free
   public :: apply_solver_window
+  public :: asw_evals, asw_single, asw_envelope
   public :: eigensolver_base, dense_lapack_solver_t
 #ifdef USE_MKL_FEAST
   public :: feast_solver_t

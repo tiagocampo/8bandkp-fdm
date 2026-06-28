@@ -480,3 +480,13 @@ cells:
     material: InAs
     tier: required
     reference: Lutchyn_Oreg2010 / topological_transition
+
+  - observable: bdg_ldos
+    geometry: wire
+    material: InAsW
+    tier: required
+
+  - observable: bdg_spectral_function
+    geometry: wire
+    material: InAsW
+    tier: required

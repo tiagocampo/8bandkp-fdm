@@ -820,6 +820,21 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# Issue 06 / Unit U9: BdG LDOS + A(k,E) + Nambu-resolved LDOS on the
+# topological wire. Verifies bdq_spectral mode produces all three
+# output files and that the Majorana zero-energy LDOS peak exists.
+add_test(
+    NAME regression_bdq_spectral_wire
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_bdg_spectral.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_bdq_spectral_wire.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_bdq_spectral_wire
+    PROPERTIES LABELS "regression" TIMEOUT 600
+)
+
 # Wire BdG strain-omission regression (#04):
 # Asserts the wire BdG spectrum SHIFTS when [strain] is applied. Before #04
 # the wire BdG driver skipped compute_strain, so strained/unstrained runs

@@ -18,6 +18,7 @@ program topologicalAnalysis
   use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, q_zero_tol
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
+  use spectral_bdg_wire, only: compute_spectral_function_bdg_wire, compute_bdg_ldos, compute_bdg_ldos_nambu
   use linalg, only: mkl_set_num_threads_local
   use simulation_setup_mod, only: simulation_setup, simulation_setup_init, simulation_setup_free
   use wire_setup_mod, only: wire_setup, wire_setup_init, wire_setup_free
@@ -178,6 +179,22 @@ program topologicalAnalysis
       end if
 
       print *, '=== BdG analysis complete ==='
+
+    ! ==================================================================
+    case('bdq_spectral')
+    ! BdG LDOS + A(k,E) + Nambu-resolved LDOS on the topological wire.
+    ! Single PARDISO setup, three observers (Issue 06 / Unit U9).
+    ! Requires confinement='wire' (the spectral/LDOS observables are
+    ! wire-only; the dense (bulk/QW) spectral routines stay untouched).
+    ! ==================================================================
+      if (trim(cfg%confinement) == 'wire') then
+        call run_bdq_spectral_wire(cfg, topo_result)
+      else
+        print *, 'ERROR: bdq_spectral mode requires confinement=''wire'''
+        error stop 'bdq_spectral requires wire confinement'
+      end if
+
+      print *, '=== BdG spectral analysis complete ==='
 
     ! ==================================================================
     case('spectral')
@@ -652,6 +669,124 @@ contains
     call wire_setup_free(wsetup)
 
   end subroutine run_bdg_wire
+
+  ! ==================================================================
+  ! BdG spectral mode (Issue 06 / Unit U9): single PARDISO setup,
+  ! three observers on the BdG CSR.
+  !   1. compute_bdg_ldos        -> total LDOS r, E -> bdg_ldos.dat
+  !   2. compute_bdg_ldos_nambu  -> electron + hole LDOS -> bdg_ldos_nambu.dat
+  !   3. compute_spectral_function_bdg_wire -> A(k,E) -> bdg_spectral.dat
+  !
+  ! No new TOML fields (ADR 0002); energy/k grids are read from the
+  ! existing [topology] spectral_* fields when present, otherwise from
+  ! the [solver] window (with a sensible physics-sized default).
+  ! ==================================================================
+  subroutine run_bdq_spectral_wire(cfg_in, result)
+    type(simulation_config), intent(in) :: cfg_in
+    type(topological_result), intent(inout) :: result
+
+    type(simulation_config) :: cfg
+    type(wire_setup) :: wsetup
+    type(csr_matrix) :: H_bdg_csr
+    real(kind=dp), allocatable :: ldos_total(:), ldos_e(:), ldos_h(:)
+    real(kind=dp), allocatable :: A_kE(:,:)
+    real(kind=dp), allocatable :: k_values(:), E_values(:)
+    integer :: nk, nE, iE, i, kz_count, kz_idx
+    real(kind=dp) :: kz_val, emin_local, emax_local, eta, dE
+
+    cfg = cfg_in
+
+    print *, '--- BdG spectral mode: LDOS + A(k,E) + Nambu-resolved LDOS ---'
+
+    call wire_setup_init(wsetup, cfg)
+
+    ! Energy grid: derive from [topology] spectral_E_min/max/nE, else default
+    if (cfg%topo%spectral_E_min < cfg%topo%spectral_E_max .and. cfg%topo%spectral_nE > 1) then
+      nE = cfg%topo%spectral_nE
+      allocate(E_values(nE))
+      dE = (cfg%topo%spectral_E_max - cfg%topo%spectral_E_min) / real(nE - 1, kind=dp)
+      do iE = 1, nE
+        E_values(iE) = cfg%topo%spectral_E_min + real(iE - 1, kind=dp) * dE
+      end do
+    else
+      ! Physics-sized default: +/-50*delta_0 around E=0 (matches Issue 00's BdG window).
+      eta = cfg%topo%spectral_eta
+      emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
+      emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
+      nE = 51
+      allocate(E_values(nE))
+      dE = (emax_local - emin_local) / real(nE - 1, kind=dp)
+      do iE = 1, nE
+        E_values(iE) = emin_local + real(iE - 1, kind=dp) * dE
+      end do
+    end if
+
+    ! k-points: derive from [topology] spectral_k_min/max/nk, else single k=bdg.kz.
+    if (cfg%topo%spectral_k_min < cfg%topo%spectral_k_max .and. cfg%topo%spectral_nk > 0) then
+      nk = cfg%topo%spectral_nk
+      allocate(k_values(nk))
+      do i = 1, nk
+        k_values(i) = cfg%topo%spectral_k_min + real(i - 1, kind=dp) * &
+          & (cfg%topo%spectral_k_max - cfg%topo%spectral_k_min) / max(real(nk - 1, kind=dp), 1.0_dp)
+      end do
+      kz_count = nk
+    else
+      nk = 1
+      allocate(k_values(nk))
+      k_values(1) = cfg%bdg%kz
+      kz_count = 1
+    end if
+
+    eta = cfg%topo%spectral_eta
+    if (eta <= 0.0_dp) eta = 0.005_dp  ! small broadening default
+
+    ! Iterate over kz points; each one builds a new BdG CSR.
+    ! Single PARDISO setup PER kz (observers reuse the same CSR).
+    do kz_idx = 1, kz_count
+      kz_val = k_values(kz_idx)
+      call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, wsetup%profile_2d, wsetup%kpterms_2d, &
+        & kz_val, cfg%bdg%mu, cfg%bdg%delta_0, wsetup%ws, &
+        & cfg%bdg%B_vec, cfg%bdg%g_factor)
+
+      print *, '  kz=', kz_val, ' 1/A  (point ', kz_idx, ' of ', kz_count, ')'
+
+      ! Observer 1: total LDOS at each E -> bdg_ldos.dat
+      ! LDOS is a function of (r, E) on the BdG CSR; write the integrated
+      ! (sum over r) total LDOS for the file header (preserves the
+      ! 1D-spectrum convention of the wire spectral mode). The Nambu
+      ! decomposition below preserves the per-r information.
+      allocate(ldos_total(size(E_values)))
+      do iE = 1, size(E_values)
+        block
+          real(kind=dp), allocatable :: ldos_tmp(:)
+          call compute_bdg_ldos(H_bdg_csr, E_values(iE), eta, ldos_tmp)
+          ldos_total(iE) = sum(ldos_tmp)
+          if (allocated(ldos_tmp)) deallocate(ldos_tmp)
+        end block
+      end do
+      call write_bdg_ldos(E_values, ldos_total, kz_val)
+      deallocate(ldos_total)
+
+      ! Observer 2: Nambu-resolved LDOS at E=0 (the Majorana peak) -> bdg_ldos_nambu.dat
+      call compute_bdg_ldos_nambu(H_bdg_csr, 0.0_dp, eta, ldos_e, ldos_h)
+      call write_bdg_ldos_nambu(ldos_e, ldos_h, kz_val)
+      deallocate(ldos_e, ldos_h)
+
+      ! Observer 3: A(k,E) on the BdG CSR -> bdg_spectral.dat
+      call compute_spectral_function_bdg_wire(H_bdg_csr, k_values(kz_idx: kz_idx), &
+        & E_values, eta, A_kE)
+      call write_bdg_spectral(k_values(kz_idx: kz_idx), E_values, A_kE)
+      deallocate(A_kE)
+
+      call csr_free(H_bdg_csr)
+    end do
+
+    deallocate(k_values, E_values)
+    call wire_setup_free(wsetup)
+
+    print *, '  Wrote: bdg_ldos.dat, bdg_ldos_nambu.dat, bdg_spectral.dat'
+
+  end subroutine run_bdq_spectral_wire
 
   ! ==================================================================
   ! BdG QW mode: compute Majorana summary from dense 16N x 16N BdG matrix
