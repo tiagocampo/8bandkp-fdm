@@ -15,7 +15,7 @@ program topologicalAnalysis
     & apply_solver_window, EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use topological_analysis
   use bdg_hamiltonian
-  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point
+  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, q_zero_tol
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
   use linalg, only: mkl_set_num_threads_local
@@ -535,7 +535,7 @@ contains
     block
       type(bdg_eval_params_t) :: evp
       type(bdg_eval_result_t) :: evr
-      evp = bdg_eval_params_t(cfg%bdg%delta_0, 0.001_dp, 1.0e-10_dp)
+      evp = bdg_eval_params_t(cfg%bdg%delta_0, 0.001_dp)
       evr = eval_bdg_point(eigvals_bdg, evp)
       result%min_gap = evr%minigap
     end block
@@ -555,7 +555,7 @@ contains
       real(kind=dp) :: wire_near_zero_thr
 
       ! Issue 00: per-point near-zero count via the seam.
-      wire_eval_p = bdg_eval_params_t(cfg%bdg%delta_0, 0.001_dp, 1.0e-10_dp)
+      wire_eval_p = bdg_eval_params_t(cfg%bdg%delta_0, 0.001_dp)
       block
         type(bdg_eval_result_t) :: evr
         evr = eval_bdg_point(eigvals_bdg, wire_eval_p)
@@ -679,7 +679,11 @@ contains
     N_local = cfg_in%grid%npoints()
     Ntot_local = 8 * N_local
     Nbdg_local = 16 * N_local
-    zero_tol = max(1.0e-10_dp, 0.001_dp * abs(cfg_in%bdg%delta_0))
+    ! Fix Round 1 / Finding 2: lift the QW near-zero literal through the seam
+    ! (was `max(1.0e-10_dp, 0.001_dp * abs(delta_0))`). q_zero_tol returns the
+    ! same value but lives next to eval_bdg_point in bdg_observables, so the
+    ! 0.001·δ₀ literal no longer survives in main_topology.
+    zero_tol = q_zero_tol(bdg_eval_params_t(cfg_in%bdg%delta_0, 0.001_dp))
     k_par_val = cfg_in%bdg%kz
 
     print *, '  Grid: N=', N_local
@@ -714,7 +718,7 @@ contains
     block
       type(bdg_eval_params_t) :: evp
       type(bdg_eval_result_t) :: evr
-      evp = bdg_eval_params_t(cfg_in%bdg%delta_0, 0.001_dp, 1.0e-10_dp)
+      evp = bdg_eval_params_t(cfg_in%bdg%delta_0, 0.001_dp)
       evr = eval_bdg_point(eigvals_bdg, evp)
       result%min_gap = evr%minigap
     end block
@@ -1330,7 +1334,7 @@ contains
     block
       type(bdg_eval_params_t) :: evp
       type(bdg_eval_result_t) :: evr
-      evp = bdg_eval_params_t(cfg_in%bdg%delta_0, 0.001_dp, 1.0e-10_dp)
+      evp = bdg_eval_params_t(cfg_in%bdg%delta_0, 0.001_dp)
       evr = eval_bdg_point(eigvals_bdg, evp)
       gap = evr%minigap
     end block

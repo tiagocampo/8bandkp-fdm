@@ -1,7 +1,7 @@
 module test_bdg_evaluator
   use funit
   use definitions, only: dp
-  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point
+  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, q_zero_tol
   implicit none
 
 contains
@@ -16,7 +16,6 @@ contains
     eig = [-1.0e-3_dp, -0.5e-3_dp, -0.1e-3_dp, 0.1e-3_dp, 0.5e-3_dp, 1.0e-3_dp]
     p%delta_0 = 1.0e-3_dp
     p%near_zero_frac = 0.001_dp
-    p%invariant_tol = 1.0e-10_dp
 
     res = eval_bdg_point(eig, p)
     @assertEqual(2.0e-4_dp, res%minigap, tolerance=1.0e-15_dp)
@@ -32,7 +31,6 @@ contains
     eig = [-5.0e-4_dp, -5.0e-7_dp, 0.0_dp, 5.0e-7_dp, 5.0e-4_dp]
     p%delta_0 = 1.0e-3_dp
     p%near_zero_frac = 0.001_dp
-    p%invariant_tol = 1.0e-10_dp
 
     res = eval_bdg_point(eig, p)
     @assertEqual(3, res%near_zero_count)
@@ -48,7 +46,6 @@ contains
     eig = [-1.0_dp, -0.5_dp, 0.5_dp, 1.0_dp]
     p%delta_0 = 1.0e-3_dp
     p%near_zero_frac = 0.001_dp
-    p%invariant_tol = 1.0e-10_dp
 
     res = eval_bdg_point(eig, p)
     @assertEqual(0, res%near_zero_count)
@@ -64,7 +61,6 @@ contains
     eig = [-5.0e-7_dp, 5.0e-7_dp, -1.0_dp, 1.0_dp]
     p%delta_0 = 1.0e-3_dp
     p%near_zero_frac = 0.001_dp
-    p%invariant_tol = 1.0e-10_dp
 
     res = eval_bdg_point(eig, p)
     @assertEqual(1, res%invariant_flag)
@@ -81,7 +77,6 @@ contains
     eig_b = [-5.0e-7_dp, -1.0_dp, 1.0_dp]
     p%delta_0 = 1.0e-3_dp
     p%near_zero_frac = 0.001_dp
-    p%invariant_tol = 1.0e-10_dp
 
     res_a = eval_bdg_point(eig_a, p)
     res_b = eval_bdg_point(eig_b, p)
@@ -99,7 +94,6 @@ contains
     eig = [-1.0e-3_dp, -5.0e-6_dp, 0.0_dp, 5.0e-6_dp, 1.0e-3_dp]
     p%delta_0 = 1.0e-3_dp
     p%near_zero_frac = 0.001_dp
-    p%invariant_tol = 1.0e-10_dp
 
     ! Default 0.1% band: only the zero value is in (count == 1).
     res = eval_bdg_point(eig, p)
@@ -119,7 +113,6 @@ contains
     type(bdg_eval_result_t) :: res
     p%delta_0 = 1.0e-3_dp
     p%near_zero_frac = 0.001_dp
-    p%invariant_tol = 1.0e-10_dp
 
     res = eval_bdg_point(eig, p)
     @assertEqual(0.0_dp, res%minigap)
@@ -137,13 +130,35 @@ contains
     eig = [-1.0e-3_dp, -5.0e-7_dp, 5.0e-7_dp, 1.0e-3_dp]
     p%delta_0 = 1.0e-3_dp
     p%near_zero_frac = 0.001_dp
-    p%invariant_tol = 1.0e-10_dp
 
     res_a = eval_bdg_point(eig, p)
     res_b = eval_bdg_point(eig, p)
     @assertEqual(res_a%minigap, res_b%minigap)
     @assertEqual(res_a%near_zero_count, res_b%near_zero_count)
     @assertEqual(res_a%invariant_flag, res_b%invariant_flag)
+  end subroutine
+
+  @test
+  subroutine test_q_zero_tol_with_floor()
+    ! q_zero_tol returns max(1e-10, frac*|delta_0|). For delta_0 large enough
+    ! the floor is inactive; for delta_0 below 1e-7 eV the 1e-10 floor takes
+    ! over. Verifies both regimes and that abs() is honored for negative input.
+    type(bdg_eval_params_t) :: p
+
+    ! Regime 1: large delta_0 → frac*|delta_0| dominates (1e-6 eV).
+    p%delta_0 = 1.0e-3_dp
+    p%near_zero_frac = 0.001_dp
+    @assertEqual(1.0e-6_dp, q_zero_tol(p), tolerance=1.0e-15_dp)
+
+    ! Regime 2: tiny delta_0 (1e-9) → floor (1e-10) dominates.
+    p%delta_0 = 1.0e-9_dp
+    p%near_zero_frac = 0.001_dp
+    @assertEqual(1.0e-10_dp, q_zero_tol(p), tolerance=1.0e-15_dp)
+
+    ! Negative delta_0 (defensive): abs() applied.
+    p%delta_0 = -1.0e-3_dp
+    p%near_zero_frac = 0.001_dp
+    @assertEqual(1.0e-6_dp, q_zero_tol(p), tolerance=1.0e-15_dp)
   end subroutine
 
 end module test_bdg_evaluator
