@@ -7,6 +7,7 @@ module topological_analysis
   use hamiltonianConstructor, only: ZB8bandQW
   use eigensolver, only: eigensolver_base, eigensolver_config, eigensolver_result, &
     & eigensolver_result_free, make_eigensolver, EIGEN_MODE_FULL
+  use pfaffian, only: complex_pfaffian
   implicit none
   private
 
@@ -35,6 +36,8 @@ module topological_analysis
   public :: is_z2_transition
   public :: gap_closing_detect
   public :: bdg_zero_energy_gap
+  public :: wire_pfaffian_witness
+  public :: wire_pfaffian_witness_sweep
 
   integer, parameter :: topo_status_ok = 0
   integer, parameter :: topo_status_invalid = 1
@@ -1585,5 +1588,233 @@ contains
     end if
     status = topo_status_ok
   end subroutine eval_bhz_analytic
+
+  ! ============================================================================
+  ! Slim projected Pfaffian witness (Issue 07 / Unit U10).
+  !
+  ! At one (B, mu) point on the wire rung, evaluate the projected Pfaffian
+  ! sign of (omega . H_proj) with two subspace choices:
+  !   S1 (empirical): diagonalize H_sp = H_bdg(1:N_sp, 1:N_sp) at kz=0; pick
+  !       the two single-particle states with smallest |E|; project the full
+  !       BdG onto the corresponding 4-dim Nambu subspace (2 states x 2 Nambu).
+  !       4-dim H_proj then feeds Pf(omega . H_proj).
+  !   S2 (analytical): project H_bdg directly onto bands 7-8 (the conduction
+  !       edge per the k.p block table SSOT: band rows 7, 8 in 1-based; Nambu
+  !       rows 7, 8, N_tot+7, N_tot+8). No diagonalization needed.
+  !
+  ! Both signs in {-1, 0, +1}; 0 = gap closure (Pf vanishes). Disagreement
+  ! between S1 and S2 is documented as a strong-SOC regime flag (Issue 07
+  ! AC) — a finding, not a defect.
+  !
+  ! Caller responsibility: pass the dense BdG matrix at one kz point. For
+  ! the wire with N grid points the wire-BdG matrix is 16N x 16N; we
+  ! evaluate per-site (single kz=0 evaluation, one site-pair sample). For
+  ! synthetic unit tests the matrix is 16 x 16 (N=1 single site).
+  ! ============================================================================
+  subroutine wire_pfaffian_witness(H_bdg, n_full, s1_sign, s2_sign)
+    complex(kind=dp), intent(in) :: H_bdg(:,:)
+    integer, intent(in) :: n_full
+    integer, intent(out) :: s1_sign, s2_sign
+
+    integer :: n_sp, half, i
+    complex(kind=dp), allocatable :: omega(:,:), h_proj(:,:), a_work(:,:)
+    complex(kind=dp) :: pf_val
+    real(kind=dp) :: pf_abs
+
+    s1_sign = 0
+    s2_sign = 0
+    if (size(H_bdg, 1) /= n_full .or. size(H_bdg, 2) /= n_full) return
+    if (mod(n_full, 2) /= 0) return
+
+    half = n_full / 2
+    n_sp = half
+    if (n_sp < 2) return
+
+    ! Canonical PHS structure matrix: omega = tau_y (x) I_N for class D BdG
+    ! (same convention as default_kitaev_omega in pfaffian.f90, but kept
+    ! local because pfaffian.f90 is owned by Issue 01 — no edits allowed).
+    allocate(omega(n_full, n_full))
+    omega = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, n_sp
+      omega(i, n_sp + i) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+      omega(n_sp + i, i) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+    end do
+
+    ! --- S1: empirical — project onto 2 lowest single-particle states at kz=0
+    call s1_project(H_bdg, n_full, n_sp, h_proj)
+    if (allocated(h_proj)) then
+      allocate(a_work(4, 4))
+      a_work = matmul(h_proj, omega(1:4, 1:4))
+      pf_val = complex_pfaffian(a_work)
+      deallocate(a_work)
+      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
+      if (pf_abs > 1.0e-12_dp) then
+        if (real(pf_val, kind=dp) > 0.0_dp) then
+          s1_sign = 1
+        else
+          s1_sign = -1
+        end if
+      end if
+      deallocate(h_proj)
+    end if
+
+    ! --- S2: analytical — project onto bands 7-8 (k.p block table SSOT).
+    call s2_project(H_bdg, n_full, h_proj)
+    if (allocated(h_proj)) then
+      allocate(a_work(4, 4))
+      a_work = matmul(h_proj, omega(1:4, 1:4))
+      pf_val = complex_pfaffian(a_work)
+      deallocate(a_work)
+      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
+      if (pf_abs > 1.0e-12_dp) then
+        if (real(pf_val, kind=dp) > 0.0_dp) then
+          s2_sign = 1
+        else
+          s2_sign = -1
+        end if
+      end if
+      deallocate(h_proj)
+    end if
+
+    if (allocated(omega)) deallocate(omega)
+  end subroutine wire_pfaffian_witness
+
+  ! ============================================================================
+  ! Wire-sweep overload: S2-only Pfaffian using 4 rows/cols of CSR BdG.
+  !
+  ! At each (B, mu) grid point, the wire BdG matrix is 16N x 16N in CSR form.
+  ! S2 (analytical bands 7-8) requires only the 4x4 subblock at rows/cols
+  ! [7, 8, n_sp+7, n_sp+8]. We extract that 4x4 from CSR by reading 4 specific
+  ! rows — O(NNZ_per_row) per row, no full densification.
+  !
+  ! Returns: s2_sign in {-1, 0, +1}. S1 needs full diagonalization, deferred
+  ! to U13 (per-issue brief: full wire Pfaffian sweep is U13).
+  ! ============================================================================
+  subroutine wire_pfaffian_witness_sweep(H_bdg_csr, n_full, s2_sign)
+    type(csr_matrix), intent(in) :: H_bdg_csr
+    integer, intent(in) :: n_full
+    integer, intent(out) :: s2_sign
+
+    integer :: n_sp, i, j, k, idx(4), col
+    complex(kind=dp) :: h_proj(4, 4), a_work(4, 4), pf_val
+    real(kind=dp) :: pf_abs
+    complex(kind=dp) :: omega_local(4, 4)
+
+    s2_sign = 0
+    if (n_full /= H_bdg_csr%nrows .or. n_full /= H_bdg_csr%ncols) return
+    if (mod(n_full, 2) /= 0) return
+    n_sp = n_full / 2
+    if (n_sp < 8) return
+
+    ! Rows/cols of the bands 7-8 + Nambu blocks. 1-based throughout.
+    idx = [7, 8, n_sp + 7, n_sp + 8]
+
+    h_proj = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, 4
+      do k = H_bdg_csr%rowptr(idx(i)), H_bdg_csr%rowptr(idx(i) + 1) - 1
+        col = H_bdg_csr%colind(k)
+        do j = 1, 4
+          if (col == idx(j)) then
+            h_proj(i, j) = H_bdg_csr%values(k)
+            exit
+          end if
+        end do
+      end do
+    end do
+
+    ! Local omega for 4-dim subspace: tau_y ⊗ I_2.
+    omega_local = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    omega_local(1, 3) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(3, 1) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+    omega_local(2, 4) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(4, 2) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+
+    a_work = matmul(h_proj, omega_local)
+    pf_val = complex_pfaffian(a_work)
+    pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
+    if (pf_abs > 1.0e-12_dp) then
+      if (real(pf_val, kind=dp) > 0.0_dp) then
+        s2_sign = 1
+      else
+        s2_sign = -1
+      end if
+    end if
+  end subroutine wire_pfaffian_witness_sweep
+
+  ! Build the 4x4 projected H onto the 2 lowest single-particle states at kz=0.
+  ! Internal helper for wire_pfaffian_witness S1.
+  subroutine s1_project(H_bdg, n_full, n_sp, h_proj)
+    complex(kind=dp), intent(in) :: H_bdg(:,:)
+    integer, intent(in) :: n_full, n_sp
+    complex(kind=dp), allocatable, intent(out) :: h_proj(:,:)
+
+    real(kind=dp), allocatable :: eig(:), rwork_dummy(:)
+    complex(kind=dp), allocatable :: h_sp(:,:), h_sp_copy(:,:), u_sp(:,:), &
+      & u_full(:,:), work_sp(:)
+    real(kind=dp) :: eig_min, eig_second
+    integer :: i_min, i_second, lwork, info, i
+
+    allocate(h_sp(n_sp, n_sp))
+    allocate(h_sp_copy(n_sp, n_sp))
+    allocate(eig(n_sp))
+    do i = 1, n_sp
+      h_sp(i, :) = H_bdg(i, 1:n_sp)
+    end do
+    h_sp_copy = h_sp
+    lwork = max(1, 2 * n_sp - 1)
+    allocate(work_sp(lwork), rwork_dummy(max(1, 3 * n_sp - 2)))
+    call zheev('V', 'U', n_sp, h_sp_copy, n_sp, eig, work_sp, lwork, &
+      & rwork_dummy, info)
+
+    i_min = 1
+    eig_min = abs(eig(1))
+    do i = 2, n_sp
+      if (abs(eig(i)) < eig_min) then
+        eig_min = abs(eig(i))
+        i_min = i
+      end if
+    end do
+    i_second = 1
+    eig_second = huge(0.0_dp)
+    do i = 1, n_sp
+      if (i == i_min) cycle
+      if (abs(eig(i)) < eig_second) then
+        eig_second = abs(eig(i))
+        i_second = i
+      end if
+    end do
+
+    ! Project BdG onto the 4-dim subspace spanned by (u_sp(:,i_min),
+    ! u_sp(:,i_second)) extended to Nambu space (identity on Nambu index).
+    allocate(u_sp(n_sp, 2))
+    u_sp(:, 1) = h_sp_copy(:, i_min)
+    u_sp(:, 2) = h_sp_copy(:, i_second)
+    allocate(u_full(n_full, 4))
+    do i = 1, 2
+      u_full(1:n_sp, i) = u_sp(:, i)
+      u_full(n_sp + 1:n_full, 2 + i) = u_sp(:, i)
+    end do
+    allocate(h_proj(4, 4))
+    h_proj = matmul(conjg(transpose(u_full)), matmul(H_bdg, u_full))
+
+    deallocate(h_sp, h_sp_copy, eig, work_sp, rwork_dummy, u_sp, u_full)
+  end subroutine s1_project
+
+  ! Build the 4x4 projected H onto bands 7-8 (conduction edge per k.p block table
+  ! SSOT). Internal helper for wire_pfaffian_witness S2. No diagonalization.
+  subroutine s2_project(H_bdg, n_full, h_proj)
+    complex(kind=dp), intent(in) :: H_bdg(:,:)
+    integer, intent(in) :: n_full
+    complex(kind=dp), allocatable, intent(out) :: h_proj(:,:)
+
+    integer :: n_sp, idx(4)
+
+    n_sp = n_full / 2
+    ! 1-based band indices: bands 7, 8 (conduction edge). Nambu blocks:
+    ! particle (rows 7, 8) + hole (rows n_sp+7, n_sp+8).
+    idx = [7, 8, n_sp + 7, n_sp + 8]
+    allocate(h_proj(4, 4))
+    h_proj = H_bdg(idx, idx)
+  end subroutine s2_project
 
 end module topological_analysis

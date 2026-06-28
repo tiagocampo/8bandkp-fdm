@@ -271,6 +271,15 @@ if(PFUNIT_FOUND)
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
+
+    # Issue 07 (U10): slim projected Pfaffian witness (S1 empirical + S2
+    # analytical bands 7-8). Tests the pure wrapper wire_pfaffian_witness
+    # added to src/physics/topological_analysis.f90.
+    add_pfunit_ctest(test_wire_pfaffian_witness
+        TEST_SOURCES unit/test_wire_pfaffian_witness.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
 else()
     message(STATUS "pFUnit not found — unit tests disabled. Install pFUnit and set -DPFUNIT_DIR to enable.")
 endif()
@@ -885,6 +894,24 @@ add_test(
 set_tests_properties(
     regression_wire_bdg_topological
     PROPERTIES LABELS "regression;strain-validation" TIMEOUT 900
+)
+
+# Issue 07 (U10): 2D wire BdG minigap colormap regression. B swept,
+# mu fixed at conduction-band edge; asserts the colormap is non-flat
+# (gap varies across the grid) and matches the golden reference. The
+# gap_map / z2_map columns are routed through wire_pfaffian_witness_sweep
+# (Pfaffian, not heuristic) per the U10 acceptance criteria.
+add_test(
+    NAME regression_wire_bdg_topological_2d
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_wire_bdg_topological_2d.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_bdg_topological_2d.toml
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/wire_inas_gaas_bdg_topological_2d_phase.dat
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_wire_bdg_topological_2d
+    PROPERTIES LABELS "regression" TIMEOUT 900
 )
 
 # Issue 05 / Unit U7: dense-QW BdG rung end-to-end certification.

@@ -1,0 +1,71 @@
+# Issue 07 (U10): 2D wire BdG minigap colormap (B swept, mu fixed at 0.6601 eV).
+# The 2D colormap replaces the heuristic Z2 output that previously labeled
+# the all-zero PASS line. The minigap is computed via Issue 00's evaluator
+# (2 * minval(|E|)) and the colormap shades the topological region (where
+# minigap < threshold) using the Pfaffian-driven Z2 from
+# wire_pfaffian_witness_sweep.
+confinement = "wire"
+FDorder = 2
+fd_step = 1
+which_band = 0
+band_idx = 1
+
+[wave_vector]
+mode = "kz"
+max = 0.0
+nsteps = 2
+
+[bands]
+num_cb = 4
+num_vb = 8
+
+[wire]
+nx = 13
+ny = 13
+dx = 5.0
+dy = 5.0
+
+[wire.geometry]
+shape = "rectangle"
+width = 65.0
+height = 65.0
+
+[[region]]
+material = "GaAs"
+inner = 25.0
+outer = 65.0
+
+[[region]]
+material = "InAs"
+inner = 0.0
+outer = 25.0
+
+[strain]
+reference = "GaAs"
+solver = "pardiso"
+piezoelectric = false
+
+[bdg]
+mu = 0.6601
+delta_0 = 0.0002
+kz = 0.0
+B_vec = [0.0, 0.0, 0.0]
+g_factor = 15.0
+
+[topology]
+mode = "sweep"
+sweep_model = "wire_bdg"
+gap_sweep_B_min = 0.0
+gap_sweep_B_max = 5.0
+gap_sweep_nB = 5
+gap_sweep_mu_min = 0.659
+gap_sweep_mu_max = 0.661
+gap_sweep_nMu = 2
+compute_gap_sweep = true
+
+[solver]
+method = "FEAST"
+mode = "ENERGY"
+emin = -0.005
+emax = 0.005
+m0 = 128

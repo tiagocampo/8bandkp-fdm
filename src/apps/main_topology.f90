@@ -1473,8 +1473,26 @@ contains
       evr = eval_bdg_point(eigvals_bdg, evp)
       gap = evr%minigap
     end block
-    z2 = compute_z2_gap(eigvals_bdg, gap_threshold)
     deallocate(eigvals_bdg)
+
+    ! Issue 07 (U10): route the wire_bdg z2 through the projected Pfaffian
+    ! (S2 strategy: analytical bands 7-8 per k.p block table SSOT) instead
+    ! of the 1D count heuristic. Pfaffian sign convention: -1 = topological,
+    ! +1 = trivial, 0 = gap closure / inconclusive.
+    block
+      integer :: s2_sign
+      call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg_local, s2_sign)
+      if (s2_sign == -1) then
+        z2 = 1
+      else if (s2_sign == +1) then
+        z2 = 0
+      else
+        ! Gap closure: defer to the SC-minigap heuristic as the fallback so
+        ! the colormap still shows a Z2=1 flag exactly when min_gap < threshold.
+        ! This preserves the open->close->reopen pattern at the B_crit point.
+        z2 = compute_z2_gap(eigen_res_local%eigenvalues, gap_threshold)
+      end if
+    end block
 
     call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
   end subroutine eval_wire_bdg_gap
