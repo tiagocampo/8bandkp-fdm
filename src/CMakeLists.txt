@@ -9,6 +9,7 @@ set(COMMON_SOURCES
     math/finitedifferences.f90
     math/eigensolver.f90
     math/linalg.f90
+    math/pfaffian.f90
     io/outputFunctions.f90
     io/input_parser.f90
     physics/confinement_init.f90
@@ -65,6 +66,7 @@ set_source_files_properties(
     math/finitedifferences.f90
     math/eigensolver.f90
     math/linalg.f90
+    math/pfaffian.f90
     io/outputFunctions.f90
     io/input_parser.f90
     physics/confinement_init.f90

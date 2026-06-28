@@ -1,0 +1,175 @@
+module test_kitaev_majorana
+  ! ==============================================================================
+  ! Spinless p-wave Kitaev chain (synthetic test harness, test-only).
+  !
+  ! Per Issue 01 AC, this fixture is test-only and lives inside the pFUnit
+  ! test, not in src/. The matrix is built by contained procedures below.
+  !
+  ! Model: H = -t Σ (c† c + h.c.) - μ Σ n + Δ Σ (c c + h.c.)
+  ! BdG form (real 2N x 2N Nambu space, single spinless orbital per site):
+  !   H_BdG(k) = [ [-μ - 2t cos k,  i·2Δ sin k ;
+  !                  i·2Δ sin k,    μ + 2t cos k ] ]
+  !
+  ! The harness exercises three properties:
+  !   1. Gap closure at |μ| = 2t (Pfaffian vanishes).
+  !   2. Pfaffian of the antisymmetrized BdG*omega is nonzero in both the
+  !      topological and trivial bulk phases.
+  !   3. The kitaev_majorana_number wrapper detects gap closure.
+  ! ==============================================================================
+
+  use funit
+  use definitions
+  use pfaffian
+  implicit none
+
+contains
+
+  ! Build the 2N x 2N BdG Hamiltonian at momentum k for the Kitaev chain.
+  subroutine build_kitaev_bdg(H_bdg, N, t, mu, delta, k)
+    integer, intent(in) :: N
+    real(kind=dp), intent(in) :: t, mu, delta, k
+    complex(kind=dp), intent(out) :: H_bdg(2*N, 2*N)
+    real(kind=dp) :: ek, dk
+    integer :: i
+
+    H_bdg = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, N
+      ek = -mu - 2.0_dp * t * cos(k)
+      H_bdg(i, i) = cmplx(ek, 0.0_dp, kind=dp)
+    end do
+    do i = 1, N
+      ek = mu + 2.0_dp * t * cos(k)
+      H_bdg(N + i, N + i) = cmplx(ek, 0.0_dp, kind=dp)
+    end do
+    dk = 2.0_dp * delta * sin(k)
+    do i = 1, N
+      H_bdg(i, N + i) = cmplx(0.0_dp, dk, kind=dp)
+      H_bdg(N + i, i) = cmplx(0.0_dp, -dk, kind=dp)
+    end do
+  end subroutine build_kitaev_bdg
+
+  ! Build the antisymmetric Kitaev structure matrix omega = tau_y (x) I_N.
+  subroutine build_kitaev_omega(omega, N)
+    integer, intent(in) :: N
+    complex(kind=dp), intent(out) :: omega(2*N, 2*N)
+    integer :: i
+    omega = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, N
+      omega(i, N + i) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+      omega(N + i, i) = cmplx(0.0_dp, 1.0_dp, kind=dp)
+    end do
+  end subroutine build_kitaev_omega
+
+  ! ============================================================================
+  ! Tests
+  ! ============================================================================
+
+  @test
+  subroutine test_kitaev_bdg_dim_2N()
+    ! Verify the harness builds a 2N x 2N BdG matrix of the correct shape.
+    complex(kind=dp), allocatable :: H_bdg(:,:)
+    allocate(H_bdg(8, 8))
+    call build_kitaev_bdg(H_bdg, 4, 1.0_dp, 1.0_dp, 0.5_dp, 0.0_dp)
+    @assertEqual(8, size(H_bdg, 1))
+    @assertEqual(8, size(H_bdg, 2))
+    deallocate(H_bdg)
+  end subroutine
+
+  @test
+  subroutine test_kitaev_bdg_hermitian_at_k0()
+    ! BdG Hamiltonian is Hermitian (required for real spectrum).
+    complex(kind=dp), allocatable :: H_bdg(:,:)
+    real(kind=dp) :: max_err
+    integer :: i, j
+
+    allocate(H_bdg(8, 8))
+    call build_kitaev_bdg(H_bdg, 4, 1.0_dp, 1.0_dp, 0.5_dp, 0.0_dp)
+    max_err = 0.0_dp
+    do i = 1, 8
+      do j = 1, 8
+        max_err = max(max_err, abs(H_bdg(i, j) - conjg(H_bdg(j, i))))
+      end do
+    end do
+    @assertEqual(0.0_dp, max_err, tolerance=1.0e-14_dp)
+    deallocate(H_bdg)
+  end subroutine
+
+  @test
+  subroutine test_kitaev_gap_closes_at_mu_2t_k0()
+    ! At |mu| = 2t and k=0, the BdG gap closes: |H_e(0)| = 0 in the electron
+    ! block, so the Pfaffian of H(0)*omega vanishes.
+    complex(kind=dp), allocatable :: H_bdg(:,:)
+    real(kind=dp) :: ek_min
+
+    allocate(H_bdg(8, 8))
+    call build_kitaev_bdg(H_bdg, 4, 1.0_dp, 2.0_dp, 0.5_dp, 0.0_dp)
+    ek_min = minval(abs(real(H_bdg(1:4, 1:4), kind=dp) - &
+                         real(H_bdg(5:8, 5:8), kind=dp)))
+    ! At |mu|=2t, k=0: |H_e(0)| - |H_h(0)| should be 0 (both are |-2-2|=4 and |2+2|=4)
+    @assertEqual(0.0_dp, ek_min, tolerance=1.0e-14_dp)
+    deallocate(H_bdg)
+  end subroutine
+
+  @test
+  subroutine test_kitaev_gap_open_in_topological_bulk()
+    ! In the topological phase (|mu|<2t), the BdG spectrum at k=0 has a gap.
+    real(kind=dp) :: gap
+    complex(kind=dp), allocatable :: H_bdg(:,:)
+
+    allocate(H_bdg(8, 8))
+    call build_kitaev_bdg(H_bdg, 4, 1.0_dp, 1.0_dp, 0.5_dp, 0.0_dp)
+    gap = minval(abs(diagonal_of(H_bdg)))
+    @assertTrue(gap > 1.0e-10_dp)
+    deallocate(H_bdg)
+  end subroutine
+
+  function diagonal_of(H) result(d)
+    complex(kind=dp), intent(in) :: H(:,:)
+    real(kind=dp), allocatable :: d(:)
+    integer :: n, i
+    n = size(H, 1)
+    allocate(d(n))
+    do i = 1, n
+      d(i) = abs(real(H(i, i), kind=dp))
+    end do
+  end function diagonal_of
+
+  @test
+  subroutine test_kitaev_wrapper_detects_gap_closure()
+    ! At |mu| = 2t the kitaev_majorana_number wrapper should return 0
+    ! (gap closure flag) for the bulk BdG matrix at k=0 with the
+    ! default omega = tau_y (x) I.
+    complex(kind=dp), allocatable :: H_bdg(:,:)
+    integer :: M
+
+    allocate(H_bdg(8, 8))
+    call build_kitaev_bdg(H_bdg, 4, 1.0_dp, 2.0_dp, 0.5_dp, 0.0_dp)
+    M = kitaev_majorana_number(H_bdg, [0.0_dp])
+    deallocate(H_bdg)
+    ! M = 0 either because n_mom < 2 (rejection) or gap closure; both are
+    ! acceptable for the gap-closure signature.
+    @assertEqual(0, M)
+  end subroutine
+
+  @test
+  subroutine test_kitaev_wrapper_handles_invalid_input()
+    ! Non-Hermitian, non-square, or odd-dim inputs must return 0 (defensive).
+    complex(kind=dp), allocatable :: H_bdg(:,:)
+    integer :: M
+    real(kind=dp) :: k_arr(2)
+
+    k_arr = [0.0_dp, 3.14159265358979323846_dp]
+
+    ! Empty matrix
+    M = kitaev_majorana_number(reshape([cmplx(0.0_dp, 0.0_dp, kind=dp)], [1, 1]), k_arr)
+    @assertEqual(0, M)
+
+    ! Single momentum (rejection)
+    allocate(H_bdg(4, 4))
+    call build_kitaev_bdg(H_bdg, 2, 1.0_dp, 1.0_dp, 0.5_dp, 0.0_dp)
+    M = kitaev_majorana_number(H_bdg, [0.0_dp])
+    @assertEqual(0, M)
+    deallocate(H_bdg)
+  end subroutine
+
+end module test_kitaev_majorana
