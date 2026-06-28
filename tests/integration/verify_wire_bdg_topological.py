@@ -28,7 +28,6 @@ EXE = str(Path(sys.argv[1]).resolve())
 CONFIG = Path(sys.argv[2])
 OMP = "4"
 RE_GAP = re.compile(r"Min gap:\s+([-\d.eE+]+)")
-RETRY = "Retrying with auto-computed energy window"
 
 
 def run(text, tag, timeout=900):
@@ -80,16 +79,12 @@ def main():
     print(f"PASS: open->close->reopen "
           f"(g0={g0*1000:.3f} >= gc={gc*1000:.3f} <= g5={g5*1000:.3f} meV)")
 
-    # --- Part 2: mu-in-gap must NOT auto-window-retry, must error-stop ---
-    # After C3 the sentinel is an error stop (CLAUDE.md 'no silent corrections')
-    # rather than a print+sentinel return. T2 asserts the behavior is fail-loud.
+    # --- Part 2: mu-in-gap must error-stop (CLAUDE.md 'no silent corrections').
+    # The auto-window retry path was removed by U8; a non-zero returncode is
+    # the assertion that fail-loud behavior is in effect.
     p = run(cfg_with(0.0, mu=0.0), "mu_gap")
     if p.returncode == 0:
         print("FAIL: mu-in-gap should have error-stopped (CLAUDE.md no silent corrections)")
-        return 1
-    if RETRY in p.stdout:
-        print("FAIL: auto-window fallback still used for mu-in-gap "
-              "(U8 fallback removal not applied)")
         return 1
     print(f"PASS: mu-in-gap error-stopped (rc={p.returncode}) without auto-window fallback")
     return 0

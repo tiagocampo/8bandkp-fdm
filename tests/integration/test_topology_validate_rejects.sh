@@ -24,8 +24,9 @@ run_test() {
 
 cd "$WORKDIR"
 
-# T3: BdG mode + Gershgorin-scale solver window -> reject
-cat > input.toml << 'EOF'
+# Shared wire baseline for T3/T4/T5 (conf, FD, grid, geometry, single InAs region).
+write_base() {
+  cat <<'EOF'
 confinement = "wire"
 FDorder = 2
 fd_step = 1
@@ -45,6 +46,11 @@ height = 45.0
 material = "InAs"
 inner = 0.0
 outer = 45.0
+EOF
+}
+
+# T3: BdG mode + Gershgorin-scale solver window -> reject
+{ write_base; cat <<'EOF'
 [bdg]
 mu = 0.66
 delta_0 = 0.0002
@@ -56,29 +62,11 @@ mode = "ENERGY"
 emin = -70.0
 emax = 70.0
 EOF
+} > input.toml
 run_test "T3_bdg_wide_window" "BdG solver window"
 
 # T4: BdG mode + axial B_vec (Peierls would silently early-return) -> reject
-cat > input.toml << 'EOF'
-confinement = "wire"
-FDorder = 2
-fd_step = 1
-[bands]
-num_cb = 4
-num_vb = 8
-[wire]
-nx = 9
-ny = 9
-dx = 5.0
-dy = 5.0
-[wire.geometry]
-shape = "rectangle"
-width = 45.0
-height = 45.0
-[[region]]
-material = "InAs"
-inner = 0.0
-outer = 45.0
+{ write_base; cat <<'EOF'
 [bdg]
 mu = 0.66
 delta_0 = 0.0002
@@ -87,29 +75,11 @@ g_factor = 15.0
 [topology]
 mode = "bdg"
 EOF
+} > input.toml
 run_test "T4_bdg_axial_B" "Bx nonzero"
 
 # T5: sweep mode + wire_bdg + Gershgorin-scale solver window -> reject
-cat > input.toml << 'EOF'
-confinement = "wire"
-FDorder = 2
-fd_step = 1
-[bands]
-num_cb = 4
-num_vb = 8
-[wire]
-nx = 9
-ny = 9
-dx = 5.0
-dy = 5.0
-[wire.geometry]
-shape = "rectangle"
-width = 45.0
-height = 45.0
-[[region]]
-material = "InAs"
-inner = 0.0
-outer = 45.0
+{ write_base; cat <<'EOF'
 [bdg]
 mu = 0.66
 delta_0 = 0.0002
@@ -131,6 +101,7 @@ mode = "ENERGY"
 emin = -70.0
 emax = 70.0
 EOF
+} > input.toml
 run_test "T5_sweep_wire_bdg_wide_window" "wire_bdg sweep"
 
 if [ "$FAIL" -ne 0 ]; then

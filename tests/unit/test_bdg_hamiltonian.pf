@@ -1011,20 +1011,12 @@ contains
     end do
 
     ! PHS: Xi H Xi^{-1} = -H. Compute Xi H Xi^{-1} + H and report ||.||_F.
-    phs_norm = 0.0_dp
-    h_norm = 0.0_dp
-    max_img_ee = 0.0_dp
-    do j = 1, H_bdg%nrows
-      do i = 1, H_bdg%nrows
-        phs_norm = phs_norm + abs(XHX(i, j) + Hd(i, j))**2
-        h_norm = h_norm + abs(Hd(i, j))**2
-        if (i <= n8 .and. j <= n8) then
-          max_img_ee = max(max_img_ee, abs(aimag(Hd(i, j))))
-        end if
-      end do
-    end do
-    phs_norm = sqrt(phs_norm)
-    h_norm = sqrt(h_norm)
+    ! Frobenius norm = sqrt(sum(|x|^2)) (norm2 is real-only; complex needs abs).
+    ! max_img_ee is restricted to the electron block (upper-left n8 x n8)
+    ! since the hole block may be the Kramers partner.
+    max_img_ee = maxval(abs(aimag(Hd(1:n8, 1:n8))))
+    phs_norm = sqrt(sum(abs(XHX + Hd)**2))
+    h_norm = sqrt(sum(abs(Hd)**2))
     phs_rel = phs_norm / max(h_norm, 1.0e-30_dp)
 
     ! Sanity: confirm the finite-Bx build actually produced complex

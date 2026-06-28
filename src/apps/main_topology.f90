@@ -521,13 +521,8 @@ contains
 
     ! U8: no auto-window fallback on the BdG path. If the physics window found
     ! nothing, mu is in the band gap or the window is mis-sized -- fail loudly
-    ! via error stop (CLAUDE.md "no silent corrections"). Delete any pre-existing
-    ! output/bdg_eigenvalues.dat so downstream readers don't see stale spectra
-    ! from a previous successful run (Codex P2 on PR40).
+    ! via error stop (CLAUDE.md "no silent corrections").
     if (eigen_res_local%nev_found == 0) then
-      ! Best-effort stale-file cleanup (ignore if file doesn't exist)
-      open(unit=11, file='output/bdg_eigenvalues.dat', status='old', iostat=ios)
-      if (ios == 0) close(11, status='delete')
       error stop 'run_bdg_wire: ' // eigen_solver_local%backend_name() // &
         ' found no eigenvalues in window; mu likely in the band gap, ' // &
         'or the [solver] emin/emax is mis-sized'
