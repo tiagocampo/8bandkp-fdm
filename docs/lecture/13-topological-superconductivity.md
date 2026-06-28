@@ -592,11 +592,33 @@ contract end-to-end and asserts:
 - $A(\mathbf{k}, E) \geq 0$ everywhere (spectral positivity)
 - Nambu electron/hole LDOS sectors split symmetrically at a true MZM
 
-![BdG LDOS zero-bias peak at wire end (Issue 06)](figures/lecture_13_bdg_ldos_wire.png)
+**Topological-regime figures (Issue 11 fix1).** The three plots below
+are produced by `tests/integration/verify_bdg_spectral_topological.py`,
+which reuses the PR40/Issue 07 topological wire config
+(`tests/regression/configs/wire_inas_gaas_bdg_topological.toml`: 13x13
+InAs/GaAs core/shell, $\mu = 0.6601$ eV, transverse $B = 2 B_{\mathrm{crit}}
+\approx 5.6$ T) at runtime overrides (B, spectral E window) injected
+into the TOML by the verifier — no TOML on disk is modified
+(ADR 0002: no new fields).
 
-![Nambu-resolved BdG LDOS — electron vs hole sector (Issue 06)](figures/lecture_13_bdg_ldos_nambu_wire.png)
+The figures show the **topological-regime BdG spectral structure**:
 
-![BdG spectral function A(kz, E) (Issue 06)](figures/lecture_13_bdg_spectral_AkE_wire.png)
+- LDOS is PHS-symmetric ($LDOS(E) = LDOS(-E)$); the feature at
+  $\pm \delta_0 \approx \pm 0.2$ meV is the SC gap edge, not an
+  in-gap mode (this wire at $B = 2 B_{\mathrm{crit}}$ has the gap
+  reopened but no zero-bias state at $k_z = 0$).
+- Nambu-resolved LDOS: the electron block (rows $1..N/2$) and hole
+  block (rows $N/2{+}1..N$) carry equal weight at the LDOS peak
+  ($\|e - h\| / \|e\| = 0.0$ in the topological regime), confirming
+  PHS at the observable level.
+- $A(k_z = 0, E)$ is PHS-symmetric and traces the same gap-edge
+  feature as the LDOS.
+
+![BdG LDOS -- InAs/GaAs wire, B = 5.6 T (2 B_crit), mu = 0.6601 eV (Issue 11 fix1)](figures/lecture_13_bdg_ldos_wire.png)
+
+![Nambu-resolved BdG LDOS at E=0 -- InAs/GaAs wire, B = 5.6 T (Issue 11 fix1)](figures/lecture_13_bdg_ldos_nambu_wire.png)
+
+![BdG spectral function A(kz=0, E) -- InAs/GaAs wire, B = 5.6 T (Issue 11 fix1)](figures/lecture_13_bdg_spectral_AkE_wire.png)
 
 ### 13.7.4 Wire Phase Diagram and Slim Pfaffian Witness
 
