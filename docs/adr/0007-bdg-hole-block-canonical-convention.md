@@ -132,6 +132,56 @@ here, not assumed.
 2. **`test_bdg_hamiltonian::test_bdg_phs_at_finite_bx`**: same root cause as (1). Same fix applies.
 3. **`test_krylov_snapshots::test_snapshot_wire_peierls`**: reference snapshot was generated with the OLD wire convention. Reference data needs regeneration in a follow-up.
 
+### Follow-up Issue 03 fix3 — Symmetric Peierls on hole block (2026-06-28)
+
+After Issue 03 fix2 (which corrected the class-D PHS tests to check
+`C H(k) C⁻¹ = -H(-k)`), 3 PHS tests still failed at generic k with Peierls:
+`test_phs_wire_no_Z_P_at_generic_k`, `test_phs_wire_Z_P_at_generic_k`,
+and `test_bdg_phs_at_finite_bx`. Root cause analysis: the canonical
+hole block `-conjg(H₀(-k))` does NOT include Peierls, but the electron
+block `H₀(+k)` does. Class-D PHS requires `C H(k, B) C⁻¹ = -H(-k, -B)`
+(time-reversal flips B → -B); Peierls is a position-dependent (NOT
+momentum-dependent) phase, so it must be applied to the hole block with
+NEGATED sign `-B_vec` to satisfy the constraint at generic k.
+
+**Fix A — `add_peierls_coo` row filter**: added optional `row_min`,
+`row_max` integer parameters to `add_peierls_coo` in
+`src/physics/magnetic_field.f90`. Default behavior (no filter) is
+unchanged. The new filter restricts application to entries with
+`coo_row(idx) ∈ [row_min, row_max]` (1-based, inclusive). Used by the
+wire builder to apply Peierls to electron block (rows 1..8N) and hole
+block (rows 8N+1..16N) independently with different signs.
+
+**Fix B — symmetric Peierls call in `build_bdg_hamiltonian_1d`**: a
+second `add_peierls_coo` call was added with `-B_vec` and the row
+filter `row_min=8N+1, row_max=16N` to apply negated Peierls to the hole
+block entries only. The electron block call (with `+B_vec`, no filter)
+remains unchanged.
+
+**Fix C — explanatory comment update**: the comment block at lines
+~204-214 in `src/physics/bdg_hamiltonian.f90` was updated to reflect
+the new symmetric Peierls convention. The OLD comment said "Peierls
+is applied to the electron block only" and "Class-D PHS is preserved
+at k=0; at generic k, PHS differs from the wire form" — this is no
+longer accurate. The NEW comment explains the symmetric application
+(+B to electron, -B to hole) and its class-D PHS rationale.
+
+**Side effects**:
+- `test_phs_wire_no_Z_P_at_generic_k`: rel_resid RED ≈ 8.93e-5 → **GREEN** (rel_resid = 0)
+- `test_phs_wire_Z_P_at_generic_k`: rel_resid RED ≈ 8.93e-5 → **GREEN** (rel_resid = 0)
+- `test_bdg_hamiltonian::test_bdg_phs_at_finite_bx`: RED → **GREEN**
+- 4 canonical hole-block tests: still **GREEN** (unchanged)
+- 4 Hermiticity tests: still **GREEN** (symmetric Peierls preserves Hermiticity)
+- `regression_wire_bdg_*`: GREEN
+- `strain_validation_wire*`: GREEN
+- Full unit suite: 44/44 GREEN (was 42/44 pre-fix3)
+
+**Approval**: Tiago de Campos — blanket approval: "there is no such
+thing as pre-existing error — fix it" (2026-06-28). Recorded in this
+Implementation Record per the controller's directive (the canonical
+hole-block form itself is correct; only the Peierls application is
+wrong, and the fix is structurally minimal).
+
 ## Alternatives Considered
 
 ### A. Pinning oracle only (no wrapper, no convention choice)

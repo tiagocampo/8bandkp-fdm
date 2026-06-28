@@ -205,13 +205,15 @@ contains
     !   H_hole = -conjg(H_h)  where H_h = ZB8bandQW(-k) (with Peierls applied
     !   internally via cfg-driven Zeeman/Peierls insertion in ZB8bandQW).
     ! For byte-identical hole blocks across both builders (per ADR 0007 Layer D),
-    ! the wire builder's hole block must derive from H0(-k) WITHOUT external
-    ! Peierls application here -- Peierls is applied to the electron block only
-    ! (via add_peierls_coo below) and the hole block follows the canonical
-    ! form -conjg(H0(-k)) (no Peierls). This is the convention that makes both
-    ! builders produce byte-identical hole blocks for the same normal H0.
-    ! Class-D PHS is preserved at k=0 (where H0(-k)=H0(+k) and Peierls is
-    ! real/antisymmetric); at generic k, PHS differs from the wire form.
+    ! the wire builder's hole block is derived from H0(-k) via the canonical
+    ! -conjg(H0(-k)) wrapper. For class-D PHS to hold at generic k with
+    ! Peierls, the hole block must carry Peierls phases with NEGATED sign
+    ! relative to the electron block (Peierls is a position-dependent phase
+    ! that does NOT flip under k -> -k; time-reversal flips B -> -B, so the
+    ! hole block needs -B_vec). The wire builder applies Peierls to BOTH
+    ! blocks (electron with +B, hole with -B), which preserves class-D PHS
+    ! C H(k) C^{-1} = -H(-k) at generic k with Peierls. ADR 0007 Issue 03
+    ! fix3.
     hole_nnz = H0_minus_k_csr%nnz
     allocate(H0_minus_k(H0%nrows, H0%nrows))
     H0_minus_k = cmplx(0.0_dp, 0.0_dp, kind=dp)
@@ -259,6 +261,11 @@ contains
     ! Peierls phase modifies existing off-diagonal entries in-place.
     ! Zeeman is already added by ZB8bandGeneralized (insert_zeeman_coo
     ! when cfg%bdg%enabled), so we must not add it again here.
+    !
+    ! The hole block is added LATER in this routine, so the symmetric
+    ! Peierls call for the hole block is deferred to the end (after
+    ! the hole block is populated). Both calls share the B_vec check
+    ! and the row/col filter convention below.
     ! ==================================================================
     if (present(B_vec)) then
       if (abs(B_vec(1)) > 1.0e-12_dp) then
@@ -392,6 +399,32 @@ contains
           coo_vals_bdg(coo_idx) = cmplx(-Vz_delta(row), 0.0_dp, kind=dp)
         end do
       end do
+    end if
+
+    ! ==================================================================
+    ! Class-D PHS symmetric Peierls (Issue 03 fix3) -- HOLE BLOCK.
+    !
+    ! Applied HERE (after the hole block is populated) because the
+    ! hole block entries did not exist when the electron block was
+    ! Peierls'd above. The hole block must carry Peierls with NEGATED
+    ! sign (-B_vec) so that the BdG matrix satisfies
+    ! C H(k) C^{-1} = -H(-k). Peierls is position-dependent (does
+    ! not flip under k -> -k), so the negation comes from B -> -B.
+    !
+    ! Filter: rows 8N+1..16N AND cols 8N+1..16N. This restricts the
+    ! application to the (2,2) hole block only -- excluding the (1,2)
+    ! and (2,1) pairing entries (which are real-valued and have no
+    ! spatial phase to apply).
+    ! ==================================================================
+    if (present(B_vec)) then
+      if (abs(B_vec(1)) > 1.0e-12_dp) then
+        call add_peierls_coo(coo_vals_bdg, coo_row_bdg, coo_col_bdg, &
+                              coo_idx, cfg%grid, -B_vec, &
+                              row_min = 8 * N + 1, &
+                              row_max = 16 * N, &
+                              col_min = 8 * N + 1, &
+                              col_max = 16 * N)
+      end if
     end if
 
     ! ==================================================================
