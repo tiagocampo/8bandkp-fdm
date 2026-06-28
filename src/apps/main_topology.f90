@@ -15,6 +15,7 @@ program topologicalAnalysis
     & apply_solver_window, EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use topological_analysis
   use bdg_hamiltonian
+  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
   use linalg, only: mkl_set_num_threads_local
@@ -530,8 +531,14 @@ contains
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues
 
-    ! Find minimum gap: full superconducting gap = 2 * min|E|
-    result%min_gap = 2.0_dp * bdg_zero_energy_gap(eigvals_bdg)
+    ! Find minimum gap: full superconducting gap = 2 * min|E| (Issue 00 seam)
+    block
+      type(bdg_eval_params_t) :: evp
+      type(bdg_eval_result_t) :: evr
+      evp = bdg_eval_params_t(cfg%bdg%delta_0, 0.001_dp, 1.0e-10_dp)
+      evr = eval_bdg_point(eigvals_bdg, evp)
+      result%min_gap = evr%minigap
+    end block
 
     ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
     call write_bdg_eigenvalues(eigvals_bdg, 'kz', kz_val)
@@ -544,13 +551,17 @@ contains
       real(kind=dp) :: xi_val
       real(kind=dp), allocatable :: profile_rho(:)
       integer :: nspatial, status_prof
+      type(bdg_eval_params_t) :: wire_eval_p
+      real(kind=dp) :: wire_near_zero_thr
 
-      n_zero = 0
-      do i = 1, eigen_res_local%nev_found
-        if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
-          n_zero = n_zero + 1
-        end if
-      end do
+      ! Issue 00: per-point near-zero count via the seam.
+      wire_eval_p = bdg_eval_params_t(cfg%bdg%delta_0, 0.001_dp, 1.0e-10_dp)
+      block
+        type(bdg_eval_result_t) :: evr
+        evr = eval_bdg_point(eigvals_bdg, wire_eval_p)
+        n_zero = evr%near_zero_count
+      end block
+      wire_near_zero_thr = wire_eval_p%near_zero_frac * wire_eval_p%delta_0
 
       print *, '  Eigenvalues found: ', eigen_res_local%nev_found
       print *, '  Near-zero modes (|E| < 0.001*delta): ', n_zero
@@ -567,7 +578,7 @@ contains
         nspatial = Ntot_local / 8
 
         do i = 1, eigen_res_local%nev_found
-          if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+          if (abs(eigvals_bdg(i)) < wire_near_zero_thr) then
             n_majorana = n_majorana + 1
             allocate(profile_rho(nspatial))
             xi_val = compute_majorana_profile( &
@@ -620,7 +631,7 @@ contains
         allocate(result%edge_energies(n_zero))
         j = 0
         do i = 1, eigen_res_local%nev_found
-          if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+          if (abs(eigvals_bdg(i)) < wire_near_zero_thr) then
             j = j + 1
             result%edge_energies(j) = eigvals_bdg(i)
           end if
@@ -700,7 +711,13 @@ contains
     call eigensolver_result_free(bdg_result)
     if (allocated(bdg_solver)) deallocate(bdg_solver)
 
-    result%min_gap = 2.0_dp * minval(abs(eigvals_bdg))
+    block
+      type(bdg_eval_params_t) :: evp
+      type(bdg_eval_result_t) :: evr
+      evp = bdg_eval_params_t(cfg_in%bdg%delta_0, 0.001_dp, 1.0e-10_dp)
+      evr = eval_bdg_point(eigvals_bdg, evp)
+      result%min_gap = evr%minigap
+    end block
 
     ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
     call write_bdg_eigenvalues(eigvals_bdg, 'k_par', k_par_val)
@@ -1310,7 +1327,13 @@ contains
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues
-    gap = 2.0_dp * minval(abs(eigvals_bdg))
+    block
+      type(bdg_eval_params_t) :: evp
+      type(bdg_eval_result_t) :: evr
+      evp = bdg_eval_params_t(cfg_in%bdg%delta_0, 0.001_dp, 1.0e-10_dp)
+      evr = eval_bdg_point(eigvals_bdg, evp)
+      gap = evr%minigap
+    end block
     z2 = compute_z2_gap(eigvals_bdg, gap_threshold)
     deallocate(eigvals_bdg)
 

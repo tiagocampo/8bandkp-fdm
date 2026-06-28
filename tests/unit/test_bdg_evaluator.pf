@@ -1,0 +1,149 @@
+module test_bdg_evaluator
+  use funit
+  use definitions, only: dp
+  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point
+  implicit none
+
+contains
+
+  @test
+  subroutine test_eval_minigap_symmetric_spectrum()
+    ! ±E-symmetric BdG spectrum → minigap == 2*min|E| exactly.
+    real(kind=dp) :: eig(6)
+    type(bdg_eval_params_t) :: p
+    type(bdg_eval_result_t) :: res
+
+    eig = [-1.0e-3_dp, -0.5e-3_dp, -0.1e-3_dp, 0.1e-3_dp, 0.5e-3_dp, 1.0e-3_dp]
+    p%delta_0 = 1.0e-3_dp
+    p%near_zero_frac = 0.001_dp
+    p%invariant_tol = 1.0e-10_dp
+
+    res = eval_bdg_point(eig, p)
+    @assertEqual(2.0e-4_dp, res%minigap, tolerance=1.0e-15_dp)
+  end subroutine
+
+  @test
+  subroutine test_eval_near_zero_count_in_band()
+    ! Three eigenvalues inside the ±0.001*delta_0 band → near_zero_count == 3.
+    real(kind=dp) :: eig(5)
+    type(bdg_eval_params_t) :: p
+    type(bdg_eval_result_t) :: res
+
+    eig = [-5.0e-4_dp, -5.0e-7_dp, 0.0_dp, 5.0e-7_dp, 5.0e-4_dp]
+    p%delta_0 = 1.0e-3_dp
+    p%near_zero_frac = 0.001_dp
+    p%invariant_tol = 1.0e-10_dp
+
+    res = eval_bdg_point(eig, p)
+    @assertEqual(3, res%near_zero_count)
+  end subroutine
+
+  @test
+  subroutine test_eval_near_zero_count_outside_band()
+    ! All eigenvalues outside the ±0.001*delta_0 band → near_zero_count == 0.
+    real(kind=dp) :: eig(4)
+    type(bdg_eval_params_t) :: p
+    type(bdg_eval_result_t) :: res
+
+    eig = [-1.0_dp, -0.5_dp, 0.5_dp, 1.0_dp]
+    p%delta_0 = 1.0e-3_dp
+    p%near_zero_frac = 0.001_dp
+    p%invariant_tol = 1.0e-10_dp
+
+    res = eval_bdg_point(eig, p)
+    @assertEqual(0, res%near_zero_count)
+  end subroutine
+
+  @test
+  subroutine test_eval_invariant_flag_two_pairs()
+    ! Two eigenvalues inside → invariant_flag == 1.
+    real(kind=dp) :: eig(4)
+    type(bdg_eval_params_t) :: p
+    type(bdg_eval_result_t) :: res
+
+    eig = [-5.0e-7_dp, 5.0e-7_dp, -1.0_dp, 1.0_dp]
+    p%delta_0 = 1.0e-3_dp
+    p%near_zero_frac = 0.001_dp
+    p%invariant_tol = 1.0e-10_dp
+
+    res = eval_bdg_point(eig, p)
+    @assertEqual(1, res%invariant_flag)
+  end subroutine
+
+  @test
+  subroutine test_eval_invariant_flag_zero_or_one()
+    ! Zero or one eigenvalue inside → invariant_flag == 0.
+    real(kind=dp) :: eig_a(2), eig_b(3)
+    type(bdg_eval_params_t) :: p
+    type(bdg_eval_result_t) :: res_a, res_b
+
+    eig_a = [-1.0_dp, 1.0_dp]
+    eig_b = [-5.0e-7_dp, -1.0_dp, 1.0_dp]
+    p%delta_0 = 1.0e-3_dp
+    p%near_zero_frac = 0.001_dp
+    p%invariant_tol = 1.0e-10_dp
+
+    res_a = eval_bdg_point(eig_a, p)
+    res_b = eval_bdg_point(eig_b, p)
+    @assertEqual(0, res_a%invariant_flag)
+    @assertEqual(0, res_b%invariant_flag)
+  end subroutine
+
+  @test
+  subroutine test_eval_overridable_threshold()
+    ! near_zero_frac = 0.01 widens the band; ±5e-6 now fit too.
+    real(kind=dp) :: eig(5)
+    type(bdg_eval_params_t) :: p
+    type(bdg_eval_result_t) :: res
+
+    eig = [-1.0e-3_dp, -5.0e-6_dp, 0.0_dp, 5.0e-6_dp, 1.0e-3_dp]
+    p%delta_0 = 1.0e-3_dp
+    p%near_zero_frac = 0.001_dp
+    p%invariant_tol = 1.0e-10_dp
+
+    ! Default 0.1% band: only the zero value is in (count == 1).
+    res = eval_bdg_point(eig, p)
+    @assertEqual(1, res%near_zero_count)
+
+    ! Widen to 1% band: zero + ±5e-6 all in (count == 3).
+    p%near_zero_frac = 0.01_dp
+    res = eval_bdg_point(eig, p)
+    @assertEqual(3, res%near_zero_count)
+  end subroutine
+
+  @test
+  subroutine test_eval_empty_spectrum()
+    ! Empty spectrum → defensive zeros (minigap = 0, count = 0, flag = 0).
+    real(kind=dp) :: eig(0)
+    type(bdg_eval_params_t) :: p
+    type(bdg_eval_result_t) :: res
+    p%delta_0 = 1.0e-3_dp
+    p%near_zero_frac = 0.001_dp
+    p%invariant_tol = 1.0e-10_dp
+
+    res = eval_bdg_point(eig, p)
+    @assertEqual(0.0_dp, res%minigap)
+    @assertEqual(0, res%near_zero_count)
+    @assertEqual(0, res%invariant_flag)
+  end subroutine
+
+  @test
+  subroutine test_eval_is_pure()
+    ! Pure-function assertion: identical input → identical output.
+    real(kind=dp) :: eig(4)
+    type(bdg_eval_params_t) :: p
+    type(bdg_eval_result_t) :: res_a, res_b
+
+    eig = [-1.0e-3_dp, -5.0e-7_dp, 5.0e-7_dp, 1.0e-3_dp]
+    p%delta_0 = 1.0e-3_dp
+    p%near_zero_frac = 0.001_dp
+    p%invariant_tol = 1.0e-10_dp
+
+    res_a = eval_bdg_point(eig, p)
+    res_b = eval_bdg_point(eig, p)
+    @assertEqual(res_a%minigap, res_b%minigap)
+    @assertEqual(res_a%near_zero_count, res_b%near_zero_count)
+    @assertEqual(res_a%invariant_flag, res_b%invariant_flag)
+  end subroutine
+
+end module test_bdg_evaluator

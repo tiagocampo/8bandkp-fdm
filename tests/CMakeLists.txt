@@ -169,6 +169,12 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    add_pfunit_ctest(test_bdg_evaluator
+        TEST_SOURCES unit/test_bdg_evaluator.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_phase_diagram
         TEST_SOURCES unit/test_phase_diagram.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
