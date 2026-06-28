@@ -19,6 +19,12 @@ import sys
 import subprocess
 from pathlib import Path
 
+# --- Plot generation (Issue 11) -------------------------------------------
+import matplotlib
+matplotlib.use('Agg')  # headless; no display required
+import matplotlib.pyplot as plt
+import numpy as np
+
 EXE = str(Path(sys.argv[1]).resolve())
 CONFIG = Path(sys.argv[2])
 OMP = "4"
@@ -141,6 +147,117 @@ def main():
     print(f"  bdg_ldos.dat:        {len(ldos_rows)} rows, peak_at_zero={peak_zero:.4e}")
     print(f"  bdg_ldos_nambu.dat:  {len(nambu_rows)} rows")
     print(f"  bdg_spectral.dat:    {len(spectral_rows)} rows, max A={max(r[4] for r in spectral_rows):.4e}")
+
+    # --- Issue 11: emit Plots 2, 3, 4 (LDOS, Nambu LDOS, A(k,E)) ---
+    out_dir = workdir.parent / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    plot_bdg_ldos(ldos_rows, peak_zero, out_dir / "bdg_ldos_wire.png")
+    plot_bdg_ldos_nambu(nambu_rows, out_dir / "bdg_ldos_nambu_wire.png")
+    plot_bdg_spectral(spectral_rows, out_dir / "bdg_spectral_AkE_wire.png")
+
+
+def plot_bdg_ldos(ldos_rows, peak_zero, out_path):
+    """Plot 2: BdG LDOS zero-bias peak (topological regime)."""
+    # Re-read the LDOS file directly: format is (r, E, LDOS). The
+    # verifier's read_2col strips the LDOS column, so we re-parse the
+    # 3-column source for the plot.
+    # Use the file path reconstructed from out_path's parent + filename
+    ldos_path = Path("run_bdq_spectral/output/bdg_ldos.dat")
+    E = []
+    ldos = []
+    if ldos_path.exists():
+        for line in open(ldos_path):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) >= 3:
+                try:
+                    E.append(float(parts[1]))
+                    ldos.append(float(parts[2]))
+                except ValueError:
+                    pass
+    E = np.array(E)
+    ldos = np.array(ldos)
+    if E.size == 0:
+        # Fall back to verifier's (incomplete) rows
+        E = np.array([r[0] for r in ldos_rows])
+        ldos = np.array([r[1] for r in ldos_rows])
+    # Convert to meV
+    E_mev = E * 1000.0
+    peak_zero_actual = float(ldos[np.argmin(np.abs(E))]) if ldos.size else 0.0
+    peak_far_actual = float(np.max(ldos[np.abs(E_mev) > 5.0])) if (np.abs(E_mev) > 5.0).any() else 0.0
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(E_mev, ldos, '-', color='#d62728',
+            label='BdG LDOS at wire end (topological regime)')
+    ax.axvline(0.0, color='black', linestyle=':', alpha=0.5)
+    label = 'zero-bias peak' if peak_zero_actual > peak_far_actual else 'flat at E=0 (no MZM)'
+    color = '#d62728' if peak_zero_actual > peak_far_actual else 'gray'
+    ax.annotate(f'{label}\nLDOS(E=0) = {peak_zero_actual:.3e}',
+                xy=(0.0, peak_zero_actual),
+                xytext=(15.0, peak_zero_actual * 1.05),
+                fontsize=9, color=color,
+                arrowprops=dict(arrowstyle='->', color=color, alpha=0.6))
+    ax.set_xlabel('E (meV)')
+    ax.set_ylabel('LDOS (1/eV)')
+    ax.set_title('BdG LDOS at wire end (Issue 06, bdq_spectral)')
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
+    fig.savefig(out_path, dpi=120, bbox_inches='tight')
+    plt.close(fig)
+    print(f"  wrote {out_path}")
+
+
+def plot_bdg_ldos_nambu(nambu_rows, out_path):
+    """Plot 3: Nambu-resolved BdG LDOS (electron vs hole sector)."""
+    r = np.array([row[0] for row in nambu_rows])
+    ldos_e = np.array([row[1] for row in nambu_rows])
+    ldos_h = np.array([row[2] for row in nambu_rows])
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(r, ldos_e, '-', color='#1f77b4', label='LDOS_electron (Nambu row)')
+    ax.plot(r, ldos_h, '--', color='#ff7f0e', label='LDOS_hole (Nambu row)')
+    # Annotation: MZM at the edge has equal electron/hole weight
+    if len(r) > 0:
+        idx_max = int(np.argmax(ldos_e + ldos_h))
+        ax.annotate('MZM: electron = hole weight',
+                    xy=(r[idx_max], ldos_e[idx_max]),
+                    xytext=(r[idx_max] + 0.4, max(ldos_e.max(), ldos_h.max()) * 0.85),
+                    fontsize=9,
+                    arrowprops=dict(arrowstyle='->', color='gray', alpha=0.5))
+    ax.set_xlabel('site index r')
+    ax.set_ylabel('LDOS at E=0 (1/eV)')
+    ax.set_title('Nambu-resolved BdG LDOS at E=0 (Issue 06, bdq_spectral)')
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
+    fig.savefig(out_path, dpi=120, bbox_inches='tight')
+    plt.close(fig)
+    print(f"  wrote {out_path}")
+
+
+def plot_bdg_spectral(spectral_rows, out_path):
+    """Plot 4: BdG spectral function A(kz, E) — 2D heatmap."""
+    # Format: ik, k, iE, E, A
+    ik_arr = np.array([int(r[0]) for r in spectral_rows])
+    k_arr = np.array([r[1] for r in spectral_rows])
+    iE_arr = np.array([int(r[2]) for r in spectral_rows])
+    E_arr = np.array([r[3] for r in spectral_rows])
+    A_arr = np.array([r[4] for r in spectral_rows])
+    nk = int(ik_arr.max())
+    nE = int(iE_arr.max())
+    A = A_arr.reshape(nk, nE)
+    K = k_arr.reshape(nk, nE)[:, 0]   # kz unique
+    E = E_arr.reshape(nk, nE)[0, :]   # E unique
+    fig, ax = plt.subplots(figsize=(8, 5))
+    im = ax.pcolormesh(K, E * 1000.0, A.T, shading='auto', cmap='viridis')
+    ax.set_xlabel('kz (1/Å)')
+    ax.set_ylabel('E (meV)')
+    ax.set_title('BdG spectral function A(kz, E) (Issue 06, bdq_spectral)')
+    ax.axhline(0.0, color='red', linestyle='--', alpha=0.4, label='E=0')
+    fig.colorbar(im, ax=ax, label='A(kz, E) (1/eV)')
+    ax.legend(loc='upper right')
+    fig.savefig(out_path, dpi=120, bbox_inches='tight')
+    plt.close(fig)
+    print(f"  wrote {out_path}")
 
 
 if __name__ == "__main__":

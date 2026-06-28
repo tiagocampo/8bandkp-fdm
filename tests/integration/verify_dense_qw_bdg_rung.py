@@ -48,6 +48,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+# --- Plot generation (Issue 11) -------------------------------------------
+import matplotlib
+matplotlib.use('Agg')  # headless; no display required
+import matplotlib.pyplot as plt
+
 EXE = str(Path(sys.argv[1]).resolve())
 CONFIG = Path(sys.argv[2])
 OMP = "4"
@@ -233,7 +238,44 @@ def main():
     print(f"  gap(B_crit) = {gap_min*1000:.4f} meV (transition)")
     print(f"  gap(4T) = {gap_at_max*1000:.4f} meV (topological)")
     print(f"  PHS residual <= {max_res:.2e} eV (machine precision)")
+
+    # --- Issue 11: emit Plot 1 (B-sweep minigap curve) ---
+    out_dir = Path("output")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    plot_B_sweep(results, B_crit, gap_at_0, gap_at_max,
+                 out_dir / "dense_qw_bdg_B_sweep.png")
+
     return 0
+
+
+def plot_B_sweep(results, B_crit, gap_at_0, gap_at_max, out_path):
+    """Plot 1: Dense-QW BdG minigap vs B (open->close->reopen)."""
+    Bs = [r["B"] for r in results]
+    gaps_mev = [r["min_gap"] * 1000.0 for r in results]
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(Bs, gaps_mev, 'o-', color='#1f77b4',
+            label='minigap (dense-QW BdG)')
+    ax.axvline(B_crit, color='red', linestyle='--', alpha=0.7,
+               label=f'B_crit = {B_crit:.1f} T')
+    # Annotate gap at endpoints
+    ax.annotate(f'gap(0) = {gap_at_0*1000:.3f} meV',
+                xy=(0.0, gaps_mev[0]),
+                xytext=(0.5, gaps_mev[0] * 0.85),
+                fontsize=9, color='#1f77b4')
+    ax.annotate(f'gap(4T) = {gap_at_max*1000:.3f} meV',
+                xy=(Bs[-1], gaps_mev[-1]),
+                xytext=(Bs[-1] - 1.4, gaps_mev[-1] * 0.85),
+                fontsize=9, color='#1f77b4')
+    ax.set_xlabel('B (T)')
+    ax.set_ylabel('minigap (meV)')
+    ax.set_title('Dense-QW BdG minigap vs B '
+                 '(InAsW, μ at CB edge, Δ=0.5 meV)')
+    ax.set_ylim(bottom=0.0)
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
+    fig.savefig(out_path, dpi=120, bbox_inches='tight')
+    plt.close(fig)
+    print(f"  wrote {out_path}")
 
 
 if __name__ == "__main__":
