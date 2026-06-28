@@ -74,6 +74,10 @@ __pycache__/
 test_debug_*
 test_staggered
 tests/integration/convergence_results/
+# Verifier scratch dirs (Issue 05/07/08 verifiers create per-run dirs)
+/run_B*/
+/run_bx*/
+/run_bdq*
 
 # CMake generated files
 Makefile

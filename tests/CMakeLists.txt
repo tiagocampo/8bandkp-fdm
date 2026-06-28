@@ -943,6 +943,22 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
+# Issue 08 / Unit U12: Lecture 13 acceptance gate. Runs the 5-section
+# lecture script + asserts 4-witness B_crit agreement + asserts the
+# false-PASS line is gone + asserts the Issue 07 regression is green.
+# Regression lock against the all-zero B_crit false-PASS failure mode
+# (per docs/solutions/patterns/2026-06-27-lecture-table-simulation-extracted.md).
+add_test(
+    NAME lecture_13_acceptance_gate
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_lecture_13_acceptance_gate.sh
+        ${CMAKE_BINARY_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    lecture_13_acceptance_gate
+    PROPERTIES LABELS "regression" TIMEOUT 1200
+)
+
 add_test(
     NAME regression_topology_sweep_qw
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_topology_sweep.sh
