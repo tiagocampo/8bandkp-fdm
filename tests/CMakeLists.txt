@@ -887,6 +887,25 @@ set_tests_properties(
     PROPERTIES LABELS "regression;strain-validation" TIMEOUT 900
 )
 
+# Issue 05 / Unit U7: dense-QW BdG rung end-to-end certification.
+# Drives a B-sweep on the dense 16N x 16N BdG QW Hamiltonian and asserts
+# the canonical class-D open->close->reopen pattern at B_crit (covers AE2
+# + AE4). Uses the existing run_bdg_qw executable path + Issue 00's
+# evaluator output (min_gap); the pure-function Pfaffian and
+# polarization seams are consumed by Issue 01 / 04 pFUnit tests and by
+# Issue 07's slim Pfaffian witness.
+add_test(
+    NAME regression_dense_qw_bdg_rung
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_dense_qw_bdg_rung.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_dense_qw_bdg.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_dense_qw_bdg_rung
+    PROPERTIES LABELS "regression" TIMEOUT 900
+)
+
 # Topological sweep mode regressions
 add_test(
     NAME regression_topology_sweep_bhz

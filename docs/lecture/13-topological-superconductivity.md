@@ -294,6 +294,42 @@ $\xi \sim \hbar v / \Delta$.
 
 ## 13.7 Local Density of States
 
+### 13.7.0 Dense-QW BdG Rung (Issue 05 / U7)
+
+The dense quantum-well rung certifies the canonical class-D topological
+transition on the 8N x 8N / 16N x 16N BdG Hamiltonian built from the
+existing `build_bdg_hamiltonian_qw` (no new builder code). The
+PHS-invariant momenta are $k_\parallel \in \{0, \pi/a\}$ (the in-plane
+TRIM points); the verifier evaluates the BdG spectrum at both momenta
+across a B-field sweep.
+
+The rung exhibits the textbook class-D signature:
+- $\pm E$ particle-hole pairing holds across the entire B-sweep
+  (AE4, pinned by Issue 00 / 03).
+- Below $B_{\text{crit}}$: the SC minigap opens at $\sim 2\Delta_0$
+  and shrinks monotonically as $B$ grows.
+- At $B_{\text{crit}} \sim 2$ T (InAsW, $\mu$ at the QW CB edge): the
+  minigap collapses by two orders of magnitude.
+- Above $B_{\text{crit}}$: the minigap REOPENS and grows with $B$ —
+  the topological phase (AE2).
+
+The topological witness at the executable level is the gap-structure
+pattern (`open -> close -> reopen`), not `n_majorana` (the existing
+near-zero detector `q_zero_tol = max(1e-10, 0.001*\Delta_0)` is much
+smaller than the topological gap on resonance, so `n_majorana` stays
+zero across the sweep). The pure Pfaffian (Issue 01) and Sticlet
+polarization (Issue 04) routines are consumed at the library level by
+their pFUnit tests and by Issue 07's slim projected Pfaffian witness
+on the wire rung.
+
+The dense-QW rung is exercised end-to-end by:
+`tests/integration/verify_dense_qw_bdg_rung.py` (driven via
+`test_dense_qw_bdg_rung.sh`, regression label
+`regression_dense_qw_bdg_rung`).
+
+*Full content (slim Pfaffian S1/S2 strategies, polarization
+interpretation, reconciliation table) lands in Issue 08.*
+
 ### 13.7.1 Green Function Method
 
 The local density of states (LDOS) at position $r$ and energy $E$ is:
