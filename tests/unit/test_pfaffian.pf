@@ -85,6 +85,14 @@ contains
     end do
   end subroutine
 
+  @test
+  subroutine test_pf_squared_equals_det_parlett_reid_14_16()
+    ! Exercises the Parlett-Reid path (n > 12). If this fails, skpfa_reduction
+    ! has a sign bug and downstream dense-QW Pfaffian witness is broken.
+    call check_one_size(14)
+    call check_one_size(16)
+  end subroutine
+
   subroutine check_one_size(n)
     integer, intent(in) :: n
     real(kind=dp), allocatable :: A(:,:)

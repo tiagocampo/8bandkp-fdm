@@ -116,22 +116,28 @@ contains
   !   M = sgn[Pf(H(k=0)*omega) * Pf(H(k=pi/a)*omega)]
   ! For class D BdG the antisymmetric structure matrix is omega = tau_y (x) I_n.
   ! Returns: +1 (trivial), -1 (topological), 0 (gap closure).
+  !
+  ! `H_k_array` is an array of BdG matrices, one per PHS-invariant momentum
+  ! (typically k=0 and k=pi/a). The wrapper evaluates Pf(H_k*omega) for each
+  ! and returns the sign of the product.
   ! ==============================================================================
-  function kitaev_majorana_number(H_bdg, k_par_values, omega_struct) result(majorana_number)
-    complex(kind=dp), intent(in) :: H_bdg(:,:)
+  function kitaev_majorana_number(H_k_array, k_par_values, omega_struct) result(majorana_number)
+    complex(kind=dp), intent(in) :: H_k_array(:,:,:)
     real(kind=dp), intent(in) :: k_par_values(:)
     complex(kind=dp), intent(in), optional :: omega_struct(:,:)
     integer :: majorana_number
-    integer :: i, n_full
+    integer :: i, n_full, n_k
     real(kind=dp) :: prod
     complex(kind=dp), allocatable :: omega(:,:), A_work(:,:)
     complex(kind=dp) :: pf_val
     real(kind=dp) :: pf_abs, tol
 
     majorana_number = 0
+    n_k = size(H_k_array, 3)
+    if (n_k < 2) return
     if (size(k_par_values) < 2) return
-    n_full = size(H_bdg, 1)
-    if (n_full /= size(H_bdg, 2) .or. mod(n_full, 2) /= 0) return
+    n_full = size(H_k_array, 1)
+    if (n_full /= size(H_k_array, 2) .or. mod(n_full, 2) /= 0) return
 
     if (present(omega_struct)) then
       allocate(omega(n_full, n_full))
@@ -143,17 +149,16 @@ contains
     tol = 1.0e-12_dp
     prod = 1.0_dp
 
-    do i = 1, size(k_par_values)
-      call assemble_skew_product(A_work, H_bdg, omega, n_full)
+    do i = 1, n_k
+      call assemble_skew_product(A_work, H_k_array(:,:,i), omega, n_full)
       pf_val = complex_pfaffian(A_work)
       pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
+      if (allocated(A_work)) deallocate(A_work)
       if (pf_abs < tol) then
         prod = 0.0_dp
-        if (allocated(A_work)) deallocate(A_work)
         exit
       end if
       prod = prod * real(pf_val, kind=dp)
-      if (allocated(A_work)) deallocate(A_work)
     end do
 
     if (abs(prod) < tol) then
@@ -168,21 +173,22 @@ contains
   end function kitaev_majorana_number
 
   subroutine default_kitaev_omega(omega, n_full)
+    ! Canonical PHS structure matrix omega = tau_y (x) I_N for class D BdG.
+    ! Kronecker product of Pauli tau_y with N x N identity. Only the diagonal
+    ! of the top-right N x N block is nonzero:
+    !   [[ 0,  -i I_N ],
+    !    [ +i I_N,   0  ]]   (where only diagonal entries of the off-diagonal
+    !                          blocks are nonzero).
+    ! This is the rank-2N matrix actually used in the canonical Kitaev formula.
     complex(kind=dp), allocatable, intent(out) :: omega(:,:)
     integer, intent(in) :: n_full
-    integer :: half, i, j
+    integer :: half, i
     half = n_full / 2
     allocate(omega(n_full, n_full))
     omega = cmplx(0.0_dp, 0.0_dp, kind=dp)
     do i = 1, half
-      do j = 1, half
-        if (i == j) then
-          omega(i, half + j) = cmplx(0.0_dp, -1.0_dp, kind=dp)
-        else
-          omega(i, half + j) = cmplx(0.0_dp, 0.0_dp, kind=dp)
-        end if
-        omega(half + j, i) = -omega(i, half + j)
-      end do
+      omega(i, half + i) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+      omega(half + i, i) = cmplx(0.0_dp,  1.0_dp, kind=dp)
     end do
   end subroutine default_kitaev_omega
 
@@ -351,7 +357,8 @@ contains
     k = 1
     do while (k <= n - 1)
       if (k + 2 > n) exit
-      s = 0.0_dp
+      ! Standard Householder: target column x = A(k+1:n, k), norm ||x||.
+      s = A(k + 1, k) * A(k + 1, k)
       do i = k + 2, n
         s = s + A(i, k) * A(i, k)
       end do
@@ -393,12 +400,12 @@ contains
         do j = k + 1, n
           w(i) = w(i) + A(i, j) * v(j)
         end do
-        w(i) = tau * w(i)
       end do
-
+      ! Apply H = I - tau*v*v^T via H*A*H = A + tau*(v*w^T - w*v^T)
+      ! (the v^T A v term vanishes for skew-symmetric A, see Wimmer 2011).
       do i = 1, n
         do j = 1, n
-          A(i, j) = A(i, j) - v(i) * w(j) - w(i) * v(j)
+          A(i, j) = A(i, j) + tau * (v(i) * w(j) - w(i) * v(j))
         end do
       end do
 
@@ -447,7 +454,8 @@ contains
     k = 1
     do while (k <= n - 1)
       if (k + 2 > n) exit
-      s_norm = 0.0_dp
+      ! Standard Householder: target column x = A(k+1:n, k), norm ||x||.
+      s_norm = real(A(k + 1, k) * conjg(A(k + 1, k)), kind=dp)
       do i = k + 2, n
         s_norm = s_norm + real(A(i, k) * conjg(A(i, k)), kind=dp)
       end do
@@ -490,12 +498,12 @@ contains
         do j = k + 1, n
           w(i) = w(i) + A(i, j) * v(j)
         end do
-        w(i) = tau * w(i)
       end do
-
+      ! Apply H = I - tau*v*v^T via H*A*H = A + tau*(v*w^T - w*v^T)
+      ! (the v^T A v term vanishes for skew-symmetric A, see Wimmer 2011).
       do i = 1, n
         do j = 1, n
-          A(i, j) = A(i, j) - v(i) * w(j) - w(i) * v(j)
+          A(i, j) = A(i, j) + tau * (v(i) * w(j) - w(i) * v(j))
         end do
       end do
 
