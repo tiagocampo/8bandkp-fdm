@@ -494,6 +494,15 @@ The rung exhibits the textbook class-D signature:
 - Above $B_{\text{crit}}$: the minigap REOPENS and grows with $B$ —
   the topological phase (AE2).
 
+![Dense-QW BdG B-sweep (open->close->reopen at B_crit=2.0 T)](figures/lecture_13_dense_qw_bdg_B_sweep.png)
+
+The majorana polarization $P_M(n)$ for the two eigenstates on either
+side of the transition distinguishes a topological MZM (edge-localized,
+$P_M \to 1$ at the ends) from a trivial in-gap resonance (delocalized,
+$P_M \approx 0$ everywhere):
+
+![Majorana polarization P_M(n) — topological vs trivial (Issue 04)](figures/lecture_13_majorana_polarization_wire.png)
+
 **Library-level wiring (cross-references):**
 
 - `eval_bdg_point` (Issue 00, pure function in `src/physics/bdg_observables.f90`)
@@ -583,6 +592,12 @@ contract end-to-end and asserts:
 - $A(\mathbf{k}, E) \geq 0$ everywhere (spectral positivity)
 - Nambu electron/hole LDOS sectors split symmetrically at a true MZM
 
+![BdG LDOS zero-bias peak at wire end (Issue 06)](figures/lecture_13_bdg_ldos_wire.png)
+
+![Nambu-resolved BdG LDOS — electron vs hole sector (Issue 06)](figures/lecture_13_bdg_ldos_nambu_wire.png)
+
+![BdG spectral function A(kz, E) (Issue 06)](figures/lecture_13_bdg_spectral_AkE_wire.png)
+
 ### 13.7.4 Wire Phase Diagram and Slim Pfaffian Witness
 
 The wire rung measures $B_{\mathrm{crit}}$ via three independent witnesses:
@@ -593,9 +608,15 @@ The wire rung measures $B_{\mathrm{crit}}$ via three independent witnesses:
    `open -> close -> reopen` structure consistent with the dense-QW rung
    but at a higher $B_{\mathrm{crit}}$ because the wire geometry couples
    the field more weakly to the relevant bands.
+
+   ![Wire BdG 1D minigap curve — open->close->reopen at B_crit=2.8 T (AE3, Issue 07 / PR40)](figures/lecture_13_wire_bdg_minigap_curve.png)
+
 2. **2D minigap colormap** (Issue 07 / U10): the $(B, \mu)$ minigap is
    non-flat; the topological region (open gap, large $B$, $\mu$ in
    conduction band) is shaded.
+
+   ![Wire BdG 2D minigap colormap (B, mu) (Issue 07 / U10)](figures/lecture_13_wire_bdg_2d_colormap.png)
+
 3. **Slim projected Pfaffian witness** (Issue 07): at the critical point
    $(B_{\mathrm{crit}}, \mu = 0.6601$ eV$)$:
    - **S1**: empirical diagonalize-once at reference $B$, project onto
@@ -604,6 +625,8 @@ The wire rung measures $B_{\mathrm{crit}}$ via three independent witnesses:
    - **Witness**: Pfaffian signs from S1 and S2 agree (or document a
      strong-SOC flag if they disagree due to band mixing beyond
      conduction-edge projection)
+
+   ![Slim projected Pfaffian witness S1 vs S2 (Issue 07)](figures/lecture_13_wire_slim_pfaffian_witness.png)
 
 The wire-rung $B_{\mathrm{crit}} = 2.8$ T (1D curve) differs from the
 dense-QW rung $B_{\mathrm{crit}} = 2.0$ T — the difference is rung-dependent,
