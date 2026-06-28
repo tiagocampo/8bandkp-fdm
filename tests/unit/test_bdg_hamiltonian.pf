@@ -943,35 +943,20 @@ contains
 
   @test
   subroutine test_bdg_phs_at_finite_bx()
-    ! U8-followup: numerically verify the particle-hole symmetry (PHS)
-    ! constraint holds at finite transverse B for the wire builder.
-    ! Closes the brainstorm R3 verification gap.
+    ! Issue 03 Fix 2: PHS check rewritten for class-D BdG.
     !
-    ! PHS for BdG:
-    !   Xi H_BdG Xi^{-1} = -H_BdG
-    ! with the standard anti-unitary particle-hole conjugation operator
-    !   Xi = tau_x K = [[0, I_n], [I_n, 0]] K
-    ! (K = complex conjugation). Xi is involutory: Xi^2 = +I.
+    ! Class-D PHS per ADR 0007 + Leijnse-Flensberg Eq. 38 is
+    !   C H(k) C^{-1} = -H(-k)  with  C = tau_x K
+    ! The pre-Fix-2 test checked C H C^{-1} = -H(k) (the wrong constraint
+    ! for the canonical -conjg(H0(-k)) hole block). At kz=0 with Peierls,
+    ! H(+0) = H(-0) but Peierls flips sign under B -> -B, so the PHS
+    ! partner of H(kz=0, Bx) is H(kz=0, -Bx). Build both and assert
+    ! || C H(Bx) C^{-1} + H(-Bx) ||_F / ||H||_F < 1e-10.
     !
-    ! Entrywise: (Xi H Xi^{-1})_{ij} = conjg(H_{tau(i), tau(j)}) where
-    !   tau(i) = i - n8 if i > n8, i + n8 if i <= n8
-    !
-    ! The wire builder assembles H_BdG as
-    !   H_BdG = [[ H_e,                 Delta              ],
-    !            [ Delta^dag,            -H_e^T             ]]
-    ! For a Hermitian H_e this gives -H_e^T = -conjg(H_e), so
-    ! H_BdG satisfies PHS if and only if the Delta matrix is
-    ! antisymmetric in the 8-band sub-block (which it is: Delta =
-    ! delta_0*(i sigma_y) tensor I_4 in the Kramers-pair basis, with
-    ! pairing_partner = [4,3,2,1,6,5,8,7] and pairing_sign = +1 for
-    ! spin-up, -1 for spin-down within each pair, yielding
-    ! antisymmetric blocks at every spatial site).
-    !
-    ! Test setup: 3x3 wire (9 orbitals => 72-orbital BdG; smallest
+    ! Test setup: 3x3 wire (9 orbitals => 144-orbital BdG; smallest
     ! size accepted by confinementInitialization_2d), Bx = 1.0 T
     ! (transverse, exercises Peierls phases), g_factor = 0 (decouples
     ! Zeeman from the PHS check so the assertion is purely structural).
-    ! Assertion: || Xi H Xi^{-1} + H ||_F / ||H||_F < 1e-10.
     integer, parameter :: nx = 3, ny = 3
     real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
     integer :: ij, i, j, n8
@@ -981,11 +966,11 @@ contains
     character(len=255), allocatable :: material_names(:)
     real(kind=dp), allocatable :: profile_2d(:,:)
     type(csr_matrix), allocatable :: kpterms_2d(:)
-    type(csr_matrix) :: H_bdg
+    type(csr_matrix) :: H_bx, H_mbx
     type(simulation_config) :: cfg
-    type(wire_workspace) :: ws
+    type(wire_workspace) :: ws_bx, ws_mbx
     integer :: mat2d(nx, ny)
-    complex(kind=dp), allocatable :: Hd(:,:), XHX(:,:)
+    complex(kind=dp), allocatable :: Hd_bx(:,:), Hd_mbx(:,:), XHX(:,:)
     real(kind=dp) :: phs_norm, h_norm, phs_rel, max_img_ee
 
     mat2d = 1
@@ -1005,44 +990,48 @@ contains
     cfg%confinement = 'wire'
     cfg%bdg%enabled = .false.
 
-    ! Build BdG with finite transverse Bx = 1.0 T. g_factor = 0 so the
-    ! only B-field contribution is the Peierls phase on off-diagonal
-    ! entries -- which is the structural feature PHS must tolerate.
-    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
-                                  kz=0.0_dp, mu=0.0_dp, delta_0=2.0e-4_dp, ws=ws, &
+    ! Build BdG with finite transverse Bx = +1.0 T and -1.0 T (the PHS
+    ! partner at kz=0 is the sign-flipped Peierls phase). g_factor = 0 so
+    ! the only B-field contribution is the Peierls phase.
+    call build_bdg_hamiltonian_1d(H_bx, cfg, profile_2d, kpterms_2d, &
+                                  kz=0.0_dp, mu=0.0_dp, delta_0=2.0e-4_dp, ws=ws_bx, &
                                   B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
+    call build_bdg_hamiltonian_1d(H_mbx, cfg, profile_2d, kpterms_2d, &
+                                  kz=0.0_dp, mu=0.0_dp, delta_0=2.0e-4_dp, ws=ws_mbx, &
+                                  B_vec=[-1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
 
-    n8 = H_bdg%nrows / 2
-    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
-    allocate(XHX(H_bdg%nrows, H_bdg%ncols))
-    call csr_to_dense(H_bdg, Hd)
+    n8 = H_bx%nrows / 2
+    allocate(Hd_bx(H_bx%nrows, H_bx%ncols))
+    allocate(Hd_mbx(H_mbx%nrows, H_mbx%ncols))
+    allocate(XHX(H_bx%nrows, H_bx%ncols))
+    call csr_to_dense(H_bx, Hd_bx)
+    call csr_to_dense(H_mbx, Hd_mbx)
 
     ! Xi = tau_x K. Action: (Xi H Xi^{-1})_{ij} = conjg(H_{tau(i), tau(j)})
-    ! where tau swaps electron and hole indices.
-    do j = 1, H_bdg%nrows
-      do i = 1, H_bdg%nrows
-        XHX(i, j) = conjg(Hd(tau_idx(i, n8), tau_idx(j, n8)))
+    ! where tau swaps electron and hole indices. Class-D PHS oracle:
+    ! || Xi H(Bx) Xi^{-1} + H(-Bx) ||_F / ||H(Bx)||_F < 1e-10.
+    do j = 1, H_bx%nrows
+      do i = 1, H_bx%nrows
+        XHX(i, j) = conjg(Hd_bx(tau_idx(i, n8), tau_idx(j, n8)))
       end do
     end do
-
-    ! PHS: Xi H Xi^{-1} = -H. Compute Xi H Xi^{-1} + H and report ||.||_F.
-    ! Frobenius norm = sqrt(sum(|x|^2)) (norm2 is real-only; complex needs abs).
-    ! max_img_ee is restricted to the electron block (upper-left n8 x n8)
-    ! since the hole block may be the Kramers partner.
-    max_img_ee = maxval(abs(aimag(Hd(1:n8, 1:n8))))
-    phs_norm = sqrt(sum(abs(XHX + Hd)**2))
-    h_norm = sqrt(sum(abs(Hd)**2))
-    phs_rel = phs_norm / max(h_norm, 1.0e-30_dp)
 
     ! Sanity: confirm the finite-Bx build actually produced complex
     ! electron-block entries (otherwise the test would silently degenerate
     ! to a real-symmetric Hamiltonian).
-    @assertTrue(max_img_ee > 1.0e-12_dp, message="finite Bx must produce complex Peierls phases")
-    @assertTrue(phs_rel < 1.0e-10_dp, message="PHS violation at finite Bx")
+    max_img_ee = maxval(abs(aimag(Hd_bx(1:n8, 1:n8))))
+    phs_norm = sqrt(sum(abs(XHX + Hd_mbx)**2))
+    h_norm = sqrt(sum(abs(Hd_bx)**2))
+    phs_rel = phs_norm / max(h_norm, 1.0e-30_dp)
 
-    deallocate(Hd, XHX)
-    call csr_free(H_bdg)
-    call wire_workspace_free(ws)
+    @assertTrue(max_img_ee > 1.0e-12_dp, message="finite Bx must produce complex Peierls phases")
+    @assertTrue(phs_rel < 1.0e-10_dp, message="PHS violation at finite Bx (class-D)")
+
+    deallocate(Hd_bx, Hd_mbx, XHX)
+    call csr_free(H_bx)
+    call csr_free(H_mbx)
+    call wire_workspace_free(ws_bx)
+    call wire_workspace_free(ws_mbx)
     do ij = 1, size(kpterms_2d)
       call csr_free(kpterms_2d(ij))
     end do

@@ -91,6 +91,11 @@ contains
   end function tau_idx
 
   ! Standard PHS residual: || C H C^{-1} + H ||_F where C = tau_x K.
+  ! NOTE: per ADR 0007 + Leijnse-Flensberg Eq. 38, the class-D PHS for BdG
+  ! is C H(k) C^{-1} = -H(-k). The simple constraint C H(k) C^{-1} = -H(k)
+  ! is only satisfied by the time-reversal-symmetric subclass and is NOT
+  ! the correct oracle for the canonical -conjg(H0(-k)) hole-block form.
+  ! Kept for backwards-compatibility diagnostics only (not asserted).
   pure function phs_residual(H, n_total) result(res)
     integer, intent(in) :: n_total
     complex(kind=dp), intent(in) :: H(n_total, n_total)
@@ -107,6 +112,30 @@ contains
     end do
     res = sqrt(acc)
   end function phs_residual
+
+  ! Class-D PHS residual: || C H(k) C^{-1} + H(-k) ||_F where C = tau_x K.
+  ! This is the correct oracle for the canonical -conjg(H0(-k)) hole block
+  ! (per ADR 0007 Layer D). Asserting this oracle at generic k with Peierls
+  ! is the canonical convention's defining PHS witness (Issue 03 Fix 2).
+  pure function phs_residual_k_minus_k(H_k, H_minus_k, n_total) result(res)
+    integer, intent(in) :: n_total
+    complex(kind=dp), intent(in) :: H_k(n_total, n_total)
+    complex(kind=dp), intent(in) :: H_minus_k(n_total, n_total)
+    real(kind=dp) :: res
+    integer :: i, j, half_n
+    real(kind=dp) :: acc
+
+    half_n = n_total / 2
+    acc = 0.0_dp
+    do j = 1, n_total
+      do i = 1, n_total
+        ! (C H C^{-1})_{ij} = conjg(H_{tau(i), tau(j)}) since C is involutory
+        acc = acc + abs(conjg(H_k(tau_idx(i, half_n), tau_idx(j, half_n))) &
+                       + H_minus_k(i, j))**2
+      end do
+    end do
+    res = sqrt(acc)
+  end function phs_residual_k_minus_k
 
   ! Matrix Frobenius norm.
   pure function frob_norm(H, n_total) result(res)
@@ -225,16 +254,18 @@ contains
 
   @test
   subroutine test_phs_wire_no_Z_no_P_at_generic_k()
-    ! Standard tau_x K PHS: satisfied by both -H0^T(+k) and -conjg(H0(-k))
-    ! because for any Hermitian H0, -H0^T = -conjg(H0). Expect GREEN
-    ! on pre-Issue-03 AND post-Issue-03 (PHS is preserved by both forms).
+    ! Class-D PHS oracle (Issue 03 Fix 2): C H(k) C^{-1} = -H(-k) with
+    ! C = tau_x K. Build H(k) and H(-k) independently and assert the
+    ! residual. This is the correct PHS for the canonical -conjg(H0(-k))
+    ! hole-block form (ADR 0007). The pre-Fix-2 test was checking the
+    ! WRONG constraint C H C^{-1} = -H (time-reversal-symmetric subclass).
     type(spatial_grid) :: grid
     real(kind=dp), allocatable :: profile_2d(:,:)
     type(csr_matrix), allocatable :: kpterms_2d(:)
-    type(csr_matrix) :: H_bdg
+    type(csr_matrix) :: H_k, H_minus_k
     type(simulation_config) :: cfg
-    type(wire_workspace) :: ws
-    complex(kind=dp), allocatable :: Hd(:,:)
+    type(wire_workspace) :: ws_k, ws_mk
+    complex(kind=dp), allocatable :: Hd_k(:,:), Hd_mk(:,:)
     real(kind=dp) :: kz, resid, hnorm, rel
 
     call build_wire_fixture(grid, profile_2d, kpterms_2d)
@@ -243,21 +274,27 @@ contains
     cfg%bdg%enabled = .false.
 
     kz = 0.05_dp
-    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
-                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws)
+    call build_bdg_hamiltonian_1d(H_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_k)
+    call build_bdg_hamiltonian_1d(H_minus_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=-kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_mk)
 
-    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
-    call csr_to_dense(H_bdg, Hd)
-    resid = phs_residual(Hd, H_bdg%nrows)
-    hnorm = frob_norm(Hd, H_bdg%nrows)
+    allocate(Hd_k(H_k%nrows, H_k%ncols))
+    allocate(Hd_mk(H_minus_k%nrows, H_minus_k%ncols))
+    call csr_to_dense(H_k, Hd_k)
+    call csr_to_dense(H_minus_k, Hd_mk)
+    resid = phs_residual_k_minus_k(Hd_k, Hd_mk, H_k%nrows)
+    hnorm = frob_norm(Hd_k, H_k%nrows)
     rel = resid / max(hnorm, 1.0e-30_dp)
 
     print *, '[diagnostic] test_phs_wire_no_Z_no_P_at_generic_k: rel = ', rel
-    @assertTrue(rel < PHS_TOL, message="PHS (no Z, no P) at generic k")
+    @assertTrue(rel < PHS_TOL, message="PHS (no Z, no P) at generic k: C H(k) C^-1 = -H(-k)")
 
-    deallocate(Hd)
-    call csr_free(H_bdg)
-    call wire_workspace_free(ws)
+    deallocate(Hd_k, Hd_mk)
+    call csr_free(H_k)
+    call csr_free(H_minus_k)
+    call wire_workspace_free(ws_k)
+    call wire_workspace_free(ws_mk)
     call free_wire_fixture(grid, profile_2d, kpterms_2d)
   end subroutine test_phs_wire_no_Z_no_P_at_generic_k
 
@@ -266,10 +303,10 @@ contains
     type(spatial_grid) :: grid
     real(kind=dp), allocatable :: profile_2d(:,:)
     type(csr_matrix), allocatable :: kpterms_2d(:)
-    type(csr_matrix) :: H_bdg
+    type(csr_matrix) :: H_k, H_minus_k
     type(simulation_config) :: cfg
-    type(wire_workspace) :: ws
-    complex(kind=dp), allocatable :: Hd(:,:)
+    type(wire_workspace) :: ws_k, ws_mk
+    complex(kind=dp), allocatable :: Hd_k(:,:), Hd_mk(:,:)
     real(kind=dp) :: kz, resid, hnorm, rel
 
     call build_wire_fixture(grid, profile_2d, kpterms_2d)
@@ -280,22 +317,29 @@ contains
     cfg%bdg%g_factor = 4.0_dp
 
     kz = 0.05_dp
-    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
-                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws, &
+    call build_bdg_hamiltonian_1d(H_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_k, &
+                                   B_vec=[0.0_dp, 0.0_dp, 1.5_dp], g_factor=4.0_dp)
+    call build_bdg_hamiltonian_1d(H_minus_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=-kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_mk, &
                                    B_vec=[0.0_dp, 0.0_dp, 1.5_dp], g_factor=4.0_dp)
 
-    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
-    call csr_to_dense(H_bdg, Hd)
-    resid = phs_residual(Hd, H_bdg%nrows)
-    hnorm = frob_norm(Hd, H_bdg%nrows)
+    allocate(Hd_k(H_k%nrows, H_k%ncols))
+    allocate(Hd_mk(H_minus_k%nrows, H_minus_k%ncols))
+    call csr_to_dense(H_k, Hd_k)
+    call csr_to_dense(H_minus_k, Hd_mk)
+    resid = phs_residual_k_minus_k(Hd_k, Hd_mk, H_k%nrows)
+    hnorm = frob_norm(Hd_k, H_k%nrows)
     rel = resid / max(hnorm, 1.0e-30_dp)
 
     print *, '[diagnostic] test_phs_wire_Z_no_P_at_generic_k: rel = ', rel
-    @assertTrue(rel < PHS_TOL, message="PHS (Z, no P) at generic k")
+    @assertTrue(rel < PHS_TOL, message="PHS (Z, no P) at generic k: C H(k) C^-1 = -H(-k)")
 
-    deallocate(Hd)
-    call csr_free(H_bdg)
-    call wire_workspace_free(ws)
+    deallocate(Hd_k, Hd_mk)
+    call csr_free(H_k)
+    call csr_free(H_minus_k)
+    call wire_workspace_free(ws_k)
+    call wire_workspace_free(ws_mk)
     call free_wire_fixture(grid, profile_2d, kpterms_2d)
   end subroutine test_phs_wire_Z_no_P_at_generic_k
 
@@ -304,10 +348,10 @@ contains
     type(spatial_grid) :: grid
     real(kind=dp), allocatable :: profile_2d(:,:)
     type(csr_matrix), allocatable :: kpterms_2d(:)
-    type(csr_matrix) :: H_bdg
+    type(csr_matrix) :: H_k, H_minus_k
     type(simulation_config) :: cfg
-    type(wire_workspace) :: ws
-    complex(kind=dp), allocatable :: Hd(:,:)
+    type(wire_workspace) :: ws_k, ws_mk
+    complex(kind=dp), allocatable :: Hd_k(:,:), Hd_mk(:,:)
     real(kind=dp) :: kz, resid, hnorm, rel, max_imag
 
     call build_wire_fixture(grid, profile_2d, kpterms_2d)
@@ -318,24 +362,31 @@ contains
     cfg%bdg%g_factor = 0.0_dp
 
     kz = 0.05_dp
-    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
-                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws, &
+    call build_bdg_hamiltonian_1d(H_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_k, &
+                                   B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
+    call build_bdg_hamiltonian_1d(H_minus_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=-kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_mk, &
                                    B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
 
-    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
-    call csr_to_dense(H_bdg, Hd)
-    resid = phs_residual(Hd, H_bdg%nrows)
-    hnorm = frob_norm(Hd, H_bdg%nrows)
+    allocate(Hd_k(H_k%nrows, H_k%ncols))
+    allocate(Hd_mk(H_minus_k%nrows, H_minus_k%ncols))
+    call csr_to_dense(H_k, Hd_k)
+    call csr_to_dense(H_minus_k, Hd_mk)
+    resid = phs_residual_k_minus_k(Hd_k, Hd_mk, H_k%nrows)
+    hnorm = frob_norm(Hd_k, H_k%nrows)
     rel = resid / max(hnorm, 1.0e-30_dp)
 
-    max_imag = maxval(abs(aimag(Hd(1:H_bdg%nrows/2, 1:H_bdg%nrows/2))))
+    max_imag = maxval(abs(aimag(Hd_k(1:H_k%nrows/2, 1:H_k%nrows/2))))
     print *, '[diagnostic] test_phs_wire_no_Z_P_at_generic_k: rel = ', rel, ' max_imag_ee = ', max_imag
     @assertTrue(max_imag > 1.0e-12_dp, message="Peierls Bx must produce complex electron-block entries")
-    @assertTrue(rel < PHS_TOL, message="PHS (no Z, P) at generic k")
+    @assertTrue(rel < PHS_TOL, message="PHS (no Z, P) at generic k: C H(k) C^-1 = -H(-k)")
 
-    deallocate(Hd)
-    call csr_free(H_bdg)
-    call wire_workspace_free(ws)
+    deallocate(Hd_k, Hd_mk)
+    call csr_free(H_k)
+    call csr_free(H_minus_k)
+    call wire_workspace_free(ws_k)
+    call wire_workspace_free(ws_mk)
     call free_wire_fixture(grid, profile_2d, kpterms_2d)
   end subroutine test_phs_wire_no_Z_P_at_generic_k
 
@@ -344,10 +395,10 @@ contains
     type(spatial_grid) :: grid
     real(kind=dp), allocatable :: profile_2d(:,:)
     type(csr_matrix), allocatable :: kpterms_2d(:)
-    type(csr_matrix) :: H_bdg
+    type(csr_matrix) :: H_k, H_minus_k
     type(simulation_config) :: cfg
-    type(wire_workspace) :: ws
-    complex(kind=dp), allocatable :: Hd(:,:)
+    type(wire_workspace) :: ws_k, ws_mk
+    complex(kind=dp), allocatable :: Hd_k(:,:), Hd_mk(:,:)
     real(kind=dp) :: kz, resid, hnorm, rel
 
     call build_wire_fixture(grid, profile_2d, kpterms_2d)
@@ -358,22 +409,29 @@ contains
     cfg%bdg%g_factor = 4.0_dp
 
     kz = 0.05_dp
-    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
-                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws, &
+    call build_bdg_hamiltonian_1d(H_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_k, &
+                                   B_vec=[1.0_dp, 0.0_dp, 1.5_dp], g_factor=4.0_dp)
+    call build_bdg_hamiltonian_1d(H_minus_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=-kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_mk, &
                                    B_vec=[1.0_dp, 0.0_dp, 1.5_dp], g_factor=4.0_dp)
 
-    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
-    call csr_to_dense(H_bdg, Hd)
-    resid = phs_residual(Hd, H_bdg%nrows)
-    hnorm = frob_norm(Hd, H_bdg%nrows)
+    allocate(Hd_k(H_k%nrows, H_k%ncols))
+    allocate(Hd_mk(H_minus_k%nrows, H_minus_k%ncols))
+    call csr_to_dense(H_k, Hd_k)
+    call csr_to_dense(H_minus_k, Hd_mk)
+    resid = phs_residual_k_minus_k(Hd_k, Hd_mk, H_k%nrows)
+    hnorm = frob_norm(Hd_k, H_k%nrows)
     rel = resid / max(hnorm, 1.0e-30_dp)
 
     print *, '[diagnostic] test_phs_wire_Z_P_at_generic_k: rel = ', rel
-    @assertTrue(rel < PHS_TOL, message="PHS (Z, P) at generic k")
+    @assertTrue(rel < PHS_TOL, message="PHS (Z, P) at generic k: C H(k) C^-1 = -H(-k)")
 
-    deallocate(Hd)
-    call csr_free(H_bdg)
-    call wire_workspace_free(ws)
+    deallocate(Hd_k, Hd_mk)
+    call csr_free(H_k)
+    call csr_free(H_minus_k)
+    call wire_workspace_free(ws_k)
+    call wire_workspace_free(ws_mk)
     call free_wire_fixture(grid, profile_2d, kpterms_2d)
   end subroutine test_phs_wire_Z_P_at_generic_k
 
