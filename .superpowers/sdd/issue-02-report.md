@@ -189,3 +189,88 @@ out-of-scope for this issue.
 - Did NOT add `sweep_model` enum value.
 - Did NOT create a new src/ module — oracle procedures live inside
   the pFUnit test file per ADR 0001.
+
+## Fix Round 1
+
+**Status:** DONE_WITH_CONCERNS (RED on canonical hole-block tests is the
+expected pre-Issue-03 state; tests will GREEN after Issue 03 lands per
+ADR 0007).
+
+**Reviewer:** review of `tests/unit/test_bdg_phs.pf` (Issue 02)
+**Fix brief:** `/data/8bandkp-fdm/.superpowers/sdd/issue-02-fix1-brief.md`
+
+### Critical 1 — Cross-builder test
+
+**Chose option (a)**: dropped `test_cross_builder_hole_block_identity`
+entirely. The test compared hole-block entries of two BdG matrices built
+from structurally different H0s (wire builder's 2D-confined
+`ZB8bandGeneralized` H0 vs QW builder's 1D-confined `ZB8bandQW` H0 with
+zero `kpterms`/`profile`). A non-zero diff between the hole blocks was
+expected EVEN IF the convention were unified, so the test would not
+turn GREEN post-Issue-03 — a broken AC #3.
+
+The four canonical hole-block tests already pin the convention; cross-
+builder identity is a *consequence* of the canonical convention, not a
+separate witness. Replaced the test with a comment block explaining the
+removal and listing follow-up options (single shared 8x8 H0 with the
+wire reduced to a single spatial point, or a QW fixture mimicking the
+wire).
+
+### Critical 2 — `pairing_partner`/`pairing_sign` dead code
+
+**Chose option (a)**: removed the duplicated constants entirely from
+the test file. They were not used by any of the 8 remaining tests (the
+tests inspect hole blocks and PHS residuals, neither of which uses
+Kramers pairing). Replaced with a comment block pointing future tests
+to expose these via the module's public API if/when needed (SSOT).
+
+### Minor 9 — Duplicate `deallocate(Hd, H0_minus_k)`
+
+Removed the second `deallocate(Hd, H0_minus_k)` line from all four
+`test_hole_block_is_time_reversed_*` tests. Now exactly one
+`deallocate(Hd, H0_minus_k)` per test. First deallocation kept (post-
+assert), second removed. Confirmed via `grep -n "deallocate(Hd,
+H0_minus_k)" tests/unit/test_bdg_phs.pf`: 4 hits, one per canonical
+hole-block test.
+
+### Test results
+
+`OMP_NUM_THREADS=$(( $(nproc)/4 )) ctest --test-dir build -R test_bdg_phs --output-on-failure`
+
+- 8 tests total (down from 9 — cross-builder removed)
+- **4 GREEN (standard PHS):** `test_phs_wire_no_Z_no_P_at_generic_k`,
+  `test_phs_wire_Z_no_P_at_generic_k`, `test_phs_wire_no_Z_P_at_generic_k`,
+  `test_phs_wire_Z_P_at_generic_k` — all rel = 0.0 (PHS is satisfied by
+  both divergent and canonical forms).
+- **4 RED (canonical hole-block, teeth preserved):**
+  `test_hole_block_is_time_reversed_no_Z_no_P`,
+  `test_hole_block_is_time_reversed_Z_no_P`,
+  `test_hole_block_is_time_reversed_no_Z_P`,
+  `test_hole_block_is_time_reversed_Z_P` — all rel_resid ≈ 0.1258
+  (raw ≈ 10.20). Expected pre-Issue-03; will GREEN when Issue 03
+  rewrites the wire builder's hole block to `-conjg(H0(-k))`.
+
+Full unit suite (`OMP_NUM_THREADS=$(( $(nproc)/4 )) ctest --test-dir build -L unit`):
+40/41 tests pass; only `test_bdg_phs` is RED on the 4 expected
+canonical hole-block failures (the regression baseline for Issue 03).
+
+### RED→GREEN contract (for Issue 03)
+
+After Issue 03 lands the canonical hole-block wrapper, the four
+`test_hole_block_is_time_reversed_*` tests should turn GREEN
+automatically (no test changes required). The four standard PHS tests
+will remain GREEN (they're satisfied by both forms).
+
+### Files touched
+
+- `tests/unit/test_bdg_phs.pf`:
+  - Removed `pairing_partner(8)` / `pairing_sign(8)` constants and
+    explanatory comment (Critical 2 option a).
+  - Removed `test_cross_builder_hole_block_identity` (~105 lines)
+    and replaced with a follow-up comment block (Critical 1 option a).
+  - Removed duplicate `deallocate(Hd, H0_minus_k)` in all four
+    canonical hole-block tests (Minor 9).
+  - Updated module-header doc block "TEETH DEMONSTRATED" comment to
+    reflect cross-builder removal.
+
+No other files modified.

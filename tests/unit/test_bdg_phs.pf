@@ -33,8 +33,9 @@ module test_bdg_phs
   ! TEETH DEMONSTRATED: the canonical hole-block test (test_hole_block_is_time_reversed_*)
   ! fails on the wire builder at generic k with Peierls. The four-field matrix
   ! test_phs_wire_* tests verify the standard tau_x K PHS (satisfied by both
-  ! forms). The cross-builder test compares the wire-CSR and dense-QW hole
-  ! blocks directly. Together these pin the canonical convention.
+  ! forms). Together these pin the canonical convention; cross-builder
+  ! identity is a *consequence* of the canonical convention, not a separate
+  ! witness (an earlier cross-builder test was removed in Fix Round 1).
   !
   ! Self-contained oracle procedures live inside this test module per ADR 0001
   ! (no new module types).
@@ -65,14 +66,12 @@ module test_bdg_phs
   ! assembles at +k, and we rebuild H0(-k) via ZB8bandGeneralized separately).
   real(kind=dp), parameter :: HOLE_TOL = 1.0e-10_dp
 
-  ! Kramers pairing data: duplicated from bdg_hamiltonian module data
-  ! (pairing_partner and pairing_sign are private to the module). These
-  ! are documented single-source-of-truth constants; for the test oracle
-  ! we mirror them in-test rather than expanding the module's public API.
-  ! Source: src/physics/bdg_hamiltonian.f90 lines 46, 50.
-  integer, parameter :: pairing_partner(8) = [4, 3, 2, 1, 6, 5, 8, 7]
-  real(kind=dp), parameter :: pairing_sign(8) = &
-       [+1.0_dp, +1.0_dp, -1.0_dp, -1.0_dp, +1.0_dp, -1.0_dp, +1.0_dp, -1.0_dp]  ! bands 1..8
+  ! Kramers pairing data (pairing_partner, pairing_sign) is private to
+  ! bdg_hamiltonian. None of the 8 oracle tests use the full C operator;
+  ! they inspect the standard tau_x K PHS (electron<->hole index swap)
+  ! and the canonical hole-block identity (hole block vs -conjg(H0(-k))).
+  ! If a future test needs the band-resolved C, expose these via the
+  ! module's public API rather than duplicating here (SSOT).
 
 contains
 
@@ -424,8 +423,6 @@ contains
 
     @assertTrue(resid / max(hnorm, 1.0e-30_dp) < HOLE_TOL, message="hole block identity")
     deallocate(Hd, H0_minus_k)
-
-    deallocate(Hd, H0_minus_k)
     call csr_free(H_bdg)
     call wire_workspace_free(ws)
     call free_wire_fixture(grid, profile_2d, kpterms_2d)
@@ -464,8 +461,6 @@ contains
               resid / max(hnorm, 1.0e-30_dp), ' raw_resid = ', resid
 
     @assertTrue(resid / max(hnorm, 1.0e-30_dp) < HOLE_TOL, message="hole block identity")
-    deallocate(Hd, H0_minus_k)
-
     deallocate(Hd, H0_minus_k)
     call csr_free(H_bdg)
     call wire_workspace_free(ws)
@@ -511,8 +506,6 @@ contains
 
     @assertTrue(resid / max(hnorm, 1.0e-30_dp) < HOLE_TOL, message="hole block identity")
     deallocate(Hd, H0_minus_k)
-
-    deallocate(Hd, H0_minus_k)
     call csr_free(H_bdg)
     call wire_workspace_free(ws)
     call free_wire_fixture(grid, profile_2d, kpterms_2d)
@@ -552,130 +545,31 @@ contains
 
     @assertTrue(resid / max(hnorm, 1.0e-30_dp) < HOLE_TOL, message="hole block identity")
     deallocate(Hd, H0_minus_k)
-
-    deallocate(Hd, H0_minus_k)
     call csr_free(H_bdg)
     call wire_workspace_free(ws)
     call free_wire_fixture(grid, profile_2d, kpterms_2d)
   end subroutine test_hole_block_is_time_reversed_Z_P
 
   ! ===========================================================================
-  ! Cross-builder spectral identity: hole blocks from wire-CSR and dense-QW
-  ! must agree under the canonical convention. Build the SAME physical H0
-  ! input to both builders and compare their hole blocks elementwise.
+  ! Cross-builder spectral identity: REMOVED (Issue 02 review, Critical 1).
   !
-  ! The wire builder takes CSR (kpterms_2d); the QW builder takes dense
-  ! (kpterms N x N x 10). To make the comparison meaningful, we set up a
-  ! simple QW fixture with diagonal kpterms and call the QW builder, then
-  ! call the wire builder with a 1D-shaped fixture.
+  ! The original test_cross_builder_hole_block_identity compared hole-block
+  ! entries of two BdG matrices built from STRUCTURALLY DIFFERENT H0s
+  ! (wire builder's 2D-confined ZB8bandGeneralized H0 vs QW builder's
+  ! 1D-confined ZB8bandQW H0 with zero kpterms/profile). Because the two
+  ! H0s are physically different, a non-zero diff between hole blocks was
+  ! expected EVEN IF the convention were unified, so the test would not
+  ! turn GREEN post-Issue-03.
   !
-  ! For the cross-builder comparison, we compare the HOLE BLOCKS (not
-  ! eigenvalues): both builders should construct -conjg(H0(-k)) for the
-  ! hole block. Post-Issue-03 both agree; pre-Issue-03 they differ.
+  ! The four canonical hole-block tests above already pin the convention;
+  ! cross-builder identity is a *consequence* of the canonical convention,
+  ! not a separate witness. Issue 03's unification will be witnessed by
+  ! the canonical hole-block tests + the standard PHS tests turning GREEN.
+  !
+  ! FOLLOW-UP (separate issue): a clean cross-builder identity test can
+  ! be added by either (a) passing a single shared 8x8 H0 to both builders
+  ! with the wire reduced to a single spatial point, or (b) constructing
+  ! a QW fixture whose kpterms/profile mimic the wire fixture.
   ! ===========================================================================
-
-  @test
-  subroutine test_cross_builder_hole_block_identity()
-    ! RED on pre-Issue-03: wire hole block = -conjg(H0(+k)), QW hole
-    ! block = -conjg(H0(-k)). At generic k with Peierls they differ.
-    ! Post-Issue-03 both = -conjg(H0(-k)) and agree.
-    !
-    ! Build both BdG matrices and compare their hole blocks elementwise
-    ! after subtracting an independently-constructed -conjg(H0(-k)).
-    type(spatial_grid) :: grid
-    real(kind=dp), allocatable :: profile_2d(:,:)
-    type(csr_matrix), allocatable :: kpterms_2d(:)
-    type(csr_matrix) :: H_bdg_wire
-    type(simulation_config) :: cfg
-    type(wire_workspace) :: ws
-    complex(kind=dp), allocatable :: Hd_wire(:,:), Hd_qw(:,:)
-    real(kind=dp), allocatable :: profile_qw(:,:), kpterms_qw(:,:,:)
-    real(kind=dp) :: kz, hole_wire_minus_qw
-
-    call build_wire_fixture(grid, profile_2d, kpterms_2d)
-    cfg%grid = grid
-    cfg%confinement = 'wire'
-    cfg%bdg%enabled = .false.
-
-    kz = 0.05_dp
-
-    ! Build wire-CSR BdG (no Peierls/zeeman — pure convention test).
-    call build_bdg_hamiltonian_1d(H_bdg_wire, cfg, profile_2d, kpterms_2d, &
-                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws)
-
-    ! Build QW-dense BdG with the same k_par = kz.
-    cfg%confinement = 'qw'
-    cfg%fd_step = grid%npoints()
-    cfg%FDorder = 2
-    cfg%num_layers = 1
-    cfg%bands%num_cb = 2
-    cfg%bands%num_vb = 6
-    cfg%bdg%enabled = .false.
-    cfg%bdg%delta_0 = 0.25e-3_dp
-    cfg%bdg%mu = 0.0_dp
-    cfg%bdg%g_factor = 0.0_dp
-    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 0.0_dp]
-    cfg%totalSize = 30.0_dp
-    cfg%delta = 10.0_dp
-    cfg%dz = 10.0_dp
-    call init_grid_from_config(cfg)
-
-    allocate(profile_qw(cfg%grid%npoints(), 3))
-    allocate(kpterms_qw(cfg%grid%npoints(), cfg%grid%npoints(), 10))
-    profile_qw = 0.0_dp
-    kpterms_qw = 0.0_dp
-
-    call build_bdg_hamiltonian_qw(Hd_qw, cfg, profile_qw, kpterms_qw, &
-                                   k_par=kz, mu=0.0_dp, delta_0=0.25e-3_dp)
-
-    ! Compare hole blocks: wire's hole block vs QW's hole block.
-    ! Both builders must produce the same hole block per the canonical
-    ! convention. Both are 8N x 8N; compare their difference Frobenius norm
-    ! normalized by ||H_qw_hole||_F.
-    block
-      integer :: n8_wire, n8_qw, i, j
-      real(kind=dp) :: diff_norm, qw_hole_norm
-      real(kind=dp) :: rel_diff
-
-      n8_wire = H_bdg_wire%nrows / 2
-      allocate(Hd_wire(H_bdg_wire%nrows, H_bdg_wire%ncols))
-      call csr_to_dense(H_bdg_wire, Hd_wire)
-
-      n8_qw = size(Hd_qw, 1) / 2
-
-      diff_norm = 0.0_dp
-      qw_hole_norm = 0.0_dp
-      if (n8_wire == n8_qw) then
-        do j = 1, n8_wire
-          do i = 1, n8_wire
-            diff_norm = diff_norm + abs(Hd_wire(n8_wire + i, n8_wire + j) - &
-                                          Hd_qw(n8_qw + i, n8_qw + j))**2
-            qw_hole_norm = qw_hole_norm + abs(Hd_qw(n8_qw + i, n8_qw + j))**2
-          end do
-        end do
-      end if
-      diff_norm = sqrt(diff_norm)
-      qw_hole_norm = sqrt(qw_hole_norm)
-      rel_diff = diff_norm / max(qw_hole_norm, 1.0e-30_dp)
-
-      print *, '[diagnostic] test_cross_builder_hole_block_identity: rel_diff = ', rel_diff, &
-                ' raw_diff = ', diff_norm, ' qw_hole_norm = ', qw_hole_norm
-
-      ! Post-Issue-03 the wire and QW hole blocks are -conjg(H0(-k)) both,
-      ! so the relative diff is small (<1e-10). Pre-Issue-03 the wire uses
-      ! -conjg(H0(+k)), so the diff is large (typically O(1) in magnitude
-      ! since the k-asymmetric terms dominate).
-      !
-      ! The test asserts the canonical convention: hole blocks must match.
-      ! The loose sanity floor (rel_diff >= 0) ensures we exercise the
-      ! comparison path; the tight witness is the residual < HOLE_TOL.
-      @assertTrue(rel_diff < HOLE_TOL, message="cross-builder hole block identity")
-    end block
-
-    deallocate(Hd_wire, Hd_qw, profile_qw, kpterms_qw)
-    call csr_free(H_bdg_wire)
-    call wire_workspace_free(ws)
-    call free_wire_fixture(grid, profile_2d, kpterms_2d)
-  end subroutine test_cross_builder_hole_block_identity
 
 end module test_bdg_phs
