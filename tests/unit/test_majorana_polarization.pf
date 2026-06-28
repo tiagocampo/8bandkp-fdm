@@ -2,6 +2,13 @@ module test_majorana_polarization
   ! Issue 04 (PR-B, U6): Sticlet Majorana polarization as MZM discriminator.
   ! Co-located with compute_majorana_profile (shares band_major_row indexing).
   ! s_σ derived from KTD7 Nambu ordering per ADR 0007.
+  !
+  ! TODO Issue 05 (Critical 2, deferred): the polarization routine is
+  ! currently pinned only to synthetic spinors. A real BdG eigensolve
+  ! test (drive main_topology, extract near-zero eigenvector, apply
+  ! polarization) is the natural follow-up in Issue 05 (PR-B Dense-QW
+  ! rung), where the polarization will be applied to a real dense-QW
+  ! BdG eigensolve.
   use funit
   use definitions, only: dp
   use topological_analysis, only: majorana_polarization, polarization_result_t
@@ -157,38 +164,74 @@ contains
 
   @test
   subroutine test_half_wire_integral_discriminates()
-    ! Half-wire integral ≈ 0.5*N for true MZM (synthetic, all at one end);
-    ! ≈ 0 for an accidental near-zero mode (pure electron).
-    ! This is the discriminator the AC names.
+    ! Headline discriminator (per AC + Issue 04 review): the half-wire
+    ! integral must CONTRAST a true MZM against an accidental near-zero
+    ! state — testing absolute saturation alone is vacuous (a localized
+    ! MZM with all amplitude at one site trivially gives half_wire=1).
+    !
+    ! This test uses a DISTRIBUTED Majorana profile across all N sites and
+    ! all 8 bands (flat |u|=1/sqrt(N) per orbital, MZM phase v_↑=+u_↑,
+    ! v_↓=-u_↓). With KTD7 spin-sector signs s_σ=pairing_sign(σ), per-site
+    ! P_M sums constructively: coherence = 8/N, density = 16/N,
+    ! P_M(site) = 2*(8/N)/(16/N) = 1. Half-wire integral = N/2 * 1 = N/2.
+    !
+    ! The 0.4 absolute floor in the brief refers to a real wire at
+    ! B = 2·B_crit (per Issue 04 brief line 19) — a synthetic flat-profile
+    ! MZM produces a much larger value (N/2) because it lacks the
+    ! continuum localization-length normalization. The 0.4 floor here is
+    ! a sanity check (any reasonable MZM must exceed it), NOT the headline
+    ! assertion. The headline is the contrast: half_wire_mzm vs
+    ! half_wire_accidental.
     integer, parameter :: N = 16
     real(kind=dp) :: u_flat(8*N), v_flat(8*N)
     complex(kind=dp) :: evec_bdg(16*N)
     type(polarization_result_t) :: pol_mzm, pol_pure_e
+    integer :: i, ib
 
-    ! --- True MZM: localized at site 1 with both spin sectors ---
-    u_flat = 0.0_dp
-    v_flat = 0.0_dp
-    u_flat(1) = 1.0_dp
-    v_flat(1) = 1.0_dp
-    u_flat(3*N + 1) = 1.0_dp
-    v_flat(3*N + 1) = -1.0_dp
+    ! --- True MZM: distributed flat profile, MZM phase ---
+    ! Per orbital: |u|² = 1/N. Spin-up bands {1,2,5,7}: v = +u. Spin-down
+    ! bands {3,4,6,8}: v = -u (MZM phase from KTD7).
+    u_flat = 1.0_dp / sqrt(real(N, dp))
+    v_flat = u_flat
+    do ib = 1, 8
+      if (ib == 3 .or. ib == 4 .or. ib == 6 .or. ib == 8) then
+        do i = 1, N
+          v_flat((ib - 1) * N + i) = -u_flat((ib - 1) * N + i)
+        end do
+      end if
+    end do
     call build_bdg_evec(u_flat, v_flat, evec_bdg)
     pol_mzm = majorana_polarization(evec_bdg, N)
 
-    ! --- Accidental near-zero mode: pure electron at site 1 ---
-    u_flat = 0.0_dp
+    ! --- Accidental near-zero mode: pure electron, distributed ---
+    ! v=0 across all bands → no electron-hole coherence → P_M = 0
+    ! everywhere → half_wire = 0.
+    u_flat = 1.0_dp / sqrt(real(N, dp))
     v_flat = 0.0_dp
-    u_flat(1) = 1.0_dp
-    u_flat(3*N + 1) = 1.0_dp
     call build_bdg_evec(u_flat, v_flat, evec_bdg)
     pol_pure_e = majorana_polarization(evec_bdg, N)
 
-    ! MZM has half_wire_integral > 0.4 (per AC, headline threshold).
-    ! The synthetic MZM has all amplitude at site 1 (a single site, fully
-    ! in the first half) with P_M(1) = 1, so half_wire_integral = 1.
+    ! Headline: contrast. The true MZM's half-wire integral must be at
+    ! least 4x the accidental state. For the synthetic flat-profile MZM,
+    ! this is N/2 vs 0 → trivially satisfied. The 4x factor documents
+    ! the ratio the discriminator needs to clear on real data, where
+    ! both states are non-zero.
+    @assertTrue(pol_mzm%half_wire_integral > 4.0_dp * pol_pure_e%half_wire_integral)
+    ! Sanity (absolute floor): any reasonable MZM produces a non-trivial
+    ! half-wire integral well above 0.4. For N=16 with flat profile,
+    ! expected value is N/2 = 8 (printed for diagnostics via @assertTrue
+    ! with a generous lower bound).
     @assertTrue(pol_mzm%half_wire_integral > 0.4_dp)
-    ! Pure electron has half_wire_integral ≈ 0 (no electron-hole coherence).
-    @assertTrue(pol_pure_e%half_wire_integral < 0.1_dp)
+    ! Per-site P_M is constructive (close to 1) at every site for the
+    ! distributed flat MZM — this exercises the multi-site summation
+    ! that the original localized test vacuously bypassed.
+    do i = 1, N
+      @assertTrue(pol_mzm%P_M(i) > 0.95_dp)
+    end do
+    ! Accidental state: per-site P_M must be zero (v=0 by construction).
+    do i = 1, N
+      @assertTrue(pol_pure_e%P_M(i) < 1.0e-12_dp)
+    end do
   end subroutine test_half_wire_integral_discriminates
 
   @test

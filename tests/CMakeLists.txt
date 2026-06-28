@@ -275,6 +275,26 @@ else()
     message(STATUS "pFUnit not found — unit tests disabled. Install pFUnit and set -DPFUNIT_DIR to enable.")
 endif()
 
+# Issue 04 Fix Round 1 (Important 1): standalone Fortran driver that
+# intentionally triggers `error stop` on size mismatch in
+# majorana_polarization. pFUnit 4.x cannot catch Fortran `error stop`
+# (per ADR 0002 + test_parameters.pf precedent), so the size-mismatch
+# branch is verified by spawning this driver from a shell integration
+# test (test_majorana_polarization_size_mismatch.sh) and checking the
+# exit code + error message. Compiled unconditionally (no pFUnit needed)
+# so the error-stop path is always covered.
+add_executable(test_majorana_polarization_size_mismatch
+    integration/test_majorana_polarization_size_mismatch.f90
+)
+target_link_libraries(test_majorana_polarization_size_mismatch PRIVATE 8bandkp_common)
+add_test(
+    NAME validation_majorana_polarization_size_mismatch
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_majorana_polarization_size_mismatch.sh
+        $<TARGET_FILE:test_majorana_polarization_size_mismatch>
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(validation_majorana_polarization_size_mismatch PROPERTIES LABELS "unit" TIMEOUT 30)
+
 # --- Regression tests ---
 # Use shell scripts from tests/integration/ to avoid CMake shell escaping issues
 

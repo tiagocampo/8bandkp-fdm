@@ -881,15 +881,19 @@ contains
 
     half_n = 8 * n_sites
     if (size(evec_bdg) < 2 * half_n) then
-      ! Defensive: zero-fill result on size mismatch (no I/O, no error stop
-      ! — pure function must always return).
-      pol%half_wire_integral = 0.0_dp
-      pol%total_P_M = 0.0_dp
-      allocate(pol%P_M(max(n_sites, 0)))
-      allocate(pol%tau_z(max(n_sites, 0)))
-      pol%P_M = 0.0_dp
-      pol%tau_z = 0.0_dp
-      return
+      ! Hard-fail on size mismatch: a BdG eigenvector that doesn't match
+      ! the expected 16*N = 2*half_n shape is a programmer error (wrong
+      ! `n_sites` passed, or partial buffer), not a runtime edge case.
+      ! CLAUDE.md forbids silent corrections; per Fix Round 1 (Important 1)
+      ! the previous zero-fill branch was replaced with error stop.
+      ! `pure function` may call `error stop` — program termination is not
+      ! a side effect on the procedure's return value.
+      block
+        character(len=120) :: errmsg
+        write(errmsg, '("majorana_polarization: eigenvector size mismatch, expected 2*half_n = ",I0,", got ",I0)') &
+          2 * half_n, size(evec_bdg)
+        error stop errmsg
+      end block
     end if
 
     allocate(pol%P_M(n_sites))
