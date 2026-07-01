@@ -28,10 +28,13 @@
 - **Implementation plan** at `docs/superpowers/plans/2026-07-01-bdg-p1-fix.md` enumerates ~40 commits.
 
 **Layer 2 (from A — 4-phase structure)**:
-- Phase 1 = Physics correctness (12 commits, TDD-doubled) — merge-blocker
+- Phase 0 = Design artifacts (1 commit, docs only) — ADR 0008 + spec + plan
+- Phase 1 = Physics correctness (13 commits, 4 TDD triples + 1 prerequisite + 2 single) — merge-blocker
 - Phase 2 = Test teeth (6 commits)
 - Phase 3 = Architecture cleanup (6 commits)
-- Phase 4 = Hygiene + docs (8 commits)
+- Phase 4 = Hygiene + docs (8 commits, with 4.2 dependent on 3.2)
+
+**Total**: ~34 commits including the prerequisite refactor (1.1).
 
 **Layer 3 (from B — TDD discipline within each phase)**:
 - For each P1 fix in Phase 1: failing test commit → fix commit → regen/refactor commit (3:1 ratio on critical path)
@@ -46,11 +49,13 @@ One new ADR (`0008-bdg-p1-invariants.md`), one spec (this file), one PR (`feat/b
 
 | Phase | Module(s) touched | New module(s) | New ADR |
 |---|---|---|---|
-| 0 | — | — | `0008-bdg-p1-invariants.md` |
+| 0 | (docs only) | — | `0008-bdg-p1-invariants.md` |
 | 1 | `bdg_hamiltonian.f90`, `pfaffian.f90`, `topological_analysis.f90`, `main_topology.f90`, `magnetic_field.f90` | — | (rolled into 0008) |
 | 2 | `tests/integration/*`, `tests/regression/*` | — | — |
 | 3 | `eigensolver.f90`, `sparse_matrices.f90`, `outputFunctions.f90`, `bdg_observables.f90` | — | — |
 | 4 | `topological_analysis.f90`, `spectral_bdg_wire.f90`, `validation_universe.yml`, `lecture.md`, PRD, AGENTS.md | — | — |
+
+**Phase ordering note**: Phase 4.2 (pointer caching on `csr_to_dense_work`) depends on Phase 3.2 (move of `csr_to_dense_work` to `sparse_matrices.f90`). Phase 4 must execute after Phase 3 for this commit. All other Phase 4 commits are independent.
 
 ### Key architectural commitments (ADR 0008)
 
@@ -61,9 +66,15 @@ One new ADR (`0008-bdg-p1-invariants.md`), one spec (this file), one PR (`feat/b
 
 ## 4. Components in detail
 
+### Phase 0 — Design artifacts (1 commit, docs only)
+
+**0.1** Write ADR 0008 + this spec + implementation plan. Commit docs only, no code change. Branched from `feat/bdg-validation-pass2`.
+
 ### Phase 1 — Physics correctness (12 commits, TDD-doubled critical path)
 
-**1.1 [Phase 0 setup]** Write ADR 0008 + this spec + implementation plan. Commit docs only, no code change.
+**1.1** [Prerequisite refactor] Verify that `add_peierls_coo` in `magnetic_field.f90:184` uses `exp(-iφ)` convention (`exp_phase = cmplx(cos(phase), -sin(phase))` with `phase = e*Bx*(y_i-y_j)/hbar`). Confirmed by code inspection 2026-07-01. Document finding in commit message so the removal in 1.10 is traceable.
+
+**1.2** [TDD red] Add `tests/unit/test_kitaev_strict.pf` asserting `M=-1` for |μ|<2t, `M=+1` for |μ|>2t on a 2-band Lutchyn-Oreg fixture.
 
 **1.2 [TDD red]** Add `tests/unit/test_kitaev_strict.pf` asserting `M=-1` for |μ|<2t, `M=+1` for |μ|>2t on a 2-band Lutchyn-Oreg fixture. Test fails because `kitaev_majorana_number` returns 0.
 
@@ -83,9 +94,9 @@ One new ADR (`0008-bdg-p1-invariants.md`), one spec (this file), one PR (`feat/b
 
 **1.10 [TDD green]** Remove the second `add_peierls_coo` call in `bdg_hamiltonian.f90:419-428` (the symmetric-Peierls fix3 over-correction). `conjg()` in `build_bdg_hole_block` is sufficient. Verify wire PHS oracle still green.
 
-**1.11** Fix `half_wire_integral = max(sum(1..N/2), sum(N/2+1..N))` in `topological_analysis.f90:939`.
+**1.12** Fix `half_wire_integral = max(sum(1..N/2), sum(N/2+1..N))` in `topological_analysis.f90:939`. Existing test `test_mzm_peaks_at_wire_ends` exercises both ends; update assertion to match new convention.
 
-**1.12** Replace `real(u·v*)` with `u·v*` (complex) at `topological_analysis.f90:919`. Add unit test for SOC-active fixture.
+**1.13** Replace `real(u·v*)` with `u·v*` (complex) at `topological_analysis.f90:919`. Add `test_majorana_polarization_soc.pf` for SOC-active fixture (synthetic BdG with imaginary coherence).
 
 ### Phase 2 — Test teeth restoration (6 commits)
 
@@ -117,7 +128,7 @@ One new ADR (`0008-bdg-p1-invariants.md`), one spec (this file), one PR (`feat/b
 
 ### Phase 4 — Hygiene + docs (8 commits, single-commit fixes)
 
-**4.1** Replace 4 bare `stop 1` in `topological_analysis.f90:964, 1132, 1496, 1501` with `error stop '<descriptive context>'`.
+**4.1** Replace 4 bare `stop 1` in `topological_analysis.f90:964, 1132, 1496, 1501` with `print + error stop` (pattern in §6.3).
 
 **4.2** Add pointer caching to `csr_to_dense_work` in `spectral_bdg_wire.f90:240-253` (the new helper introduced in this PR). Pattern matches `hamiltonian_wire.f90`.
 
@@ -129,7 +140,7 @@ One new ADR (`0008-bdg-p1-invariants.md`), one spec (this file), one PR (`feat/b
 
 **4.6** Reconcile LDOS zero-bias peak claim at `lecture.md:480` with Issue 11 fix1 figure caption.
 
-**4.7** Update `PRD.md`: commit count 14→26, mark 3 missing solutions docs as deferred or create from existing materials. `git mv .scratch/bdg-majorana-validation .scratch/archive/bdg-majorana-validation` per MEMORY.md step 3.
+**4.7** Update `PRD.md`: commit count 14→26, **create** the 3 missing solutions docs from existing materials (`issue-02-report.md`, `issue-03-report.md`, the `green_functions.f90` diff in commit `328b83a`). Per MEMORY.md `codebase-doc-drift-prevention` rule, deferring is a doc-drift source — create the docs. Then `git mv .scratch/bdg-majorana-validation .scratch/archive/bdg-majorana-validation` per MEMORY.md step 3.
 
 **4.8** `git rm` stale all-zero `docs/lecture/figures/rashba_majorana_phase_diagram.txt` + companion `.png`. Update MEMORY.md to add 3rd drift event.
 
@@ -211,8 +222,8 @@ Acceptance gate:
 Before (asymmetric, possibly double-counted):
 ```
 wire CSR builder:
-  H_e = ZB8bandGeneralized(kz, +B)            → Peierls phase exp(-iφ)
-  H_h = ZB8bandGeneralized(-kz, +B)           → Peierls phase exp(-iφ)
+  H_e = ZB8bandGeneralized(kz, +B)            → Peierls phase exp(-iφ) on electron block
+  H_h = ZB8bandGeneralized(-kz, +B)           → Peierls phase exp(-iφ) on hole block
   hole = -conjg(H_h)                          → conjg flips phase to exp(+iφ)
   + add_peierls_coo(hole, -B)                 → adds exp(+iφ) AGAIN
   = hole carries exp(+2iφ)                    → wrong by 2x
@@ -228,8 +239,8 @@ dense QW builder:
 After (symmetric, both correct):
 ```
 wire CSR builder:
-  H_e = ZB8bandGeneralized(kz, +B)            → Peierls phase exp(-iφ)
-  H_h = ZB8bandGeneralized(-kz, +B)           → Peierls phase exp(-iφ)
+  H_e = ZB8bandGeneralized(kz, +B)            → Peierls phase exp(-iφ) on electron block
+  H_h = ZB8bandGeneralized(-kz, +B)           → Peierls phase exp(-iφ) on hole block
   hole = -conjg(H_h)                          → conjg flips phase to exp(+iφ)
   (no extra Peierls call)
   = hole carries exp(+iφ)                     → correct, matches dense QW
@@ -237,6 +248,8 @@ wire CSR builder:
 dense QW builder:
   unchanged                                    → correct
 ```
+
+**Peierls phase sign convention** (per ADR 0008, verified in `magnetic_field.f90:184`): `add_peierls_coo` applies `exp(-iφ)` where `φ = e*Bx*(y_i-y_j)/hbar`. For class-D PHS C·H(k,B)·C⁻¹ = -H(-k,-B), the hole block must carry Peierls(-B) which yields exp(+iφ) (sign-flipped). The `-conjg()` in `build_bdg_hole_block` already provides this sign flip; no additional `add_peierls_coo` call is required.
 
 ## 6. Error handling
 
@@ -276,11 +289,12 @@ After:
 
 ### 6.3 Bare `stop 1` → `error stop` (Phase 4.1)
 
-4 sites in `topological_analysis.f90`:
-- Line 964: `error stop 'build_bhz_wire_hamiltonian: invalid parameters (N=' // str(N) // ', dz=' // str(dz) // ')'`
-- Line 1132: `error stop 'compute_phase_diagram: nB=' // str(nB) // ' nMu=' // str(nMu) // ' out of [1, 1000] range'`
-- Line 1496: `error stop 'compute_z2_gap_sweep: unsupported sweep_model ' // trim(model) // ' (expected bhz_analytic)'`
-- Line 1501: `error stop 'compute_z2_gap_sweep: evaluator failed for model ' // trim(model)`
+4 sites in `topological_analysis.f90`. `error stop` in F2018 accepts a literal string or a character expression; some compilers reject runtime concatenation in the stop expression itself, so we use a `print` + `error stop` pattern (the print appears on stderr before the runtime halt):
+
+- Line 964: `print *, 'build_bhz_wire_hamiltonian: invalid parameters (N=', N, ', dz=', dz); error stop 'build_bhz_wire_hamiltonian: invalid parameters'`
+- Line 1132: `print *, 'compute_phase_diagram: nB=', nB, ' nMu=', nMu, ' out of [1, 1000]'; error stop 'compute_phase_diagram: nB and nMu must be in [1, 1000]'`
+- Line 1496: `print *, 'compute_z2_gap_sweep: unsupported sweep_model ', trim(cfg%topo%sweep_model); error stop 'compute_z2_gap_sweep: unsupported sweep_model (expected bhz_analytic)'`
+- Line 1501: `print *, 'compute_z2_gap_sweep: evaluator failed for model ', trim(cfg%topo%sweep_model); error stop 'compute_z2_gap_sweep: evaluator failed'`
 
 ### 6.4 New failure modes introduced
 
@@ -309,6 +323,8 @@ TDD commit triples:
 | 1.5 / 1.6 | `test_pairing_sign_cross_module.pf` (byte-identity) | `public` + `use` |
 | 1.7 / 1.8 | `test_dense_qw_block_21_sign.pf` (Hermiticity) | Fix line 547 |
 | 1.9 / 1.10 | `test_phs_qw_peierls_symmetric.pf` (PHS with Bx≠0 generic k) | Remove symmetric Peierls |
+
+**Note on numbering**: Phase 0 commit (0.1) precedes all Phase 1 commits. The prerequisite refactor (1.1) verifies the `add_peierls_coo` convention before 1.10 removes the symmetric Peierls call. Commits 1.11 and 1.12 are single-commit refactors (the half_wire_integral and complex-coherence fixes are 1-line changes with existing test coverage).
 
 For Phases 2-4 (less physics-critical), commits bundle fix + test in a single commit.
 
@@ -389,9 +405,9 @@ Lutchyn-Oreg requires eigendecomposition of H_bdg at two PHS-invariant momenta p
 
 1. **PHS oracle green at generic k** under all four field combinations, both wire AND dense-QW. Phase 1.7, 1.8, 1.9, 1.10.
 2. **Both builders produce Hermitian BdG matrices** (verified by Phase 1.7 test). Phase 1.8.
-3. **Kitaev harness AE1 closed-form certification strict**: M=-1 for |μ|<2t, M=+1 for |μ|>2t on real fixture. Phase 1.2-1.4.
-4. **Sticlet polarization with complex coherence**: P_M saturates for analytical MZM spinor; half-wire integral = max(left, right). Phase 1.11, 1.12.
-5. **Dense-QW BdG rung**: ±E pairing, M=±1 strict, Hermiticity, edge-localized MZMs with P_M>0.95 + half-wire >0.4 at B=2·B_crit. Phase 1 (cumulative).
+3. **Kitaev harness AE1 closed-form certification strict**: M=-1 for |μ|<2t, M=+1 for |μ|>2t on the **real Lutchyn-Oreg-compatible BdG fixture** (2-band s-wave SC with explicit hopping/onsite terms; not the synthetic diagonal-in-(c,c†) harness). Phase 1.2-1.4.
+4. **Sticlet polarization with complex coherence**: P_M saturates for analytical MZM spinor; half-wire integral = max(left, right). Phase 1.12, 1.13.
+5. **Dense-QW BdG rung**: ±E pairing, M=±1 strict (per AC3), Hermiticity (per AC2), edge-localized MZMs with P_M>0.95 + half-wire >0.4 at B=2·B_crit. Phase 1 (cumulative).
 6. **Wire rung AE3**: min_gap traces open→close→reopen at B_crit≈2.8T; PHS oracle green at generic k with Bx≠0. Phase 1.10.
 7. **2D minigap colormap regression**: pattern assertion (small near B_crit, large far from it), NOT z2=±1 numerical sign. Phase 2.1.
 8. **4-witness acceptance gate**: all 4 witnesses live (not constants), range check + absolute window guard + regex anchor. Phase 2.2-2.6.
@@ -418,6 +434,8 @@ Lutchyn-Oreg requires eigendecomposition of H_bdg at two PHS-invariant momenta p
 - **CLAUDE.md**: Engineering Principles (DRY, SOLID, YAGNI), Code Conventions (`error stop`, `iso_fortran_env`, pFUnit single-line asserts).
 - **PRD**: `.scratch/bdg-majorana-validation/PRD.md` (will be archived in Phase 4.7).
 - **Prior review-fix specs**: `docs/superpowers/specs/2026-06-13-eigensolver-review-fixes-design.md`, `docs/superpowers/specs/2026-06-21-pr39-review-fixes-design.md`.
+- **Implementation plan**: `docs/superpowers/plans/2026-07-01-bdg-p1-fix.md` (to be created by `writing-plans` skill after this spec is approved).
+- **ADR 0008**: `docs/adr/0008-bdg-p1-invariants.md` (to be created in Phase 0.1; locks Lutchyn-Oreg, pairing_sign DRY public API, `conjg()` for class-D Peierls, minigap-pattern regression).
 
 ---
 
