@@ -77,7 +77,8 @@ tests/integration/convergence_results/
 # Verifier scratch dirs (Issue 05/07/08 verifiers create per-run dirs)
 /run_B*/
 /run_bx*/
-/run_bdq*
+/run_bdq*/
+/run_mu_gap/
 
 # CMake generated files
 Makefile

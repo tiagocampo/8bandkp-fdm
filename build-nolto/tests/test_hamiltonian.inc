@@ -1,1 +1,0 @@
-ADD_TEST_SUITE(test_hamiltonian_suite)
