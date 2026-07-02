@@ -171,7 +171,6 @@ def section_wire_rung(exe):
     # Per ADR 0008 §4 + spec §5.3: read live Fortran output if available,
     # fall back to golden with WARN if not (live output is produced by the
     # just-completed Fortran run of topologicalAnalysis).
-    import re
     live_output = REPO / "output" / "z2_phase_diagram.dat"
     bcrit_2d = None
     if live_output.exists():
