@@ -1148,15 +1148,27 @@ contains
   subroutine csr_to_dense_work(H_csr, A, N)
     ! CSR -> dense extraction (utility; lives with CSR helpers per DRY).
     ! Moved from spectral_bdg_wire.f90 and eigensolver.f90 in Task 3.2.
-    type(csr_matrix), intent(in) :: H_csr
+    !
+    ! Pointer caching per MEMORY `codebase-doc-drift-prevention`:
+    ! gfortran -O3 may emit array temporaries for derived-type component
+    ! access in tight CSR-traversal inner loops. Declaring H_csr as `target`
+    ! makes its allocatable components target-accessible; pointer association
+    ! then reads the storage directly without temporaries.
+    type(csr_matrix), target, intent(in) :: H_csr
     integer, intent(in) :: N
     complex(kind=dp), intent(out) :: A(N, N)
+    integer, pointer :: rowptr_(:) => null(), colind_(:) => null()
+    complex(kind=dp), pointer :: vals_(:) => null()
     integer :: row, k
+
+    rowptr_ => H_csr%rowptr
+    colind_ => H_csr%colind
+    vals_ => H_csr%values
 
     A = cmplx(0.0_dp, 0.0_dp, kind=dp)
     do row = 1, N
-      do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
-        A(row, H_csr%colind(k)) = H_csr%values(k)
+      do k = rowptr_(row), rowptr_(row + 1) - 1
+        A(row, colind_(k)) = vals_(k)
       end do
     end do
   end subroutine csr_to_dense_work
