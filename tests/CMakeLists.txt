@@ -1003,7 +1003,7 @@ add_test(
 )
 set_tests_properties(
     lecture_13_acceptance_gate
-    PROPERTIES LABELS "regression" TIMEOUT 1200
+    PROPERTIES LABELS "regression;acceptance-gate" TIMEOUT 1200
 )
 
 add_test(
