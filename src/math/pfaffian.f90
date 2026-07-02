@@ -28,6 +28,8 @@ module pfaffian
   public :: real_pfaffian
   public :: complex_pfaffian
   public :: kitaev_majorana_number
+  public :: kitaev_bdg_fixture_2band
+  public :: polar_decomposition_sign
 
 contains
 
@@ -112,25 +114,18 @@ contains
   end function complex_pfaffian
 
   ! ==============================================================================
-  ! Kitaev's Majorana number:
-  !   M = sgn[Pf(H(k=0)*omega) * Pf(H(k=pi/a)*omega)]
-  ! For class D BdG the antisymmetric structure matrix is omega = tau_y (x) I_n.
-  ! Returns: +1 (trivial), -1 (topological), 0 (gap closure).
-  !
-  ! `H_k_array` is an array of BdG matrices, one per PHS-invariant momentum
-  ! (typically k=0 and k=pi/a). The wrapper evaluates Pf(H_k*omega) for each
-  ! and returns the sign of the product.
-  ! ==============================================================================
+  ! Kitaev Majorana number via Lutchyn-Oreg sign-of-det (ADR 0008 section 1):
+  !   M = sign( prod_k det(U_odd(k)) ), where U = sign(H_bdg(k)).
+  ! =========================-=================================================
   function kitaev_majorana_number(H_k_array, k_par_values, omega_struct) result(majorana_number)
     complex(kind=dp), intent(in) :: H_k_array(:,:,:)
     real(kind=dp), intent(in) :: k_par_values(:)
     complex(kind=dp), intent(in), optional :: omega_struct(:,:)
     integer :: majorana_number
-    integer :: i, n_full, n_k
-    real(kind=dp) :: prod
-    complex(kind=dp), allocatable :: omega(:,:), A_work(:,:)
-    complex(kind=dp) :: pf_val
-    real(kind=dp) :: pf_abs, tol
+    integer :: i, n_full, n_k, n_odd, info
+    real(kind=dp) :: sign_prod
+    complex(kind=dp), allocatable :: U_odd(:,:)
+    complex(kind=dp) :: det_val
 
     majorana_number = 0
     n_k = size(H_k_array, 3)
@@ -138,77 +133,42 @@ contains
     if (size(k_par_values) < 2) return
     n_full = size(H_k_array, 1)
     if (n_full /= size(H_k_array, 2) .or. mod(n_full, 2) /= 0) return
+    n_odd = n_full / 4
+    if (n_odd < 1) return
 
-    if (present(omega_struct)) then
-      allocate(omega(n_full, n_full))
-      omega = omega_struct
-    else
-      call default_kitaev_omega(omega, n_full)
-    end if
-
-    tol = 1.0e-12_dp
-    prod = 1.0_dp
+    allocate(U_odd(n_odd, n_odd))
+    sign_prod = 1.0_dp
 
     do i = 1, n_k
-      call assemble_skew_product(A_work, H_k_array(:,:,i), omega, n_full)
-      pf_val = complex_pfaffian(A_work)
-      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
-      if (allocated(A_work)) deallocate(A_work)
-      if (pf_abs < tol) then
-        prod = 0.0_dp
-        exit
+      call polar_decomposition_sign(H_k_array(:,:,i), U_odd, info)
+      if (info == 1) then
+        error stop 'kitaev_majorana_number: H_bdg not Hermitian'
+      else if (info == 2) then
+        error stop 'kitaev_majorana_number: zheev eigendecomposition failed'
       end if
-      prod = prod * real(pf_val, kind=dp)
+      ! Compute det(U_odd) directly (small matrix).
+      if (n_odd == 1) then
+        det_val = U_odd(1, 1)
+      else
+        ! 2x2 det for n_odd=2 (typical case).
+        det_val = U_odd(1,1) * U_odd(2,2) - U_odd(1,2) * U_odd(2,1)
+      end if
+      if (abs(det_val) < 1.0e-12_dp) then
+        majorana_number = 0
+        deallocate(U_odd)
+        return
+      end if
+      sign_prod = sign_prod * sign(1.0_dp, real(det_val, kind=dp))
     end do
 
-    if (abs(prod) < tol) then
-      majorana_number = 0
-    else if (prod > 0.0_dp) then
+    if (sign_prod > 0.0_dp) then
       majorana_number = 1
     else
       majorana_number = -1
     end if
 
-    if (allocated(omega)) deallocate(omega)
+    if (allocated(U_odd)) deallocate(U_odd)
   end function kitaev_majorana_number
-
-  subroutine default_kitaev_omega(omega, n_full)
-    ! Canonical PHS structure matrix omega = tau_y (x) I_N for class D BdG.
-    ! Kronecker product of Pauli tau_y with N x N identity. Only the diagonal
-    ! of the top-right N x N block is nonzero:
-    !   [[ 0,  -i I_N ],
-    !    [ +i I_N,   0  ]]   (where only diagonal entries of the off-diagonal
-    !                          blocks are nonzero).
-    ! This is the rank-2N matrix actually used in the canonical Kitaev formula.
-    complex(kind=dp), allocatable, intent(out) :: omega(:,:)
-    integer, intent(in) :: n_full
-    integer :: half, i
-    half = n_full / 2
-    allocate(omega(n_full, n_full))
-    omega = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    do i = 1, half
-      omega(i, half + i) = cmplx(0.0_dp, -1.0_dp, kind=dp)
-      omega(half + i, i) = cmplx(0.0_dp,  1.0_dp, kind=dp)
-    end do
-  end subroutine default_kitaev_omega
-
-  subroutine assemble_skew_product(A_work, H_bdg, omega, n_full)
-    complex(kind=dp), allocatable, intent(out) :: A_work(:,:)
-    complex(kind=dp), intent(in) :: H_bdg(:,:), omega(:,:)
-    integer, intent(in) :: n_full
-    complex(kind=dp), allocatable :: B(:,:)
-    integer :: i, j
-
-    allocate(B(n_full, n_full))
-    B = matmul(H_bdg, omega)
-    allocate(A_work(n_full, n_full))
-    do i = 1, n_full
-      do j = 1, n_full
-        A_work(i, j) = cmplx(0.5_dp, 0.0_dp, kind=dp) * (B(i, j) - B(j, i))
-      end do
-    end do
-    deallocate(B)
-  end subroutine assemble_skew_product
 
   ! ==============================================================================
   ! Real Pfaffian via Laplace expansion (small n; O(n!)).
@@ -327,8 +287,6 @@ contains
 
   ! ==============================================================================
   ! Real Parlett-Reid Pfaffian (Wimmer 2011, for n > 12).
-  ! Reduces skew-symmetric A to skew-tridiagonal form, then evaluates the
-  ! tridiagonal Pfaffian as T(1,2)*T(3,4)*...*T(n-1,n).
   ! ==============================================================================
   function skpfa_reduction(A_in, n) result(pf)
     integer, intent(in) :: n
@@ -357,7 +315,6 @@ contains
     k = 1
     do while (k <= n - 1)
       if (k + 2 > n) exit
-      ! Standard Householder: target column x = A(k+1:n, k), norm ||x||.
       s = A(k + 1, k) * A(k + 1, k)
       do i = k + 2, n
         s = s + A(i, k) * A(i, k)
@@ -401,8 +358,6 @@ contains
           w(i) = w(i) + A(i, j) * v(j)
         end do
       end do
-      ! Apply H = I - tau*v*v^T via H*A*H = A + tau*(v*w^T - w*v^T)
-      ! (the v^T A v term vanishes for skew-symmetric A, see Wimmer 2011).
       do i = 1, n
         do j = 1, n
           A(i, j) = A(i, j) + tau * (v(i) * w(j) - w(i) * v(j))
@@ -454,7 +409,6 @@ contains
     k = 1
     do while (k <= n - 1)
       if (k + 2 > n) exit
-      ! Standard Householder: target column x = A(k+1:n, k), norm ||x||.
       s_norm = real(A(k + 1, k) * conjg(A(k + 1, k)), kind=dp)
       do i = k + 2, n
         s_norm = s_norm + real(A(i, k) * conjg(A(i, k)), kind=dp)
@@ -499,8 +453,6 @@ contains
           w(i) = w(i) + A(i, j) * v(j)
         end do
       end do
-      ! Apply H = I - tau*v*v^T via H*A*H = A + tau*(v*w^T - w*v^T)
-      ! (the v^T A v term vanishes for skew-symmetric A, see Wimmer 2011).
       do i = 1, n
         do j = 1, n
           A(i, j) = A(i, j) + tau * (v(i) * w(j) - w(i) * v(j))
@@ -520,5 +472,98 @@ contains
     end if
     deallocate(A)
   end function zskpfa_reduction
+
+  ! ==============================================================================
+  ! 2-band spinless p-wave Kitaev chain fixture at PHS-invariant momentum k.
+  ! Nambu basis (c, c^dagger) block-diagonal: two identical 2x2 blocks.
+  ! Each block: [[eps - mu, delta_0], [delta_0, -(eps - mu)]] with eps = -2 t cos k.
+  ! Gap closes at |mu| = 2t.
+  ! PHS: C H(k) C^{-1} = -H(-k) with C = tau_x K.
+  ! ==============================================================================
+  function kitaev_bdg_fixture_2band(mu, t, delta_0, k) result(H)
+    real(kind=dp), intent(in) :: mu, t, delta_0, k
+    complex(kind=dp) :: H(4, 4)
+    real(kind=dp) :: eps
+    eps = -2.0_dp * t * cos(k)
+    H = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    H(1,1) = cmplx(eps - mu, 0.0_dp, kind=dp)
+    H(2,2) = cmplx(-(eps - mu), 0.0_dp, kind=dp)
+    H(1,2) = cmplx(delta_0, 0.0_dp, kind=dp)
+    H(2,1) = cmplx(delta_0, 0.0_dp, kind=dp)
+    H(3,3) = cmplx(eps - mu, 0.0_dp, kind=dp)
+    H(4,4) = cmplx(-(eps - mu), 0.0_dp, kind=dp)
+    H(3,4) = cmplx(delta_0, 0.0_dp, kind=dp)
+    H(4,3) = cmplx(delta_0, 0.0_dp, kind=dp)
+  end function kitaev_bdg_fixture_2band
+
+  ! ==============================================================================
+  ! Polar-decomposition sign (Lutchyn-Oreg majority-rule algorithm per ADR 0008
+  ! section 1). For Hermitian H_bdg(k), sign(H) = sum_j sign(eigval_j) |v_j><v_j|
+  ! where {eigval_j, v_j} are eigendecomposition pairs (zheev). The odd-parity
+  ! Nambu subspace is rows/cols 1..n_sp/2, so U_odd is the restricted sign(H).
+  ! det(U_odd) is purely real (since sign(H) is involutory and Hermitian) and
+  ! its sign maps onto the BdG Z2 invariant.
+  !
+  ! info = 0: success; U_odd is n_odd x n_odd.
+  ! info = 1: H_bdg shape wrong or not Hermitian.
+  ! info = 2: LAPACK zheev failed.
+  ! ==============================================================================
+  subroutine polar_decomposition_sign(H_bdg, U_odd, info)
+    use linalg, only: zheev
+    complex(kind=dp), intent(in) :: H_bdg(:,:)
+    complex(kind=dp), allocatable, intent(out) :: U_odd(:,:)
+    integer, intent(out) :: info
+    integer :: n_full, n_sp, n_odd, lwork, lrwork, info_lapack, i, j, k
+    complex(kind=dp), allocatable :: work(:)
+    real(kind=dp), allocatable :: rwork(:)
+    complex(kind=dp), allocatable :: eigenvectors(:,:)
+    real(kind=dp), allocatable :: eigvals(:)
+
+    info = 0
+    n_full = size(H_bdg, 1)
+    if (n_full /= size(H_bdg, 2)) then; info = 1; return; end if
+    if (mod(n_full, 2) /= 0) then; info = 1; return; end if
+    n_sp = n_full / 2
+    n_odd = n_sp / 2
+    if (n_odd < 1) then; info = 1; return; end if
+
+    ! Hermiticity check (strict).
+    do i = 1, n_full
+      do j = i + 1, n_full
+        if (abs(H_bdg(i,j) - conjg(H_bdg(j,i))) > 1.0e-12_dp) then
+          info = 1
+          return
+        end if
+      end do
+    end do
+
+    ! Eigendecomposition via zheev.
+    allocate(eigvals(n_full), eigenvectors(n_full, n_full))
+    eigenvectors = H_bdg
+    lwork = max(1, 2*n_full - 1)
+    lrwork = max(1, 3*n_full - 2)
+    allocate(work(max(lwork, n_full*n_full)), rwork(lrwork))
+    call zheev('V', 'U', n_full, eigenvectors, n_full, eigvals, work, size(work), &
+               rwork, info_lapack)
+    if (info_lapack /= 0) then
+      info = 2
+      deallocate(work, rwork, eigvals, eigenvectors)
+      return
+    end if
+
+    ! sign(H) restricted to odd-parity block.
+    allocate(U_odd(n_odd, n_odd))
+    U_odd = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, n_odd
+      do j = 1, n_odd
+        do k = 1, n_full
+          U_odd(i,j) = U_odd(i,j) + sign(1.0_dp, eigvals(k)) * &
+                       eigenvectors(i, k) * conjg(eigenvectors(j, k))
+        end do
+      end do
+    end do
+
+    deallocate(work, rwork, eigvals, eigenvectors)
+  end subroutine polar_decomposition_sign
 
 end module pfaffian
