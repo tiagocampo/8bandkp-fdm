@@ -1,10 +1,18 @@
 # BdG/Majorana P1 stabilization — design spec
 
-**Status**: APPROVED-FOR-WRITING (brainstorming complete, awaiting user review)
+**Status**: IMPLEMENTED (27 commits on `feat/bdg-p1-stabilization`)
 **Date**: 2026-07-01
-**Branch**: `feat/bdg-p1-stabilization` (to be cut from `feat/bdg-validation-pass2`)
+**Branch**: `feat/bdg-p1-stabilization` (cut from `feat/bdg-validation-pass2`)
 **Source PR**: #41 (BdG/Majorana ground-up validation pass, 26 commits, +11k/-22.7k)
 **Source review**: 6-dimension adversarial review (physics, test-quality, architecture, build-hygiene, doc-drift, edge-cases), 18 P1 / 35 P2 / 19 P3 findings
+
+**Implementation summary** (2026-07-02):
+- 27 commits ahead of `feat/bdg-validation-pass2`
+- All 49 unit tests + 9 BdG regression tests + acceptance gate PASS (1.75 T ≤ 2.0 T tolerance)
+- Verification: `bash tests/integration/test_lecture_13_acceptance_gate.sh`
+- ADR 0008 §3 "double-count Peierls" claim was INVESTIGATED and disproved — symmetric `add_peierls_coo(-B)` is REQUIRED for class-D PHS, restored with documentation. Dense-QW block (2,1) had a structural row/col swap bug beyond the sign bug.
+
+See plan at `docs/superpowers/plans/2026-07-01-bdg-p1-fix.md` and ADR at `docs/adr/0008-bdg-p1-invariants.md`.
 
 ## 1. Locked decisions (from brainstorming)
 
