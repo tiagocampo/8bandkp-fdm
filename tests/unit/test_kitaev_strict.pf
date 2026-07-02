@@ -1,4 +1,5 @@
 module test_kitaev_strict
+  ! COVERAGE: observable=Majorana_number_strict geometry=chain material=spinless_p-wave tier=unit
   use funit
   use definitions, only: dp
   use pfaffian, only: kitaev_majorana_number, kitaev_bdg_fixture_2band

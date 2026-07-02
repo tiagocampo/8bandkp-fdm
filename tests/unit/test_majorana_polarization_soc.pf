@@ -1,4 +1,5 @@
 module test_majorana_polarization_soc
+  ! COVERAGE: observable=majorana_polarization_complex geometry=wire material=InAsW tier=unit
   ! Task 1.12 (P1 BdG stabilization, ADR 0008 §3): pins the complex-coherence
   ! branch of majorana_polarization against SOC-active BdG inputs where the
   ! per-site u·v* product is purely imaginary (Rashba/Dresselhaus spinor phase

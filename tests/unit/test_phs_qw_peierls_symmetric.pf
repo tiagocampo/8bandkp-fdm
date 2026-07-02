@@ -1,4 +1,5 @@
 module test_phs_qw_peierls_symmetric
+  ! COVERAGE: observable=PHS_dense_QW geometry=QW material=InAsW tier=unit
   ! ==============================================================================
   ! Task 1.9 (P1 BdG stabilization, ADR 0008 §2): class-D PHS oracle pinning
   ! the dense-QW builder's behavior at generic k_par with Bx != 0.
