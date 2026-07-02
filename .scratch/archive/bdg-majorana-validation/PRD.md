@@ -1,3 +1,9 @@
+**Status**: COMPLETE (2026-06-28)
+
+---
+
+<!-- Original PRD body below -->
+
 # BdG/Majorana ground-up validation and observable coverage (Phase 21)
 
 **Branch**: `feat/bdg-validation-pass2`
