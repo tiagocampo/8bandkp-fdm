@@ -1146,6 +1146,8 @@ contains
   ! Moved from spectral_bdg_wire.f90 and eigensolver.f90 in Task 3.2.
   ! ==================================================================
   subroutine csr_to_dense_work(H_csr, A, N)
+    ! CSR -> dense extraction (utility; lives with CSR helpers per DRY).
+    ! Moved from spectral_bdg_wire.f90 and eigensolver.f90 in Task 3.2.
     type(csr_matrix), intent(in) :: H_csr
     integer, intent(in) :: N
     complex(kind=dp), intent(out) :: A(N, N)
