@@ -211,7 +211,6 @@ def section_wire_rung(exe):
     # over a B-grid, parse output, emit B_crit = argmin |Pf(kz, B)|.
     pf_output = REPO / "output" / "wire_slim_pfaffian_witness.dat"
     if pf_output.exists():
-        import re
         pf_mags = {}
         for m in re.finditer(r"B=([\d.+-]+)\s+\|Pf\|=([\d.e+-]+)", pf_output.read_text()):
             pf_mags[float(m.group(1))] = float(m.group(2))
