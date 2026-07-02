@@ -234,22 +234,8 @@ contains
   end subroutine extract_block_csr
 
   ! ==================================================================
-  ! Local helper: convert CSR to dense (mirrors eigensolver.f90's
-  ! csr_to_dense_work but kept private to this module).
+  ! Local helper: REMOVED — csr_to_dense_work now lives in
+  ! sparse_matrices (Task 3.2, ADR 0008 DRY).
   ! ==================================================================
-  subroutine csr_to_dense_work(H_csr, A, N)
-    type(csr_matrix), intent(in)  :: H_csr
-    integer, intent(in) :: N
-    complex(kind=dp), intent(out) :: A(N, N)
-
-    integer :: row, k
-
-    A = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    do row = 1, N
-      do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
-        A(row, H_csr%colind(k)) = H_csr%values(k)
-      end do
-    end do
-  end subroutine csr_to_dense_work
 
 end module spectral_bdg_wire

@@ -19,7 +19,7 @@ module green_functions
   use hamiltonian_wire, only: ZB8bandGeneralized
   use eigensolver, only: eigensolver_base, eigensolver_config, eigensolver_result, &
     & eigensolver_result_free, make_eigensolver, auto_compute_energy_window, &
-    & asw_evals, &
+    & apply_solver_window, &
     & EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use wire_setup_mod, only: wire_setup, wire_setup_init, wire_setup_free
 
@@ -288,7 +288,7 @@ contains
       ! applies uniformly. The legacy auto_compute_energy_window
       ! fallback is retained only as the narrow-case degenerate-window
       ! backstop (eigen_cfg%emin >= emax).
-      call asw_evals(E_arr, cfg_local%solver%emin, cfg_local%solver%emax, &
+      call apply_solver_window(E_arr, cfg_local%solver%emin, cfg_local%solver%emax, &
         & eigen_cfg%emin, eigen_cfg%emax)
       if (eigen_cfg%emin >= eigen_cfg%emax) then
         call auto_compute_energy_window(H_csr, emin_auto, emax_auto)

@@ -25,6 +25,7 @@ module sparse_matrices
   public :: csr_find_diag_positions
   public :: csr_spmv
   public :: csr_conjugate_transpose, csr_conjugate_transpose_to_preallocated
+  public :: csr_to_dense_work
 
   ! ------------------------------------------------------------------
   ! Compressed Sparse Row (CSR) matrix type for complex-valued
@@ -1139,5 +1140,23 @@ contains
       end do
     end do
   end subroutine csr_conjugate_transpose_to_preallocated
+
+  ! ==================================================================
+  ! CSR -> dense extraction (utility; lives with CSR helpers per DRY).
+  ! Moved from spectral_bdg_wire.f90 and eigensolver.f90 in Task 3.2.
+  ! ==================================================================
+  subroutine csr_to_dense_work(H_csr, A, N)
+    type(csr_matrix), intent(in) :: H_csr
+    integer, intent(in) :: N
+    complex(kind=dp), intent(out) :: A(N, N)
+    integer :: row, k
+
+    A = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do row = 1, N
+      do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
+        A(row, H_csr%colind(k)) = H_csr%values(k)
+      end do
+    end do
+  end subroutine csr_to_dense_work
 
 end module sparse_matrices
