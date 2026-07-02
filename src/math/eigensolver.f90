@@ -1,7 +1,7 @@
 module eigensolver
 
   use definitions, only: dp
-  use sparse_matrices, only: csr_matrix, csr_free, csr_build_from_coo
+  use sparse_matrices, only: csr_matrix, csr_free, csr_build_from_coo, csr_to_dense_work
   use linalg, only: zheevx, zheev
 #ifdef USE_MKL_FEAST
   use linalg, only: feastinit, zfeast_hcsrev
@@ -14,7 +14,6 @@ module eigensolver
   public :: solve_feast
   public :: auto_compute_energy_window, eigensolver_result_free
   public :: apply_solver_window
-  public :: asw_evals, asw_single, asw_envelope
   public :: eigensolver_base, dense_lapack_solver_t
 #ifdef USE_MKL_FEAST
   public :: feast_solver_t
@@ -650,24 +649,6 @@ contains
     fw%initialized = .false.
     fw%last_successful_m0 = 0
   end subroutine feast_workspace_free
-
-  ! ==================================================================
-  ! Internal: convert CSR to dense.
-  ! ==================================================================
-  subroutine csr_to_dense_work(H_csr, A, N)
-    type(csr_matrix), intent(in)  :: H_csr
-    integer, intent(in) :: N
-    complex(kind=dp), intent(out) :: A(N, N)
-
-    integer :: row, k
-
-    A = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    do row = 1, N
-      do k = H_csr%rowptr(row), H_csr%rowptr(row + 1) - 1
-        A(row, H_csr%colind(k)) = H_csr%values(k)
-      end do
-    end do
-  end subroutine csr_to_dense_work
 
 
   ! ------------------------------------------------------------------
