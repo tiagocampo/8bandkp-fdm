@@ -52,6 +52,8 @@ module bdg_hamiltonian
 
   public :: build_bdg_hamiltonian_1d
   public :: build_bdg_hamiltonian_qw
+  public :: pairing_sign
+  public :: pairing_partner
 
   ! s-wave pairing partner band indices (iσ_y ⊗ I_4 in zinc-blende basis).
   ! Basis: HH↑(1), LH↑(2), LH↓(3), HH↓(4), SO↑(5), SO↓(6), CB↑(7), CB↓(8).

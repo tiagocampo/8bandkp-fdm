@@ -8,6 +8,7 @@ module topological_analysis
   use eigensolver, only: eigensolver_base, eigensolver_config, eigensolver_result, &
     & eigensolver_result_free, make_eigensolver, EIGEN_MODE_FULL
   use pfaffian, only: complex_pfaffian
+  use bdg_hamiltonian, only: pairing_sign, pairing_partner
   implicit none
   private
 
@@ -875,13 +876,9 @@ contains
     complex(kind=dp) :: u_vc
     complex(kind=dp) :: coherence
     real(kind=dp) :: half_left, half_right
-    ! Local copy of pairing_sign(8): +1 for spin-up bands {1,2,5,7};
-    ! -1 for spin-down bands {3,4,6,8}. KTD7 per ADR 0007.
-    real(kind=dp) :: s_sigma(8)
+    ! Use bdg_hamiltonian::pairing_sign (PUBLIC per ADR 0008 §2). No local copy.
     integer :: spin_up_bands(4)
 
-    s_sigma = [1.0_dp, 1.0_dp, -1.0_dp, -1.0_dp, &
-               1.0_dp, -1.0_dp, 1.0_dp, -1.0_dp]
     spin_up_bands = [1, 2, 5, 7]  ! HH↑, LH↑, SO↑, CB↑
 
     half_n = 8 * n_sites
@@ -930,7 +927,7 @@ contains
         u_vc = evec_bdg((ib - 1) * n_sites + i) * &
                conjg(evec_bdg(half_n + (ib - 1) * n_sites + i))
         ! Per-band spin-sector sign (KTD7 derivation, see header above).
-        sign_s = s_sigma(ib)
+        sign_s = pairing_sign(ib)
         if (any(spin_up_bands(1:4) == ib)) then
           nspin_up = nspin_up + 1
         end if
