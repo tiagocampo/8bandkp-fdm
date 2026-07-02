@@ -35,12 +35,7 @@ gate (`tests/integration/test_lecture_13_acceptance_gate.sh`) will fail.
 
 ![BdG/Majorana Reconciliation Table](../output/lecture_13_reconciliation_table.png)
 
-| Rung | B_crit (T) | Method | Witness |
-|------|-----------|--------|---------|
-| Wire (1D curve) | 2.800 | minigap closing | AE3 / Issue 07 |
-| Wire (2D colormap) | 3.750 | minigap colormap | Issue 07 / U10 |
-| Wire (slim Pfaffian) | 2.800 | projected Pfaffian | Issue 07 / U10 |
-| Dense QW | 2.000 | Pfaffian flip at TRIM | Issue 05 / U7 |
+See the embedded image above for the four B_crit values. The markdown intentionally contains no hand-edited numbers.
 
 Run `python3 scripts/lecture_13_topological.py` to regenerate the
 table; the B_crit values will be re-extracted from the four
