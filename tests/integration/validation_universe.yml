@@ -39,6 +39,9 @@ metadata:
     - potential_profile
     - exciton_Eb
     - minigap
+    - bdg_ldos_topological
+    - bdg_spectral_function_topological
+    - bdg_nambu_ldos_topological
   geometries:
     - bulk
     - QW
@@ -508,3 +511,21 @@ cells:
     material: InAsW
     tier: required
     reference: Kitaev_2001 / Issue_01_Pfaffian
+
+  - observable: bdg_ldos_topological
+    geometry: wire
+    material: InAs
+    tier: required
+    test: verify_bdg_spectral_topological.py
+
+  - observable: bdg_spectral_function_topological
+    geometry: wire
+    material: InAs
+    tier: required
+    test: verify_bdg_spectral_topological.py
+
+  - observable: bdg_nambu_ldos_topological
+    geometry: wire
+    material: InAs
+    tier: required
+    test: verify_bdg_spectral_topological.py
