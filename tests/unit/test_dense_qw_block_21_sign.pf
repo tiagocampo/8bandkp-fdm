@@ -1,0 +1,66 @@
+module test_dense_qw_block_21_sign
+  use funit
+  use definitions
+  use parameters
+  use bdg_hamiltonian, only: build_bdg_hamiltonian_qw
+  implicit none
+
+contains
+
+  @test
+  subroutine test_dense_qw_bdg_hermitian_at_zero_mu()
+    ! BdG Hamiltonian must be Hermitian: H(i,j) = conjg(H(j,i)).
+    ! Block (2,1) sign bug at bdg_hamiltonian.f90:547 broke this.
+    ! The bug: pairing_sign(pairing_partner(ib)) instead of pairing_sign(ib)
+    ! in the dense-QW block (2,1) breaks H(2,1) = conjg(H(1,2)) for delta_0 != 0.
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: H_bdg(:,:)
+    integer :: i, j, n
+    real(kind=dp) :: max_err
+
+    call setup_minimal_qw_config(cfg)
+    call init_grid_from_config(cfg)
+    allocate(profile(cfg%fd_step, 3))
+    profile(:, 1) = 0.0_dp
+    profile(:, 2) = 0.0_dp
+    profile(:, 3) = 1.0_dp
+    allocate(kpterms(cfg%fd_step, cfg%fd_step, 10))
+    kpterms = 0.0_dp
+
+    call build_bdg_hamiltonian_qw(H_bdg, cfg, profile, kpterms, &
+                                  k_par=0.0_dp, mu=0.0_dp, delta_0=0.5e-3_dp)
+
+    n = size(H_bdg, 1)
+    max_err = 0.0_dp
+    do i = 1, n
+      do j = i + 1, n
+        max_err = max(max_err, abs(H_bdg(i, j) - conjg(H_bdg(j, i))))
+      end do
+    end do
+    @assertLessThan(max_err, 1.0e-12_dp)
+
+    deallocate(H_bdg)
+    deallocate(profile)
+    deallocate(kpterms)
+  end subroutine test_dense_qw_bdg_hermitian_at_zero_mu
+
+  subroutine setup_minimal_qw_config(cfg)
+    type(simulation_config), intent(out) :: cfg
+    cfg%confinement = 'qw'
+    cfg%FDorder = 2
+    cfg%fd_step = 8
+    cfg%num_layers = 1
+    cfg%totalSize = 50.0_dp
+    cfg%delta = 10.0_dp
+    cfg%dz = 10.0_dp
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum = 8
+    cfg%bdg%enabled = .true.
+    cfg%bdg%delta_0 = 0.5e-3_dp
+    cfg%bdg%mu = 0.0_dp
+    cfg%bdg%g_factor = 6.0_dp
+    cfg%bdg%B_vec = [1.0_dp, 0.0_dp, 0.0_dp]
+  end subroutine setup_minimal_qw_config
+end module test_dense_qw_block_21_sign

@@ -203,6 +203,18 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    # Task 1.9 (P1 BdG stabilization, ADR 0008 §2): class-D PHS oracle for
+    # the dense-QW builder at generic k_par with Bx != 0. Pins that the
+    # QW path (which has NO Peierls phase) satisfies C H(k) C^{-1} = -H(-k)
+    # for diagonal Zeeman perturbations; serves as the QW witness of the
+    # same canonical hole-block convention (ADR 0007) the wire builder
+    # already pins via test_bdg_phs.pf.
+    add_pfunit_ctest(test_phs_qw_peierls_symmetric
+        TEST_SOURCES unit/test_phs_qw_peierls_symmetric.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_phase_diagram
         TEST_SOURCES unit/test_phase_diagram.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
@@ -292,6 +304,17 @@ if(PFUNIT_FOUND)
     # derived from KTD7 Nambu ordering per ADR 0007.
     add_pfunit_ctest(test_majorana_polarization
         TEST_SOURCES unit/test_majorana_polarization.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Task 1.12 (P1 BdG stabilization, ADR 0008 §3): pins the
+    # complex-coherence branch of majorana_polarization against SOC-active
+    # BdG inputs where the per-site u·v* product is purely imaginary
+    # (Rashba/Dresselhaus spinor phase that the real-valued tests in
+    # test_majorana_polarization.pf cannot exercise).
+    add_pfunit_ctest(test_majorana_polarization_soc
+        TEST_SOURCES unit/test_majorana_polarization_soc.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
