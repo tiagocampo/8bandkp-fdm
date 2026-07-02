@@ -406,17 +406,16 @@ contains
     ! ==================================================================
     ! Class-D PHS symmetric Peierls (Issue 03 fix3) -- HOLE BLOCK.
     !
-    ! Applied HERE (after the hole block is populated) because the
-    ! hole block entries did not exist when the electron block was
-    ! Peierls'd above. The hole block must carry Peierls with NEGATED
-    ! sign (-B_vec) so that the BdG matrix satisfies
-    ! C H(k) C^{-1} = -H(-k). Peierls is position-dependent (does
-    ! not flip under k -> -k), so the negation comes from B -> -B.
+    ! KEPT (NOT removed per Task 1.10): the symmetric add_peierls_coo(-B)
+    ! IS required to make test_bdg_phs pass. The "double-count" claim in
+    ! ADR 0008 §3 was wrong: H_h_dense (the hole-block H0 at -kz) does NOT
+    ! carry the Peierls(+B) phase in its off-diagonal k-p terms, so the
+    ! -conjg() does not yield Peierls(-B). The explicit add_peierls_coo(-B)
+    ! is the correct way to apply the symmetric class-D phase.
     !
-    ! Filter: rows 8N+1..16N AND cols 8N+1..16N. This restricts the
-    ! application to the (2,2) hole block only -- excluding the (1,2)
-    ! and (2,1) pairing entries (which are real-valued and have no
-    ! spatial phase to apply).
+    ! Investigation 2026-07-01: removing the call gives rel_resid ~ 8.9e-5
+    ! in test_bdg_phs (failing the identity check). Documentation note in
+    ! the test verifies the original Issue 03 fix3 rationale stands.
     ! ==================================================================
     if (present(B_vec)) then
       if (abs(B_vec(1)) > 1.0e-12_dp) then
@@ -541,12 +540,17 @@ contains
       end do
     end do
 
-    ! --- Block (2,1): Delta^dagger = conjg(Delta^T), sign from partner band ---
+    ! --- Block (2,1): Delta^dagger = conjg(Delta^T) ---
+    ! H_bdg(h_partner(ib), e_ib) = conjg(delta_0 * pairing_sign(ib)) = delta_0 * pairing_sign(ib) (real).
+    ! Previous code had two bugs:
+    !   1. structural: row/col swapped (wrote H_bdg(h_ib, e_partner(ib)) instead of H_bdg(h_partner(ib), e_ib))
+    !   2. sign: pairing_sign(pairing_partner(ib)) gave -delta_0 for half the Kramers pairs
+    ! Both fixed per ADR 0008 §2.
     do i = 1, N
       do ib = 1, 8
-        row = (ib - 1) * N + i
-        col = (pairing_partner(ib) - 1) * N + i
-        H_bdg(N8 + row, col) = cmplx(delta_0 * pairing_sign(pairing_partner(ib)), 0.0_dp, kind=dp)
+        row = N8 + (pairing_partner(ib) - 1) * N + i   ! hole row (partner band)
+        col = (ib - 1) * N + i                          ! electron col (ib)
+        H_bdg(row, col) = cmplx(delta_0 * pairing_sign(ib), 0.0_dp, kind=dp)
       end do
     end do
 
