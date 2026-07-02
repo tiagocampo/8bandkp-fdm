@@ -185,6 +185,15 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    # Task 1.5 (P1 BdG stabilization, ADR 0008 §2): cross-module pinning
+    # of pairing_sign/pairing_partner as PUBLIC exports from bdg_hamiltonian.
+    # RED until Task 1.6 adds them to the public list.
+    add_pfunit_ctest(test_pairing_sign_cross_module
+        TEST_SOURCES unit/test_pairing_sign_cross_module.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_phase_diagram
         TEST_SOURCES unit/test_phase_diagram.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support

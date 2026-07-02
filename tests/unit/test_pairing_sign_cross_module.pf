@@ -1,0 +1,26 @@
+module test_pairing_sign_cross_module
+  use funit
+  use definitions, only: dp
+  use bdg_hamiltonian, only: pairing_sign, pairing_partner
+  implicit none
+
+contains
+
+  @test
+  subroutine test_pairing_sign_publicly_exported()
+    real(kind=dp), parameter :: expected_sign(8) = &
+      [+1.0_dp, +1.0_dp, -1.0_dp, -1.0_dp, +1.0_dp, -1.0_dp, +1.0_dp, -1.0_dp]
+    integer, parameter :: expected_partner(8) = [4, 3, 2, 1, 6, 5, 8, 7]
+    @assertEqual(expected_sign, pairing_sign, tolerance=1.0e-15_dp)
+    @assertEqual(expected_partner, pairing_partner)
+  end subroutine
+
+  @test
+  subroutine test_pairing_partner_involution()
+    ! pairing_partner is an involution: pairing_partner(pairing_partner(i)) == i.
+    integer :: i
+    do i = 1, 8
+      @assertEqual(i, pairing_partner(pairing_partner(i)))
+    end do
+  end subroutine
+end module
