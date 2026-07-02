@@ -168,32 +168,63 @@ def section_wire_rung(exe):
     if gaps:
         bcrit_curve = min(gaps, key=lambda b: gaps[b])
 
-    # 2D colormap: parse the golden reference (deterministic B-sweep grid)
-    golden = REPO / "tests/regression/data/wire_inas_gaas_bdg_topological_2d_phase.dat"
+    # Per ADR 0008 §4 + spec §5.3: read live Fortran output if available,
+    # fall back to golden with WARN if not (live output is produced by the
+    # just-completed Fortran run of topologicalAnalysis).
+    import re
+    live_output = REPO / "output" / "z2_phase_diagram.dat"
     bcrit_2d = None
-    if golden.exists():
-        rows = []
-        for line in golden.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
+    if live_output.exists():
+        data_source = live_output.read_text()
+        # Compute B_crit = argmin(min_gap) over the colormap.
+        gap_at_B = {}
+        for line in data_source.split("\n"):
             parts = line.split()
             if len(parts) >= 4:
-                rows.append((float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])))
-        # B_crit = B at minigap-minimum averaged across the two mu values
-        if rows:
-            by_B = {}
-            for B, mu, z2, gap in rows:
-                by_B.setdefault(B, []).append(gap)
-            avg = {B: sum(g) / len(g) for B, g in by_B.items()}
-            bcrit_2d = min(avg, key=lambda B: avg[B])
+                try:
+                    B = float(parts[0]); gap = float(parts[3])
+                    if B not in gap_at_B or gap < gap_at_B[B]:
+                        gap_at_B[B] = gap
+                except ValueError:
+                    continue
+        bcrit_2d = min(gap_at_B, key=gap_at_B.get) if gap_at_B else None
+    else:
+        # Fall back to golden with WARN.
+        golden = REPO / "tests/regression/data/wire_inas_gaas_bdg_topological_2d_phase.dat"
+        print(f"WARN: live {live_output} not found; falling back to {golden}")
+        if golden.exists():
+            rows = []
+            for line in golden.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 4:
+                    rows.append((float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])))
+            if rows:
+                by_B = {}
+                for B, mu, z2, gap in rows:
+                    by_B.setdefault(B, []).append(gap)
+                avg = {B: sum(g) / len(g) for B, g in by_B.items()}
+                bcrit_2d = min(avg, key=lambda B: avg[B])
 
-    # Slim Pfaffian witness: exercised at one (B_crit, mu=0.6601) point. The
-    # pFUnit witness test (test_wire_pfaffian_witness.pf) is the
-    # executable-level gate; the witness on the topological regime reports
-    # s1_sign = s2_sign = -1 per the synthetic matrix. For the table we
-    # attribute B_crit to bcrit_curve (Pfaffian-driven, per Issue 07).
-    bcrit_pfaffian = bcrit_curve  # the slim witness is evaluated at B_crit itself
+    # Per ADR 0008 §4 + spec §5.3: invoke topologicalAnalysis with slimp faffian mode
+    # over a B-grid, parse output, emit B_crit = argmin |Pf(kz, B)|.
+    pf_output = REPO / "output" / "wire_slim_pfaffian_witness.dat"
+    if pf_output.exists():
+        import re
+        pf_mags = {}
+        for m in re.finditer(r"B=([\d.+-]+)\s+\|Pf\|=([\d.e+-]+)", pf_output.read_text()):
+            pf_mags[float(m.group(1))] = float(m.group(2))
+        if pf_mags:
+            bcrit_pfaffian = min(pf_mags, key=lambda B: pf_mags[B])
+        else:
+            bcrit_pfaffian = bcrit_curve
+    else:
+        # Fall back: just use bcrit_curve if slimp faffian mode unavailable.
+        # This fallback will be removed once slimp faffian grid support lands (TODO U13).
+        bcrit_pfaffian = bcrit_curve
+        print(f"WARN: {pf_output} not found; bcrit_pfaffian aliased to bcrit_curve (U13 deferred)")
 
     if bcrit_curve is not None:
         print(f"  BCRIT wire_curve    {bcrit_curve:.3f}")
