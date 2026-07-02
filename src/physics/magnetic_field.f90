@@ -181,7 +181,10 @@ contains
         ! Using SI units: e in C, B in T, y and dz in m, hbar in J*s
         phase = e * Bx * (y_i - y_j) * dy_m / hbar_J
 
-        ! Phase factor: exp(-i * phase)
+        ! Phase factor: exp(-i * phase) [verified 2026-07-01 per ADR 0008 §3].
+        ! For class-D PHS, -conjg(H0(-k)) applies this Peierls to the hole block
+        ! with sign-flipped phase (exp(+i*phase)). Any subsequent add_peierls_coo
+        ! call on the hole block would double-count the phase — see Task 1.10.
         exp_phase = cmplx(cos(phase), -sin(phase), kind=dp)
 
         ! Multiply the off-diagonal entry by the full complex phase factor
