@@ -973,7 +973,7 @@ contains
     if (params%N < 1 .or. params%dz <= 0.0_dp) then
       print *, 'ERROR: build_bhz_wire_hamiltonian: invalid parameters'
       print *, '  N=', params%N, ' dz=', params%dz
-      stop 1
+      error stop 'build_bhz_wire_hamiltonian: invalid parameters (N<1 or dz<=0)'
     end if
 
     N = params%N
@@ -1141,7 +1141,7 @@ contains
     if (nB < 1 .or. nMu < 1 .or. nB > 1000 .or. nMu > 1000) then
       print *, 'ERROR: compute_phase_diagram: nB, nMu must be in [1, 1000]'
       print *, '  nB=', nB, ' nMu=', nMu
-      stop 1
+      error stop 'compute_phase_diagram: nB and nMu must be in [1, 1000]'
     end if
 
     dB = (B_max - B_min) / real(max(1, nB - 1), kind=dp)
@@ -1505,12 +1505,12 @@ contains
         case default
           print *, 'ERROR: compute_z2_gap_sweep supports sweep_model=bhz_analytic only'
           print *, '       Use topologicalAnalysis sweep mode for QW Fu-Kane or wire BdG sweeps.'
-          stop 1
+          error stop 'compute_z2_gap_sweep: unsupported sweep_model (expected bhz_analytic)'
         end select
         if (status_eval /= topo_status_ok) then
           print *, 'ERROR: topology gap sweep evaluator failed for model ', &
             trim(cfg%topo%sweep_model)
-          stop 1
+          error stop 'compute_z2_gap_sweep: evaluator failed'
         end if
       end do
     end do

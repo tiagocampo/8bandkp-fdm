@@ -15,7 +15,7 @@ or input/output (`src/io/`).
 | `eigensolver.f90` | `eigensolver` | — | Polymorphic eigensolver dispatch (LAPACK / FEAST) — `make_eigensolver(config)` factory |
 | `sparse_matrices.f90` | `sparse_matrices` | — | CSR/COO sparse matrix types + SpMV/SpBLAS helpers |
 | `geometry.f90` | `geometry` | — | Spatial grid types (`spatial_grid`) + `npoints()` accessor; band-major index mapping |
-| `pfaffian.f90` | `pfaffian` | 525 | Real/complex skew-symmetric Pfaffian (Laplace for n<=12, Parlett-Reid tridiagonalization for n>12) + `kitaev_majorana_number` wrapper (Issue 01) |
+| `pfaffian.f90` | `pfaffian` | ~570 | Real/complex skew-symmetric Pfaffian (Laplace for n<=12, Parlett-Reid tridiagonalization for n>12) + `kitaev_majorana_number` wrapper using Lutchyn-Oreg sign-of-det (ADR 0008 §1) + `kitaev_bdg_fixture_2band` (strict AE1 test fixture) |
 
 ## Dependency DAG
 
