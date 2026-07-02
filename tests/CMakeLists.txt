@@ -194,6 +194,15 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    # Task 1.7 (P1 BdG stabilization, ADR 0008 §2): Hermiticity of dense-QW
+    # BdG output. RED until Task 1.8 swaps pairing_sign(pairing_partner(ib))
+    # for pairing_sign(ib) at bdg_hamiltonian.f90:547.
+    add_pfunit_ctest(test_dense_qw_block_21_sign
+        TEST_SOURCES unit/test_dense_qw_block_21_sign.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_phase_diagram
         TEST_SOURCES unit/test_phase_diagram.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
@@ -267,6 +276,12 @@ if(PFUNIT_FOUND)
     # Issue 01: Kitaev-chain Majorana number harness
     add_pfunit_ctest(test_kitaev_majorana
         TEST_SOURCES unit/test_kitaev_majorana.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_kitaev_strict
+        TEST_SOURCES unit/test_kitaev_strict.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
@@ -1353,6 +1368,19 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 set_tests_properties(coverage_matrix PROPERTIES LABELS "coverage" TIMEOUT 120)
+
+# --- Illustrative Plot Generators (Issue 11 / Plot 7) ---
+# Synthetic-data plot companions for lecture material. These are
+# illustrative-only (tier=illustrative in COVERAGE annotations) and do
+# NOT wire to a Fortran executable — the canonical physics is exercised
+# on real BdG eigenvectors by test_majorana_polarization.pf. The plot
+# tests run the Python script and confirm it exits 0 (file written).
+add_test(
+    NAME plot_majorana_polarization_synthetic
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/plot_majorana_polarization_synthetic.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(plot_majorana_polarization_synthetic PROPERTIES LABELS "plot" TIMEOUT 60)
 
 # --- Convergence Tests (Richardson Extrapolation on Physics Observables) ---
 # On-demand only: ctest -L convergence
