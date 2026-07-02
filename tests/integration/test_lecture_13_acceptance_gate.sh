@@ -98,12 +98,21 @@ else
     exit 1
 fi
 
+# Per ADR 0008 §4: absolute window guard catches uniform regression.
+# Uniform regression to all 0.5 T or all 5.0 T would still pass range check
+# (range=0) but is unphysical. Wire B_crit is documented as ~2.8 T.
+if (( $(awk "BEGIN {print ($BCRIT_MIN < 0.5)}") )) || (( $(awk "BEGIN {print ($BCRIT_MAX > 6.0)}") )); then
+    echo "FAIL: B_crit out of absolute window [0.5, 6.0] T for InAs wire (got [$BCRIT_MIN, $BCRIT_MAX])"
+    exit 1
+fi
+
 # ---- Step 3: false-PASS line must be gone ----
 # The previous line was:
 #   | Majorana phase diagram | InAs Rashba wire | PASS | Auto energy-window fallback via Gershgorin bounds; B_crit~1.22 T |
-if grep -F -q 'Auto energy-window fallback via Gershgorin bounds; B_crit' "$DOC"; then
-    echo "FAIL: false-PASS line still present in $DOC"
-    grep -nF 'Auto energy-window fallback via Gershgorin bounds; B_crit' "$DOC" | sed 's/^/  /'
+# Per ADR 0008 §4: regex anchor catches any reference to legacy false-PASS values.
+if grep -E -q '(Auto energy-window fallback via Gershgorin|<1\.5\s*T)' "$DOC"; then
+    echo "FAIL: lecture 13 contains legacy B_crit value < 1.5 T or Gershgorin fallback reference"
+    grep -nE '(Auto energy-window fallback via Gershgorin|<1\.5\s*T)' "$DOC" | sed 's/^/  /'
     exit 1
 fi
 echo "PASS: false-PASS line removed from $DOC"
