@@ -1,4 +1,5 @@
 module test_pfaffian
+  ! COVERAGE: observable=Pfaffian geometry=bulk material=generic tier=unit
   use funit
   use definitions
   use pfaffian

@@ -1,4 +1,5 @@
 module test_kitaev_majorana
+  ! COVERAGE: observable=Majorana_number geometry=chain material=spinless_p-wave tier=unit
   ! ==============================================================================
   ! Spinless p-wave Kitaev chain (synthetic test harness, test-only).
   !

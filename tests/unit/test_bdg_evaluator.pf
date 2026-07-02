@@ -1,4 +1,5 @@
 module test_bdg_evaluator
+  ! COVERAGE: observable=minigap geometry=bulk material=generic tier=unit
   use funit
   use definitions, only: dp
   use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, q_zero_tol

@@ -1,4 +1,5 @@
 module test_wire_pfaffian_witness
+  ! COVERAGE: observable=Pfaffian_witness geometry=wire material=InAs tier=unit
   ! ==============================================================================
   ! Slim projected Pfaffian witness (Issue 07 / Unit U10).
   !

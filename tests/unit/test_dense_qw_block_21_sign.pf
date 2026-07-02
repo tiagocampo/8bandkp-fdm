@@ -1,4 +1,5 @@
 module test_dense_qw_block_21_sign
+  ! COVERAGE: observable=Hermiticity geometry=QW material=InAsW tier=unit
   use funit
   use definitions
   use parameters

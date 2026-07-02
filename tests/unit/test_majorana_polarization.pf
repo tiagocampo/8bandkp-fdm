@@ -1,4 +1,5 @@
 module test_majorana_polarization
+  ! COVERAGE: observable=majorana_polarization geometry=wire material=InAsW tier=unit
   ! Issue 04 (PR-B, U6): Sticlet Majorana polarization as MZM discriminator.
   ! Co-located with compute_majorana_profile (shares band_major_row indexing).
   ! s_σ derived from KTD7 Nambu ordering per ADR 0007.

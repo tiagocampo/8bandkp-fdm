@@ -1,4 +1,5 @@
 module test_pairing_sign_cross_module
+  ! COVERAGE: observable=pairing_sign geometry=bulk material=generic tier=unit
   use funit
   use definitions, only: dp
   use bdg_hamiltonian, only: pairing_sign, pairing_partner

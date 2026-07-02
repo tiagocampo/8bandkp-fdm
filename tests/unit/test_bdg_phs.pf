@@ -1,4 +1,5 @@
 module test_bdg_phs
+  ! COVERAGE: observable=PHS geometry=wire material=InAsW tier=unit
   ! ==============================================================================
   ! Issue 02 (U5, Layer A of U4): PHS oracle for the BdG hole-block convention.
   !

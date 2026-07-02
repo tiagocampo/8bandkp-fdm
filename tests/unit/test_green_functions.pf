@@ -1,4 +1,5 @@
 module test_green_functions
+  ! COVERAGE: observable=bdg_ldos geometry=wire material=InAs tier=unit
   use funit
   use definitions
   use parameters
