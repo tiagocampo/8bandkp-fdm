@@ -15,7 +15,8 @@ program topologicalAnalysis
     & apply_solver_window, EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use topological_analysis
   use bdg_hamiltonian
-  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, q_zero_tol
+  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, &
+    & q_zero_tol, bdg_eval_params_with_delta
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
   use spectral_bdg_wire, only: compute_spectral_function_bdg_wire, compute_bdg_ldos, compute_bdg_ldos_nambu
@@ -231,34 +232,7 @@ program topologicalAnalysis
   ! ====================================================================
   ! Write topological result to output file
   ! ====================================================================
-  call ensure_output_dir()
-  call get_unit(iounit)
-  open(unit=iounit, file='output/topology_result.dat', status='replace', &
-       action='write', iostat=status)
-  if (status /= 0) then
-    print *, 'ERROR: cannot open output/topology_result.dat (iostat=', status, ')'
-    error stop 'cannot open topology_result.dat'
-  end if
-  write(iounit, '(A)') '# Topological Analysis Results'
-  write(iounit, '(A,A)') '# mode: ', trim(cfg%topo%mode)
-  write(iounit, '(A,I0)') '# Chern number: ', topo_result%chern_number
-  write(iounit, '(A,I0)') '# Z2 invariant: ', topo_result%z2_invariant
-  write(iounit, '(A,F12.6)') '# Hall conductance (e^2/h): ', topo_result%hall_conductance
-  write(iounit, '(A,F12.6)') '# Conductance xy (e^2/h): ', topo_result%conductance_xy
-  write(iounit, '(A,F12.6)') '# Conductance zz: ', topo_result%conductance_zz
-  write(iounit, '(A,I0)') '# Majorana count: ', topo_result%n_majorana
-  write(iounit, '(A,I0)') '# Majorana fit failures: ', topo_result%n_majorana_fit_failed
-  write(iounit, '(A,F12.6)') '# Min gap (eV): ', topo_result%min_gap
-  write(iounit, '(A,F12.6)') '# Edge localization length min (AA): ', topo_result%edge_xi_min
-  write(iounit, '(A,F12.6)') '# Edge localization length avg (AA): ', topo_result%edge_xi
-  if (allocated(topo_result%edge_energies)) then
-    write(iounit, '(A)') '# Edge state energies (eV):'
-    do i = 1, size(topo_result%edge_energies)
-      write(iounit, '(F12.6)') topo_result%edge_energies(i)
-    end do
-  end if
-  close(iounit)
-  print *, '  Results written to output/topology_result.dat'
+  call write_topology_result(cfg, topo_result)
 
   ! ====================================================================
   ! Clean up
@@ -552,7 +526,7 @@ contains
     block
       type(bdg_eval_params_t) :: evp
       type(bdg_eval_result_t) :: evr
-      evp = bdg_eval_params_t(cfg%bdg%delta_0, 0.001_dp)
+      evp = bdg_eval_params_with_delta(cfg%bdg%delta_0)
       evr = eval_bdg_point(eigvals_bdg, evp)
       result%min_gap = evr%minigap
     end block
@@ -572,7 +546,7 @@ contains
       real(kind=dp) :: wire_near_zero_thr
 
       ! Issue 00: per-point near-zero count via the seam.
-      wire_eval_p = bdg_eval_params_t(cfg%bdg%delta_0, 0.001_dp)
+      wire_eval_p = bdg_eval_params_with_delta(cfg%bdg%delta_0)
       block
         type(bdg_eval_result_t) :: evr
         evr = eval_bdg_point(eigvals_bdg, wire_eval_p)
@@ -610,22 +584,9 @@ contains
 
             ! Write Majorana profile to file (first Majorana mode only)
             if (n_majorana == 1) then
-              call get_unit(iounit_prof)
-              open(unit=iounit_prof, file='output/majorana_profile.dat', &
-                   status='replace', action='write', iostat=status_prof)
-              if (status_prof == 0) then
-                write(iounit_prof, '(A)') '# Majorana wavefunction spatial profile'
-                write(iounit_prof, '(A,ES16.8)') '# kz (1/A) = ', kz_val
-                write(iounit_prof, '(A,ES16.8)') '# xi (AA) = ', xi_val
-                write(iounit_prof, '(A,I0)') '# n_spatial = ', nspatial
-                write(iounit_prof, '(A)') '# Columns: index, x (AA), y (AA), rho'
-                do j = 1, nspatial
-                  write(iounit_prof, '(I6,2ES16.8,ES20.12)') j, &
-                    & cfg%grid%coords(1, j), cfg%grid%coords(2, j), profile_rho(j)
-                end do
-                close(iounit_prof)
-                print *, '  Majorana profile written to output/majorana_profile.dat'
-              end if
+              call write_majorana_profile( &
+                & reshape(cfg%grid%coords, [2 * nspatial]), profile_rho, &
+                & 'kz', kz_val, xi_val, nspatial)
             end if
             deallocate(profile_rho)
           end if
@@ -818,7 +779,7 @@ contains
     ! (was `max(1.0e-10_dp, 0.001_dp * abs(delta_0))`). q_zero_tol returns the
     ! same value but lives next to eval_bdg_point in bdg_observables, so the
     ! 0.001·δ₀ literal no longer survives in main_topology.
-    zero_tol = q_zero_tol(bdg_eval_params_t(cfg_in%bdg%delta_0, 0.001_dp))
+    zero_tol = q_zero_tol(bdg_eval_params_with_delta(cfg_in%bdg%delta_0))
     k_par_val = cfg_in%bdg%kz
 
     print *, '  Grid: N=', N_local
@@ -853,7 +814,7 @@ contains
     block
       type(bdg_eval_params_t) :: evp
       type(bdg_eval_result_t) :: evr
-      evp = bdg_eval_params_t(cfg_in%bdg%delta_0, 0.001_dp)
+      evp = bdg_eval_params_with_delta(cfg_in%bdg%delta_0)
       evr = eval_bdg_point(eigvals_bdg, evp)
       result%min_gap = evr%minigap
     end block
@@ -906,21 +867,8 @@ contains
 
           ! Write Majorana profile for first zero-energy mode
           if (n_fit_ok + n_fit_failed == 1) then
-            call get_unit(iounit_prof)
-            open(unit=iounit_prof, file='output/majorana_profile.dat', &
-                 status='replace', action='write', iostat=status_prof)
-            if (status_prof == 0) then
-              write(iounit_prof, '(A)') '# Majorana wavefunction spatial profile'
-              write(iounit_prof, '(A,ES16.8)') '# k_par (1/A) = ', k_par_val
-              write(iounit_prof, '(A,ES16.8)') '# xi (AA) = ', xi_val
-              write(iounit_prof, '(A,I0)') '# n_spatial = ', N_local
-              write(iounit_prof, '(A)') '# Columns: z (AA), rho'
-              do j = 1, N_local
-                write(iounit_prof, '(ES16.8,ES20.12)') qw_grid%z(j), profile_majorana(j)
-              end do
-              close(iounit_prof)
-              print *, '  Majorana profile written to output/majorana_profile.dat'
-            end if
+            call write_majorana_profile(qw_grid%z, profile_majorana, &
+              & 'k_par', k_par_val, xi_val, N_local)
           end if
         end if
       end do
@@ -1469,7 +1417,7 @@ contains
     block
       type(bdg_eval_params_t) :: evp
       type(bdg_eval_result_t) :: evr
-      evp = bdg_eval_params_t(cfg_in%bdg%delta_0, 0.001_dp)
+      evp = bdg_eval_params_with_delta(cfg_in%bdg%delta_0)
       evr = eval_bdg_point(eigvals_bdg, evp)
       gap = evr%minigap
     end block

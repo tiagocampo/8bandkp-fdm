@@ -27,6 +27,13 @@ module bdg_observables
   public :: bdg_eval_result_t
   public :: eval_bdg_point
   public :: q_zero_tol
+  public :: bdg_eval_params_with_delta
+
+  ! Module-level defaults (SSOT for the near-zero literals). Extracted from
+  ! inline 0.001_dp / 1.0e-10_dp at the 5 call sites in main_topology so the
+  ! magic numbers live in one place.
+  real(kind=dp), parameter, public :: bdg_default_near_zero_frac = 0.001_dp
+  real(kind=dp), parameter, public :: bdg_default_min_threshold = 1.0e-10_dp
 
   ! Parameters for a single BdG evaluation.
   type :: bdg_eval_params_t
@@ -79,6 +86,21 @@ contains
   end function eval_bdg_point
 
   ! ==============================================================================
+  ! Factory: build a bdg_eval_params_t from a single delta_0 using the module
+  ! defaults for near_zero_frac. Collapses the 5 call sites in main_topology
+  ! from `bdg_eval_params_t(cfg%bdg%delta_0, 0.001_dp)` to a one-liner.
+  !
+  ! EXACTLY equivalent to bdg_eval_params_t(delta_0, bdg_default_near_zero_frac)
+  ! — same defaults as the previous direct construction.
+  ! ==============================================================================
+  pure function bdg_eval_params_with_delta(delta_0) result(p)
+    real(kind=dp), intent(in) :: delta_0
+    type(bdg_eval_params_t) :: p
+    p%delta_0 = delta_0
+    p%near_zero_frac = bdg_default_near_zero_frac
+  end function bdg_eval_params_with_delta
+
+  ! ==============================================================================
   ! QW near-zero tolerance helper. Returns the BdG near-zero threshold with a
   ! numerical floor (1e-10 eV) so callers that need an absolute precision
   ! floor (e.g., QW Majorana profile extraction at very small delta_0) get
@@ -90,7 +112,7 @@ contains
   pure function q_zero_tol(params) result(t)
     type(bdg_eval_params_t), intent(in) :: params
     real(kind=dp) :: t
-    t = max(1.0e-10_dp, params%near_zero_frac * abs(params%delta_0))
+    t = max(bdg_default_min_threshold, params%near_zero_frac * abs(params%delta_0))
   end function q_zero_tol
 
 end module bdg_observables

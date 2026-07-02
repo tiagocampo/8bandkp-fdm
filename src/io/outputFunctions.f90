@@ -1,7 +1,7 @@
 module outputFunctions
 
   use definitions, only: dp, simulation_config, spatial_grid, &
-    wavevector, optical_transition
+    wavevector, optical_transition, topological_result
   use utils
 
   implicit NONE
@@ -10,6 +10,8 @@ module outputFunctions
   public :: writeEigenfunctions, writeEigenfunctions2d, writeParts2d, writeEigenvalues
   public :: write_bdg_eigenvalues, write_optical_transitions, write_profile_1d
   public :: write_bdg_ldos, write_bdg_ldos_nambu, write_bdg_spectral
+  public :: write_topology_result, write_majorana_profile, write_bdg_lowest_state_profile, &
+    & write_spectral_function, write_z2_phase_diagram, write_z2_transitions
 
   character(len=*), parameter :: OUTPUT_DIR = 'output'
 
@@ -524,5 +526,260 @@ module outputFunctions
       close(iounit)
 
     end subroutine write_bdg_spectral
+
+    ! ==================================================================
+    ! Task 3.3: Write topological result summary to output/topology_result.dat.
+    !
+    ! Replaces the inline block formerly at main_topology.f90:236-261.
+    ! Consolidates header + diagnostics + (optional) edge-state energies.
+    ! Error path mirrors original (ERROR print + error stop on open failure).
+    ! ==================================================================
+    subroutine write_topology_result(cfg, topo_result)
+
+      type(simulation_config), intent(in) :: cfg
+      type(topological_result), intent(in) :: topo_result
+
+      integer(kind=4) :: iounit, status
+      integer :: i
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/topology_result.dat', status='replace', &
+           action='write', iostat=status)
+      if (status /= 0) then
+        print *, 'ERROR: cannot open output/topology_result.dat (iostat=', status, ')'
+        error stop 'cannot open topology_result.dat'
+      end if
+      write(iounit, '(A)') '# Topological Analysis Results'
+      write(iounit, '(A,A)') '# mode: ', trim(cfg%topo%mode)
+      write(iounit, '(A,I0)') '# Chern number: ', topo_result%chern_number
+      write(iounit, '(A,I0)') '# Z2 invariant: ', topo_result%z2_invariant
+      write(iounit, '(A,F12.6)') '# Hall conductance (e^2/h): ', topo_result%hall_conductance
+      write(iounit, '(A,F12.6)') '# Conductance xy (e^2/h): ', topo_result%conductance_xy
+      write(iounit, '(A,F12.6)') '# Conductance zz: ', topo_result%conductance_zz
+      write(iounit, '(A,I0)') '# Majorana count: ', topo_result%n_majorana
+      write(iounit, '(A,I0)') '# Majorana fit failures: ', topo_result%n_majorana_fit_failed
+      write(iounit, '(A,F12.6)') '# Min gap (eV): ', topo_result%min_gap
+      write(iounit, '(A,F12.6)') '# Edge localization length min (AA): ', topo_result%edge_xi_min
+      write(iounit, '(A,F12.6)') '# Edge localization length avg (AA): ', topo_result%edge_xi
+      if (allocated(topo_result%edge_energies)) then
+        write(iounit, '(A)') '# Edge state energies (eV):'
+        do i = 1, size(topo_result%edge_energies)
+          write(iounit, '(F12.6)') topo_result%edge_energies(i)
+        end do
+      end if
+      close(iounit)
+      print *, '  Results written to output/topology_result.dat'
+
+    end subroutine write_topology_result
+
+    ! ==================================================================
+    ! Task 3.3: Write Majorana wavefunction spatial profile.
+    !
+    ! Replaces the inline blocks formerly at main_topology.f90:614-628 (wire,
+    ! 2D coords) and :910-923 (QW, 1D z-grid). The axis_label and coord data
+    ! are passed by the caller so the same writer serves both geometries:
+    !   - wire: coord is cfg%grid%coords (2, nspatial) -> index, x, y, rho
+    !   - QW:   coord is qw_grid%z (nspatial)          -> z, rho
+    ! axis_label distinguishes 'kz' (wire) from 'k_par' (QW) in the header.
+    ! ==================================================================
+    subroutine write_majorana_profile(coord, profile, axis_label, axis_val, xi_val, n)
+
+      real(kind=dp), intent(in), contiguous :: coord(:)
+      real(kind=dp), intent(in), contiguous :: profile(:)
+      character(len=*), intent(in) :: axis_label
+      real(kind=dp), intent(in) :: axis_val, xi_val
+      integer, intent(in) :: n
+
+      integer(kind=4) :: iounit, status
+      integer :: j
+      logical :: is_2d
+
+      is_2d = (size(coord) == 2 * n)
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/majorana_profile.dat', &
+           status='replace', action='write', iostat=status)
+      if (status /= 0) return
+
+      write(iounit, '(A)') '# Majorana wavefunction spatial profile'
+      write(iounit, '(A,ES16.8)') '# ' // axis_label // ' (1/A) = ', axis_val
+      write(iounit, '(A,ES16.8)') '# xi (AA) = ', xi_val
+      write(iounit, '(A,I0)') '# n_spatial = ', n
+      if (is_2d) then
+        write(iounit, '(A)') '# Columns: index, x (AA), y (AA), rho'
+        do j = 1, n
+          write(iounit, '(I6,2ES16.8,ES20.12)') j, coord(j), coord(n + j), profile(j)
+        end do
+      else
+        write(iounit, '(A)') '# Columns: z (AA), rho'
+        do j = 1, n
+          write(iounit, '(ES16.8,ES20.12)') coord(j), profile(j)
+        end do
+      end if
+      close(iounit)
+      print *, '  Majorana profile written to output/majorana_profile.dat'
+
+    end subroutine write_majorana_profile
+
+    ! ==================================================================
+    ! Task 3.3: Write the lowest-|E| BdG state spatial profile.
+    !
+    ! Replaces the inline block formerly at main_topology.f90:972-986.
+    ! Header records k_par, the minimum-energy BdG eigenvalue, and xi.
+    ! Format: 'z (AA), rho' (one row per spatial point on the QW z-grid).
+    ! ==================================================================
+    subroutine write_bdg_lowest_state_profile(z_grid, profile, k_par_val, energy, xi_val)
+
+      real(kind=dp), intent(in), contiguous :: z_grid(:)
+      real(kind=dp), intent(in), contiguous :: profile(:)
+      real(kind=dp), intent(in) :: k_par_val, energy, xi_val
+
+      integer(kind=4) :: iounit, status
+      integer :: j, n
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/bdg_lowest_state_profile.dat', &
+           status='replace', action='write', iostat=status)
+      if (status /= 0) return
+
+      n = size(z_grid)
+      write(iounit, '(A)') '# Lowest-|E| BdG state spatial profile'
+      write(iounit, '(A,ES16.8)') '# k_par (1/A) = ', k_par_val
+      write(iounit, '(A,ES16.8)') '# Energy (eV) = ', energy
+      write(iounit, '(A,ES16.8)') '# xi (AA) = ', xi_val
+      write(iounit, '(A)') '# Columns: z (AA), rho'
+      do j = 1, n
+        write(iounit, '(ES16.8,ES20.12)') z_grid(j), profile(j)
+      end do
+      close(iounit)
+      print *, '  Lowest-state profile written to output/bdg_lowest_state_profile.dat'
+
+    end subroutine write_bdg_lowest_state_profile
+
+    ! ==================================================================
+    ! Task 3.3: Write spectral function A(k, E) to output/spectral_function.dat.
+    !
+    ! Replaces the inline block formerly at main_topology.f90:1070-1091.
+    ! The writer reads only the data the header needs (confinement, eta, k/E
+    ! ranges) plus the A(k,E) array itself, so the call site stays compact.
+    ! Format: 'k (1/A), E (eV), A(k,E)' (one row per (ik, iE) pair).
+    ! ==================================================================
+    subroutine write_spectral_function(cfg, k_arr, E_arr, A_kE)
+
+      type(simulation_config), intent(in) :: cfg
+      real(kind=dp), intent(in), contiguous :: k_arr(:)
+      real(kind=dp), intent(in), contiguous :: E_arr(:)
+      real(kind=dp), intent(in), contiguous :: A_kE(:,:)
+
+      integer(kind=4) :: iounit, status
+      integer :: ik, iE, nk, nE
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/spectral_function.dat', status='replace', &
+           action='write', iostat=status)
+      if (status /= 0) then
+        print *, 'ERROR: cannot open output/spectral_function.dat'
+        error stop 'cannot open spectral_function.dat'
+      end if
+
+      nk = size(k_arr)
+      nE = size(E_arr)
+      write(iounit, '(A)') '# Spectral function A(k, E)'
+      write(iounit, '(A,A)') '# confinement=', trim(cfg%confinement)
+      write(iounit, '(A,I0,A,I0)') '# nk=', nk, '  nE=', nE
+      write(iounit, '(A,ES12.4)') '# eta (eV) = ', cfg%topo%spectral_eta
+      write(iounit, '(A,2ES16.8)') '# k_grid_min_max (1/A) = ', k_arr(1), k_arr(nk)
+      write(iounit, '(A,2ES16.8)') '# E_grid_min_max (eV) = ', E_arr(1), E_arr(nE)
+      write(iounit, '(A)') '# units: k in 1/A, E in eV, A in 1/eV'
+      write(iounit, '(A)') '# Columns: k (1/A), E (eV), A(k,E)'
+      do ik = 1, nk
+        do iE = 1, nE
+          write(iounit, '(3ES16.8)') k_arr(ik), E_arr(iE), A_kE(ik, iE)
+        end do
+      end do
+      close(iounit)
+      print *, '  Spectral function written to output/spectral_function.dat'
+
+    end subroutine write_spectral_function
+
+    ! ==================================================================
+    ! Task 3.3: Write Z2 phase diagram to output/z2_phase_diagram.dat.
+    !
+    ! Replaces the inline block formerly at main_topology.f90:1232-1253.
+    ! B and mu grids are reconstructed from cfg%topo sweep ranges so the
+    ! caller only passes the result grids (z2_map, gap_map). The (iB, iMu)
+    ! loop order matches the original: rows iterate over B, columns over mu.
+    ! ==================================================================
+    subroutine write_z2_phase_diagram(cfg, z2_map, gap_map)
+
+      type(simulation_config), intent(in) :: cfg
+      real(kind=dp), intent(in), contiguous :: z2_map(:,:)
+      real(kind=dp), intent(in), contiguous :: gap_map(:,:)
+
+      integer(kind=4) :: iounit, status
+      integer :: iB, iMu, nB, nMu
+
+      nB = size(z2_map, 2)
+      nMu = size(z2_map, 1)
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/z2_phase_diagram.dat', status='replace', &
+           action='write', iostat=status)
+      if (status /= 0) then
+        print *, 'ERROR: cannot open output/z2_phase_diagram.dat'
+        error stop 'cannot open z2_phase_diagram.dat'
+      end if
+      write(iounit, '(A)') '# Z2 phase diagram'
+      write(iounit, '(A,I0,A,I0)') '# nB=', nB, '  nMu=', nMu
+      write(iounit, '(A)') '# B(T) mu(eV) z2 gap(eV)'
+      do iB = 1, nB
+        do iMu = 1, nMu
+          write(iounit, '(4ES16.8)') &
+            & cfg%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * &
+            & (cfg%topo%gap_sweep_B_max - cfg%topo%gap_sweep_B_min) / real(max(1, nB - 1), kind=dp), &
+            & cfg%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * &
+            & (cfg%topo%gap_sweep_mu_max - cfg%topo%gap_sweep_mu_min) / real(max(1, nMu - 1), kind=dp), &
+            & z2_map(iMu, iB), gap_map(iMu, iB)
+        end do
+      end do
+      close(iounit)
+      print *, '  Z2 phase diagram written to output/z2_phase_diagram.dat'
+
+    end subroutine write_z2_phase_diagram
+
+    ! ==================================================================
+    ! Task 3.3: Write Z2 phase transition list to output/z2_transitions.dat.
+    !
+    ! Replaces the inline block formerly at main_topology.f90:1255-1266.
+    ! One row per detected transition: 'B (T), mu (eV)'. Silent on empty.
+    ! ==================================================================
+    subroutine write_z2_transitions(transitions)
+
+      real(kind=dp), intent(in), contiguous :: transitions(:,:)
+      integer(kind=4) :: iounit, status
+      integer :: iB, n
+
+      n = size(transitions, 1)
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/z2_transitions.dat', status='replace', &
+           action='write', iostat=status)
+      if (status /= 0) then
+        print *, 'ERROR: cannot open output/z2_transitions.dat'
+        error stop 'cannot open z2_transitions.dat'
+      end if
+      write(iounit, '(A)') '# B(T) mu(eV)'
+      do iB = 1, n
+        write(iounit, '(2ES16.8)') transitions(iB, 1), transitions(iB, 2)
+      end do
+      close(iounit)
+
+    end subroutine write_z2_transitions
 
 end module outputFunctions
