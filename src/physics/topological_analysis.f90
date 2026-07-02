@@ -871,8 +871,10 @@ contains
     type(polarization_result_t) :: pol
 
     integer :: i, j, ib, half_n, nspin_up
-    real(kind=dp) :: u_n, v_n, u_sq, v_sq, u_vc, sign_s, density
-    real(kind=dp) :: coherence, half_sum
+    real(kind=dp) :: u_n, v_n, u_sq, v_sq, sign_s, density
+    complex(kind=dp) :: u_vc
+    complex(kind=dp) :: coherence
+    real(kind=dp) :: half_left, half_right
     ! Local copy of pairing_sign(8): +1 for spin-up bands {1,2,5,7};
     ! -1 for spin-down bands {3,4,6,8}. KTD7 per ADR 0007.
     real(kind=dp) :: s_sigma(8)
@@ -906,18 +908,27 @@ contains
     pol%total_P_M = 0.0_dp
     pol%half_wire_integral = 0.0_dp
 
-    half_sum = 0.0_dp
+    half_left = 0.0_dp
+    half_right = 0.0_dp
     nspin_up = 0
     do i = 1, n_sites
-      coherence = 0.0_dp
+      coherence = (0.0_dp, 0.0_dp)
       u_sq = 0.0_dp
       v_sq = 0.0_dp
       do ib = 1, 8
         ! Band-major row index: (ib-1)*n_sites + i
         u_n = abs(evec_bdg((ib - 1) * n_sites + i))**2
         v_n = abs(evec_bdg(half_n + (ib - 1) * n_sites + i))**2
-        u_vc = real(evec_bdg((ib - 1) * n_sites + i) * &
-                    conjg(evec_bdg(half_n + (ib - 1) * n_sites + i)), kind=dp)
+        ! Complex coherence u·v* (Sticlet Eq. 5). Per locked decision
+        ! (ADR 0008): preserve imaginary MZM phase through the band sum;
+        ! the magnitude |.| is taken at the end via abs(coherence), not
+        ! per-band. For real-valued BdG spinors (no SOC) u·v* is real
+        ! so the old `real()` cast was lossless; for SOC-active BdG
+        ! (Rashba/Dresselhaus in the 8-band basis) the product is
+        ! generically complex, and `real()` would destroy the MZM phase
+        ! signal.
+        u_vc = evec_bdg((ib - 1) * n_sites + i) * &
+               conjg(evec_bdg(half_n + (ib - 1) * n_sites + i))
         ! Per-band spin-sector sign (KTD7 derivation, see header above).
         sign_s = s_sigma(ib)
         if (any(spin_up_bands(1:4) == ib)) then
@@ -936,11 +947,15 @@ contains
         pol%tau_z(i) = 0.0_dp
       end if
       pol%total_P_M = pol%total_P_M + pol%P_M(i)
+      ! Per ADR 0008 (locked decision): half_wire_integral = max(left_half, right_half).
+      ! A symmetric localization test picks the dominant end, not arbitrary first half.
       if (i <= n_sites / 2) then
-        half_sum = half_sum + pol%P_M(i)
+        half_left = half_left + pol%P_M(i)
+      else
+        half_right = half_right + pol%P_M(i)
       end if
     end do
-    pol%half_wire_integral = half_sum
+    pol%half_wire_integral = max(half_left, half_right)
     ! Suppress unused-variable warnings for purely diagnostic locals.
     if (nspin_up < 0) then
       j = nspin_up  ! never executed; keeps nspin_up/j from being optimized out
