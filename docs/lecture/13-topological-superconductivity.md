@@ -642,7 +642,7 @@ The wire rung measures $B_{\mathrm{crit}}$ via three independent witnesses:
      strong-SOC flag if they disagree due to band mixing beyond
      conduction-edge projection)
 
-   ![Slim projected Pfaffian witness S1 vs S2 (Issue 07)](figures/lecture_13_wire_slim_pfaffian_witness.png)
+   **Figure**: Slim Pfaffian witness S1 vs S2 — *synthetic illustrative; real Pfaffian witness output requires U13 (full wire Pfaffian B-sweep with periodic/Bloch BdG). The 3-witness acceptance gate (wire_curve, wire_2d, qw_dense) is the current regression net per spec §7.5; the wire_pfaffian row is reserved for U13.*
 
 The wire-rung $B_{\mathrm{crit}} = 2.8$ T (1D curve) differs from the
 dense-QW rung $B_{\mathrm{crit}} = 2.0$ T — the difference is rung-dependent,
