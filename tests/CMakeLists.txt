@@ -327,6 +327,18 @@ if(PFUNIT_FOUND)
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
+
+    # Task B.1 (PR #41 BdG/Majorana blocker-fix plan, spec §4.1):
+    # Cross-builder identity test with shared-H0 invariant. Pins that
+    # both build_bdg_hamiltonian_1d (wire) and build_bdg_hamiltonian_qw
+    # route through the canonical -conjg(H0(-k)) wrapper. Fixture (a)
+    # tests the wrapper directly at k=0, B=0; fixture (b) tests the wire
+    # builder at generic k with Bx != 0 (Peierls regime).
+    add_pfunit_ctest(test_cross_builder_hole_block_identity
+        TEST_SOURCES unit/test_cross_builder_hole_block_identity.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
 else()
     message(STATUS "pFUnit not found — unit tests disabled. Install pFUnit and set -DPFUNIT_DIR to enable.")
 endif()

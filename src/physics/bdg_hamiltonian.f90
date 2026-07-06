@@ -52,6 +52,7 @@ module bdg_hamiltonian
 
   public :: build_bdg_hamiltonian_1d
   public :: build_bdg_hamiltonian_qw
+  public :: build_bdg_hole_block
   public :: pairing_sign
   public :: pairing_partner
 
