@@ -84,7 +84,7 @@ echo "  Dense QW               = $BCRIT_QW"
 # the 2D colormap is a coarse 5x2 grid whose discrete B_crit can drift by
 # ~1.5 T from the 1D curve. Tighter would fail on the physics; looser
 # would mask a real regression (e.g. the all-zero 1.22 T legacy value).
-TOL_BCRIT_RANGE="2.0"
+TOL_BCRIT_RANGE="1.0"  # tightened from 2.0 per spec §3.4 / D5 (3-witness config)
 
 BCRIT_MIN=$(python3 -c "print(min($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_WIRE_PFAFFIAN, $BCRIT_QW))")
 BCRIT_MAX=$(python3 -c "print(max($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_WIRE_PFAFFIAN, $BCRIT_QW))")
