@@ -31,9 +31,13 @@ H_bdg(k) at k=0 and k=π
 
 The pairing_sign(8) = [+1,+1,-1,-1,+1,-1,+1,-1] table is duplicated in `bdg_hamiltonian.f90:60-72` and `topological_analysis.f90:876-878`. This DRY violation enabled the block (2,1) sign bug at `bdg_hamiltonian.f90:547`. Make `pairing_sign` and `pairing_partner` PUBLIC in `bdg_hamiltonian.f90`. `topological_analysis.f90` imports via `use bdg_hamiltonian, only: pairing_sign, pairing_partner`.
 
-### 3. `conjg()` is sufficient for class-D Peierls
+### 3. Symmetric Peierls on hole block — KEPT (reversed 2026-07-05)
 
-Verified `add_peierls_coo` in `magnetic_field.f90:184` applies `exp(-iφ)` where `φ = e*Bx*(y_i-y_j)/hbar`. Class-D PHS requires the hole block to carry Peierls(-B) → exp(+iφ). The `-conjg()` in `build_bdg_hole_block` already flips the sign correctly. The current second `add_peierls_coo(-B)` call in `bdg_hamiltonian.f90:419-428` (Issue 03 fix3) double-counts the phase: hole block carries exp(+2iφ) instead of exp(+iφ). Remove this call. Wire and dense-QW builders unify on this convention.
+**Reversed 2026-07-05**: Symmetric `add_peierls_coo(-B)` on hole block is KEPT (not removed). The `add_peierls_coo` function applies `exp(-iφ)` where `φ = e*Bx*(y_i-y_j)/hbar`. The `-conjg()` transform in `build_bdg_hole_block` does NOT include Peierls phase.
+
+Empirical PHS oracle verification (rel_resid 1.25e-1 → 0 on removing the call) demonstrated the symmetric call is REQUIRED for class-D PHS at generic k with Bx≠0. The original 'double-count' rationale was disproved 2026-07-01; the investigation note lives at `src/physics/bdg_hamiltonian.f90:406-419` ("KEPT (NOT removed per Task 1.10): the symmetric add_peierls_coo(-B) IS required to make test_bdg_phs pass. The 'double-count' claim in ADR 0008 §3 was wrong").
+
+Companion fixes: `docs/superpowers/specs/2026-07-01-bdg-p1-fix-design.md` line 23 corrected in this PR per spec §6.1; `docs/adr/0007-bdg-hole-block-canonical-convention.md` Layer D gets a Peierls-symmetry footnote per spec §6.2.
 
 ### 4. Minigap-pattern regression replaces z2-golden test
 
