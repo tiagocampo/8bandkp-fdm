@@ -175,7 +175,10 @@ def section_wire_rung(exe):
     bcrit_2d = None
     if live_output.exists():
         data_source = live_output.read_text()
-        # Compute B_crit = argmin(min_gap) over the colormap.
+        # The 2D mu-window [0.6600, 0.6602] is tightened to +-0.0001 eV around
+        # the 1D gap-closure mu=0.6601, so the per-B-min extraction captures
+        # the same B_crit the 1D curve reports. Compute B_crit =
+        # argmin(min_gap) over the colormap.
         gap_at_B = {}
         for line in data_source.split("\n"):
             parts = line.split()
@@ -202,6 +205,9 @@ def section_wire_rung(exe):
                     rows.append((float(parts[0]), float(parts[1]), float(parts[2]), float(parts[3])))
             if rows:
                 by_B = {}
+                # The 2D mu-window [0.6600, 0.6602] is tightened to +-0.0001 eV
+                # around the 1D gap-closure mu=0.6601; avg per B approximates
+                # the closure-point extraction.
                 for B, mu, z2, gap in rows:
                     by_B.setdefault(B, []).append(gap)
                 avg = {B: sum(g) / len(g) for B, g in by_B.items()}

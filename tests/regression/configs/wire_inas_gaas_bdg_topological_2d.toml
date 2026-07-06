@@ -58,8 +58,8 @@ sweep_model = "wire_bdg"
 gap_sweep_B_min = 0.0
 gap_sweep_B_max = 5.0
 gap_sweep_nB = 5
-gap_sweep_mu_min = 0.659
-gap_sweep_mu_max = 0.661
+gap_sweep_mu_min = 0.6600
+gap_sweep_mu_max = 0.6602
 gap_sweep_nMu = 2
 compute_gap_sweep = true
 
