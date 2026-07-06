@@ -283,10 +283,14 @@ $$
 - H_{\mathrm{BdG}}(-\mathbf{k}), \qquad \mathcal{C} = \tau_x \mathcal{K},
 $$
 
-where $\mathcal{K}$ is complex conjugation. The wire CSR builder and dense
-QW builder both route the hole block through the private wrapper
-`build_bdg_hole_block(H0_minus_k, H_hole)` in `src/physics/bdg_hamiltonian.f90`
-(ADR 0007 Layer B), guaranteeing the canonical form on every call path.
+where $\mathcal{K}$ is complex conjugation. The shared wrapper
+`build_bdg_hole_block` at `src/physics/bdg_hamiltonian.f90:94-103` enforces
+the canonical form on every call path. Cross-builder identity (PRD R4) is
+asserted by code structure AND verified by
+`tests/unit/test_cross_builder_hole_block_identity.pf` (added in this PR per
+spec §4.1). The test exercises two fixtures: (a) k=0, B=0 with a shared
+upstream H₀ and (b) generic k=π/(2a), Bx≠0 with the same shared H₀, asserting
+byte-identical hole blocks at both fixtures.
 
 **Symmetric Peierls convention** (ADR 0007 Layer A, Issue 03 fix3): under a
 magnetic field $\mathbf{B}$, the electron block applies the Peierls phase
