@@ -20,7 +20,7 @@ See plan at `docs/superpowers/plans/2026-07-01-bdg-p1-fix.md` and ADR at `docs/a
 |---|---|---|
 | Scope | **C — full stabilization** (P1 + P2 + P3) | Multi-week but comprehensive; matches user's chosen scope |
 | Kitaev Majorana number fix | **Lutchyn-Oreg sign-of-det** (bypass Pf) | Literature-canonical, handles diagonal-in-(c,c†) BdG, makes strict tests possible |
-| Symmetric Peierls philosophy | **A — remove from wire, rely on `conjg()`** | Symmetry between builders per ADR 0007; `conjg()` already flips phase correctly |
+| Symmetric Peierls philosophy | **A — keep symmetric (re-investigated)** — symmetric `add_peierls_coo(-B)` on hole block is REQUIRED for class-D PHS at generic k with Bx≠0. The `-conjg()` transform alone is insufficient. See ADR 0008 §3 amendment in `2026-07-05-pr41-completion-design.md` §6.3. |
 | 2D colormap regression test | **B — replace with minigap-pattern assertion** | Robust physics assertion; avoids brittle z2=±1 numerical sign |
 | Acceptance gate tolerance | **A — add absolute window guard** | Catches uniform regression that pure range check misses |
 | Module split | **C — defer to follow-up** | Pre-existing 1437-line bloat is separate from P1 stabilization |
