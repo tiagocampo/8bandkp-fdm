@@ -311,12 +311,7 @@ integer, parameter :: pairing_partner(8) = [4, 3, 2, 1, 6, 5, 8, 7]
 real(kind=dp), parameter :: pairing_sign(8)   = [+1, +1, -1, -1, +1, -1, +1, -1]
 ```
 
-Each Kramers pair $(1,4)$, $(2,3)$, $(5,6)$, $(7,8)$ in the basis
-$(\mathrm{HH}\uparrow, \mathrm{LH}\uparrow, \mathrm{LH}\downarrow, \mathrm{HH}\downarrow,
-\mathrm{SO}\uparrow, \mathrm{SO}\downarrow, \mathrm{CB}\uparrow, \mathrm{CB}\downarrow)$
-gets a $+1 / -1$ sign matching the $i\sigma_y \otimes I_4$ structure, with
-the spin-up bands (1, 2, 5, 7) carrying $+1$ and the spin-down bands (3, 4, 6, 8)
-carrying $-1$.
+**Pairing-sector sign convention**: `pairing_sign(8) = [+1, +1, -1, -1, +1, -1, +1, -1]` per the iσ_y⊗I₄ structure, where each band carries +1 if spin-up and -1 if spin-down. Kramers pairs `(1,4), (2,3), (5,6), (7,8)` take signs `(+1, -1)` respectively. The codepath stores `cmplx(delta_0 * pairing_sign, 0.0_dp, kind=dp)` per `bdg_hamiltonian.f90:361` (purely real) because the upper-triangular block (electron→hole) and lower-triangular block (hole→electron, adjoint) encode the imaginary factor across the diagonal — see `bdg_hamiltonian.f90:539-553` for the adjoint structure. The `i` in iσ_y is absorbed into the complex-conjugation convention used by the canonical-form wrapper `build_bdg_hole_block` (`-conjg()`).
 
 The class-D particle-hole symmetry guarantees that if $E$ is an eigenvalue,
 $-E$ is also an eigenvalue.
