@@ -219,10 +219,13 @@ def section_wire_rung(exe):
         else:
             bcrit_pfaffian = bcrit_curve
     else:
-        # Fall back: just use bcrit_curve if slimp faffian mode unavailable.
-        # This fallback will be removed once slimp faffian grid support lands (TODO U13).
-        bcrit_pfaffian = bcrit_curve
-        print(f"WARN: {pf_output} not found; bcrit_pfaffian aliased to bcrit_curve (U13 deferred)")
+        # Per spec §3.3 / D5: wire_pfaffian witness is reserved for U13 (full
+        # wire Pfaffian B-sweep with periodic/Bloch BdG). Today no Fortran
+        # producer emits output/wire_slim_pfaffian_witness.dat (per
+        # ce-doc-review adversarial P0 finding). Mark the 4th witness row as
+        # 'deferred to U13' instead of silently aliasing to bcrit_curve.
+        bcrit_pfaffian = None
+        print(f"WARN: {pf_output} not found; bcrit_pfaffian marked 'deferred to U13' (U13 deferred)")
 
     if bcrit_curve is not None:
         print(f"  BCRIT wire_curve    {bcrit_curve:.3f}")
@@ -230,6 +233,8 @@ def section_wire_rung(exe):
         print(f"  BCRIT wire_2d       {bcrit_2d:.3f}")
     if bcrit_pfaffian is not None:
         print(f"  BCRIT wire_pfaffian {bcrit_pfaffian:.3f}")
+    else:
+        print(f"  BCRIT wire_pfaffian (deferred to U13)")
     return True, (bcrit_curve, bcrit_2d, bcrit_pfaffian)
 
 
@@ -271,7 +276,14 @@ TOLERANCE_BCRIT_RANGE = 2.0  # T
 
 
 def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
-    """Render the 4-witness reconciliation table as a PNG image."""
+    """Render the reconciliation table as a PNG image.
+
+    Per spec §3.3 / D5: the slim Pfaffian witness row is honestly labeled
+    "(deferred to U13)" since no Fortran producer emits
+    output/wire_slim_pfaffian_witness.dat (reserved for U13, full wire
+    Pfaffian B-sweep with periodic/Bloch BdG). Its numeric value (None)
+    is excluded from the range calc via the existing `is not None` filter.
+    """
     bcrit_curve, bcrit_2d, bcrit_pfaffian = wire_bcrits
     rows = [
         ("Wire (1D curve)",     bcrit_curve,    "minigap closing",       "AE3 / Issue 07"),
@@ -287,8 +299,15 @@ def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
     ax.axis("off")
     cell_text = []
     for r in rows:
-        cell_text.append([r[0], f"{r[1]:.3f}" if r[1] is not None else "N/A",
-                          r[2], r[3]])
+        # Per spec §3.3 / D5: slim Pfaffian witness labeled
+        # "(deferred to U13)" when its value is unavailable.
+        if r[1] is None and r[0] == "Wire (slim Pfaffian)":
+            bc = "deferred to U13"
+        elif r[1] is not None:
+            bc = f"{r[1]:.3f}"
+        else:
+            bc = "N/A"
+        cell_text.append([r[0], bc, r[2], r[3]])
     cell_text.append(["", "", "", ""])
     cell_text.append(["4-witness range", f"{bcrit_range:.3f} T",
                       f"tol = {TOLERANCE_BCRIT_RANGE} T", tolerance_status])
