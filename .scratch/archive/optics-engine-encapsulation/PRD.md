@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 Status: ready-for-agent
 
 # PRD: Encapsulate Optical Spectra State into `optics_engine` Type

@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # PRD — Architecture Deepening + FEAST Parity
 
 Branch: `refactor/architecture-deepening` (off `main`).

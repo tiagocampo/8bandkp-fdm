@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # Issue 07 — Wire minigap colormap + slim projected Pfaffian witness (U10)
 
 **Parent PRD**: `/data/8bandkp-fdm/.scratch/bdg-majorana-validation/PRD.md` (Unit U10)

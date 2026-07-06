@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # Issue 03 — Hole-block unified under canonical convention `-conjg(H₀(-k))` (U4, APPROVAL-GATED)
 
 > **File-numbering note**: This file is `01-kitaev-pfaffian-harness.md` in `.scratch/bdg-majorana-validation/issues/`. The content is **Issue 03** (hole-block unified, APPROVAL-GATED) — sourced from `.superpowers/sdd/issue-01-brief.md`. The brief filenames were off by 2 from the issue numbers; this corrected numbering aligns the file's content with its issue number in the dependency graph.

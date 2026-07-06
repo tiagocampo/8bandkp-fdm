@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # PRD: Normalize config type fields — eliminate mode-dependent overwrites
 
 ## Problem Statement

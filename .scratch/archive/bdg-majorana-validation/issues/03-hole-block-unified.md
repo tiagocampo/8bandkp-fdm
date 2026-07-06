@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # Issue 01 — Kitaev-chain harness certifies Pfaffian + Majorana number (U3)
 
 > **File-numbering note**: This file is `03-hole-block-unified.md` in `.scratch/bdg-majorana-validation/issues/`. The content is **Issue 01** (Kitaev harness) — sourced from `.superpowers/sdd/issue-03-brief.md`. The brief filenames were off by 2 from the issue numbers; this corrected numbering aligns the file's content with its issue number in the dependency graph.

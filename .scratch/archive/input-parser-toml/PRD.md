@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # PRD: TOML Input Parser Refactor
 
 **Labels:** enhancement, ready-for-agent

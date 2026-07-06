@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # Issue 06 — BdG LDOS + A(k,E) + KTD6 close (U9)
 
 **Parent PRD**: `/data/8bandkp-fdm/.scratch/bdg-majorana-validation/PRD.md` (Unit U9, LDOS path; A(k,E) and Nambu-resolved LDOS land alongside)

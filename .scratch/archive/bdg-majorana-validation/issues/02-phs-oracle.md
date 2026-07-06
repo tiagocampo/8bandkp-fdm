@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # Issue 00 — Pure per-point BdG evaluator extracted from app glue (U2)
 
 > **File-numbering note**: This file is `02-phs-oracle.md` in `.scratch/bdg-majorana-validation/issues/`. The content is **Issue 00** (pure evaluator) — sourced from `.superpowers/sdd/issue-02-brief.md`. The brief filenames were off by 2 from the issue numbers; this corrected numbering aligns the file's content with its issue number in the dependency graph.

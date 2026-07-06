@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # Issue 02 — PHS oracle catches hole-block divergence at generic k (U5, Layer A of U4)
 
 > **File-numbering note**: This file is `00-pure-bdg-evaluator.md` in `.scratch/bdg-majorana-validation/issues/`. The content is **Issue 02** (PHS oracle) — sourced from `.superpowers/sdd/issue-00-brief.md`. The brief filenames were off by 2 from the issue numbers; this corrected numbering aligns the file's content with its issue number in the dependency graph.

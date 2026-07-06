@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # Issue 08 — Lecture 13 reconciliation table + acceptance gate (U11 + U12)
 
 **Parent PRD**: `/data/8bandkp-fdm/.scratch/bdg-majorana-validation/PRD.md` (Units U11 + U12)

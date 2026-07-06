@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # Issue 05 — Dense-QW BdG rung end-to-end certification (U7)
 
 **Parent PRD**: `/data/8bandkp-fdm/.scratch/bdg-majorana-validation/PRD.md` (Unit U7, dense-QW rung certification; U3 dense-QW Pfaffian application)

@@ -1,3 +1,5 @@
+**Status**: COMPLETE (2026-07-05)
+
 # PRD: Eigensolver Standardization — Unified Interface, QW CSR Builder, ARPACK Removal
 
 ## Problem Statement
