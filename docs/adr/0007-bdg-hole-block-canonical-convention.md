@@ -58,6 +58,8 @@ convention**, in three layers:
    match the dense" decision; it is the implementation strategy inside
    Layer B, not a separate code change).
 
+**Footnote** (added 2026-07-05): The Layer D canonical form `H_hole = -conjg(H0(-k))` does NOT include Peierls phase. Peierls phase is applied symmetrically: electron block via `ZB8bandGeneralized` at `+kz` with `+B`; hole block via explicit `add_peierls_coo(-B)` with row filter `8N+1..16N` per `bdg_hamiltonian.f90:420-428`. Empirical investigation at `bdg_hamiltonian.f90:406-419` documents that removing the second `add_peierls_coo` call breaks the PHS oracle at generic k with Bx≠0 (rel_resid 1.25e-1 → 0). The symmetric call is REQUIRED.
+
 The Pfaffian structure matrix ω (U3) and the Sticlet polarization signs
 (U6) are derived once for the 16N Nambu layout under this convention
 (KTD7 in the plan), and any relative spin-sector sign in `P_M` is pinned
