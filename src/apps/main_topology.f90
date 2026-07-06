@@ -587,6 +587,14 @@ contains
               call write_majorana_profile( &
                 & reshape(cfg%grid%coords, [2 * nspatial]), profile_rho, &
                 & 'kz', kz_val, xi_val, nspatial)
+              ! PR #41 A.3a (Issue 04 / U7): emit polarization file so
+              ! verify_majorana_polarization.py can parse real output
+              ! (the pre-A.3a verifier generated synthetic numpy data).
+              block
+                type(polarization_result_t) :: pol
+                pol = majorana_polarization(eigen_res_local%eigenvectors(:, i), Ngrid_local)
+                call write_majorana_polarization(pol, 'output/majorana_polarization.dat')
+              end block
             end if
             deallocate(profile_rho)
           end if

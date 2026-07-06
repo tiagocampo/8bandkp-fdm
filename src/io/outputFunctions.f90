@@ -3,6 +3,7 @@ module outputFunctions
   use definitions, only: dp, simulation_config, spatial_grid, &
     wavevector, optical_transition, topological_result
   use utils
+  use topological_analysis, only: polarization_result_t
 
   implicit NONE
 
@@ -11,7 +12,8 @@ module outputFunctions
   public :: write_bdg_eigenvalues, write_optical_transitions, write_profile_1d
   public :: write_bdg_ldos, write_bdg_ldos_nambu, write_bdg_spectral
   public :: write_topology_result, write_majorana_profile, write_bdg_lowest_state_profile, &
-    & write_spectral_function, write_z2_phase_diagram, write_z2_transitions
+    & write_spectral_function, write_z2_phase_diagram, write_z2_transitions, &
+    & write_majorana_polarization
 
   character(len=*), parameter :: OUTPUT_DIR = 'output'
 
@@ -622,6 +624,47 @@ module outputFunctions
       print *, '  Majorana profile written to output/majorana_profile.dat'
 
     end subroutine write_majorana_profile
+
+    ! ==================================================================
+    ! PR #41 A.3a (Issue 04 / U7): Write Majorana polarization profile
+    ! (Sticlet P_M and <tau_z>) to output/majorana_polarization.dat.
+    !
+    ! Consumes a polarization_result_t produced by
+    ! topological_analysis::majorana_polarization applied to one BdG
+    ! eigenvector. The file format is fixed-width, parseable by
+    ! tests/integration/verify_majorana_polarization.py (A.3b): one row
+    ! per site with columns (index, P_M, tau_z, half_wire_integral).
+    ! half_wire_integral is a scalar so it is repeated on every row for
+    ! convenience (verifier reads row 1 for the integral).
+    ! ==================================================================
+    subroutine write_majorana_polarization(pol, filename)
+
+      type(polarization_result_t), intent(in) :: pol
+      character(len=*), intent(in) :: filename
+
+      integer(kind=4) :: iounit, status
+      integer :: i, n
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file=filename, status='replace', action='write', iostat=status)
+      if (status /= 0) then
+        print *, 'ERROR: cannot open ', filename
+        error stop 'cannot open majorana_polarization.dat'
+      end if
+
+      n = size(pol%P_M)
+      write(iounit, '(A)') '# Majorana polarization profile (Sticlet P_M, <tau_z>)'
+      write(iounit, '(A,I0)') '# n_sites = ', n
+      write(iounit, '(A,ES15.7)') '# half_wire_integral = ', pol%half_wire_integral
+      write(iounit, '(A)') '# Columns: index, P_M, tau_z, half_wire_integral'
+      do i = 1, n
+        write(iounit, '(I6,3(1X,ES15.7))') i, pol%P_M(i), pol%tau_z(i), pol%half_wire_integral
+      end do
+      close(iounit)
+      print *, '  Majorana polarization written to ', filename
+
+    end subroutine write_majorana_polarization
 
     ! ==================================================================
     ! Task 3.3: Write the lowest-|E| BdG state spatial profile.
