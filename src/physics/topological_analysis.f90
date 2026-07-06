@@ -1707,9 +1707,9 @@ contains
     integer, intent(in) :: n_full
     integer, intent(out) :: s2_sign
 
-    integer :: n_sp, i, j, k, idx(4), col
+    integer :: n_sp, Nsites, s, i, j, k, idx(4), col, best_s
     complex(kind=dp) :: h_proj(4, 4), a_work(4, 4), pf_val
-    real(kind=dp) :: pf_abs
+    real(kind=dp) :: pf_abs, best_pf
     complex(kind=dp) :: omega_local(4, 4)
 
     s2_sign = 0
@@ -1717,22 +1717,8 @@ contains
     if (mod(n_full, 2) /= 0) return
     n_sp = n_full / 2
     if (n_sp < 8) return
-
-    ! Rows/cols of the bands 7-8 + Nambu blocks. 1-based throughout.
-    idx = [7, 8, n_sp + 7, n_sp + 8]
-
-    h_proj = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    do i = 1, 4
-      do k = H_bdg_csr%rowptr(idx(i)), H_bdg_csr%rowptr(idx(i) + 1) - 1
-        col = H_bdg_csr%colind(k)
-        do j = 1, 4
-          if (col == idx(j)) then
-            h_proj(i, j) = H_bdg_csr%values(k)
-            exit
-          end if
-        end do
-      end do
-    end do
+    if (mod(n_sp, 8) /= 0) return
+    Nsites = n_sp / 8
 
     ! Local omega for 4-dim subspace: tau_y ⊗ I_2.
     omega_local = cmplx(0.0_dp, 0.0_dp, kind=dp)
@@ -1741,10 +1727,60 @@ contains
     omega_local(2, 4) = cmplx(0.0_dp, -1.0_dp, kind=dp)
     omega_local(4, 2) = cmplx(0.0_dp,  1.0_dp, kind=dp)
 
-    a_work = matmul(h_proj, omega_local)
-    pf_val = complex_pfaffian(a_work)
-    pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
-    if (pf_abs > 1.0e-12_dp) then
+    ! Multi-site band-major scan: for each site s = 1..Nsites, project the 4x4
+    ! subblock at rows/cols [6*Nsites+s, 7*Nsites+s, n_sp+6*Nsites+s,
+    ! n_sp+7*Nsites+s] (i.e., band 7 / band 8 / hole-band-7 / hole-band-8 in the
+    ! band-major wire H0 layout per hamiltonian_wire.f90:1208-1209). Pick the
+    ! site with maximum |Pf|. For Nsites=1 this collapses to the original
+    ! single-site projection; for Nsites>1 it recovers the otherwise-lost
+    ! spatial information (per spec §3.1, ce-doc-review adversarial P1).
+    best_s = 1
+    best_pf = 0.0_dp
+    pf_val = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do s = 1, Nsites
+      idx = [6 * Nsites + s, 7 * Nsites + s, &
+        & n_sp + 6 * Nsites + s, n_sp + 7 * Nsites + s]
+
+      h_proj = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      do i = 1, 4
+        do k = H_bdg_csr%rowptr(idx(i)), H_bdg_csr%rowptr(idx(i) + 1) - 1
+          col = H_bdg_csr%colind(k)
+          do j = 1, 4
+            if (col == idx(j)) then
+              h_proj(i, j) = H_bdg_csr%values(k)
+              exit
+            end if
+          end do
+        end do
+      end do
+
+      a_work = matmul(h_proj, omega_local)
+      pf_val = complex_pfaffian(a_work)
+      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
+      if (pf_abs > best_pf) then
+        best_pf = pf_abs
+        best_s = s
+      end if
+    end do
+
+    if (best_pf > 1.0e-12_dp) then
+      ! Recompute the canonical subblock at the selected site for sign extraction.
+      idx = [6 * Nsites + best_s, 7 * Nsites + best_s, &
+        & n_sp + 6 * Nsites + best_s, n_sp + 7 * Nsites + best_s]
+      h_proj = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      do i = 1, 4
+        do k = H_bdg_csr%rowptr(idx(i)), H_bdg_csr%rowptr(idx(i) + 1) - 1
+          col = H_bdg_csr%colind(k)
+          do j = 1, 4
+            if (col == idx(j)) then
+              h_proj(i, j) = H_bdg_csr%values(k)
+              exit
+            end if
+          end do
+        end do
+      end do
+      a_work = matmul(h_proj, omega_local)
+      pf_val = complex_pfaffian(a_work)
       if (real(pf_val, kind=dp) > 0.0_dp) then
         s2_sign = 1
       else
@@ -1814,17 +1850,57 @@ contains
 
   ! Build the 4x4 projected H onto bands 7-8 (conduction edge per k.p block table
   ! SSOT). Internal helper for wire_pfaffian_witness S2. No diagonalization.
+  !
+  ! Multi-site band-major scan (per spec §3.1): for each site s = 1..Nsites,
+  ! project the 4x4 subblock at the band-major conduction indices, pick the
+  ! site with maximum |Pf|, and return that subblock as h_proj. For
+  ! Nsites=1 (single-site synthetic fixtures) this collapses to the original
+  ! single-site read; for Nsites>1 it recovers the otherwise-lost spatial
+  ! information.
   subroutine s2_project(H_bdg, n_full, h_proj)
     complex(kind=dp), intent(in) :: H_bdg(:,:)
     integer, intent(in) :: n_full
     complex(kind=dp), allocatable, intent(out) :: h_proj(:,:)
 
-    integer :: n_sp, idx(4)
+    integer :: n_sp, Nsites, s, idx(4), best_s
+    complex(kind=dp) :: omega_local(4, 4), a_work(4, 4)
+    complex(kind=dp) :: pf_val
+    real(kind=dp) :: pf_abs, best_pf
 
+    if (allocated(h_proj)) deallocate(h_proj)
     n_sp = n_full / 2
-    ! 1-based band indices: bands 7, 8 (conduction edge). Nambu blocks:
-    ! particle (rows 7, 8) + hole (rows n_sp+7, n_sp+8).
-    idx = [7, 8, n_sp + 7, n_sp + 8]
+    if (n_sp < 8 .or. mod(n_sp, 8) /= 0) then
+      ! Fall back to the original single-site indices for N=1 / malformed
+      ! sizes; preserves legacy 16x16 synthetic-fixture behavior.
+      idx = [7, 8, n_sp + 7, n_sp + 8]
+      allocate(h_proj(4, 4))
+      h_proj = H_bdg(idx, idx)
+      return
+    end if
+    Nsites = n_sp / 8
+
+    omega_local = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    omega_local(1, 3) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(3, 1) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+    omega_local(2, 4) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(4, 2) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+
+    best_s = 1
+    best_pf = 0.0_dp
+    do s = 1, Nsites
+      idx = [6 * Nsites + s, 7 * Nsites + s, &
+        & n_sp + 6 * Nsites + s, n_sp + 7 * Nsites + s]
+      a_work = matmul(H_bdg(idx, idx), omega_local)
+      pf_val = complex_pfaffian(a_work)
+      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
+      if (pf_abs > best_pf) then
+        best_pf = pf_abs
+        best_s = s
+      end if
+    end do
+
+    idx = [6 * Nsites + best_s, 7 * Nsites + best_s, &
+      & n_sp + 6 * Nsites + best_s, n_sp + 7 * Nsites + best_s]
     allocate(h_proj(4, 4))
     h_proj = H_bdg(idx, idx)
   end subroutine s2_project
