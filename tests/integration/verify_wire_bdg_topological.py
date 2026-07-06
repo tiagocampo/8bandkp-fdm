@@ -156,6 +156,11 @@ def plot_slim_pfaffian_witness(gaps, out_path):
     # Both agree with the canonical class-D sign convention:
     #   B < B_crit => trivial  (S = +1)
     #   B > B_crit => topological (S = -1)
+    # S1/S2 slim Pfaffian witness plot — SYNTHETIC ILLUSTRATIVE.
+    # Per spec §3.3 (P0 fix C-3): real witness output requires U13 (full wire
+    # Pfaffian sweep with periodic/Bloch BdG). No Fortran producer exists for
+    # output/wire_slim_pfaffian_s1.dat or s2.dat. Acceptance gate is 3-witness
+    # (wire_curve, wire_2d, qw_dense) per spec §3.4 / D5.
     s2_sign = np.where(np.array(Bs) < B_crit, +1, -1)
     s1_sign = s2_sign  # agreement is the witness (synthetic from curve)
     agree = (s1_sign == s2_sign)
