@@ -961,6 +961,21 @@ set_tests_properties(
     PROPERTIES LABELS "regression" TIMEOUT 900
 )
 
+# A.1 [TDD-red]: slim Pfaffian witness projects onto conduction bands,
+# not band-1 sites. Pins the row-index bug at
+# src/physics/topological_analysis.f90:1722, :1827 (idx=[7,8,...] reads
+# band-1 rows for band-major wire H0). Fails until A.2 lands the
+# multi-site band-major scan fix.
+add_test(
+    NAME regression_slim_pfaffian_witness_projection
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_slim_pfaffian_witness_projection.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+set_tests_properties(
+    regression_slim_pfaffian_witness_projection
+    PROPERTIES LABELS "regression" TIMEOUT 60
+)
+
 # Issue 05 / Unit U7: dense-QW BdG rung end-to-end certification.
 # Drives a B-sweep on the dense 16N x 16N BdG QW Hamiltonian and asserts
 # the canonical class-D open->close->reopen pattern at B_crit (covers AE2
