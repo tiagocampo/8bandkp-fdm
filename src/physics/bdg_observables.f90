@@ -32,6 +32,7 @@ module bdg_observables
   public :: q_zero_tol
   public :: bdg_eval_params_with_delta
   public :: eval_bdg_pfaffian_witness_csr
+  public :: eval_bdg_kitaev_majorana
 
   ! Module-level defaults (SSOT for the near-zero literals). Extracted from
   ! inline 0.001_dp / 1.0e-10_dp at the 5 call sites in main_topology so the
@@ -158,5 +159,26 @@ contains
     ! exists, the helper doesn't accept it yet).
     call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg, s2_sign)
   end function eval_bdg_pfaffian_witness_csr
+
+  ! ==============================================================================
+  ! QW+Kitaev-rung Majorana number seam sibling.
+  !
+  ! Wraps `pfaffian.f90:kitaev_majorana_number` with a seam-shape signature.
+  ! Returns majorana_number ∈ {-1, 0, +1} (Kitaev 2001, Eq. 26 convention:
+  ! M = -1 topological, M = +1 trivial). The wrapped helper uses the
+  ! Lutchyn-Oreg sign-of-det (ADR 0008 §1) formula via polar decomposition.
+  !
+  ! The advanced `omega_struct` argument is intentionally NOT exposed on the
+  ! seam — consumers that need a custom particle-hole structure (non-canonical
+  ! BdG) can fall back to the helper directly. The canonical Kitaev form
+  ! (`omega = σ_y ⊗ I_N`) is the only one in scope for U2/U3 consumers.
+  ! ==============================================================================
+  function eval_bdg_kitaev_majorana(H_k_array, k_par_values) result(majorana_number)
+    complex(kind=dp), intent(in) :: H_k_array(:,:,:)
+    real(kind=dp),    intent(in) :: k_par_values(:)
+    integer                       :: majorana_number
+
+    majorana_number = kitaev_majorana_number(H_k_array, k_par_values)
+  end function eval_bdg_kitaev_majorana
 
 end module bdg_observables

@@ -191,6 +191,12 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    add_pfunit_ctest(test_bdg_kitaev_majorana
+        TEST_SOURCES unit/test_bdg_kitaev_majorana.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     # Task 1.5 (P1 BdG stabilization, ADR 0008 §2): cross-module pinning
     # of pairing_sign/pairing_partner as PUBLIC exports from bdg_hamiltonian.
     # RED until Task 1.6 adds them to the public list.
