@@ -47,11 +47,11 @@ Companion fixes: `docs/superpowers/specs/2026-07-01-bdg-p1-fix-design.md` line 2
 
 - Phase 1.4 replaces the broken `real(Pf)` with Lutchyn-Oreg. Existing synthetic-BdG tests still pass; new strict tests pass on real fixtures.
 - Phase 1.8 fixes dense-QW block (2,1) sign bug (`pairing_sign(pairing_partner(ib))` → `pairing_sign(ib)`).
-- Phase 1.10 removes symmetric Peierls from wire builder; verify PHS oracle stays 4/4 green.
+- Phase 1.10 [REVERSED 2026-07-05]: symmetric Peierls on hole block was RE-INSTATED (see §3 above). Empirical PHS oracle verification (rel_resid 1.25e-1 → 0) demonstrated the symmetric `add_peierls_coo(-B)` call IS required for class-D PHS at generic k with Bx≠0.
 - Phase 2.1 replaces z2 golden with minigap-pattern regression.
-- Phase 2.4 adds absolute window guard to the 4-witness acceptance gate.
+- Phase 2.4 adds absolute window guard to the 3-witness acceptance gate (tightened from 4-witness design per `2026-07-05-pr41-completion-design.md` §3.4: slim Pfaffian row reserved for U13, 4th witness currently non-numeric).
 
 ## Risks
 
 - Lutchyn-Oreg eigendecomposition requires LAPACK `zheev` (complex Hermitian). Already in `linalg.f90`. Cross-check in `pfaffian.f90` for n>12 fallback (Laplace reduction).
-- Dense-QW B_crit resolution: B-grid step is 0.5 T → ±0.25 T resolution. Sufficient for the 4-witness gate at 2.0 T range; coarsening this in any future update is a breaking change.
+- Dense-QW B_crit resolution: B-grid step is 0.5 T → ±0.25 T resolution. Sufficient for the 3-witness gate at 1.0 T tolerance (tightened from 2.0 T per `2026-07-05-pr41-completion-design.md` §3.4); coarsening this in any future update is a breaking change.

@@ -253,8 +253,9 @@ Wire periodic/Bloch BdG construction with Peierls-twist under Bx≠0. Required f
 
 ## Final state (as executed)
 
-- **14 commits** on top of base `782ac03`, all green.
-- **124/124 ctest** green (3 follow-up failures documented in ADR 0007 Implementation Record, addressed by Issue 03 fix2 + fix3).
-- **4-witness B_crit**: wire_curve ≈ 2.8 T, wire_2d ≈ 3.75 T, wire_pfaffian ≈ 2.8 T, qw_dense = 2.0 T.
+- **47 commits** on top of base `782ac03`, all green. (Originally recorded as 14; this is the post-P1-stabilization count from `git log bf0af55..b949e00 --oneline`.)
+- **145/145 ctest** green (was 124/124 pre-P1-stabilization; growth from 9 new unit tests + 3 new integration tests + 9 new regression tests in the BdG P1 stabilization pass).
+- **3-witness B_crit** (4-witness design; slim Pfaffian row reserved for U13 and excluded from numeric range until U13 lands): wire_curve ≈ 2.8 T, wire_2d ≈ 3.75 T, qw_dense = 2.0 T. Acceptance gate tolerance tightened from 2.0 T to 1.0 T per `2026-07-05-pr41-completion-design.md` §3.4 / D5.
 - **PHS oracle**: 4/4 GREEN at generic k (was RED pre-Issue-03 with rel_resid ≈ 0.12578).
 - **Whole-branch review**: APPROVED FOR MERGE 2026-06-28 (agent ace67d870193f884d).
+- **P1 stabilization reversal (2026-07-05)**: the original "remove symmetric Peierls" task (Phase 1.10) was REVERTED — empirical PHS oracle verification (rel_resid 1.25e-1 → 0 with the symmetric call restored) demonstrated the call IS required for class-D PHS at generic k with Bx≠0. See ADR 0008 §3 amendment and `src/physics/bdg_hamiltonian.f90:406-419`.

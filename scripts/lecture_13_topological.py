@@ -23,12 +23,16 @@ and aggregates their results. It emits four machine-readable lines:
 
 These lines are consumed by the acceptance gate
 (tests/integration/test_lecture_13_acceptance_gate.sh, U12) to assert
-that the four B_crit witnesses agree within tolerance -- and that no
-value is hand-baked into the lecture markdown.
+that the 3 active B_crit witnesses (wire_curve, wire_2d, qw_dense)
+agree within tolerance (4-witness design; slim Pfaffian row reserved
+for U13 and excluded from the numeric range until that lands) -- and
+that no value is hand-baked into the lecture markdown.
 
 Output:
   output/lecture_13_reconciliation_table.png -- embedded image of the
-    4-witness B_crit table; consumed by docs/lecture/13-topological-superconductivity.md
+    3-witness B_crit table (4-witness design; slim Pfaffian row reserved
+    for U13 and excluded from numeric range); consumed by
+    docs/lecture/13-topological-superconductivity.md
 """
 import os
 import re
@@ -261,8 +265,9 @@ def section_observables(exe):
 # ---------------------------------------------------------------------------
 # Reconciliation table image generation
 # ---------------------------------------------------------------------------
-# Tolerance for 4-witness B_crit agreement. The brief suggested 0.5 T, but
-# the four witnesses measure different physics:
+# Tolerance for 3-witness B_crit agreement (4-witness design; see
+# `2026-07-05-pr41-completion-design.md` §3.4 / D5). The four witnesses
+# measure different physics:
 #   * Wire 1D curve (Issue 07 U8): B_crit at minigap minimum, mu=0.6601 eV
 #   * Wire 2D colormap (Issue 07 U10): B_crit at minigap minimum on a
 #     coarse 5x2 (B, mu) grid averaged over [0.659, 0.661] eV -- the
@@ -274,11 +279,14 @@ def section_observables(exe):
 #   * Dense QW (Issue 05 U7): 8x8 -> 16x16 QW with InAsW, mu at the QW
 #     conduction subband edge (different geometry; expected to differ
 #     by O(1 T) from the wire).
-# We set the tolerance to 2.0 T to accommodate the coarse 2D grid
+# We set the tolerance to 1.0 T to accommodate the coarse 2D grid
 # resolution while still surfacing real regressions (e.g. a value of
 # 0.0 T from the all-zero artifact would trigger a FAIL with this
-# tolerance). Document the choice in the lecture markdown.
-TOLERANCE_BCRIT_RANGE = 2.0  # T
+# tolerance). Tightened from 2.0 T per
+# `2026-07-05-pr41-completion-design.md` §3.4 / D5 (3-witness config;
+# slim Pfaffian row excluded from numeric range until U13 lands).
+# Document the choice in the lecture markdown.
+TOLERANCE_BCRIT_RANGE = 1.0  # T (3-witness gate; matches acceptance gate)
 
 
 def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
@@ -315,7 +323,7 @@ def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
             bc = "N/A"
         cell_text.append([r[0], bc, r[2], r[3]])
     cell_text.append(["", "", "", ""])
-    cell_text.append(["4-witness range", f"{bcrit_range:.3f} T",
+    cell_text.append(["3-witness range", f"{bcrit_range:.3f} T",
                       f"tol = {TOLERANCE_BCRIT_RANGE} T", tolerance_status])
     table = ax.table(
         cellText=cell_text,
@@ -333,7 +341,7 @@ def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
         cell.set_facecolor("#404040")
         cell.set_text_props(color="white", weight="bold")
 
-    # Last row styling (4-witness summary)
+    # Last row styling (3-witness summary)
     for i in range(4):
         cell = table[(len(cell_text) - 1, i)]
         cell.set_facecolor("#e0e0e0" if tolerance_status == "PASS" else "#ffcccc")
@@ -345,7 +353,7 @@ def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
     print(f"\nReconciliation table image: {out_path}")
-    print(f"4-witness B_crit range: {bcrit_range:.3f} T (tolerance {TOLERANCE_BCRIT_RANGE} T) -> {tolerance_status}")
+    print(f"3-witness B_crit range: {bcrit_range:.3f} T (tolerance {TOLERANCE_BCRIT_RANGE} T) -> {tolerance_status}")
     return bcrit_range, tolerance_status
 
 
@@ -378,7 +386,7 @@ def main():
         bcrit_range, status = render_reconciliation_table(
             qw_bcrit, wire_bcrits, FIG_PATH)
         if status == "FAIL":
-            print(f"FAIL: 4-witness disagreement exceeds tolerance")
+            print(f"FAIL: 3-witness disagreement exceeds tolerance")
             all_passed = False
     else:
         print("FAIL: missing B_crit values for reconciliation table")
