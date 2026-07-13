@@ -73,35 +73,35 @@ contains
 
   @test
   subroutine test_wire_pfaffian_witness_sign_agreement_synthetic()
-    ! Spec §4.3 — drop the zero-escape hatch via the OPPOSITE direction
-    ! (controller-mandated resolution): assertions today pass via the
-    ! "(s1==0 .and. s2==0)" branch because all current synthetic
-    ! fixtures (16x16 N=1 and 32x32 N=2, swept over mu in
-    ! {-0.5, 0.0, 0.03, 0.0301} and delta in {0.001, 0.05, 0.5})
-    ! collapse to Pf=0 under diagonal-in-(c,c†) BdG. The non-trivial
-    ! branch "(s1 == s2 .and. s1 /= 0)" is the strict assertion that
-    ! will fire once C-1 multi-site scan is exercised against a real
-    ! wire BdG in [bdg] mode (sweep coverage deferred to U13). See
-    ! `2026-07-05-pr41-completion-design.md` §4.3.
+    ! Spec §4.3 — STRICT sign-agreement assertion (no zero-escape hatch).
+    ! The witness must produce identical non-zero signs for both S1 (smallest
+    ! |E| subspace) and S2 (conduction-band projection) strategies when the
+    ! BdG matrix is topologically non-trivial.
+    !
+    ! KNOWN LIMITATION (@todo, tracked in spec `2026-07-05-pr41-completion-design.md`
+    ! §4.3): the synthetic fixture `build_synthetic_bdg_16` constructs a
+    ! diagonal-in-(c,c†) BdG matrix (single-particle block is purely
+    ! diagonal; pairing block is real diagonal). Under this structure the
+    ! Pfaffian vanishes identically because no band mixes the
+    ! conduction-block subspaces across the Nambu seam, so the witness
+    ! returns (0, 0) and the strict assertion FAILS. A real wire BdG from
+    ! `topologicalAnalysis slimpfaffian` (deferred to U13) carries the
+    ! off-diagonal k.p terms required for a non-trivial Pf.
+    !
+    ! Per spec §4.3 the zero-escape hatch was deliberately removed: a
+    ! silent-zero pass-through would mask the real diagnostic. This test
+    ! is therefore expected to FAIL on current fixtures; the @todo marks
+    ! it as a known gap pending U13 (wire periodic/Bloch BdG with
+    ! Peierls-twist under Bx≠0, see PRD Issue 07).
+    ! @todo replace synthetic fixture with real wire BdG once U13 lands
     complex(kind=dp) :: H_bdg(16, 16)
     integer :: s1, s2
-    logical :: s1s2_agree_or_both_zero
 
     call build_synthetic_bdg_16(H_bdg, mu=0.0_dp, delta_0=0.001_dp)
     call wire_pfaffian_witness(H_bdg, 16, s1, s2)
 
-    ! AC: either both signs are zero (vanishing Pf: pair-symmetric fixture
-    ! lacks the antisymmetric subspace to host a non-trivial Pf) OR both
-    ! signs agree AND are non-zero. The empty-disjunction clause is the
-    ! non-trivial branch — strictly s1==s2/=0 — the zero-disjunction clause
-    ! is a documented weakening for the diagonal-in-(c,c†) BdG fixture
-    ! that all current unit fixtures collapse to (spec §4.3 gap; the
-    ! multi-site scan added for C-1 still returns Pf=0 on purely real
-    ! diagonal-in-(c,c†) BdG matrices because no band mixes the
-    ! conduction-block subspaces across the Nambu seam).
-    s1s2_agree_or_both_zero = ((s1 == 0 .and. s2 == 0) .or. &
-                               (s1 == s2 .and. s1 /= 0))
-    @assertTrue(s1s2_agree_or_both_zero)
+    ! Strict AC: signs must agree AND be non-zero. No both-zero escape.
+    @assertTrue(s1 == s2 .and. s1 /= 0)
   end subroutine
 
   @test

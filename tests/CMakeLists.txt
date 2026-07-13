@@ -1257,7 +1257,7 @@ set_tests_properties(
 # valence bands (lowest-M copy); this locks the corrected [il,iuu] slice.
 add_test(
     NAME verification_qw_bandstructure_dense_feast
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_bandstructure_dense_feast.py
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_bandstructure_dense_feast.sh
         ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
