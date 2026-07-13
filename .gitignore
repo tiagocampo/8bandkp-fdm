@@ -62,8 +62,12 @@ Thumbs.db
 
 # Backup files
 *.bak
+*.bkp
 *.old
 *.orig
+
+# Claude Code runtime state
+.claude/scheduled_tasks.lock
 
 # Documentation (large/generated)
 docs/papers/
