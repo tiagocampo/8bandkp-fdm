@@ -16,7 +16,7 @@ program topologicalAnalysis
   use topological_analysis
   use bdg_hamiltonian
   use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, &
-    & q_zero_tol, bdg_eval_params_with_delta
+    & q_zero_tol, bdg_eval_params_with_delta, eval_bdg_pfaffian_witness_csr
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
   use spectral_bdg_wire, only: compute_spectral_function_bdg_wire, compute_bdg_ldos, compute_bdg_ldos_nambu
@@ -1369,7 +1369,11 @@ contains
     ! +1 = trivial, 0 = gap closure / inconclusive.
     block
       integer :: s2_sign
-      call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg_local, s2_sign)
+      ! Slim Pfaffian witness via seam sibling (per ticket 04 of
+      ! .scratch/bdg-evaluator-pfaffian/ — drop-in replacement for
+      ! wire_pfaffian_witness_sweep, same s2_sign ∈ {-1, 0, +1} semantics).
+      s2_sign = eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg_local, &
+                                              bdg_eval_params_with_delta(cfg_in%bdg%delta_0))
       if (s2_sign == -1) then
         z2 = 1
       else if (s2_sign == +1) then
