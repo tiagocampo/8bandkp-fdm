@@ -1,1 +1,0 @@
-ADD_TEST_SUITE(test_sc_loop_suite)

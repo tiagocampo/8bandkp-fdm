@@ -1,0 +1,161 @@
+module test_phs_qw_peierls_symmetric
+  ! COVERAGE: observable=PHS_dense_QW geometry=QW material=InAsW tier=unit
+  ! ==============================================================================
+  ! Task 1.9 (P1 BdG stabilization, ADR 0008 §2): class-D PHS oracle pinning
+  ! the dense-QW builder's behavior at generic k_par with Bx != 0.
+  !
+  ! For the QW builder (build_bdg_hamiltonian_qw), there is NO Peierls phase
+  ! path: ZB8bandQW does not apply any position-dependent phase. B_vec enters
+  ! only via the diagonal Zeeman table (a real-valued per-band additive
+  ! constant). The class-D PHS residual
+  !   || C H(k) C^{-1} + H(-k) ||_F  with C = tau_x K
+  ! must therefore be zero (up to FP noise) at generic k_par for any
+  ! diagonal-only perturbation.
+  !
+  ! If a future refactor adds Peierls to the dense-QW path (e.g. by routing
+  ! ZB8bandQW through the wire's Peierls machinery), this test will
+  ! immediately catch any sign-flip or magnitude error.
+  !
+  ! Companion test: test_bdg_phs.pf::test_phs_wire_*_at_generic_k. The
+  ! wire builder applies Peierls with +B to the electron block and -B
+  ! to the hole block (Issue 03 fix3) so that its hole block carries
+  ! the negated Peierls that -conjg(H0(-k)) requires. The dense-QW
+  ! builder has no such path; the class-D PHS oracle is trivially
+  ! satisfied at generic k with Bx != 0.
+  ! ==============================================================================
+  use funit
+  use definitions, only: dp, simulation_config, init_grid_from_config
+  use bdg_hamiltonian, only: build_bdg_hamiltonian_qw
+  implicit none
+
+  ! Numerical tolerance for the PHS residual. The class-D constraint
+  ! C H(k) C^{-1} = -H(-k) is exact (mathematical identity) once mu*I
+  ! and Delta entries are correctly placed; numerical FP error from
+  ! the dense assembly must stay below this bound. The companion
+  ! test_bdg_phs.pf uses 1.0e-10_dp for the wire (which carries
+  ! Peierls phase multipliers with exp(-i*phi) FP error). The dense
+  ! QW path has fewer FP operations (no Peierls, no exp()), so we
+  ! adopt the same 1.0e-10_dp witness.
+  real(kind=dp), parameter :: PHS_TOL = 1.0e-10_dp
+
+contains
+
+  @test
+  subroutine test_phs_qw_with_bx_ne0_at_generic_k()
+    ! Class-D PHS oracle for the dense-QW builder at generic k_par with
+    ! Bx != 0 (no Zeeman on off-diagonal, no Peierls). Asserts
+    !   || C H(k) C^{-1} + H(-k) ||_F  /  || H(k) ||_F  <  PHS_TOL
+    ! with C = tau_x K.
+    !
+    ! QW setup matches the minimal QW BdG fixture used in
+    ! test_bdg_hamiltonian.pf::setup_minimal_qw_bdg_fixture, except we
+    ! set B_vec = [1.0, 0, 0] T to exercise the Peierls-relevant axis
+    ! while keeping g_factor active for the diagonal Zeeman term.
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: profile(:,:), kpterms(:,:,:)
+    complex(kind=dp), allocatable :: H_k(:,:), H_mk(:,:)
+    integer :: Npts, n_total, n_half, ii, jj
+    real(kind=dp) :: k_par, acc, resid, hnorm, rel
+
+    k_par = 0.07_dp
+
+    ! --- Build a minimal QW BdG fixture: 8 grid points, single material,
+    ! InAsW-like profile (HH at -0.1 eV, LH at -0.05 eV, SO at -0.05 eV,
+    ! CB at 0.5 eV), nonzero diagonal kpterms. Bx = 1.0 T, g = 6.0.
+    Npts = 8
+    call setup_dense_qw_with_bx(cfg, Npts)
+
+    allocate(profile(Npts, 3), kpterms(Npts, Npts, 10))
+    profile(:, 1) = -0.1_dp
+    profile(:, 2) = -0.05_dp
+    profile(:, 3) =  0.5_dp
+    kpterms = 0.0_dp
+    do ii = 1, Npts
+      kpterms(ii, ii, 1) = 1.0_dp    ! kpterms(1) for HH/LH diagonal
+      kpterms(ii, ii, 4) = 0.2_dp    ! kpterms(4) for SO
+      kpterms(ii, ii, 9) = 0.3_dp    ! kpterms(9) for CB
+    end do
+
+    call init_grid_from_config(cfg)
+
+    ! --- Build H(k_par) and H(-k_par) ---
+    call build_bdg_hamiltonian_qw(H_k, cfg, profile, kpterms, &
+                                  k_par=k_par, mu=0.0_dp, delta_0=0.5e-3_dp, &
+                                  B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=6.0_dp)
+    call build_bdg_hamiltonian_qw(H_mk, cfg, profile, kpterms, &
+                                  k_par=-k_par, mu=0.0_dp, delta_0=0.5e-3_dp, &
+                                  B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=6.0_dp)
+
+    n_total = size(H_k, 1)
+    n_half = n_total / 2
+
+    ! --- Compute PHS residual: || C H(k) C^{-1} + H(-k) ||_F ---
+    ! C = tau_x K, so (C H C^{-1})[i, j] = conjg(H[tau(i), tau(j)]) with
+    ! tau swapping upper/lower half. The constraint is then
+    !   conjg(H_k(tau(i), tau(j))) + H_mk(i, j) = 0
+    ! for all i, j. Same formula for all rows (no per-half sign flip;
+    ! the sign of the canonical hole block H_hole = -conjg(H0(-k))
+    ! is already absorbed into the data, and the tau-swap brings it
+    ! back out).
+    acc = 0.0_dp
+    do jj = 1, n_total
+      do ii = 1, n_total
+        acc = acc + abs(conjg(H_k(tau_idx(ii, n_half), tau_idx(jj, n_half))) &
+                        + H_mk(ii, jj))**2
+      end do
+    end do
+    resid = sqrt(acc)
+
+    hnorm = 0.0_dp
+    do jj = 1, n_total
+      do ii = 1, n_total
+        hnorm = hnorm + abs(H_k(ii, jj))**2
+      end do
+    end do
+    hnorm = sqrt(hnorm)
+    rel = resid / max(hnorm, 1.0e-30_dp)
+
+    print *, '[diagnostic] test_phs_qw_with_bx_ne0_at_generic_k: rel = ', rel, &
+              ' raw_resid = ', resid
+
+    @assertTrue(rel < PHS_TOL, message="dense-QW PHS at generic k with Bx != 0: C H(k) C^-1 = -H(-k)")
+
+    deallocate(H_k, H_mk, profile, kpterms)
+  end subroutine test_phs_qw_with_bx_ne0_at_generic_k
+
+  ! ----------------------------------------------------------------------------
+  ! Helpers
+  ! ----------------------------------------------------------------------------
+
+  ! Electron <-> hole index swap (tau_x in Nambu space).
+  pure function tau_idx(k, half_n) result(t)
+    integer, intent(in) :: k, half_n
+    integer :: t
+    if (k <= half_n) then
+      t = k + half_n
+    else
+      t = k - half_n
+    end if
+  end function tau_idx
+
+  subroutine setup_dense_qw_with_bx(cfg, N)
+    type(simulation_config), intent(out) :: cfg
+    integer, intent(in) :: N
+    cfg%confinement = 'qw'
+    cfg%FDorder = 2
+    cfg%fd_step = N
+    cfg%num_layers = 1
+    cfg%totalSize = 50.0_dp
+    cfg%delta = 10.0_dp
+    cfg%dz = 10.0_dp
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 6
+    cfg%evnum = 8
+    cfg%bdg%enabled = .true.
+    cfg%bdg%delta_0 = 0.5e-3_dp
+    cfg%bdg%mu = 0.0_dp
+    cfg%bdg%g_factor = 6.0_dp
+    cfg%bdg%B_vec = [1.0_dp, 0.0_dp, 0.0_dp]
+  end subroutine setup_dense_qw_with_bx
+
+end module test_phs_qw_peierls_symmetric

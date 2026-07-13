@@ -19,6 +19,7 @@ module green_functions
   use hamiltonian_wire, only: ZB8bandGeneralized
   use eigensolver, only: eigensolver_base, eigensolver_config, eigensolver_result, &
     & eigensolver_result_free, make_eigensolver, auto_compute_energy_window, &
+    & apply_solver_window, &
     & EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use wire_setup_mod, only: wire_setup, wire_setup_init, wire_setup_free
 
@@ -280,13 +281,17 @@ contains
     do ik = 1, nk
       call ZB8bandGeneralized(H_csr, k_arr(ik), wsetup%profile_2d, wsetup%kpterms_2d, &
         & cfg_local, ws=wsetup%ws)
-      call auto_compute_energy_window(H_csr, emin_auto, emax_auto)
-      eigen_cfg%emin = minval(E_arr) - 5.0_dp * eta
-      eigen_cfg%emax = maxval(E_arr) + 5.0_dp * eta
-      if (cfg_local%solver%emin /= 0.0_dp .or. cfg_local%solver%emax /= 0.0_dp) then
-        eigen_cfg%emin = cfg_local%solver%emin
-        eigen_cfg%emax = cfg_local%solver%emax
-      else if (eigen_cfg%emin >= eigen_cfg%emax) then
+      ! KTD6 closure (ADR 0005): route the wire spectral window through
+      ! apply_solver_window. The override path (cfg_local%solver%emin/emax
+      ! nonzero) is honored verbatim. Otherwise, the E-grid envelope
+      ! is fed through asw_evals so the Gershgorin margin convention
+      ! applies uniformly. The legacy auto_compute_energy_window
+      ! fallback is retained only as the narrow-case degenerate-window
+      ! backstop (eigen_cfg%emin >= emax).
+      call apply_solver_window(E_arr, cfg_local%solver%emin, cfg_local%solver%emax, &
+        & eigen_cfg%emin, eigen_cfg%emax)
+      if (eigen_cfg%emin >= eigen_cfg%emax) then
+        call auto_compute_energy_window(H_csr, emin_auto, emax_auto)
         eigen_cfg%emin = emin_auto
         eigen_cfg%emax = emax_auto
       end if
@@ -378,7 +383,7 @@ contains
 
     if (N /= size(ldos)) then
       print *, 'ERROR: compute_ldos_csr: ldos size mismatch (N=', N, ', ldos=', size(ldos), ')'
-      stop 1
+      error stop 'compute_ldos_csr: LDOS array size does not match Hamiltonian row count'
     end if
 
     shift = cmplx(E, eta, kind=dp)
@@ -399,7 +404,7 @@ contains
       end do
       if (.not. found_diag) then
         print *, 'ERROR: compute_ldos_csr: missing structural diagonal at row ', r
-        stop 1
+        error stop 'compute_ldos_csr: Hamiltonian CSR is missing the structural diagonal (see row above)'
       end if
     end do
 
@@ -435,7 +440,7 @@ contains
       call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                      a_val, ia, ja, perm, nrhs, iparm, msglvl, &
                      rhs, sol, error_loc)
-      stop 1
+      error stop 'compute_ldos_csr: PARDISO symbolic factorization failed'
     end if
 
     ! Phase 22: Numeric factorization
@@ -449,7 +454,7 @@ contains
       call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                      a_val, ia, ja, perm, nrhs, iparm, msglvl, &
                      rhs, sol, error_loc)
-      stop 1
+      error stop 'compute_ldos_csr: PARDISO numeric factorization failed'
     end if
 
     ! Extract diagonal of G by solving A * x = e_r for each r
@@ -468,7 +473,7 @@ contains
         call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                        a_val, ia, ja, perm, nrhs, iparm, msglvl, &
                        rhs, sol, error_loc)
-        stop 1
+        error stop 'compute_ldos_csr: PARDISO solve failed for LDOS column'
       end if
 
       ! LDOS = -(1/pi) * Im[G(r,r)] = -(1/pi) * Im[sol(r)]

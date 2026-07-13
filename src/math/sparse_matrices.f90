@@ -25,6 +25,8 @@ module sparse_matrices
   public :: csr_find_diag_positions
   public :: csr_spmv
   public :: csr_conjugate_transpose, csr_conjugate_transpose_to_preallocated
+  public :: csr_to_dense_work
+  public :: extract_block_csr
 
   ! ------------------------------------------------------------------
   ! Compressed Sparse Row (CSR) matrix type for complex-valued
@@ -367,7 +369,7 @@ contains
       else
         print *, 'ERROR: csr_set_values_from_coo: csr_pos out of range:', csr_pos, &
           ' (nnz=', mat%nnz, ', coo index=', i, ')'
-        stop 1
+        error stop 'csr_set_values_from_coo: COO->CSR index mapping fell out of valid range'
       end if
     end do
   end subroutine csr_set_values_from_coo
@@ -775,7 +777,7 @@ contains
     if (transfer(c_loc(C), 0_iknd) == transfer(c_loc(A), 0_iknd) .or. &
         transfer(c_loc(C), 0_iknd) == transfer(c_loc(B), 0_iknd)) then
       print *, 'ERROR: csr_add self-aliasing detected'
-      stop 1
+      error stop 'csr_add: self-aliasing detected (output C cannot alias input A or B)'
     end if
 
     sa = cmplx(1.0_dp, 0.0_dp, kind=dp)
@@ -870,7 +872,7 @@ contains
     end do
     if (any(diag_pos == 0)) then
       print *, 'ERROR: csr_find_diag_positions: no diagonal entry for some rows'
-      stop 1
+      error stop 'csr_find_diag_positions: CSR matrix has no structural diagonal in at least one row'
     end if
   end subroutine csr_find_diag_positions
 
@@ -1139,5 +1141,84 @@ contains
       end do
     end do
   end subroutine csr_conjugate_transpose_to_preallocated
+
+  ! ==================================================================
+  ! CSR -> dense extraction (utility; lives with CSR helpers per DRY).
+  ! Moved from spectral_bdg_wire.f90 and eigensolver.f90 in Task 3.2.
+  ! ==================================================================
+  subroutine csr_to_dense_work(H_csr, A, N)
+    ! CSR -> dense extraction (utility; lives with CSR helpers per DRY).
+    ! Moved from spectral_bdg_wire.f90 and eigensolver.f90 in Task 3.2.
+    !
+    ! Pointer caching per MEMORY `codebase-doc-drift-prevention`:
+    ! gfortran -O3 may emit array temporaries for derived-type component
+    ! access in tight CSR-traversal inner loops. Declaring H_csr as `target`
+    ! makes its allocatable components target-accessible; pointer association
+    ! then reads the storage directly without temporaries.
+    type(csr_matrix), target, intent(in) :: H_csr
+    integer, intent(in) :: N
+    complex(kind=dp), intent(out) :: A(N, N)
+    integer, pointer :: rowptr_(:) => null(), colind_(:) => null()
+    complex(kind=dp), pointer :: vals_(:) => null()
+    integer :: row, k
+
+    rowptr_ => H_csr%rowptr
+    colind_ => H_csr%colind
+    vals_ => H_csr%values
+
+    A = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do row = 1, N
+      do k = rowptr_(row), rowptr_(row + 1) - 1
+        A(row, colind_(k)) = vals_(k)
+      end do
+    end do
+  end subroutine csr_to_dense_work
+
+  ! ==================================================================
+  ! Extract a diagonal block from a CSR matrix into a smaller CSR.
+  ! Moved from spectral_bdg_wire.f90 (Task 3.2 follow-up, ADR 0008 DRY).
+  !
+  ! Re-indexes the block (r0..r1, r0..r1) into a (r1-r0+1) x (r1-r0+1)
+  ! matrix. Assumes the block has a structural diagonal at every row
+  ! (matches the BdG CSR property required by compute_ldos_csr).
+  ! ==================================================================
+  subroutine extract_block_csr(H_in, r0, r1, H_out)
+    type(csr_matrix), intent(in) :: H_in
+    integer, intent(in) :: r0, r1
+    type(csr_matrix), intent(out) :: H_out
+
+    integer :: Nr, max_nnz, nnz, i, r_out, c_out, idx, col_local
+    integer, allocatable :: rows_out(:), colind_out(:)
+    complex(kind=dp), allocatable :: values_out(:)
+
+    Nr = r1 - r0 + 1
+    max_nnz = H_in%nnz
+    allocate(rows_out(max_nnz))
+    allocate(colind_out(max_nnz), values_out(max_nnz))
+
+    nnz = 0
+    do r_out = 1, Nr
+      idx = r0 + r_out - 1
+      do i = H_in%rowptr(idx), H_in%rowptr(idx + 1) - 1
+        col_local = H_in%colind(i)
+        if (col_local >= r0 .and. col_local <= r1) then
+          nnz = nnz + 1
+          c_out = col_local - r0 + 1
+          rows_out(nnz) = r_out
+          colind_out(nnz) = c_out
+          values_out(nnz) = H_in%values(i)
+        end if
+      end do
+    end do
+
+    if (nnz == 0) then
+      call csr_build_from_coo(H_out, Nr, Nr, 0, [integer::], [integer::], &
+         & [complex(kind=dp)::])
+    else
+      call csr_build_from_coo(H_out, Nr, Nr, nnz, &
+         & rows_out(1:nnz), colind_out(1:nnz), values_out(1:nnz))
+    end if
+    deallocate(rows_out, colind_out, values_out)
+  end subroutine extract_block_csr
 
 end module sparse_matrices

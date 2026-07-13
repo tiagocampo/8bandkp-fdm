@@ -1,1 +1,0 @@
-ADD_TEST_SUITE(test_charge_density_suite)

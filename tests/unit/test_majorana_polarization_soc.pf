@@ -1,0 +1,149 @@
+module test_majorana_polarization_soc
+  ! COVERAGE: observable=majorana_polarization_complex geometry=wire material=InAsW tier=unit
+  ! Task 1.12 (P1 BdG stabilization, ADR 0008 §3): pins the complex-coherence
+  ! branch of majorana_polarization against SOC-active BdG inputs where the
+  ! per-site u·v* product is purely imaginary (Rashba/Dresselhaus spinor phase
+  ! that real-valued BdG tests cannot exercise).
+  !
+  ! The previous implementation used `u_vc = real(evec * conjg(evec))`,
+  ! which drops the imaginary MZM phase and returns P_M = 0 for any
+  ! SOC-active spinor with purely imaginary coherence. The fixed code
+  ! preserves the complex u·v* through the band sum and takes |.| at the
+  ! end, so the MZM signature survives.
+  !
+  ! Fixture: construct a synthetic BdG eigenvector with
+  !   u_↑ = (1+i)/sqrt(2),  v_↑ = (1-i)/sqrt(2)
+  !   u_↓ = (1+i)/sqrt(2),  v_↓ = -(1-i)/sqrt(2)
+  ! at the same site, restricted to the Kramers pair (band 1 HH↑, band 4
+  ! HH↓). For each spin sector, u·v* = (1+i)(1+i)/2 = i (purely imaginary)
+  ! for the up sector, and u_↓·v_↓* = (1+i)·(-(1+i))/2 = -i for the down
+  ! sector. With s_↑=+1, s_↓=-1 (per pairing_sign):
+  !   coherence = (+1)·i + (-1)·(-i) = i + i = 2i
+  ! → |coherence| = 2 → P_M = 2·2/density = 4/4 = 1.0 (saturated MZM).
+  !
+  ! This pins that the FIX preserves the imaginary phase (the bug would
+  ! return coherence=Re(i)+Re(-i)=0+0=0, then P_M=0 even with the
+  ! correct sign choice). The headline assertion is that P_M(1) reaches
+  ! saturation (>0.95) for the SOC-active spinor — a result the old
+  ! `real()` cast cannot produce.
+  use funit
+  use definitions, only: dp
+  use topological_analysis, only: majorana_polarization, polarization_result_t
+  implicit none
+
+  ! Local copy of pairing_sign(8) (matches bdg_hamiltonian.f90):
+  ! spin-up bands {1,2,5,7} = +1, spin-down bands {3,4,6,8} = -1.
+  real(kind=dp), parameter :: pairing_sign(8) = [ &
+       1.0_dp, 1.0_dp, -1.0_dp, -1.0_dp, &
+       1.0_dp, -1.0_dp, 1.0_dp, -1.0_dp ]
+
+contains
+
+  @test
+  subroutine test_soc_active_spinor_PM_saturates_with_complex_coherence()
+    ! SOC-active BdG spinor (purely imaginary u·v*). Old code: real() cast
+    ! destroys the MZM phase → P_M = 0. Fixed code: complex coherence
+    ! preserved → P_M saturates to 1.
+    integer, parameter :: N = 8
+    real(kind=dp) :: u_sq_oneband, v_sq_oneband
+    real(kind=dp) :: inv_sqrt2
+    complex(kind=dp) :: evec_bdg(16*N)
+    type(polarization_result_t) :: pol
+
+    inv_sqrt2 = 1.0_dp / sqrt(2.0_dp)
+    evec_bdg = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! Band 1 (HH↑, spin-up): u_1 = (1+i)/sqrt(2), v_1 = (1-i)/sqrt(2)
+    !   u·v* = (1+i)(1+i)/2 = i (purely imaginary)
+    evec_bdg(1) = cmplx(inv_sqrt2, inv_sqrt2, kind=dp)
+    evec_bdg(8*N + 1) = cmplx(inv_sqrt2, -inv_sqrt2, kind=dp)
+
+    ! Band 4 (HH↓, spin-down): u_4 = (1+i)/sqrt(2), v_4 = -(1-i)/sqrt(2)
+    !   u·v* = (1+i)·(-(1+i))/2 = -(1+i)²/2 = -i
+    !   s_↓·u_↓·v_↓* = (-1)·(-i) = +i (constructive with band 1).
+    evec_bdg(3*N + 1) = cmplx(inv_sqrt2, inv_sqrt2, kind=dp)
+    evec_bdg(8*N + 3*N + 1) = cmplx(-inv_sqrt2, inv_sqrt2, kind=dp)
+
+    ! |u_1|² = |u_4|² = 1, |v_1|² = |v_4|² = 1. density = 4.
+    u_sq_oneband = abs(evec_bdg(1))**2
+    v_sq_oneband = abs(evec_bdg(8*N + 1))**2
+    @assertEqual(1.0_dp, u_sq_oneband, tolerance=1.0e-12_dp)
+    @assertEqual(1.0_dp, v_sq_oneband, tolerance=1.0e-12_dp)
+
+    pol = majorana_polarization(evec_bdg, N)
+
+    ! Headline: complex coherence preserved → P_M(1) saturates.
+    ! Old `real()`-cast code would return coherence = Re(i) + Re(-i) = 0,
+    ! then P_M(1) = 0 (this test would fail before the fix).
+    @assertTrue(pol%P_M(1) > 0.95_dp)
+
+    ! Charge polarization <tau_z> = (|u|²-|v|²)/(density) = 0 at the MZM.
+    @assertEqual(0.0_dp, pol%tau_z(1), tolerance=1.0e-12_dp)
+
+    ! Total P_M = 1 for our localized MZM at site 1.
+    @assertEqual(1.0_dp, pol%total_P_M, tolerance=1.0e-12_dp)
+  end subroutine test_soc_active_spinor_PM_saturates_with_complex_coherence
+
+  @test
+  subroutine test_old_real_cast_would_have_returned_zero_PM()
+    ! Regression pin: the OLD code (real() cast on u·v*) returns P_M = 0
+    ! for this exact fixture because Re(i) + Re(-i) = 0. The fixed code
+    ! (complex coherence, |.| at end) returns P_M = 1. This test
+    ! documents the bug-fix contrast: under the old code, the assertion
+    ! below would FAIL; under the new code, it PASSES.
+    integer, parameter :: N = 8
+    real(kind=dp) :: inv_sqrt2
+    complex(kind=dp) :: evec_bdg(16*N)
+    type(polarization_result_t) :: pol
+
+    inv_sqrt2 = 1.0_dp / sqrt(2.0_dp)
+    evec_bdg = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! Same SOC-active spinor as above.
+    evec_bdg(1) = cmplx(inv_sqrt2, inv_sqrt2, kind=dp)
+    evec_bdg(8*N + 1) = cmplx(inv_sqrt2, -inv_sqrt2, kind=dp)
+    evec_bdg(3*N + 1) = cmplx(inv_sqrt2, inv_sqrt2, kind=dp)
+    evec_bdg(8*N + 3*N + 1) = cmplx(-inv_sqrt2, inv_sqrt2, kind=dp)
+
+    pol = majorana_polarization(evec_bdg, N)
+
+    ! The bug-fix delta: pre-fix code had u_vc = real(evec*conjg(evec)).
+    ! Per-band real parts: Re(i) + Re(-i) = 0 + 0 = 0, so the old code's
+    ! coherence sum was exactly 0. The fixed code accumulates the full
+    ! complex sum (i + i = 2i) and takes |.| once at the end, yielding
+    ! |2i| = 2 → P_M(1) = 4/4 = 1.
+    !
+    ! Headline assertion: P_M(1) is NOT zero (it must be > 0.5, the
+    ! saturation floor for any reasonable MZM).
+    @assertTrue(pol%P_M(1) > 0.5_dp)
+  end subroutine test_old_real_cast_would_have_returned_zero_PM
+
+  @test
+  subroutine test_pure_imaginary_coherence_contributes_to_PM()
+    ! Single-band pure-imaginary coherence: only one spin sector populated,
+    ! so s_σ·u·v* = ±i. With complex coherence, |.| at the end gives |i| = 1
+    ! and P_M(1) = 2·1/(2·|u|²) = 1 (since |u|² = |v|²). Old code:
+    ! Re(i) = 0 → P_M(1) = 0.
+    integer, parameter :: N = 8
+    real(kind=dp) :: inv_sqrt2
+    complex(kind=dp) :: evec_bdg(16*N)
+    type(polarization_result_t) :: pol
+
+    inv_sqrt2 = 1.0_dp / sqrt(2.0_dp)
+    evec_bdg = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! Only band 1 (HH↑, spin-up) populated. u_1 = (1+i)/sqrt(2),
+    ! v_1 = (1-i)/sqrt(2).
+    !   u·v* = (1+i)(1+i)/2 = i (purely imaginary).
+    evec_bdg(1) = cmplx(inv_sqrt2, inv_sqrt2, kind=dp)
+    evec_bdg(8*N + 1) = cmplx(inv_sqrt2, -inv_sqrt2, kind=dp)
+
+    pol = majorana_polarization(evec_bdg, N)
+
+    ! Single spin sector, density = 2 (one band, |u|²+|v|² = 1+1 = 2).
+    ! coherence = (+1)·i = i. |coherence| = 1.
+    ! P_M(1) = 2·1/2 = 1.0.
+    @assertTrue(pol%P_M(1) > 0.95_dp)
+  end subroutine test_pure_imaginary_coherence_contributes_to_PM
+
+end module test_majorana_polarization_soc

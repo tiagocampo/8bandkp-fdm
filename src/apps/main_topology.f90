@@ -15,8 +15,11 @@ program topologicalAnalysis
     & apply_solver_window, EIGEN_MODE_ENERGY, EIGEN_MODE_FULL
   use topological_analysis
   use bdg_hamiltonian
+  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, &
+    & q_zero_tol, bdg_eval_params_with_delta
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
+  use spectral_bdg_wire, only: compute_spectral_function_bdg_wire, compute_bdg_ldos, compute_bdg_ldos_nambu
   use linalg, only: mkl_set_num_threads_local
   use simulation_setup_mod, only: simulation_setup, simulation_setup_init, simulation_setup_free
   use wire_setup_mod, only: wire_setup, wire_setup_init, wire_setup_free
@@ -179,6 +182,22 @@ program topologicalAnalysis
       print *, '=== BdG analysis complete ==='
 
     ! ==================================================================
+    case('bdq_spectral')
+    ! BdG LDOS + A(k,E) + Nambu-resolved LDOS on the topological wire.
+    ! Single PARDISO setup, three observers (Issue 06 / Unit U9).
+    ! Requires confinement='wire' (the spectral/LDOS observables are
+    ! wire-only; the dense (bulk/QW) spectral routines stay untouched).
+    ! ==================================================================
+      if (trim(cfg%confinement) == 'wire') then
+        call run_bdq_spectral_wire(cfg, topo_result)
+      else
+        print *, 'ERROR: bdq_spectral mode requires confinement=''wire'''
+        error stop 'bdq_spectral requires wire confinement'
+      end if
+
+      print *, '=== BdG spectral analysis complete ==='
+
+    ! ==================================================================
     case('spectral')
     ! Spectral function A(k, E) for QW systems
     ! ==================================================================
@@ -213,34 +232,7 @@ program topologicalAnalysis
   ! ====================================================================
   ! Write topological result to output file
   ! ====================================================================
-  call ensure_output_dir()
-  call get_unit(iounit)
-  open(unit=iounit, file='output/topology_result.dat', status='replace', &
-       action='write', iostat=status)
-  if (status /= 0) then
-    print *, 'ERROR: cannot open output/topology_result.dat (iostat=', status, ')'
-    error stop 'cannot open topology_result.dat'
-  end if
-  write(iounit, '(A)') '# Topological Analysis Results'
-  write(iounit, '(A,A)') '# mode: ', trim(cfg%topo%mode)
-  write(iounit, '(A,I0)') '# Chern number: ', topo_result%chern_number
-  write(iounit, '(A,I0)') '# Z2 invariant: ', topo_result%z2_invariant
-  write(iounit, '(A,F12.6)') '# Hall conductance (e^2/h): ', topo_result%hall_conductance
-  write(iounit, '(A,F12.6)') '# Conductance xy (e^2/h): ', topo_result%conductance_xy
-  write(iounit, '(A,F12.6)') '# Conductance zz: ', topo_result%conductance_zz
-  write(iounit, '(A,I0)') '# Majorana count: ', topo_result%n_majorana
-  write(iounit, '(A,I0)') '# Majorana fit failures: ', topo_result%n_majorana_fit_failed
-  write(iounit, '(A,F12.6)') '# Min gap (eV): ', topo_result%min_gap
-  write(iounit, '(A,F12.6)') '# Edge localization length min (AA): ', topo_result%edge_xi_min
-  write(iounit, '(A,F12.6)') '# Edge localization length avg (AA): ', topo_result%edge_xi
-  if (allocated(topo_result%edge_energies)) then
-    write(iounit, '(A)') '# Edge state energies (eV):'
-    do i = 1, size(topo_result%edge_energies)
-      write(iounit, '(F12.6)') topo_result%edge_energies(i)
-    end do
-  end if
-  close(iounit)
-  print *, '  Results written to output/topology_result.dat'
+  call write_topology_result(cfg, topo_result)
 
   ! ====================================================================
   ! Clean up
@@ -530,8 +522,14 @@ contains
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues
 
-    ! Find minimum gap: full superconducting gap = 2 * min|E|
-    result%min_gap = 2.0_dp * bdg_zero_energy_gap(eigvals_bdg)
+    ! Find minimum gap: full superconducting gap = 2 * min|E| (Issue 00 seam)
+    block
+      type(bdg_eval_params_t) :: evp
+      type(bdg_eval_result_t) :: evr
+      evp = bdg_eval_params_with_delta(cfg%bdg%delta_0)
+      evr = eval_bdg_point(eigvals_bdg, evp)
+      result%min_gap = evr%minigap
+    end block
 
     ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
     call write_bdg_eigenvalues(eigvals_bdg, 'kz', kz_val)
@@ -544,13 +542,17 @@ contains
       real(kind=dp) :: xi_val
       real(kind=dp), allocatable :: profile_rho(:)
       integer :: nspatial, status_prof
+      type(bdg_eval_params_t) :: wire_eval_p
+      real(kind=dp) :: wire_near_zero_thr
 
-      n_zero = 0
-      do i = 1, eigen_res_local%nev_found
-        if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
-          n_zero = n_zero + 1
-        end if
-      end do
+      ! Issue 00: per-point near-zero count via the seam.
+      wire_eval_p = bdg_eval_params_with_delta(cfg%bdg%delta_0)
+      block
+        type(bdg_eval_result_t) :: evr
+        evr = eval_bdg_point(eigvals_bdg, wire_eval_p)
+        n_zero = evr%near_zero_count
+      end block
+      wire_near_zero_thr = wire_eval_p%near_zero_frac * wire_eval_p%delta_0
 
       print *, '  Eigenvalues found: ', eigen_res_local%nev_found
       print *, '  Near-zero modes (|E| < 0.001*delta): ', n_zero
@@ -567,7 +569,7 @@ contains
         nspatial = Ntot_local / 8
 
         do i = 1, eigen_res_local%nev_found
-          if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+          if (abs(eigvals_bdg(i)) < wire_near_zero_thr) then
             n_majorana = n_majorana + 1
             allocate(profile_rho(nspatial))
             xi_val = compute_majorana_profile( &
@@ -582,22 +584,17 @@ contains
 
             ! Write Majorana profile to file (first Majorana mode only)
             if (n_majorana == 1) then
-              call get_unit(iounit_prof)
-              open(unit=iounit_prof, file='output/majorana_profile.dat', &
-                   status='replace', action='write', iostat=status_prof)
-              if (status_prof == 0) then
-                write(iounit_prof, '(A)') '# Majorana wavefunction spatial profile'
-                write(iounit_prof, '(A,ES16.8)') '# kz (1/A) = ', kz_val
-                write(iounit_prof, '(A,ES16.8)') '# xi (AA) = ', xi_val
-                write(iounit_prof, '(A,I0)') '# n_spatial = ', nspatial
-                write(iounit_prof, '(A)') '# Columns: index, x (AA), y (AA), rho'
-                do j = 1, nspatial
-                  write(iounit_prof, '(I6,2ES16.8,ES20.12)') j, &
-                    & cfg%grid%coords(1, j), cfg%grid%coords(2, j), profile_rho(j)
-                end do
-                close(iounit_prof)
-                print *, '  Majorana profile written to output/majorana_profile.dat'
-              end if
+              call write_majorana_profile( &
+                & reshape(cfg%grid%coords, [2 * nspatial]), profile_rho, &
+                & 'kz', kz_val, xi_val, nspatial)
+              ! PR #41 A.3a (Issue 04 / U7): emit polarization file so
+              ! verify_majorana_polarization.py can parse real output
+              ! (the pre-A.3a verifier generated synthetic numpy data).
+              block
+                type(polarization_result_t) :: pol
+                pol = majorana_polarization(eigen_res_local%eigenvectors(:, i), Ngrid_local)
+                call write_majorana_polarization(pol, 'output/majorana_polarization.dat')
+              end block
             end if
             deallocate(profile_rho)
           end if
@@ -620,7 +617,7 @@ contains
         allocate(result%edge_energies(n_zero))
         j = 0
         do i = 1, eigen_res_local%nev_found
-          if (abs(eigvals_bdg(i)) < 0.001_dp * cfg%bdg%delta_0) then
+          if (abs(eigvals_bdg(i)) < wire_near_zero_thr) then
             j = j + 1
             result%edge_energies(j) = eigvals_bdg(i)
           end if
@@ -641,6 +638,124 @@ contains
     call wire_setup_free(wsetup)
 
   end subroutine run_bdg_wire
+
+  ! ==================================================================
+  ! BdG spectral mode (Issue 06 / Unit U9): single PARDISO setup,
+  ! three observers on the BdG CSR.
+  !   1. compute_bdg_ldos        -> total LDOS r, E -> bdg_ldos.dat
+  !   2. compute_bdg_ldos_nambu  -> electron + hole LDOS -> bdg_ldos_nambu.dat
+  !   3. compute_spectral_function_bdg_wire -> A(k,E) -> bdg_spectral.dat
+  !
+  ! No new TOML fields (ADR 0002); energy/k grids are read from the
+  ! existing [topology] spectral_* fields when present, otherwise from
+  ! the [solver] window (with a sensible physics-sized default).
+  ! ==================================================================
+  subroutine run_bdq_spectral_wire(cfg_in, result)
+    type(simulation_config), intent(in) :: cfg_in
+    type(topological_result), intent(inout) :: result
+
+    type(simulation_config) :: cfg
+    type(wire_setup) :: wsetup
+    type(csr_matrix) :: H_bdg_csr
+    real(kind=dp), allocatable :: ldos_total(:), ldos_e(:), ldos_h(:)
+    real(kind=dp), allocatable :: A_kE(:,:)
+    real(kind=dp), allocatable :: k_values(:), E_values(:)
+    integer :: nk, nE, iE, i, kz_count, kz_idx
+    real(kind=dp) :: kz_val, emin_local, emax_local, eta, dE
+
+    cfg = cfg_in
+
+    print *, '--- BdG spectral mode: LDOS + A(k,E) + Nambu-resolved LDOS ---'
+
+    call wire_setup_init(wsetup, cfg)
+
+    ! Energy grid: derive from [topology] spectral_E_min/max/nE, else default
+    if (cfg%topo%spectral_E_min < cfg%topo%spectral_E_max .and. cfg%topo%spectral_nE > 1) then
+      nE = cfg%topo%spectral_nE
+      allocate(E_values(nE))
+      dE = (cfg%topo%spectral_E_max - cfg%topo%spectral_E_min) / real(nE - 1, kind=dp)
+      do iE = 1, nE
+        E_values(iE) = cfg%topo%spectral_E_min + real(iE - 1, kind=dp) * dE
+      end do
+    else
+      ! Physics-sized default: +/-50*delta_0 around E=0 (matches Issue 00's BdG window).
+      eta = cfg%topo%spectral_eta
+      emin_local = -max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
+      emax_local =  max(50.0_dp * cfg%bdg%delta_0, 0.01_dp)
+      nE = 51
+      allocate(E_values(nE))
+      dE = (emax_local - emin_local) / real(nE - 1, kind=dp)
+      do iE = 1, nE
+        E_values(iE) = emin_local + real(iE - 1, kind=dp) * dE
+      end do
+    end if
+
+    ! k-points: derive from [topology] spectral_k_min/max/nk, else single k=bdg.kz.
+    if (cfg%topo%spectral_k_min < cfg%topo%spectral_k_max .and. cfg%topo%spectral_nk > 0) then
+      nk = cfg%topo%spectral_nk
+      allocate(k_values(nk))
+      do i = 1, nk
+        k_values(i) = cfg%topo%spectral_k_min + real(i - 1, kind=dp) * &
+          & (cfg%topo%spectral_k_max - cfg%topo%spectral_k_min) / max(real(nk - 1, kind=dp), 1.0_dp)
+      end do
+      kz_count = nk
+    else
+      nk = 1
+      allocate(k_values(nk))
+      k_values(1) = cfg%bdg%kz
+      kz_count = 1
+    end if
+
+    eta = cfg%topo%spectral_eta
+    if (eta <= 0.0_dp) eta = 0.005_dp  ! small broadening default
+
+    ! Iterate over kz points; each one builds a new BdG CSR.
+    ! Single PARDISO setup PER kz (observers reuse the same CSR).
+    do kz_idx = 1, kz_count
+      kz_val = k_values(kz_idx)
+      call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, wsetup%profile_2d, wsetup%kpterms_2d, &
+        & kz_val, cfg%bdg%mu, cfg%bdg%delta_0, wsetup%ws, &
+        & cfg%bdg%B_vec, cfg%bdg%g_factor)
+
+      print *, '  kz=', kz_val, ' 1/A  (point ', kz_idx, ' of ', kz_count, ')'
+
+      ! Observer 1: total LDOS at each E -> bdg_ldos.dat
+      ! LDOS is a function of (r, E) on the BdG CSR; write the integrated
+      ! (sum over r) total LDOS for the file header (preserves the
+      ! 1D-spectrum convention of the wire spectral mode). The Nambu
+      ! decomposition below preserves the per-r information.
+      allocate(ldos_total(size(E_values)))
+      do iE = 1, size(E_values)
+        block
+          real(kind=dp), allocatable :: ldos_tmp(:)
+          call compute_bdg_ldos(H_bdg_csr, E_values(iE), eta, ldos_tmp)
+          ldos_total(iE) = sum(ldos_tmp)
+          if (allocated(ldos_tmp)) deallocate(ldos_tmp)
+        end block
+      end do
+      call write_bdg_ldos(E_values, ldos_total, kz_val)
+      deallocate(ldos_total)
+
+      ! Observer 2: Nambu-resolved LDOS at E=0 (the Majorana peak) -> bdg_ldos_nambu.dat
+      call compute_bdg_ldos_nambu(H_bdg_csr, 0.0_dp, eta, ldos_e, ldos_h)
+      call write_bdg_ldos_nambu(ldos_e, ldos_h, kz_val)
+      deallocate(ldos_e, ldos_h)
+
+      ! Observer 3: A(k,E) on the BdG CSR -> bdg_spectral.dat
+      call compute_spectral_function_bdg_wire(H_bdg_csr, k_values(kz_idx: kz_idx), &
+        & E_values, eta, A_kE)
+      call write_bdg_spectral(k_values(kz_idx: kz_idx), E_values, A_kE)
+      deallocate(A_kE)
+
+      call csr_free(H_bdg_csr)
+    end do
+
+    deallocate(k_values, E_values)
+    call wire_setup_free(wsetup)
+
+    print *, '  Wrote: bdg_ldos.dat, bdg_ldos_nambu.dat, bdg_spectral.dat'
+
+  end subroutine run_bdq_spectral_wire
 
   ! ==================================================================
   ! BdG QW mode: compute Majorana summary from dense 16N x 16N BdG matrix
@@ -668,7 +783,11 @@ contains
     N_local = cfg_in%grid%npoints()
     Ntot_local = 8 * N_local
     Nbdg_local = 16 * N_local
-    zero_tol = max(1.0e-10_dp, 0.001_dp * abs(cfg_in%bdg%delta_0))
+    ! Fix Round 1 / Finding 2: lift the QW near-zero literal through the seam
+    ! (was `max(1.0e-10_dp, 0.001_dp * abs(delta_0))`). q_zero_tol returns the
+    ! same value but lives next to eval_bdg_point in bdg_observables, so the
+    ! 0.001·δ₀ literal no longer survives in main_topology.
+    zero_tol = q_zero_tol(bdg_eval_params_with_delta(cfg_in%bdg%delta_0))
     k_par_val = cfg_in%bdg%kz
 
     print *, '  Grid: N=', N_local
@@ -700,7 +819,13 @@ contains
     call eigensolver_result_free(bdg_result)
     if (allocated(bdg_solver)) deallocate(bdg_solver)
 
-    result%min_gap = 2.0_dp * minval(abs(eigvals_bdg))
+    block
+      type(bdg_eval_params_t) :: evp
+      type(bdg_eval_result_t) :: evr
+      evp = bdg_eval_params_with_delta(cfg_in%bdg%delta_0)
+      evr = eval_bdg_point(eigvals_bdg, evp)
+      result%min_gap = evr%minigap
+    end block
 
     ! --- Write all eigenvalues to output/bdg_eigenvalues.dat ---
     call write_bdg_eigenvalues(eigvals_bdg, 'k_par', k_par_val)
@@ -750,21 +875,8 @@ contains
 
           ! Write Majorana profile for first zero-energy mode
           if (n_fit_ok + n_fit_failed == 1) then
-            call get_unit(iounit_prof)
-            open(unit=iounit_prof, file='output/majorana_profile.dat', &
-                 status='replace', action='write', iostat=status_prof)
-            if (status_prof == 0) then
-              write(iounit_prof, '(A)') '# Majorana wavefunction spatial profile'
-              write(iounit_prof, '(A,ES16.8)') '# k_par (1/A) = ', k_par_val
-              write(iounit_prof, '(A,ES16.8)') '# xi (AA) = ', xi_val
-              write(iounit_prof, '(A,I0)') '# n_spatial = ', N_local
-              write(iounit_prof, '(A)') '# Columns: z (AA), rho'
-              do j = 1, N_local
-                write(iounit_prof, '(ES16.8,ES20.12)') qw_grid%z(j), profile_majorana(j)
-              end do
-              close(iounit_prof)
-              print *, '  Majorana profile written to output/majorana_profile.dat'
-            end if
+            call write_majorana_profile(qw_grid%z, profile_majorana, &
+              & 'k_par', k_par_val, xi_val, N_local)
           end if
         end if
       end do
@@ -795,7 +907,7 @@ contains
 
     ! Always output spatial profile of the lowest-|E| BdG state
     block
-      integer :: i_min_e, iounit_low, status_low
+      integer :: i_min_e
       real(kind=dp) :: min_abs_e
       real(kind=dp), allocatable :: profile_lowest(:)
 
@@ -812,22 +924,8 @@ contains
       xi_val = compute_majorana_profile(H_bdg(:, i_min_e), qw_grid, &
         & zero_tol, Ntot_local, profile_lowest)
 
-      call ensure_output_dir()
-      call get_unit(iounit_low)
-      open(unit=iounit_low, file='output/bdg_lowest_state_profile.dat', &
-           status='replace', action='write', iostat=status_low)
-      if (status_low == 0) then
-        write(iounit_low, '(A)') '# Lowest-|E| BdG state spatial profile'
-        write(iounit_low, '(A,ES16.8)') '# k_par (1/A) = ', k_par_val
-        write(iounit_low, '(A,ES16.8)') '# Energy (eV) = ', eigvals_bdg(i_min_e)
-        write(iounit_low, '(A,ES16.8)') '# xi (AA) = ', xi_val
-        write(iounit_low, '(A)') '# Columns: z (AA), rho'
-        do j = 1, N_local
-          write(iounit_low, '(ES16.8,ES20.12)') qw_grid%z(j), profile_lowest(j)
-        end do
-        close(iounit_low)
-        print *, '  Lowest-state profile written to output/bdg_lowest_state_profile.dat'
-      end if
+      call write_bdg_lowest_state_profile(qw_grid%z(1:N_local), profile_lowest, &
+        & k_par_val, eigvals_bdg(i_min_e), xi_val)
       deallocate(profile_lowest)
     end block
 
@@ -850,7 +948,7 @@ contains
     real(kind=dp), allocatable :: k_arr(:), E_arr(:)
     real(kind=dp), allocatable :: A_kE(:,:)
     real(kind=dp) :: dk, dE
-    integer :: ik, iE, nk, nE, iounit_loc, status_loc
+    integer :: ik, iE, nk, nE
 
     print *, '--- Spectral function A(k, E) ---'
 
@@ -910,29 +1008,7 @@ contains
     result%spectral_function = A_kE
 
     ! Write output file
-    call ensure_output_dir()
-    call get_unit(iounit_loc)
-    open(unit=iounit_loc, file='output/spectral_function.dat', status='replace', &
-         action='write', iostat=status_loc)
-    if (status_loc /= 0) then
-      print *, 'ERROR: cannot open output/spectral_function.dat'
-      error stop 'cannot open spectral_function.dat'
-    end if
-    write(iounit_loc, '(A)') '# Spectral function A(k, E)'
-    write(iounit_loc, '(A,A)') '# confinement=', trim(cfg_in%confinement)
-    write(iounit_loc, '(A,I0,A,I0)') '# nk=', nk, '  nE=', nE
-    write(iounit_loc, '(A,ES12.4)') '# eta (eV) = ', cfg_in%topo%spectral_eta
-    write(iounit_loc, '(A,2ES16.8)') '# k_grid_min_max (1/A) = ', k_arr(1), k_arr(nk)
-    write(iounit_loc, '(A,2ES16.8)') '# E_grid_min_max (eV) = ', E_arr(1), E_arr(nE)
-    write(iounit_loc, '(A)') '# units: k in 1/A, E in eV, A in 1/eV'
-    write(iounit_loc, '(A)') '# Columns: k (1/A), E (eV), A(k,E)'
-    do ik = 1, nk
-      do iE = 1, nE
-        write(iounit_loc, '(3ES16.8)') k_arr(ik), E_arr(iE), A_kE(ik, iE)
-      end do
-    end do
-    close(iounit_loc)
-    print *, '  Spectral function written to output/spectral_function.dat'
+    call write_spectral_function(cfg_in, k_arr, E_arr, A_kE)
 
     deallocate(k_arr, E_arr, A_kE)
   end subroutine run_spectral
@@ -1030,7 +1106,7 @@ contains
     integer, allocatable :: z2_map_int(:,:)
     real(kind=dp), allocatable :: gap_map_real(:,:), transitions(:,:)
     real(kind=dp) :: gap_threshold
-    integer :: iB, iMu, nB, nMu, iounit_loc, status_loc
+    integer :: iB, iMu, nB, nMu
 
     print *, '--- Z2 gap sweep ---'
 
@@ -1072,42 +1148,9 @@ contains
     end do
 
     ! Write phase diagram output
-    call ensure_output_dir()
-    call get_unit(iounit_loc)
-    open(unit=iounit_loc, file='output/z2_phase_diagram.dat', status='replace', &
-         action='write', iostat=status_loc)
-    if (status_loc /= 0) then
-      print *, 'ERROR: cannot open output/z2_phase_diagram.dat'
-      error stop 'cannot open z2_phase_diagram.dat'
-    end if
-    write(iounit_loc, '(A)') '# Z2 phase diagram'
-    write(iounit_loc, '(A,I0,A,I0)') '# nB=', nB, '  nMu=', nMu
-    write(iounit_loc, '(A)') '# B(T) mu(eV) z2 gap(eV)'
-    do iB = 1, nB
-      do iMu = 1, nMu
-        write(iounit_loc, '(4ES16.8)') &
-          & cfg_in%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * &
-          & (cfg_in%topo%gap_sweep_B_max - cfg_in%topo%gap_sweep_B_min) / real(max(1, nB - 1), kind=dp), &
-          & cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * &
-          & (cfg_in%topo%gap_sweep_mu_max - cfg_in%topo%gap_sweep_mu_min) / real(max(1, nMu - 1), kind=dp), &
-          & result%z2_map(iMu, iB), result%gap_map(iMu, iB)
-      end do
-    end do
-    close(iounit_loc)
-    print *, '  Z2 phase diagram written to output/z2_phase_diagram.dat'
+    call write_z2_phase_diagram(cfg_in, result%z2_map, result%gap_map)
 
-    call get_unit(iounit_loc)
-    open(unit=iounit_loc, file='output/z2_transitions.dat', status='replace', &
-         action='write', iostat=status_loc)
-    if (status_loc /= 0) then
-      print *, 'ERROR: cannot open output/z2_transitions.dat'
-      error stop 'cannot open z2_transitions.dat'
-    end if
-    write(iounit_loc, '(A)') '# B(T) mu(eV)'
-    do iB = 1, size(transitions, 1)
-      write(iounit_loc, '(2ES16.8)') transitions(iB, 1), transitions(iB, 2)
-    end do
-    close(iounit_loc)
+    call write_z2_transitions(transitions)
 
     if (size(transitions, 1) > 0) then
       print *, '  Phase transitions detected: ', size(transitions, 1)
@@ -1310,9 +1353,33 @@ contains
     end if
     allocate(eigvals_bdg(eigen_res_local%nev_found))
     eigvals_bdg = eigen_res_local%eigenvalues
-    gap = 2.0_dp * minval(abs(eigvals_bdg))
-    z2 = compute_z2_gap(eigvals_bdg, gap_threshold)
+    block
+      type(bdg_eval_params_t) :: evp
+      type(bdg_eval_result_t) :: evr
+      evp = bdg_eval_params_with_delta(cfg_in%bdg%delta_0)
+      evr = eval_bdg_point(eigvals_bdg, evp)
+      gap = evr%minigap
+    end block
     deallocate(eigvals_bdg)
+
+    ! Issue 07 (U10): route the wire_bdg z2 through the projected Pfaffian
+    ! (S2 strategy: analytical bands 7-8 per k.p block table SSOT) instead
+    ! of the 1D count heuristic. Pfaffian sign convention: -1 = topological,
+    ! +1 = trivial, 0 = gap closure / inconclusive.
+    block
+      integer :: s2_sign
+      call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg_local, s2_sign)
+      if (s2_sign == -1) then
+        z2 = 1
+      else if (s2_sign == +1) then
+        z2 = 0
+      else
+        ! Gap closure: defer to the SC-minigap heuristic as the fallback so
+        ! the colormap still shows a Z2=1 flag exactly when min_gap < threshold.
+        ! This preserves the open->close->reopen pattern at the B_crit point.
+        z2 = compute_z2_gap(eigen_res_local%eigenvalues, gap_threshold)
+      end if
+    end block
 
     call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
   end subroutine eval_wire_bdg_gap

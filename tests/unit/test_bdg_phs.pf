@@ -1,0 +1,697 @@
+module test_bdg_phs
+  ! COVERAGE: observable=PHS geometry=wire material=InAsW tier=unit
+  ! ==============================================================================
+  ! Issue 02 (U5, Layer A of U4): PHS oracle for the BdG hole-block convention.
+  !
+  ! This oracle pins the BdG particle-hole-symmetry (PHS) constraint at generic
+  ! k (nonzero) for both the wire CSR builder (build_bdg_hamiltonian_1d) and
+  ! the dense QW builder (build_bdg_hamiltonian_qw), under the four-field matrix:
+  !   { no Zeeman, with Zeeman } x { no Peierls, with Peierls }
+  !
+  ! The PHS constraint for class-D BdG is
+  !   C H_BdG C^{-1} = - H_BdG
+  ! with the standard involutory anti-unitary particle-hole conjugation
+  !   C = tau_x K = [[0, I_n], [I_n, 0]] K
+  ! where K is complex conjugation and tau_x swaps electron and hole sectors.
+  !
+  ! IMPORTANT: the standard tau_x K PHS oracle is satisfied by BOTH the
+  ! divergent wire convention (-H0^T(+k)) and the canonical QW convention
+  ! (-conjg(H0(-k))). Both forms are mathematically PHS-symmetric for any
+  ! Hermitian H0. The divergence is in WHICH H0 the hole block derives from:
+  !   - wire: -conjg(H0(+k))  (hole block derives from H0 evaluated at +k)
+  !   - QW:   -conjg(H0(-k))  (hole block derives from H0 evaluated at -k)
+  !
+  ! To pin the canonical convention, we test a STRONGER constraint: the hole
+  ! block of any BdG matrix must equal -conjg(H0_at_-k), where H0_at_-k is
+  ! H0 evaluated independently at momentum -k. This is the time-reversal
+  ! symmetry of Nambu space; it's the convention pinned by ADR 0007.
+  !
+  ! On pre-Issue-03 code: the wire builder's hole block equals -conjg(H0(+k))
+  ! NOT -conjg(H0(-k)) at generic k, so the canonical hole-block test FAILS
+  ! when Peierls phases or k-asymmetric H0 structure is present. Post-Issue-03
+  ! the wire hole block is rewritten as -conjg(H0(-k)), and the test passes.
+  !
+  ! TEETH DEMONSTRATED: the canonical hole-block test (test_hole_block_is_time_reversed_*)
+  ! fails on the wire builder at generic k with Peierls. The four-field matrix
+  ! test_phs_wire_* tests verify the standard tau_x K PHS (satisfied by both
+  ! forms). Together these pin the canonical convention; cross-builder
+  ! identity is a *consequence* of the canonical convention, not a separate
+  ! witness (an earlier cross-builder test was removed in Fix Round 1).
+  !
+  ! Self-contained oracle procedures live inside this test module per ADR 0001
+  ! (no new module types).
+  ! ==============================================================================
+  use funit
+  use definitions, only: dp, paramStruct, region_spec, init_grid_from_config, &
+                         simulation_config, spatial_grid, wavevector, e, hbar
+  use bdg_hamiltonian, only: build_bdg_hamiltonian_1d, build_bdg_hamiltonian_qw
+  use sparse_matrices, only: csr_matrix, csr_free
+  use hamiltonian_wire, only: wire_workspace, wire_workspace_free, ZB8bandGeneralized
+  use hamiltonianConstructor, only: ZB8bandQW
+  use magnetic_field, only: add_peierls_coo
+  use linalg, only: zheev
+  use geometry
+  use parameters
+  use confinement_init, only: confinementInitialization_2d
+  use csr_test_helpers, only: csr_to_dense
+  implicit none
+
+  ! Numerical tolerance for the PHS residual. The class-D constraint is
+  ! exact (mathematical identity); numerical FP error from the dense
+  ! Hermitian assembly and the Peierls COO insertions must stay below
+  ! this bound. 1e-10_dp / ||H||_F is a tight witness.
+  real(kind=dp), parameter :: PHS_TOL = 1.0e-10_dp
+
+  ! Numerical tolerance for the canonical hole-block identity
+  ! H_hole == -conjg(H0_at_-k). Tight witness: FP error from the CSR->dense
+  ! conversion and from the independent H0(-k) build (the wire-CSR builder
+  ! assembles at +k, and we rebuild H0(-k) via ZB8bandGeneralized separately).
+  real(kind=dp), parameter :: HOLE_TOL = 1.0e-10_dp
+
+  ! Kramers pairing data (pairing_partner, pairing_sign) is private to
+  ! bdg_hamiltonian. None of the 8 oracle tests use the full C operator;
+  ! they inspect the standard tau_x K PHS (electron<->hole index swap)
+  ! and the canonical hole-block identity (hole block vs -conjg(H0(-k))).
+  ! If a future test needs the band-resolved C, expose these via the
+  ! module's public API rather than duplicating here (SSOT).
+
+contains
+
+  ! ===========================================================================
+  ! PHS oracle procedures (pure)
+  ! ===========================================================================
+
+  ! Electron <-> hole index swap (tau_x in Nambu space).
+  pure function tau_idx(k, half_n) result(t)
+    integer, intent(in) :: k, half_n
+    integer :: t
+    if (k <= half_n) then
+      t = k + half_n
+    else
+      t = k - half_n
+    end if
+  end function tau_idx
+
+  ! Standard PHS residual: || C H C^{-1} + H ||_F where C = tau_x K.
+  ! NOTE: per ADR 0007 + Leijnse-Flensberg Eq. 38, the class-D PHS for BdG
+  ! is C H(k) C^{-1} = -H(-k). The simple constraint C H(k) C^{-1} = -H(k)
+  ! is only satisfied by the time-reversal-symmetric subclass and is NOT
+  ! the correct oracle for the canonical -conjg(H0(-k)) hole-block form.
+  ! Kept for backwards-compatibility diagnostics only (not asserted).
+  pure function phs_residual(H, n_total) result(res)
+    integer, intent(in) :: n_total
+    complex(kind=dp), intent(in) :: H(n_total, n_total)
+    real(kind=dp) :: res
+    integer :: i, j, half_n
+    real(kind=dp) :: acc
+
+    half_n = n_total / 2
+    acc = 0.0_dp
+    do j = 1, n_total
+      do i = 1, n_total
+        acc = acc + abs(conjg(H(tau_idx(i, half_n), tau_idx(j, half_n))) + H(i, j))**2
+      end do
+    end do
+    res = sqrt(acc)
+  end function phs_residual
+
+  ! Class-D PHS residual: || C H(k) C^{-1} + H(-k) ||_F where C = tau_x K.
+  ! This is the correct oracle for the canonical -conjg(H0(-k)) hole block
+  ! (per ADR 0007 Layer D). Asserting this oracle at generic k with Peierls
+  ! is the canonical convention's defining PHS witness (Issue 03 Fix 2).
+  pure function phs_residual_k_minus_k(H_k, H_minus_k, n_total) result(res)
+    integer, intent(in) :: n_total
+    complex(kind=dp), intent(in) :: H_k(n_total, n_total)
+    complex(kind=dp), intent(in) :: H_minus_k(n_total, n_total)
+    real(kind=dp) :: res
+    integer :: i, j, half_n
+    real(kind=dp) :: acc
+
+    half_n = n_total / 2
+    acc = 0.0_dp
+    do j = 1, n_total
+      do i = 1, n_total
+        ! (C H C^{-1})_{ij} = conjg(H_{tau(i), tau(j)}) since C is involutory
+        acc = acc + abs(conjg(H_k(tau_idx(i, half_n), tau_idx(j, half_n))) &
+                       + H_minus_k(i, j))**2
+      end do
+    end do
+    res = sqrt(acc)
+  end function phs_residual_k_minus_k
+
+  ! Matrix Frobenius norm.
+  pure function frob_norm(H, n_total) result(res)
+    integer, intent(in) :: n_total
+    complex(kind=dp), intent(in) :: H(n_total, n_total)
+    real(kind=dp) :: res
+    integer :: i, j
+    real(kind=dp) :: acc
+    acc = 0.0_dp
+    do j = 1, n_total
+      do i = 1, n_total
+        acc = acc + abs(H(i, j))**2
+      end do
+    end do
+    res = sqrt(acc)
+  end function frob_norm
+
+  ! Hole-block residual: || H_hole - (-conjg(H0(-k))) ||_F where H_hole is
+  ! the bottom-right 8N x 8N block of the BdG matrix.
+  pure function hole_block_residual(H_bdg, n_total, H0_minus_k) result(res)
+    integer, intent(in) :: n_total  ! 16N
+    complex(kind=dp), intent(in) :: H_bdg(n_total, n_total)
+    complex(kind=dp), intent(in) :: H0_minus_k(*)
+    real(kind=dp) :: res
+    integer :: i, j, n8
+    real(kind=dp) :: acc
+
+    n8 = n_total / 2
+    acc = 0.0_dp
+    do j = 1, n8
+      do i = 1, n8
+        acc = acc + abs(H_bdg(n8 + i, n8 + j) - (-conjg(H0_minus_k((j-1)*n8 + i))))**2
+      end do
+    end do
+    res = sqrt(acc)
+  end function hole_block_residual
+
+  ! ===========================================================================
+  ! Wire fixture helpers
+  ! ===========================================================================
+
+  ! Build a wire fixture: 3x3 grid, single material (GaAs), FDorder=2.
+  subroutine build_wire_fixture(grid, profile_2d, kpterms_2d)
+    implicit none
+    type(spatial_grid), intent(out) :: grid
+    real(kind=dp), allocatable, intent(out) :: profile_2d(:,:)
+    type(csr_matrix), allocatable, intent(out) :: kpterms_2d(:)
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: mat2d(nx, ny)
+
+    mat2d = 1
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+  end subroutine build_wire_fixture
+
+  subroutine free_wire_fixture(grid, profile_2d, kpterms_2d)
+    implicit none
+    type(spatial_grid), intent(inout) :: grid
+    real(kind=dp), allocatable, intent(inout) :: profile_2d(:,:)
+    type(csr_matrix), allocatable, intent(inout) :: kpterms_2d(:)
+    integer :: ij
+    if (allocated(kpterms_2d)) then
+      do ij = 1, size(kpterms_2d)
+        call csr_free(kpterms_2d(ij))
+      end do
+      deallocate(kpterms_2d)
+    end if
+    if (allocated(profile_2d)) deallocate(profile_2d)
+    call grid_free(grid)
+  end subroutine free_wire_fixture
+
+  ! Build H0 at a chosen kz and return as dense (8N x 8N). We use
+  ! ZB8bandGeneralized (the wire's internal H0 builder) so the H0 we
+  ! compare against is constructed INDEPENDENTLY of the BdG matrix.
+  ! The B-field is read from cfg%bdg%B_vec (the wire builder doesn't
+  ! take B_vec directly; it reads from cfg).
+  !
+  ! Optional peierls_B argument: when present, applies the SAME
+  ! symmetric Peierls phase that the wire builder applies to the hole
+  ! block. The wire builder applies Peierls(+B) to the electron block
+  ! and Peierls(-B) to the hole block (Issue 03 fix3); for the hole
+  ! block reference, pass peierls_B = -B_vec.
+  subroutine build_wire_H0_dense(H0_dense, cfg, profile_2d, kpterms_2d, ws, kz, peierls_B)
+    implicit none
+    complex(kind=dp), allocatable, intent(out) :: H0_dense(:,:)
+    type(simulation_config), intent(in) :: cfg
+    real(kind=dp), contiguous, intent(in) :: profile_2d(:,:)
+    type(csr_matrix), intent(in) :: kpterms_2d(:)
+    type(wire_workspace), intent(inout) :: ws
+    real(kind=dp), intent(in) :: kz
+    real(kind=dp), intent(in), optional :: peierls_B(3)
+    type(csr_matrix) :: H0_csr
+    integer :: n8, i, j, ngrid, flat_i, flat_j
+    real(kind=dp) :: Bx, phase, y_i, y_j, dy_m, hbar_J
+    complex(kind=dp) :: exp_phase
+
+    call ZB8bandGeneralized(H0_csr, kz, profile_2d, kpterms_2d, cfg, ws=ws)
+    n8 = H0_csr%nrows
+    allocate(H0_dense(n8, n8))
+    call csr_to_dense(H0_csr, H0_dense)
+    call csr_free(H0_csr)
+
+    ! Apply the same Peierls phase that the wire builder applies. This
+    ! mirrors add_peierls_coo (magnetic_field.f90) exactly: it
+    ! multiplies off-diagonal entries by exp(-i*phi) where
+    ! phi = e*Bx*(y_i - y_j)*dy/hbar. The wire builder applies
+    ! Peierls(+B) to the electron block; for the hole block reference,
+    ! the caller passes peierls_B = -B_vec (negated B-field) so the
+    ! reference carries the negated Peierls that the wire builder
+    ! applies to the hole block.
+    !
+    ! NOTE: in the dense 8N x 8N H0 reference, rows/cols are
+    ! band-major: site s of band b is at index (b-1)*N + s. The flat
+    ! spatial site s is in 1..N. The y-coordinate depends on s
+    ! (position in the y-direction, for 2D wires).
+    if (present(peierls_B)) then
+      Bx = peierls_B(1)
+      if (abs(Bx) > 1.0e-12_dp) then
+        ngrid = cfg%grid%npoints()
+        dy_m = cfg%grid%dy * 1.0e-10_dp
+        hbar_J = hbar * e  ! hbar in J*s for SI unit handling
+        do j = 1, n8
+          flat_j = mod(j - 1, ngrid) + 1
+          do i = 1, n8
+            if (i == j) cycle
+            flat_i = mod(i - 1, ngrid) + 1
+            if (cfg%grid%ndim == 2 .and. allocated(cfg%grid%coords)) then
+              y_i = cfg%grid%coords(2, flat_i) * 1.0e-10_dp
+              y_j = cfg%grid%coords(2, flat_j) * 1.0e-10_dp
+            else
+              y_i = cfg%grid%z(((flat_i - 1) / cfg%grid%nx) + 1) * 1.0e-10_dp
+              y_j = cfg%grid%z(((flat_j - 1) / cfg%grid%nx) + 1) * 1.0e-10_dp
+            end if
+            phase = e * Bx * (y_i - y_j) * dy_m / hbar_J
+            exp_phase = cmplx(cos(phase), -sin(phase), kind=dp)
+            H0_dense(i, j) = H0_dense(i, j) * exp_phase
+          end do
+        end do
+      end if
+    end if
+  end subroutine build_wire_H0_dense
+
+  ! ===========================================================================
+  ! Four-field matrix: {no_Z, Z} x {no_P, P} on the wire CSR builder at
+  ! generic k. The wire is the divergence site: at k=0 with no Peierls the
+  ! hole-block divergence is invisible; generic kz + Peierls exposes it.
+  !
+  ! Generic k choice: kz = 0.05 / Angstrom (nonzero, finite, within the
+  ! typical inversion-asymmetry range for wires). delta_0 = 0.25 meV.
+  ! ===========================================================================
+
+  @test
+  subroutine test_phs_wire_no_Z_no_P_at_generic_k()
+    ! Class-D PHS oracle (Issue 03 Fix 2): C H(k) C^{-1} = -H(-k) with
+    ! C = tau_x K. Build H(k) and H(-k) independently and assert the
+    ! residual. This is the correct PHS for the canonical -conjg(H0(-k))
+    ! hole-block form (ADR 0007). The pre-Fix-2 test was checking the
+    ! WRONG constraint C H C^{-1} = -H (time-reversal-symmetric subclass).
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_k, H_minus_k
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws_k, ws_mk
+    complex(kind=dp), allocatable :: Hd_k(:,:), Hd_mk(:,:)
+    real(kind=dp) :: kz, resid, hnorm, rel
+
+    call build_wire_fixture(grid, profile_2d, kpterms_2d)
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+    cfg%bdg%enabled = .false.
+
+    kz = 0.05_dp
+    call build_bdg_hamiltonian_1d(H_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_k)
+    call build_bdg_hamiltonian_1d(H_minus_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=-kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_mk)
+
+    allocate(Hd_k(H_k%nrows, H_k%ncols))
+    allocate(Hd_mk(H_minus_k%nrows, H_minus_k%ncols))
+    call csr_to_dense(H_k, Hd_k)
+    call csr_to_dense(H_minus_k, Hd_mk)
+    resid = phs_residual_k_minus_k(Hd_k, Hd_mk, H_k%nrows)
+    hnorm = frob_norm(Hd_k, H_k%nrows)
+    rel = resid / max(hnorm, 1.0e-30_dp)
+
+    print *, '[diagnostic] test_phs_wire_no_Z_no_P_at_generic_k: rel = ', rel
+    @assertTrue(rel < PHS_TOL, message="PHS (no Z, no P) at generic k: C H(k) C^-1 = -H(-k)")
+
+    deallocate(Hd_k, Hd_mk)
+    call csr_free(H_k)
+    call csr_free(H_minus_k)
+    call wire_workspace_free(ws_k)
+    call wire_workspace_free(ws_mk)
+    call free_wire_fixture(grid, profile_2d, kpterms_2d)
+  end subroutine test_phs_wire_no_Z_no_P_at_generic_k
+
+  @test
+  subroutine test_phs_wire_Z_no_P_at_generic_k()
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_k, H_minus_k
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws_k, ws_mk
+    complex(kind=dp), allocatable :: Hd_k(:,:), Hd_mk(:,:)
+    real(kind=dp) :: kz, resid, hnorm, rel
+
+    call build_wire_fixture(grid, profile_2d, kpterms_2d)
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+    cfg%bdg%enabled = .true.
+    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 1.5_dp]
+    cfg%bdg%g_factor = 4.0_dp
+
+    kz = 0.05_dp
+    call build_bdg_hamiltonian_1d(H_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_k, &
+                                   B_vec=[0.0_dp, 0.0_dp, 1.5_dp], g_factor=4.0_dp)
+    call build_bdg_hamiltonian_1d(H_minus_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=-kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_mk, &
+                                   B_vec=[0.0_dp, 0.0_dp, 1.5_dp], g_factor=4.0_dp)
+
+    allocate(Hd_k(H_k%nrows, H_k%ncols))
+    allocate(Hd_mk(H_minus_k%nrows, H_minus_k%ncols))
+    call csr_to_dense(H_k, Hd_k)
+    call csr_to_dense(H_minus_k, Hd_mk)
+    resid = phs_residual_k_minus_k(Hd_k, Hd_mk, H_k%nrows)
+    hnorm = frob_norm(Hd_k, H_k%nrows)
+    rel = resid / max(hnorm, 1.0e-30_dp)
+
+    print *, '[diagnostic] test_phs_wire_Z_no_P_at_generic_k: rel = ', rel
+    @assertTrue(rel < PHS_TOL, message="PHS (Z, no P) at generic k: C H(k) C^-1 = -H(-k)")
+
+    deallocate(Hd_k, Hd_mk)
+    call csr_free(H_k)
+    call csr_free(H_minus_k)
+    call wire_workspace_free(ws_k)
+    call wire_workspace_free(ws_mk)
+    call free_wire_fixture(grid, profile_2d, kpterms_2d)
+  end subroutine test_phs_wire_Z_no_P_at_generic_k
+
+  @test
+  subroutine test_phs_wire_no_Z_P_at_generic_k()
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_k, H_minus_k
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws_k, ws_mk
+    complex(kind=dp), allocatable :: Hd_k(:,:), Hd_mk(:,:)
+    real(kind=dp) :: kz, resid, hnorm, rel, max_imag
+
+    call build_wire_fixture(grid, profile_2d, kpterms_2d)
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+    cfg%bdg%enabled = .true.
+    cfg%bdg%B_vec = [1.0_dp, 0.0_dp, 0.0_dp]
+    cfg%bdg%g_factor = 0.0_dp
+
+    kz = 0.05_dp
+    call build_bdg_hamiltonian_1d(H_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_k, &
+                                   B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
+    call build_bdg_hamiltonian_1d(H_minus_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=-kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_mk, &
+                                   B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
+
+    allocate(Hd_k(H_k%nrows, H_k%ncols))
+    allocate(Hd_mk(H_minus_k%nrows, H_minus_k%ncols))
+    call csr_to_dense(H_k, Hd_k)
+    call csr_to_dense(H_minus_k, Hd_mk)
+    resid = phs_residual_k_minus_k(Hd_k, Hd_mk, H_k%nrows)
+    hnorm = frob_norm(Hd_k, H_k%nrows)
+    rel = resid / max(hnorm, 1.0e-30_dp)
+
+    max_imag = maxval(abs(aimag(Hd_k(1:H_k%nrows/2, 1:H_k%nrows/2))))
+    print *, '[diagnostic] test_phs_wire_no_Z_P_at_generic_k: rel = ', rel, ' max_imag_ee = ', max_imag
+    @assertTrue(max_imag > 1.0e-12_dp, message="Peierls Bx must produce complex electron-block entries")
+    @assertTrue(rel < PHS_TOL, message="PHS (no Z, P) at generic k: C H(k) C^-1 = -H(-k)")
+
+    deallocate(Hd_k, Hd_mk)
+    call csr_free(H_k)
+    call csr_free(H_minus_k)
+    call wire_workspace_free(ws_k)
+    call wire_workspace_free(ws_mk)
+    call free_wire_fixture(grid, profile_2d, kpterms_2d)
+  end subroutine test_phs_wire_no_Z_P_at_generic_k
+
+  @test
+  subroutine test_phs_wire_Z_P_at_generic_k()
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_k, H_minus_k
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws_k, ws_mk
+    complex(kind=dp), allocatable :: Hd_k(:,:), Hd_mk(:,:)
+    real(kind=dp) :: kz, resid, hnorm, rel
+
+    call build_wire_fixture(grid, profile_2d, kpterms_2d)
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+    cfg%bdg%enabled = .true.
+    cfg%bdg%B_vec = [1.0_dp, 0.0_dp, 1.5_dp]
+    cfg%bdg%g_factor = 4.0_dp
+
+    kz = 0.05_dp
+    call build_bdg_hamiltonian_1d(H_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_k, &
+                                   B_vec=[1.0_dp, 0.0_dp, 1.5_dp], g_factor=4.0_dp)
+    call build_bdg_hamiltonian_1d(H_minus_k, cfg, profile_2d, kpterms_2d, &
+                                   kz=-kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_mk, &
+                                   B_vec=[1.0_dp, 0.0_dp, 1.5_dp], g_factor=4.0_dp)
+
+    allocate(Hd_k(H_k%nrows, H_k%ncols))
+    allocate(Hd_mk(H_minus_k%nrows, H_minus_k%ncols))
+    call csr_to_dense(H_k, Hd_k)
+    call csr_to_dense(H_minus_k, Hd_mk)
+    resid = phs_residual_k_minus_k(Hd_k, Hd_mk, H_k%nrows)
+    hnorm = frob_norm(Hd_k, H_k%nrows)
+    rel = resid / max(hnorm, 1.0e-30_dp)
+
+    print *, '[diagnostic] test_phs_wire_Z_P_at_generic_k: rel = ', rel
+    @assertTrue(rel < PHS_TOL, message="PHS (Z, P) at generic k: C H(k) C^-1 = -H(-k)")
+
+    deallocate(Hd_k, Hd_mk)
+    call csr_free(H_k)
+    call csr_free(H_minus_k)
+    call wire_workspace_free(ws_k)
+    call wire_workspace_free(ws_mk)
+    call free_wire_fixture(grid, profile_2d, kpterms_2d)
+  end subroutine test_phs_wire_Z_P_at_generic_k
+
+  ! ===========================================================================
+  ! Canonical hole-block identity: H_hole == -conjg(H0_at_-k).
+  !
+  ! This is the CANONICAL convention pinned by ADR 0007. It distinguishes
+  ! the wire (-H0^T(+k) = -conjg(H0(+k))) from the canonical form
+  ! (-conjg(H0(-k))) at generic k where H0 has k-asymmetric structure.
+  !
+  ! RED on pre-Issue-03: wire builder uses H0 evaluated at +k, but we
+  ! expect it to equal H0 evaluated at -k. Generic k with Peierls exposes
+  ! the divergence. Post-Issue-03 the wire builder is rewritten to use
+  ! -conjg(H0(-k)) and this test passes.
+  ! ===========================================================================
+
+  @test
+  subroutine test_hole_block_is_time_reversed_no_Z_no_P()
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    complex(kind=dp), allocatable :: Hd(:,:)
+    complex(kind=dp), allocatable :: H0_minus_k(:,:)
+    real(kind=dp) :: kz, resid, hnorm
+
+    call build_wire_fixture(grid, profile_2d, kpterms_2d)
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+    cfg%bdg%enabled = .false.
+
+    kz = 0.05_dp
+    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws)
+    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
+    call csr_to_dense(H_bdg, Hd)
+
+    ! Independent H0 at -k (the canonical hole-block target).
+    call build_wire_H0_dense(H0_minus_k, cfg, profile_2d, kpterms_2d, ws, -kz)
+
+    resid = hole_block_residual(Hd, H_bdg%nrows, H0_minus_k)
+    hnorm = frob_norm(H0_minus_k, size(H0_minus_k, 1))
+    print *, '[diagnostic] test_hole_block_is_time_reversed_no_Z_no_P: rel_resid = ', &
+              resid / max(hnorm, 1.0e-30_dp), ' raw_resid = ', resid
+
+    @assertTrue(resid / max(hnorm, 1.0e-30_dp) < HOLE_TOL, message="hole block identity")
+    deallocate(Hd, H0_minus_k)
+    call csr_free(H_bdg)
+    call wire_workspace_free(ws)
+    call free_wire_fixture(grid, profile_2d, kpterms_2d)
+  end subroutine test_hole_block_is_time_reversed_no_Z_no_P
+
+  @test
+  subroutine test_hole_block_is_time_reversed_Z_no_P()
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    complex(kind=dp), allocatable :: Hd(:,:)
+    complex(kind=dp), allocatable :: H0_minus_k(:,:)
+    real(kind=dp) :: kz, resid, hnorm
+
+    call build_wire_fixture(grid, profile_2d, kpterms_2d)
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+    cfg%bdg%enabled = .true.
+    cfg%bdg%B_vec = [0.0_dp, 0.0_dp, 1.5_dp]
+    cfg%bdg%g_factor = 4.0_dp
+
+    kz = 0.05_dp
+    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws, &
+                                   B_vec=[0.0_dp, 0.0_dp, 1.5_dp], g_factor=4.0_dp)
+    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
+    call csr_to_dense(H_bdg, Hd)
+    call build_wire_H0_dense(H0_minus_k, cfg, profile_2d, kpterms_2d, ws, -kz)
+
+    resid = hole_block_residual(Hd, H_bdg%nrows, H0_minus_k)
+    hnorm = frob_norm(H0_minus_k, size(H0_minus_k, 1))
+    print *, '[diagnostic] test_hole_block_is_time_reversed_Z_no_P: rel_resid = ', &
+              resid / max(hnorm, 1.0e-30_dp), ' raw_resid = ', resid
+
+    @assertTrue(resid / max(hnorm, 1.0e-30_dp) < HOLE_TOL, message="hole block identity")
+    deallocate(Hd, H0_minus_k)
+    call csr_free(H_bdg)
+    call wire_workspace_free(ws)
+    call free_wire_fixture(grid, profile_2d, kpterms_2d)
+  end subroutine test_hole_block_is_time_reversed_Z_no_P
+
+  @test
+  subroutine test_hole_block_is_time_reversed_no_Z_P()
+    ! RED on pre-Issue-03: wire uses -H0^T(+k) = -conjg(H0(+k)), but the
+    ! canonical form is -conjg(H0(-k)). With Peierls phases at generic k,
+    ! H0(+k) != H0(-k) (Peierls phases depend on position; k=0 vs k!=0 is
+    ! the divergence trigger). The hole block must equal -conjg(H0(-k))
+    ! for the canonical convention.
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    complex(kind=dp), allocatable :: Hd(:,:)
+    complex(kind=dp), allocatable :: H0_minus_k(:,:)
+    real(kind=dp) :: kz, resid, hnorm
+
+    call build_wire_fixture(grid, profile_2d, kpterms_2d)
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+    cfg%bdg%enabled = .true.
+    cfg%bdg%B_vec = [1.0_dp, 0.0_dp, 0.0_dp]
+    cfg%bdg%g_factor = 0.0_dp
+
+    kz = 0.05_dp
+    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws, &
+                                   B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
+    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
+    call csr_to_dense(H_bdg, Hd)
+    ! Hole block carries Peierls(-B_vec) per Issue 03 fix3. The
+    ! wire builder applies Peierls to the (2,2) block entries
+    ! AFTER taking -conjg(H0(-k)) via the wrapper. So the order is:
+    !   wire hole block = -conjg(H0(-k)) with Peierls(-B) applied
+    !   reference = -conjg(H0(-k) with Peierls(-B) applied)
+    ! Equivalently, the wire applies the conjugated Peierls factor
+    ! to the conjugated H0. We achieve this by applying Peierls(+B)
+    ! to the H0(-k) reference and letting the residual function take
+    ! -conjg (which conjugates the Peierls factor too).
+    call build_wire_H0_dense(H0_minus_k, cfg, profile_2d, kpterms_2d, ws, -kz, &
+                              peierls_B=[+1.0_dp, 0.0_dp, 0.0_dp])
+
+    resid = hole_block_residual(Hd, H_bdg%nrows, H0_minus_k)
+    hnorm = frob_norm(H0_minus_k, size(H0_minus_k, 1))
+    print *, '[diagnostic] test_hole_block_is_time_reversed_no_Z_P: rel_resid = ', &
+              resid / max(hnorm, 1.0e-30_dp), ' raw_resid = ', resid
+
+    @assertTrue(resid / max(hnorm, 1.0e-30_dp) < HOLE_TOL, message="hole block identity")
+    deallocate(Hd, H0_minus_k)
+    call csr_free(H_bdg)
+    call wire_workspace_free(ws)
+    call free_wire_fixture(grid, profile_2d, kpterms_2d)
+  end subroutine test_hole_block_is_time_reversed_no_Z_P
+
+  @test
+  subroutine test_hole_block_is_time_reversed_Z_P()
+    type(spatial_grid) :: grid
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    complex(kind=dp), allocatable :: Hd(:,:)
+    complex(kind=dp), allocatable :: H0_minus_k(:,:)
+    real(kind=dp) :: kz, resid, hnorm
+
+    call build_wire_fixture(grid, profile_2d, kpterms_2d)
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+    cfg%bdg%enabled = .true.
+    cfg%bdg%B_vec = [1.0_dp, 0.0_dp, 1.5_dp]
+    cfg%bdg%g_factor = 4.0_dp
+
+    kz = 0.05_dp
+    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws, &
+                                   B_vec=[1.0_dp, 0.0_dp, 1.5_dp], g_factor=4.0_dp)
+    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
+    call csr_to_dense(H_bdg, Hd)
+    ! See test_hole_block_is_time_reversed_no_Z_P: the wire applies
+    ! Peierls AFTER the -conjg transform, so the effective Peierls on
+    ! the H0 reference is +B (the conjg converts -B to +B on the value).
+    call build_wire_H0_dense(H0_minus_k, cfg, profile_2d, kpterms_2d, ws, -kz, &
+                              peierls_B=[+1.0_dp, 0.0_dp, +1.5_dp])
+
+    resid = hole_block_residual(Hd, H_bdg%nrows, H0_minus_k)
+    hnorm = frob_norm(H0_minus_k, size(H0_minus_k, 1))
+    print *, '[diagnostic] test_hole_block_is_time_reversed_Z_P: rel_resid = ', &
+              resid / max(hnorm, 1.0e-30_dp), ' raw_resid = ', resid
+
+    @assertTrue(resid / max(hnorm, 1.0e-30_dp) < HOLE_TOL, message="hole block identity")
+    deallocate(Hd, H0_minus_k)
+    call csr_free(H_bdg)
+    call wire_workspace_free(ws)
+    call free_wire_fixture(grid, profile_2d, kpterms_2d)
+  end subroutine test_hole_block_is_time_reversed_Z_P
+
+  ! ===========================================================================
+  ! Cross-builder spectral identity: REMOVED (Issue 02 review, Critical 1).
+  !
+  ! The original test_cross_builder_hole_block_identity compared hole-block
+  ! entries of two BdG matrices built from STRUCTURALLY DIFFERENT H0s
+  ! (wire builder's 2D-confined ZB8bandGeneralized H0 vs QW builder's
+  ! 1D-confined ZB8bandQW H0 with zero kpterms/profile). Because the two
+  ! H0s are physically different, a non-zero diff between hole blocks was
+  ! expected EVEN IF the convention were unified, so the test would not
+  ! turn GREEN post-Issue-03.
+  !
+  ! The four canonical hole-block tests above already pin the convention;
+  ! cross-builder identity is a *consequence* of the canonical convention,
+  ! not a separate witness. Issue 03's unification will be witnessed by
+  ! the canonical hole-block tests + the standard PHS tests turning GREEN.
+  !
+  ! FOLLOW-UP (separate issue): a clean cross-builder identity test can
+  ! be added by either (a) passing a single shared 8x8 H0 to both builders
+  ! with the wire reduced to a single spatial point, or (b) constructing
+  ! a QW fixture whose kpterms/profile mimic the wire fixture.
+  ! ===========================================================================
+
+end module test_bdg_phs

@@ -1,1 +1,0 @@
-ADD_TEST_SUITE(test_eigensolver_suite)

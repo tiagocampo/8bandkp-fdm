@@ -77,7 +77,7 @@ contains
   end subroutine init_zeeman_cache
 
   subroutine add_peierls_coo(coo_vals, coo_row, coo_col, nnz_offset, &
-                              grid, B_vec)
+                              grid, B_vec, row_min, row_max, col_min, col_max)
     ! Peierls substitution: k -> k - eA/hbar
     ! For Landau gauge A = (0, 0, Bx*y):
     !   kz -> kz - e*Bx*y/hbar  (phase factor e^(ieA.z/hbar))
@@ -92,14 +92,25 @@ contains
     ! Operates on the main complex COO array so that full complex phase
     ! factors are preserved (unlike the old version which discarded the
     ! imaginary part by storing into a real array).
+    !
+    ! Optional row/column range filters (row_min, row_max, col_min, col_max)
+    ! restrict the application to entries with coo_row(idx) in
+    ! [row_min, row_max] AND coo_col(idx) in [col_min, col_max] (1-based,
+    ! inclusive). Used by the BdG wire builder to apply Peierls symmetrically
+    ! to the (1,1) and (2,2) blocks: electron block at rows/cols 1..8N,
+    ! hole block at rows/cols 8N+1..16N. Class-D PHS requires the hole
+    ! block to carry Peierls with NEGATED sign (-B_vec) so that
+    ! time-reversal flips B -> -B.
     complex(kind=dp), intent(inout), contiguous :: coo_vals(:)
     integer, intent(in), contiguous :: coo_row(:), coo_col(:)
     integer, intent(in) :: nnz_offset
     type(spatial_grid), intent(in) :: grid
     real(kind=dp), intent(in) :: B_vec(3)
+    integer, intent(in), optional :: row_min, row_max, col_min, col_max
 
     real(kind=dp) :: Bx, phase, y_i, y_j, dy_m, hbar_J
     integer :: idx, ngrid
+    integer :: r_min, r_max, c_min, c_max
     complex(kind=dp) :: exp_phase
 
     Bx = B_vec(1)
@@ -116,8 +127,34 @@ contains
     ! This gives hbar in J*s for proper SI unit handling
     hbar_J = hbar * e
 
-    ! Apply Peierls phase to all off-diagonal entries
+    ! Row/column range filter: default (no filter) = apply to all entries.
+    ! When provided, restrict to coo_row in [row_min, row_max] AND
+    ! coo_col in [col_min, col_max] (inclusive).
+    if (present(row_min)) then
+      r_min = row_min
+    else
+      r_min = 1
+    end if
+    if (present(row_max)) then
+      r_max = row_max
+    else
+      r_max = huge(0)
+    end if
+    if (present(col_min)) then
+      c_min = col_min
+    else
+      c_min = 1
+    end if
+    if (present(col_max)) then
+      c_max = col_max
+    else
+      c_max = huge(0)
+    end if
+
+    ! Apply Peierls phase to all off-diagonal entries in the row/col range
     do idx = 1, nnz_offset
+      if (coo_row(idx) < r_min .or. coo_row(idx) > r_max) cycle
+      if (coo_col(idx) < c_min .or. coo_col(idx) > c_max) cycle
       if (coo_row(idx) /= coo_col(idx)) then
         block
           integer :: flat_i, flat_j, iy_i, iy_j
@@ -144,7 +181,10 @@ contains
         ! Using SI units: e in C, B in T, y and dz in m, hbar in J*s
         phase = e * Bx * (y_i - y_j) * dy_m / hbar_J
 
-        ! Phase factor: exp(-i * phase)
+        ! Phase factor: exp(-i * phase) [verified 2026-07-01 per ADR 0008 §3].
+        ! For class-D PHS, -conjg(H0(-k)) applies this Peierls to the hole block
+        ! with sign-flipped phase (exp(+i*phase)). Any subsequent add_peierls_coo
+        ! call on the hole block would double-count the phase — see Task 1.10.
         exp_phase = cmplx(cos(phase), -sin(phase), kind=dp)
 
         ! Multiply the off-diagonal entry by the full complex phase factor

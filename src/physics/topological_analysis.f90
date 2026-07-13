@@ -7,6 +7,8 @@ module topological_analysis
   use hamiltonianConstructor, only: ZB8bandQW
   use eigensolver, only: eigensolver_base, eigensolver_config, eigensolver_result, &
     & eigensolver_result_free, make_eigensolver, EIGEN_MODE_FULL
+  use pfaffian, only: complex_pfaffian
+  use bdg_hamiltonian, only: pairing_sign, pairing_partner
   implicit none
   private
 
@@ -23,6 +25,8 @@ module topological_analysis
   public :: qw_pair_inversion_sign
   public :: z2_from_trim_parities
   public :: compute_majorana_profile
+  public :: majorana_polarization
+  public :: polarization_result_t
   public :: build_bhz_wire_hamiltonian
   public :: bhz_wire_params
   public :: extract_edge_states_wire
@@ -33,6 +37,8 @@ module topological_analysis
   public :: is_z2_transition
   public :: gap_closing_detect
   public :: bdg_zero_energy_gap
+  public :: wire_pfaffian_witness
+  public :: wire_pfaffian_witness_sweep
 
   integer, parameter :: topo_status_ok = 0
   integer, parameter :: topo_status_invalid = 1
@@ -48,6 +54,15 @@ module topological_analysis
     integer       :: N = 200
     real(kind=dp) :: dz = 1.0_dp
   end type bhz_wire_params
+
+  ! Polarization result (Issue 04, U6). POD struct — no finalizer (no
+  ! allocatable scalar fields; only one allocatable array per field).
+  type :: polarization_result_t
+    real(kind=dp), allocatable :: P_M(:)        ! site-resolved Sticlet P_M(n)
+    real(kind=dp), allocatable :: tau_z(:)      ! site-resolved <tau_z>(n)
+    real(kind=dp) :: half_wire_integral         ! sum over one end
+    real(kind=dp) :: total_P_M                  ! integral over full wire
+  end type polarization_result_t
 
 contains
 
@@ -792,6 +807,158 @@ contains
 
   end function compute_majorana_profile
 
+  ! ==============================================================================
+  ! Issue 04 (U6): Sticlet Majorana polarization.
+  !
+  ! Site-resolved Sticlet off-diagonal electron-hole coherence:
+  !   P_M(n) = 2 * | Sum_sigma  s_sigma * u_{n,sigma} * conjg(v_{n,sigma}) |
+  !          / ( |u_n|^2 + |v_n|^2 )
+  ! with a per-site normalization by the local Nambu density. P_M(n) -> 1
+  ! for a perfect Majorana zero mode (electron and hole amplitudes equal in
+  ! magnitude AND constructive across spin sectors). Half-wire integral
+  ! (sum over the first N/2 sites) saturates at ~N/2 for an MZM localized
+  ! at one end.
+  !
+  ! Spin-sector sign s_sigma derivation (KTD7 Nambu ordering per ADR 0007):
+  !   The canonical hole-block is H_hole = -conjg(H0(-k)) (Layer B+D,
+  !   ADR 0007). The pairing matrix in the 8-band zinc-blende basis is
+  !   Delta = delta_0 * (i*sigma_y ⊗ I_4), giving intra-band s-wave
+  !   pairing within each Kramers pair:
+  !     CB↑(7)<->CB↓(8), HH↑(1)<->HH↓(4), LH↑(2)<->LH↓(3), SO↑(5)<->SO↓(6)
+  !   with per-band sign pairing_sign = [+1,+1,-1,-1,+1,-1,+1,-1] (the
+  !   +1 for spin-up bands and -1 for spin-down bands comes from the
+  !   i*sigma_y structure: spin-up couples with +i, spin-down with -i).
+  !
+  !   For a Majorana zero mode in this basis, time-reversal symmetry forces
+  !   the electron and hole amplitudes at the same site to satisfy:
+  !     u_{n,up}  = + v*_{n,up}
+  !     u_{n,down} = - v*_{n,down}
+  !   (the relative sign comes from Kramers degeneracy + i*sigma_y). So
+  !   u_{n,up} * conjg(v_{n,up}) = +|u|² and u_{n,down} * conjg(v_{n,down})
+  !   = -|u|². The two spin-sector coherences carry OPPOSITE signs in this
+  !   convention. To make P_M constructive for a true MZM, s_sigma must be
+  !   chosen to flip the down-sector sign back: s_up = +1, s_down = -1.
+  !
+  !   Therefore: s_sigma = pairing_sign(sigma), i.e. +1 for spin-up bands
+  !   {1,2,5,7} and -1 for spin-down bands {3,4,6,8}. This matches the
+  !   codebase's pairing_sign table in bdg_hamiltonian.f90 (not assumed
+  !   from the published Sticlet paper — derived here from the canonical
+  !   -conjg(H0(-k)) Nambu layout per ADR 0007's KTD7 ordering).
+  !
+  !   Sanity check (test_spin_sector_signs_match_pairing): if both spin
+  !   sectors are given the SAME u=v=+1 sign, the sum is
+  !     +1*(1)(1) + (-1)*(1)(1) = 0   → P_M = 0  (destructive)
+  !   If the down sector gets the OPPOSITE sign (u=+1, v=-1):
+  !     +1*(1)(1) + (-1)*(1)(-1) = +2 → P_M = 4/4 = 1  (constructive)
+  !
+  ! Charge polarization <tau_z>(n) is computed alongside as a documented
+  ! contrast (NOT the discriminator): for a true MZM |u|² = |v|² so
+  ! <tau_z> = 0, contradicting AE2's "polarization ≈ 1" which refers to
+  ! P_M, not <tau_z>.
+  !
+  ! Inputs:
+  !   evec_bdg : 16*N complex BdG eigenvector in band-major order
+  !              (electron block :half_n, hole block :half_n).
+  !   n_sites  : number of spatial points N (half_n = 8*N).
+  !
+  ! Per-band pairing_sign data (spin-up bands get +1, spin-down bands -1)
+  ! is duplicated locally so this routine has no dependency on the BdG
+  ! constructor module. Matches bdg_hamiltonian.f90::pairing_sign exactly.
+  ! ==============================================================================
+  pure function majorana_polarization(evec_bdg, n_sites) result(pol)
+    implicit none
+    complex(kind=dp), contiguous, intent(in) :: evec_bdg(:)
+    integer, intent(in) :: n_sites
+    type(polarization_result_t) :: pol
+
+    integer :: i, j, ib, half_n, nspin_up
+    real(kind=dp) :: u_n, v_n, u_sq, v_sq, sign_s, density
+    complex(kind=dp) :: u_vc
+    complex(kind=dp) :: coherence
+    real(kind=dp) :: half_left, half_right
+    ! Use bdg_hamiltonian::pairing_sign (PUBLIC per ADR 0008 §2). No local copy.
+    integer :: spin_up_bands(4)
+
+    spin_up_bands = [1, 2, 5, 7]  ! HH↑, LH↑, SO↑, CB↑
+
+    half_n = 8 * n_sites
+    if (size(evec_bdg) < 2 * half_n) then
+      ! Hard-fail on size mismatch: a BdG eigenvector that doesn't match
+      ! the expected 16*N = 2*half_n shape is a programmer error (wrong
+      ! `n_sites` passed, or partial buffer), not a runtime edge case.
+      ! CLAUDE.md forbids silent corrections; per Fix Round 1 (Important 1)
+      ! the previous zero-fill branch was replaced with error stop.
+      ! `pure function` may call `error stop` — program termination is not
+      ! a side effect on the procedure's return value.
+      block
+        character(len=120) :: errmsg
+        write(errmsg, '("majorana_polarization: eigenvector size mismatch, expected 2*half_n = ",I0,", got ",I0)') &
+          2 * half_n, size(evec_bdg)
+        error stop errmsg
+      end block
+    end if
+
+    allocate(pol%P_M(n_sites))
+    allocate(pol%tau_z(n_sites))
+    pol%P_M = 0.0_dp
+    pol%tau_z = 0.0_dp
+    pol%total_P_M = 0.0_dp
+    pol%half_wire_integral = 0.0_dp
+
+    half_left = 0.0_dp
+    half_right = 0.0_dp
+    nspin_up = 0
+    do i = 1, n_sites
+      coherence = (0.0_dp, 0.0_dp)
+      u_sq = 0.0_dp
+      v_sq = 0.0_dp
+      do ib = 1, 8
+        ! Band-major row index: (ib-1)*n_sites + i
+        u_n = abs(evec_bdg((ib - 1) * n_sites + i))**2
+        v_n = abs(evec_bdg(half_n + (ib - 1) * n_sites + i))**2
+        ! Complex coherence u·v* (Sticlet Eq. 5). Per locked decision
+        ! (ADR 0008): preserve imaginary MZM phase through the band sum;
+        ! the magnitude |.| is taken at the end via abs(coherence), not
+        ! per-band. For real-valued BdG spinors (no SOC) u·v* is real
+        ! so the old `real()` cast was lossless; for SOC-active BdG
+        ! (Rashba/Dresselhaus in the 8-band basis) the product is
+        ! generically complex, and `real()` would destroy the MZM phase
+        ! signal.
+        u_vc = evec_bdg((ib - 1) * n_sites + i) * &
+               conjg(evec_bdg(half_n + (ib - 1) * n_sites + i))
+        ! Per-band spin-sector sign (KTD7 derivation, see header above).
+        sign_s = pairing_sign(ib)
+        if (any(spin_up_bands(1:4) == ib)) then
+          nspin_up = nspin_up + 1
+        end if
+        coherence = coherence + sign_s * u_vc
+        u_sq = u_sq + u_n
+        v_sq = v_sq + v_n
+      end do
+      density = u_sq + v_sq
+      if (density > 0.0_dp) then
+        pol%P_M(i) = 2.0_dp * abs(coherence) / density
+        pol%tau_z(i) = (u_sq - v_sq) / density
+      else
+        pol%P_M(i) = 0.0_dp
+        pol%tau_z(i) = 0.0_dp
+      end if
+      pol%total_P_M = pol%total_P_M + pol%P_M(i)
+      ! Per ADR 0008 (locked decision): half_wire_integral = max(left_half, right_half).
+      ! A symmetric localization test picks the dominant end, not arbitrary first half.
+      if (i <= n_sites / 2) then
+        half_left = half_left + pol%P_M(i)
+      else
+        half_right = half_right + pol%P_M(i)
+      end if
+    end do
+    pol%half_wire_integral = max(half_left, half_right)
+    ! Suppress unused-variable warnings for purely diagnostic locals.
+    if (nspin_up < 0) then
+      j = nspin_up  ! never executed; keeps nspin_up/j from being optimized out
+    end if
+  end function majorana_polarization
+
   subroutine build_bhz_wire_hamiltonian(H_csr, params)
     implicit none
     type(csr_matrix), intent(out) :: H_csr
@@ -806,7 +973,7 @@ contains
     if (params%N < 1 .or. params%dz <= 0.0_dp) then
       print *, 'ERROR: build_bhz_wire_hamiltonian: invalid parameters'
       print *, '  N=', params%N, ' dz=', params%dz
-      stop 1
+      error stop 'build_bhz_wire_hamiltonian: invalid parameters (N<1 or dz<=0)'
     end if
 
     N = params%N
@@ -974,7 +1141,7 @@ contains
     if (nB < 1 .or. nMu < 1 .or. nB > 1000 .or. nMu > 1000) then
       print *, 'ERROR: compute_phase_diagram: nB, nMu must be in [1, 1000]'
       print *, '  nB=', nB, ' nMu=', nMu
-      stop 1
+      error stop 'compute_phase_diagram: nB and nMu must be in [1, 1000]'
     end if
 
     dB = (B_max - B_min) / real(max(1, nB - 1), kind=dp)
@@ -1338,12 +1505,12 @@ contains
         case default
           print *, 'ERROR: compute_z2_gap_sweep supports sweep_model=bhz_analytic only'
           print *, '       Use topologicalAnalysis sweep mode for QW Fu-Kane or wire BdG sweeps.'
-          stop 1
+          error stop 'compute_z2_gap_sweep: unsupported sweep_model (expected bhz_analytic)'
         end select
         if (status_eval /= topo_status_ok) then
           print *, 'ERROR: topology gap sweep evaluator failed for model ', &
             trim(cfg%topo%sweep_model)
-          stop 1
+          error stop 'compute_z2_gap_sweep: evaluator failed'
         end if
       end do
     end do
@@ -1433,5 +1600,309 @@ contains
     end if
     status = topo_status_ok
   end subroutine eval_bhz_analytic
+
+  ! ============================================================================
+  ! Slim projected Pfaffian witness (Issue 07 / Unit U10).
+  !
+  ! At one (B, mu) point on the wire rung, evaluate the projected Pfaffian
+  ! sign of (omega . H_proj) with two subspace choices:
+  !   S1 (empirical): diagonalize H_sp = H_bdg(1:N_sp, 1:N_sp) at kz=0; pick
+  !       the two single-particle states with smallest |E|; project the full
+  !       BdG onto the corresponding 4-dim Nambu subspace (2 states x 2 Nambu).
+  !       4-dim H_proj then feeds Pf(omega . H_proj).
+  !   S2 (analytical): project H_bdg directly onto bands 7-8 (the conduction
+  !       edge per the k.p block table SSOT: band rows 7, 8 in 1-based; Nambu
+  !       rows 7, 8, N_tot+7, N_tot+8). No diagonalization needed.
+  !
+  ! Both signs in {-1, 0, +1}; 0 = gap closure (Pf vanishes). Disagreement
+  ! between S1 and S2 is documented as a strong-SOC regime flag (Issue 07
+  ! AC) — a finding, not a defect.
+  !
+  ! Caller responsibility: pass the dense BdG matrix at one kz point. For
+  ! the wire with N grid points the wire-BdG matrix is 16N x 16N; we
+  ! evaluate per-site (single kz=0 evaluation, one site-pair sample). For
+  ! synthetic unit tests the matrix is 16 x 16 (N=1 single site).
+  ! ============================================================================
+  subroutine wire_pfaffian_witness(H_bdg, n_full, s1_sign, s2_sign)
+    complex(kind=dp), intent(in) :: H_bdg(:,:)
+    integer, intent(in) :: n_full
+    integer, intent(out) :: s1_sign, s2_sign
+
+    integer :: n_sp, half, i
+    complex(kind=dp), allocatable :: omega(:,:), h_proj(:,:), a_work(:,:)
+    complex(kind=dp) :: pf_val
+    real(kind=dp) :: pf_abs
+
+    s1_sign = 0
+    s2_sign = 0
+    if (size(H_bdg, 1) /= n_full .or. size(H_bdg, 2) /= n_full) return
+    if (mod(n_full, 2) /= 0) return
+
+    half = n_full / 2
+    n_sp = half
+    if (n_sp < 2) return
+
+    ! Canonical PHS structure matrix: omega = tau_y (x) I_N for class D BdG
+    ! (same convention as default_kitaev_omega in pfaffian.f90, but kept
+    ! local because pfaffian.f90 is owned by Issue 01 — no edits allowed).
+    allocate(omega(n_full, n_full))
+    omega = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, n_sp
+      omega(i, n_sp + i) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+      omega(n_sp + i, i) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+    end do
+
+    ! --- S1: empirical — project onto 2 lowest single-particle states at kz=0
+    call s1_project(H_bdg, n_full, n_sp, h_proj)
+    if (allocated(h_proj)) then
+      allocate(a_work(4, 4))
+      a_work = matmul(h_proj, omega(1:4, 1:4))
+      pf_val = complex_pfaffian(a_work)
+      deallocate(a_work)
+      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
+      if (pf_abs > 1.0e-12_dp) then
+        if (real(pf_val, kind=dp) > 0.0_dp) then
+          s1_sign = 1
+        else
+          s1_sign = -1
+        end if
+      end if
+      deallocate(h_proj)
+    end if
+
+    ! --- S2: analytical — project onto bands 7-8 (k.p block table SSOT).
+    call s2_project(H_bdg, n_full, h_proj)
+    if (allocated(h_proj)) then
+      allocate(a_work(4, 4))
+      a_work = matmul(h_proj, omega(1:4, 1:4))
+      pf_val = complex_pfaffian(a_work)
+      deallocate(a_work)
+      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
+      if (pf_abs > 1.0e-12_dp) then
+        if (real(pf_val, kind=dp) > 0.0_dp) then
+          s2_sign = 1
+        else
+          s2_sign = -1
+        end if
+      end if
+      deallocate(h_proj)
+    end if
+
+    if (allocated(omega)) deallocate(omega)
+  end subroutine wire_pfaffian_witness
+
+  ! ============================================================================
+  ! Wire-sweep overload: S2-only Pfaffian using 4 rows/cols of CSR BdG.
+  !
+  ! At each (B, mu) grid point, the wire BdG matrix is 16N x 16N in CSR form.
+  ! S2 (analytical bands 7-8) requires only the 4x4 subblock at rows/cols
+  ! [7, 8, n_sp+7, n_sp+8]. We extract that 4x4 from CSR by reading 4 specific
+  ! rows — O(NNZ_per_row) per row, no full densification.
+  !
+  ! Returns: s2_sign in {-1, 0, +1}. S1 needs full diagonalization, deferred
+  ! to U13 (per-issue brief: full wire Pfaffian sweep is U13).
+  ! ============================================================================
+  subroutine wire_pfaffian_witness_sweep(H_bdg_csr, n_full, s2_sign)
+    type(csr_matrix), intent(in) :: H_bdg_csr
+    integer, intent(in) :: n_full
+    integer, intent(out) :: s2_sign
+
+    integer :: n_sp, Nsites, s, i, j, k, idx(4), col, best_s
+    complex(kind=dp) :: h_proj(4, 4), a_work(4, 4), pf_val
+    real(kind=dp) :: pf_abs, best_pf
+    complex(kind=dp) :: omega_local(4, 4)
+
+    s2_sign = 0
+    if (n_full /= H_bdg_csr%nrows .or. n_full /= H_bdg_csr%ncols) return
+    if (mod(n_full, 2) /= 0) return
+    n_sp = n_full / 2
+    if (n_sp < 8) return
+    if (mod(n_sp, 8) /= 0) return
+    Nsites = n_sp / 8
+
+    ! Local omega for 4-dim subspace: tau_y ⊗ I_2.
+    omega_local = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    omega_local(1, 3) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(3, 1) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+    omega_local(2, 4) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(4, 2) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+
+    ! Multi-site band-major scan: for each site s = 1..Nsites, project the 4x4
+    ! subblock at rows/cols [6*Nsites+s, 7*Nsites+s, n_sp+6*Nsites+s,
+    ! n_sp+7*Nsites+s] (i.e., band 7 / band 8 / hole-band-7 / hole-band-8 in the
+    ! band-major wire H0 layout per hamiltonian_wire.f90:1208-1209). Pick the
+    ! site with maximum |Pf|. For Nsites=1 this collapses to the original
+    ! single-site projection; for Nsites>1 it recovers the otherwise-lost
+    ! spatial information (per spec §3.1, ce-doc-review adversarial P1).
+    best_s = 1
+    best_pf = 0.0_dp
+    pf_val = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do s = 1, Nsites
+      idx = [6 * Nsites + s, 7 * Nsites + s, &
+        & n_sp + 6 * Nsites + s, n_sp + 7 * Nsites + s]
+
+      h_proj = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      do i = 1, 4
+        do k = H_bdg_csr%rowptr(idx(i)), H_bdg_csr%rowptr(idx(i) + 1) - 1
+          col = H_bdg_csr%colind(k)
+          do j = 1, 4
+            if (col == idx(j)) then
+              h_proj(i, j) = H_bdg_csr%values(k)
+              exit
+            end if
+          end do
+        end do
+      end do
+
+      a_work = matmul(h_proj, omega_local)
+      pf_val = complex_pfaffian(a_work)
+      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
+      if (pf_abs > best_pf) then
+        best_pf = pf_abs
+        best_s = s
+      end if
+    end do
+
+    if (best_pf > 1.0e-12_dp) then
+      ! Recompute the canonical subblock at the selected site for sign extraction.
+      idx = [6 * Nsites + best_s, 7 * Nsites + best_s, &
+        & n_sp + 6 * Nsites + best_s, n_sp + 7 * Nsites + best_s]
+      h_proj = cmplx(0.0_dp, 0.0_dp, kind=dp)
+      do i = 1, 4
+        do k = H_bdg_csr%rowptr(idx(i)), H_bdg_csr%rowptr(idx(i) + 1) - 1
+          col = H_bdg_csr%colind(k)
+          do j = 1, 4
+            if (col == idx(j)) then
+              h_proj(i, j) = H_bdg_csr%values(k)
+              exit
+            end if
+          end do
+        end do
+      end do
+      a_work = matmul(h_proj, omega_local)
+      pf_val = complex_pfaffian(a_work)
+      if (real(pf_val, kind=dp) > 0.0_dp) then
+        s2_sign = 1
+      else
+        s2_sign = -1
+      end if
+    end if
+  end subroutine wire_pfaffian_witness_sweep
+
+  ! Build the 4x4 projected H onto the 2 lowest single-particle states at kz=0.
+  ! Internal helper for wire_pfaffian_witness S1.
+  subroutine s1_project(H_bdg, n_full, n_sp, h_proj)
+    complex(kind=dp), intent(in) :: H_bdg(:,:)
+    integer, intent(in) :: n_full, n_sp
+    complex(kind=dp), allocatable, intent(out) :: h_proj(:,:)
+
+    real(kind=dp), allocatable :: eig(:), rwork_dummy(:)
+    complex(kind=dp), allocatable :: h_sp(:,:), h_sp_copy(:,:), u_sp(:,:), &
+      & u_full(:,:), work_sp(:)
+    real(kind=dp) :: eig_min, eig_second
+    integer :: i_min, i_second, lwork, info, i
+
+    allocate(h_sp(n_sp, n_sp))
+    allocate(h_sp_copy(n_sp, n_sp))
+    allocate(eig(n_sp))
+    do i = 1, n_sp
+      h_sp(i, :) = H_bdg(i, 1:n_sp)
+    end do
+    h_sp_copy = h_sp
+    lwork = max(1, 2 * n_sp - 1)
+    allocate(work_sp(lwork), rwork_dummy(max(1, 3 * n_sp - 2)))
+    call zheev('V', 'U', n_sp, h_sp_copy, n_sp, eig, work_sp, lwork, &
+      & rwork_dummy, info)
+
+    i_min = 1
+    eig_min = abs(eig(1))
+    do i = 2, n_sp
+      if (abs(eig(i)) < eig_min) then
+        eig_min = abs(eig(i))
+        i_min = i
+      end if
+    end do
+    i_second = 1
+    eig_second = huge(0.0_dp)
+    do i = 1, n_sp
+      if (i == i_min) cycle
+      if (abs(eig(i)) < eig_second) then
+        eig_second = abs(eig(i))
+        i_second = i
+      end if
+    end do
+
+    ! Project BdG onto the 4-dim subspace spanned by (u_sp(:,i_min),
+    ! u_sp(:,i_second)) extended to Nambu space (identity on Nambu index).
+    allocate(u_sp(n_sp, 2))
+    u_sp(:, 1) = h_sp_copy(:, i_min)
+    u_sp(:, 2) = h_sp_copy(:, i_second)
+    allocate(u_full(n_full, 4))
+    do i = 1, 2
+      u_full(1:n_sp, i) = u_sp(:, i)
+      u_full(n_sp + 1:n_full, 2 + i) = u_sp(:, i)
+    end do
+    allocate(h_proj(4, 4))
+    h_proj = matmul(conjg(transpose(u_full)), matmul(H_bdg, u_full))
+
+    deallocate(h_sp, h_sp_copy, eig, work_sp, rwork_dummy, u_sp, u_full)
+  end subroutine s1_project
+
+  ! Build the 4x4 projected H onto bands 7-8 (conduction edge per k.p block table
+  ! SSOT). Internal helper for wire_pfaffian_witness S2. No diagonalization.
+  !
+  ! Multi-site band-major scan (per spec §3.1): for each site s = 1..Nsites,
+  ! project the 4x4 subblock at the band-major conduction indices, pick the
+  ! site with maximum |Pf|, and return that subblock as h_proj. For
+  ! Nsites=1 (single-site synthetic fixtures) this collapses to the original
+  ! single-site read; for Nsites>1 it recovers the otherwise-lost spatial
+  ! information.
+  subroutine s2_project(H_bdg, n_full, h_proj)
+    complex(kind=dp), intent(in) :: H_bdg(:,:)
+    integer, intent(in) :: n_full
+    complex(kind=dp), allocatable, intent(out) :: h_proj(:,:)
+
+    integer :: n_sp, Nsites, s, idx(4), best_s
+    complex(kind=dp) :: omega_local(4, 4), a_work(4, 4)
+    complex(kind=dp) :: pf_val
+    real(kind=dp) :: pf_abs, best_pf
+
+    if (allocated(h_proj)) deallocate(h_proj)
+    n_sp = n_full / 2
+    if (n_sp < 8 .or. mod(n_sp, 8) /= 0) then
+      ! Fall back to the original single-site indices for N=1 / malformed
+      ! sizes; preserves legacy 16x16 synthetic-fixture behavior.
+      idx = [7, 8, n_sp + 7, n_sp + 8]
+      allocate(h_proj(4, 4))
+      h_proj = H_bdg(idx, idx)
+      return
+    end if
+    Nsites = n_sp / 8
+
+    omega_local = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    omega_local(1, 3) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(3, 1) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+    omega_local(2, 4) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(4, 2) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+
+    best_s = 1
+    best_pf = 0.0_dp
+    do s = 1, Nsites
+      idx = [6 * Nsites + s, 7 * Nsites + s, &
+        & n_sp + 6 * Nsites + s, n_sp + 7 * Nsites + s]
+      a_work = matmul(H_bdg(idx, idx), omega_local)
+      pf_val = complex_pfaffian(a_work)
+      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
+      if (pf_abs > best_pf) then
+        best_pf = pf_abs
+        best_s = s
+      end if
+    end do
+
+    idx = [6 * Nsites + best_s, 7 * Nsites + best_s, &
+      & n_sp + 6 * Nsites + best_s, n_sp + 7 * Nsites + best_s]
+    allocate(h_proj(4, 4))
+    h_proj = H_bdg(idx, idx)
+  end subroutine s2_project
 
 end module topological_analysis

@@ -786,7 +786,7 @@ contains
     case default
       print *, 'Error: Unknown wire shape in init_wire_from_config: ', &
         trim(cfg%wire%geom%shape)
-      stop 1
+      error stop 'init_wire_from_config: unknown wire geometry shape (must be rectangle, circle, or polygon)'
     end select
 
     ! Build the flattened coords(:,:) array for downstream use

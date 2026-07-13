@@ -332,7 +332,7 @@ module definitions
     real(kind=dp)    :: gap_sweep_mu_min = 0.0_dp
     real(kind=dp)    :: gap_sweep_mu_max = 0.01_dp
     integer          :: gap_sweep_nMu = 20
-    character(len=20) :: sweep_model = 'bhz_analytic'  ! bhz_analytic | wire_bdg | qw_fukane
+    character(len=20) :: sweep_model = 'bhz_analytic'  ! bhz_analytic | wire_bdg | qw_fukane | bdq_spectral
     ! Conductance
     logical          :: compute_conductance = .false.
     character(len=20) :: conductance_method = 'kubo_chern'  ! kubo_chern | kubo_berry | landauer
@@ -924,9 +924,10 @@ module definitions
           trim(cfg%topo%mode) /= 'bdg' .and. &
           trim(cfg%topo%mode) /= 'spectral' .and. &
           trim(cfg%topo%mode) /= 'conductance' .and. &
-          trim(cfg%topo%mode) /= 'sweep') then
+          trim(cfg%topo%mode) /= 'sweep' .and. &
+          trim(cfg%topo%mode) /= 'bdq_spectral') then
         error stop 'validate_semantic: topology mode ''' // trim(cfg%topo%mode) // &
-          ''' not recognized (expected: qhe, qshe, bdg, spectral, conductance, sweep)'
+          ''' not recognized (expected: qhe, qshe, bdg, spectral, conductance, sweep, bdq_spectral)'
       end if
 
       ! S2: QSHE Z2 requires QW or wire confinement
@@ -938,9 +939,10 @@ module definitions
       end if
 
       ! S3: BdG mode requires [bdg] section enabled
-      if (trim(cfg%topo%mode) == 'bdg') then
+      if (trim(cfg%topo%mode) == 'bdg' .or. trim(cfg%topo%mode) == 'bdq_spectral') then
         if (.not. cfg%bdg%enabled) then
-          error stop 'validate_semantic: topology mode ''bdg'' requires [bdg] section'
+          error stop 'validate_semantic: topology mode ''' // trim(cfg%topo%mode) // &
+            ''' requires [bdg] section'
         end if
         ! S4: BdG confinement must be QW or wire
         if (trim(cfg%confinement) /= 'qw' .and. trim(cfg%confinement) /= 'wire') then
@@ -970,7 +972,7 @@ module definitions
       ! strain-BdG regression config (±0.5 eV). Fires on mode='bdg' (eval_bdg)
       ! and on mode='sweep'+sweep_model='wire_bdg' (eval_wire_bdg_gap), both
       ! of which honor [solver] emin/emax via apply_solver_window.
-      if (trim(cfg%topo%mode) == 'bdg' .or. &
+      if (trim(cfg%topo%mode) == 'bdg' .or. trim(cfg%topo%mode) == 'bdq_spectral' .or. &
           (trim(cfg%topo%mode) == 'sweep' .and. &
            trim(cfg%topo%sweep_model) == 'wire_bdg')) then
         if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then

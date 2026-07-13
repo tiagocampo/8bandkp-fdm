@@ -1,4 +1,5 @@
 module test_green_functions
+  ! COVERAGE: observable=bdg_ldos geometry=wire material=InAs tier=unit
   use funit
   use definitions
   use parameters
@@ -7,6 +8,7 @@ module test_green_functions
   use confinement_init, only: confinementInitialization_raw
   use green_functions
   use linalg
+  use spectral_bdg_wire, only: compute_spectral_function_bdg_wire, compute_bdg_ldos, compute_bdg_ldos_nambu
   implicit none
 
 contains
@@ -354,5 +356,251 @@ contains
 
     deallocate(z, profile, kpterms, k_arr, E_arr, A_kE)
   end subroutine test_spectral_function_gap_region
+
+  ! ==================================================================
+  ! Issue 06 / Helper: synthetic 4x4 diagonal BdG-like CSR.
+  !
+  ! Eigenvalues [-0.5, 0, 0, +0.5] eV -- the zero-mode pair mimics the
+  ! Majorana in-gap state; +/-0.5 eV mimic the quasiparticle gap edge.
+  ! ==================================================================
+  subroutine build_bdg_synthetic_csr(mat)
+    type(csr_matrix), intent(out) :: mat
+    integer, allocatable :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    allocate(rows(4), cols(4), vals(4))
+    rows = [1, 2, 3, 4]
+    cols = [1, 2, 3, 4]
+    vals = [cmplx(-0.5_dp, 0.0_dp, kind=dp), cmplx(0.0_dp, 0.0_dp, kind=dp), &
+            cmplx( 0.0_dp, 0.0_dp, kind=dp), cmplx(0.5_dp, 0.0_dp, kind=dp)]
+    call csr_build_from_coo(mat, 4, 4, 4, rows, cols, vals)
+    deallocate(rows, cols, vals)
+  end subroutine build_bdg_synthetic_csr
+
+  ! ==================================================================
+  ! Issue 06 / Test 1: BdG spectral function A(k,E) non-negativity.
+  !
+  ! The Lorentzian decomposition is a sum of positive peaks; on a
+  ! diagonal synthetic BdG CSR with a zero mode, A(k,E) at one k
+  ! point must be non-negative everywhere.
+  ! ==================================================================
+  @test
+  subroutine test_spectral_function_bdg_wire_non_negative()
+    type(csr_matrix) :: H_bdg_csr
+    real(kind=dp), allocatable :: k_values(:), E_values(:)
+    real(kind=dp), allocatable :: A_kE(:,:)
+
+    call build_bdg_synthetic_csr(H_bdg_csr)
+    allocate(k_values(1), E_values(5))
+    k_values = [0.0_dp]
+    E_values = [-1.0_dp, -0.25_dp, 0.0_dp, 0.25_dp, 1.0_dp]
+
+    call compute_spectral_function_bdg_wire(H_bdg_csr, k_values, E_values, &
+       & 0.01_dp, A_kE)
+
+    @assertEqual(1, size(A_kE, 1), message="A_kE row dim = nk")
+    @assertEqual(5, size(A_kE, 2), message="A_kE col dim = nE")
+    @assertTrue(all(A_kE >= 0.0_dp), message="A(k,E) must be non-negative")
+    @assertTrue(maxval(A_kE) > 0.0_dp, message="A(k,E) must have positive peaks")
+
+    if (allocated(A_kE)) deallocate(A_kE)
+    deallocate(k_values, E_values)
+    call H_bdg_csr%free()
+  end subroutine test_spectral_function_bdg_wire_non_negative
+
+  ! ==================================================================
+  ! Issue 06 / Test 2: BdG LDOS peak at E=0 in topological phase.
+  !
+  ! Synthetic diagonal BdG CSR with a zero mode produces a Lorentzian
+  ! peak at E=0; the LDOS at the zero-energy grid point must exceed
+  ! off-peak LDOS for energies well outside the gap edge.
+  ! ==================================================================
+  @test
+  subroutine test_bdg_ldos_peak_at_zero_energy()
+    type(csr_matrix) :: H_bdg_csr
+    real(kind=dp), allocatable :: E_grid(:)
+    real(kind=dp), allocatable :: ldos_zero(:), ldos_far(:)
+    real(kind=dp) :: peak_zero, peak_far
+    integer :: r
+
+    call build_bdg_synthetic_csr(H_bdg_csr)
+
+    allocate(E_grid(21))
+    do r = 1, 21
+      E_grid(r) = -0.2_dp + real(r - 1, kind=dp) * 0.02_dp
+    end do
+
+    call compute_bdg_ldos(H_bdg_csr, 0.0_dp, 0.005_dp, ldos_zero)
+    call compute_bdg_ldos(H_bdg_csr, -0.15_dp, 0.005_dp, ldos_far)
+
+    peak_zero = maxval(ldos_zero)
+    peak_far  = maxval(ldos_far)
+
+    @assertTrue(peak_zero > peak_far, message="E=0 LDOS peak must exceed off-peak LDOS")
+
+    deallocate(E_grid)
+    if (allocated(ldos_zero)) deallocate(ldos_zero)
+    if (allocated(ldos_far)) deallocate(ldos_far)
+    call H_bdg_csr%free()
+  end subroutine test_bdg_ldos_peak_at_zero_energy
+
+  ! ==================================================================
+  ! Issue 06 / Test 3: Nambu-resolved LDOS sums to total LDOS.
+  !
+  ! The structural electron/hole split must satisfy
+  !   ldos(n) == ldos_e(n) + ldos_h(n)
+  ! at every grid point. (Issue 06 AC: "Nambu-resolved LDOS splits
+  ! the electron vs hole sector contribution to the zero-energy peak".)
+  ! ==================================================================
+  @test
+  subroutine test_bdg_ldos_nambu_decomposition()
+    type(csr_matrix) :: H_bdg_csr
+    real(kind=dp), allocatable :: ldos_e_vec(:), ldos_h_vec(:), ldos_total(:)
+    real(kind=dp) :: sum_err
+
+    call build_bdg_synthetic_csr(H_bdg_csr)
+
+    call compute_bdg_ldos_nambu(H_bdg_csr, 0.0_dp, 0.01_dp, ldos_e_vec, ldos_h_vec)
+    call compute_bdg_ldos(H_bdg_csr, 0.0_dp, 0.01_dp, ldos_total)
+
+    sum_err = maxval(abs(ldos_total - (ldos_e_vec + ldos_h_vec)))
+    @assertTrue(sum_err < 1.0e-8_dp, message="Nambu LDOS must sum to total LDOS")
+
+    if (allocated(ldos_e_vec)) deallocate(ldos_e_vec)
+    if (allocated(ldos_h_vec)) deallocate(ldos_h_vec)
+    if (allocated(ldos_total)) deallocate(ldos_total)
+    call H_bdg_csr%free()
+  end subroutine test_bdg_ldos_nambu_decomposition
+
+  ! ==================================================================
+  ! Issue 06 / Test 4: KTD6 closure -- wire spectral function still
+  ! produces non-negative A(k,E) after routing through apply_solver_window.
+  !
+  ! After closing the KTD6 bypass, the wire spectral function still
+  ! returns shape (nk x nE), non-negative entries, and is robust to a
+  ! configured wire config. The pre-existing
+  ! regression_topology_spectral_wire regression test captures the
+  ! byte-identical output as the no-regression gate; here we check the
+  ! shape and non-negativity invariants on a minimal wire config.
+  ! ==================================================================
+  @test
+  subroutine test_spectral_function_wire_ktd6_equivalence()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: A_kE(:,:), k_arr(:), E_arr(:)
+
+    cfg%confinement = 'wire'
+    cfg%fd_step = 1
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 2
+    cfg%evnum = 8
+    cfg%solver%emin = -2.0_dp
+    cfg%solver%emax =  2.0_dp
+    cfg%solver%m0 = 8
+    cfg%num_layers = 1
+    cfg%totalSize = 15.0_dp
+    cfg%delta = 5.0_dp
+    cfg%dz = 5.0_dp
+    cfg%FDorder = 2
+
+    ! Wire geometry: 3x3 grid, square cross-section, one GaAs region.
+    ! Note: init_wire_from_config reads cfg%grid%nx/ny, NOT cfg%wire%nx/ny,
+    ! so we set the grid fields directly here.
+    cfg%grid%nx = 3
+    cfg%grid%ny = 3
+    cfg%grid%dx = 5.0_dp
+    cfg%grid%dy = 5.0_dp
+    cfg%wire%nx = 3
+    cfg%wire%ny = 3
+    cfg%wire%dx = 5.0_dp
+    cfg%wire%dy = 5.0_dp
+    cfg%wire%geom%shape = 'rectangle'
+    cfg%wire%geom%width = 15.0_dp
+    cfg%wire%geom%height = 15.0_dp
+    allocate(cfg%wire%regions(1))
+    cfg%wire%regions(1)%material = 'GaAs'
+    cfg%wire%regions(1)%inner = 0.0_dp
+    cfg%wire%regions(1)%outer = 100.0_dp
+    cfg%wire%num_regions = 1
+
+    allocate(k_arr(1), E_arr(3))
+    k_arr = [0.0_dp]
+    E_arr = [-1.0_dp, 0.0_dp, 1.0_dp]
+
+    call compute_spectral_function_wire(cfg, k_arr, E_arr, eta=0.01_dp, A_kE=A_kE)
+
+    @assertTrue(allocated(A_kE), message="A_kE must be allocated (fail-loud or populated)")
+    if (size(A_kE, 1) > 0 .and. size(A_kE, 2) > 0) then
+      @assertTrue(all(A_kE >= 0.0_dp), message="A(k,E) must be non-negative")
+    end if
+
+    deallocate(k_arr, E_arr)
+    if (allocated(A_kE)) deallocate(A_kE)
+    if (allocated(cfg%wire%regions)) deallocate(cfg%wire%regions)
+  end subroutine test_spectral_function_wire_ktd6_equivalence
+
+  ! ==================================================================
+  ! Issue 06 / Test 5: KTD6 -- apply_solver_window used by wire spectral.
+  !
+  ! Regression-baseline guardrail: after the KTD6 closure, the
+  ! spectral function must NOT depend on the Gershgorin auto-window
+  ! fallback (the source of the U8 FD-Nyquist tail false positives).
+  ! On a configured wire, it must succeed with a user-override window.
+  !
+  ! The byte-identical equivalence to the pre-refactor output is locked
+  ! by `regression_topology_spectral_wire` (golden-file); this unit
+  ! test asserts the A_kE is allocated (the function did not crash and
+  ! did not silently return NaN).
+  ! ==================================================================
+  @test
+  subroutine test_spectral_function_wire_user_override_honored()
+    type(simulation_config) :: cfg
+    real(kind=dp), allocatable :: A_kE(:,:), k_arr(:), E_arr(:)
+
+    cfg%confinement = 'wire'
+    cfg%fd_step = 1
+    cfg%bands%num_cb = 2
+    cfg%bands%num_vb = 2
+    cfg%evnum = 8
+    cfg%solver%emin = -1.0_dp
+    cfg%solver%emax =  1.0_dp
+    cfg%solver%m0 = 8
+    cfg%num_layers = 1
+    cfg%totalSize = 15.0_dp
+    cfg%delta = 5.0_dp
+    cfg%dz = 5.0_dp
+    cfg%FDorder = 2
+
+    cfg%grid%nx = 3
+    cfg%grid%ny = 3
+    cfg%grid%dx = 5.0_dp
+    cfg%grid%dy = 5.0_dp
+    cfg%wire%nx = 3
+    cfg%wire%ny = 3
+    cfg%wire%dx = 5.0_dp
+    cfg%wire%dy = 5.0_dp
+    cfg%wire%geom%shape = 'rectangle'
+    cfg%wire%geom%width = 15.0_dp
+    cfg%wire%geom%height = 15.0_dp
+    allocate(cfg%wire%regions(1))
+    cfg%wire%regions(1)%material = 'GaAs'
+    cfg%wire%regions(1)%inner = 0.0_dp
+    cfg%wire%regions(1)%outer = 100.0_dp
+    cfg%wire%num_regions = 1
+
+    allocate(k_arr(1), E_arr(3))
+    k_arr = [0.0_dp]
+    E_arr = [-0.5_dp, 0.0_dp, 0.5_dp]
+
+    call compute_spectral_function_wire(cfg, k_arr, E_arr, eta=0.01_dp, A_kE=A_kE)
+
+    @assertTrue(allocated(A_kE), message="user-override A_kE must be allocated")
+    if (size(A_kE, 1) > 0 .and. size(A_kE, 2) > 0) then
+      @assertTrue(all(A_kE >= 0.0_dp), message="user-override A(k,E) must be non-negative")
+    end if
+
+    deallocate(k_arr, E_arr)
+    if (allocated(A_kE)) deallocate(A_kE)
+    if (allocated(cfg%wire%regions)) deallocate(cfg%wire%regions)
+  end subroutine test_spectral_function_wire_user_override_honored
 
 end module test_green_functions

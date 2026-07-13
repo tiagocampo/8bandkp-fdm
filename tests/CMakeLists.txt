@@ -163,8 +163,54 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    # Issue 02 (U5, Layer A of U4): PHS oracle pinning the BdG hole-block
+    # canonical convention (-conjg(H0(-k)) per ADR 0007). Four-field matrix
+    # (no_Z/Z x no_P/P) at generic k + cross-builder spectral identity.
+    # RED on pre-Issue-03 code; GREEN post-Issue-03.
+    add_pfunit_ctest(test_bdg_phs
+        TEST_SOURCES unit/test_bdg_phs.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     add_pfunit_ctest(test_bdg_config
         TEST_SOURCES unit/test_bdg_config.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_bdg_evaluator
+        TEST_SOURCES unit/test_bdg_evaluator.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Task 1.5 (P1 BdG stabilization, ADR 0008 §2): cross-module pinning
+    # of pairing_sign/pairing_partner as PUBLIC exports from bdg_hamiltonian.
+    # RED until Task 1.6 adds them to the public list.
+    add_pfunit_ctest(test_pairing_sign_cross_module
+        TEST_SOURCES unit/test_pairing_sign_cross_module.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Task 1.7 (P1 BdG stabilization, ADR 0008 §2): Hermiticity of dense-QW
+    # BdG output. RED until Task 1.8 swaps pairing_sign(pairing_partner(ib))
+    # for pairing_sign(ib) at bdg_hamiltonian.f90:547.
+    add_pfunit_ctest(test_dense_qw_block_21_sign
+        TEST_SOURCES unit/test_dense_qw_block_21_sign.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Task 1.9 (P1 BdG stabilization, ADR 0008 §2): class-D PHS oracle for
+    # the dense-QW builder at generic k_par with Bx != 0. Pins that the
+    # QW path (which has NO Peierls phase) satisfies C H(k) C^{-1} = -H(-k)
+    # for diagonal Zeeman perturbations; serves as the QW witness of the
+    # same canonical hole-block convention (ADR 0007) the wire builder
+    # already pins via test_bdg_phs.pf.
+    add_pfunit_ctest(test_phs_qw_peierls_symmetric
+        TEST_SOURCES unit/test_phs_qw_peierls_symmetric.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
@@ -231,9 +277,91 @@ if(PFUNIT_FOUND)
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
+
+    # Issue 01: Pfaffian math (Parlett-Reid tridiagonalization)
+    add_pfunit_ctest(test_pfaffian
+        TEST_SOURCES unit/test_pfaffian.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Issue 01: Kitaev-chain Majorana number harness
+    add_pfunit_ctest(test_kitaev_majorana
+        TEST_SOURCES unit/test_kitaev_majorana.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_kitaev_strict
+        TEST_SOURCES unit/test_kitaev_strict.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Issue 04 (U6): Sticlet Majorana polarization as MZM discriminator.
+    # Tests the pure function majorana_polarization + polarization_result_t
+    # added to src/physics/topological_analysis.f90. Spin-sector signs s_σ
+    # derived from KTD7 Nambu ordering per ADR 0007.
+    add_pfunit_ctest(test_majorana_polarization
+        TEST_SOURCES unit/test_majorana_polarization.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Task 1.12 (P1 BdG stabilization, ADR 0008 §3): pins the
+    # complex-coherence branch of majorana_polarization against SOC-active
+    # BdG inputs where the per-site u·v* product is purely imaginary
+    # (Rashba/Dresselhaus spinor phase that the real-valued tests in
+    # test_majorana_polarization.pf cannot exercise).
+    add_pfunit_ctest(test_majorana_polarization_soc
+        TEST_SOURCES unit/test_majorana_polarization_soc.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Issue 07 (U10): slim projected Pfaffian witness (S1 empirical + S2
+    # analytical bands 7-8). Tests the pure wrapper wire_pfaffian_witness
+    # added to src/physics/topological_analysis.f90.
+    add_pfunit_ctest(test_wire_pfaffian_witness
+        TEST_SOURCES unit/test_wire_pfaffian_witness.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # Task B.1 (PR #41 BdG/Majorana blocker-fix plan, spec §4.1):
+    # Cross-builder identity test with shared-H0 invariant. Pins that
+    # both build_bdg_hamiltonian_1d (wire) and build_bdg_hamiltonian_qw
+    # route through the canonical -conjg(H0(-k)) wrapper. Fixture (a)
+    # tests the wrapper directly at k=0, B=0; fixture (b) tests the wire
+    # builder at generic k with Bx != 0 (Peierls regime).
+    add_pfunit_ctest(test_cross_builder_hole_block_identity
+        TEST_SOURCES unit/test_cross_builder_hole_block_identity.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
 else()
     message(STATUS "pFUnit not found — unit tests disabled. Install pFUnit and set -DPFUNIT_DIR to enable.")
 endif()
+
+# Issue 04 Fix Round 1 (Important 1): standalone Fortran driver that
+# intentionally triggers `error stop` on size mismatch in
+# majorana_polarization. pFUnit 4.x cannot catch Fortran `error stop`
+# (per ADR 0002 + test_parameters.pf precedent), so the size-mismatch
+# branch is verified by spawning this driver from a shell integration
+# test (test_majorana_polarization_size_mismatch.sh) and checking the
+# exit code + error message. Compiled unconditionally (no pFUnit needed)
+# so the error-stop path is always covered.
+add_executable(test_majorana_polarization_size_mismatch
+    integration/test_majorana_polarization_size_mismatch.f90
+)
+target_link_libraries(test_majorana_polarization_size_mismatch PRIVATE 8bandkp_common)
+add_test(
+    NAME validation_majorana_polarization_size_mismatch
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_majorana_polarization_size_mismatch.sh
+        $<TARGET_FILE:test_majorana_polarization_size_mismatch>
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(validation_majorana_polarization_size_mismatch PROPERTIES LABELS "unit" TIMEOUT 30)
 
 # --- Regression tests ---
 # Use shell scripts from tests/integration/ to avoid CMake shell escaping issues
@@ -780,6 +908,21 @@ set_tests_properties(
     PROPERTIES LABELS "regression"
 )
 
+# Issue 06 / Unit U9: BdG LDOS + A(k,E) + Nambu-resolved LDOS on the
+# topological wire. Verifies bdq_spectral mode produces all three
+# output files and that the Majorana zero-energy LDOS peak exists.
+add_test(
+    NAME regression_bdq_spectral_wire
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_bdg_spectral.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_bdq_spectral_wire.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_bdq_spectral_wire
+    PROPERTIES LABELS "regression" TIMEOUT 600
+)
+
 # Wire BdG strain-omission regression (#04):
 # Asserts the wire BdG spectrum SHIFTS when [strain] is applied. Before #04
 # the wire BdG driver skipped compute_strain, so strained/unstrained runs
@@ -812,6 +955,58 @@ set_tests_properties(
     PROPERTIES LABELS "regression;strain-validation" TIMEOUT 900
 )
 
+# Issue 07 (U10): 2D wire BdG minigap colormap regression. B swept,
+# mu fixed at conduction-band edge; asserts the colormap is non-flat
+# (gap varies across the grid) and matches the golden reference. The
+# gap_map / z2_map columns are routed through wire_pfaffian_witness_sweep
+# (Pfaffian, not heuristic) per the U10 acceptance criteria.
+add_test(
+    NAME regression_wire_bdg_topological_2d
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_wire_bdg_topological_2d.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_bdg_topological_2d.toml
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/data/wire_inas_gaas_bdg_topological_2d_phase.dat
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_wire_bdg_topological_2d
+    PROPERTIES LABELS "regression" TIMEOUT 900
+)
+
+# A.1 [TDD-red]: slim Pfaffian witness projects onto conduction bands,
+# not band-1 sites. Pins the row-index bug at
+# src/physics/topological_analysis.f90:1722, :1827 (idx=[7,8,...] reads
+# band-1 rows for band-major wire H0). Fails until A.2 lands the
+# multi-site band-major scan fix.
+add_test(
+    NAME regression_slim_pfaffian_witness_projection
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_slim_pfaffian_witness_projection.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+set_tests_properties(
+    regression_slim_pfaffian_witness_projection
+    PROPERTIES LABELS "regression" TIMEOUT 60
+)
+
+# Issue 05 / Unit U7: dense-QW BdG rung end-to-end certification.
+# Drives a B-sweep on the dense 16N x 16N BdG QW Hamiltonian and asserts
+# the canonical class-D open->close->reopen pattern at B_crit (covers AE2
+# + AE4). Uses the existing run_bdg_qw executable path + Issue 00's
+# evaluator output (min_gap); the pure-function Pfaffian and
+# polarization seams are consumed by Issue 01 / 04 pFUnit tests and by
+# Issue 07's slim Pfaffian witness.
+add_test(
+    NAME regression_dense_qw_bdg_rung
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_dense_qw_bdg_rung.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_dense_qw_bdg.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_dense_qw_bdg_rung
+    PROPERTIES LABELS "regression" TIMEOUT 900
+)
+
 # Topological sweep mode regressions
 add_test(
     NAME regression_topology_sweep_bhz
@@ -820,6 +1015,22 @@ add_test(
         ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/topology_sweep_bhz.toml
         bhz_analytic
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Issue 08 / Unit U12: Lecture 13 acceptance gate. Runs the 5-section
+# lecture script + asserts 4-witness B_crit agreement + asserts the
+# false-PASS line is gone + asserts the Issue 07 regression is green.
+# Regression lock against the all-zero B_crit false-PASS failure mode
+# (per docs/solutions/patterns/2026-06-27-lecture-table-simulation-extracted.md).
+add_test(
+    NAME lecture_13_acceptance_gate
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_lecture_13_acceptance_gate.sh
+        ${CMAKE_BINARY_DIR}
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    lecture_13_acceptance_gate
+    PROPERTIES LABELS "regression;acceptance-gate" TIMEOUT 1200
 )
 
 add_test(
@@ -1046,7 +1257,7 @@ set_tests_properties(
 # valence bands (lowest-M copy); this locks the corrected [il,iuu] slice.
 add_test(
     NAME verification_qw_bandstructure_dense_feast
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/verify_qw_bandstructure_dense_feast.py
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_qw_bandstructure_dense_feast.sh
         ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
@@ -1207,6 +1418,19 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 set_tests_properties(coverage_matrix PROPERTIES LABELS "coverage" TIMEOUT 120)
+
+# --- Illustrative Plot Generators (Issue 11 / Plot 7) ---
+# Synthetic-data plot companions for lecture material. These are
+# illustrative-only (tier=illustrative in COVERAGE annotations) and do
+# NOT wire to a Fortran executable — the canonical physics is exercised
+# on real BdG eigenvectors by test_majorana_polarization.pf. The plot
+# tests run the Python script and confirm it exits 0 (file written).
+add_test(
+    NAME plot_majorana_polarization_synthetic
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/integration/plot_majorana_polarization_synthetic.py
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(plot_majorana_polarization_synthetic PROPERTIES LABELS "plot" TIMEOUT 60)
 
 # --- Convergence Tests (Richardson Extrapolation on Physics Observables) ---
 # On-demand only: ctest -L convergence

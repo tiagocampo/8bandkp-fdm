@@ -329,7 +329,7 @@ contains
       call pardiso_real(pt, maxfct, mnum, mtype, phase, ntotal, a_csr, ia, ja, &
         perm, nrhs, iparm, msglvl, rhs, sol, error)
       deallocate(ia, ja, a_csr, rhs, sol, perm)
-      stop 1
+      error stop 'poisson_2d: PARDISO real solve failed'
     end if
 
     ! Phase -1: Release memory
@@ -369,7 +369,7 @@ contains
     idx = idx + 1
     if (idx > capacity) then
       print *, 'ERROR: COO capacity exceeded in 2D Poisson solver'
-      stop 1
+      error stop 'poisson_2d: COO capacity exceeded while building Poisson matrix'
     end if
     rows(idx) = row
     cols(idx) = col

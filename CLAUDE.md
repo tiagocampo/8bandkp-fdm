@@ -207,6 +207,20 @@ Sections: `[wave_vector]` (mode, max, nsteps), `[bands]` (num_cb, num_vb), `[[ma
 
 Optional sections are enabled by presence -- no separate enable flags. G-factor uses top-level `which_band` and `band_idx`. See `docs/reference/input-reference.md` for the complete schema.
 
+## Agent skills
+
+### Issue tracker
+
+Local markdown under `.scratch/<feature-slug>/` — see `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) — see `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
 ## Engineering Principles
 
 Apply KISS / DRY / YAGNI / SOLID as decision criteria for new code and refactors — not as slogans. Each is already instantiated in this repo; preserve and extend those instantiations rather than reinventing them.
@@ -298,3 +312,5 @@ Always check for and follow applicable superpowers skills when working. In parti
 
 - `bir_pikus_blocks` in `defs.f90:83` has no finalizer. This is intentional: the type contains only non-allocatable fixed-size arrays (no pointers or allocatable components), so no explicit finalizer is needed. Do not add one.
 - The wire g-factor was fixed using the commutator-based velocity operator (`build_velocity_matrices` in `hamiltonian_wire.f90`). The transverse perturbation construction uses $-i [r_\alpha, H]$ element-wise on the CSR Hamiltonian, which correctly captures all k.p term contributions.
+- **U13 wire periodic/Bloch BdG construction with Peierls-twist under Bx≠0** is deferred (Issue 07 of PRD at `.scratch/archive/bdg-majorana-validation/`). Without it, the wire Pfaffian sweep evaluates at one point only; full sweep requires U13 as a separate scoped PR.
+- **bdq_spectral sweep mode is wire-only** (Issue 06). Dense-QW spectral can be added without touching the enum dispatch — deferred to follow-up PR.

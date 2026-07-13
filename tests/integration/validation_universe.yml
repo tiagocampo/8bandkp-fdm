@@ -39,6 +39,9 @@ metadata:
     - potential_profile
     - exciton_Eb
     - minigap
+    - bdg_ldos_topological
+    - bdg_spectral_function_topological
+    - bdg_nambu_ldos_topological
   geometries:
     - bulk
     - QW
@@ -480,3 +483,49 @@ cells:
     material: InAs
     tier: required
     reference: Lutchyn_Oreg2010 / topological_transition
+
+  - observable: bdg_ldos
+    geometry: wire
+    material: InAsW
+    tier: required
+
+  - observable: bdg_spectral_function
+    geometry: wire
+    material: InAsW
+    tier: required
+
+  - observable: majorana_polarization
+    geometry: QW
+    material: InAsW
+    tier: required
+    reference: Sticlet_2012 / dense_QW_Pfaffian_rung
+
+  - observable: particle_hole_pairing
+    geometry: QW
+    material: InAsW
+    tier: required
+    reference: Issue_02_PHS_oracle / Issue_03_hole_block_unified
+
+  - observable: majorana_number
+    geometry: QW
+    material: InAsW
+    tier: required
+    reference: Kitaev_2001 / Issue_01_Pfaffian
+
+  - observable: bdg_ldos_topological
+    geometry: wire
+    material: InAs
+    tier: required
+    test: verify_bdg_spectral_topological.py
+
+  - observable: bdg_spectral_function_topological
+    geometry: wire
+    material: InAs
+    tier: required
+    test: verify_bdg_spectral_topological.py
+
+  - observable: bdg_nambu_ldos_topological
+    geometry: wire
+    material: InAs
+    tier: required
+    test: verify_bdg_spectral_topological.py

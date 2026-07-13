@@ -1,0 +1,132 @@
+module test_wire_pfaffian_witness
+  ! COVERAGE: observable=Pfaffian_witness geometry=wire material=InAs tier=unit
+  ! ==============================================================================
+  ! Slim projected Pfaffian witness (Issue 07 / Unit U10).
+  !
+  ! The slim Pfaffian wrapper takes a 16 x 16 wire BdG matrix at kz=0
+  ! (one k-point per site pair; for tests we collapse the spatial structure
+  ! to a single site to keep the synthetic matrix tractable) and evaluates:
+  !   S1: diagonalize, pick the two single-particle eigenvalues with smallest
+  !       |E|, project H onto their 4-dim (Nambu x 2-state) subspace, compute
+  !       Pf(omega * H_proj). Sign is the witness.
+  !   S2: project H onto bands 7-8 (the conduction-band edge defined by the
+  !       k.p block table SSOT). 4-dim Nambu subspace. Pf(omega * H_proj) sign.
+  !
+  ! AC: sign(s1) == sign(s2) at the witness point. Disagreement is documented
+  ! as a strong-SOC regime flag (Issue 07 AC).
+  ! ==============================================================================
+
+  use funit
+  use definitions
+  use topological_analysis, only: wire_pfaffian_witness
+  implicit none
+
+contains
+
+  ! Build a synthetic 16 x 16 BdG matrix at a single site with one spin-orbital
+  ! per band (N_single=8 single-particle bands, Nambu x2 = 16 Nambu rows).
+  ! H_BdG = [[H_sp - mu*I,  delta*I], [delta*I, -(H_sp - mu*I)^T]]
+  ! with H_sp = diag(energies) and delta = i*sigma_y * delta_0 (block-diagonal
+  ! s-wave pairing convention).
+  subroutine build_synthetic_bdg_16(H_bdg, mu, delta_0)
+    complex(kind=dp), intent(out) :: H_bdg(16, 16)
+    real(kind=dp), intent(in) :: mu, delta_0
+    real(kind=dp) :: single_particle_energies(8)
+    integer :: i
+
+    ! Single-particle energies: bands 1-4 valence, 5-6 SO, 7-8 conduction.
+    single_particle_energies = [ -0.5_dp, -0.4_dp, -0.4_dp, -0.5_dp, &
+                                 -1.0_dp, -1.0_dp,  0.05_dp, 0.05_dp ]
+
+    H_bdg = cmplx(0.0_dp, 0.0_dp, kind=dp)
+
+    ! Particle block: H_sp - mu*I (top-left 8x8)
+    do i = 1, 8
+      H_bdg(i, i) = cmplx(single_particle_energies(i) - mu, 0.0_dp, kind=dp)
+    end do
+
+    ! Hole block: -(H_sp - mu)^T (bottom-right 8x8)
+    do i = 1, 8
+      H_bdg(8 + i, 8 + i) = cmplx(-(single_particle_energies(i) - mu), 0.0_dp, kind=dp)
+    end do
+
+    ! Pairing block: delta_0 * I_8 (top-right and bottom-left, real diagonal)
+    do i = 1, 8
+      H_bdg(i, 8 + i) = cmplx(delta_0, 0.0_dp, kind=dp)
+      H_bdg(8 + i, i) = cmplx(delta_0, 0.0_dp, kind=dp)
+    end do
+  end subroutine build_synthetic_bdg_16
+
+  @test
+  subroutine test_wire_pfaffian_witness_smoke()
+    ! Smoke: witness must return without error and produce valid signs in
+    ! {-1, +1, 0} for both S1 and S2 strategies on a 16x16 synthetic BdG.
+    complex(kind=dp) :: H_bdg(16, 16)
+    integer :: s1, s2
+
+    call build_synthetic_bdg_16(H_bdg, mu=0.0_dp, delta_0=0.001_dp)
+    call wire_pfaffian_witness(H_bdg, 16, s1, s2)
+
+    @assertTrue(s1 >= -1 .and. s1 <= 1)
+    @assertTrue(s2 >= -1 .and. s2 <= 1)
+  end subroutine
+
+  @test
+  subroutine test_wire_pfaffian_witness_sign_agreement_synthetic()
+    ! Spec §4.3 — STRICT sign-agreement assertion (no zero-escape hatch).
+    ! The witness must produce identical non-zero signs for both S1 (smallest
+    ! |E| subspace) and S2 (conduction-band projection) strategies when the
+    ! BdG matrix is topologically non-trivial.
+    !
+    ! KNOWN LIMITATION (@todo, tracked in spec `2026-07-05-pr41-completion-design.md`
+    ! §4.3): the synthetic fixture `build_synthetic_bdg_16` constructs a
+    ! diagonal-in-(c,c†) BdG matrix (single-particle block is purely
+    ! diagonal; pairing block is real diagonal). Under this structure the
+    ! Pfaffian vanishes identically because no band mixes the
+    ! conduction-block subspaces across the Nambu seam, so the witness
+    ! returns (0, 0) and the strict assertion FAILS. A real wire BdG from
+    ! `topologicalAnalysis slimpfaffian` (deferred to U13) carries the
+    ! off-diagonal k.p terms required for a non-trivial Pf.
+    !
+    ! Per spec §4.3 the zero-escape hatch was deliberately removed: a
+    ! silent-zero pass-through would mask the real diagnostic. This test
+    ! is therefore expected to FAIL on current fixtures; the @todo marks
+    ! it as a known gap pending U13 (wire periodic/Bloch BdG with
+    ! Peierls-twist under Bx≠0, see PRD Issue 07).
+    ! @todo replace synthetic fixture with real wire BdG once U13 lands
+    complex(kind=dp) :: H_bdg(16, 16)
+    integer :: s1, s2
+
+    call build_synthetic_bdg_16(H_bdg, mu=0.0_dp, delta_0=0.001_dp)
+    call wire_pfaffian_witness(H_bdg, 16, s1, s2)
+
+    ! Strict AC: signs must agree AND be non-zero. No both-zero escape.
+    @assertTrue(s1 == s2 .and. s1 /= 0)
+  end subroutine
+
+  @test
+  subroutine test_wire_pfaffian_witness_nondiagonal_single_particle()
+    ! AC: when the single-particle block has off-diagonal coupling between
+    ! conduction bands (7-8) and the rest, the witness must still return
+    ! valid signs (no NaN, no spurious error). This exercises the S2
+    ! conduction-band extraction path.
+    complex(kind=dp) :: H_bdg(16, 16)
+    integer :: s1, s2, i
+
+    call build_synthetic_bdg_16(H_bdg, mu=0.03_dp, delta_0=0.002_dp)
+
+    ! Add small off-diagonal coupling within the conduction block
+    ! (single-particle block indices 7,8 -> matrix indices 7,8).
+    H_bdg(7, 8) = cmplx(0.01_dp, 0.0_dp, kind=dp)
+    H_bdg(8, 7) = cmplx(0.01_dp, 0.0_dp, kind=dp)
+    do i = 1, 8
+      H_bdg(7 + 8, 8 + 8) = H_bdg(7 + 8, 8 + 8) ! identity preserve
+    end do
+
+    call wire_pfaffian_witness(H_bdg, 16, s1, s2)
+
+    @assertTrue(s1 >= -1 .and. s1 <= 1)
+    @assertTrue(s2 >= -1 .and. s2 <= 1)
+  end subroutine
+
+end module test_wire_pfaffian_witness

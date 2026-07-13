@@ -30,6 +30,24 @@ fort.*
 .clinerules
 .codex/
 
+# Agent / Claude Code config dirs (local-only, never tracked)
+.claude/
+.agents/
+agent/
+
+# Agent skills (mattpocock/skills via skills.sh) — tracked via skills-lock.json
+.agents/skills/
+.claude/skills/
+
+# AI-tool runtime state dirs (local-only)
+# .superpowers/sdd/ has a local .gitignore handling its briefs; tracked
+# issue reports in sdd/ (issue-02-report, issue-03-report,
+# issue-07-report, issue-11-figures-fix1-report) are unaffected by this
+# root rule — gitignore only governs untracked content.
+.compound-engineering/
+.remember/
+.superpowers/
+
 # Temporary / scratch
 tmp/
 # Only root-level orphaned plots
@@ -58,8 +76,12 @@ Thumbs.db
 
 # Backup files
 *.bak
+*.bkp
 *.old
 *.orig
+
+# Claude Code runtime state
+.claude/scheduled_tasks.lock
 
 # Documentation (large/generated)
 docs/papers/
@@ -74,6 +96,12 @@ __pycache__/
 test_debug_*
 test_staggered
 tests/integration/convergence_results/
+tests/integration/coverage_matrix_report.txt
+# Verifier scratch dirs (Issue 05/07/08 verifiers create per-run dirs)
+/run_B*/
+/run_bx*/
+/run_bdq*/
+/run_mu_gap/
 
 # CMake generated files
 Makefile

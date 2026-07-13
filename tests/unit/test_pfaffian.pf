@@ -1,0 +1,264 @@
+module test_pfaffian
+  ! COVERAGE: observable=Pfaffian geometry=bulk material=generic tier=unit
+  use funit
+  use definitions
+  use pfaffian
+  implicit none
+
+  real(kind=dp), parameter :: TOL = 1.0e-10_dp
+
+contains
+
+  ! ============================================================================
+  ! 2x2 closed-form: Pf([[0,a],[-a,0]]) == +a  (Kitaev convention)
+  ! ============================================================================
+
+  @test
+  subroutine test_pf_2x2_unit_positive()
+    real(kind=dp) :: A(2,2), pf
+    A = reshape([0.0_dp, -1.0_dp, 1.0_dp, 0.0_dp], [2,2])
+    pf = real_pfaffian(A)
+    @assertEqual(1.0_dp, pf, tolerance=TOL)
+  end subroutine
+
+  @test
+  subroutine test_pf_2x2_unit_negative()
+    real(kind=dp) :: A(2,2), pf
+    A = reshape([0.0_dp, 1.0_dp, -1.0_dp, 0.0_dp], [2,2])
+    pf = real_pfaffian(A)
+    @assertEqual(-1.0_dp, pf, tolerance=TOL)
+  end subroutine
+
+  @test
+  subroutine test_pf_2x2_half()
+    real(kind=dp) :: A(2,2), pf
+    A = reshape([0.0_dp, -0.5_dp, 0.5_dp, 0.0_dp], [2,2])
+    pf = real_pfaffian(A)
+    @assertEqual(0.5_dp, pf, tolerance=TOL)
+  end subroutine
+
+  @test
+  subroutine test_pf_2x2_negative_two()
+    real(kind=dp) :: A(2,2), pf
+    A = reshape([0.0_dp, 2.0_dp, -2.0_dp, 0.0_dp], [2,2])
+    pf = real_pfaffian(A)
+    @assertEqual(-2.0_dp, pf, tolerance=TOL)
+  end subroutine
+
+  @test
+  subroutine test_pf_2x2_tiny()
+    real(kind=dp) :: A(2,2), pf
+    A = reshape([0.0_dp, -1.0e-6_dp, 1.0e-6_dp, 0.0_dp], [2,2])
+    pf = real_pfaffian(A)
+    @assertEqual(1.0e-6_dp, pf, tolerance=1.0e-20_dp)
+  end subroutine
+
+  @test
+  subroutine test_pf_2x2_large()
+    real(kind=dp) :: A(2,2), pf
+    A = reshape([0.0_dp, -1.0e3_dp, 1.0e3_dp, 0.0_dp], [2,2])
+    pf = real_pfaffian(A)
+    @assertEqual(1.0e3_dp, pf, tolerance=1.0e-10_dp)
+  end subroutine
+
+  ! ============================================================================
+  ! Zero / odd-dim matrix edge cases
+  ! ============================================================================
+
+  @test
+  subroutine test_pf_zero_2x2()
+    real(kind=dp) :: A(2,2), pf
+    A = 0.0_dp
+    pf = real_pfaffian(A)
+    @assertEqual(0.0_dp, pf, tolerance=TOL)
+  end subroutine
+
+  ! ============================================================================
+  ! Pf(A)^2 = det(A) on random skew matrices for n = 2, 4, 6, 8, 10, 12, 14, 16
+  ! ============================================================================
+
+  @test
+  subroutine test_pf_squared_equals_det_random_sizes()
+    integer :: sizes(5), n_idx
+    sizes = [2, 4, 6, 8, 10]
+    do n_idx = 1, 5
+      call check_one_size(sizes(n_idx))
+    end do
+  end subroutine
+
+  @test
+  subroutine test_pf_squared_equals_det_parlett_reid_14_16()
+    ! Exercises the Parlett-Reid path (n > 12). If this fails, skpfa_reduction
+    ! has a sign bug and downstream dense-QW Pfaffian witness is broken.
+    call check_one_size(14)
+    call check_one_size(16)
+  end subroutine
+
+  subroutine check_one_size(n)
+    integer, intent(in) :: n
+    real(kind=dp), allocatable :: A(:,:)
+    real(kind=dp) :: pf, det_abs, pf_sq
+    integer :: i, j
+    allocate(A(n,n))
+    A = 0.0_dp
+    do i = 1, n
+      do j = i+1, n
+        call random_number(A(i,j))
+        A(j,i) = -A(i,j)
+      end do
+    end do
+    pf = real_pfaffian(A)
+    pf_sq = pf * pf
+    det_abs = abs(compute_skew_det(A))
+    @assertEqual(det_abs, pf_sq, tolerance=2.0e-8_dp * max(1.0_dp, det_abs))
+    deallocate(A)
+  end subroutine
+
+  function compute_skew_det(A) result(d)
+    real(kind=dp), intent(in) :: A(:,:)
+    real(kind=dp) :: d
+    integer :: n, i, j, k, ip
+    real(kind=dp), allocatable :: LU(:,:)
+    real(kind=dp), allocatable :: row_tmp(:)
+    real(kind=dp) :: pivot_sign
+    n = size(A, 1)
+    allocate(LU(n,n))
+    LU = A
+    pivot_sign = 1.0_dp
+    do k = 1, n
+      ip = k
+      do i = k+1, n
+        if (abs(LU(i,k)) > abs(LU(ip,k))) ip = i
+      end do
+      if (ip /= k) then
+        allocate(row_tmp(n))
+        do j = 1, n
+          row_tmp(j) = LU(k,j)
+          LU(k,j) = LU(ip,j)
+          LU(ip,j) = row_tmp(j)
+        end do
+        deallocate(row_tmp)
+        pivot_sign = -pivot_sign
+      end if
+      do i = k+1, n
+        LU(i,k) = LU(i,k) / LU(k,k)
+        do j = k+1, n
+          LU(i,j) = LU(i,j) - LU(i,k) * LU(k,j)
+        end do
+      end do
+    end do
+    d = 1.0_dp
+    do i = 1, n
+      d = d * LU(i,i)
+    end do
+    d = pivot_sign * d
+    deallocate(LU)
+  end function
+
+  ! ============================================================================
+  ! Skew-symmetrization guard: a non-skew input is corrected in place
+  ! ============================================================================
+
+  @test
+  subroutine test_pf_skew_guard_correction()
+    real(kind=dp) :: A(2,2), A_clean(2,2), pf_dirty, pf_clean
+    A = reshape([0.0_dp, 1.0e-14_dp, 1.0_dp, 0.0_dp], [2,2])
+    A_clean = reshape([0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp], [2,2])
+    pf_dirty = real_pfaffian(A)
+    pf_clean = real_pfaffian(A_clean)
+    @assertEqual(pf_clean, pf_dirty, tolerance=TOL)
+  end subroutine
+
+  ! ============================================================================
+  ! 4x4 block-diagonal: Pf([[A1,0],[0,A2]]) = Pf(A1)*Pf(A2)
+  ! ============================================================================
+
+  @test
+  subroutine test_pf_4x4_block_diagonal()
+    real(kind=dp) :: A(4,4), pf
+    A = reshape([ &
+      0.0_dp,  1.0_dp, 0.0_dp, 0.0_dp, &
+     -1.0_dp,  0.0_dp, 0.0_dp, 0.0_dp, &
+      0.0_dp,  0.0_dp, 0.0_dp, 2.0_dp, &
+      0.0_dp,  0.0_dp, -2.0_dp, 0.0_dp  &
+    ], [4,4])
+    pf = real_pfaffian(A)
+    @assertEqual(2.0_dp, pf, tolerance=TOL)
+  end subroutine
+
+  ! ============================================================================
+  ! Complex Pfaffian: i*sin(phase) on diagonals
+  ! ============================================================================
+
+  @test
+  subroutine test_pf_complex_2x2()
+    complex(kind=dp) :: A(2,2), pf
+    A = reshape([cmplx(0.0_dp, 0.0_dp, kind=dp), cmplx(0.0_dp, -1.0_dp, kind=dp), &
+                 cmplx(0.0_dp, 1.0_dp, kind=dp), cmplx(0.0_dp, 0.0_dp, kind=dp)], [2,2])
+    pf = complex_pfaffian(A)
+    @assertEqual(cmplx(0.0_dp, 1.0_dp, kind=dp), pf, tolerance=TOL)
+  end subroutine
+
+  @test
+  subroutine test_pf_complex_squared_equals_det()
+    complex(kind=dp), allocatable :: A(:,:)
+    complex(kind=dp) :: pf
+    real(kind=dp) :: pf_sq, det_abs
+    integer :: n, i, j
+    n = 4
+    allocate(A(n,n))
+    A = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, n
+      do j = i+1, n
+        call random_number(A(i,j)%re)
+        A(i,j)%im = 0.0_dp
+        A(j,i) = -A(i,j)
+      end do
+    end do
+    pf = complex_pfaffian(A)
+    pf_sq = real(pf * conjg(pf), kind=dp)
+    det_abs = abs(compute_skew_det_complex(A))
+    @assertEqual(det_abs, pf_sq, tolerance=2.0e-8_dp * max(1.0_dp, det_abs))
+    deallocate(A)
+  end subroutine
+
+  function compute_skew_det_complex(A) result(d)
+    complex(kind=dp), intent(in) :: A(:,:)
+    complex(kind=dp) :: d
+    integer :: n, k, i, j, ip
+    complex(kind=dp), allocatable :: LU(:,:)
+    complex(kind=dp) :: tmp, pivot_sign_c
+    real(kind=dp) :: pivot_sign
+    n = size(A, 1)
+    allocate(LU(n,n))
+    LU = A
+    pivot_sign = 1.0_dp
+    do k = 1, n
+      ip = k
+      do i = k+1, n
+        if (abs(LU(i,k)) > abs(LU(ip,k))) ip = i
+      end do
+      if (ip /= k) then
+        do j = 1, n
+          tmp = LU(k,j)
+          LU(k,j) = LU(ip,j)
+          LU(ip,j) = tmp
+        end do
+        pivot_sign = -pivot_sign
+      end if
+      do i = k+1, n
+        LU(i,k) = LU(i,k) / LU(k,k)
+        do j = k+1, n
+          LU(i,j) = LU(i,j) - LU(i,k) * LU(k,j)
+        end do
+      end do
+    end do
+    d = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    do i = 1, n
+      d = d * LU(i,i)
+    end do
+    d = pivot_sign * d
+    deallocate(LU)
+  end function
+
+end module test_pfaffian

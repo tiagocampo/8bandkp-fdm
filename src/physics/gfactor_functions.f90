@@ -80,7 +80,7 @@ subroutine set_perturbation_direction(d, smallk)
   case(3); smallk%kz = 1
   case default
     print *, 'Error: perturbation direction must be 1, 2, or 3, got:', d
-    stop 1
+    error stop 'set_perturbation_direction: invalid direction index (must be 1, 2, or 3)'
   end select
 end subroutine set_perturbation_direction
 
@@ -145,7 +145,7 @@ complex(kind=dp) function sigmaElem(state1, state2, dir, fdstep, startz, endz, d
 
     if (abs(dz) < tolerance) then
       print *, 'Error: sigmaElem called with dz=0. Grid spacing is zero.'
-      stop 1
+      error stop 'sigmaElem: grid spacing dz is zero (multi-layer path)'
     end if
 
     Y = 0
@@ -224,7 +224,7 @@ subroutine pMatrixEleCalc(Pele,d,state1,state2,nlayers,params, Ppartial, &
   if (present(dz)) then
     if (abs(dz) < tolerance) then
       print *, 'Error: pMatrixEleCalc called with dz=0. Grid spacing is zero.'
-      stop 1
+      error stop 'pMatrixEleCalc: grid spacing dz is zero (would divide by zero)'
     end if
   end if
 

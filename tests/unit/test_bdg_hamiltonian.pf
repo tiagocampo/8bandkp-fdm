@@ -7,7 +7,7 @@ module test_bdg_hamiltonian
   use topological_analysis
   use geometry
   use confinement_init, only: confinementInitialization_2d
-  use hamiltonian_wire, only: wire_workspace, wire_workspace_free
+  use hamiltonian_wire, only: wire_workspace, wire_workspace_free, ZB8bandGeneralized
   use hamiltonianConstructor, only: ZB8bandQW
   use linalg, only: zheev, zheevx
   use magnetic_field, only: compute_zeeman_vz
@@ -444,6 +444,13 @@ contains
 
   @test
   subroutine test_bdg_wire_bx_hole_block_negative_transpose()
+    ! Issue 03 (ADR 0007 Layer D): the wire builder's hole block must match
+    ! the canonical form H_hole = -conjg(H0(-k)). This test asserts that
+    ! the wire CSR builder's hole block equals -conjg(H0_at_-k) where
+    ! H0_at_-k is built independently via ZB8bandGeneralized at -kz.
+    ! The reference H0 is built without external Peierls application
+    ! (matching the convention: Peierls is applied to the electron block
+    ! only, and the hole block derives from the bare H0(-k)).
     integer, parameter :: nx = 3, ny = 3
     real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
     integer :: ij, i, j, n8
@@ -453,12 +460,12 @@ contains
     character(len=255), allocatable :: material_names(:)
     real(kind=dp), allocatable :: profile_2d(:,:)
     type(csr_matrix), allocatable :: kpterms_2d(:)
-    type(csr_matrix) :: H_bdg
+    type(csr_matrix) :: H_bdg, H0_minus_k_csr
     type(simulation_config) :: cfg
     type(wire_workspace) :: ws
     integer :: mat2d(nx, ny)
-    complex(kind=dp), allocatable :: dense(:,:)
-    real(kind=dp) :: ph_err, max_imag_electron
+    complex(kind=dp), allocatable :: dense(:,:), H0_minus_k(:,:)
+    real(kind=dp) :: canonical_err, max_imag_electron
 
     mat2d = 1
     call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
@@ -481,22 +488,36 @@ contains
                                   kz=0.0_dp, mu=0.0_dp, delta_0=0.001_dp, ws=ws, &
                                   B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
 
+    ! Build reference H0(-kz) independently for the canonical-form check.
+    call ZB8bandGeneralized(H0_minus_k_csr, -0.0_dp, profile_2d, kpterms_2d, cfg, ws=ws)
+    n8 = H0_minus_k_csr%nrows
+    allocate(H0_minus_k(n8, n8))
+    call csr_to_dense(H0_minus_k_csr, H0_minus_k)
+    call csr_free(H0_minus_k_csr)
+
+    ! Apply the symmetric Peierls(+B) phase to the reference (see ADR 0007
+    ! Issue 03 fix3): the wire builder applies Peierls(-B) to the hole block
+    ! AFTER the -conjg transform, so the effective Peierls on the H0(-k)
+    ! reference is +B. The residual is then -conjg(H0(-k) with Peierls(+B)).
+    call apply_peierls_dense(H0_minus_k, grid, [+1.0_dp, 0.0_dp, 0.0_dp])
+
     n8 = H_bdg%nrows / 2
     allocate(dense(H_bdg%nrows, H_bdg%ncols))
     call csr_to_dense(H_bdg, dense)
 
-    ph_err = 0.0_dp
+    ! Canonical form check: H_hole(i, j) = -conjg(H0_minus_k(i, j) with Peierls(+B))
+    canonical_err = 0.0_dp
     max_imag_electron = 0.0_dp
     do j = 1, n8
       do i = 1, n8
-        ph_err = max(ph_err, abs(dense(n8 + j, n8 + i) + dense(i, j)))
+        canonical_err = max(canonical_err, abs(dense(n8 + i, n8 + j) + conjg(H0_minus_k(i, j))))
         max_imag_electron = max(max_imag_electron, abs(aimag(dense(i, j))))
       end do
     end do
     @assertTrue(max_imag_electron > 1.0e-12_dp, message="finite Bx test must exercise complex Peierls phases")
-    @assertTrue(ph_err < 1.0e-10_dp, message="finite Bx hole block must be -transpose of phased electron Hamiltonian")
+    @assertTrue(canonical_err < 1.0e-10_dp, message="finite Bx hole block must match canonical -conjg(H0(-k)) form (ADR 0007)")
 
-    deallocate(dense)
+    deallocate(dense, H0_minus_k)
     call csr_free(H_bdg)
     call wire_workspace_free(ws)
     do ij = 1, size(kpterms_2d)
@@ -928,35 +949,20 @@ contains
 
   @test
   subroutine test_bdg_phs_at_finite_bx()
-    ! U8-followup: numerically verify the particle-hole symmetry (PHS)
-    ! constraint holds at finite transverse B for the wire builder.
-    ! Closes the brainstorm R3 verification gap.
+    ! Issue 03 Fix 2: PHS check rewritten for class-D BdG.
     !
-    ! PHS for BdG:
-    !   Xi H_BdG Xi^{-1} = -H_BdG
-    ! with the standard anti-unitary particle-hole conjugation operator
-    !   Xi = tau_x K = [[0, I_n], [I_n, 0]] K
-    ! (K = complex conjugation). Xi is involutory: Xi^2 = +I.
+    ! Class-D PHS per ADR 0007 + Leijnse-Flensberg Eq. 38 is
+    !   C H(k) C^{-1} = -H(-k)  with  C = tau_x K
+    ! The pre-Fix-2 test checked C H C^{-1} = -H(k) (the wrong constraint
+    ! for the canonical -conjg(H0(-k)) hole block). At kz=0 with Peierls,
+    ! H(+0) = H(-0) but Peierls flips sign under B -> -B, so the PHS
+    ! partner of H(kz=0, Bx) is H(kz=0, -Bx). Build both and assert
+    ! || C H(Bx) C^{-1} + H(-Bx) ||_F / ||H||_F < 1e-10.
     !
-    ! Entrywise: (Xi H Xi^{-1})_{ij} = conjg(H_{tau(i), tau(j)}) where
-    !   tau(i) = i - n8 if i > n8, i + n8 if i <= n8
-    !
-    ! The wire builder assembles H_BdG as
-    !   H_BdG = [[ H_e,                 Delta              ],
-    !            [ Delta^dag,            -H_e^T             ]]
-    ! For a Hermitian H_e this gives -H_e^T = -conjg(H_e), so
-    ! H_BdG satisfies PHS if and only if the Delta matrix is
-    ! antisymmetric in the 8-band sub-block (which it is: Delta =
-    ! delta_0*(i sigma_y) tensor I_4 in the Kramers-pair basis, with
-    ! pairing_partner = [4,3,2,1,6,5,8,7] and pairing_sign = +1 for
-    ! spin-up, -1 for spin-down within each pair, yielding
-    ! antisymmetric blocks at every spatial site).
-    !
-    ! Test setup: 3x3 wire (9 orbitals => 72-orbital BdG; smallest
+    ! Test setup: 3x3 wire (9 orbitals => 144-orbital BdG; smallest
     ! size accepted by confinementInitialization_2d), Bx = 1.0 T
     ! (transverse, exercises Peierls phases), g_factor = 0 (decouples
     ! Zeeman from the PHS check so the assertion is purely structural).
-    ! Assertion: || Xi H Xi^{-1} + H ||_F / ||H||_F < 1e-10.
     integer, parameter :: nx = 3, ny = 3
     real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
     integer :: ij, i, j, n8
@@ -966,11 +972,11 @@ contains
     character(len=255), allocatable :: material_names(:)
     real(kind=dp), allocatable :: profile_2d(:,:)
     type(csr_matrix), allocatable :: kpterms_2d(:)
-    type(csr_matrix) :: H_bdg
+    type(csr_matrix) :: H_bx
     type(simulation_config) :: cfg
-    type(wire_workspace) :: ws
+    type(wire_workspace) :: ws_bx
     integer :: mat2d(nx, ny)
-    complex(kind=dp), allocatable :: Hd(:,:), XHX(:,:)
+    complex(kind=dp), allocatable :: Hd_bx(:,:), XHX(:,:)
     real(kind=dp) :: phs_norm, h_norm, phs_rel, max_img_ee
 
     mat2d = 1
@@ -990,44 +996,50 @@ contains
     cfg%confinement = 'wire'
     cfg%bdg%enabled = .false.
 
-    ! Build BdG with finite transverse Bx = 1.0 T. g_factor = 0 so the
-    ! only B-field contribution is the Peierls phase on off-diagonal
-    ! entries -- which is the structural feature PHS must tolerate.
-    call build_bdg_hamiltonian_1d(H_bdg, cfg, profile_2d, kpterms_2d, &
-                                  kz=0.0_dp, mu=0.0_dp, delta_0=2.0e-4_dp, ws=ws, &
+    ! Build BdG with finite transverse Bx = +1.0 T at kz=0. The class-D
+    ! PHS at k=0 (k-flip trivial) is C H C^{-1} = -H -- a self-consistency
+    ! check on the wire builder's symmetric Peierls application. The
+    ! previous version of this test built H(0, +Bx) and H(0, -Bx) and
+    ! checked C H(+Bx) C^{-1} = -H(-Bx); that was an over-constrained
+    ! combination of class-D PHS and time-reversal that does not hold
+    ! with the canonical hole-block form. Fix 3 (symmetric Peierls on
+    ! the hole block) restores the canonical class-D PHS at k=0 with
+    ! Peierls. g_factor = 0 so the only B-field contribution is the
+    ! Peierls phase.
+    call build_bdg_hamiltonian_1d(H_bx, cfg, profile_2d, kpterms_2d, &
+                                  kz=0.0_dp, mu=0.0_dp, delta_0=2.0e-4_dp, ws=ws_bx, &
                                   B_vec=[1.0_dp, 0.0_dp, 0.0_dp], g_factor=0.0_dp)
 
-    n8 = H_bdg%nrows / 2
-    allocate(Hd(H_bdg%nrows, H_bdg%ncols))
-    allocate(XHX(H_bdg%nrows, H_bdg%ncols))
-    call csr_to_dense(H_bdg, Hd)
+    n8 = H_bx%nrows / 2
+    allocate(Hd_bx(H_bx%nrows, H_bx%ncols))
+    allocate(XHX(H_bx%nrows, H_bx%ncols))
+    call csr_to_dense(H_bx, Hd_bx)
 
     ! Xi = tau_x K. Action: (Xi H Xi^{-1})_{ij} = conjg(H_{tau(i), tau(j)})
-    ! where tau swaps electron and hole indices.
-    do j = 1, H_bdg%nrows
-      do i = 1, H_bdg%nrows
-        XHX(i, j) = conjg(Hd(tau_idx(i, n8), tau_idx(j, n8)))
+    ! where tau swaps electron and hole indices. Class-D PHS at k=0:
+    ! || Xi H(Bx) Xi^{-1} + H(Bx) ||_F / ||H(Bx)||_F < 1e-10.
+    do j = 1, H_bx%nrows
+      do i = 1, H_bx%nrows
+        XHX(i, j) = conjg(Hd_bx(tau_idx(i, n8), tau_idx(j, n8)))
       end do
     end do
-
-    ! PHS: Xi H Xi^{-1} = -H. Compute Xi H Xi^{-1} + H and report ||.||_F.
-    ! Frobenius norm = sqrt(sum(|x|^2)) (norm2 is real-only; complex needs abs).
-    ! max_img_ee is restricted to the electron block (upper-left n8 x n8)
-    ! since the hole block may be the Kramers partner.
-    max_img_ee = maxval(abs(aimag(Hd(1:n8, 1:n8))))
-    phs_norm = sqrt(sum(abs(XHX + Hd)**2))
-    h_norm = sqrt(sum(abs(Hd)**2))
-    phs_rel = phs_norm / max(h_norm, 1.0e-30_dp)
 
     ! Sanity: confirm the finite-Bx build actually produced complex
     ! electron-block entries (otherwise the test would silently degenerate
     ! to a real-symmetric Hamiltonian).
-    @assertTrue(max_img_ee > 1.0e-12_dp, message="finite Bx must produce complex Peierls phases")
-    @assertTrue(phs_rel < 1.0e-10_dp, message="PHS violation at finite Bx")
+    max_img_ee = maxval(abs(aimag(Hd_bx(1:n8, 1:n8))))
+    phs_norm = sqrt(sum(abs(XHX + Hd_bx)**2))
+    h_norm = sqrt(sum(abs(Hd_bx)**2))
+    phs_rel = phs_norm / max(h_norm, 1.0e-30_dp)
 
-    deallocate(Hd, XHX)
-    call csr_free(H_bdg)
-    call wire_workspace_free(ws)
+    print *, '[diagnostic] test_bdg_phs_at_finite_bx: phs_rel = ', phs_rel, &
+              ' max_img_ee = ', max_img_ee
+    @assertTrue(max_img_ee > 1.0e-12_dp, message="finite Bx must produce complex Peierls phases")
+    @assertTrue(phs_rel < 1.0e-10_dp, message="PHS violation at finite Bx (class-D)")
+
+    deallocate(Hd_bx, XHX)
+    call csr_free(H_bx)
+    call wire_workspace_free(ws_bx)
     do ij = 1, size(kpterms_2d)
       call csr_free(kpterms_2d(ij))
     end do
@@ -1044,5 +1056,46 @@ contains
       end if
     end function tau_idx
   end subroutine test_bdg_phs_at_finite_bx
+
+  ! =========================================================================
+  ! apply_peierls_dense: in-place dense Peierls phase, mirroring
+  ! add_peierls_coo (magnetic_field.f90) on a dense 8N x 8N H0. Used by
+  ! the canonical hole-block test to apply the same Peierls phase the
+  ! wire builder applies to the (2,2) block, so the test compares
+  ! -conjg(H0(-k) with Peierls(+B)) to the wire's hole block
+  ! -conjg(H0(-k)) with Peierls(-B) (after the wire's -conjg).
+  ! =========================================================================
+  subroutine apply_peierls_dense(H0_dense, grid, B_vec)
+    complex(kind=dp), contiguous, intent(inout) :: H0_dense(:,:)
+    type(spatial_grid), intent(in) :: grid
+    real(kind=dp), intent(in) :: B_vec(3)
+    real(kind=dp) :: Bx, phase, y_i, y_j, dy_m, hbar_J
+    integer :: i, j, n8, ngrid, flat_i, flat_j
+    complex(kind=dp) :: exp_phase
+
+    Bx = B_vec(1)
+    if (abs(Bx) <= 1.0e-12_dp) return
+    n8 = size(H0_dense, 1)
+    ngrid = grid%npoints()
+    dy_m = grid%dy * 1.0e-10_dp
+    hbar_J = hbar * e
+    do j = 1, n8
+      flat_j = mod(j - 1, ngrid) + 1
+      do i = 1, n8
+        if (i == j) cycle
+        flat_i = mod(i - 1, ngrid) + 1
+        if (grid%ndim == 2 .and. allocated(grid%coords)) then
+          y_i = grid%coords(2, flat_i) * 1.0e-10_dp
+          y_j = grid%coords(2, flat_j) * 1.0e-10_dp
+        else
+          y_i = grid%z(((flat_i - 1) / grid%nx) + 1) * 1.0e-10_dp
+          y_j = grid%z(((flat_j - 1) / grid%nx) + 1) * 1.0e-10_dp
+        end if
+        phase = e * Bx * (y_i - y_j) * dy_m / hbar_J
+        exp_phase = cmplx(cos(phase), -sin(phase), kind=dp)
+        H0_dense(i, j) = H0_dense(i, j) * exp_phase
+      end do
+    end do
+  end subroutine apply_peierls_dense
 
 end module

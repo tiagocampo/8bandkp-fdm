@@ -1,0 +1,43 @@
+module test_kitaev_strict
+  ! COVERAGE: observable=Majorana_number_strict geometry=chain material=spinless_p-wave tier=unit
+  use funit
+  use definitions, only: dp
+  use pfaffian, only: kitaev_majorana_number, kitaev_bdg_fixture_2band
+  implicit none
+
+contains
+
+  @test
+  subroutine test_kitaev_M_minus_one_topological()
+    ! |mu| < 2t regime -> M = -1 (topological, Kitaev spinless p-wave).
+    real(kind=dp), parameter :: t = 1.0_dp, delta_0 = 0.5_dp, mu = 0.5_dp
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    integer :: M
+
+    allocate(H_k(4, 4, 2))
+    allocate(k_par(2))
+    k_par = [0.0_dp, 3.141592653589793_dp]
+    H_k(:,:,1) = kitaev_bdg_fixture_2band(mu, t, delta_0, k_par(1))
+    H_k(:,:,2) = kitaev_bdg_fixture_2band(mu, t, delta_0, k_par(2))
+    M = kitaev_majorana_number(H_k, k_par)
+    @assertEqual(-1, M)
+  end subroutine
+
+  @test
+  subroutine test_kitaev_M_plus_one_trivial()
+    ! |mu| > 2t regime -> M = +1 (trivial).
+    real(kind=dp), parameter :: t = 1.0_dp, delta_0 = 0.5_dp, mu = 3.0_dp
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    integer :: M
+
+    allocate(H_k(4, 4, 2))
+    allocate(k_par(2))
+    k_par = [0.0_dp, 3.141592653589793_dp]
+    H_k(:,:,1) = kitaev_bdg_fixture_2band(mu, t, delta_0, k_par(1))
+    H_k(:,:,2) = kitaev_bdg_fixture_2band(mu, t, delta_0, k_par(2))
+    M = kitaev_majorana_number(H_k, k_par)
+    @assertEqual(+1, M)
+  end subroutine
+end module
