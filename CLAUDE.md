@@ -207,6 +207,20 @@ Sections: `[wave_vector]` (mode, max, nsteps), `[bands]` (num_cb, num_vb), `[[ma
 
 Optional sections are enabled by presence -- no separate enable flags. G-factor uses top-level `which_band` and `band_idx`. See `docs/reference/input-reference.md` for the complete schema.
 
+## Agent skills
+
+### Issue tracker
+
+Local markdown under `.scratch/<feature-slug>/` — see `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) — see `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
 ## Engineering Principles
 
 Apply KISS / DRY / YAGNI / SOLID as decision criteria for new code and refactors — not as slogans. Each is already instantiated in this repo; preserve and extend those instantiations rather than reinventing them.
