@@ -4,10 +4,13 @@ type: feat
 date: 2026-06-14
 origin: docs/brainstorms/2026-06-14-bdg-majorana-validation-requirements.md
 deepened: 2026-06-14
-updated: 2026-07-12
+updated: 2026-07-13
 status: in-progress
 status_note: |
-  Units shipped: U3 (Pfaffian + Kitaev harness), U4 (hole-block unification via
+  Units shipped: U2 (per-point BdG evaluator seam — `bdg_observables.f90`
+  with three faces: `eval_bdg_point` + `eval_bdg_pfaffian_witness_csr`
+  + `eval_bdg_kitaev_majorana`; SSOT `bdg_default_pfaffian_floor`),
+  U3 (Pfaffian + Kitaev harness), U4 (hole-block unification via
   `half_wire_integral=max(L,R)` per ADR 0007), U5 (cross-builder PHS check via
   `test_bdg_phs_at_finite_bx` + cross-builder identity test in B.1), U6
   (Sticlet Majorana polarization via wire-polarization emitter in A.3a —
@@ -15,21 +18,22 @@ status_note: |
   `verify_majorana_polarization.py` real-eigensolve verifier is `@todo U13`
   due to BLOCKING-EMPIRICAL: FEAST noise floor ~1e-5 eV > near-zero
   threshold ~2e-7 eV → `n_majorana==1` never produced on canonical wire;
-  verifier skips with exit 0 and prints `BLOCKING-EMPIRICAL` notice — the
-  acceptance gate covers the 3-witness regression net), U7 (dense-QW BdG
-  rung certified via block-(2,1) sign fix in Task 1.8), U8 (sparse-wire
-  zero-gap fix shipped in PR #40 / Phase 23), U12 (PASS/FAIL acceptance gate
-  via `lecture_13_acceptance_gate` — current state: **3-witness** at **1.0 T**
-  tolerance, tightened from the 4-witness design / 2.0 T original; the wire
-  Pfaffian row is reserved for U13).
+  verifier SKIP precondition tightened per ticket 05 to require the slim
+  Pfaffian gate row present in `output/z2_phase_diagram.dat` z2 column at
+  mu ≈ 0.6601 ± 0.0001), U7 (dense-QW BdG rung certified via block-(2,1)
+  sign fix in Task 1.8), U8 (sparse-wire zero-gap fix shipped in PR #40 /
+  Phase 23), U12 (PASS/FAIL acceptance gate via `lecture_13_acceptance_gate`
+  — current state: **4-witness** at **1.0 T** tolerance; the slim Pfaffian
+  row is LIVE, colormap-extracted from `output/z2_phase_diagram.dat` z2
+  column at mu ≈ 0.6601 ± 0.0001, ticket 05 of
+  `.scratch/archive/bdg-evaluator-pfaffian/`).
 
-  Partial: U11 (lecture 13 disclosures + slim-Pfaffian caption landed + full
-  4→3 witness label sweep landed in Phase 24 follow-up; full revamp not done).
+  Partial: U11 (lecture 13 disclosures + slim-Pfaffian caption + new
+  §13.7.5 landed; full revamp not done).
 
-  Still open: U1 (FEAST falsification probe + ADR-0005 window audit), U2 (pure
-  per-point BdG evaluator — physics seam), U9 (BdG spectral function + LDOS
-  on BdG, not normal-state), U10 (bulk minigap + (B, μ) phase diagram from
-  the Pfaffian).
+  Still open: U1 (FEAST falsification probe + ADR-0005 window audit),
+  U9 (BdG spectral function + LDOS on BdG, not normal-state), U10 (bulk
+  minigap + (B, μ) phase diagram from the Pfaffian).
 
   Explicitly deferred: U13 (periodic/Bloch BdG construction for the Majorana
   number; without it the wire Pfaffian sweep evaluates at one point only).
@@ -47,15 +51,21 @@ status_note: |
   (`test_wire_pfaffian_witness` — strict assertion unreachable on synthetic
   fixtures, documented `@todo` U13).
 
+  U2 close-out (2026-07-13, feat/bdg-u2-actual-ship PR): seam siblings
+  `eval_bdg_pfaffian_witness_csr` (wire-rung slim projected Pfaffian,
+  delegates to `wire_pfaffian_witness_sweep` per ticket 04) +
+  `eval_bdg_kitaev_majorana` (QW+Kitaev rung, wraps
+  `kitaev_majorana_number`); rename `compute_z2_gap`/`compute_z2_gap_edge`
+  → `*_bhz_heuristic` (scope-narrow gap-closure fallback per ticket 03);
+  migrate `main_topology.f90:1371` to seam; fix latent bug in
+  `wire_pfaffian_witness` (omega(1:4,1:4) extraction was all-zeros);
+  strict sign-agreement test GREEN via non-diagonal fixture (s2 witness).
+  ctest 52/52 unit tests green. See
+  `docs/solutions/best-practices/2026-07-13-bdg-evaluator-seam-ssot.md`.
+
   PR #41 merge status (2026-07-12): 8 follow-up commits
   (`5a39bfb..01a2bdc`) landed on `feat/bdg-validation-pass2` head via
-  FF-push — the 7 originally-tracked commits (`a9a71a6..01a2bdc`) plus
-  one subsequent chore (`5a39bfb`: gitignore `.compound-engineering`/
-  `.remember`/`.superpowers`). PR #41 now at head `5a39bfb` (85 commits,
-  MERGEABLE), ready for merge to `main`. PR #41 source branch
-  `feat/bdg-validation-pass2` and working branch
-  `feat/bdg-p1-stabilization` are co-aligned at `5a39bfb`; the working
-  branch can be retired after merge.
+  FF-push. PR #41 merged to `main@8fa9551` 2026-07-13 (520 commits).
 ---
 
 # BdG/Majorana ground-up validation and observable coverage

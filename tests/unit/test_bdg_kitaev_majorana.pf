@@ -1,0 +1,138 @@
+module test_bdg_kitaev_majorana
+  ! COVERAGE: observable=Majorana_number geometry=chain material=spinless_p-wave tier=unit
+  ! ==============================================================================
+  ! Seam-sibling `eval_bdg_kitaev_majorana` — QW+Kitaev rung face of
+  ! `bdg_observables`. Per `.scratch/archive/bdg-evaluator-pfaffian/` ticket 03 —
+  ! thin wrapper around `pfaffian.f90:kitaev_majorana_number` that pins the
+  ! seam shape consumers (U3 callers) call instead of the helper directly.
+  !
+  ! The wrapped helper uses the Lutchyn-Oreg sign-of-det (ADR 0008 §1)
+  ! formula via polar decomposition of H(k). For a 4×4 BdG matrix
+  ! (n_full=4 ⇒ n_sp=2 ⇒ n_odd=1) at two PHS-invariant momenta, the helper
+  ! computes det(U_odd) at each k and multiplies the signs:
+  !   - All eigenvalues same sign at both k → product +1 → M = +1 (trivial)
+  !   - Eigenvalues flip sign between k=0 and k=π/a → product -1 → M = -1
+  !     (topological)
+  !
+  ! Tests pin three contracts:
+  !   1. Range: M ∈ {-1, 0, +1} for any valid input.
+  !   2. Topological sign: opposing eigenvalues at k=0 vs k=π/a → M = -1.
+  !   3. Trivial sign: same-sign eigenvalues at both k → M = +1.
+  ! ==============================================================================
+
+  use funit
+  use iso_fortran_env, only: dp => real64
+  use bdg_observables, only: eval_bdg_kitaev_majorana
+
+  implicit none
+
+contains
+
+  @test
+  subroutine test_kitaev_majorana_seam_returns_valid_sign()
+    ! Spec §4 — QW+Kitaev rung seam sibling. Returns
+    ! majorana_number ∈ {-1, 0, +1}. Pin the range contract on a valid
+    ! 4×4 BdG fixture (n_odd = 1, smallest case the wrapped helper accepts).
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    integer :: m
+
+    call build_trivial_bdg_4x4(H_k, k_par)
+
+    m = eval_bdg_kitaev_majorana(H_k, k_par)
+
+    @assertTrue(m >= -1 .and. m <= 1)
+  end subroutine
+
+  @test
+  subroutine test_kitaev_majorana_seam_topological_sign()
+    ! Spec §4 — M = -1 (topological) on a fixture where the Lutchyn-Oreg
+    ! `polar_decomposition_sign` det has opposite sign at k=0 vs k=π/a.
+    ! H(0) = +I → det(U_odd) = +1; H(π/a) = -I → det(U_odd) = -1;
+    ! product = -1 → M = -1.
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    integer :: m
+
+    call build_topological_bdg_4x4(H_k, k_par)
+
+    m = eval_bdg_kitaev_majorana(H_k, k_par)
+
+    @assertEqual(-1, m)
+  end subroutine
+
+  @test
+  subroutine test_kitaev_majorana_seam_trivial_sign()
+    ! Spec §4 — M = +1 (trivial) on a fixture where the det has the same
+    ! sign at both momenta. H(0) = +I and H(π/a) = +I → det(U_odd) = +1 at
+    ! both → product = +1 → M = +1.
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    integer :: m
+
+    call build_trivial_bdg_4x4(H_k, k_par)
+
+    m = eval_bdg_kitaev_majorana(H_k, k_par)
+
+    @assertEqual(1, m)
+  end subroutine
+
+  ! ---------------------------------------------------------------------------
+  ! Fixtures — minimal 4×4 BdG (n_odd = 1) at k=0 and k=π/a.
+  !
+  ! H = real diagonal ±I: spectral decomposition gives sign(H) = ±I (modulo
+  ! the arbitrary orthonormal basis zheev returns for degenerate spectra);
+  ! the wrapped helper then takes det(U_odd) = sign of every eigenvalue
+  ! restricted to the odd-parity block.
+  !
+  ! Trivial:  H(0) = +I, H(π/a) = +I  → sign_prod = +1 → M = +1.
+  ! Topological: H(0) = +I, H(π/a) = -I  → sign_prod = -1 → M = -1.
+  !
+  ! These fixtures intentionally bypass the structural diagonal-in-(c,c†)
+  ! constraint that real fcc-superlattice BdG satisfies (where Pf=0 at TRIM
+  ! by construction): they pin the SIGN PATH through the helper, decoupled
+  ! from the structural degeneracy. The real-physics path is exercised by
+  ! `tests/unit/test_kitaev_majorana.pf` against the Lutchyn-Oreg ADL.
+  ! ---------------------------------------------------------------------------
+
+  subroutine build_trivial_bdg_4x4(H_k, k_par)
+    complex(kind=dp), allocatable, intent(out) :: H_k(:,:,:)
+    real(kind=dp), allocatable, intent(out) :: k_par(:)
+
+    allocate(k_par(2))
+    k_par = [0.0_dp, 3.141592653589793_dp]
+
+    allocate(H_k(4, 4, 2))
+    H_k = (0.0_dp, 0.0_dp)
+    ! All-positive eigenvalues at both momenta.
+    H_k(1, 1, 1) = (1.0_dp, 0.0_dp)
+    H_k(2, 2, 1) = (1.0_dp, 0.0_dp)
+    H_k(3, 3, 1) = (1.0_dp, 0.0_dp)
+    H_k(4, 4, 1) = (1.0_dp, 0.0_dp)
+    H_k(1, 1, 2) = (1.0_dp, 0.0_dp)
+    H_k(2, 2, 2) = (1.0_dp, 0.0_dp)
+    H_k(3, 3, 2) = (1.0_dp, 0.0_dp)
+    H_k(4, 4, 2) = (1.0_dp, 0.0_dp)
+  end subroutine
+
+  subroutine build_topological_bdg_4x4(H_k, k_par)
+    complex(kind=dp), allocatable, intent(out) :: H_k(:,:,:)
+    real(kind=dp), allocatable, intent(out) :: k_par(:)
+
+    allocate(k_par(2))
+    k_par = [0.0_dp, 3.141592653589793_dp]
+
+    allocate(H_k(4, 4, 2))
+    H_k = (0.0_dp, 0.0_dp)
+    ! +I at k=0, -I at k=π/a: sign-det flip → topological.
+    H_k(1, 1, 1) = (1.0_dp, 0.0_dp)
+    H_k(2, 2, 1) = (1.0_dp, 0.0_dp)
+    H_k(3, 3, 1) = (1.0_dp, 0.0_dp)
+    H_k(4, 4, 1) = (1.0_dp, 0.0_dp)
+    H_k(1, 1, 2) = (-1.0_dp, 0.0_dp)
+    H_k(2, 2, 2) = (-1.0_dp, 0.0_dp)
+    H_k(3, 3, 2) = (-1.0_dp, 0.0_dp)
+    H_k(4, 4, 2) = (-1.0_dp, 0.0_dp)
+  end subroutine
+
+end module test_bdg_kitaev_majorana

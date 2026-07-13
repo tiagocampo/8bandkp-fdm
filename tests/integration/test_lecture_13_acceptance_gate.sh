@@ -49,11 +49,11 @@ fi
 # Capture the four B_crit values from the lecture log. The script prints
 # machine-readable lines of the form '  BCRIT <rung> <value_T>' for each rung
 # (lines are indented two spaces for visual grouping).
-# Per spec §3.3 / D5: acceptance gate is 3-witness (wire_curve, wire_2d,
-# qw_dense); the 4th witness (wire_pfaffian) is reserved for U13. The
-# lecture script emits `BCRIT wire_pfaffian (deferred to U13)` when the
-# slim Pfaffian output is absent, which is non-numeric and must be excluded
-# from the numeric range computation.
+# Per ticket 05 of `.scratch/archive/bdg-evaluator-pfaffian/`: the gate is
+# 4-witness (wire_curve, wire_2d, wire_pfaffian, qw_dense). The slim
+# Pfaffian is the LIVE 4th witness, colormap-extracted from
+# `output/z2_phase_diagram.dat`; the lecture script raises RuntimeError
+# (failing exit) if the z2==-1 row at mu ≈ 0.6601 ± 0.0001 is missing.
 BCRIT_LINE_WIRE_CURVE=$(grep -E 'BCRIT wire_curve ' "$WORKDIR/lecture.log" | head -1 || true)
 BCRIT_LINE_WIRE_2D=$(grep -E 'BCRIT wire_2d ' "$WORKDIR/lecture.log" | head -1 || true)
 BCRIT_LINE_WIRE_PFAFFIAN=$(grep -E 'BCRIT wire_pfaffian ' "$WORKDIR/lecture.log" | head -1 || true)
@@ -73,18 +73,8 @@ fi
 
 BCRIT_WIRE_CURVE=$(echo "$BCRIT_LINE_WIRE_CURVE" | awk '{print $3}')
 BCRIT_WIRE_2D=$(echo "$BCRIT_LINE_WIRE_2D" | awk '{print $3}')
-BCRIT_WIRE_PFAFFIAN_RAW=$(echo "$BCRIT_LINE_WIRE_PFAFFIAN" | awk '{print $3}')
+BCRIT_WIRE_PFAFFIAN=$(echo "$BCRIT_LINE_WIRE_PFAFFIAN" | awk '{print $3}')
 BCRIT_QW=$(echo "$BCRIT_LINE_QW" | awk '{print $3}')
-
-# Pfaffian is "(deferred" when U13 is not landed; treat as non-numeric and
-# exclude from the range computation. Gate is 3-witness per spec §3.4 / D5.
-if [[ "$BCRIT_WIRE_PFAFFIAN_RAW" =~ ^[0-9.+-]+$ ]]; then
-    BCRIT_WIRE_PFAFFIAN="$BCRIT_WIRE_PFAFFIAN_RAW"
-    PFAFFIAN_DEFERRED=0
-else
-    BCRIT_WIRE_PFAFFIAN="(deferred to U13)"
-    PFAFFIAN_DEFERRED=1
-fi
 
 echo "BCRIT values (T):"
 echo "  Wire (1D curve)        = $BCRIT_WIRE_CURVE"
@@ -92,29 +82,19 @@ echo "  Wire (2D colormap)     = $BCRIT_WIRE_2D"
 echo "  Wire (slim Pfaffian)   = $BCRIT_WIRE_PFAFFIAN"
 echo "  Dense QW               = $BCRIT_QW"
 
-# ---- Step 2: 3-witness agreement within tolerance ----
-# Per spec §3.4 / D5: acceptance gate is 3-witness (wire_curve, wire_2d,
-# qw_dense). The slim Pfaffian is reserved for U13 (full wire Pfaffian
-# B-sweep with periodic/Bloch BdG). Tolerance 1.0 T accommodates the 2D
-# colormap's coarse 5x2 grid resolution while still surfacing real
-# regressions (e.g. the all-zero 1.22 T legacy value).
-TOL_BCRIT_RANGE="1.0"  # tightened from 2.0 per spec §3.4 / D5 (3-witness config)
+# ---- Step 2: 4-witness agreement within tolerance ----
+# Per ticket 05: gate is 4-witness (wire_curve, wire_2d, wire_pfaffian,
+# qw_dense). Tolerance 1.0 T accommodates the 2D colormap's coarse 5x2
+# grid resolution while still surfacing real regressions (e.g. the
+# all-zero 1.22 T legacy value).
+TOL_BCRIT_RANGE="1.0"  # 4-witness gate (slim Pfaffian row live per ticket 05)
+WITNESS_LABEL="4-witness"
 
-if [ "$PFAFFIAN_DEFERRED" -eq 1 ]; then
-    BCRIT_MIN=$(python3 -c "print(min($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_QW))")
-    BCRIT_MAX=$(python3 -c "print(max($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_QW))")
-else
-    BCRIT_MIN=$(python3 -c "print(min($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_WIRE_PFAFFIAN, $BCRIT_QW))")
-    BCRIT_MAX=$(python3 -c "print(max($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_WIRE_PFAFFIAN, $BCRIT_QW))")
-fi
+BCRIT_MIN=$(python3 -c "print(min($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_WIRE_PFAFFIAN, $BCRIT_QW))")
+BCRIT_MAX=$(python3 -c "print(max($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_WIRE_PFAFFIAN, $BCRIT_QW))")
 BCRIT_RANGE=$(python3 -c "print($BCRIT_MAX - $BCRIT_MIN)")
 
 echo "BCRIT range = $BCRIT_RANGE T (tolerance = $TOL_BCRIT_RANGE T)"
-if [ "$PFAFFIAN_DEFERRED" -eq 1 ]; then
-    WITNESS_LABEL="3-witness"
-else
-    WITNESS_LABEL="4-witness"
-fi
 if python3 -c "import sys; sys.exit(0 if $BCRIT_RANGE <= $TOL_BCRIT_RANGE else 1)"; then
     echo "PASS: $WITNESS_LABEL agreement within tolerance ($BCRIT_RANGE T <= $TOL_BCRIT_RANGE T)"
 else

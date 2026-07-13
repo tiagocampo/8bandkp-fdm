@@ -23,16 +23,19 @@ and aggregates their results. It emits four machine-readable lines:
 
 These lines are consumed by the acceptance gate
 (tests/integration/test_lecture_13_acceptance_gate.sh, U12) to assert
-that the 3 active B_crit witnesses (wire_curve, wire_2d, qw_dense)
-agree within tolerance (4-witness design; slim Pfaffian row reserved
-for U13 and excluded from the numeric range until that lands) -- and
-that no value is hand-baked into the lecture markdown.
+that the **4 active B_crit witnesses** (wire_curve, wire_2d, qw_dense,
+slim Pfaffian) agree within tolerance -- and that no value is
+hand-baked into the lecture markdown.
+
+The slim Pfaffian row reads **live** from `output/z2_phase_diagram.dat`
+(ticket 05 of `.scratch/archive/bdg-evaluator-pfaffian/`): the first B
+row where the z2 column reads -1 at mu ≈ 0.6601 ± 0.0001. Full
+Bloch-Pfaffian on a periodic supercell is U13 (separate scoped PR).
 
 Output:
   output/lecture_13_reconciliation_table.png -- embedded image of the
-    3-witness B_crit table (4-witness design; slim Pfaffian row reserved
-    for U13 and excluded from numeric range); consumed by
-    docs/lecture/13-topological-superconductivity.md
+    4-witness B_crit table (slim Pfaffian row live per ticket 05);
+    consumed by docs/lecture/13-topological-superconductivity.md
 """
 import os
 import re
@@ -217,25 +220,39 @@ def section_wire_rung(exe):
                 avg = {B: sum(g) / len(g) for B, g in by_B.items()}
                 bcrit_2d = min(avg, key=lambda B: avg[B])
 
-    # Per ADR 0008 §4 + spec §5.3: invoke topologicalAnalysis with slimp faffian mode
-    # over a B-grid, parse output, emit B_crit = argmin |Pf(kz, B)|.
-    pf_output = REPO / "output" / "wire_slim_pfaffian_witness.dat"
-    if pf_output.exists():
-        pf_mags = {}
-        for m in re.finditer(r"B=([\d.+-]+)\s+\|Pf\|=([\d.e+-]+)", pf_output.read_text()):
-            pf_mags[float(m.group(1))] = float(m.group(2))
-        if pf_mags:
-            bcrit_pfaffian = min(pf_mags, key=lambda B: pf_mags[B])
-        else:
-            bcrit_pfaffian = bcrit_curve
-    else:
-        # Per spec §3.3 / D5: wire_pfaffian witness is reserved for U13 (full
-        # wire Pfaffian B-sweep with periodic/Bloch BdG). Today no Fortran
-        # producer emits output/wire_slim_pfaffian_witness.dat (per
-        # ce-doc-review adversarial P0 finding). Mark the 4th witness row as
-        # 'deferred to U13' instead of silently aliasing to bcrit_curve.
-        bcrit_pfaffian = None
-        print(f"WARN: {pf_output} not found; bcrit_pfaffian marked 'deferred to U13' (U13 deferred)")
+    # Per ticket 05 of `.scratch/archive/bdg-evaluator-pfaffian/`: the slim
+    # Pfaffian row is read live from `output/z2_phase_diagram.dat` (the
+    # colormap produced by `compute_wire_bdg_gap_sweep`). Find the first B
+    # row where the z2 column reads -1 at mu ≈ 0.6601 ± 0.0001. The full
+    # Bloch-Pfaffian on a periodic supercell is U13 (separate scoped PR).
+    colormap = REPO / "output" / "z2_phase_diagram.dat"
+    bcrit_pfaffian = None
+    if colormap.exists():
+        for line in colormap.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            try:
+                b = float(parts[0]); mu = float(parts[1]); z2 = int(float(parts[3]))
+            except ValueError:
+                continue
+            if abs(mu - 0.6601) <= 0.0001 and z2 == -1:
+                bcrit_pfaffian = b
+                break
+    if bcrit_pfaffian is None:
+        # Per ticket 05: the colormap-extracted row is the slim Pfaffian
+        # witness; FAIL rather than silent SKIP. Re-running compute_wire_bdg_
+        # gap_sweep should regenerate output/z2_phase_diagram.dat with the
+        # z2==-1 row at the canonical mu.
+        raise RuntimeError(
+            "Slim Pfaffian row missing: output/z2_phase_diagram.dat has no "
+            "row with mu ≈ 0.6601 ± 0.0001 and z2 == -1. Re-run wire BdG "
+            "gap sweep; the colormap-extracted witness is mandatory "
+            "(ticket 05 of .scratch/archive/bdg-evaluator-pfaffian/)."
+        )
 
     if bcrit_curve is not None:
         print(f"  BCRIT wire_curve    {bcrit_curve:.3f}")
@@ -243,8 +260,6 @@ def section_wire_rung(exe):
         print(f"  BCRIT wire_2d       {bcrit_2d:.3f}")
     if bcrit_pfaffian is not None:
         print(f"  BCRIT wire_pfaffian {bcrit_pfaffian:.3f}")
-    else:
-        print(f"  BCRIT wire_pfaffian (deferred to U13)")
     return True, (bcrit_curve, bcrit_2d, bcrit_pfaffian)
 
 
@@ -265,44 +280,40 @@ def section_observables(exe):
 # ---------------------------------------------------------------------------
 # Reconciliation table image generation
 # ---------------------------------------------------------------------------
-# Tolerance for 3-witness B_crit agreement (4-witness design; see
-# `2026-07-05-pr41-completion-design.md` §3.4 / D5). The four witnesses
-# measure different physics:
+# Tolerance for 4-witness B_crit agreement. The four witnesses measure
+# different physics:
 #   * Wire 1D curve (Issue 07 U8): B_crit at minigap minimum, mu=0.6601 eV
 #   * Wire 2D colormap (Issue 07 U10): B_crit at minigap minimum on a
 #     coarse 5x2 (B, mu) grid averaged over [0.659, 0.661] eV -- the
 #     discrete minimum picks 3.75 T (vs. the 1D curve's 2.8 T) because
 #     the grid can't resolve between 2.5 T (mu=0.661) and 3.75 T
 #     (mu=0.659). With a finer grid the values would agree within 0.5 T.
-#   * Wire slim Pfaffian (Issue 07): evaluated at one point (B_crit,
-#     mu=0.6601) -- agrees with the 1D curve by construction.
+#   * Wire slim Pfaffian (Issue 07; live row per ticket 05): colormap-
+#     extracted bcrit at z2==-1 for mu ≈ 0.6601 ± 0.0001 — typically
+#     agrees with the 1D curve by construction.
 #   * Dense QW (Issue 05 U7): 8x8 -> 16x16 QW with InAsW, mu at the QW
 #     conduction subband edge (different geometry; expected to differ
 #     by O(1 T) from the wire).
 # We set the tolerance to 1.0 T to accommodate the coarse 2D grid
 # resolution while still surfacing real regressions (e.g. a value of
 # 0.0 T from the all-zero artifact would trigger a FAIL with this
-# tolerance). Tightened from 2.0 T per
-# `2026-07-05-pr41-completion-design.md` §3.4 / D5 (3-witness config;
-# slim Pfaffian row excluded from numeric range until U13 lands).
-# Document the choice in the lecture markdown.
-TOLERANCE_BCRIT_RANGE = 1.0  # T (3-witness gate; matches acceptance gate)
+# tolerance). Document the choice in the lecture markdown.
+TOLERANCE_BCRIT_RANGE = 1.0  # T (4-witness gate; matches acceptance gate)
 
 
 def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
     """Render the reconciliation table as a PNG image.
 
-    Per spec §3.3 / D5: the slim Pfaffian witness row is honestly labeled
-    "(deferred to U13)" since no Fortran producer emits
-    output/wire_slim_pfaffian_witness.dat (reserved for U13, full wire
-    Pfaffian B-sweep with periodic/Bloch BdG). Its numeric value (None)
-    is excluded from the range calc via the existing `is not None` filter.
+    Per ticket 05 of `.scratch/archive/bdg-evaluator-pfaffian/`: the
+    slim Pfaffian witness row is the 4th live witness, read from
+    `output/z2_phase_diagram.dat`. Missing-row is already raised in
+    `section_wire_rung`; here we render the numeric value.
     """
     bcrit_curve, bcrit_2d, bcrit_pfaffian = wire_bcrits
     rows = [
         ("Wire (1D curve)",     bcrit_curve,    "minigap closing",       "AE3 / Issue 07"),
         ("Wire (2D colormap)",  bcrit_2d,       "minigap colormap",      "Issue 07 / U10"),
-        ("Wire (slim Pfaffian)", bcrit_pfaffian, "projected Pfaffian",    "Issue 07 / U10"),
+        ("Wire (slim Pfaffian)", bcrit_pfaffian, "colormap z2==-1 row",  "Issue 07 / U10 (ticket 05)"),
         ("Dense QW",            qw_bcrit,       "Pfaffian flip at TRIM", "Issue 05 / U7"),
     ]
     values = [r[1] for r in rows if r[1] is not None]
@@ -313,17 +324,13 @@ def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
     ax.axis("off")
     cell_text = []
     for r in rows:
-        # Per spec §3.3 / D5: slim Pfaffian witness labeled
-        # "(deferred to U13)" when its value is unavailable.
-        if r[1] is None and r[0] == "Wire (slim Pfaffian)":
-            bc = "deferred to U13"
-        elif r[1] is not None:
+        if r[1] is not None:
             bc = f"{r[1]:.3f}"
         else:
             bc = "N/A"
         cell_text.append([r[0], bc, r[2], r[3]])
     cell_text.append(["", "", "", ""])
-    cell_text.append(["3-witness range", f"{bcrit_range:.3f} T",
+    cell_text.append(["4-witness range", f"{bcrit_range:.3f} T",
                       f"tol = {TOLERANCE_BCRIT_RANGE} T", tolerance_status])
     table = ax.table(
         cellText=cell_text,
@@ -341,7 +348,7 @@ def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
         cell.set_facecolor("#404040")
         cell.set_text_props(color="white", weight="bold")
 
-    # Last row styling (3-witness summary)
+    # Last row styling (4-witness summary)
     for i in range(4):
         cell = table[(len(cell_text) - 1, i)]
         cell.set_facecolor("#e0e0e0" if tolerance_status == "PASS" else "#ffcccc")
@@ -353,7 +360,7 @@ def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
     print(f"\nReconciliation table image: {out_path}")
-    print(f"3-witness B_crit range: {bcrit_range:.3f} T (tolerance {TOLERANCE_BCRIT_RANGE} T) -> {tolerance_status}")
+    print(f"4-witness B_crit range: {bcrit_range:.3f} T (tolerance {TOLERANCE_BCRIT_RANGE} T) -> {tolerance_status}")
     return bcrit_range, tolerance_status
 
 
@@ -386,7 +393,7 @@ def main():
         bcrit_range, status = render_reconciliation_table(
             qw_bcrit, wire_bcrits, FIG_PATH)
         if status == "FAIL":
-            print(f"FAIL: 3-witness disagreement exceeds tolerance")
+            print(f"FAIL: 4-witness disagreement exceeds tolerance")
             all_passed = False
     else:
         print("FAIL: missing B_crit values for reconciliation table")

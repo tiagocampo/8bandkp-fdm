@@ -2,7 +2,8 @@ module test_bdg_evaluator
   ! COVERAGE: observable=minigap geometry=bulk material=generic tier=unit
   use funit
   use definitions, only: dp
-  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, q_zero_tol
+  use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, q_zero_tol, &
+       bdg_default_pfaffian_floor, bdg_eval_params_with_delta
   implicit none
 
 contains
@@ -160,6 +161,23 @@ contains
     p%delta_0 = -1.0e-3_dp
     p%near_zero_frac = 0.001_dp
     @assertEqual(1.0e-6_dp, q_zero_tol(p), tolerance=1.0e-15_dp)
+  end subroutine
+
+  @test
+  subroutine test_bdg_default_pfaffian_floor_value()
+    ! Spec §"SSOT magic-number extraction" — bdg_default_pfaffian_floor is the
+    ! SSOT for the magic literal 1.0e-12_dp formerly duplicated at
+    ! topological_analysis.f90:1663, 1681, 1766. Pin its value.
+    @assertTrue(bdg_default_pfaffian_floor == 1.0e-12_dp)
+  end subroutine
+
+  @test
+  subroutine test_bdg_eval_params_factory_uses_pfaffian_floor()
+    ! bdg_eval_params_with_delta must default pfaffian_floor to the SSOT
+    ! (per Task 2.1 factory wiring).
+    type(bdg_eval_params_t) :: p
+    p = bdg_eval_params_with_delta(0.001_dp)
+    @assertTrue(p%pfaffian_floor == bdg_default_pfaffian_floor)
   end subroutine
 
 end module test_bdg_evaluator

@@ -16,8 +16,8 @@ module topological_analysis
   public :: compute_berry_curvature_lattice
   public :: compute_hall_conductance
   public :: compute_conductance_kubo
-  public :: compute_z2_gap
-  public :: compute_z2_gap_edge
+  public :: compute_z2_gap_bhz_heuristic
+  public :: compute_z2_gap_edge_bhz_heuristic
   public :: compute_z2_fukane
   public :: compute_z2_fukane_qw
   public :: compute_z2_fukane_qw_result
@@ -272,7 +272,18 @@ contains
     sigma_xy = sum(berry_curvature) * dkx * dky / (2.0_dp * pi_dp)
   end function compute_conductance_kubo
 
-  function compute_z2_gap(eigenvalues, gap_threshold) result(z2)
+  ! ==============================================================================
+  ! BHZ-only Z2 gap-closure heuristic (R9).
+  !
+  ! Counts eigenvalues inside the gap window [−gap_threshold, +gap_threshold]
+  ! and reports Z2 = 1 if at least 2 states sit inside. SCOPE: this is a
+  ! gap-closure fallback, NOT a topological invariant. The proper Z2 is the
+  ! slim Pfaffian (`eval_bdg_pfaffian_witness_csr` in `bdg_observables.f90`,
+  ! wire-rung invariant per `.scratch/archive/bdg-evaluator-pfaffian/` ticket 03).
+  ! The BHZ-only suffix signals hardcoded 4-band basis assumption; this
+  ! helper is the LAST-RESORT signal after the Pfaffian returns 0.
+  ! ==============================================================================
+  function compute_z2_gap_bhz_heuristic(eigenvalues, gap_threshold) result(z2)
     implicit none
     real(kind=dp), contiguous, intent(in) :: eigenvalues(:)
     real(kind=dp), intent(in) :: gap_threshold
@@ -299,14 +310,18 @@ contains
     ! states (one per end) within the bulk gap. Divide by 2 to get pair count.
     if (n_in_gap >= 2) z2 = 1
 
-  end function compute_z2_gap
+  end function compute_z2_gap_bhz_heuristic
 
   ! ==============================================================================
-  ! Z2 from gap + spatial localization (R9).
+  ! BHZ-only Z2 from gap + spatial localization (R9).
   !
-  ! Like compute_z2_gap, but additionally checks that near-zero eigenvalues have
-  ! eigenvectors spatially localized at the wire edges.  This distinguishes
-  ! topological edge states from numerical noise.
+  ! Like compute_z2_gap_bhz_heuristic, but additionally checks that near-zero
+  ! eigenvalues have eigenvectors spatially localized at the wire edges. This
+  ! distinguishes topological edge states from numerical noise. SCOPE: this
+  ! is a gap-closure FALLBACK heuristic for BHZ wires (hardcoded 4-band basis),
+  ! NOT a topological invariant. The proper Z2 is the slim Pfaffian
+  ! (`eval_bdg_pfaffian_witness_csr` in `bdg_observables.f90`, wire-rung
+  ! invariant per `.scratch/archive/bdg-evaluator-pfaffian/` ticket 03).
   !
   ! The wire is assumed to have a 4-band basis per site (BHZ model).
   ! N_sites = size(eigenvectors, 1) / 4.
@@ -315,7 +330,7 @@ contains
   ! last 10% of sites.  If this fraction exceeds edge_fraction_threshold
   ! (default 0.5), the state is edge-localized.
   ! ==============================================================================
-  function compute_z2_gap_edge(eigenvalues, eigenvectors, gap_threshold, &
+  function compute_z2_gap_edge_bhz_heuristic(eigenvalues, eigenvectors, gap_threshold, &
                                 edge_fraction_threshold) result(z2)
     implicit none
     real(kind=dp), contiguous, intent(in) :: eigenvalues(:)
@@ -381,7 +396,7 @@ contains
     ! Z2 in 1D: topological phase has at least 2 edge states (one per end)
     if (n_edge_states >= 2) z2 = 1
 
-  end function compute_z2_gap_edge
+  end function compute_z2_gap_edge_bhz_heuristic
 
   function compute_z2_fukane(cfg, profile, kpterms, n_occ) result(z2)
     implicit none
@@ -1629,7 +1644,8 @@ contains
     integer, intent(out) :: s1_sign, s2_sign
 
     integer :: n_sp, half, i
-    complex(kind=dp), allocatable :: omega(:,:), h_proj(:,:), a_work(:,:)
+    complex(kind=dp), allocatable :: h_proj(:,:), a_work(:,:)
+    complex(kind=dp) :: omega_local(4, 4)
     complex(kind=dp) :: pf_val
     real(kind=dp) :: pf_abs
 
@@ -1642,21 +1658,22 @@ contains
     n_sp = half
     if (n_sp < 2) return
 
-    ! Canonical PHS structure matrix: omega = tau_y (x) I_N for class D BdG
-    ! (same convention as default_kitaev_omega in pfaffian.f90, but kept
-    ! local because pfaffian.f90 is owned by Issue 01 — no edits allowed).
-    allocate(omega(n_full, n_full))
-    omega = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    do i = 1, n_sp
-      omega(i, n_sp + i) = cmplx(0.0_dp, -1.0_dp, kind=dp)
-      omega(n_sp + i, i) = cmplx(0.0_dp,  1.0_dp, kind=dp)
-    end do
+    ! Local 4×4 PHS structure matrix for the projected Nambu subspace
+    ! (tau_y ⊗ I_2). The 16×16 global omega crosses (i, i+8) indices, so
+    ! extracting omega(1:4, 1:4) would yield all-zeros by construction;
+    ! we use a properly-built local omega for the 4×4 projected subblock.
+    ! (Same convention as `wire_pfaffian_witness_sweep`.)
+    omega_local = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    omega_local(1, 3) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(3, 1) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+    omega_local(2, 4) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(4, 2) = cmplx(0.0_dp,  1.0_dp, kind=dp)
 
     ! --- S1: empirical — project onto 2 lowest single-particle states at kz=0
     call s1_project(H_bdg, n_full, n_sp, h_proj)
     if (allocated(h_proj)) then
       allocate(a_work(4, 4))
-      a_work = matmul(h_proj, omega(1:4, 1:4))
+      a_work = matmul(h_proj, omega_local)
       pf_val = complex_pfaffian(a_work)
       deallocate(a_work)
       pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
@@ -1674,7 +1691,7 @@ contains
     call s2_project(H_bdg, n_full, h_proj)
     if (allocated(h_proj)) then
       allocate(a_work(4, 4))
-      a_work = matmul(h_proj, omega(1:4, 1:4))
+      a_work = matmul(h_proj, omega_local)
       pf_val = complex_pfaffian(a_work)
       deallocate(a_work)
       pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
@@ -1687,8 +1704,6 @@ contains
       end if
       deallocate(h_proj)
     end if
-
-    if (allocated(omega)) deallocate(omega)
   end subroutine wire_pfaffian_witness
 
   ! ============================================================================
