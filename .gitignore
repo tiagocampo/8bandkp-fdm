@@ -30,6 +30,11 @@ fort.*
 .clinerules
 .codex/
 
+# Agent / Claude Code config dirs (local-only, never tracked)
+.claude/
+.agents/
+agent/
+
 # Agent skills (mattpocock/skills via skills.sh) — tracked via skills-lock.json
 .agents/skills/
 .claude/skills/
@@ -82,6 +87,7 @@ __pycache__/
 test_debug_*
 test_staggered
 tests/integration/convergence_results/
+tests/integration/coverage_matrix_report.txt
 # Verifier scratch dirs (Issue 05/07/08 verifiers create per-run dirs)
 /run_B*/
 /run_bx*/
