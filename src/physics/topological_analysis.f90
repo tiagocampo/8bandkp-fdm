@@ -1644,7 +1644,8 @@ contains
     integer, intent(out) :: s1_sign, s2_sign
 
     integer :: n_sp, half, i
-    complex(kind=dp), allocatable :: omega(:,:), h_proj(:,:), a_work(:,:)
+    complex(kind=dp), allocatable :: h_proj(:,:), a_work(:,:)
+    complex(kind=dp) :: omega_local(4, 4)
     complex(kind=dp) :: pf_val
     real(kind=dp) :: pf_abs
 
@@ -1657,21 +1658,22 @@ contains
     n_sp = half
     if (n_sp < 2) return
 
-    ! Canonical PHS structure matrix: omega = tau_y (x) I_N for class D BdG
-    ! (same convention as default_kitaev_omega in pfaffian.f90, but kept
-    ! local because pfaffian.f90 is owned by Issue 01 — no edits allowed).
-    allocate(omega(n_full, n_full))
-    omega = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    do i = 1, n_sp
-      omega(i, n_sp + i) = cmplx(0.0_dp, -1.0_dp, kind=dp)
-      omega(n_sp + i, i) = cmplx(0.0_dp,  1.0_dp, kind=dp)
-    end do
+    ! Local 4×4 PHS structure matrix for the projected Nambu subspace
+    ! (tau_y ⊗ I_2). The 16×16 global omega crosses (i, i+8) indices, so
+    ! extracting omega(1:4, 1:4) would yield all-zeros by construction;
+    ! we use a properly-built local omega for the 4×4 projected subblock.
+    ! (Same convention as `wire_pfaffian_witness_sweep`.)
+    omega_local = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    omega_local(1, 3) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(3, 1) = cmplx(0.0_dp,  1.0_dp, kind=dp)
+    omega_local(2, 4) = cmplx(0.0_dp, -1.0_dp, kind=dp)
+    omega_local(4, 2) = cmplx(0.0_dp,  1.0_dp, kind=dp)
 
     ! --- S1: empirical — project onto 2 lowest single-particle states at kz=0
     call s1_project(H_bdg, n_full, n_sp, h_proj)
     if (allocated(h_proj)) then
       allocate(a_work(4, 4))
-      a_work = matmul(h_proj, omega(1:4, 1:4))
+      a_work = matmul(h_proj, omega_local)
       pf_val = complex_pfaffian(a_work)
       deallocate(a_work)
       pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
@@ -1689,7 +1691,7 @@ contains
     call s2_project(H_bdg, n_full, h_proj)
     if (allocated(h_proj)) then
       allocate(a_work(4, 4))
-      a_work = matmul(h_proj, omega(1:4, 1:4))
+      a_work = matmul(h_proj, omega_local)
       pf_val = complex_pfaffian(a_work)
       deallocate(a_work)
       pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
@@ -1702,8 +1704,6 @@ contains
       end if
       deallocate(h_proj)
     end if
-
-    if (allocated(omega)) deallocate(omega)
   end subroutine wire_pfaffian_witness
 
   ! ============================================================================
