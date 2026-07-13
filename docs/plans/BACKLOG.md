@@ -2,7 +2,7 @@
 
 Consolidated from REVIEW.md on 2026-05-06. Updated 2026-07-12.
 Piezoelectric explicitly excluded (ZB [001] = zero by symmetry, wires = negligible).
-Phases 1-24 complete. Phase 24 follow-ups complete (2026-07-12). Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architectural cleanup, extended cross-code, FEAST parity). Parent BdG validation plan (`docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md`) still in progress — U1, U2, U9, U10 open; U13 deferred.
+Phases 1-24 complete. Phase 24 follow-ups complete (2026-07-12). **PR #41 ready for merge** — 8 follow-up commits (`5a39bfb..01a2bdc`) landed on `feat/bdg-validation-pass2` head via FF-push; head now `5a39bfb`, 85 commits, MERGEABLE. Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architectural cleanup, extended cross-code, FEAST parity). Parent BdG validation plan (`docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md`) still in progress — U1, U2, U9, U10 open; U13 deferred.
 
 ---
 
@@ -596,6 +596,8 @@ b949e00 fix(tests): tighten 2D colormap μ-window to capture 1D closure point
 ---
 
 ## Phase 24 follow-ups: COMPLETED (2026-07-12)
+
+**PR #41 status:** the 8 follow-up commits (`5a39bfb..01a2bdc`) landed on `feat/bdg-validation-pass2` head via FF-push from `feat/bdg-p1-stabilization` on 2026-07-12. PR #41 now at head `5a39bfb` (85 commits, MERGEABLE), ready for merge to `main`. The 7 originally-tracked follow-ups (`a9a71a6..01a2bdc`) cover the 4-subagent cleanup (Agent A B.2 escape hatch + doc drift, Agent B architecture cleanup, Agent C hygiene, Agent D shell wrapper) + U13 BLOCKING-EMPIRICAL SKIP + archive moves; the 8th (`5a39bfb`) is a subsequent chore gitignore update.
 
 Post-archive cleanup pass driven by adversarial review of the 8 archived specs/plans. Four parallel subagent dispatches, each verified at file:line.
 

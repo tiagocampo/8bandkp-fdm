@@ -46,6 +46,16 @@ status_note: |
   reconciliation). 4 of 4 fix agents green; 1 expected unit-test failure
   (`test_wire_pfaffian_witness` — strict assertion unreachable on synthetic
   fixtures, documented `@todo` U13).
+
+  PR #41 merge status (2026-07-12): 8 follow-up commits
+  (`5a39bfb..01a2bdc`) landed on `feat/bdg-validation-pass2` head via
+  FF-push — the 7 originally-tracked commits (`a9a71a6..01a2bdc`) plus
+  one subsequent chore (`5a39bfb`: gitignore `.compound-engineering`/
+  `.remember`/`.superpowers`). PR #41 now at head `5a39bfb` (85 commits,
+  MERGEABLE), ready for merge to `main`. PR #41 source branch
+  `feat/bdg-validation-pass2` and working branch
+  `feat/bdg-p1-stabilization` are co-aligned at `5a39bfb`; the working
+  branch can be retired after merge.
 ---
 
 # BdG/Majorana ground-up validation and observable coverage
