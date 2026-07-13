@@ -1,8 +1,8 @@
 # Implementation Backlog — Ordered by Priority
 
-Consolidated from REVIEW.md on 2026-05-06. Updated 2026-06-27.
+Consolidated from REVIEW.md on 2026-05-06. Updated 2026-07-12.
 Piezoelectric explicitly excluded (ZB [001] = zero by symmetry, wires = negligible).
-Phases 1-23 complete. Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architectural cleanup, extended cross-code, FEAST parity).
+Phases 1-24 complete. Phase 24 follow-ups complete (2026-07-12). Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architectural cleanup, extended cross-code, FEAST parity). Parent BdG validation plan (`docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md`) still in progress — U1, U2, U9, U10 open; U13 deferred.
 
 ---
 
@@ -527,7 +527,130 @@ U8 wire BdG window routing — the all-zero minigap fix that killed the stale
 ### Deferred (out of scope, future PRs)
 
 - `compute_spectral_function_wire` window routing → U9 (per design §6)
-- U1, U2, U9, U10, U11, U12 of parent BdG validation plan still open
+- ~~U1, U2, U9, U10, U11, U12 of parent BdG validation plan still open~~ → **UPDATED 2026-07-06** (Phase 24): U12 shipped via `lecture_13_acceptance_gate` (3-witness gate, ≤1.0 T spread); U11 partial (lecture disclosures + slim-Pfaffian caption only); **U1, U2, U9, U10 still open**; U13 still explicitly deferred per CLAUDE.md Known Issues (separate scoped PR).
+
+---
+
+## Phase 24: COMPLETED (2026-07-06)
+
+PR #41 BdG/Majorana P1 stabilization + blocker fixes — the addendum that unblocked PR #41's merge. Branch: `feat/bdg-p1-stabilization`, pushed as PR #41 onto `feat/bdg-validation-pass2`.
+
+**P1 stabilization plan:** `docs/superpowers/plans/archive/2026-07-01-bdg-p1-fix.md` (28 commits, Phases 1–4)
+**P1 stabilization spec:** `docs/superpowers/specs/archive/2026-07-01-bdg-p1-fix-design.md` (IMPLEMENTED)
+**Companion blocker-fixes plan:** `docs/superpowers/plans/archive/2026-07-05-pr41-blocker-fixes.md` (17 commits, Phases A+B+C+C.8)
+**Companion completion spec:** `docs/superpowers/specs/archive/2026-07-05-pr41-completion-design.md` (IMPLEMENTED, addendum)
+**Parent plan (NOT archived, still in progress):** `docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md`. Units shipped in Phase 24: U3, U4, U5, U6, U7, U12. Partial: U11. Still open: U1, U2, U9, U10. Deferred: U13 (separate scoped PR per CLAUDE.md Known Issues).
+
+### Delivered (PR #41)
+
+| Item | What | Status |
+|------|------|--------|
+| P1 stabilization (Phases 1–4) | Physics correctness TDD-doubled (kitaev M=±1, dense-QW block sign, symmetric Peierls KEEP per PHS oracle, `half_wire_integral=max(L,R)`, complex coherence); test teeth (minigap regression, real Pfaffian bcrit_pfaffian, absolute-window gate); architecture cleanup (asw_* → private, csr_to_dense_work move, outputFunctions centralization, `bdg_default_near_zero_frac`); hygiene (4× `stop 1` → `error stop`, coverage annotations, LDOS zero-bias peak reconciliation, 3 solutions docs) | **DONE** |
+| Blocker fixes Phase A (P0) | A.1/A.2 slim-Pfaffian row-index bug (TDD-doubled); A.3a wire-polarization emitter + A.3b real-eigensolve verifier rewrite; A.4 S1/S2 synthetic-plot label; A.5 acceptance gate tighten 2.0→1.0 T; A.6 lecture 13 slim-Pfaffian disclosure + 3-witness reconcile | **DONE** |
+| Test soundness Phase B (P1) | B.1 cross-builder identity test with shared-H₀ invariant; B.2 drop zero-escape hatch in `test_wire_pfaffian_witness.pf` | **DONE** |
+| Doc fixes Phase C | C.1 archive `Status: COMPLETE` footer on 9 issue files + 15 PRDs; C.2 lecture §13.5.1 cross-builder disclosure; C.3 §13.5.2 pairing sign convention; C.4 §13.7.4 slim-Pfaffian plot caption; C.5 P1 spec line-23 2→3-col collapse; C.6 ADR 0007 Layer D footnote; C.7 ADR 0008 §3 reversal (load-bearing); C.8 final 2D-colormap μ-window tightening (`b949e00`) — bcrit_2d 3.750→2.500 T, acceptance gate 3-witness range 0.8 T ≤ 1.0 T PASS | **DONE** |
+| 9 BdG regression tests | `regression_bdg_*` | **9/9 GREEN** |
+| Acceptance gate | `tests/integration/test_lecture_13_acceptance_gate.sh` (3-witness bcrit reconciliation, ≤1.0 T spread) | **PASS** |
+
+### Archive + memory (2026-07-06)
+
+- 4 docs (`2026-07-01-bdg-p1-fix{,-design}.md` + `2026-07-05-pr41-{blocker-fixes,completion-design}.md`) → `docs/superpowers/{plans,specs}/archive/`
+- Status footer added to parent plan `2026-06-14-001-feat-bdg-majorana-validation-plan.md` (`status: in-progress` + per-unit breakdown)
+- 9 issue files + 15 PRDs in `.scratch/` got `Status: COMPLETE` footers (C.1 commit `1487198`)
+- 3 new `docs/solutions/` docs per Task 4.7 (PHS oracle as teeth-first regression baseline; BdG hole-block unified convention; etc.)
+
+### Commits
+
+17 commits on `feat/bdg-p1-stabilization` (oldest → newest):
+
+```
+1487198 docs(scratch): add Status: COMPLETE footer to 9 issue files + 15 PRDs
+0e8fd9e test(bdg): wire_pfaffian_witness drop zero-escape hatch
+56f49bb test(bdg): cross-builder hole-block identity with shared-H0 invariant
+f863964 docs(scripts): label slim Pfaffian witness as deferred to U13
+b430b1f test: tighten acceptance gate tolerance 2.0 -> 1.0 T
+4d2a40a docs(test): label S1/S2 plot as synthetic illustrative
+677c0eb test(bdg): verify_majorana_polarization real eigensolve path
+e95d001 feat(bdg): wire-polarization emitter for real verifier
+7172858 fix(bdg): slim Pfaffian witness multi-site band-major projection
+ea9212d test(red): slim Pfaffian witness projection onto conduction bands
+3ead499 test: add 'acceptance-gate' ctest label per spec §7.5
+4c26070 fix(math): pointer caching in csr_to_dense_work (Task 4.2)
+7312e97 test(reg): wire_bdg_topological_2d skip z2 column + non-flat assertion
+f617640 fix(physics)+docs(agents): 4 stop 1 -> error stop + AGENTS.md updates
+cf19f0c docs(lecture): delete hand-edited reconciliation table per ADR 0008
+56c0ec9 fix(scripts): remove second duplicate 'import re' for bcrit_pfaffian
+64494a0 fix(scripts): remove duplicate 'import re' that broke Python UnboundLocalError
+1984ca5 fix(bdg): correct dense-QW block (2,1) structural + sign bugs (per ADR 0008 §2)
+c523dbe docs(adr): 0008 §3 reversal — symmetric Peierls KEPT, per spec §6.3
+90c4a6b docs(adr): 0007 Layer D footnote re symmetric Peierls per spec §6.2
+3135ad6 docs(spec): correct P1 spec line-23 Peierls philosophy per spec §6.1
+7430331 docs(lecture): §13.7.4 slim Pfaffian plot caption per spec §5.2
+cefcbe5 docs(lecture): §13.5.2 pairing sign convention per spec §5.2
+845c178 docs(lecture): §13.5.1 disclose cross-builder identity test per spec §4.1
+b949e00 fix(tests): tighten 2D colormap μ-window to capture 1D closure point
+```
+
+(plus prior 28 commits of the P1 stabilization plan: `1984ca5` → `df9954c` on `feat/bdg-p1-stabilization`).
+
+---
+
+## Phase 24 follow-ups: COMPLETED (2026-07-12)
+
+Post-archive cleanup pass driven by adversarial review of the 8 archived specs/plans. Four parallel subagent dispatches, each verified at file:line.
+
+**Spec/Plan context:** adversarial review of archived `docs/superpowers/{plans,specs}/archive/2026-{06-13-eigensolver,06-21-pr39,07-01-bdg-p1-fix,07-05-pr41-blocker-fixes}*.md` surfaced DONE-WITH-GAPS findings; this section records the resolutions.
+
+### Deliverables (4 subagents, all green)
+
+| Bucket | Agent | Sites | Test result |
+|--------|-------|-------|-------------|
+| **PR #41 doc/test cleanup** | A | B.2 escape hatch removed (strict `@assertTrue(s1 == s2 .and. s1 /= 0)` + `@todo` U13); P1 spec doc drift at 8 lines (34, 72, 103, 260, 333, 335, 430, 446); ADR 0008 §3 follow-up at 3 lines (50, 52, 57); "4-witness" → "3-witness" label sweep in `lecture_13_topological.py` 7 places + `13-topological-superconductivity.md` 3 places; PRD reconciliation (14→47 commits, 124/124→145/145, 4→3 witness); `TOLERANCE_BCRIT_RANGE` 2.0→1.0 in lecture script | 8/8 collateral BdG GREEN; `lecture_13_acceptance_gate` PASS; 1 expected unit-test fail (`test_wire_pfaffian_witness` — strict assertion unreachable on synthetic fixtures, `@todo` U13) |
+| **BdG P1 architecture cleanup** | B | `extract_block_csr` moved `src/physics/spectral_bdg_wire.f90:189-234` → `src/math/sparse_matrices.f90:1185-1222`; 4 inline `open()` blocks in `main_topology.f90` (lines 927, 1010, 1150) replaced with calls to named writers (`write_bdg_lowest_state_profile`, `write_spectral_function`, `write_z2_phase_diagram`, `write_z2_transitions` in `outputFunctions.f90`); unused locals removed | 8/8 BdG regression + 4/4 spectral + 3/3 wire BdG regression + 1/1 lecture 13 GREEN |
+| **BdG P1 hygiene sweep** | C | 26 bare `stop 1` → descriptive `error stop '<message>'` across 8 files (`confinement_init.f90`, `green_functions.f90`, `hamiltonian_wire.f90`, `gfactor_functions.f90`, `finitedifferences.f90`, `poisson.f90`, `sparse_matrices.f90`, `geometry.f90`). CLAUDE.md Boundaries respected: FD stencil coefficients and Poisson solver semantics only modified at the `stop 1` lines (not changed). Final bare `stop 1` count in `src/`: 0 | 49/50 unit GREEN (1 expected fail = `test_wire_pfaffian_witness` from A); 46/46 regression GREEN |
+| **PR #39 shell wrapper** | D | New `tests/integration/test_qw_bandstructure_dense_feast.sh` (modeled on `test_dense_qw_bdg_rung.sh`); `tests/CMakeLists.txt:1260` updated to invoke shell wrapper instead of Python directly | `verification_qw_bandstructure_dense_feast` PASS via wrapper (14.5 s) |
+
+### BLOCKING-EMPIRICAL resolution (option b)
+
+The adversarial review surfaced that `tests/integration/verify_majorana_polarization.py` is structurally broken end-to-end on the canonical wire config: the wire-polarization emitter at `src/apps/main_topology.f90:586-598` gates on `n_majorana==1`, which the canonical `wire_inas_gaas_bdg_topological.toml` never produces (FEAST noise floor ~1e-5 eV > near-zero threshold `bdg_default_near_zero_frac · delta_0` ~2e-7 eV). The verifier's B-override to `B_vec = [3.0, 0.0, 0.0]` therefore never triggers the emitter, and the polarization file is never written.
+
+Per user decision (option **b**, 2026-07-12): document the gap and skip from the regression net.
+
+**Resolution applied (2026-07-12):**
+- `verify_majorana_polarization.py` module docstring now carries an `@todo U13` block explaining the BLOCKING-EMPIRICAL situation, the FEAST noise floor / near-zero threshold arithmetic, and the resolution path (U13 periodic/Bloch BdG construction).
+- `parse_polarization()` now exits 0 with `SKIP: ... not produced ... (BLOCKING-EMPIRICAL on canonical wire)` and a pointer to the `@todo U13`, instead of `FAIL: ... sys.exit(1)`.
+- All other failure modes (config/executable missing, exec error, empty file, trivial polarization) still fail loud per spec D7.
+- The acceptance gate `tests/integration/test_lecture_13_acceptance_gate.sh` (3-witness, 1.0 T tolerance per spec §7.5) remains the working regression net; the 4-witness design's wire Pfaffian row is reserved for U13.
+
+**Resolution path (deferred to U13):**
+- U13 (periodic/Bloch BdG construction per parent plan §U13) scopes the wire Pfaffian sweep at the PHS-invariant momenta where the noise floor is suppressed by spectral averaging.
+- Per CLAUDE.md Known Issues — separate scoped PR.
+
+### Decisions deferred vs resolved
+
+| Issue | Status | Path |
+|-------|--------|------|
+| PR #39 truncation warning #9 (eigensolver) | **Superseded** by `reconcile_band_slice` per REVIEW.md #74 | Documentation-only; no code fix |
+| PR #39 test count "124/124" stale | **Updated** to 145/145 in PRD via Agent A | Doc only |
+| PR #41 A.3a/A.3b integration | **@todo U13 + SKIP** per option (b) | `verify_majorana_polarization.py` exit 0 with @todo |
+| PR #41 B.2 escape hatch | **Removed** (strict `@assertTrue` + `@todo U13`); 1 expected unit fail | Test now fails by design — see `@todo` |
+| PR #41 P1 spec doc drift (8 lines) | **Fixed** by Agent A | Lines 34, 72, 103, 260, 333, 335, 430, 446 |
+| PR #41 ADR 0008 doc drift (3 lines) | **Fixed** by Agent A | Lines 50, 52, 57 |
+| PR #41 "4-witness" labels (10 sites) | **Fixed** by Agent A | `lecture_13_topological.py` 7 + lecture markdown 3 |
+| PR #41 PRD reconciliation | **Fixed** by Agent A | Commit count 14→47, ctest 124/124→145/145, 4→3 witness |
+| PR #41 `TOLERANCE_BCRIT_RANGE` 2.0→1.0 | **Fixed** by Agent A | `scripts/lecture_13_topological.py:278-283` |
+| BdG P1 `extract_block_csr` move | **Fixed** by Agent B | Now at `sparse_matrices.f90:1185-1222` |
+| BdG P1 4 inline `open()` consolidation | **Fixed** by Agent B | `main_topology.f90:927, 1010, 1150` |
+| BdG P1 26 bare `stop 1` | **Fixed** by Agent C | All 26 sites → `error stop '<descriptive message>'` |
+| PR #39 shell wrapper | **Fixed** by Agent D | New `test_qw_bandstructure_dense_feast.sh` + CMakeLists.txt update |
+
+### Verification gate
+
+- Build green across all 4 agent scopes
+- 49/50 unit tests pass (the 1 expected fail is `test_wire_pfaffian_witness`, marked `@todo` U13)
+- 8/8 BdG regression + 4/4 spectral + 3/3 wire BdG regression + 1/1 lecture 13 + 1/1 new wrapper = all green
+- `verify_majorana_polarization.py` exits 0 with `SKIP` message on canonical wire (BLOCKING-EMPIRICAL documented)
+- `lecture_13_acceptance_gate` PASS at 1.0 T tolerance, 3-witness range 0.8 T
 
 ---
 
@@ -599,6 +722,8 @@ Items that were explicitly deferred or relaxed with documented justification:
 | 21. Publishable benchmarks | — | ISBT 6-config sweep (42 checks), SC benchmark (5 checks), exciton tightening + Bastard 1982 | IN_PROGRESS (PR #35) |
 | 22. FEAST parity | — | Sparse FEAST first-class for all geometries except bulk (ADR 0005); window gate (#10) → QW g-factor → QW optics → Landau | PENDING |
 | 23. U8 wire BdG window routing (PR40) | — | All-zero minigap fix: window routing via `apply_solver_window`, auto-fallback removal, Gershgorin window guard, 10 follow-up C1–C10 (parser, validate, sentinel, named constant, sweep rewrite, PHS test, doc cleanup), C-fix1 rashba config, doc-drift fix. 23 commits `dcdea33..84e238a`. 126/126 ctest green; pushed, OPEN awaiting merge. | DONE |
+| 24. PR #41 BdG/Majorana P1 stabilization + blocker fixes | — | P1 stabilization (Phase 1–4, 28 commits on `feat/bdg-p1-stabilization`): physics correctness TDD-doubled, test teeth, architecture cleanup, hygiene + docs. Blocker fixes (Phase A P0 + B P1 + C docs + C.8 μ-window tighten, 17 commits): slim-Pfaffian row fix, wire-polarization emitter + real-eigensolve verifier, S1/S2 synthetic disclosure, acceptance-gate tighten 2.0→1.0 T, 3-witness reconcile, cross-builder identity test, zero-escape hatch drop, doc fixes (Status footers, lecture disclosures, ADR amendments, spec line-23 fix). 9/9 BdG regression GREEN + acceptance gate PASS. PR #41 pushed 2026-07-06 (`b949e00`). 4 docs archived to `docs/superpowers/{plans,specs}/archive/`. Parent BdG validation plan (`docs/plans/2026-06-14-001`) NOT archived (U1/U2/U9/U10 still open; U13 deferred). | DONE |
+| 25. Phase 24 follow-ups (adversarial review cleanup pass) | — | 4 parallel subagents (A: PR #41 doc/test, B: BdG P1 architecture, C: BdG P1 hygiene, D: PR #39 shell wrapper) resolved DONE-WITH-GAPS findings from adversarial review. `extract_block_csr` moved to `sparse_matrices.f90`; 4 inline `open()` blocks consolidated to named writers; 26 bare `stop 1` → `error stop '<descriptive message>'`; B.2 escape hatch removed (strict `@assertTrue` + `@todo U13`); 8 P1-spec doc-drift lines + 3 ADR 0008 lines reconciled; 10 "4-witness" labels swept to "3-witness"; PRD reconciliation (14→47 commits, 124/124→145/145); `TOLERANCE_BCRIT_RANGE` 2.0→1.0; PR #39 shell wrapper created. BLOCKING-EMPIRICAL gap (A.3a/A.3b integration) resolved per option (b): `verify_majorana_polarization.py` documented `@todo U13`, exits 0 with `SKIP` message; acceptance gate covers 3-witness regression net. Build green, 49/50 unit + 8/8 BdG regression + 4/4 spectral + 3/3 wire BdG regression + 1/1 lecture 13 GREEN. 1 expected unit fail (`test_wire_pfaffian_witness` — strict assertion unreachable on synthetic fixtures, `@todo` U13). | DONE |
 
-**Phases 1-23 complete.** 126 tests pass. Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architecture deepening + FEAST parity).
+**Phases 1-24 + follow-ups complete.** 145 tests pass (BdG regression suite + acceptance-gate label). Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architecture deepening + FEAST parity). Parent BdG validation plan still in progress — U1, U2, U9, U10 open; U13 deferred per CLAUDE.md Known Issues; U6 verifier @todo U13 BLOCKING-EMPIRICAL documented per option (b).
 Source of truth: `docs/plans/BACKLOG.md` (this file) and `docs/plans/REVIEW.md`.
