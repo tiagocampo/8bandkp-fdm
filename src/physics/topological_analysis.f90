@@ -16,8 +16,8 @@ module topological_analysis
   public :: compute_berry_curvature_lattice
   public :: compute_hall_conductance
   public :: compute_conductance_kubo
-  public :: compute_z2_gap
-  public :: compute_z2_gap_edge
+  public :: compute_z2_gap_bhz_heuristic
+  public :: compute_z2_gap_edge_bhz_heuristic
   public :: compute_z2_fukane
   public :: compute_z2_fukane_qw
   public :: compute_z2_fukane_qw_result
@@ -272,7 +272,18 @@ contains
     sigma_xy = sum(berry_curvature) * dkx * dky / (2.0_dp * pi_dp)
   end function compute_conductance_kubo
 
-  function compute_z2_gap(eigenvalues, gap_threshold) result(z2)
+  ! ==============================================================================
+  ! BHZ-only Z2 gap-closure heuristic (R9).
+  !
+  ! Counts eigenvalues inside the gap window [−gap_threshold, +gap_threshold]
+  ! and reports Z2 = 1 if at least 2 states sit inside. SCOPE: this is a
+  ! gap-closure fallback, NOT a topological invariant. The proper Z2 is the
+  ! slim Pfaffian (`eval_bdg_pfaffian_witness_csr` in `bdg_observables.f90`,
+  ! wire-rung invariant per `.scratch/bdg-evaluator-pfaffian/` ticket 03).
+  ! The BHZ-only suffix signals hardcoded 4-band basis assumption; this
+  ! helper is the LAST-RESORT signal after the Pfaffian returns 0.
+  ! ==============================================================================
+  function compute_z2_gap_bhz_heuristic(eigenvalues, gap_threshold) result(z2)
     implicit none
     real(kind=dp), contiguous, intent(in) :: eigenvalues(:)
     real(kind=dp), intent(in) :: gap_threshold
@@ -299,14 +310,18 @@ contains
     ! states (one per end) within the bulk gap. Divide by 2 to get pair count.
     if (n_in_gap >= 2) z2 = 1
 
-  end function compute_z2_gap
+  end function compute_z2_gap_bhz_heuristic
 
   ! ==============================================================================
-  ! Z2 from gap + spatial localization (R9).
+  ! BHZ-only Z2 from gap + spatial localization (R9).
   !
-  ! Like compute_z2_gap, but additionally checks that near-zero eigenvalues have
-  ! eigenvectors spatially localized at the wire edges.  This distinguishes
-  ! topological edge states from numerical noise.
+  ! Like compute_z2_gap_bhz_heuristic, but additionally checks that near-zero
+  ! eigenvalues have eigenvectors spatially localized at the wire edges. This
+  ! distinguishes topological edge states from numerical noise. SCOPE: this
+  ! is a gap-closure FALLBACK heuristic for BHZ wires (hardcoded 4-band basis),
+  ! NOT a topological invariant. The proper Z2 is the slim Pfaffian
+  ! (`eval_bdg_pfaffian_witness_csr` in `bdg_observables.f90`, wire-rung
+  ! invariant per `.scratch/bdg-evaluator-pfaffian/` ticket 03).
   !
   ! The wire is assumed to have a 4-band basis per site (BHZ model).
   ! N_sites = size(eigenvectors, 1) / 4.
@@ -315,7 +330,7 @@ contains
   ! last 10% of sites.  If this fraction exceeds edge_fraction_threshold
   ! (default 0.5), the state is edge-localized.
   ! ==============================================================================
-  function compute_z2_gap_edge(eigenvalues, eigenvectors, gap_threshold, &
+  function compute_z2_gap_edge_bhz_heuristic(eigenvalues, eigenvectors, gap_threshold, &
                                 edge_fraction_threshold) result(z2)
     implicit none
     real(kind=dp), contiguous, intent(in) :: eigenvalues(:)
@@ -381,7 +396,7 @@ contains
     ! Z2 in 1D: topological phase has at least 2 edge states (one per end)
     if (n_edge_states >= 2) z2 = 1
 
-  end function compute_z2_gap_edge
+  end function compute_z2_gap_edge_bhz_heuristic
 
   function compute_z2_fukane(cfg, profile, kpterms, n_occ) result(z2)
     implicit none

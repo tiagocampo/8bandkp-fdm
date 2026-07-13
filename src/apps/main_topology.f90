@@ -366,13 +366,14 @@ contains
           ', gap=', max_gap
 
         ! R8: Detect Z2 from eigenspectrum with spatial localization (R9).
-        ! First try: spectral edge-state detection with compute_z2_gap_edge.
-        ! This checks for eigenvalues inside the bulk gap that are spatially
-        ! localized at the wire edges.
+        ! First try: spectral edge-state detection with
+        ! compute_z2_gap_edge_bhz_heuristic (BHZ-only, gap-closure fallback
+        ! after slim Pfaffian returns 0). This checks for eigenvalues inside
+        ! the bulk gap that are spatially localized at the wire edges.
         gap_threshold_edge = max_gap * 0.5_dp
         gap_threshold_edge = max(gap_threshold_edge, 1.0_dp)
 
-        result%z2_invariant = compute_z2_gap_edge( &
+        result%z2_invariant = compute_z2_gap_edge_bhz_heuristic( &
           & eigvals_local, eigen_res_local%eigenvectors, &
           & gap_threshold_edge, 0.5_dp)
 
@@ -1377,7 +1378,7 @@ contains
         ! Gap closure: defer to the SC-minigap heuristic as the fallback so
         ! the colormap still shows a Z2=1 flag exactly when min_gap < threshold.
         ! This preserves the open->close->reopen pattern at the B_crit point.
-        z2 = compute_z2_gap(eigen_res_local%eigenvalues, gap_threshold)
+        z2 = compute_z2_gap_bhz_heuristic(eigen_res_local%eigenvalues, gap_threshold)
       end if
     end block
 
