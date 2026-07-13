@@ -60,7 +60,7 @@ contains
   ! Build a non-diagonal 16 x 16 BdG matrix that crosses the Nambu seam
   ! inside the projected 4x4 (rows/cols = [7, 8, 15, 16]) so Pf ≠ 0.
   !
-  ! Per `.scratch/bdg-evaluator-pfaffian/` ticket 06 — decoupled from U13
+  ! Per `.scratch/archive/bdg-evaluator-pfaffian/` ticket 06 — decoupled from U13
   ! (slim → full Bloch-Pfaffian swap). The strict sign-agreement test was
   ! RED on the diagonal-in-(c,c†) synthetic fixture (Pf=0 by construction);
   ! the same fix the CSR-sibling test adopted (intra-conduction symmetric
@@ -133,7 +133,7 @@ contains
     ! preserves the off-diagonal pairing asymmetry and yields a non-zero Pf
     ! (Pf_real = -0.0225 ⇒ s2_sign = -1 for the non-diagonal fixture).
     !
-    ! Per `.scratch/bdg-evaluator-pfaffian/` ticket 06 — this test pins the
+    ! Per `.scratch/archive/bdg-evaluator-pfaffian/` ticket 06 — this test pins the
     ! gate-relevant witness (S2 only, the slim Pfaffian consumed by the L13
     ! acceptance gate). Full S1+S2 strict sign-agreement is a Majorana-basis
     ! Pfaffian problem (Issue 05, deferred).

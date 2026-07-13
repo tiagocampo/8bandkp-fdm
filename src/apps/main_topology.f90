@@ -1370,7 +1370,7 @@ contains
     block
       integer :: s2_sign
       ! Slim Pfaffian witness via seam sibling (per ticket 04 of
-      ! .scratch/bdg-evaluator-pfaffian/ — drop-in replacement for
+      ! .scratch/archive/bdg-evaluator-pfaffian/ — drop-in replacement for
       ! wire_pfaffian_witness_sweep, same s2_sign ∈ {-1, 0, +1} semantics).
       s2_sign = eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg_local, &
                                               bdg_eval_params_with_delta(cfg_in%bdg%delta_0))

@@ -41,7 +41,7 @@ module bdg_observables
   real(kind=dp), parameter, public :: bdg_default_min_threshold = 1.0e-10_dp
   ! Magic-number SSOT for the slim Pfaffian floor (replaces the literal at
   ! topological_analysis.f90:1663, 1681, 1766). Promoted per ticket 02 of
-  ! `.scratch/bdg-evaluator-pfaffian/`.
+  ! `.scratch/archive/bdg-evaluator-pfaffian/`.
   real(kind=dp), parameter, public :: bdg_default_pfaffian_floor = 1.0e-12_dp
 
   ! Parameters for a single BdG evaluation.

@@ -279,7 +279,7 @@ contains
   ! and reports Z2 = 1 if at least 2 states sit inside. SCOPE: this is a
   ! gap-closure fallback, NOT a topological invariant. The proper Z2 is the
   ! slim Pfaffian (`eval_bdg_pfaffian_witness_csr` in `bdg_observables.f90`,
-  ! wire-rung invariant per `.scratch/bdg-evaluator-pfaffian/` ticket 03).
+  ! wire-rung invariant per `.scratch/archive/bdg-evaluator-pfaffian/` ticket 03).
   ! The BHZ-only suffix signals hardcoded 4-band basis assumption; this
   ! helper is the LAST-RESORT signal after the Pfaffian returns 0.
   ! ==============================================================================
@@ -321,7 +321,7 @@ contains
   ! is a gap-closure FALLBACK heuristic for BHZ wires (hardcoded 4-band basis),
   ! NOT a topological invariant. The proper Z2 is the slim Pfaffian
   ! (`eval_bdg_pfaffian_witness_csr` in `bdg_observables.f90`, wire-rung
-  ! invariant per `.scratch/bdg-evaluator-pfaffian/` ticket 03).
+  ! invariant per `.scratch/archive/bdg-evaluator-pfaffian/` ticket 03).
   !
   ! The wire is assumed to have a 4-band basis per site (BHZ model).
   ! N_sites = size(eigenvectors, 1) / 4.

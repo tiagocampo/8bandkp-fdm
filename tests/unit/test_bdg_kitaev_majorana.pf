@@ -2,7 +2,7 @@ module test_bdg_kitaev_majorana
   ! COVERAGE: observable=Majorana_number geometry=chain material=spinless_p-wave tier=unit
   ! ==============================================================================
   ! Seam-sibling `eval_bdg_kitaev_majorana` — QW+Kitaev rung face of
-  ! `bdg_observables`. Per `.scratch/bdg-evaluator-pfaffian/` ticket 03 —
+  ! `bdg_observables`. Per `.scratch/archive/bdg-evaluator-pfaffian/` ticket 03 —
   ! thin wrapper around `pfaffian.f90:kitaev_majorana_number` that pins the
   ! seam shape consumers (U3 callers) call instead of the helper directly.
   !

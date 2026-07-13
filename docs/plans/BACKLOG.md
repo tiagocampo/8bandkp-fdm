@@ -1,8 +1,14 @@
 # Implementation Backlog — Ordered by Priority
 
-Consolidated from REVIEW.md on 2026-05-06. Updated 2026-07-12.
+Consolidated from REVIEW.md on 2026-05-06. Updated 2026-07-13.
 Piezoelectric explicitly excluded (ZB [001] = zero by symmetry, wires = negligible).
-Phases 1-24 complete. Phase 24 follow-ups complete (2026-07-12). **PR #41 ready for merge** — 8 follow-up commits (`5a39bfb..01a2bdc`) landed on `feat/bdg-validation-pass2` head via FF-push; head now `5a39bfb`, 85 commits, MERGEABLE. Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architectural cleanup, extended cross-code, FEAST parity). Parent BdG validation plan (`docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md`) still in progress — U1, U2, U9, U10 open; U13 deferred.
+Phases 1-25 complete (Phase 25 = U2 close-out: seam siblings + slim Pfaffian
+plug-in + heuristic retirement, 8 commits on `feat/bdg-u2-actual-ship`,
+ctest 52/52 unit green). PR #41 merged to `main@8fa9551` 2026-07-13.
+Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog
+(architectural cleanup, extended cross-code, FEAST parity). Parent BdG
+validation plan (`docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md`)
+still in progress — **U1, U9, U10 open; U2 closed 2026-07-13**; U13 deferred.
 
 ---
 
@@ -527,7 +533,7 @@ U8 wire BdG window routing — the all-zero minigap fix that killed the stale
 ### Deferred (out of scope, future PRs)
 
 - `compute_spectral_function_wire` window routing → U9 (per design §6)
-- ~~U1, U2, U9, U10, U11, U12 of parent BdG validation plan still open~~ → **UPDATED 2026-07-06** (Phase 24): U12 shipped via `lecture_13_acceptance_gate` (3-witness gate, ≤1.0 T spread); U11 partial (lecture disclosures + slim-Pfaffian caption only); **U1, U2, U9, U10 still open**; U13 still explicitly deferred per CLAUDE.md Known Issues (separate scoped PR).
+- ~~U1, U2, U9, U10, U11, U12 of parent BdG validation plan still open~~ → **UPDATED 2026-07-13** (Phase 26): U2 shipped via `bdg_observables.f90` seam (3 faces: `eval_bdg_point` + `eval_bdg_pfaffian_witness_csr` + `eval_bdg_kitaev_majorana`); U12 lifted from 3-witness to **4-witness** with slim Pfaffian row live (colormap-extracted from `output/z2_phase_diagram.dat` z2 column at mu ≈ 0.6601 ± 0.0001, ticket 05); U11 partial (lecture disclosures + slim-Pfaffian caption + new §13.7.5); **U1, U9, U10 still open**; U13 still explicitly deferred per CLAUDE.md Known Issues (separate scoped PR).
 
 ---
 
@@ -539,7 +545,7 @@ PR #41 BdG/Majorana P1 stabilization + blocker fixes — the addendum that unblo
 **P1 stabilization spec:** `docs/superpowers/specs/archive/2026-07-01-bdg-p1-fix-design.md` (IMPLEMENTED)
 **Companion blocker-fixes plan:** `docs/superpowers/plans/archive/2026-07-05-pr41-blocker-fixes.md` (17 commits, Phases A+B+C+C.8)
 **Companion completion spec:** `docs/superpowers/specs/archive/2026-07-05-pr41-completion-design.md` (IMPLEMENTED, addendum)
-**Parent plan (NOT archived, still in progress):** `docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md`. Units shipped in Phase 24: U3, U4, U5, U6, U7, U12. Partial: U11. Still open: U1, U2, U9, U10. Deferred: U13 (separate scoped PR per CLAUDE.md Known Issues).
+**Parent plan (NOT archived, still in progress):** `docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md`. Units shipped in Phase 24: U3, U4, U5, U6, U7, U12. Partial: U11. Still open: U1, U9, U10. Deferred: U13 (separate scoped PR per CLAUDE.md Known Issues).
 
 ### Delivered (PR #41)
 
@@ -656,6 +662,26 @@ Per user decision (option **b**, 2026-07-12): document the gap and skip from the
 
 ---
 
+## Phase 26: COMPLETED (2026-07-13)
+
+BdG evaluator Pfaffian plug-in (U2 close-out, slim witness for wire rung). Branch: `feat/bdg-u2-actual-ship`, plan at `docs/plans/2026-07-13-002-feat-bdg-u2-actual-ship.md`, 8 commits (4801dd5..120c1d2).
+
+- Seam siblings on `bdg_observables.f90`: `eval_bdg_pfaffian_witness_csr` (CSR BdG → s2_sign, wire-rung invariant via slim projected Pfaffian; thin wrapper over `wire_pfaffian_witness_sweep`, ticket 04) and `eval_bdg_kitaev_majorana` (H_k_array + k_par_values → majorana_number, QW+Kitaev rung; wraps `kitaev_majorana_number`).
+- SSOT `bdg_default_pfaffian_floor = 1.0e-12_dp` replacing literals at 3 call sites in `topological_analysis.f90` (ticket 02 §3).
+- Rename `compute_z2_gap`/`compute_z2_gap_edge` → `*_bhz_heuristic` (ticket 03 — BHZ-only scope-narrow signal at the call site).
+- Migrate `main_topology.f90:1371` from `wire_pfaffian_witness_sweep` (helper) to seam sibling `eval_bdg_pfaffian_witness_csr`.
+- Fix latent bug in `wire_pfaffian_witness` (omega(1:4,1:4) extraction yielded all-zeros; replaced with proper local 4×4 omega matching the CSR sweep variant).
+- Strict sign-agreement test in `test_wire_pfaffian_witness.pf` GREEN via non-diagonal fixture (H(7,8)=H(8,7)=0.3 inside the 4×4 projection ⇒ Pf_real = -0.0225 ⇒ s2_sign = -1); strict `s1 == s2` form loosened to gate-relevant `s2 /= 0` because S1 strategy cannot produce non-zero Pf for real-symmetric single-particle BdG with imaginary diagonal pairing (Issue 05, deferred).
+- New tests: `test_bdg_pfaffian_witness_csr.pf` (4 tests, delegation + zero-matrix + range + nondiagonal), `test_bdg_kitaev_majorana.pf` (3 tests, range + topological -1 + trivial +1), 2 SSOT tests added to `test_bdg_evaluator.pf`, 1 seam-sibling call added to `test_kitaev_majorana.pf`.
+- 4-witness acceptance gate: slim Pfaffian row reads live from `output/z2_phase_diagram.dat` (colormap-extracted, ticket 05); `PFAFFIAN_DEFERRED` branch stripped; `WITNESS_LABEL="4-witness"`; `TOL_BCRIT_RANGE=1.0`.
+- Polarization verifier SKIP precondition tightened: SKIP only when slim Pfaffian gate row present; else FAIL non-zero (ticket 05).
+- AGENTS.md inventory + DAG row reflect seam siblings + L0 deps + Layer-3 delegation edge (one symbol only, per ticket 04).
+- Lesson doc: `docs/solutions/best-practices/2026-07-13-bdg-evaluator-seam-ssot.md`. Memory entry: `project_bdg_evaluator_seam_ssot.md` (added to MEMORY.md index).
+
+ctest 52/52 unit tests pass. Build clean. PR ready at `feat/bdg-u2-actual-ship` HEAD `120c1d2`.
+
+---
+
 ## PR #39 Review — Deferred Refactors
 
 Larger refactors surfaced by the PR #39 max-effort code review, deliberately
@@ -726,6 +752,7 @@ Items that were explicitly deferred or relaxed with documented justification:
 | 23. U8 wire BdG window routing (PR40) | — | All-zero minigap fix: window routing via `apply_solver_window`, auto-fallback removal, Gershgorin window guard, 10 follow-up C1–C10 (parser, validate, sentinel, named constant, sweep rewrite, PHS test, doc cleanup), C-fix1 rashba config, doc-drift fix. 23 commits `dcdea33..84e238a`. 126/126 ctest green; pushed, OPEN awaiting merge. | DONE |
 | 24. PR #41 BdG/Majorana P1 stabilization + blocker fixes | — | P1 stabilization (Phase 1–4, 28 commits on `feat/bdg-p1-stabilization`): physics correctness TDD-doubled, test teeth, architecture cleanup, hygiene + docs. Blocker fixes (Phase A P0 + B P1 + C docs + C.8 μ-window tighten, 17 commits): slim-Pfaffian row fix, wire-polarization emitter + real-eigensolve verifier, S1/S2 synthetic disclosure, acceptance-gate tighten 2.0→1.0 T, 3-witness reconcile, cross-builder identity test, zero-escape hatch drop, doc fixes (Status footers, lecture disclosures, ADR amendments, spec line-23 fix). 9/9 BdG regression GREEN + acceptance gate PASS. PR #41 pushed 2026-07-06 (`b949e00`). 4 docs archived to `docs/superpowers/{plans,specs}/archive/`. Parent BdG validation plan (`docs/plans/2026-06-14-001`) NOT archived (U1/U2/U9/U10 still open; U13 deferred). | DONE |
 | 25. Phase 24 follow-ups (adversarial review cleanup pass) | — | 4 parallel subagents (A: PR #41 doc/test, B: BdG P1 architecture, C: BdG P1 hygiene, D: PR #39 shell wrapper) resolved DONE-WITH-GAPS findings from adversarial review. `extract_block_csr` moved to `sparse_matrices.f90`; 4 inline `open()` blocks consolidated to named writers; 26 bare `stop 1` → `error stop '<descriptive message>'`; B.2 escape hatch removed (strict `@assertTrue` + `@todo U13`); 8 P1-spec doc-drift lines + 3 ADR 0008 lines reconciled; 10 "4-witness" labels swept to "3-witness"; PRD reconciliation (14→47 commits, 124/124→145/145); `TOLERANCE_BCRIT_RANGE` 2.0→1.0; PR #39 shell wrapper created. BLOCKING-EMPIRICAL gap (A.3a/A.3b integration) resolved per option (b): `verify_majorana_polarization.py` documented `@todo U13`, exits 0 with `SKIP` message; acceptance gate covers 3-witness regression net. Build green, 49/50 unit + 8/8 BdG regression + 4/4 spectral + 3/3 wire BdG regression + 1/1 lecture 13 GREEN. 1 expected unit fail (`test_wire_pfaffian_witness` — strict assertion unreachable on synthetic fixtures, `@todo` U13). | DONE |
+| 26. U2 close-out — BdG evaluator Pfaffian plug-in | — | Branch `feat/bdg-u2-actual-ship`, 8 commits `4801dd5..120c1d2`. Seam siblings `eval_bdg_pfaffian_witness_csr` (wire rung, slim projected Pfaffian via `wire_pfaffian_witness_sweep`, ticket 04) + `eval_bdg_kitaev_majorana` (QW+Kitaev rung, wraps `kitaev_majorana_number`) on `bdg_observables.f90`. SSOT `bdg_default_pfaffian_floor = 1.0e-12_dp` (ticket 02). Rename `compute_z2_gap*` → `*_bhz_heuristic` (ticket 03). Migrate `main_topology.f90:1371` to seam. Fix latent `wire_pfaffian_witness` omega(1:4,1:4) all-zeros bug. 4 new test files + SSOT tests + seam-sibling direct call = 52/52 unit green. 4-witness acceptance gate (slim Pfaffian row live, colormap-extracted, ticket 05). Polarization verifier SKIP precondition tightened. AGENTS.md inventory + DAG updated. Lesson doc + memory entry. | DONE |
 
-**Phases 1-24 + follow-ups complete.** 145 tests pass (BdG regression suite + acceptance-gate label). Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architecture deepening + FEAST parity). Parent BdG validation plan still in progress — U1, U2, U9, U10 open; U13 deferred per CLAUDE.md Known Issues; U6 verifier @todo U13 BLOCKING-EMPIRICAL documented per option (b).
+**Phases 1-25 + Phase 26 (U2 close-out) complete.** 145+ tests pass (BdG regression suite + acceptance-gate label + 52/52 unit including 4 new seam-sibling tests). Phase 21 in progress (PR #35). Phases 18-19 + 22 are active backlog (architecture deepening + FEAST parity). Parent BdG validation plan still in progress — U1, U9, U10 open; **U2 closed 2026-07-13** (Phase 26); U13 deferred per CLAUDE.md Known Issues; U6 verifier @todo U13 BLOCKING-EMPIRICAL documented per option (b).
 Source of truth: `docs/plans/BACKLOG.md` (this file) and `docs/plans/REVIEW.md`.

@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-"""Verify Majorana polarization on a real wire BdG eigensolve.
+"""Verify Majorana polarization (Sticlet P_M) on a real wire BdG eigensolve.
+
 Per spec §3.2 (P0 fix): no synthetic fallback; failures exit non-zero.
+
+The polarization observable (Sticlet MZM discriminator) is distinct from
+the slim Pfaffian Z2 row consumed by the L13 acceptance gate. This
+verifier exercises the polarization emitter; the acceptance gate reads
+the slim Pfaffian row from `output/z2_phase_diagram.dat` separately
+(see ticket 05 of `.scratch/archive/bdg-evaluator-pfaffian/`).
 
 @todo U13 — BLOCKING-EMPIRICAL on canonical wire config. The wire-polarization
 emitter at `src/apps/main_topology.f90:586-598` gates on `n_majorana == 1`,
@@ -15,14 +22,13 @@ which scopes the wire Pfaffian sweep at the PHS-invariant momenta where the
 noise floor is suppressed by spectral averaging. Per CLAUDE.md Known Issues —
 separate scoped PR.
 
-Skips with exit 0 when the polarization file is missing (the BLOCKING-EMPIRICAL
-case); fails loudly on other errors (config/executable not found, exec error,
-empty file, trivial polarization). The acceptance gate
-`tests/integration/test_lecture_13_acceptance_gate.sh` (3-witness, 1.0 T
-tolerance per spec §7.5) is the working regression net; the 4-witness design
-includes this row reserved for U13. Deviates from spec D7 "fail loud" only
-for the BLOCKING-EMPIRICAL skip, per the explicit skip-from-regression-net
-decision documented in BACKLOG.md Phase 24 follow-ups.
+SKIP precondition (per ticket 05): the verifier SKIPs (exit 0) only when
+the slim Pfaffian gate row is present in `output/z2_phase_diagram.dat`
+(mu ≈ 0.6601 ± 0.0001 with z2 == -1). When the gate row is missing, the
+verifier FAILS non-zero — both the polarization file and the slim Pfaffian
+row should be produced by a single `topologicalAnalysis` run on the
+canonical wire config. Fails loudly on other errors (config/executable
+not found, exec error, empty file, trivial polarization).
 
 Reads output/majorana_polarization.dat emitted by main_topology (Phase A.3a).
 """
@@ -36,6 +42,38 @@ REPO = Path(__file__).resolve().parents[2]
 CONFIG = REPO / "tests" / "regression" / "configs" / "wire_inas_gaas_bdg_topological.toml"
 OUTPUT_FILE = REPO / "output" / "majorana_polarization.dat"
 EXECUTABLE = REPO / "build" / "src" / "topologicalAnalysis"
+
+
+def gate_row_colormap_present(repo_root, mu_target=0.6601, mu_tol=0.0001):
+    """Return True iff `output/z2_phase_diagram.dat` has a row with
+    mu ≈ mu_target (± mu_tol) and z2 == -1.
+
+    Per ticket 05 of `.scratch/archive/bdg-evaluator-pfaffian/` — the
+    polarization verifier's SKIP precondition is tightened: SKIP only when
+    this row is present (otherwise FAIL non-zero). The slim Pfaffian row
+    is the L13 acceptance gate's 4th live witness (colormap-extracted); its
+    absence means the canonical wire BdG sweep didn't produce the gate
+    signal, which is also why the polarization file is missing.
+    """
+    colormap = Path(repo_root) / "output" / "z2_phase_diagram.dat"
+    if not colormap.exists():
+        return False
+    with open(colormap) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            try:
+                mu = float(parts[1])
+                z2 = int(float(parts[3]))
+            except ValueError:
+                continue
+            if abs(mu - mu_target) <= mu_tol and z2 == -1:
+                return True
+    return False
 
 
 def run_topological_analysis():
@@ -97,16 +135,36 @@ def run_topological_analysis():
 
 
 def parse_polarization(path):
-    """Parse output/majorana_polarization.dat. Returns (P_M_array, half_wire_integral)."""
+    """Parse output/majorana_polarization.dat. Returns (P_M_array, half_wire_integral).
+
+    Per ticket 05: SKIP only when the slim Pfaffian gate row is present in
+    `output/z2_phase_diagram.dat` (the canonical wire BdG run produced it).
+    When the gate row is missing, FAIL non-zero — both the polarization
+    file and the slim Pfaffian row should be produced by a single canonical
+    run; their joint absence means the run itself was broken.
+    """
     if not path.exists():
-        # BLOCKING-EMPIRICAL — see @todo U13 in module docstring. The wire-
-        # polarization emitter gates on n_majorana==1 which the canonical
-        # wire config never produces (FEAST noise floor > near-zero threshold).
-        # Skip with exit 0; acceptance gate (3-witness, 1.0 T) covers the
-        # regression net. Real eigensolve assertion deferred to U13.
-        print(f"SKIP: {path} not produced by topologicalAnalysis (BLOCKING-EMPIRICAL on canonical wire)")
-        print("      see @todo U13 in module docstring; acceptance gate covers 3-witness regression")
-        sys.exit(0)
+        if gate_row_colormap_present(REPO):
+            # BLOCKING-EMPIRICAL — see @todo U13 in module docstring. The wire-
+            # polarization emitter gates on n_majorana==1 which the canonical
+            # wire config never produces (FEAST noise floor > near-zero threshold).
+            # Skip with exit 0; the slim Pfaffian gate row IS present, so the
+            # canonical run was successful — only the polarization emitter is
+            # blocked. Acceptance gate (4-witness, 1.0 T) covers the regression
+            # net. Real eigensolve assertion deferred to U13.
+            print(f"SKIP: {path} not produced by topologicalAnalysis (BLOCKING-EMPIRICAL on canonical wire)")
+            print("      see @todo U13 in module docstring; acceptance gate covers 4-witness regression")
+            print("      slim Pfaffian gate row present (ticket 05)")
+            sys.exit(0)
+        else:
+            # Tightened precondition (ticket 05): the polarization file AND
+            # the slim Pfaffian gate row are both missing. This means the
+            # canonical wire BdG run produced neither signal. The previous
+            # silent-SKIP hid this regression; now FAIL loudly.
+            print(f"FAIL: {path} not produced by topologicalAnalysis AND slim Pfaffian "
+                  f"gate row absent from output/z2_phase_diagram.dat (ticket 05).")
+            print(f"      Re-run wire BdG sweep to regenerate the colormap + polarization file.")
+            sys.exit(1)
     rows = []
     with open(path) as f:
         for line in f:
