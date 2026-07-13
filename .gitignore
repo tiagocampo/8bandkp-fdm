@@ -30,6 +30,10 @@ fort.*
 .clinerules
 .codex/
 
+# Agent skills (mattpocock/skills via skills.sh) — tracked via skills-lock.json
+.agents/skills/
+.claude/skills/
+
 # Temporary / scratch
 tmp/
 # Only root-level orphaned plots
