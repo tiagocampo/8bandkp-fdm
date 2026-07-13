@@ -18,6 +18,8 @@ module bdg_observables
   ! ==============================================================================
 
   use definitions, only: dp
+  use sparse_matrices, only: csr_matrix
+  use pfaffian, only: complex_pfaffian, kitaev_majorana_number
 
   implicit none
 
@@ -34,11 +36,16 @@ module bdg_observables
   ! magic numbers live in one place.
   real(kind=dp), parameter, public :: bdg_default_near_zero_frac = 0.001_dp
   real(kind=dp), parameter, public :: bdg_default_min_threshold = 1.0e-10_dp
+  ! Magic-number SSOT for the slim Pfaffian floor (replaces the literal at
+  ! topological_analysis.f90:1663, 1681, 1766). Promoted per ticket 02 of
+  ! `.scratch/bdg-evaluator-pfaffian/`.
+  real(kind=dp), parameter, public :: bdg_default_pfaffian_floor = 1.0e-12_dp
 
   ! Parameters for a single BdG evaluation.
   type :: bdg_eval_params_t
     real(kind=dp) :: delta_0        ! SC gap magnitude (eV) — scale for near-zero band
     real(kind=dp) :: near_zero_frac ! default 0.001; |E| < near_zero_frac*delta_0 counts as near-zero
+    real(kind=dp) :: pfaffian_floor ! default 1.0e-12; |Pf| below this counts as zero (slim witness)
   end type
 
   ! Result of a single BdG evaluation.
@@ -96,8 +103,9 @@ contains
   pure function bdg_eval_params_with_delta(delta_0) result(p)
     real(kind=dp), intent(in) :: delta_0
     type(bdg_eval_params_t) :: p
-    p%delta_0 = delta_0
+    p%delta_0        = delta_0
     p%near_zero_frac = bdg_default_near_zero_frac
+    p%pfaffian_floor = bdg_default_pfaffian_floor
   end function bdg_eval_params_with_delta
 
   ! ==============================================================================
