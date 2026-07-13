@@ -1,0 +1,230 @@
+module test_bdg_pfaffian_witness_csr
+  ! COVERAGE: observable=Pfaffian_witness_csr geometry=wire material=InAs tier=unit
+  ! ==============================================================================
+  ! CSR-aware slim projected Pfaffian witness — seam sibling
+  ! (`bdg_observables%eval_bdg_pfaffian_witness_csr`).
+  !
+  ! Per design decision 2026-07-13 (option b): the seam sibling delegates to
+  ! `wire_pfaffian_witness_sweep` in `topological_analysis.f90`. The CSR-aware
+  ! S2 row-extraction lives in that helper (per ticket 04 — `main_topology.f90
+  ! :1371` migration pattern). The seam shape (3 faces on `bdg_observables`)
+  ! is the SSOT; the implementation lives where the existing test path lives.
+  !
+  ! The `params%pfaffian_floor` field is the SSOT surface for future U13 floor
+  ! plumbing; for now the helper uses its own internal
+  ! `bdg_default_pfaffian_floor` (= 1.0e-12_dp). `params` is therefore unused
+  ! inside the seam sibling at this revision — the test 3 (delegation contract)
+  ! pins the wrapper's byte-identical delegation behavior.
+  ! ==============================================================================
+
+  use funit
+  use iso_fortran_env, only: dp => real64
+  use sparse_matrices, only: csr_matrix, csr_free, csr_build_from_coo
+  use bdg_observables, only: bdg_eval_params_t, bdg_default_pfaffian_floor, &
+       bdg_eval_params_with_delta, eval_bdg_pfaffian_witness_csr
+  use topological_analysis, only: wire_pfaffian_witness_sweep
+
+  implicit none
+
+contains
+
+  @test
+  subroutine test_pfaffian_witness_csr_returns_valid_sign_on_synthetic()
+    ! Spec §4 — slim projected Pfaffian over S2 (bands 7-8). Returns
+    ! s2_sign ∈ {-1, 0, +1}. Pin the range contract.
+    type(csr_matrix) :: H
+    integer :: N
+    type(bdg_eval_params_t) :: p
+    integer :: s2_sign
+
+    call build_synthetic_bdg_csr(H, N, mu=0.0_dp, delta_0=0.001_dp)
+    p = bdg_eval_params_with_delta(0.001_dp)
+
+    s2_sign = eval_bdg_pfaffian_witness_csr(H, N, p)
+
+    @assertTrue(s2_sign >= -1 .and. s2_sign <= 1)
+    call csr_free(H)
+  end subroutine
+
+  @test
+  subroutine test_pfaffian_witness_csr_handles_zero_matrix()
+    ! Defensive: zero spectrum → s2_sign = 0 (helper returns early when
+    ! best_pf <= 1e-12; the projected block is all-zero → Pf = 0).
+    type(csr_matrix) :: H
+    integer :: N
+    type(bdg_eval_params_t) :: p
+    integer :: s2_sign
+
+    call build_zero_bdg_csr(H, N)
+    p = bdg_eval_params_with_delta(0.001_dp)
+
+    s2_sign = eval_bdg_pfaffian_witness_csr(H, N, p)
+
+    @assertEqual(0, s2_sign)
+    call csr_free(H)
+  end subroutine
+
+  @test
+  subroutine test_pfaffian_witness_csr_delegation_contract()
+    ! Per design decision 2026-07-13 (option b): the seam sibling delegates
+    ! to wire_pfaffian_witness_sweep in topological_analysis.f90. The
+    ! params%pfaffian_floor SSOT is wired through in U13 (the floor is the
+    ! SSOT surface; the helper doesn't accept it yet). For now, this test
+    ! pins the delegation contract: same input → same output as the helper.
+    type(csr_matrix) :: H
+    integer :: N
+    type(bdg_eval_params_t) :: p
+    integer :: s2_sign_seam, s2_sign_direct
+
+    call build_nondiagonal_bdg_csr(H, N, mu=0.0_dp, delta_0=0.001_dp)
+    p = bdg_eval_params_with_delta(0.001_dp)
+
+    s2_sign_seam = eval_bdg_pfaffian_witness_csr(H, N, p)
+    call wire_pfaffian_witness_sweep(H, N, s2_sign_direct)
+
+    @assertEqual(s2_sign_direct, s2_sign_seam)
+    call csr_free(H)
+  end subroutine
+
+  @test
+  subroutine test_pfaffian_witness_csr_nondiagonal_nonzero_sign()
+    ! Non-diagonal fixture: intra-conduction-band symmetric off-diagonal
+    ! k.p mixing H(7,8) = H(8,7) = 0.3 inside the 4x4 projected subspace
+    ! breaks the vanishing-Pf diagonal pattern. H(1,7)/H(2,8) coupling
+    ! crosses the single-particle Nambu boundary (bands 1-2 → bands 7-8)
+    ! but DOES NOT appear in the 4x4 projection (rows/cols =
+    ! [7, 8, 15, 16]) — it is retained as a realistic-real-BdG
+    ! construction marker, not as the Pf source.
+    !
+    ! Pf_real = -0.0225 (computed analytically 2026-07-13) ⇒ s2_sign = -1.
+    type(csr_matrix) :: H
+    integer :: N
+    type(bdg_eval_params_t) :: p
+    integer :: s2_sign
+
+    call build_nondiagonal_bdg_csr(H, N, mu=0.0_dp, delta_0=0.001_dp)
+    p = bdg_eval_params_with_delta(0.001_dp)
+
+    s2_sign = eval_bdg_pfaffian_witness_csr(H, N, p)
+
+    @assertTrue(s2_sign /= 0)
+    call csr_free(H)
+  end subroutine
+
+  ! ---------------------------------------------------------------------------
+  ! Fixtures — CSR builders. Build a dense matrix first, then convert to CSR
+  ! via csr_build_from_coo (rows/cols/vals triplets). The brief assumed a
+  ! 2-arg `dense_to_csr` shape, but utils.f90:dense_to_csr_* are private; only
+  ! `dnscsr_z_mkl(nzmax, N, dns, csr)` is public and is 4-arg — a no-fit for
+  ! this synthetic fixture. csr_build_from_coo is the cleanest portable path
+  ! (sorted (row, col) input → CSR).
+  ! ---------------------------------------------------------------------------
+
+  subroutine dense_to_csr_coo(H_dense, H_csr)
+    complex(kind=dp), intent(in), contiguous :: H_dense(:,:)
+    type(csr_matrix), intent(out) :: H_csr
+    integer :: N, nnz, i, j, idx
+    integer, allocatable :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    N = size(H_dense, 1)
+    nnz = 0
+    do j = 1, N
+      do i = 1, N
+        if (abs(H_dense(i, j)) > 0.0_dp) nnz = nnz + 1
+      end do
+    end do
+
+    allocate(rows(nnz), cols(nnz), vals(nnz))
+    idx = 0
+    do i = 1, N
+      do j = 1, N
+        if (abs(H_dense(i, j)) > 0.0_dp) then
+          idx = idx + 1
+          rows(idx) = i
+          cols(idx) = j
+          vals(idx) = H_dense(i, j)
+        end if
+      end do
+    end do
+
+    call csr_build_from_coo(H_csr, N, N, nnz, rows, cols, vals)
+    deallocate(rows, cols, vals)
+  end subroutine dense_to_csr_coo
+
+  subroutine build_synthetic_bdg_csr(H, N, mu, delta_0)
+    type(csr_matrix), intent(out) :: H
+    integer, intent(out) :: N
+    real(kind=dp), intent(in) :: mu, delta_0
+    complex(kind=dp), allocatable :: H_dense(:,:)
+    integer :: i
+
+    N = 16
+    allocate(H_dense(N, N))
+    H_dense = (0.0_dp, 0.0_dp)
+    do i = 1, n
+      H_dense(i, i) = cmplx(mu, 0.0_dp, kind=dp)
+    end do
+    ! Pairing block (iσ_y in bands 7-8): delta_0 between (7,15), (8,16),
+    ! (15,7), (16,8). Antisymmetric: H(7,15) = +i*delta_0, H(15,7) = -i*delta_0.
+    H_dense(7, 15) = cmplx(0.0_dp, delta_0, kind=dp)
+    H_dense(8, 16) = cmplx(0.0_dp, delta_0, kind=dp)
+    H_dense(15, 7) = cmplx(0.0_dp, -delta_0, kind=dp)
+    H_dense(16, 8) = cmplx(0.0_dp, -delta_0, kind=dp)
+    call dense_to_csr_coo(H_dense, H)
+    deallocate(H_dense)
+  end subroutine
+
+  subroutine build_zero_bdg_csr(H, N)
+    type(csr_matrix), intent(out) :: H
+    integer, intent(out) :: N
+    complex(kind=dp), allocatable :: H_dense(:,:)
+
+    N = 16
+    allocate(H_dense(N, N))
+    H_dense = (0.0_dp, 0.0_dp)
+    call dense_to_csr_coo(H_dense, H)
+    deallocate(H_dense)
+  end subroutine
+
+  subroutine build_nondiagonal_bdg_csr(H, N, mu, delta_0)
+    type(csr_matrix), intent(out) :: H
+    integer, intent(out) :: N
+    real(kind=dp), intent(in) :: mu, delta_0
+    complex(kind=dp), allocatable :: H_dense(:,:)
+    integer :: i
+
+    N = 16
+    allocate(H_dense(N, N))
+    H_dense = (0.0_dp, 0.0_dp)
+    do i = 1, n
+      H_dense(i, i) = cmplx(mu, 0.0_dp, kind=dp)
+    end do
+    ! Non-diagonal k.p mixing: bands 1-2 couple into bands 7-8 (crosses
+    ! the Nambu seam at the single-particle level, NOT inside the projected
+    ! 4x4 — see test_pfaffian_witness_csr_nondiagonal_nonzero_sign docstring).
+    H_dense(1, 7)  = cmplx(0.3_dp, 0.0_dp, kind=dp)
+    H_dense(2, 8)  = cmplx(0.3_dp, 0.0_dp, kind=dp)
+    H_dense(7, 1)  = cmplx(0.3_dp, 0.0_dp, kind=dp)
+    H_dense(8, 2)  = cmplx(0.3_dp, 0.0_dp, kind=dp)
+    H_dense(7, 15) = cmplx(0.0_dp, delta_0, kind=dp)
+    H_dense(8, 16) = cmplx(0.0_dp, delta_0, kind=dp)
+    H_dense(15, 7) = cmplx(0.0_dp, -delta_0, kind=dp)
+    H_dense(16, 8) = cmplx(0.0_dp, -delta_0, kind=dp)
+    ! Intra-conduction symmetric off-diagonal k.p mixing (H(7,8) = H(8,7) = 0.3).
+    ! Inside the 4x4 projection (rows/cols = [7, 8, 15, 16]) this contributes
+    ! a_work(1,4) = -0.3*i (from h(1,2)*omega(2,4) = 0.3*(-i)) and
+    ! a_work(2,3) = -0.3*i (from h(2,1)*omega(1,3) = 0.3*(-i)).
+    ! With mu=0 and no hole-block coupling, Asym(1,4) = -0.15*i and
+    ! Asym(2,3) = -0.15*i → Pf_real = Asym(1,4)*Asym(2,3) = -0.0225 < 0
+    ! → s2_sign = -1.
+    ! (NOTE: also adding the symmetric hole-block mirror H(15,16)=H(16,15)=-0.3
+    ! makes Pf = 0 because the (1,4) and (4,1) contributions cancel under
+    ! antisymmetrization. Verified analytically 2026-07-13.)
+    H_dense(7, 8) = cmplx(0.3_dp, 0.0_dp, kind=dp)
+    H_dense(8, 7) = cmplx(0.3_dp, 0.0_dp, kind=dp)
+    call dense_to_csr_coo(H_dense, H)
+    deallocate(H_dense)
+  end subroutine
+
+end module test_bdg_pfaffian_witness_csr

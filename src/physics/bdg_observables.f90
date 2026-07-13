@@ -20,6 +20,7 @@ module bdg_observables
   use definitions, only: dp
   use sparse_matrices, only: csr_matrix
   use pfaffian, only: complex_pfaffian, kitaev_majorana_number
+  use topological_analysis, only: wire_pfaffian_witness_sweep
 
   implicit none
 
@@ -30,6 +31,7 @@ module bdg_observables
   public :: eval_bdg_point
   public :: q_zero_tol
   public :: bdg_eval_params_with_delta
+  public :: eval_bdg_pfaffian_witness_csr
 
   ! Module-level defaults (SSOT for the near-zero literals). Extracted from
   ! inline 0.001_dp / 1.0e-10_dp at the 5 call sites in main_topology so the
@@ -122,5 +124,39 @@ contains
     real(kind=dp) :: t
     t = max(bdg_default_min_threshold, params%near_zero_frac * abs(params%delta_0))
   end function q_zero_tol
+
+  ! ==============================================================================
+  ! CSR BdG slim projected Pfaffian witness — seam sibling (wire-rung invariant).
+  !
+  ! Returns the S2-projected Pfaffian sign (s2_sign ∈ {-1, 0, +1}) of the
+  ! BdG matrix H_bdg_csr. S2 = bands 7-8 per the k.p block table SSOT.
+  !
+  ! Per design decision 2026-07-13 (option b): this seam sibling is a thin
+  ! wrapper that delegates the CSR-aware S2 extraction to
+  ! wire_pfaffian_witness_sweep in topological_analysis.f90. That subroutine
+  ! already operates on CSR input (per ticket 04 — `main_topology.f90:1371`
+  ! migration pattern) and is the existing CSR-aware dense-path witness;
+  ! reusing it keeps the seam thin (single subroutine import) without
+  ! re-implementing the S2 row-extraction for CSR.
+  !
+  ! The params%pfaffian_floor field is the SSOT for future U13 work where
+  ! the floor will be wired through; for now wire_pfaffian_witness_sweep
+  ! uses its own internal floor (`bdg_default_pfaffian_floor`).
+  !
+  ! DEP EDGE: this is the one symbol `bdg_observables` imports from `topological_analysis`
+  ! (Layer 3). Necessary because the helper encapsulates the CSR-aware S2
+  ! indexing logic in one place; documented in src/physics/AGENTS.md Task 3.1.
+  ! ==============================================================================
+  function eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg, params) result(s2_sign)
+    type(csr_matrix), intent(in)        :: H_bdg_csr
+    integer,          intent(in)        :: Nbdg
+    type(bdg_eval_params_t), intent(in) :: params
+    integer                              :: s2_sign
+
+    ! Delegate to the CSR-aware dense-path witness. params is unused for
+    ! now (params%pfaffian_floor plumbing is the U13 follow-up — the SSOT
+    ! exists, the helper doesn't accept it yet).
+    call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg, s2_sign)
+  end function eval_bdg_pfaffian_witness_csr
 
 end module bdg_observables
