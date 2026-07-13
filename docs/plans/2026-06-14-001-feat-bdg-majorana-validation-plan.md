@@ -4,6 +4,48 @@ type: feat
 date: 2026-06-14
 origin: docs/brainstorms/2026-06-14-bdg-majorana-validation-requirements.md
 deepened: 2026-06-14
+updated: 2026-07-12
+status: in-progress
+status_note: |
+  Units shipped: U3 (Pfaffian + Kitaev harness), U4 (hole-block unification via
+  `half_wire_integral=max(L,R)` per ADR 0007), U5 (cross-builder PHS check via
+  `test_bdg_phs_at_finite_bx` + cross-builder identity test in B.1), U6
+  (Sticlet Majorana polarization via wire-polarization emitter in A.3a —
+  emitter landed in `src/apps/main_topology.f90:586-598`, but the
+  `verify_majorana_polarization.py` real-eigensolve verifier is `@todo U13`
+  due to BLOCKING-EMPIRICAL: FEAST noise floor ~1e-5 eV > near-zero
+  threshold ~2e-7 eV → `n_majorana==1` never produced on canonical wire;
+  verifier skips with exit 0 and prints `BLOCKING-EMPIRICAL` notice — the
+  acceptance gate covers the 3-witness regression net), U7 (dense-QW BdG
+  rung certified via block-(2,1) sign fix in Task 1.8), U8 (sparse-wire
+  zero-gap fix shipped in PR #40 / Phase 23), U12 (PASS/FAIL acceptance gate
+  via `lecture_13_acceptance_gate` — current state: **3-witness** at **1.0 T**
+  tolerance, tightened from the 4-witness design / 2.0 T original; the wire
+  Pfaffian row is reserved for U13).
+
+  Partial: U11 (lecture 13 disclosures + slim-Pfaffian caption landed + full
+  4→3 witness label sweep landed in Phase 24 follow-up; full revamp not done).
+
+  Still open: U1 (FEAST falsification probe + ADR-0005 window audit), U2 (pure
+  per-point BdG evaluator — physics seam), U9 (BdG spectral function + LDOS
+  on BdG, not normal-state), U10 (bulk minigap + (B, μ) phase diagram from
+  the Pfaffian).
+
+  Explicitly deferred: U13 (periodic/Bloch BdG construction for the Majorana
+  number; without it the wire Pfaffian sweep evaluates at one point only).
+  Per CLAUDE.md Known Issues — separate scoped PR.
+
+  Post-archive cleanup pass (2026-07-12, documented in BACKLOG.md Phase 24
+  follow-ups): `extract_block_csr` moved from `spectral_bdg_wire.f90` to
+  `sparse_matrices.f90`; 4 inline `open()` blocks in `main_topology.f90`
+  consolidated to the named writers in `outputFunctions.f90`; 26 bare
+  `stop 1` replaced with descriptive `error stop` across 8 src/ files;
+  PR #39 shell wrapper created for `verify_qw_bandstructure_dense_feast`;
+  PR #41 doc-drift cleanup (B.2 escape hatch removal + @todo U13, 8 lines
+  in P1 spec, 3 lines in ADR 0008, "4-witness" label sweep, PRD
+  reconciliation). 4 of 4 fix agents green; 1 expected unit-test failure
+  (`test_wire_pfaffian_witness` — strict assertion unreachable on synthetic
+  fixtures, documented `@todo` U13).
 ---
 
 # BdG/Majorana ground-up validation and observable coverage
