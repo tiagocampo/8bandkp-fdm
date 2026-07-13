@@ -383,7 +383,7 @@ contains
 
     if (N /= size(ldos)) then
       print *, 'ERROR: compute_ldos_csr: ldos size mismatch (N=', N, ', ldos=', size(ldos), ')'
-      stop 1
+      error stop 'compute_ldos_csr: LDOS array size does not match Hamiltonian row count'
     end if
 
     shift = cmplx(E, eta, kind=dp)
@@ -404,7 +404,7 @@ contains
       end do
       if (.not. found_diag) then
         print *, 'ERROR: compute_ldos_csr: missing structural diagonal at row ', r
-        stop 1
+        error stop 'compute_ldos_csr: Hamiltonian CSR is missing the structural diagonal (see row above)'
       end if
     end do
 
@@ -440,7 +440,7 @@ contains
       call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                      a_val, ia, ja, perm, nrhs, iparm, msglvl, &
                      rhs, sol, error_loc)
-      stop 1
+      error stop 'compute_ldos_csr: PARDISO symbolic factorization failed'
     end if
 
     ! Phase 22: Numeric factorization
@@ -454,7 +454,7 @@ contains
       call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                      a_val, ia, ja, perm, nrhs, iparm, msglvl, &
                      rhs, sol, error_loc)
-      stop 1
+      error stop 'compute_ldos_csr: PARDISO numeric factorization failed'
     end if
 
     ! Extract diagonal of G by solving A * x = e_r for each r
@@ -473,7 +473,7 @@ contains
         call pardiso_c(pt, maxfct, mnum, mtype, phase, N, &
                        a_val, ia, ja, perm, nrhs, iparm, msglvl, &
                        rhs, sol, error_loc)
-        stop 1
+        error stop 'compute_ldos_csr: PARDISO solve failed for LDOS column'
       end if
 
       ! LDOS = -(1/pi) * Im[G(r,r)] = -(1/pi) * Im[sol(r)]

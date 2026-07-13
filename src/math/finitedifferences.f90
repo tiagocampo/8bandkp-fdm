@@ -321,7 +321,7 @@ module finitedifferences
         coeffs(hf+5) = 8.0_dp/25200.0_dp
       case default
         print *, 'Error: unsupported FDorder:', FDorder
-        stop 1
+        error stop 'FDcentralCoeffs2nd: unsupported FDorder (must be 2, 4, 6, 8, or 10)'
       end select
 
       coeffs = coeffs / d**2
@@ -385,7 +385,7 @@ module finitedifferences
         coeffs(hf+5) = 1.0_dp/1260.0_dp
       case default
         print *, 'Error: unsupported FDorder:', FDorder
-        stop 1
+        error stop 'FDcentralCoeffs1st: unsupported FDorder (must be 2, 4, 6, 8, or 10)'
       end select
 
       coeffs = coeffs / d

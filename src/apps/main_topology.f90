@@ -907,7 +907,7 @@ contains
 
     ! Always output spatial profile of the lowest-|E| BdG state
     block
-      integer :: i_min_e, iounit_low, status_low
+      integer :: i_min_e
       real(kind=dp) :: min_abs_e
       real(kind=dp), allocatable :: profile_lowest(:)
 
@@ -924,22 +924,8 @@ contains
       xi_val = compute_majorana_profile(H_bdg(:, i_min_e), qw_grid, &
         & zero_tol, Ntot_local, profile_lowest)
 
-      call ensure_output_dir()
-      call get_unit(iounit_low)
-      open(unit=iounit_low, file='output/bdg_lowest_state_profile.dat', &
-           status='replace', action='write', iostat=status_low)
-      if (status_low == 0) then
-        write(iounit_low, '(A)') '# Lowest-|E| BdG state spatial profile'
-        write(iounit_low, '(A,ES16.8)') '# k_par (1/A) = ', k_par_val
-        write(iounit_low, '(A,ES16.8)') '# Energy (eV) = ', eigvals_bdg(i_min_e)
-        write(iounit_low, '(A,ES16.8)') '# xi (AA) = ', xi_val
-        write(iounit_low, '(A)') '# Columns: z (AA), rho'
-        do j = 1, N_local
-          write(iounit_low, '(ES16.8,ES20.12)') qw_grid%z(j), profile_lowest(j)
-        end do
-        close(iounit_low)
-        print *, '  Lowest-state profile written to output/bdg_lowest_state_profile.dat'
-      end if
+      call write_bdg_lowest_state_profile(qw_grid%z(1:N_local), profile_lowest, &
+        & k_par_val, eigvals_bdg(i_min_e), xi_val)
       deallocate(profile_lowest)
     end block
 
@@ -962,7 +948,7 @@ contains
     real(kind=dp), allocatable :: k_arr(:), E_arr(:)
     real(kind=dp), allocatable :: A_kE(:,:)
     real(kind=dp) :: dk, dE
-    integer :: ik, iE, nk, nE, iounit_loc, status_loc
+    integer :: ik, iE, nk, nE
 
     print *, '--- Spectral function A(k, E) ---'
 
@@ -1022,29 +1008,7 @@ contains
     result%spectral_function = A_kE
 
     ! Write output file
-    call ensure_output_dir()
-    call get_unit(iounit_loc)
-    open(unit=iounit_loc, file='output/spectral_function.dat', status='replace', &
-         action='write', iostat=status_loc)
-    if (status_loc /= 0) then
-      print *, 'ERROR: cannot open output/spectral_function.dat'
-      error stop 'cannot open spectral_function.dat'
-    end if
-    write(iounit_loc, '(A)') '# Spectral function A(k, E)'
-    write(iounit_loc, '(A,A)') '# confinement=', trim(cfg_in%confinement)
-    write(iounit_loc, '(A,I0,A,I0)') '# nk=', nk, '  nE=', nE
-    write(iounit_loc, '(A,ES12.4)') '# eta (eV) = ', cfg_in%topo%spectral_eta
-    write(iounit_loc, '(A,2ES16.8)') '# k_grid_min_max (1/A) = ', k_arr(1), k_arr(nk)
-    write(iounit_loc, '(A,2ES16.8)') '# E_grid_min_max (eV) = ', E_arr(1), E_arr(nE)
-    write(iounit_loc, '(A)') '# units: k in 1/A, E in eV, A in 1/eV'
-    write(iounit_loc, '(A)') '# Columns: k (1/A), E (eV), A(k,E)'
-    do ik = 1, nk
-      do iE = 1, nE
-        write(iounit_loc, '(3ES16.8)') k_arr(ik), E_arr(iE), A_kE(ik, iE)
-      end do
-    end do
-    close(iounit_loc)
-    print *, '  Spectral function written to output/spectral_function.dat'
+    call write_spectral_function(cfg_in, k_arr, E_arr, A_kE)
 
     deallocate(k_arr, E_arr, A_kE)
   end subroutine run_spectral
@@ -1142,7 +1106,7 @@ contains
     integer, allocatable :: z2_map_int(:,:)
     real(kind=dp), allocatable :: gap_map_real(:,:), transitions(:,:)
     real(kind=dp) :: gap_threshold
-    integer :: iB, iMu, nB, nMu, iounit_loc, status_loc
+    integer :: iB, iMu, nB, nMu
 
     print *, '--- Z2 gap sweep ---'
 
@@ -1184,42 +1148,9 @@ contains
     end do
 
     ! Write phase diagram output
-    call ensure_output_dir()
-    call get_unit(iounit_loc)
-    open(unit=iounit_loc, file='output/z2_phase_diagram.dat', status='replace', &
-         action='write', iostat=status_loc)
-    if (status_loc /= 0) then
-      print *, 'ERROR: cannot open output/z2_phase_diagram.dat'
-      error stop 'cannot open z2_phase_diagram.dat'
-    end if
-    write(iounit_loc, '(A)') '# Z2 phase diagram'
-    write(iounit_loc, '(A,I0,A,I0)') '# nB=', nB, '  nMu=', nMu
-    write(iounit_loc, '(A)') '# B(T) mu(eV) z2 gap(eV)'
-    do iB = 1, nB
-      do iMu = 1, nMu
-        write(iounit_loc, '(4ES16.8)') &
-          & cfg_in%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * &
-          & (cfg_in%topo%gap_sweep_B_max - cfg_in%topo%gap_sweep_B_min) / real(max(1, nB - 1), kind=dp), &
-          & cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * &
-          & (cfg_in%topo%gap_sweep_mu_max - cfg_in%topo%gap_sweep_mu_min) / real(max(1, nMu - 1), kind=dp), &
-          & result%z2_map(iMu, iB), result%gap_map(iMu, iB)
-      end do
-    end do
-    close(iounit_loc)
-    print *, '  Z2 phase diagram written to output/z2_phase_diagram.dat'
+    call write_z2_phase_diagram(cfg_in, result%z2_map, result%gap_map)
 
-    call get_unit(iounit_loc)
-    open(unit=iounit_loc, file='output/z2_transitions.dat', status='replace', &
-         action='write', iostat=status_loc)
-    if (status_loc /= 0) then
-      print *, 'ERROR: cannot open output/z2_transitions.dat'
-      error stop 'cannot open z2_transitions.dat'
-    end if
-    write(iounit_loc, '(A)') '# B(T) mu(eV)'
-    do iB = 1, size(transitions, 1)
-      write(iounit_loc, '(2ES16.8)') transitions(iB, 1), transitions(iB, 2)
-    end do
-    close(iounit_loc)
+    call write_z2_transitions(transitions)
 
     if (size(transitions, 1) > 0) then
       print *, '  Phase transitions detected: ', size(transitions, 1)

@@ -112,7 +112,7 @@ contains
           print *, "ERROR: Material '", trim(material(i)), &
             & "' has EV=0 and EC=0. Band offsets are required."
           print *, "  Check that the material name is correct and EV/EC are in the database."
-          stop 1
+          error stop "confinement_init: QW material '" // trim(material(i)) // "' has no band offsets (EV=0 and EC=0)"
         end if
       end do
 
@@ -391,7 +391,7 @@ contains
     ! Validate grid
     if (nx < 3 .or. ny < 3) then
       print *, "ERROR: confinementInitialization_2d requires nx>=3, ny>=3"
-      stop 1
+      error stop "confinement_init_2d: wire grid too small (nx and ny must be >= 3)"
     end if
 
     ! ====================================================================
@@ -477,7 +477,7 @@ contains
       if (params(mid)%EV == 0.0_dp .and. params(mid)%EC == 0.0_dp) then
         print *, "ERROR: Region '", trim(regions(mid)%material), &
           "' has EV=0 and EC=0. Band offsets are required."
-        stop 1
+        error stop "confinement_init_2d: wire region '" // trim(regions(mid)%material) // "' has no band offsets (EV=0 and EC=0)"
       end if
 
       ! Band-edge profile
@@ -761,7 +761,7 @@ contains
     if (params(1)%EV == 0.0_dp .and. params(1)%EC == 0.0_dp) then
       print *, "ERROR: Material '", trim(material(1)), &
         & "' has EV=0 and EC=0. Band offsets are required."
-      stop 1
+      error stop "confinement_init: bulk material '" // trim(material(1)) // "' has no band offsets (EV=0 and EC=0)"
     end if
 
     ! Constant profile (single material)

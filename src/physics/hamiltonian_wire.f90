@@ -141,7 +141,7 @@ module hamiltonian_wire
           end do
           if (lo > hi) then
             print *, 'ERROR: build_scatter_map: entry not found for row', row, 'col', col_src
-            stop 1
+            error stop 'build_scatter_map: k.p block column not found in source row (CSR mismatch)'
           end if
         end do
       end do
@@ -481,7 +481,7 @@ module hamiltonian_wire
         ws%coo_capacity = coo_capacity
         if (ws%initialized) then
           print *, 'ERROR: workspace already initialized in slow path'
-          stop 1
+          error stop 'wire_workspace: already initialized in slow path (double-init)'
         end if
         ws%initialized = .true.
       end if
@@ -998,7 +998,7 @@ module hamiltonian_wire
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
             print *, "ERROR: COO capacity exceeded in insert_csr_block_scaled"
-            stop 1
+            error stop "hamiltonian_wire: COO capacity exceeded while inserting scaled CSR block"
           end if
           g_row = alpha_off * N + row
           g_col = beta_off * N + blk%colind(k)
@@ -1203,7 +1203,7 @@ module hamiltonian_wire
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
             print *, "ERROR: COO capacity exceeded in insert_profile_diagonal"
-            stop 1
+            error stop "hamiltonian_wire: COO capacity exceeded while inserting profile diagonal"
           end if
           coo_r(coo_idx) = (band - 1) * N + ii
           coo_c(coo_idx) = (band - 1) * N + ii
@@ -1232,7 +1232,7 @@ module hamiltonian_wire
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
             print *, "ERROR: COO capacity exceeded in insert_strain_coo"
-            stop 1
+            error stop "hamiltonian_wire: COO capacity exceeded while inserting strain blocks"
           end if
 
           g_row = table(e)%row_band * N + ii
@@ -1279,7 +1279,7 @@ module hamiltonian_wire
           coo_idx = coo_idx + 1
           if (coo_idx > coo_cap) then
             print *, "ERROR: COO capacity exceeded in insert_zeeman_coo"
-            stop 1
+            error stop "hamiltonian_wire: COO capacity exceeded while inserting Zeeman diagonal"
           end if
           band_idx = ztable(e)%band_index
           ! band-major: row = band_index * N + site

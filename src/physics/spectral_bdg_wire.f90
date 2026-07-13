@@ -187,55 +187,10 @@ contains
   end subroutine compute_bdg_ldos_nambu
 
   ! ==================================================================
-  ! Extract a diagonal block from a CSR matrix into a smaller CSR.
-  ! Used by compute_bdg_ldos_nambu to split electron/hole sectors.
-  !
-  ! Re-indexes the block (r0..r1, c0..c1) into a (r1-r0+1) x (r1-r0+1)
-  ! matrix. Assumes the block has a structural diagonal at every row
-  ! (matches the BdG CSR property required by compute_ldos_csr).
-  ! ==================================================================
-  subroutine extract_block_csr(H_in, r0, r1, H_out)
-    type(csr_matrix), intent(in) :: H_in
-    integer, intent(in) :: r0, r1
-    type(csr_matrix), intent(out) :: H_out
-
-    integer :: Nr, max_nnz, nnz, i, r_out, c_out, idx, col_local
-    integer, allocatable :: rows_out(:), colind_out(:)
-    complex(kind=dp), allocatable :: values_out(:)
-
-    Nr = r1 - r0 + 1
-    max_nnz = H_in%nnz
-    allocate(rows_out(max_nnz))
-    allocate(colind_out(max_nnz), values_out(max_nnz))
-
-    nnz = 0
-    do r_out = 1, Nr
-      idx = r0 + r_out - 1
-      do i = H_in%rowptr(idx), H_in%rowptr(idx + 1) - 1
-        col_local = H_in%colind(i)
-        if (col_local >= r0 .and. col_local <= r1) then
-          nnz = nnz + 1
-          c_out = col_local - r0 + 1
-          rows_out(nnz) = r_out
-          colind_out(nnz) = c_out
-          values_out(nnz) = H_in%values(i)
-        end if
-      end do
-    end do
-
-    if (nnz == 0) then
-      call csr_build_from_coo(H_out, Nr, Nr, 0, [integer::], [integer::], &
-         & [complex(kind=dp)::])
-    else
-      call csr_build_from_coo(H_out, Nr, Nr, nnz, &
-         & rows_out(1:nnz), colind_out(1:nnz), values_out(1:nnz))
-    end if
-    deallocate(rows_out, colind_out, values_out)
-  end subroutine extract_block_csr
-
-  ! ==================================================================
   ! Local helper: REMOVED — csr_to_dense_work now lives in
   ! sparse_matrices (Task 3.2, ADR 0008 DRY).
+  ! extract_block_csr also moved to sparse_matrices (Task 3.2 follow-up,
+  ! ADR 0008 DRY). Both CSR helpers now live with the CSR type.
   ! ==================================================================
 
 end module spectral_bdg_wire
