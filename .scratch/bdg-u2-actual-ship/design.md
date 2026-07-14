@@ -5,7 +5,7 @@ status: in-progress
 date: 2026-07-13
 owner: Tiago de Campos
 branch: feat/bdg-u2-actual-ship
-closes: PR #42 review findings (13 Standards + 3 Spec) + Codacy 2 high ErrorProne flags
+closes: PR #42 review findings (9 Standards + 3 Spec) + Codacy 2 high ErrorProne flags
 supersedes: nothing (extends PR #42, does not replace it)
 related: .scratch/archive/bdg-evaluator-pfaffian/spec.md (the shipped spec); docs/plans/2026-07-13-002-feat-bdg-u2-actual-ship.md (the original U2 plan)
 ---
@@ -16,7 +16,7 @@ related: .scratch/archive/bdg-evaluator-pfaffian/spec.md (the shipped spec); doc
 
 ## Problem Statement
 
-PR #42 closes U2 of the parent BdG validation plan. The code-review (Standards + Spec axes, parallel sub-agents) surfaced 16 findings clustered into three cost bands. The cross-axis worst — flagged independently by both axes — is `bdg_default_pfaffian_floor`: the SSOT is **declared** at `src/physics/bdg_observables.f90:42`, **advertised** in 5 places (its own docstring, `tests/unit/test_bdg_evaluator.pf`, lecture doc, parent plan status_note, AGENTS.md), but **never consumed** — the 3 hard-coded `1.0e-12_dp` literals at `topological_analysis.f90:1680, :1698, :1781` are unchanged. The seam sibling `eval_bdg_pfaffian_witness_csr` accepts the SSOT in `params` and discards it.
+PR #42 closes U2 of the parent BdG validation plan. The code-review (Standards + Spec axes, parallel sub-agents) surfaced 12 review findings plus 2 Codacy high-severity `ErrorProne` flags (14 total), clustered into three cost bands. The cross-axis worst — flagged independently by both axes — is `bdg_default_pfaffian_floor`: the SSOT is **declared** at `src/physics/bdg_observables.f90:42`, **advertised** in 5 places (its own docstring, `tests/unit/test_bdg_evaluator.pf`, lecture doc, parent plan status_note, AGENTS.md), but **never consumed** — the 3 hard-coded `1.0e-12_dp` literals at `topological_analysis.f90:1680, :1698, :1781` are unchanged. The seam sibling `eval_bdg_pfaffian_witness_csr` accepts the SSOT in `params` and discards it.
 
 A second defect is the User Story 5 contract. Spec says *"Pfaffian sibling's strict assertion to be GREEN today (independent of U13)"* — but the test was loosened to `@assertTrue(s2 /= 0)` rather than restored to `@assertTrue(s1 == s2 .and. s1 /= 0)`. A focused verification subagent reconstructed the omega construction on paper (4×4 `tau_y ⊗ I_2` block-diagonal skew, Pf evaluated via `(A - A^T)/2` symmetrization) and confirmed empirically (200 random BdG seeds + 2 curated fixtures) that **strict `s1 == s2 && s1 /= 0` is structurally unattainable** on the 16×16 synthetic BdG fixtures in U2's scope: the antisymmetric part of `h_proj @ omega_local` vanishes by Nambu particle-hole symmetry (`Asym(1,3) = -i*(E_min + (-E_min))/2 = 0`). To make it GREEN would require a Majorana-basis projection, which is **Issue 05 / U13 territory**, not a U2 omega-fix delta.
 
@@ -38,7 +38,7 @@ Single PR extending PR #42 (no squash — multi-commit TDD pattern, FF-push to m
 6. `tests/unit/test_bdg_pfaffian_witness_csr.pf`: tighten `s2_sign /= 0` → `@assertEqual(-1, s2_sign)` (S7); add 5th test pinning SSOT propagation; add meta-test `test_pfaffian_witness_spec_user_story_5_contract`
 7. `tests/unit/test_wire_pfaffian_witness.pf`: dedup "Pf_real = -0.0225" comment to shared fixture doc (S6)
 8. Triage Codacy's 2 high `ErrorProne` flags (likely `pure`/intent or allocatable; fix as surfaced)
-9. Reconcile unit count across spec / plan / BACKLOG to **52** (matches BACKLOG Phase 26 + new total: 50 baseline + 4 csr + 3 kitaev + 2 SSOT + 1 kitaev-seam-sibling + 2 SSOT-error-stop − 1 dedup = ~52; final count verified in commit)
+9. Reconcile unit count across spec / plan / BACKLOG to a single number; pick 52 (BACKLOG Phase 26's claim) and verify the actual `ctest -L unit` total in this commit. If the actual count differs, use the actual count and re-propagate to the 5 doc sites. Do not derive the count from a sum of "baseline + adds" — confirm against the running ctest.
 10. `.scratch/bdg-u2-actual-ship/HANDOFF.md` (new): documents live state, status footer "IN PROGRESS"
 11. `.scratch/archive/bdg-evaluator-pfaffian/HANDOFF.md` (new): documents archived state, status footer "SHIPPED via PR #42"; points future agents to the live dir
 12. `.scratch/archive/bdg-evaluator-pfaffian/spec.md` User Story 5 amendment
@@ -142,7 +142,7 @@ site:    src/apps/main_topology.f90:1371
 
 ## Testing
 
-**Test count target: 52 unit tests total** (reconcile to this number — drops the 60+ forecast from the U2 plan and matches BACKLOG Phase 26 claim).
+**Test count target: 52 unit tests total** (per BACKLOG Phase 26's claim). The actual `ctest -L unit` total is the source of truth — verify the running count in the verification gate and use that number across all doc sites. If it differs from 52, use the actual count and re-propagate (the prior 50 / 52 / 60+ disagreement is a backfill hazard — the running count is canonical).
 
 **Modified tests:**
 
@@ -164,15 +164,15 @@ site:    src/apps/main_topology.f90:1371
 4. `tests/unit/test_kitaev_majorana.pf`: no change (per existing direct-seam-sibling test from PR #42).
 
 **Test invariants:**
-- 52 unit tests total (reconcile to this number; final count verified in commit)
-- All existing 50 baseline tests from `8fa9551` still pass
+- Final unit-test count = the actual `ctest -L unit` total in the verification gate (do not commit to a specific number in advance)
+- All pre-existing tests still pass
 - New tests pin: SSOT propagation, error-stop on bad SSOT, dedup comment reference, exact sign on canonical fixture
 - Integration gate (`test_lecture_13_acceptance_gate.sh`) untouched; polarization verifier untouched
 
 **Verification gate (run before claiming complete):**
 
 1. `cmake --build build` → no warnings, no errors
-2. `OMP_NUM_THREADS=$(( $(nproc)/4 )) ctest --test-dir build -j4 --output-on-failure` → 52/52 unit PASS
+2. `OMP_NUM_THREADS=$(( $(nproc)/4 )) ctest --test-dir build -j4 --output-on-failure` → all unit tests PASS, record the exact number for back-propagation to doc sites
 3. `ctest --test-dir build -R lecture_13_acceptance_gate` → 4-witness gate green at 1.0 T tolerance
 4. Manual scan: BACKLOG row 82 + parent plan status_note + AGENTS.md row + solution doc + memory entry all carry the amended wording verbatim
 5. Manual scan: `.scratch/bdg-u2-actual-ship/HANDOFF.md` + `.scratch/archive/bdg-evaluator-pfaffian/HANDOFF.md` exist with correct status footers
