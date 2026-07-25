@@ -10,18 +10,20 @@ module test_bdg_pfaffian_witness_csr
   ! :1371` migration pattern). The seam shape (3 faces on `bdg_observables`)
   ! is the SSOT; the implementation lives where the existing test path lives.
   !
-  ! The `params%pfaffian_floor` field is the SSOT surface for future U13 floor
-  ! plumbing; for now the helper uses its own internal
-  ! `bdg_default_pfaffian_floor` (= 1.0e-12_dp). `params` is therefore unused
-  ! inside the seam sibling at this revision — the test 3 (delegation contract)
-  ! pins the wrapper's byte-identical delegation behavior.
-  ! ==============================================================================
+  ! The `params%pfaffian_floor` field is the SSOT surface: the seam sibling
+  ! (`eval_bdg_pfaffian_witness_csr`) threads it through to
+  ! `wire_pfaffian_witness_sweep` (closed PR #42's declared-but-not-consumed
+  ! gap, event .scratch/bdg-u2-actual-ship ticket 01). Test 3 (delegation
+  ! contract) pins byte-identical delegation; SD-4 `test_seam_sibling_consumes_
+  ! pfaffian_floor` pins that the value actually flows into the sign extraction
+  ! (looser custom floor ⇒ s2_sign=0 on a near-zero-Pf fixture).
 
   use funit
   use iso_fortran_env, only: dp => real64
   use sparse_matrices, only: csr_matrix, csr_free, csr_build_from_coo
-  use bdg_observables, only: bdg_eval_params_t, bdg_default_pfaffian_floor, &
-       bdg_eval_params_with_delta, eval_bdg_pfaffian_witness_csr
+  use bdg_observables, only: bdg_default_pfaffian_floor, &
+    & bdg_pfaffian_params_t, bdg_pfaffian_params_with_floor, &
+    & eval_bdg_pfaffian_witness_csr
   use topological_analysis, only: wire_pfaffian_witness_sweep
 
   implicit none
@@ -34,11 +36,11 @@ contains
     ! s2_sign ∈ {-1, 0, +1}. Pin the range contract.
     type(csr_matrix) :: H
     integer :: N
-    type(bdg_eval_params_t) :: p
+    type(bdg_pfaffian_params_t) :: p
     integer :: s2_sign
 
     call build_synthetic_bdg_csr(H, N, mu=0.0_dp, delta_0=0.001_dp)
-    p = bdg_eval_params_with_delta(0.001_dp)
+    p = bdg_pfaffian_params_t()
 
     s2_sign = eval_bdg_pfaffian_witness_csr(H, N, p)
 
@@ -52,11 +54,11 @@ contains
     ! best_pf <= 1e-12; the projected block is all-zero → Pf = 0).
     type(csr_matrix) :: H
     integer :: N
-    type(bdg_eval_params_t) :: p
+    type(bdg_pfaffian_params_t) :: p
     integer :: s2_sign
 
     call build_zero_bdg_csr(H, N)
-    p = bdg_eval_params_with_delta(0.001_dp)
+    p = bdg_pfaffian_params_t()
 
     s2_sign = eval_bdg_pfaffian_witness_csr(H, N, p)
 
@@ -68,19 +70,20 @@ contains
   subroutine test_pfaffian_witness_csr_delegation_contract()
     ! Per design decision 2026-07-13 (option b): the seam sibling delegates
     ! to wire_pfaffian_witness_sweep in topological_analysis.f90. The
-    ! params%pfaffian_floor SSOT is wired through in U13 (the floor is the
-    ! SSOT surface; the helper doesn't accept it yet). For now, this test
-    ! pins the delegation contract: same input → same output as the helper.
+    ! params%pfaffian_floor SSOT is threaded through the helper (ticket 01 of
+    ! .scratch/bdg-u2-actual-ship/ — closes PR #42's declared-but-not-consumed
+    ! gap). This test pins the delegation contract: same floor → same output
+    ! as the helper called directly.
     type(csr_matrix) :: H
     integer :: N
-    type(bdg_eval_params_t) :: p
+    type(bdg_pfaffian_params_t) :: p
     integer :: s2_sign_seam, s2_sign_direct
 
     call build_nondiagonal_bdg_csr(H, N, mu=0.0_dp, delta_0=0.001_dp)
-    p = bdg_eval_params_with_delta(0.001_dp)
+    p = bdg_pfaffian_params_t()
 
     s2_sign_seam = eval_bdg_pfaffian_witness_csr(H, N, p)
-    call wire_pfaffian_witness_sweep(H, N, s2_sign_direct)
+    call wire_pfaffian_witness_sweep(H, N, bdg_default_pfaffian_floor, s2_sign_direct)
 
     @assertEqual(s2_sign_direct, s2_sign_seam)
     call csr_free(H)
@@ -99,16 +102,73 @@ contains
     ! Pf_real = -0.0225 (computed analytically 2026-07-13) ⇒ s2_sign = -1.
     type(csr_matrix) :: H
     integer :: N
-    type(bdg_eval_params_t) :: p
+    type(bdg_pfaffian_params_t) :: p
     integer :: s2_sign
 
     call build_nondiagonal_bdg_csr(H, N, mu=0.0_dp, delta_0=0.001_dp)
-    p = bdg_eval_params_with_delta(0.001_dp)
+    p = bdg_pfaffian_params_t()
 
     s2_sign = eval_bdg_pfaffian_witness_csr(H, N, p)
 
-    @assertTrue(s2_sign /= 0)
+    @assertEqual(-1, s2_sign)
     call csr_free(H)
+  end subroutine
+
+  @test
+  subroutine test_seam_sibling_consumes_pfaffian_floor()
+    ! H1 receipt test (would have caught PR #42's declared-but-not-consumed
+    ! SSOT): the custom pfaffian_floor must flow into the sweep's sign
+    ! extraction, not be discarded. Same canonical nondiagonal fixture
+    ! (Pf_real = -0.0225 ⇒ |Pf| ≈ 0.0225) used twice:
+    !   - default floor (1.0e-12_dp): 0.0225 > floor → nonzero → s2_sign = -1.
+    !   - floor = 1.0_dp: 0.0225 NOT > floor → helper keeps s2_sign = 0.
+    ! The sign flipping from -1 to 0 as the floor crosses |Pf| proves the value
+    ! (not just the argument) drives the helper's branch — pinning both halves
+    ! of the SSOT contract (arg consumed AND value matters).
+    type(csr_matrix) :: H
+    integer :: N
+    type(bdg_pfaffian_params_t) :: p_default, p_loose
+    integer :: s2_sign_default, s2_sign_loose
+
+    call build_nondiagonal_bdg_csr(H, N, mu=0.0_dp, delta_0=0.001_dp)
+
+    p_default = bdg_pfaffian_params_t()
+    s2_sign_default = eval_bdg_pfaffian_witness_csr(H, N, p_default)
+
+    p_loose = bdg_pfaffian_params_with_floor(1.0_dp)
+    s2_sign_loose = eval_bdg_pfaffian_witness_csr(H, N, p_loose)
+
+    @assertEqual(-1, s2_sign_default)
+    @assertEqual(0, s2_sign_loose)
+    call csr_free(H)
+  end subroutine
+
+  @test
+  subroutine test_pfaffian_witness_spec_user_story_5_contract()
+    ! Self-documenting meta-test pinning User Story 5 invariant (name is
+    ! grep-able from future audits — if a later change reintroduces the
+    ! unattainable strict s1 == s2 sign agreement, this test name surfaces
+    ! in the failure log pointing back to User Story 5). U2 accepts s2 ∈
+    ! {-1, 0, +1} with s2 /= 0 on non-diagonal synthetic fixtures as the
+    ! GREEN contract; strict S1+S2 sign agreement is the Majorana-basis
+    ! Pfaffian problem (Issue 05 / U13), out of this map's scope.
+    type(csr_matrix) :: H_zero, H_nd
+    integer :: N_zero, N_nd
+    type(bdg_pfaffian_params_t) :: p
+    integer :: s2_zero, s2_nd
+
+    call build_zero_bdg_csr(H_zero, N_zero)
+    call build_nondiagonal_bdg_csr(H_nd, N_nd, mu=0.0_dp, delta_0=0.001_dp)
+    p = bdg_pfaffian_params_t()
+
+    s2_zero = eval_bdg_pfaffian_witness_csr(H_zero, N_zero, p)
+    s2_nd = eval_bdg_pfaffian_witness_csr(H_nd, N_nd, p)
+
+    @assertTrue(s2_zero >= -1 .and. s2_zero <= 1)
+    @assertTrue(s2_nd >= -1 .and. s2_nd <= 1)
+    @assertEqual(-1, s2_nd)
+    call csr_free(H_zero)
+    call csr_free(H_nd)
   end subroutine
 
   ! ---------------------------------------------------------------------------

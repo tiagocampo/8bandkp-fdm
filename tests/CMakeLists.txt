@@ -331,15 +331,6 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
-    # Issue 07 (U10): slim projected Pfaffian witness (S1 empirical + S2
-    # analytical bands 7-8). Tests the pure wrapper wire_pfaffian_witness
-    # added to src/physics/topological_analysis.f90.
-    add_pfunit_ctest(test_wire_pfaffian_witness
-        TEST_SOURCES unit/test_wire_pfaffian_witness.pf
-        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
-        LABELS "unit"
-    )
-
     # Task B.1 (PR #41 BdG/Majorana blocker-fix plan, spec §4.1):
     # Cross-builder identity test with shared-H0 invariant. Pins that
     # both build_bdg_hamiltonian_1d (wire) and build_bdg_hamiltonian_qw

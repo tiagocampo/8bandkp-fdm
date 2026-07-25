@@ -3,7 +3,7 @@ module test_bdg_evaluator
   use funit
   use definitions, only: dp
   use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, q_zero_tol, &
-       bdg_default_pfaffian_floor, bdg_eval_params_with_delta
+       bdg_default_pfaffian_floor, bdg_pfaffian_params_t
   implicit none
 
 contains
@@ -172,12 +172,13 @@ contains
   end subroutine
 
   @test
-  subroutine test_bdg_eval_params_factory_uses_pfaffian_floor()
-    ! bdg_eval_params_with_delta must default pfaffian_floor to the SSOT
-    ! (per Task 2.1 factory wiring).
-    type(bdg_eval_params_t) :: p
-    p = bdg_eval_params_with_delta(0.001_dp)
-    @assertTrue(p%pfaffian_floor == bdg_default_pfaffian_floor)
+  subroutine test_bdg_pfaffian_params_default_uses_ssot()
+    ! Happy-path placeholder for ticket 01 — bdg_pfaffian_params_t factory
+    ! defaults pfaffian_floor to bdg_default_pfaffian_floor. The full
+    ! error-stop contract (zero/negative floor) lands in ticket 03.
+    type(bdg_pfaffian_params_t) :: p
+    p = bdg_pfaffian_params_t()
+    @assertEqual(bdg_default_pfaffian_floor, p%pfaffian_floor, tolerance=0.0_dp)
   end subroutine
 
 end module test_bdg_evaluator

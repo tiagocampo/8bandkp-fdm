@@ -16,7 +16,8 @@ program topologicalAnalysis
   use topological_analysis
   use bdg_hamiltonian
   use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, &
-    & q_zero_tol, bdg_eval_params_with_delta, eval_bdg_pfaffian_witness_csr
+    & q_zero_tol, bdg_eval_params_with_delta, eval_bdg_pfaffian_witness_csr, &
+    & bdg_pfaffian_params_t, bdg_default_pfaffian_floor
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
   use spectral_bdg_wire, only: compute_spectral_function_bdg_wire, compute_bdg_ldos, compute_bdg_ldos_nambu
@@ -1372,8 +1373,11 @@ contains
       ! Slim Pfaffian witness via seam sibling (per ticket 04 of
       ! .scratch/archive/bdg-evaluator-pfaffian/ — drop-in replacement for
       ! wire_pfaffian_witness_sweep, same s2_sign ∈ {-1, 0, +1} semantics).
+      ! The Pfaffian floor is threaded from the SSOT via bdg_pfaffian_params_t
+      ! (closes PR #42's declared-but-not-consumed gap — ticket 01 of
+      ! .scratch/bdg-u2-actual-ship/).
       s2_sign = eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg_local, &
-                                              bdg_eval_params_with_delta(cfg_in%bdg%delta_0))
+           bdg_pfaffian_params_t(pfaffian_floor = bdg_default_pfaffian_floor))
       if (s2_sign == -1) then
         z2 = 1
       else if (s2_sign == +1) then
