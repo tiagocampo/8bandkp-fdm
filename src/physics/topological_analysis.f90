@@ -16,8 +16,8 @@ module topological_analysis
   public :: compute_berry_curvature_lattice
   public :: compute_hall_conductance
   public :: compute_conductance_kubo
-  public :: compute_z2_gap
-  public :: compute_z2_gap_edge
+  public :: compute_z2_gap_bhz_heuristic
+  public :: compute_z2_gap_edge_bhz_heuristic
   public :: compute_z2_fukane
   public :: compute_z2_fukane_qw
   public :: compute_z2_fukane_qw_result
@@ -37,7 +37,6 @@ module topological_analysis
   public :: is_z2_transition
   public :: gap_closing_detect
   public :: bdg_zero_energy_gap
-  public :: wire_pfaffian_witness
   public :: wire_pfaffian_witness_sweep
 
   integer, parameter :: topo_status_ok = 0
@@ -272,7 +271,18 @@ contains
     sigma_xy = sum(berry_curvature) * dkx * dky / (2.0_dp * pi_dp)
   end function compute_conductance_kubo
 
-  function compute_z2_gap(eigenvalues, gap_threshold) result(z2)
+  ! ==============================================================================
+  ! BHZ-only Z2 gap-closure heuristic (R9).
+  !
+  ! Counts eigenvalues inside the gap window [−gap_threshold, +gap_threshold]
+  ! and reports Z2 = 1 if at least 2 states sit inside. SCOPE: this is a
+  ! gap-closure fallback, NOT a topological invariant. The proper Z2 is the
+  ! slim Pfaffian (`eval_bdg_pfaffian_witness_csr` in `bdg_observables.f90`,
+  ! wire-rung invariant per `.scratch/archive/bdg-evaluator-pfaffian/` ticket 03).
+  ! The BHZ-only suffix signals hardcoded 4-band basis assumption; this
+  ! helper is the LAST-RESORT signal after the Pfaffian returns 0.
+  ! ==============================================================================
+  function compute_z2_gap_bhz_heuristic(eigenvalues, gap_threshold) result(z2)
     implicit none
     real(kind=dp), contiguous, intent(in) :: eigenvalues(:)
     real(kind=dp), intent(in) :: gap_threshold
@@ -299,14 +309,18 @@ contains
     ! states (one per end) within the bulk gap. Divide by 2 to get pair count.
     if (n_in_gap >= 2) z2 = 1
 
-  end function compute_z2_gap
+  end function compute_z2_gap_bhz_heuristic
 
   ! ==============================================================================
-  ! Z2 from gap + spatial localization (R9).
+  ! BHZ-only Z2 from gap + spatial localization (R9).
   !
-  ! Like compute_z2_gap, but additionally checks that near-zero eigenvalues have
-  ! eigenvectors spatially localized at the wire edges.  This distinguishes
-  ! topological edge states from numerical noise.
+  ! Like compute_z2_gap_bhz_heuristic, but additionally checks that near-zero
+  ! eigenvalues have eigenvectors spatially localized at the wire edges. This
+  ! distinguishes topological edge states from numerical noise. SCOPE: this
+  ! is a gap-closure FALLBACK heuristic for BHZ wires (hardcoded 4-band basis),
+  ! NOT a topological invariant. The proper Z2 is the slim Pfaffian
+  ! (`eval_bdg_pfaffian_witness_csr` in `bdg_observables.f90`, wire-rung
+  ! invariant per `.scratch/archive/bdg-evaluator-pfaffian/` ticket 03).
   !
   ! The wire is assumed to have a 4-band basis per site (BHZ model).
   ! N_sites = size(eigenvectors, 1) / 4.
@@ -315,7 +329,7 @@ contains
   ! last 10% of sites.  If this fraction exceeds edge_fraction_threshold
   ! (default 0.5), the state is edge-localized.
   ! ==============================================================================
-  function compute_z2_gap_edge(eigenvalues, eigenvectors, gap_threshold, &
+  function compute_z2_gap_edge_bhz_heuristic(eigenvalues, eigenvectors, gap_threshold, &
                                 edge_fraction_threshold) result(z2)
     implicit none
     real(kind=dp), contiguous, intent(in) :: eigenvalues(:)
@@ -381,7 +395,7 @@ contains
     ! Z2 in 1D: topological phase has at least 2 edge states (one per end)
     if (n_edge_states >= 2) z2 = 1
 
-  end function compute_z2_gap_edge
+  end function compute_z2_gap_edge_bhz_heuristic
 
   function compute_z2_fukane(cfg, profile, kpterms, n_occ) result(z2)
     implicit none
@@ -1623,75 +1637,6 @@ contains
   ! evaluate per-site (single kz=0 evaluation, one site-pair sample). For
   ! synthetic unit tests the matrix is 16 x 16 (N=1 single site).
   ! ============================================================================
-  subroutine wire_pfaffian_witness(H_bdg, n_full, s1_sign, s2_sign)
-    complex(kind=dp), intent(in) :: H_bdg(:,:)
-    integer, intent(in) :: n_full
-    integer, intent(out) :: s1_sign, s2_sign
-
-    integer :: n_sp, half, i
-    complex(kind=dp), allocatable :: omega(:,:), h_proj(:,:), a_work(:,:)
-    complex(kind=dp) :: pf_val
-    real(kind=dp) :: pf_abs
-
-    s1_sign = 0
-    s2_sign = 0
-    if (size(H_bdg, 1) /= n_full .or. size(H_bdg, 2) /= n_full) return
-    if (mod(n_full, 2) /= 0) return
-
-    half = n_full / 2
-    n_sp = half
-    if (n_sp < 2) return
-
-    ! Canonical PHS structure matrix: omega = tau_y (x) I_N for class D BdG
-    ! (same convention as default_kitaev_omega in pfaffian.f90, but kept
-    ! local because pfaffian.f90 is owned by Issue 01 — no edits allowed).
-    allocate(omega(n_full, n_full))
-    omega = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    do i = 1, n_sp
-      omega(i, n_sp + i) = cmplx(0.0_dp, -1.0_dp, kind=dp)
-      omega(n_sp + i, i) = cmplx(0.0_dp,  1.0_dp, kind=dp)
-    end do
-
-    ! --- S1: empirical — project onto 2 lowest single-particle states at kz=0
-    call s1_project(H_bdg, n_full, n_sp, h_proj)
-    if (allocated(h_proj)) then
-      allocate(a_work(4, 4))
-      a_work = matmul(h_proj, omega(1:4, 1:4))
-      pf_val = complex_pfaffian(a_work)
-      deallocate(a_work)
-      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
-      if (pf_abs > 1.0e-12_dp) then
-        if (real(pf_val, kind=dp) > 0.0_dp) then
-          s1_sign = 1
-        else
-          s1_sign = -1
-        end if
-      end if
-      deallocate(h_proj)
-    end if
-
-    ! --- S2: analytical — project onto bands 7-8 (k.p block table SSOT).
-    call s2_project(H_bdg, n_full, h_proj)
-    if (allocated(h_proj)) then
-      allocate(a_work(4, 4))
-      a_work = matmul(h_proj, omega(1:4, 1:4))
-      pf_val = complex_pfaffian(a_work)
-      deallocate(a_work)
-      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
-      if (pf_abs > 1.0e-12_dp) then
-        if (real(pf_val, kind=dp) > 0.0_dp) then
-          s2_sign = 1
-        else
-          s2_sign = -1
-        end if
-      end if
-      deallocate(h_proj)
-    end if
-
-    if (allocated(omega)) deallocate(omega)
-  end subroutine wire_pfaffian_witness
-
-  ! ============================================================================
   ! Wire-sweep overload: S2-only Pfaffian using 4 rows/cols of CSR BdG.
   !
   ! At each (B, mu) grid point, the wire BdG matrix is 16N x 16N in CSR form.
@@ -1702,15 +1647,17 @@ contains
   ! Returns: s2_sign in {-1, 0, +1}. S1 needs full diagonalization, deferred
   ! to U13 (per-issue brief: full wire Pfaffian sweep is U13).
   ! ============================================================================
-  subroutine wire_pfaffian_witness_sweep(H_bdg_csr, n_full, s2_sign)
+  subroutine wire_pfaffian_witness_sweep(H_bdg_csr, n_full, pfaffian_floor, s2_sign)
     type(csr_matrix), intent(in) :: H_bdg_csr
     integer, intent(in) :: n_full
+    real(kind=dp), intent(in) :: pfaffian_floor
     integer, intent(out) :: s2_sign
 
     integer :: n_sp, Nsites, s, i, j, k, idx(4), col, best_s
     complex(kind=dp) :: h_proj(4, 4), a_work(4, 4), pf_val
     real(kind=dp) :: pf_abs, best_pf
     complex(kind=dp) :: omega_local(4, 4)
+    complex(kind=dp) :: h_proj_best(4, 4), pf_val_best
 
     s2_sign = 0
     if (n_full /= H_bdg_csr%nrows .or. n_full /= H_bdg_csr%ncols) return
@@ -1737,6 +1684,10 @@ contains
     best_s = 1
     best_pf = 0.0_dp
     pf_val = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    ! Cache the winning site's projected subblock + Pfaffian so the sign can be
+    ! read from it without re-extracting the same CSR rows a second time.
+    h_proj_best = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    pf_val_best = cmplx(0.0_dp, 0.0_dp, kind=dp)
     do s = 1, Nsites
       idx = [6 * Nsites + s, 7 * Nsites + s, &
         & n_sp + 6 * Nsites + s, n_sp + 7 * Nsites + s]
@@ -1760,27 +1711,16 @@ contains
       if (pf_abs > best_pf) then
         best_pf = pf_abs
         best_s = s
+        h_proj_best = h_proj
+        pf_val_best = pf_val
       end if
     end do
 
-    if (best_pf > 1.0e-12_dp) then
-      ! Recompute the canonical subblock at the selected site for sign extraction.
-      idx = [6 * Nsites + best_s, 7 * Nsites + best_s, &
-        & n_sp + 6 * Nsites + best_s, n_sp + 7 * Nsites + best_s]
-      h_proj = cmplx(0.0_dp, 0.0_dp, kind=dp)
-      do i = 1, 4
-        do k = H_bdg_csr%rowptr(idx(i)), H_bdg_csr%rowptr(idx(i) + 1) - 1
-          col = H_bdg_csr%colind(k)
-          do j = 1, 4
-            if (col == idx(j)) then
-              h_proj(i, j) = H_bdg_csr%values(k)
-              exit
-            end if
-          end do
-        end do
-      end do
-      a_work = matmul(h_proj, omega_local)
-      pf_val = complex_pfaffian(a_work)
+    if (best_pf > pfaffian_floor) then
+      ! Sign extraction reuses the cached winning Pfaffian — no second CSR
+      ! gather / matmul / complex_pfaffian call (DRY: the scan loop above is
+      ! the single site of the 4x4 projection).
+      pf_val = pf_val_best
       if (real(pf_val, kind=dp) > 0.0_dp) then
         s2_sign = 1
       else
@@ -1788,121 +1728,5 @@ contains
       end if
     end if
   end subroutine wire_pfaffian_witness_sweep
-
-  ! Build the 4x4 projected H onto the 2 lowest single-particle states at kz=0.
-  ! Internal helper for wire_pfaffian_witness S1.
-  subroutine s1_project(H_bdg, n_full, n_sp, h_proj)
-    complex(kind=dp), intent(in) :: H_bdg(:,:)
-    integer, intent(in) :: n_full, n_sp
-    complex(kind=dp), allocatable, intent(out) :: h_proj(:,:)
-
-    real(kind=dp), allocatable :: eig(:), rwork_dummy(:)
-    complex(kind=dp), allocatable :: h_sp(:,:), h_sp_copy(:,:), u_sp(:,:), &
-      & u_full(:,:), work_sp(:)
-    real(kind=dp) :: eig_min, eig_second
-    integer :: i_min, i_second, lwork, info, i
-
-    allocate(h_sp(n_sp, n_sp))
-    allocate(h_sp_copy(n_sp, n_sp))
-    allocate(eig(n_sp))
-    do i = 1, n_sp
-      h_sp(i, :) = H_bdg(i, 1:n_sp)
-    end do
-    h_sp_copy = h_sp
-    lwork = max(1, 2 * n_sp - 1)
-    allocate(work_sp(lwork), rwork_dummy(max(1, 3 * n_sp - 2)))
-    call zheev('V', 'U', n_sp, h_sp_copy, n_sp, eig, work_sp, lwork, &
-      & rwork_dummy, info)
-
-    i_min = 1
-    eig_min = abs(eig(1))
-    do i = 2, n_sp
-      if (abs(eig(i)) < eig_min) then
-        eig_min = abs(eig(i))
-        i_min = i
-      end if
-    end do
-    i_second = 1
-    eig_second = huge(0.0_dp)
-    do i = 1, n_sp
-      if (i == i_min) cycle
-      if (abs(eig(i)) < eig_second) then
-        eig_second = abs(eig(i))
-        i_second = i
-      end if
-    end do
-
-    ! Project BdG onto the 4-dim subspace spanned by (u_sp(:,i_min),
-    ! u_sp(:,i_second)) extended to Nambu space (identity on Nambu index).
-    allocate(u_sp(n_sp, 2))
-    u_sp(:, 1) = h_sp_copy(:, i_min)
-    u_sp(:, 2) = h_sp_copy(:, i_second)
-    allocate(u_full(n_full, 4))
-    do i = 1, 2
-      u_full(1:n_sp, i) = u_sp(:, i)
-      u_full(n_sp + 1:n_full, 2 + i) = u_sp(:, i)
-    end do
-    allocate(h_proj(4, 4))
-    h_proj = matmul(conjg(transpose(u_full)), matmul(H_bdg, u_full))
-
-    deallocate(h_sp, h_sp_copy, eig, work_sp, rwork_dummy, u_sp, u_full)
-  end subroutine s1_project
-
-  ! Build the 4x4 projected H onto bands 7-8 (conduction edge per k.p block table
-  ! SSOT). Internal helper for wire_pfaffian_witness S2. No diagonalization.
-  !
-  ! Multi-site band-major scan (per spec §3.1): for each site s = 1..Nsites,
-  ! project the 4x4 subblock at the band-major conduction indices, pick the
-  ! site with maximum |Pf|, and return that subblock as h_proj. For
-  ! Nsites=1 (single-site synthetic fixtures) this collapses to the original
-  ! single-site read; for Nsites>1 it recovers the otherwise-lost spatial
-  ! information.
-  subroutine s2_project(H_bdg, n_full, h_proj)
-    complex(kind=dp), intent(in) :: H_bdg(:,:)
-    integer, intent(in) :: n_full
-    complex(kind=dp), allocatable, intent(out) :: h_proj(:,:)
-
-    integer :: n_sp, Nsites, s, idx(4), best_s
-    complex(kind=dp) :: omega_local(4, 4), a_work(4, 4)
-    complex(kind=dp) :: pf_val
-    real(kind=dp) :: pf_abs, best_pf
-
-    if (allocated(h_proj)) deallocate(h_proj)
-    n_sp = n_full / 2
-    if (n_sp < 8 .or. mod(n_sp, 8) /= 0) then
-      ! Fall back to the original single-site indices for N=1 / malformed
-      ! sizes; preserves legacy 16x16 synthetic-fixture behavior.
-      idx = [7, 8, n_sp + 7, n_sp + 8]
-      allocate(h_proj(4, 4))
-      h_proj = H_bdg(idx, idx)
-      return
-    end if
-    Nsites = n_sp / 8
-
-    omega_local = cmplx(0.0_dp, 0.0_dp, kind=dp)
-    omega_local(1, 3) = cmplx(0.0_dp, -1.0_dp, kind=dp)
-    omega_local(3, 1) = cmplx(0.0_dp,  1.0_dp, kind=dp)
-    omega_local(2, 4) = cmplx(0.0_dp, -1.0_dp, kind=dp)
-    omega_local(4, 2) = cmplx(0.0_dp,  1.0_dp, kind=dp)
-
-    best_s = 1
-    best_pf = 0.0_dp
-    do s = 1, Nsites
-      idx = [6 * Nsites + s, 7 * Nsites + s, &
-        & n_sp + 6 * Nsites + s, n_sp + 7 * Nsites + s]
-      a_work = matmul(H_bdg(idx, idx), omega_local)
-      pf_val = complex_pfaffian(a_work)
-      pf_abs = real(sqrt(pf_val * conjg(pf_val)), kind=dp)
-      if (pf_abs > best_pf) then
-        best_pf = pf_abs
-        best_s = s
-      end if
-    end do
-
-    idx = [6 * Nsites + best_s, 7 * Nsites + best_s, &
-      & n_sp + 6 * Nsites + best_s, n_sp + 7 * Nsites + best_s]
-    allocate(h_proj(4, 4))
-    h_proj = H_bdg(idx, idx)
-  end subroutine s2_project
 
 end module topological_analysis

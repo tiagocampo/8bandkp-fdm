@@ -18,6 +18,9 @@ module bdg_observables
   ! ==============================================================================
 
   use definitions, only: dp
+  use sparse_matrices, only: csr_matrix
+  use pfaffian, only: complex_pfaffian, kitaev_majorana_number
+  use topological_analysis, only: wire_pfaffian_witness_sweep
 
   implicit none
 
@@ -28,17 +31,36 @@ module bdg_observables
   public :: eval_bdg_point
   public :: q_zero_tol
   public :: bdg_eval_params_with_delta
+  public :: eval_bdg_pfaffian_witness_csr
+  public :: eval_bdg_kitaev_majorana
+  public :: bdg_pfaffian_params_t
+  public :: bdg_pfaffian_params_with_floor
 
   ! Module-level defaults (SSOT for the near-zero literals). Extracted from
   ! inline 0.001_dp / 1.0e-10_dp at the 5 call sites in main_topology so the
   ! magic numbers live in one place.
   real(kind=dp), parameter, public :: bdg_default_near_zero_frac = 0.001_dp
   real(kind=dp), parameter, public :: bdg_default_min_threshold = 1.0e-10_dp
+  ! Magic-number SSOT for the slim Pfaffian floor (replaces the literal at
+  ! topological_analysis.f90:1663, 1681, 1766). Promoted per ticket 02 of
+  ! `.scratch/archive/bdg-evaluator-pfaffian/`.
+  real(kind=dp), parameter, public :: bdg_default_pfaffian_floor = 1.0e-12_dp
 
-  ! Parameters for a single BdG evaluation.
+  ! Parameters for a single BdG evaluation (per-point minigap/near-zero-count).
+  ! No Pfaffian floor here — that belongs to the Pfaffian witness, not the
+  ! per-point evaluator (SRP ticket 01 of .scratch/bdg-u2-actual-ship/).
   type :: bdg_eval_params_t
     real(kind=dp) :: delta_0        ! SC gap magnitude (eV) — scale for near-zero band
     real(kind=dp) :: near_zero_frac ! default 0.001; |E| < near_zero_frac*delta_0 counts as near-zero
+  end type
+
+  ! Parameters for the slim projected Pfaffian witness seam sibling. Single
+  ! field — the |Pf| floor below which a Pfaffian counts as zero. Defaulted to
+  ! the SSOT so the bare structure constructor `bdg_pfaffian_params_t()`
+  ! returns the safe default; the factory `bdg_pfaffian_params_with_floor` is
+  ! the validation site (rejects zero/negative floors).
+  type :: bdg_pfaffian_params_t
+    real(kind=dp) :: pfaffian_floor = bdg_default_pfaffian_floor
   end type
 
   ! Result of a single BdG evaluation.
@@ -96,7 +118,7 @@ contains
   pure function bdg_eval_params_with_delta(delta_0) result(p)
     real(kind=dp), intent(in) :: delta_0
     type(bdg_eval_params_t) :: p
-    p%delta_0 = delta_0
+    p%delta_0        = delta_0
     p%near_zero_frac = bdg_default_near_zero_frac
   end function bdg_eval_params_with_delta
 
@@ -114,5 +136,93 @@ contains
     real(kind=dp) :: t
     t = max(bdg_default_min_threshold, params%near_zero_frac * abs(params%delta_0))
   end function q_zero_tol
+
+  ! ==============================================================================
+  ! Factory: build a bdg_pfaffian_params_t validated against the SSOT.
+  ! Optional pfaffian_floor overrides the SSOT; zero/negative floors are a
+  ! fatal config error (error stop) — a non-positive floor would silently
+  ! classify every Pfaffian as non-zero. The bare structure constructor
+  ! `bdg_pfaffian_params_t()` is safe (returns the SSOT) but does NOT validate;
+  ! this factory is the validation site.
+  ! ==============================================================================
+  function bdg_pfaffian_params_with_floor(pfaffian_floor) result(p)
+    real(kind=dp), intent(in), optional :: pfaffian_floor
+    type(bdg_pfaffian_params_t) :: p
+
+    if (present(pfaffian_floor)) then
+      if (pfaffian_floor <= 0.0_dp) then
+        error stop 'bdg_pfaffian_params_t: pfaffian_floor must be > 0'
+      end if
+      p%pfaffian_floor = pfaffian_floor
+    else
+      p%pfaffian_floor = bdg_default_pfaffian_floor
+    end if
+  end function bdg_pfaffian_params_with_floor
+
+  ! ==============================================================================
+  ! CSR BdG slim projected Pfaffian witness — seam sibling (wire-rung invariant).
+  !
+  ! Returns the S2-projected Pfaffian sign (s2_sign ∈ {-1, 0, +1}) of the
+  ! BdG matrix H_bdg_csr. S2 = bands 7-8 per the k.p block table SSOT.
+  !
+  ! User Story 1 seam contract: the wire rung's invariant_flag is the slim
+  ! projected Pfaffian witness, S2 = bands 7-8 (per hamiltonian_blocks.f90
+  ! SSOT). Callers pass the Pfaffian floor via bdg_pfaffian_params_t; this is
+  ! the route the declared-but-not-consumed SSOT at :45 was missing in PR #42.
+  !
+  ! Per design decision 2026-07-13 (option b): this seam sibling is a thin
+  ! wrapper that delegates the CSR-aware S2 extraction to
+  ! wire_pfaffian_witness_sweep in topological_analysis.f90. That subroutine
+  ! already operates on CSR input (per ticket 04 — `main_topology.f90:1371`
+  ! migration pattern) and is the existing CSR-aware dense-path witness;
+  ! reusing it keeps the seam thin (single subroutine import) without
+  ! re-implementing the S2 row-extraction for CSR.
+  !
+  ! Non-pure by intent: the call chain
+  !   eval_bdg_pfaffian_witness_csr → wire_pfaffian_witness_sweep → complex_pfaffian
+  ! ends in src/math/pfaffian.f90, whose helpers are not pure. Making this
+  ! sibling pure would require pure-marking that whole module — a separate PR
+  ! out of this map's scope (ticket 01 sub-decision 3; the L3-import exception
+  ! is the topological_analysis import below, documented in AGENTS.md Task 3.1
+  ! and forwarded to Codacy triage ticket 04).
+  !
+  ! U13 forward reference: the slim S2 witness is the interim stand-in for the
+  ! full Bloch-Pfaffian sweep (S1+S2 strict sign agreement). S1 needs the
+  ! periodic/Bloch BdG construction deferred to U13 — Issue 05 of the parent
+  ! plan. Until then the seam accepts s2 ∈ {-1, 0, +1} with s2 /= 0 on
+  ! non-diagonal synthetic fixtures as the GREEN contract (User Story 5).
+  ! ==============================================================================
+  function eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg, params) result(s2_sign)
+    type(csr_matrix), intent(in)            :: H_bdg_csr
+    integer,          intent(in)            :: Nbdg
+    type(bdg_pfaffian_params_t), intent(in) :: params
+    integer                                  :: s2_sign
+
+    ! Delegate to the CSR-aware dense-path witness, threading the SSOT
+    ! pfaffian_floor through (PR #42's declared-but-not-consumed gap, closed
+    ! by ticket 01 of .scratch/bdg-u2-actual-ship/).
+    call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg, params%pfaffian_floor, s2_sign)
+  end function eval_bdg_pfaffian_witness_csr
+
+  ! ==============================================================================
+  ! QW+Kitaev-rung Majorana number seam sibling.
+  !
+  ! Wraps `pfaffian.f90:kitaev_majorana_number` with a seam-shape signature.
+  ! Returns majorana_number ∈ {-1, 0, +1} (Kitaev 2001, Eq. 26 convention:
+  ! M = -1 topological, M = +1 trivial). The wrapped helper uses the
+  ! Lutchyn-Oreg sign-of-det (ADR 0008 §1) formula via polar decomposition.
+  !
+  ! The advanced `omega_struct` argument is intentionally NOT exposed on the
+  ! seam — consumers that need a custom particle-hole structure (non-canonical
+  ! BdG) can fall back to the helper directly. The canonical Kitaev form
+  ! (`omega = σ_y ⊗ I_N`) is the only one in scope for U2/U3 consumers.
+  ! ==============================================================================
+  function eval_bdg_kitaev_majorana(H_k_array, k_par_values) result(majorana_number)
+    complex(kind=dp), intent(in) :: H_k_array(:,:,:)
+    real(kind=dp),    intent(in) :: k_par_values(:)
+    integer                       :: majorana_number
+
+    majorana_number = kitaev_majorana_number(H_k_array, k_par_values)
+  end function eval_bdg_kitaev_majorana
 
 end module bdg_observables

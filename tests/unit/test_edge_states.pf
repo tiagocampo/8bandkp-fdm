@@ -39,7 +39,7 @@ contains
     @assertTrue(result%converged)
     @assertTrue(allocated(result%eigenvalues))
 
-    z2 = compute_z2_gap(result%eigenvalues, gap_threshold)
+    z2 = compute_z2_gap_bhz_heuristic(result%eigenvalues, gap_threshold)
 
     @assertEqual(0, z2)
 
@@ -75,7 +75,7 @@ contains
     @assertTrue(result%converged)
     @assertTrue(allocated(result%eigenvalues))
 
-    z2 = compute_z2_gap(result%eigenvalues, gap_threshold)
+    z2 = compute_z2_gap_bhz_heuristic(result%eigenvalues, gap_threshold)
 
     @assertEqual(1, z2, message="BHZ topological phase (M=-10 meV, d=70A) should have Z2=1")
 

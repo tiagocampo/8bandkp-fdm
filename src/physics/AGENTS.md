@@ -36,29 +36,34 @@ Called from `src/apps/` and `src/core/simulation_setup.f90`:
 | `charge_density.f90` | `charge_density` | 437 | n(z), p(z) from eigenstates; output in cm⁻³ |
 | `poisson.f90` | `poisson` | 517 | 1D Thomas + 2D PARDISO Poisson; box-integration |
 | `sc_loop.f90` | `sc_loop` | 1089 | SC Schrödinger-Poisson with DIIS; Fermi bisection |
-| `topological_analysis.f90` | `topological_analysis` | ~1740 | Chern, Z2, Berry curvature, Majorana, BHZ wire. Issue 04 (U6): added `majorana_polarization` (pure) + `polarization_result_t` — Sticlet MZM discriminator with `s_σ` derived from KTD7 Nambu ordering per ADR 0007. Issue 07 (U10): added `wire_pfaffian_witness` — slim projected Pfaffian (S1: 2 lowest single-particle states; S2: bands 7-8 per k.p block table SSOT) for the wire BdG rung. |
+| `topological_analysis.f90` | `topological_analysis` | ~1640 | Chern, Z2, Berry curvature, Majorana, BHZ wire. Issue 04 (U6): added `majorana_polarization` (pure) + `polarization_result_t` — Sticlet MZM discriminator with `s_σ` derived from KTD7 Nambu ordering per ADR 0007. Issue 07 (U10): added `wire_pfaffian_witness_sweep` — slim projected Pfaffian (S2: bands 7-8 per k.p block table SSOT) for the wire BdG rung. The dense `wire_pfaffian_witness` (S1+S2) was retired post-PR-#42 after its production call site migrated to the seam sibling `eval_bdg_pfaffian_witness_csr`; only the CSR sweep remains. |
 | `green_functions.f90` | `green_functions` | 501 | Spectral function, Landauer transmission, LDOS |
 | `exciton.f90` | `exciton_solver` | 529 | Variational exciton (Bastard), Sommerfeld enhancement |
 | `scattering.f90` | `scattering_solver` | 442 | LO-phonon Fröhlich intersubband scattering |
 | `spin_projection.f90` | `spin_projection` | 71 | Spin-up/down weights, band character decomposition |
-| `bdg_observables.f90` | `bdg_observables` | 88 | Pure per-point BdG evaluator (`eval_bdg_point`): SC minigap (2·min|E|), near-zero count, heuristic invariant flag. Single seam consumed by run_bdg_wire, run_bdg_qw, eval_wire_bdg_gap (Issue 00). |
+| `bdg_observables.f90` | `bdg_observables` | 184 | Pure per-point BdG evaluator seam with three faces: `eval_bdg_point` (eigenvalues-only → minigap + near-zero count + heuristic invariant_flag ∈ {0,1}); seam siblings `eval_bdg_pfaffian_witness_csr` (CSR BdG → s2_sign ∈ {-1, 0, +1}, wire-rung invariant via slim projected Pfaffian, delegates to `wire_pfaffian_witness_sweep`; takes `bdg_pfaffian_params_t` carrying the floor) and `eval_bdg_kitaev_majorana` (H_k_array + k_par_values → majorana_number ∈ {-1, 0, +1}, QW+Kitaev rung, wraps `kitaev_majorana_number`). SSOT: **`type :: bdg_pfaffian_params_t`** with factory `bdg_pfaffian_params_with_floor` (`error stop` on `pfaffian_floor <= 0`) + named-floor defaults `bdg_default_near_zero_frac = 0.001_dp`, `bdg_default_min_threshold = 1.0e-10_dp`, `bdg_default_pfaffian_floor = 1.0e-12_dp`. User Story 5 verbatim (spec-of-record `.scratch/archive/bdg-evaluator-pfaffian/spec.md:95`; test `test_pfaffian_witness_spec_user_story_5_contract`): "the witness is the S2-projected Pfaffian sign `s2 ∈ {-1, 0, +1}` (range contract pinned by `s2 >= -1 .and. s2 <= 1` and non-zeroness pinned by `s2 /= 0` on a non-diagonal synthetic fixture); full S1+S2 strict sign-agreement is the Majorana-basis Pfaffian problem (Issue 05), deferred." Imports L0 leaves `sparse_matrices` + `pfaffian` + one symbol from L3 `topological_analysis` (the `wire_pfaffian_witness_sweep` delegation target; see DAG). |
 
 ## Dependency DAG
 
 ```
 Layer 0 (leaves):  hamiltonian_blocks, strain_types, strain_pde,
                    magnetic_field, spin_projection, confinement_init,
-                   charge_density, poisson, exciton, scattering
+                   charge_density, poisson, exciton, scattering,
+                   sparse_matrices, pfaffian        [math leaves — imported
+                                                    by bdg_observables for the
+                                                    Pfaffian seam]
 Layer 1:           strain_solver (uses strain_types + strain_pde),
                    hamiltonian_wire, hamiltonian_qw (uses hamiltonian_wire),
                    wire_setup_mod (uses confinement_init + hamiltonian_wire + strain_solver),
-                   optical_spectra, gfactorFunctions
+                   optical_spectra, gfactorFunctions,
+                   bdg_observables (uses sparse_matrices + pfaffian
+                                    + one symbol from topological_analysis)
 Layer 2 (hubs):    hamiltonianConstructor (uses hamiltonian_wire + strain_solver),
                    green_functions (uses wire_setup_mod), sc_loop
 Layer 3:           bdg_hamiltonian, topological_analysis (main_topology app uses wire_setup_mod)
 ```
 
-No cycles. `hamiltonianConstructor` depends on `hamiltonian_wire` (not vice versa). `hamiltonian_qw` depends on `hamiltonian_wire` (imports `insert_main_blocks`, `build_kp_derived_csr_blocks`, etc.). `strain_solver` depends on the two strain leaves (`strain_types` for the result container, `strain_pde` for the wire PDE); the Bir-Pikus / strain-table concern stays in `strain_solver`.
+No cycles. `hamiltonianConstructor` depends on `hamiltonian_wire` (not vice versa). `hamiltonian_qw` depends on `hamiltonian_wire` (imports `insert_main_blocks`, `build_kp_derived_csr_blocks`, etc.). `strain_solver` depends on the two strain leaves (`strain_types` for the result container, `strain_pde` for the wire PDE); the Bir-Pikus / strain-table concern stays in `strain_solver`. **`bdg_observables` imports one symbol from L3 `topological_analysis`** (`wire_pfaffian_witness_sweep`) — a deliberate trade-off per ticket 04 of `.scratch/archive/bdg-evaluator-pfaffian/`: keeping the CSR-aware S2 row-extraction in one place rather than re-implementing it in the seam. Documented inline at `bdg_observables.f90:146-148`.
 
 ## Contracts & Invariants
 

@@ -16,7 +16,8 @@ program topologicalAnalysis
   use topological_analysis
   use bdg_hamiltonian
   use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, &
-    & q_zero_tol, bdg_eval_params_with_delta
+    & q_zero_tol, bdg_eval_params_with_delta, eval_bdg_pfaffian_witness_csr, &
+    & bdg_pfaffian_params_with_floor, bdg_default_pfaffian_floor
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
   use spectral_bdg_wire, only: compute_spectral_function_bdg_wire, compute_bdg_ldos, compute_bdg_ldos_nambu
@@ -366,13 +367,14 @@ contains
           ', gap=', max_gap
 
         ! R8: Detect Z2 from eigenspectrum with spatial localization (R9).
-        ! First try: spectral edge-state detection with compute_z2_gap_edge.
-        ! This checks for eigenvalues inside the bulk gap that are spatially
-        ! localized at the wire edges.
+        ! First try: spectral edge-state detection with
+        ! compute_z2_gap_edge_bhz_heuristic (BHZ-only, gap-closure fallback
+        ! after slim Pfaffian returns 0). This checks for eigenvalues inside
+        ! the bulk gap that are spatially localized at the wire edges.
         gap_threshold_edge = max_gap * 0.5_dp
         gap_threshold_edge = max(gap_threshold_edge, 1.0_dp)
 
-        result%z2_invariant = compute_z2_gap_edge( &
+        result%z2_invariant = compute_z2_gap_edge_bhz_heuristic( &
           & eigvals_local, eigen_res_local%eigenvectors, &
           & gap_threshold_edge, 0.5_dp)
 
@@ -1368,16 +1370,28 @@ contains
     ! +1 = trivial, 0 = gap closure / inconclusive.
     block
       integer :: s2_sign
-      call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg_local, s2_sign)
+      ! Slim Pfaffian witness via seam sibling (per ticket 04 of
+      ! .scratch/archive/bdg-evaluator-pfaffian/ — drop-in replacement for
+      ! wire_pfaffian_witness_sweep, same s2_sign ∈ {-1, 0, +1} semantics).
+      ! The Pfaffian floor is threaded from the SSOT via the validating
+      ! factory bdg_pfaffian_params_with_floor (closes PR #42's declared-but-
+      ! not-consumed gap — ticket 01 of .scratch/bdg-u2-actual-ship/).
+      s2_sign = eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg_local, &
+           bdg_pfaffian_params_with_floor(bdg_default_pfaffian_floor))
       if (s2_sign == -1) then
         z2 = 1
       else if (s2_sign == +1) then
         z2 = 0
       else
-        ! Gap closure: defer to the SC-minigap heuristic as the fallback so
-        ! the colormap still shows a Z2=1 flag exactly when min_gap < threshold.
-        ! This preserves the open->close->reopen pattern at the B_crit point.
-        z2 = compute_z2_gap(eigen_res_local%eigenvalues, gap_threshold)
+        ! Gap closure (s2_sign == 0): the slim Pfaffian cannot decide the phase
+        ! at the transition. Use the SC-minigap BHZ heuristic as an EMPIRICAL
+        ! stand-in (NOT a Pfaffian-derived z2) to preserve the open->close->
+        ! reopen pattern at the B_crit point — the full Bloch-Pfaffian sweep
+        ! (S1+S2 strict sign agreement) that replaces this fallback is deferred
+        ! to U13 (Issue 05 / BLOCKING-EMPIRICAL). Reviewers reading the
+        ! z2_phase_diagram.dat z2 column at the B_crit cell should treat it as
+        ! BHZ-heuristic-decided, not Pfaffian-decided, until U13 lands.
+        z2 = compute_z2_gap_bhz_heuristic(eigen_res_local%eigenvalues, gap_threshold)
       end if
     end block
 

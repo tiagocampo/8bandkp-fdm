@@ -185,6 +185,18 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    add_pfunit_ctest(test_bdg_pfaffian_witness_csr
+        TEST_SOURCES unit/test_bdg_pfaffian_witness_csr.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    add_pfunit_ctest(test_bdg_kitaev_majorana
+        TEST_SOURCES unit/test_bdg_kitaev_majorana.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     # Task 1.5 (P1 BdG stabilization, ADR 0008 §2): cross-module pinning
     # of pairing_sign/pairing_partner as PUBLIC exports from bdg_hamiltonian.
     # RED until Task 1.6 adds them to the public list.
@@ -315,15 +327,6 @@ if(PFUNIT_FOUND)
     # test_majorana_polarization.pf cannot exercise).
     add_pfunit_ctest(test_majorana_polarization_soc
         TEST_SOURCES unit/test_majorana_polarization_soc.pf
-        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
-        LABELS "unit"
-    )
-
-    # Issue 07 (U10): slim projected Pfaffian witness (S1 empirical + S2
-    # analytical bands 7-8). Tests the pure wrapper wire_pfaffian_witness
-    # added to src/physics/topological_analysis.f90.
-    add_pfunit_ctest(test_wire_pfaffian_witness
-        TEST_SOURCES unit/test_wire_pfaffian_witness.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )

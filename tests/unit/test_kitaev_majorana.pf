@@ -21,6 +21,7 @@ module test_kitaev_majorana
   use funit
   use definitions
   use pfaffian
+  use bdg_observables, only: eval_bdg_kitaev_majorana
   implicit none
 
 contains
@@ -289,6 +290,28 @@ contains
     H_arr(:,:,2) = H_kpi
     M = kitaev_majorana_number(H_arr, [0.0_dp, pi])
     @assertEqual(0, M)
+    deallocate(H_k0, H_kpi, H_arr)
+  end subroutine
+
+  @test
+  subroutine test_kitaev_majorana_via_seam_sibling()
+    ! Spec §"Seam shape" — QW+Kitaev rung consumes the seam sibling
+    ! (not pfaffian.f90:kitaev_majorana_number directly). Pin the
+    ! delegation contract: identical result for the same fixture.
+    ! Use the gap-closure case (mu=2t) where the helper returns 0.
+    complex(kind=dp), allocatable :: H_k0(:,:), H_kpi(:,:), H_arr(:,:,:)
+    integer :: M_seam
+    real(kind=dp), parameter :: pi = 3.14159265358979323846_dp
+
+    allocate(H_k0(8, 8))
+    allocate(H_kpi(8, 8))
+    allocate(H_arr(8, 8, 2))
+    call build_kitaev_bdg(H_k0,  4, 1.0_dp, 2.0_dp, 0.5_dp, 0.0_dp)
+    call build_kitaev_bdg(H_kpi, 4, 1.0_dp, 2.0_dp, 0.5_dp, pi)
+    H_arr(:,:,1) = H_k0
+    H_arr(:,:,2) = H_kpi
+    M_seam = eval_bdg_kitaev_majorana(H_arr, [0.0_dp, pi])
+    @assertEqual(0, M_seam)
     deallocate(H_k0, H_kpi, H_arr)
   end subroutine
 

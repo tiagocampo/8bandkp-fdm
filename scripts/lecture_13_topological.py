@@ -217,17 +217,25 @@ def section_wire_rung(exe):
                 avg = {B: sum(g) / len(g) for B, g in by_B.items()}
                 bcrit_2d = min(avg, key=lambda B: avg[B])
 
-    # Per ADR 0008 §4 + spec §5.3: invoke topologicalAnalysis with slimp faffian mode
+    # Per ADR 0008 §4 + spec §5.3: invoke topologicalAnalysis with slim Pfaffian mode
     # over a B-grid, parse output, emit B_crit = argmin |Pf(kz, B)|.
     pf_output = REPO / "output" / "wire_slim_pfaffian_witness.dat"
     if pf_output.exists():
         pf_mags = {}
-        for m in re.finditer(r"B=([\d.+-]+)\s+\|Pf\|=([\d.e+-]+)", pf_output.read_text()):
+        # Character class allows uppercase E (Fortran ES16.8) as well as e.
+        for m in re.finditer(r"B=([\d.eE+-]+)\s+\|Pf\|=([\d.eE+-]+)", pf_output.read_text()):
             pf_mags[float(m.group(1))] = float(m.group(2))
         if pf_mags:
             bcrit_pfaffian = min(pf_mags, key=lambda B: pf_mags[B])
         else:
-            bcrit_pfaffian = bcrit_curve
+            # File present but empty/unmatched — treat identically to the
+            # file-absent case (deferred) rather than silently aliasing to
+            # bcrit_curve. A truncated/whitespace-only producer file must not
+            # inject the wire_curve value as the Pfaffian witness (the gate
+            # would then compare wire_curve to itself and pass trivially).
+            bcrit_pfaffian = None
+            print(f"WARN: {pf_output} present but matched no Pfaffian lines; "
+                  f"bcrit_pfaffian marked 'deferred to U13'")
     else:
         # Per spec §3.3 / D5: wire_pfaffian witness is reserved for U13 (full
         # wire Pfaffian B-sweep with periodic/Bloch BdG). Today no Fortran
@@ -386,7 +394,7 @@ def main():
         bcrit_range, status = render_reconciliation_table(
             qw_bcrit, wire_bcrits, FIG_PATH)
         if status == "FAIL":
-            print(f"FAIL: 3-witness disagreement exceeds tolerance")
+            print("FAIL: 3-witness disagreement exceeds tolerance")
             all_passed = False
     else:
         print("FAIL: missing B_crit values for reconciliation table")
