@@ -976,6 +976,23 @@ set_tests_properties(
     PROPERTIES LABELS "regression" TIMEOUT 900
 )
 
+# U10 T1b: smoke test for the per-B min-|Pf| proxy producer
+# (write_wire_slim_pfaffian_witness in src/io/outputFunctions.f90). Drives
+# the wire_bdg 2D sweep and asserts output/wire_slim_pfaffian_witness.dat
+# exists with nB data rows in the lecture 13 acceptance-gate regex format
+# (B=<val> <space> |Pf|=<val>). Full non-flat assertion is T4.
+add_test(
+    NAME regression_wire_slim_pfaffian_witness
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_slim_pfaffian_witness.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_bdg_topological_2d.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_wire_slim_pfaffian_witness
+    PROPERTIES LABELS "regression" TIMEOUT 900
+)
+
 # A.1 [TDD-red]: slim Pfaffian witness projects onto conduction bands,
 # not band-1 sites. Pins the row-index bug at
 # src/physics/topological_analysis.f90:1722, :1827 (idx=[7,8,...] reads

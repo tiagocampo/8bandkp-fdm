@@ -1107,6 +1107,10 @@ contains
 
     integer, allocatable :: z2_map_int(:,:)
     real(kind=dp), allocatable :: gap_map_real(:,:), transitions(:,:)
+    ! U10 T1b: per-(B, mu) max-site |Pf| magnitude grid (returned by
+    ! compute_wire_bdg_gap_sweep) and its per-B min across the mu-window.
+    real(kind=dp), allocatable :: pf_mag_grid_real(:,:)
+    real(kind=dp), allocatable :: min_pf_abs_per_b(:)
     real(kind=dp) :: gap_threshold
     integer :: iB, iMu, nB, nMu
 
@@ -1127,11 +1131,16 @@ contains
         & cfg_in%topo%gap_sweep_B_min, cfg_in%topo%gap_sweep_B_max, nB, &
         & cfg_in%topo%gap_sweep_mu_min, cfg_in%topo%gap_sweep_mu_max, nMu, &
         & gap_threshold, z2_map_int, gap_map_real, transitions)
+      ! T1b: per-B min-|Pf| proxy is wire-only (per Q4 / Q1 acceptance).
+      allocate(pf_mag_grid_real(0,0))
     case ('qw_fukane')
       call compute_qw_fukane_gap_sweep(cfg_in, profile_in, kpterms_in, gap_threshold, &
         & z2_map_int, gap_map_real, transitions)
+      ! T1b: per-B min-|Pf| proxy is wire-only (per Q4 / Q1 acceptance).
+      allocate(pf_mag_grid_real(0,0))
     case ('wire_bdg')
-      call compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map_int, gap_map_real, transitions)
+      call compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map_int, gap_map_real, &
+        & transitions, pf_mag_grid_real)
     case default
       print *, 'ERROR: unknown topology sweep_model: ', trim(cfg_in%topo%sweep_model)
       error stop 'unknown topology sweep_model'
@@ -1151,6 +1160,22 @@ contains
 
     ! Write phase diagram output
     call write_z2_phase_diagram(cfg_in, result%z2_map, result%gap_map)
+
+    ! U10 T1b: emit the per-B min-|Pf| proxy file (wire-only; per Q4 /
+    ! Q1 acceptance). Folded into min_pf_abs_per_b(iB) across the mu-window
+    ! so the lecture 13 acceptance-gate reader's
+    !   re.finditer(r"B=([\d.eE+-]+)\s+\|Pf\|=([\d.eE+-]+)", ...)
+    ! picks up one |Pf| row per B, with the 4th witness `bcrit_pfaffian`
+    ! emitted approximately (full Bloch-Pfaffian @ PHS-invariant k is U13).
+    if (trim(cfg_in%topo%sweep_model) == 'wire_bdg' .and. size(pf_mag_grid_real, 1) > 0) then
+      if (allocated(min_pf_abs_per_b)) deallocate(min_pf_abs_per_b)
+      allocate(min_pf_abs_per_b(nB))
+      do iB = 1, nB
+        min_pf_abs_per_b(iB) = minval(pf_mag_grid_real(:, iB))
+      end do
+      call write_wire_slim_pfaffian_witness(cfg_in, min_pf_abs_per_b)
+      deallocate(min_pf_abs_per_b)
+    end if
 
     call write_z2_transitions(transitions)
 
@@ -1227,23 +1252,29 @@ contains
       & cfg_in%topo%gap_sweep_mu_max, gap_threshold, transitions)
   end subroutine compute_qw_fukane_gap_sweep
 
-  subroutine compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map, gap_map, transitions)
+  subroutine compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map, gap_map, transitions, pf_mag_grid)
     type(simulation_config), intent(in) :: cfg_in
     real(kind=dp), intent(in) :: gap_threshold
     integer, allocatable, intent(out) :: z2_map(:,:)
     real(kind=dp), allocatable, intent(out) :: gap_map(:,:), transitions(:,:)
+    ! U10 T1b: per-(B, mu) max-site |Pf| magnitude grid (informational; the
+    ! caller folds it into the per-B min-|Pf| proxy file
+    ! output/wire_slim_pfaffian_witness.dat). Returned as (nMu, nB) to
+    ! mirror the z2_map / gap_map layout.
+    real(kind=dp), allocatable, intent(out) :: pf_mag_grid(:,:)
 
     integer :: iB, iMu, nB, nMu
     real(kind=dp) :: dB, dmu, B_val, mu_val
+    real(kind=dp) :: pf_mag
 
     nB = cfg_in%topo%gap_sweep_nB
     nMu = cfg_in%topo%gap_sweep_nMu
     if (nB < 1 .or. nMu < 1) then
-      allocate(z2_map(0,0), gap_map(0,0), transitions(0,2))
+      allocate(z2_map(0,0), gap_map(0,0), transitions(0,2), pf_mag_grid(0,0))
       return
     end if
 
-    allocate(z2_map(nMu, nB), gap_map(nMu, nB))
+    allocate(z2_map(nMu, nB), gap_map(nMu, nB), pf_mag_grid(nMu, nB))
     dB = 0.0_dp
     if (nB > 1) dB = (cfg_in%topo%gap_sweep_B_max - cfg_in%topo%gap_sweep_B_min) / real(nB - 1, kind=dp)
     dmu = 0.0_dp
@@ -1254,7 +1285,8 @@ contains
       do iMu = 1, nMu
         mu_val = cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * dmu
         call eval_wire_bdg_gap(cfg_in, B_val, mu_val, gap_threshold, &
-          & z2_map(iMu, iB), gap_map(iMu, iB))
+          & z2_map(iMu, iB), gap_map(iMu, iB), pf_mag)
+        pf_mag_grid(iMu, iB) = pf_mag
       end do
     end do
 
@@ -1274,11 +1306,17 @@ contains
     call wire_setup_free(wsetup)
   end subroutine bdg_wire_cleanup
 
-  subroutine eval_wire_bdg_gap(cfg_in, B_val, mu_val, gap_threshold, z2, gap)
+  subroutine eval_wire_bdg_gap(cfg_in, B_val, mu_val, gap_threshold, z2, gap, pf_mag)
     type(simulation_config), intent(in) :: cfg_in
     real(kind=dp), intent(in) :: B_val, mu_val, gap_threshold
     integer, intent(out) :: z2
     real(kind=dp), intent(out) :: gap
+    ! U10 T1b: per-call max-site |Pf| magnitude returned through the seam
+    ! sibling (OPTIONAL on the seam-side; required here because the only
+    ! production caller, compute_wire_bdg_gap_sweep, routes it into the
+    ! per-B min-|Pf| proxy file). Forwarded from eval_wire_bdg_gap to
+    ! wire_pfaffian_witness_sweep via eval_bdg_pfaffian_witness_csr.
+    real(kind=dp), intent(out) :: pf_mag
 
     type(simulation_config) :: cfg
     type(wire_setup) :: wsetup
@@ -1377,7 +1415,8 @@ contains
       ! factory bdg_pfaffian_params_with_floor (closes PR #42's declared-but-
       ! not-consumed gap — ticket 01 of .scratch/bdg-u2-actual-ship/).
       s2_sign = eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg_local, &
-           bdg_pfaffian_params_with_floor(bdg_default_pfaffian_floor))
+           bdg_pfaffian_params_with_floor(bdg_default_pfaffian_floor), &
+           pf_mag)
       if (s2_sign == -1) then
         z2 = 1
       else if (s2_sign == +1) then
