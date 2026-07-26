@@ -23,10 +23,12 @@ status_note: |
   mu ≈ 0.6601 ± 0.0001), U7 (dense-QW BdG rung certified via block-(2,1)
   sign fix in Task 1.8), U8 (sparse-wire zero-gap fix shipped in PR #40 /
   Phase 23), U12 (PASS/FAIL acceptance gate via `lecture_13_acceptance_gate`
-  — current state: **4-witness** at **1.0 T** tolerance; the slim Pfaffian
-  row is LIVE, colormap-extracted from `output/z2_phase_diagram.dat` z2
-  column at mu ≈ 0.6601 ± 0.0001, ticket 05 of
-  `.scratch/archive/bdg-evaluator-pfaffian/`).
+  — current state: **3-witness** at **1.0 T** tolerance; the slim Pfaffian
+  row is **RESERVED FOR U13** (colormap-extracted from
+  `output/z2_phase_diagram.dat` z2 column at mu ≈ 0.6601 ± 0.0001, ticket 05
+  of `.scratch/archive/bdg-evaluator-pfaffian/`, but the 4-witness slim-
+  Pfaffian row regression was reverted in `8e9128d`; gate runs 3-witness
+  with `WITNESS_LABEL="3-witness"` per Phase 26 closure block).
 
   Partial: U11 (lecture 13 disclosures + slim-Pfaffian caption + new
   §13.7.5 landed; full revamp not done).
@@ -51,8 +53,8 @@ status_note: |
   (`test_wire_pfaffian_witness` — strict assertion unreachable on synthetic
   fixtures, documented `@todo` U13).
 
-  U2 close-out (2026-07-13, feat/bdg-u2-actual-ship PR #42 — open; follow-up
-  branch still landing review findings): seam siblings
+  U2 close-out (2026-07-13, feat/bdg-u2-actual-ship PR #42 — pending merge;
+  branch HEAD `4986d5a`): seam siblings
   `eval_bdg_pfaffian_witness_csr` (wire-rung slim projected Pfaffian,
   delegates to `wire_pfaffian_witness_sweep` per ticket 04) +
   `eval_bdg_kitaev_majorana` (QW+Kitaev rung, wraps
