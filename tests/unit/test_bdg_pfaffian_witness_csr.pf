@@ -78,14 +78,16 @@ contains
     integer :: N
     type(bdg_pfaffian_params_t) :: p
     integer :: s2_sign_seam, s2_sign_direct
+    real(kind=dp) :: best_pf_abs_seam, best_pf_abs_direct
 
     call build_nondiagonal_bdg_csr(H, N, mu=0.0_dp, delta_0=0.001_dp)
     p = bdg_pfaffian_params_t()
 
-    s2_sign_seam = eval_bdg_pfaffian_witness_csr(H, N, p)
-    call wire_pfaffian_witness_sweep(H, N, bdg_default_pfaffian_floor, s2_sign_direct)
+    s2_sign_seam = eval_bdg_pfaffian_witness_csr(H, N, p, best_pf_abs_seam)
+    call wire_pfaffian_witness_sweep(H, N, bdg_default_pfaffian_floor, s2_sign_direct, best_pf_abs_direct)
 
     @assertEqual(s2_sign_direct, s2_sign_seam)
+    @assertEqual(best_pf_abs_direct, best_pf_abs_seam)
     call csr_free(H)
   end subroutine
 

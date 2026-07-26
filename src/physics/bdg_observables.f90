@@ -192,16 +192,26 @@ contains
   ! plan. Until then the seam accepts s2 ∈ {-1, 0, +1} with s2 /= 0 on
   ! non-diagonal synthetic fixtures as the GREEN contract (User Story 5).
   ! ==============================================================================
-  function eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg, params) result(s2_sign)
+  function eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg, params, best_pf_abs) result(s2_sign)
     type(csr_matrix), intent(in)            :: H_bdg_csr
     integer,          intent(in)            :: Nbdg
     type(bdg_pfaffian_params_t), intent(in) :: params
+    ! Optional `best_pf_abs` out-arg threads the per-(B, mu) max-site |Pf|
+    ! magnitude through the seam for callers accumulating a per-B `min-|Pf|`
+    ! proxy (U10 T1a/T1b); absent -> magnitude discarded, existing API contract
+    ! preserved.
+    real(kind=dp), intent(out), optional    :: best_pf_abs
     integer                                  :: s2_sign
+    real(kind=dp)                           :: best_pf_abs_local
 
     ! Delegate to the CSR-aware dense-path witness, threading the SSOT
     ! pfaffian_floor through (PR #42's declared-but-not-consumed gap, closed
     ! by ticket 01 of .scratch/bdg-u2-actual-ship/).
-    call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg, params%pfaffian_floor, s2_sign)
+    if (present(best_pf_abs)) then
+      call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg, params%pfaffian_floor, s2_sign, best_pf_abs)
+    else
+      call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg, params%pfaffian_floor, s2_sign, best_pf_abs_local)
+    end if
   end function eval_bdg_pfaffian_witness_csr
 
   ! ==============================================================================
