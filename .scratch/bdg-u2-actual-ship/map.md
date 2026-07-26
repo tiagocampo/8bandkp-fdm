@@ -1,7 +1,7 @@
 ---
 title: BdG U2 finish — wire SSOT + tighten tests + retire orphans + amend spec + scratch consolidation
 type: wayfinder:map
-status: in-progress
+status: complete
 date: 2026-07-13
 owner: Tiago de Campos
 branch: feat/bdg-u2-actual-ship
@@ -12,7 +12,7 @@ related: .scratch/archive/bdg-evaluator-pfaffian/spec.md; .scratch/archive/bdg-e
 
 # BdG U2 finish — wayfinder map
 
-**Status:** in-progress (2026-07-13). Eight tickets charted from design.md §"Solution". When this map merges, auto-archives alongside `.scratch/bdg-u2-actual-ship/` → `.scratch/archive/bdg-u2-finish/` per the consolidation decision in `design.md` §"Cross-References".
+**Status:** complete (2026-07-25). Eight tickets resolved. When this map merges, auto-archives alongside `.scratch/bdg-u2-actual-ship/` → `.scratch/archive/bdg-u2-finish/` per the consolidation decision in `design.md` §"Cross-References".
 
 ## Destination
 
@@ -68,8 +68,8 @@ Land a follow-up PR on `feat/bdg-u2-actual-ship` that closes every PR-#42 review
 | [03 — Test contracts: SSOT error-stops + s2_sign tightening + meta-test](issues/03-test-contracts.md) | task (AFK) | 01 ✓ | **closed** (2026-07-13) + **executed** (2026-07-25; 51/51 unit PASS; SD-1 dropped infeasible — pFUnit 4.16 can't catch `error stop`; SD-2 already done by ticket 01; SD-3/4/5/6/7 landed) |
 | [04 — Codacy triage: 2 high `ErrorProne` flags](issues/04-codacy-triage.md) | task (HITL/AFK) | — | **closed** (2026-07-13) + **executed** (2026-07-25; 2x drop-f-prefix applied) |
 | [05 — Verification gate: unit-count + ctest + clean build](issues/05-verification-gate.md) | task (AFK) | 01 ✓, 02 ✓, 03 | **closed** (2026-07-25) + **executed** (2026-07-25; 51/51 unit PASS; 3-witness gate green; unit-count.txt locked) |
-| [06 — Spec amendment: User Story 5 verbatim text](issues/06-spec-amendment.md) | task (AFK) | 03 | pending |
-| [07 — Doc propagation: HANDOFF files + 5 doc sites](issues/07-doc-propagation.md) | task (AFK) | 01 ✓, 03, 05, 06 | pending |
-| [08 — Memory entry: project_bdg_evaluator_seam_ssot follow-on](issues/08-memory-entry.md) | task (AFK) | 06, 07 | pending |
+| [06 — Spec amendment: User Story 5 verbatim text](issues/06-spec-amendment.md) | task (AFK) | 03 | **closed** (2026-07-25) + **executed** (2026-07-25; verbatim design.md §"Spec Amendment" text + meta-test citation landed in `spec.md:95`) |
+| [07 — Doc propagation: HANDOFF files + 5 doc sites](issues/07-doc-propagation.md) | task (AFK) | 01 ✓, 03, 05, 06 | **closed** (2026-07-25) + **executed** (2026-07-25; re-charted then executed — premise correction: 51 not 52, 3-witness not 4-witness live, PR #42 open not shipped; 5 doc sites carry User Story 5 verbatim; 2 HANDOFF files created as pointer docs) |
+| [08 — Memory entry: project_bdg_evaluator_seam_ssot follow-on](issues/08-memory-entry.md) | task (AFK) | 06, 07 | **closed** (2026-07-25) + **executed** (2026-07-25; updated existing memory in place — S2-only/3-witness/`bdg_pfaffian_params_t`/User Story 5/51 count; MEMORY.md hook refreshed) |
 
-Frontier (open, unblocked, unclaimed, lowest number first): **06** (01✓executed, 02✓executed, 03✓executed, 04✓executed, 05✓executed). Ticket 06 (spec amendment) is now unblocked: write the verbatim User Story 5 text to the spec. Ticket 07 (doc propagation) follows 06. Ticket 08 (memory entry) follows 06+07.
+Frontier (open, unblocked, unclaimed, lowest number first): **empty** — all eight tickets executed (01✓, 02✓, 03✓, 04✓, 05✓, 06✓executed-25jul, 07✓executed-25jul, 08✓executed-25jul). Remaining step is PR #42 close-out (review sign-off + umbrella-merge of `feat/bdg-u2-actual-ship` — not a ticket; tracked on the PR timeline), then this map auto-archives to `.scratch/archive/bdg-u2-finish/`.

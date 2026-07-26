@@ -1,10 +1,38 @@
-**Status**: pending — ticket 07 of `.scratch/bdg-u2-actual-ship/`.
+**Status**: closed (2026-07-25) — ticket 07 of `.scratch/bdg-u2-actual-ship/`.
 
 Type: task (AFK)
-Status: pending
+Status: closed
 Claimed-by: —
 Blocked by: 01, 03, 05, 06
-Related: design.md §"Solution" items 10, 11, 13; §"Components" rows 9-13; §"Cross-References"
+Executed: 2026-07-25 (wayfinder work-through)
+
+## Execution (2026-07-25)
+
+Re-charted-then-executed after the premise-correction block above. Files touched:
+
+| File | Change |
+|---|---|
+| `docs/plans/BACKLOG.md` | Preamble (L5-11): 52→51, "U2 closed"→"PR #42 open follow-up". Phase-26 detailed block (L670-682): SSOT type framing, orphan retirement, dense-test retirement, 3-witness gate revert, 51 count, HEAD `8e9128d`. Appended User Story 5 verbatim paragraph (L684). Phase-26 table row (L758): IN PROGRESS, 3-witness, 51, `bdg_pfaffian_params_t`. Trailer (L760): 51 + 6 seam-sibling tests + "PR #42 open". |
+| `docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md` | U2 close-out block (L54-85): corrected framing (open PR #42, SSOT type, orphan retirement, 3-witness revert, 51 count) + embedded User Story 5 verbatim paragraph with meta-test citation. |
+| `src/physics/AGENTS.md` | `bdg_observables.f90` row (L44): named `type :: bdg_pfaffian_params_t` + factory + User Story 5 contract fragment (range + non-zeroness + Issue-05 carve-out) byte-identical to spec. (DAG block already documented the L3-symbol trade-off; no DAG change needed beyond the row.) |
+| `docs/solutions/best-practices/2026-07-13-bdg-evaluator-seam-ssot.md` | "Problem"/"Solution"/"Why"/"Latent bug"/"Strict S1+S2"/"When to use"/"Source" sections reconciled: S2-only (not S1⊗S2), orphan retirement, `bdg_pfaffian_params_t` SSOT, 3-witness (4th reserved for U13), dense-variant line ranges marked retired, User Story 5 verbatim + meta-test + 51 count. |
+| `.scratch/bdg-u2-actual-ship/HANDOFF.md` (new) | Live-state handoff: IN PROGRESS footer, PR #42 open, frontier, locked decisions table, standing preferences, files-to-read. |
+| `.scratch/archive/bdg-evaluator-pfaffian/HANDOFF.md` (new) | Archived-state handoff: SHIPPED-via-PR-#42 footer (spec-of-record only; points to live dir for follow-up). |
+
+**Correction principle applied (do NOT re-litigate):** HANDOFF files are *pointer* docs and do NOT embed the User Story 5 verbatim paragraph (DRY — a 7th verbatim copy would itself be a drift hazard; the U10 HANDOFF template they follow doesn't embed prose either). The "5 propagation sites" in SD-1 = the 5 doc files; the 2 HANDOFFs are SD-3/SD-4 status/footer docs that *point* at the spec + solutions doc. So the verbatim lives in exactly 6 places (spec + 5 doc sites) and is greppable via the range-contract fragment `s2 >= -1 .and. s2 <= 1`.
+
+**Out-of-scope honored:** Historical Phase-25 row (PR #41 "1 expected unit fail") left as accurate history — doc-drift prevention fixes *current* state, not retroactive history. U10 HANDOFF locked-decisions table noted as having its own stale references (4-witness, dense `wire_pfaffian_witness`) but updating U10's handoff is U10 scope (this map's ticket-07 §"Out of scope"), not here.
+
+## Premise correction (2026-07-25, before execution)
+
+The frozen sub-decisions below were authored 2026-07-13 against then-current state. Since then three factual deltas landed that the frozen SDs would re-introduce as drift if executed verbatim. Locked corrections (do NOT re-litigate):
+
+- **Unit count = 51, NOT 52.** `unit-count.txt` = 51; `ctest-final.log` footer = "100% tests passed, 0 tests failed out of 51". The frozen SD-2 ("replace 50/52/60+ disagreement with the canonical count") — the canonical count is **51**. BACKLOG rows 7/681/755/757 and parent-plan line 63 currently say "52/52" and must be overwritten to 51. The 52→51 drop was the ctest-target-vs-`@test`-subroutines count after deleting `test_wire_pfaffian_witness.pf` (map ticket-02 execution note; `feedback_ctest_counts_targets` memory).
+- **Acceptance gate = 3-witness, NOT 4-witness live.** Commit 8e9128d (ticket-05 regression fix) reverted the 4th slim-Pfaffian row back to a 3-witness gate — the slim Pfaffian site-by-site sweep is an interim diagnostic reserved for the U13 Bloch-Pfaffian (map "Out of scope"; `project_bdg_allzero_mu_misparam` / handoff SD). The frozen SD-3/SD-4 framing ("4-witness design") must NOT be propagated to BACKLOG row 755 (currently says "4-witness acceptance gate (slim Pfaffian row live, colormap-extracted, ticket 05)") — correct it to "3-witness acceptance gate (slim-Pfaffian row reserved for U13)". The lecture-script comment strings that say "4-witness design; slim Pfaffian row reserved" are intentional design-aspiration markers and stay.
+- **Status = PR #42 OPEN + follow-up branch, NOT "SHIPPED via PR #42".** PR #42 is still open (per `project_bdg_u2_ship_pr42`); `feat/bdg-u2-actual-ship` follow-up branch has not merged. The frozen SD-4 HANDOFF footer "SHIPPED via PR #42 (2026-07-13)" is itself drift as of today. The archived HANDOFF footer reads "spec-of-record shipped via PR #42 (2026-07-13); follow-up ticket work on `feat/bdg-u2-actual-ship` (PR #42 still open)".
+- **AGENTS.md SD-5 is outstanding, not already-done.** `src/physics/AGENTS.md:39,44` cite the `bdg_default_*` constants and the seam-sibling delegations + the cross-level `wire_pfaffian_witness_sweep` trade-off, but do NOT name the `bdg_pfaffian_params_t` type. SD-5's "name `bdg_pfaffian_params_t` in inventory row + DAG" is real outstanding work. (Type exists at `bdg_observables.f90:36,62`.)
+
+These corrections follow the locked-decision convention of this map (corrections recorded IN the ticket, not silently executed) and the `codebase-doc-drift-prevention` discipline.
 
 # 07 — Doc propagation: HANDOFF files + 5 doc sites
 

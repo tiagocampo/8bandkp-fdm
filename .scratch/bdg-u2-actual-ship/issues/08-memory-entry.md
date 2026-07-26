@@ -1,9 +1,22 @@
-**Status**: pending — ticket 08 of `.scratch/bdg-u2-actual-ship/`.
+**Status**: closed (2026-07-25) — ticket 08 of `.scratch/bdg-u2-actual-ship/`.
 
 Type: task (AFK)
-Status: pending
+Status: closed
 Claimed-by: —
 Blocked by: 06, 07
+Executed: 2026-07-25 (wayfinder work-through)
+
+## Execution (2026-07-25)
+
+Updated-in-place per the memory-deduplication guidance (avoiding forks; `feedback_style` preference for single-fact files). Files touched:
+
+- `/home/tiago/.claude/projects/-data-8bandkp-fdm/memory/project_bdg_evaluator_seam_ssot.md` (updated): corrected S1⊗S2 → S2-only, 4-witness-live → 3-witness-reserved-U13, detailed dense retirement, named `bdg_pfaffian_params_t` type + factory, added the 51 unit count, and quoted the User Story 5 contract verbatim.
+- `/home/tiago/.claude/projects/-data-8bandkp-fdm/memory/MEMORY.md` (updated): shifted hook description at line 27 from "U2 closed 2026-07-13" to "U2 finish follow-up (PR #42 open, branch feat/bdg-u2-actual-ship); bdg_observables.f90 3-face seam; bdg_pfaffian_params_t SSOT; 3-witness gate; User Story 5 contract; 51 unit green".
+
+Verification details:
+- Index contains exactly the one entry pointing to the corrected file.
+- Memory content carries the verbatim spec range contract fragment (`s2 >= -1 .and. s2 <= 1`).
+- Links to related memories (`[[ctest-counts-targets]]`, `[[codebase-doc-drift-prevention]]`) are active.
 Related: design.md §"Solution" item 14; §"Cross-References"
 
 # 08 — Memory entry: project_bdg_evaluator_seam_ssot follow-on

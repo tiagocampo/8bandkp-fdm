@@ -1,9 +1,21 @@
-**Status**: pending — ticket 06 of `.scratch/bdg-u2-actual-ship/`.
+**Status**: closed (2026-07-25) — ticket 06 of `.scratch/bdg-u2-actual-ship/`.
 
 Type: task (AFK)
-Status: pending
+Status: closed
 Claimed-by: —
 Blocked by: 03
+Executed: 2026-07-25 (wayfinder work-through)
+
+## Execution (2026-07-25)
+
+- **SD-1 line range:** confirmed `spec.md:95-99` held the *old* "strict assertion to be GREEN" wording (the wording that predates the discovered invariant). Replaced by content (line numbers drifted by ±0 since the spec is in the archived, gitignored dir — located by content match on "5. As a researcher running cross-builder").
+- **SD-2 verbatim preservation:** the new paragraph is byte-identical to `design.md` §"Spec Amendment" line 185 (the blockquote body), appended with the SD-3 citation.
+- **SD-3 cross-reference:** appended `(test: \`test_pfaffian_witness_spec_user_story_5_contract\` in \`tests/unit/test_bdg_pfaffian_witness_csr.pf\`)`. Meta-test existence confirmed via `grep` — present at `test_bdg_pfaffian_witness_csr.pf:147` (landed by ticket 03).
+- **SD-4 sibling stories:** stories 1–4 and 6–8 untouched; only the User Story 5 paragraph changed.
+
+**Files touched:** `.scratch/archive/bdg-evaluator-pfaffian/spec.md` (User Story 5 paragraph only).
+
+**Note:** tracking is split. `.scratch/bdg-u2-actual-ship/` (the *live* dir — map, tickets, ctest-final.log) **is tracked in git** (added by commit 8e9128d). `.scratch/archive/bdg-evaluator-pfaffian/spec.md` (the *archived* spec) is **untracked** (`??` in `git status`) — so this ticket's single source edit is not captured by `git diff` by design, and verification is by content read + design.md text comparison (per ticket §"Verification" bullet 2: "copy the new User Story 5 text, grep it against the diff" → here, grep the spec text against design.md §"Spec Amendment" blockquote body; the only diff is the leading `> ` marker, content byte-identical ✓). The map and ticket-06 execution-record edits *are* tracked and appear in `git status`.
 Related: design.md §"Solution" item 12; §"Spec Amendment (User Story 5 verbatim text)"
 
 # 06 — Spec amendment: User Story 5 verbatim text

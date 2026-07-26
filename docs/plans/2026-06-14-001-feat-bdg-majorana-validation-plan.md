@@ -51,16 +51,37 @@ status_note: |
   (`test_wire_pfaffian_witness` — strict assertion unreachable on synthetic
   fixtures, documented `@todo` U13).
 
-  U2 close-out (2026-07-13, feat/bdg-u2-actual-ship PR): seam siblings
+  U2 close-out (2026-07-13, feat/bdg-u2-actual-ship PR #42 — open; follow-up
+  branch still landing review findings): seam siblings
   `eval_bdg_pfaffian_witness_csr` (wire-rung slim projected Pfaffian,
   delegates to `wire_pfaffian_witness_sweep` per ticket 04) +
   `eval_bdg_kitaev_majorana` (QW+Kitaev rung, wraps
-  `kitaev_majorana_number`); rename `compute_z2_gap`/`compute_z2_gap_edge`
-  → `*_bhz_heuristic` (scope-narrow gap-closure fallback per ticket 03);
-  migrate `main_topology.f90:1371` to seam; fix latent bug in
-  `wire_pfaffian_witness` (omega(1:4,1:4) extraction was all-zeros);
-  strict sign-agreement test GREEN via non-diagonal fixture (s2 witness).
-  ctest 52/52 unit tests green. See
+  `kitaev_majorana_number`); SSOT `bdg_pfaffian_params_t` (factory
+  `bdg_pfaffian_params_with_floor`, default `bdg_default_pfaffian_floor`)
+  wired from default to call site per ticket 01; orphan dense
+  `wire_pfaffian_witness` + helpers retired per ticket 02; rename
+  `compute_z2_gap`/`compute_z2_gap_edge` → `*_bhz_heuristic` (scope-narrow
+  gap-closure fallback per ticket 03); migrate `main_topology.f90:1371` to
+  seam; fix latent bug in `wire_pfaffian_witness` (omega(1:4,1:4) extraction
+  was all-zeros); strict sign-agreement contract tightened to `s2 ∈ {-1, 0,
+  +1}` via non-diagonal fixture (s2 witness) per ticket 03; lecture-13
+  acceptance-gate regression (4-witness slim-Pfaffian row) reverted to the
+  3-witness gate per ticket 05 (slim-Pfaffian row reserved for U13 Bloch-
+  Pfaffian). ctest 51/51 unit tests green (the 52→51 drop is the
+  ctest-target-vs-`@test`-subroutines count after retiring
+  `test_wire_pfaffian_witness.pf` per ticket 02; see
+  `feedback_ctest_counts_targets`). User Story 5 verbatim (test:
+  `test_pfaffian_witness_spec_user_story_5_contract` in
+  `tests/unit/test_bdg_pfaffian_witness_csr.pf`): "As a researcher running
+  cross-builder BdG unit tests, I want the Pfaffian sibling's witness
+  assertions to be GREEN today (independent of the deferred Bloch-periodic
+  BdG construction U13), where the witness is the S2-projected Pfaffian
+  sign `s2 ∈ {-1, 0, +1}` (range contract pinned by `s2 >= -1 .and. s2 <= 1`
+  and non-zeroness pinned by `s2 /= 0` on a non-diagonal synthetic fixture).
+  Full S1+S2 strict sign-agreement is the Majorana-basis Pfaffian problem
+  (Issue 05), deferred to a follow-up scope — for U2 the S1 path returns
+  `(0, -1)` on the canonical fixtures, which is a structurally-valid
+  gap-closure signal in the S1 eigenspace, not a defect." See
   `docs/solutions/best-practices/2026-07-13-bdg-evaluator-seam-ssot.md`.
 
   PR #41 merge status (2026-07-12): 8 follow-up commits

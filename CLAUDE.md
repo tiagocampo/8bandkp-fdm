@@ -10,8 +10,8 @@ Fortran 2018 code solving the **8-band zinc-blende k.p Hamiltonian** via finite 
 
 **Before modifying code in a subdirectory, read its AGENTS.md first** to understand local patterns and invariants.
 
-- **Physics engine** (`src/physics/AGENTS.md`): 17 modules — Hamiltonian construction, optics, strain, SC loop, topology, BdG. ~113k tokens. Contains dependency DAG, basis conventions, and single-source-of-truth contracts.
-- **Integration tests** (`tests/integration/AGENTS.md`): 38 files — verification ladder (rungs 1–8), standard-star benchmarks (S1–S7), convergence tests (U4–U8), coverage matrix. ~108k tokens. Shared infrastructure in `star_helpers.py` and `convergence_helpers.py`.
+- **Physics engine** (`src/physics/AGENTS.md`): Hamiltonian construction, optics, strain, SC loop, topology, BdG. Contains dependency DAG, basis conventions, and single-source-of-truth contracts.
+- **Integration tests** (`tests/integration/AGENTS.md`): Verification ladder (rungs 1–8), standard-star benchmarks (S1–S7), convergence tests (U4–U8), coverage matrix. Shared infrastructure in `star_helpers.py` and `convergence_helpers.py`.
 - **Lecture scripts** (`scripts/AGENTS.md`): 19 files — lecture-companion scripts (L00–L14), figure generation, config converter. ~155k tokens. Shared infrastructure via `tests/integration/star_helpers.py`.
 
 ### Global Invariants
@@ -310,7 +310,7 @@ Always check for and follow applicable superpowers skills when working. In parti
 
 ## Known Issues
 
-- `bir_pikus_blocks` in `defs.f90:83` has no finalizer. This is intentional: the type contains only non-allocatable fixed-size arrays (no pointers or allocatable components), so no explicit finalizer is needed. Do not add one.
+- `bir_pikus_blocks` in `defs.f90` has no finalizer. This is intentional: the type contains only non-allocatable fixed-size arrays (no pointers or allocatable components), so no explicit finalizer is needed. Do not add one.
 - The wire g-factor was fixed using the commutator-based velocity operator (`build_velocity_matrices` in `hamiltonian_wire.f90`). The transverse perturbation construction uses $-i [r_\alpha, H]$ element-wise on the CSR Hamiltonian, which correctly captures all k.p term contributions.
 - **U13 wire periodic/Bloch BdG construction with Peierls-twist under Bx≠0** is deferred (Issue 07 of PRD at `.scratch/archive/bdg-majorana-validation/`). Without it, the wire Pfaffian sweep evaluates at one point only; full sweep requires U13 as a separate scoped PR.
 - **bdq_spectral sweep mode is wire-only** (Issue 06). Dense-QW spectral can be added without touching the enum dispatch — deferred to follow-up PR.
