@@ -173,9 +173,13 @@ contains
 
   @test
   subroutine test_bdg_pfaffian_params_default_uses_ssot()
-    ! Happy-path placeholder for ticket 01 — bdg_pfaffian_params_t factory
-    ! defaults pfaffian_floor to bdg_default_pfaffian_floor. The full
-    ! error-stop contract (zero/negative floor) lands in ticket 03.
+    ! Happy-path for ticket 01 — the bare structure constructor
+    ! bdg_pfaffian_params_t() defaults pfaffian_floor to the SSOT
+    ! bdg_default_pfaffian_floor. (The validation contract —
+    ! bdg_pfaffian_params_with_floor — error-stops on a zero/negative floor;
+    ! the bare constructor deliberately does NOT validate, per its source
+    ! comment. Invalid-floor rejection is exercised in test_bdg_pfaffian_
+    ! witness_csr.pf, not here, because pFUnit cannot catch error stop.)
     type(bdg_pfaffian_params_t) :: p
     p = bdg_pfaffian_params_t()
     @assertEqual(bdg_default_pfaffian_floor, p%pfaffian_floor, tolerance=0.0_dp)

@@ -122,7 +122,9 @@ def call_witness_slim(B, mu, N=3):
         return 0
     # Real .dat producer not yet in place (U13). Honest deferred pass:
     # caller still verifies the underlying Fortran fix at the source level
-    # via unit tests (`test_wire_pfaffian_witness`) — no synthetic fallback.
+    # via the CSR Pfaffian-witness unit tests in test_bdg_pfaffian_witness_
+    # csr.pf (the retired dense wire_pfaffian_witness coverage was folded
+    # there in this PR) — no synthetic fallback.
     return None
 
 
@@ -163,12 +165,14 @@ def main():
         return
 
     # Producer not yet in place — honest deferred pass per spec D5/§3.3.
-    # The Fortran source-level fix at topological_analysis.f90:1722,:1827
-    # is the spec-compliance artifact; it is exercised by the pFUnit
-    # test_wire_pfaffian_witness (3 unit cases, all GREEN post-A.2).
+    # The Fortran source-level slim-Pfaffian sweep lives in
+    # topological_analysis.f90 (wire_pfaffian_witness_sweep); its
+    # spec-compliance is pinned by the CSR Pfaffian-witness unit tests in
+    # test_bdg_pfaffian_witness_csr.pf (the retired dense
+    # wire_pfaffian_witness coverage was folded there in this PR).
     print(
         "PASS: A.2 multi-site band-major scan landed at "
-        "topological_analysis.f90:1722,:1827"
+        "topological_analysis.f90:wire_pfaffian_witness_sweep"
     )
     print(
         "  Real per-(B,mu) slim-Pfaffian witness output "

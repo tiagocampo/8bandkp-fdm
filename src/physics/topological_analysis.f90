@@ -1657,6 +1657,7 @@ contains
     complex(kind=dp) :: h_proj(4, 4), a_work(4, 4), pf_val
     real(kind=dp) :: pf_abs, best_pf
     complex(kind=dp) :: omega_local(4, 4)
+    complex(kind=dp) :: h_proj_best(4, 4), pf_val_best
 
     s2_sign = 0
     if (n_full /= H_bdg_csr%nrows .or. n_full /= H_bdg_csr%ncols) return
@@ -1683,6 +1684,10 @@ contains
     best_s = 1
     best_pf = 0.0_dp
     pf_val = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    ! Cache the winning site's projected subblock + Pfaffian so the sign can be
+    ! read from it without re-extracting the same CSR rows a second time.
+    h_proj_best = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    pf_val_best = cmplx(0.0_dp, 0.0_dp, kind=dp)
     do s = 1, Nsites
       idx = [6 * Nsites + s, 7 * Nsites + s, &
         & n_sp + 6 * Nsites + s, n_sp + 7 * Nsites + s]
@@ -1706,27 +1711,16 @@ contains
       if (pf_abs > best_pf) then
         best_pf = pf_abs
         best_s = s
+        h_proj_best = h_proj
+        pf_val_best = pf_val
       end if
     end do
 
     if (best_pf > pfaffian_floor) then
-      ! Recompute the canonical subblock at the selected site for sign extraction.
-      idx = [6 * Nsites + best_s, 7 * Nsites + best_s, &
-        & n_sp + 6 * Nsites + best_s, n_sp + 7 * Nsites + best_s]
-      h_proj = cmplx(0.0_dp, 0.0_dp, kind=dp)
-      do i = 1, 4
-        do k = H_bdg_csr%rowptr(idx(i)), H_bdg_csr%rowptr(idx(i) + 1) - 1
-          col = H_bdg_csr%colind(k)
-          do j = 1, 4
-            if (col == idx(j)) then
-              h_proj(i, j) = H_bdg_csr%values(k)
-              exit
-            end if
-          end do
-        end do
-      end do
-      a_work = matmul(h_proj, omega_local)
-      pf_val = complex_pfaffian(a_work)
+      ! Sign extraction reuses the cached winning Pfaffian — no second CSR
+      ! gather / matmul / complex_pfaffian call (DRY: the scan loop above is
+      ! the single site of the 4x4 projection).
+      pf_val = pf_val_best
       if (real(pf_val, kind=dp) > 0.0_dp) then
         s2_sign = 1
       else

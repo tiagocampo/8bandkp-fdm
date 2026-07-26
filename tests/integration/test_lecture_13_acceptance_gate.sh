@@ -98,24 +98,32 @@ echo "  Dense QW               = $BCRIT_QW"
 # B-sweep with periodic/Bloch BdG). Tolerance 1.0 T accommodates the 2D
 # colormap's coarse 5x2 grid resolution while still surfacing real
 # regressions (e.g. the all-zero 1.22 T legacy value).
-TOL_BCRIT_RANGE="1.0"  # tightened from 2.0 per spec §3.4 / D5 (3-witness config)
+TOL_BCRIT_RANGE="1.0"  # 3-witness tolerance per spec §3.4 / D5
 
-if [ "$PFAFFIAN_DEFERRED" -eq 1 ]; then
-    BCRIT_MIN=$(python3 -c "print(min($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_QW))")
-    BCRIT_MAX=$(python3 -c "print(max($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_QW))")
+# Build the witness list once; append the slim-Pfaffian value only when U13
+# has landed a live numeric row (PFAFFIAN_DEFERRED == 0). Avoids the three
+# near-identical forked branches that previously duplicated the list logic.
+WITNESSES=("$BCRIT_WIRE_CURVE" "$BCRIT_WIRE_2D" "$BCRIT_QW")
+if [ "$PFAFFIAN_DEFERRED" -eq 0 ]; then
+    WITNESSES+=("$BCRIT_WIRE_PFAFFIAN")
+    WITNESS_LABEL="4-witness"
 else
-    BCRIT_MIN=$(python3 -c "print(min($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_WIRE_PFAFFIAN, $BCRIT_QW))")
-    BCRIT_MAX=$(python3 -c "print(max($BCRIT_WIRE_CURVE, $BCRIT_WIRE_2D, $BCRIT_WIRE_PFAFFIAN, $BCRIT_QW))")
+    WITNESS_LABEL="3-witness"
 fi
-BCRIT_RANGE=$(python3 -c "print($BCRIT_MAX - $BCRIT_MIN)")
+
+# One python3 invocation emits MIN, MAX, RANGE, and PASS-FLAG for the whole
+# comparison (previously up to four python3 -c + two awk subprocesses).
+# Build comma-separated list for Python syntax.
+WITNESSES_CSV=$(IFS=,; echo "${WITNESSES[*]}")
+read BCRIT_MIN BCRIT_MAX BCRIT_RANGE RANGE_PASS <<< "$(python3 -c "
+vals = [${WITNESSES_CSV}]
+lo, hi = min(vals), max(vals)
+rg = hi - lo
+print(lo, hi, rg, 0 if rg <= ${TOL_BCRIT_RANGE} else 1)
+")"
 
 echo "BCRIT range = $BCRIT_RANGE T (tolerance = $TOL_BCRIT_RANGE T)"
-if [ "$PFAFFIAN_DEFERRED" -eq 1 ]; then
-    WITNESS_LABEL="3-witness"
-else
-    WITNESS_LABEL="4-witness"
-fi
-if python3 -c "import sys; sys.exit(0 if $BCRIT_RANGE <= $TOL_BCRIT_RANGE else 1)"; then
+if [ "$RANGE_PASS" -eq 0 ]; then
     echo "PASS: $WITNESS_LABEL agreement within tolerance ($BCRIT_RANGE T <= $TOL_BCRIT_RANGE T)"
 else
     echo "FAIL: $WITNESS_LABEL disagreement exceeds tolerance ($BCRIT_RANGE T > $TOL_BCRIT_RANGE T)"

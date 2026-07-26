@@ -68,7 +68,7 @@ def gate_row_colormap_present(repo_root, mu_target=0.6601, mu_tol=0.0001):
                 continue
             try:
                 mu = float(parts[1])
-                z2 = int(float(parts[3]))
+                z2 = int(float(parts[2]))
             except ValueError:
                 continue
             if abs(mu - mu_target) <= mu_tol and z2 == -1:
