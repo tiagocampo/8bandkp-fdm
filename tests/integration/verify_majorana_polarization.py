@@ -163,7 +163,7 @@ def parse_polarization(path):
             # silent-SKIP hid this regression; now FAIL loudly.
             print(f"FAIL: {path} not produced by topologicalAnalysis AND slim Pfaffian "
                   f"gate row absent from output/z2_phase_diagram.dat (ticket 05).")
-            print(f"      Re-run wire BdG sweep to regenerate the colormap + polarization file.")
+            print("      Re-run wire BdG sweep to regenerate the colormap + polarization file.")
             sys.exit(1)
     rows = []
     with open(path) as f:

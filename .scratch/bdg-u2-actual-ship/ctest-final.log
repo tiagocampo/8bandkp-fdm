@@ -1,0 +1,110 @@
+Test project /data/8bandkp-fdm/build
+      Start 27: test_optical_qw
+      Start 26: test_optical
+      Start 43: test_edge_states
+      Start 50: test_trk_sum_rule
+ 1/51 Test #50: test_trk_sum_rule ................................   Passed    0.50 sec
+      Start 45: test_z2_invariant
+ 2/51 Test #45: test_z2_invariant ................................   Passed    0.52 sec
+      Start 42: test_green_functions
+ 3/51 Test #42: test_green_functions .............................   Passed    0.14 sec
+      Start 15: test_geometry
+ 4/51 Test #15: test_geometry ....................................   Passed    0.17 sec
+      Start 11: test_hamiltonian
+ 5/51 Test #11: test_hamiltonian .................................   Passed    0.10 sec
+      Start 14: test_sc_loop
+ 6/51 Test #14: test_sc_loop .....................................   Passed    0.08 sec
+      Start 17: test_eigensolver
+ 7/51 Test #17: test_eigensolver .................................   Passed    0.09 sec
+      Start 41: test_phase_diagram
+ 8/51 Test #41: test_phase_diagram ...............................   Passed    0.01 sec
+      Start 18: test_strain_solver
+ 9/51 Test #18: test_strain_solver ...............................   Passed    0.06 sec
+      Start 47: test_simulation_setup
+10/51 Test #47: test_simulation_setup ............................   Passed    0.05 sec
+      Start 39: test_dense_qw_block_21_sign
+11/51 Test #39: test_dense_qw_block_21_sign ......................   Passed    0.01 sec
+      Start 24: test_krylov_helpers
+12/51 Test #24: test_krylov_helpers ..............................   Passed    0.01 sec
+      Start 46: test_fd_convergence
+13/51 Test #46: test_fd_convergence ..............................   Passed    0.05 sec
+      Start 57: validation_majorana_polarization_size_mismatch
+14/51 Test #57: validation_majorana_polarization_size_mismatch ...   Passed    0.03 sec
+      Start 20: test_confinement_assembly
+15/51 Test #20: test_confinement_assembly ........................   Passed    0.01 sec
+      Start  8: test_finitedifferences
+16/51 Test  #8: test_finitedifferences ...........................   Passed    0.01 sec
+      Start 37: test_bdg_kitaev_majorana
+17/51 Test #37: test_bdg_kitaev_majorana .........................   Passed    0.01 sec
+      Start 12: test_poisson
+18/51 Test #12: test_poisson .....................................   Passed    0.02 sec
+      Start 34: test_bdg_config
+19/51 Test #34: test_bdg_config ..................................   Passed    0.01 sec
+      Start 33: test_bdg_phs
+20/51 Test #33: test_bdg_phs .....................................   Passed    0.02 sec
+      Start 16: test_hamiltonian_2d
+21/51 Test #16: test_hamiltonian_2d ..............................   Passed    0.02 sec
+      Start 32: test_bdg_hamiltonian
+22/51 Test #32: test_bdg_hamiltonian .............................   Passed    0.02 sec
+      Start 36: test_bdg_pfaffian_witness_csr
+23/51 Test #36: test_bdg_pfaffian_witness_csr ....................   Passed    0.01 sec
+      Start 54: test_majorana_polarization
+24/51 Test #54: test_majorana_polarization .......................   Passed    0.01 sec
+      Start 49: test_optical_spectra
+25/51 Test #49: test_optical_spectra .............................   Passed    0.01 sec
+      Start 44: test_landau
+26/51 Test #44: test_landau ......................................   Passed    0.01 sec
+      Start 29: test_topology_parser
+27/51 Test #29: test_topology_parser .............................   Passed    0.01 sec
+      Start 52: test_kitaev_majorana
+28/51 Test #52: test_kitaev_majorana .............................   Passed    0.01 sec
+      Start 40: test_phs_qw_peierls_symmetric
+29/51 Test #40: test_phs_qw_peierls_symmetric ....................   Passed    0.01 sec
+      Start 28: test_topology_types
+30/51 Test #28: test_topology_types ..............................   Passed    0.01 sec
+      Start 23: test_csr_structural
+31/51 Test #23: test_csr_structural ..............................   Passed    0.01 sec
+      Start 25: test_krylov_snapshots
+32/51 Test #25: test_krylov_snapshots ............................   Passed    0.01 sec
+      Start 51: test_pfaffian
+33/51 Test #51: test_pfaffian ....................................   Passed    0.01 sec
+      Start 48: test_solver_derivation
+34/51 Test #48: test_solver_derivation ...........................   Passed    0.01 sec
+      Start 56: test_cross_builder_hole_block_identity
+35/51 Test #56: test_cross_builder_hole_block_identity ...........   Passed    0.01 sec
+      Start 10: test_parameters
+36/51 Test #10: test_parameters ..................................   Passed    0.01 sec
+      Start 31: test_chern_number
+37/51 Test #31: test_chern_number ................................   Passed    0.01 sec
+      Start 22: test_csr_helpers
+38/51 Test #22: test_csr_helpers .................................   Passed    0.01 sec
+      Start 21: test_csr_spmv
+39/51 Test #21: test_csr_spmv ....................................   Passed    0.01 sec
+      Start  7: test_defs
+40/51 Test  #7: test_defs ........................................   Passed    0.01 sec
+      Start 13: test_charge_density
+41/51 Test #13: test_charge_density ..............................   Passed    0.00 sec
+      Start  9: test_utils
+42/51 Test  #9: test_utils .......................................   Passed    0.01 sec
+      Start 53: test_kitaev_strict
+43/51 Test #53: test_kitaev_strict ...............................   Passed    0.01 sec
+      Start 19: test_hamiltonian_blocks
+44/51 Test #19: test_hamiltonian_blocks ..........................   Passed    0.01 sec
+      Start 38: test_pairing_sign_cross_module
+45/51 Test #38: test_pairing_sign_cross_module ...................   Passed    0.01 sec
+      Start 30: test_magnetic_field
+46/51 Test #30: test_magnetic_field ..............................   Passed    0.01 sec
+      Start 55: test_majorana_polarization_soc
+47/51 Test #55: test_majorana_polarization_soc ...................   Passed    0.01 sec
+      Start 35: test_bdg_evaluator
+48/51 Test #35: test_bdg_evaluator ...............................   Passed    0.01 sec
+49/51 Test #43: test_edge_states .................................   Passed    2.41 sec
+50/51 Test #26: test_optical .....................................   Passed    2.75 sec
+51/51 Test #27: test_optical_qw ..................................   Passed   32.70 sec
+
+100% tests passed, 0 tests failed out of 51
+
+Label Time Summary:
+unit    =  39.96 sec*proc (51 tests)
+
+Total Test time (real) =  32.71 sec
