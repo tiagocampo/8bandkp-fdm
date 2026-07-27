@@ -464,6 +464,24 @@ Both writers (`write_z2_phase_diagram`, `write_wire_slim_pfaffian_witness`) in `
 
 **Verification:** The regenerated phase diagram shows the topological region; the sweep drives the Pfaffian; the map is non-flat; the new fixture's output files are disjoint from the canonical fixture's.
 
+**Status (2026-07-26, post-T2 execution):** T2 closed on `feat/bdg-u10-pfaffian-phase-diagram` (uncommitted, pending PR #43 review). 8-item scope shipped: config-driven `[topology] phase_diagram_file` + `slim_pfaffian_witness_file` writer paths (defaults preserve canonical fixture behavior); sibling fixture `wire_inas_gaas_bdg_topological_phase.toml` overrides both keys + widens B-grid (nB=6) with tight μ-window [0.6600, 0.6602] eV (FEST physics: `eval_wire_bdg_gap` fixes FEAST window `±5·δ₀` around E=0, so μ MUST stay within ±0.001 eV of the conduction-band edge 0.6601 eV; values far from the edge leave the Majorana-mode subspace empty and FEST fails U8 fail-fast); new `regression_wire_bdg_topological_phase` ctest entry (`regression` label, 900 s timeout); plan §U10 status footer amended; 2 new TDD parser @tests pass; 51/51 unit + 5/5 wire-BdG regression green.
+
+**Status (2026-07-27, post-T3 execution, commit `29e85c5`):** T3 closed. Wire path emits Pfaffian-native `{-1,+1,0}` directly from `s2_sign` (no remap, no BHZ_heuristic fallback at closure); BHZ-only `compute_z2_gap_sweep` path retains heuristic `{0,1}` (preserves 7+ existing unit tests pinning BHZ); `write_z2_phase_diagram` annotates per-file convention via `# z2 semantics:` header. Pre-grill pivot from Q3a=(c) convert-BHZ to (a) header annotation avoided 7+ existing unit-test churn. TDD-red pin in `test_wire_bdg_topological_phase.sh`. **Unblocks T4 + T5.**
+
+**T4 (2026-07-27) closed BLOCKED:** non-flat z2 colormap assertion physically unsatisfiable inside slim Pfaffian's signal regime. 5 probe fixtures enumerated in `tickets/T4_regression_test.md` §Probe findings:
+
+- Probe 1 (μ∈[0.650,0.670], nMu=11, nB=6, B_vec=[0,0,0]): FEST fail (U8 fail-fast).
+- Probe 2 (μ∈[0.655,0.665], nMu=11, nB=6, B_vec=[0,0,0]): FEST fail mid-grid.
+- Probe 3 (μ∈[0.657,0.663], nMu=11, nB=6, B_vec=[0,0,0]): SUCCESS — 66 cells, all z2=-1.
+- Probe 4 (μ∈[0.657,0.663], nMu=11, nB=21, B_vec=[0,0,0]): SUCCESS — 231 cells, all z2=-1.
+- Probe 5 (probe 4 + B_vec=[1,0,0]): SUCCESS — 231 cells, all z2=-1.
+
+Closure regime (`s2_sign=0`) requires full Bloch-Pfaffian + periodic Peierls-twist (U13, BLOCKING-EMPIRICAL per CLAUDE.md Known Issues); trivial regime (`s2_sign=+1`) requires wider FEST window (touches ADR 0005 window authority — explicitly out-of-scope) or geometry where band inversion never occurs. **Do NOT manufacture non-flat colormap** by forcing `s2_sign=0` or flipping signs inside FEST envelope — would bug physics that's working. User direction 2026-07-27: "don't bug code that is breaking the physics." **Routing:** non-flat z2 colormap assertion deferred to U13. T4r research subagent verdict: BUG REFUTED — slim CSR Pfaffian correctly constructs local 4×4 omega at band-7,8 subblock indices (Ponytail rule satisfied); 51/51 unit + 6 BdG/Pfaffian tests pin correctness; all-`-1` colormap is the genuine physical answer inside the FEST envelope, NOT a structural artifact.
+
+**T5 (2026-07-27) active:** gate precondition update `z2==-1` native (acceptance surfaces). Per (C) full cleanup: rewrite lecture-13 status strings (lines 246, 255, 327), test_lecture_13_acceptance_gate.sh comment blocks (49-56, 79-86, 95-111), and `test_slim_pfaffian_witness_projection.py` doc-drift (lines 15, 43-44, 107-109, 167, 178-179). Q4 approximation phrase: "approximation (open-chain projected; full Bloch-Pfaffian deferred U13)". Logic unchanged (gate already auto-detects numeric Pfaffian witness at line 81 → 4-witness when emitted, 3-witness fallback when absent/truncated).
+
+**T6 (formerly blocked by T4, now unblocked):** per-B min-|Pf| Lutchyn-Oreg criterion cross-check `bcrit_pfaffian ≈ bcrit_curve ≈ bcrit_2d` within ±0.5 T (grill HITL required). Claim after T5 closes.
+
 ### U11. Revamp the topological-superconductivity lecture
 
 **Goal:** Replace the false benchmark claims with corrected, validated results and the new observables, and reconcile every B_crit occurrence.
