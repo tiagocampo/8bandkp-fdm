@@ -240,4 +240,59 @@ contains
     close(unit=99, status='delete')
   end subroutine
 
+  ! U10 T2: topology phase_diagram_file + slim_pfaffian_witness_file keys.
+  ! Default path: keys omitted → both default to canonical names (no behavior
+  ! change for the canonical fixture). Override path: keys present → cfg%
+  ! topo fields carry the configured names so the writers emit under those
+  ! files (new fixture wires through this path).
+  @test
+  subroutine test_topology_writer_paths_defaults()
+    type(simulation_config) :: cfg
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "sweep"'
+    write(99, '(A)') 'compute_gap_sweep = true'
+    write(99, '(A)') 'sweep_model = "wire_bdg"'
+    close(99)
+
+    call read_config(cfg)
+
+    @assertEqual('z2_phase_diagram.dat', trim(cfg%topo%phase_diagram_file))
+    @assertEqual('wire_slim_pfaffian_witness.dat', trim(cfg%topo%slim_pfaffian_witness_file))
+
+    close(unit=99, status='delete')
+  end subroutine
+
+  @test
+  subroutine test_topology_writer_paths_overrides()
+    type(simulation_config) :: cfg
+    open(unit=99, file='input.toml', status='replace', action='write')
+    write(99, '(A)') 'confinement = "bulk"'
+    write(99, '(A)') 'FDorder = 2'
+    write(99, '(A)') ''
+    write(99, '(A)') '[[material]]'
+    write(99, '(A)') 'name = "InAs"'
+    write(99, '(A)') ''
+    write(99, '(A)') '[topology]'
+    write(99, '(A)') 'mode = "sweep"'
+    write(99, '(A)') 'compute_gap_sweep = true'
+    write(99, '(A)') 'sweep_model = "wire_bdg"'
+    write(99, '(A)') 'phase_diagram_file = "z2_phase_diagram_phase.dat"'
+    write(99, '(A)') 'slim_pfaffian_witness_file = "wire_slim_pfaffian_witness_phase.dat"'
+    close(99)
+
+    call read_config(cfg)
+
+    @assertEqual('z2_phase_diagram_phase.dat', trim(cfg%topo%phase_diagram_file))
+    @assertEqual('wire_slim_pfaffian_witness_phase.dat', trim(cfg%topo%slim_pfaffian_witness_file))
+
+    close(unit=99, status='delete')
+  end subroutine
+
 end module

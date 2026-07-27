@@ -771,11 +771,11 @@ module outputFunctions
 
       call ensure_output_dir()
       call get_unit(iounit)
-      open(unit=iounit, file='output/z2_phase_diagram.dat', status='replace', &
-           action='write', iostat=status)
+      open(unit=iounit, file='output/' // trim(adjustl(cfg%topo%phase_diagram_file)), &
+           status='replace', action='write', iostat=status)
       if (status /= 0) then
-        print *, 'ERROR: cannot open output/z2_phase_diagram.dat'
-        error stop 'cannot open z2_phase_diagram.dat'
+        print *, 'ERROR: cannot open output/' // trim(adjustl(cfg%topo%phase_diagram_file))
+        error stop 'cannot open phase_diagram.dat'
       end if
       write(iounit, '(A)') '# Z2 phase diagram'
       write(iounit, '(A,I0,A,I0)') '# nB=', nB, '  nMu=', nMu
@@ -791,12 +791,14 @@ module outputFunctions
         end do
       end do
       close(iounit)
-      print *, '  Z2 phase diagram written to output/z2_phase_diagram.dat'
+      print *, '  Z2 phase diagram written to output/' // trim(adjustl(cfg%topo%phase_diagram_file))
 
     end subroutine write_z2_phase_diagram
 
     ! ==================================================================
-    ! U10 T1b: Write per-B min-|Pf| proxy to output/wire_slim_pfaffian_witness.dat.
+    ! U10 T1b: Write per-B min-|Pf| proxy to output/<slim_pfaffian_witness_file>
+    ! (path is config-driven via cfg%topo%slim_pfaffian_witness_file, default
+    ! 'wire_slim_pfaffian_witness.dat' preserves canonical fixture output).
     !
     ! Mirrors the write_z2_phase_diagram header style; data rows use the
     ! `B=<value> |Pf|=<value>` literal-token format so the lecture 13
@@ -829,11 +831,11 @@ module outputFunctions
 
       call ensure_output_dir()
       call get_unit(iounit)
-      open(unit=iounit, file='output/wire_slim_pfaffian_witness.dat', status='replace', &
-           action='write', iostat=status)
+      open(unit=iounit, file='output/' // trim(adjustl(cfg%topo%slim_pfaffian_witness_file)), &
+           status='replace', action='write', iostat=status)
       if (status /= 0) then
-        print *, 'ERROR: cannot open output/wire_slim_pfaffian_witness.dat'
-        error stop 'cannot open wire_slim_pfaffian_witness.dat'
+        print *, 'ERROR: cannot open output/' // trim(adjustl(cfg%topo%slim_pfaffian_witness_file))
+        error stop 'cannot open slim_pfaffian_witness.dat'
       end if
       write(iounit, '(A)') '# wire slim Pfaffian witness (per-B min |Pf| over mu-window)'
       write(iounit, '(A,I0)') '# nB=', nB
@@ -851,7 +853,7 @@ module outputFunctions
           & ' |Pf|=', trim(adjustl(pf_str)), ''
       end do
       close(iounit)
-      print *, '  wire slim Pfaffian witness written to output/wire_slim_pfaffian_witness.dat'
+      print *, '  wire slim Pfaffian witness written to output/' // trim(adjustl(cfg%topo%slim_pfaffian_witness_file))
 
     end subroutine write_wire_slim_pfaffian_witness
 

@@ -993,6 +993,24 @@ set_tests_properties(
     PROPERTIES LABELS "regression" TIMEOUT 900
 )
 
+# U10 T2: smoke test for the new sibling fixture
+# wire_inas_gaas_bdg_topological_phase.toml (config-driven writer path).
+# Asserts output/z2_phase_diagram_phase.dat and
+# output/wire_slim_pfaffian_witness_phase.dat are present, both files
+# well-formed (witness matches lecture 13 regex; phase diagram has
+# (B, mu, z2, gap) rows). Non-flat colormap assertion is T4.
+add_test(
+    NAME regression_wire_bdg_topological_phase
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/integration/test_wire_bdg_topological_phase.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_bdg_topological_phase.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_wire_bdg_topological_phase
+    PROPERTIES LABELS "regression" TIMEOUT 900
+)
+
 # A.1 [TDD-red]: slim Pfaffian witness projects onto conduction bands,
 # not band-1 sites. Pins the row-index bug at
 # src/physics/topological_analysis.f90:1722, :1827 (idx=[7,8,...] reads

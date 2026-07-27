@@ -333,6 +333,11 @@ module definitions
     real(kind=dp)    :: gap_sweep_mu_max = 0.01_dp
     integer          :: gap_sweep_nMu = 20
     character(len=20) :: sweep_model = 'bhz_analytic'  ! bhz_analytic | wire_bdg | qw_fukane | bdq_spectral
+    ! U10 T2: config-driven writer paths (default values preserve canonical
+    ! behavior). New fixtures override these so phase-diagram output files
+    ! emitted by different sweeps cannot collide.
+    character(len=64) :: phase_diagram_file = 'z2_phase_diagram.dat'
+    character(len=64) :: slim_pfaffian_witness_file = 'wire_slim_pfaffian_witness.dat'
     ! Conductance
     logical          :: compute_conductance = .false.
     character(len=20) :: conductance_method = 'kubo_chern'  ! kubo_chern | kubo_berry | landauer

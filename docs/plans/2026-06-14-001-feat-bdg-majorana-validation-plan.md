@@ -141,7 +141,7 @@ Architecturally, the physics logic that should catch this is buried in app glue:
 ### Observable coverage
 
 - R8. Compute the BdG spectral function A(k,E) and BdG LDOS on the BdG Hamiltonian (not the normal-state one), exposing the zero-energy Majorana peak.
-- R9. Compute the bulk minigap as a minimum over a kz sweep of `min|E|`, and produce the (B, μ) phase diagram from the discrete 2-point Pfaffian Majorana number (evaluated at the PHS-invariant momenta by U13), driving the existing `wire_bdg`/`qw_fukane` sweep paths with the real invariant. The continuous gap-BZ-minimum and the discrete 2-point invariant are separate quantities.
+- R9. Compute the bulk minigap as a minimum over a kz sweep of `min|E|`, and produce the (B, μ) phase diagram from the discrete 2-point Pfaffian Majorana number (evaluated at the PHS-invariant momenta by U13), driving the existing `wire_bdg`/`qw_fukane` sweep paths with the real invariant. The continuous gap-BZ-minimum and the discrete 2-point invariant are separate quantities. **T2 (2026-07-26):** phase-diagram and slim-Pfaffian-witness output files are config-driven via `[topology] phase_diagram_file` + `slim_pfaffian_witness_file` (defaults preserve canonical fixture behavior); coarse-phase fixture `wire_inas_gaas_bdg_topological_phase.toml` overrides both.
 
 ### Documentation and verification
 
@@ -444,6 +444,12 @@ The pure-function seam, in miniature: the caller owns build + solve and hands a 
 
 **Approach:** The sweep contract (`z2_map(nMu,nB)` integer 0/1, `gap_map`, `transitions`) is invariant to the underlying invariant — the Pfaffian plugs in at the per-point evaluator, and `detect_z2_transitions`/`is_z2_transition` work unchanged. No new `sweep_model` enum value (the Kitaev harness is test-only, U3); the existing `wire_bdg`/`qw_fukane` values now drive the real invariant. Recompute the invariant per (B,μ) with a local config copy (the flat-phase-diagram fix). **Gap-vs-invariant caveat:** the existing `wire_bdg` `gap_map` is `2·minval(|E|)` over the ±5δ₀-windowed set at a single kz=0 — it is the *windowed near-zero indicator*, not R9's continuous kz-sweep BZ-minimum (the existing path does no kz sweep). Either add a kz-sweep sub-step for the true bulk minigap, or label the wire `gap_map` as the windowed quantity and defer the BZ-minimum — decided in U10 against cost.
 
+**T2 (2026-07-26) execution state:** Schema change lands in T2 so the coarse fixture's writer output paths cannot collide with the canonical `wire_inas_gaas_bdg_topological_2d.toml` output. Two new optional keys under `[topology]`:
+- `phase_diagram_file` (default `'z2_phase_diagram.dat'`)
+- `slim_pfaffian_witness_file` (default `'wire_slim_pfaffian_witness.dat'`)
+
+Both writers (`write_z2_phase_diagram`, `write_wire_slim_pfaffian_witness`) in `src/io/outputFunctions.f90` consume `cfg` and emit to `output/<value>`. Default behavior is unchanged for the canonical fixture (both keys omitted). Phase fixture `tests/regression/configs/wire_inas_gaas_bdg_topological_phase.toml` overrides both keys (`*_phase.dat` suffix) and widens the B grid to nB=6 on a [0, 5] T range with a tight mu-window [0.6600, 0.6602] eV (nMu=3) — eval_wire_bdg_gap fixes FEAST window to `±5·δ₀` around E=0 (catches near-zero Majorana-mode subspace), so μ MUST stay within ±0.001 eV of the conduction-band edge 0.6601 eV; values far from the edge leave the subspace empty and FEAST fails (U8 fail-fast guard). The wider B grid gives finer B_crit transition detection while respecting the FEST physics window.
+
 **Execution note:** Test-first — assert the phase diagram is not flat before trusting it (the flat-diagram failure mode is established in this codebase).
 
 **Patterns to follow:** `compute_qw_fukane_gap_sweep` (the per-point-recomputation pattern); `detect_z2_transitions`.
@@ -453,8 +459,10 @@ The pure-function seam, in miniature: the caller owns build + solve and hands a 
 - The `wire_bdg` sweep path uses the Pfaffian, not the heuristic, at every grid point.
 - The phase map is not flat (varies across (B,μ)) — guards the flat-diagram regression.
 - Transition detection finds the B_crit boundary within tolerance.
+- Canonical fixture (no override keys) emits `output/z2_phase_diagram.dat` and `output/wire_slim_pfaffian_witness.dat` — no behavior change.
+- Phase fixture emits `output/z2_phase_diagram_phase.dat` and `output/wire_slim_pfaffian_witness_phase.dat` — no path collision with canonical output.
 
-**Verification:** The regenerated phase diagram shows the topological region; the sweep drives the Pfaffian; the map is non-flat.
+**Verification:** The regenerated phase diagram shows the topological region; the sweep drives the Pfaffian; the map is non-flat; the new fixture's output files are disjoint from the canonical fixture's.
 
 ### U11. Revamp the topological-superconductivity lecture
 
