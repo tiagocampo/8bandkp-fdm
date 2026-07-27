@@ -1405,7 +1405,14 @@ contains
     ! Issue 07 (U10): route the wire_bdg z2 through the projected Pfaffian
     ! (S2 strategy: analytical bands 7-8 per k.p block table SSOT) instead
     ! of the 1D count heuristic. Pfaffian sign convention: -1 = topological,
-    ! +1 = trivial, 0 = gap closure / inconclusive.
+    ! +1 = trivial, 0 = gap closure / inconclusive. T3 (U10): the z2 column
+    ! is now written in Pfaffian-native convention directly — no remap, no
+    ! BHZ-heuristic fallback (the heuristic is retained ONLY in
+    ! compute_z2_gap_sweep for bhz_analytic dispatches per KTD8; the wire
+    ! path makes its own decision at every (B, mu) point, including closure
+    ! cells which read 0). This matches the convention every other consumer
+    ! reads (gate precondition gate_row_colormap_present checks z2 == -1
+    ! at mu ≈ 0.6601; docs/plans/lecture-13 also read native).
     block
       integer :: s2_sign
       ! Slim Pfaffian witness via seam sibling (per ticket 04 of
@@ -1414,24 +1421,13 @@ contains
       ! The Pfaffian floor is threaded from the SSOT via the validating
       ! factory bdg_pfaffian_params_with_floor (closes PR #42's declared-but-
       ! not-consumed gap — ticket 01 of .scratch/bdg-u2-actual-ship/).
+      ! The full Bloch-Pfaffian sweep (S1+S2 strict sign agreement) that
+      ! resolves the closure=0 cells is deferred to U13 (Issue 05 /
+      ! BLOCKING-EMPIRICAL per main plan §U13 + CLAUDE.md Known Issues).
       s2_sign = eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg_local, &
            bdg_pfaffian_params_with_floor(bdg_default_pfaffian_floor), &
            pf_mag)
-      if (s2_sign == -1) then
-        z2 = 1
-      else if (s2_sign == +1) then
-        z2 = 0
-      else
-        ! Gap closure (s2_sign == 0): the slim Pfaffian cannot decide the phase
-        ! at the transition. Use the SC-minigap BHZ heuristic as an EMPIRICAL
-        ! stand-in (NOT a Pfaffian-derived z2) to preserve the open->close->
-        ! reopen pattern at the B_crit point — the full Bloch-Pfaffian sweep
-        ! (S1+S2 strict sign agreement) that replaces this fallback is deferred
-        ! to U13 (Issue 05 / BLOCKING-EMPIRICAL). Reviewers reading the
-        ! z2_phase_diagram.dat z2 column at the B_crit cell should treat it as
-        ! BHZ-heuristic-decided, not Pfaffian-decided, until U13 lands.
-        z2 = compute_z2_gap_bhz_heuristic(eigen_res_local%eigenvalues, gap_threshold)
-      end if
+      z2 = s2_sign
     end block
 
     call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)

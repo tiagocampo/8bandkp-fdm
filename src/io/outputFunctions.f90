@@ -778,6 +778,22 @@ module outputFunctions
         error stop 'cannot open phase_diagram.dat'
       end if
       write(iounit, '(A)') '# Z2 phase diagram'
+      ! T3 (U10): the z2 column convention depends on cfg%topo%sweep_model —
+      ! document it inline so downstream consumers (lecture 13 reader,
+      ! gate precondition verify_majorana_polarization.py:74) can parse the
+      ! correct semantic without consulting external docs. wire_bdg emits
+      ! Pfaffian-native {-1,+1,0} (topological/trivial/closure); bhz_analytic
+      ! and qw_fukane dispatch via compute_z2_gap_sweep which retains the
+      ! heuristic {0,1} convention at the helper level (compute_z2_gap_bhz_
+      ! heuristic / eval_bhz_analytic). The wire path's native convention
+      ! matches every other invariant in the codebase (gate, lecture, plans).
+      if (trim(cfg%topo%sweep_model) == 'wire_bdg') then
+        write(iounit, '(A)') '# z2 semantics: {-1,+1,0} = Pfaffian native ' // &
+          & '(topological, trivial, closure)'
+      else
+        write(iounit, '(A)') '# z2 semantics: {0,1} = heuristic ' // &
+          & '(trivial, topological) per compute_z2_gap_bhz_heuristic'
+      end if
       write(iounit, '(A,I0,A,I0)') '# nB=', nB, '  nMu=', nMu
       write(iounit, '(A)') '# B(T) mu(eV) z2 gap(eV)'
       do iB = 1, nB

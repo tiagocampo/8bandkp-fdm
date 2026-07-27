@@ -83,7 +83,32 @@ for line in phase_data_rows:
         print(f"FAIL: {PHASE_PATH} row has {len(parts)} cols, expected 4: {line}")
         sys.exit(1)
 
+# T3 (U10): wire_BdG path emits Pfaffian-native z2 ∈ {-1, +1, 0}.
+# Pre-T3 the remap at main_topology.f90:1420-1423 inverted the sign so the
+# column read {0, 1}; gate precondition gate_row_colormap_present
+# (verify_majorana_polarization.py:74) needs z2 == -1 to match the wire
+# sweep. Pin the native convention here so the integration test fails if
+# the remap is reintroduced.
+z2_col = [int(round(float(line.split()[2]))) for line in phase_data_rows]
+allowed = {-1, 0, 1}
+bad_z2 = [v for v in z2_col if v not in allowed]
+if bad_z2:
+    print(f"FAIL: {PHASE_PATH} z2 column has non-native values {set(bad_z2)}; "
+          f"expected subset of {allowed} (Pfaffian-native convention)")
+    sys.exit(1)
+# Stronger pin: at least one row must read z2 == -1 (the topological cell
+# at low B, pre-B_crit). Pre-T3 the remap emits {0, 1} so the value -1
+# never appears; this assertion turns the TDD-red into a true fail.
+if -1 not in z2_col:
+    print(f"FAIL: {PHASE_PATH} z2 column never reads -1 (topological cell); "
+          f"got values={sorted(set(z2_col))}; the wire path is still "
+          f"emitting the inverted convention")
+    sys.exit(1)
+non_trivial = [v for v in z2_col if v != 0]
+print(f"INFO: phase diagram z2 column native (n={len(z2_col)}, "
+      f"non-closure={len(non_trivial)}, values={sorted(set(z2_col))})")
+
 print(f"PASS: phase fixture emits both files under config-driven names "
       f"(phase={len(phase_data_rows)} rows, witness={len(data_rows)} B rows, "
-      f"all regex-matched and finite)")
+      f"all regex-matched and finite, native z2 column)")
 PYEOF
