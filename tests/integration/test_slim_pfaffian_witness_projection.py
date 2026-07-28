@@ -11,13 +11,13 @@ scan, band-major) yields Pf != 0 at the topological-phase grid points.
 A.2 (TDD-green) landed `topological_analysis.f90:1722, :1827` multi-site
 band-major projection per spec §3.1. The test is wired to invoke the real
 Fortran pipeline (`build/src/topologicalAnalysis` on the canonical
-`wire_inas_gaas_bdg_topological.toml` per spec D8). The slim-Pfaffian witness
-sweep output file `output/wire_slim_pfaffian_witness.dat` is RESERVED for U13
-(full wire Pfaffian B-sweep with periodic/Bloch BdG) per spec D5/§3.3, so the
-current code path does not emit it. When the producer is in place, the test
-will parse the file and verify the Pf sign per (B, mu); until then the test
-exits 0 with an explicit deferred label (per the ambiguity resolution noted
-in task-A.2 brief). No env-gated synthetic fallback per spec D7.
+`wire_inas_gaas_bdg_topological.toml` per spec D8). U10 T1b now emits the
+slim-Pfaffian witness file `output/wire_slim_pfaffian_witness.dat` (per-B
+min-|Pf| proxy; open-chain projected approximation; full Bloch-Pfaffian
+deferred to U13). When the producer is in place, the test parses the file
+and verifies the Pf sign per (B, mu); if the file is missing the test exits
+0 with an explicit deferred label (per the ambiguity resolution noted in
+task-A.2 brief). No env-gated synthetic fallback per spec D7.
 """
 import subprocess
 import sys
@@ -40,8 +40,9 @@ CANONICAL_CFG = (
     REPO / "tests" / "regression" / "configs"
     / "wire_inas_gaas_bdg_topological.toml"
 )
-# Per spec D5/§3.3: the slim-Pfaffian sweep output is reserved for U13.
-# No Fortran source emits it today; once the U13 writer lands, this test
+# Per spec D5/§3.3: U10 T1b now emits the slim-Pfaffian sweep output
+# (per-B min-|Pf| proxy; open-chain projected approximation). The full
+# Bloch-Pfaffian at PHS-invariant momenta is deferred to U13. This test
 # parses the file and verifies the Pf sign per (B, mu) grid point.
 SLIM_PF_FILE = REPO / "output" / "wire_slim_pfaffian_witness.dat"
 
@@ -104,11 +105,12 @@ def call_witness_slim(B, mu, N=3):
     `output/wire_slim_pfaffian_witness.dat` per Lecture 13 cross-reference
     (`lecture_13_topological.py:212`).
 
-    NOTE: per spec D5/§3.3, the .dat producer is RESERVED FOR U13 (full wire
-    Pfaffian sweep with periodic/Bloch BdG). The current code path does not
-    emit the file. The test therefore exits 0 with an explicit deferred label
-    when the file is absent (per task-A.2 ambiguity resolution; honest-pass,
-    not Falsifying-PASS).
+    NOTE: per spec D5/§3.3, the .dat producer is now in place (U10 T1b:
+    per-B min-|Pf| proxy; open-chain projected approximation). The full
+    wire Pfaffian sweep with periodic/Bloch BdG remains deferred to U13.
+    The test parses the file when present and exits 0 with an explicit
+    deferred label when the file is absent (per task-A.2 ambiguity
+    resolution; honest-pass, not Falsifying-PASS).
     """
     if SLIM_PF_FILE.exists():
         signs = parse_slim_pf_witness(SLIM_PF_FILE)
@@ -175,12 +177,14 @@ def main():
         "topological_analysis.f90:wire_pfaffian_witness_sweep"
     )
     print(
-        "  Real per-(B,mu) slim-Pfaffian witness output "
-        f"({SLIM_PF_FILE.relative_to(REPO)}) is RESERVED FOR U13"
+        "  Per-(B,mu) slim-Pfaffian witness output "
+        f"({SLIM_PF_FILE.relative_to(REPO)}) is now emitted by T1b "
+        "(per-B min-|Pf| proxy; open-chain projected approximation)"
     )
     print(
-        "  (full wire Pfaffian B-sweep with periodic/Bloch BdG per "
-        "spec D5/section-3.3); current canonical "
+        "  Full wire Pfaffian B-sweep with periodic/Bloch BdG "
+        "remains deferred to U13 (per spec D5/section-3.3); current "
+        "canonical "
         "topologicalAnalysis pipeline ran cleanly without errors."
     )
 

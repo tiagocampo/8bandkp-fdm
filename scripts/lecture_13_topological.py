@@ -229,21 +229,25 @@ def section_wire_rung(exe):
             bcrit_pfaffian = min(pf_mags, key=lambda B: pf_mags[B])
         else:
             # File present but empty/unmatched — treat identically to the
-            # file-absent case (deferred) rather than silently aliasing to
-            # bcrit_curve. A truncated/whitespace-only producer file must not
-            # inject the wire_curve value as the Pfaffian witness (the gate
-            # would then compare wire_curve to itself and pass trivially).
+            # file-absent case (approximation) rather than silently aliasing
+            # to bcrit_curve. A truncated/whitespace-only producer file must
+            # not inject the wire_curve value as the Pfaffian witness (the
+            # gate would then compare wire_curve to itself and pass trivially).
             bcrit_pfaffian = None
             print(f"WARN: {pf_output} present but matched no Pfaffian lines; "
-                  f"bcrit_pfaffian marked 'deferred to U13'")
+                  f"bcrit_pfaffian marked 'approximation (open-chain projected; "
+                  f"full Bloch-Pfaffian deferred U13)'")
     else:
-        # Per spec §3.3 / D5: wire_pfaffian witness is reserved for U13 (full
-        # wire Pfaffian B-sweep with periodic/Bloch BdG). Today no Fortran
-        # producer emits output/wire_slim_pfaffian_witness.dat (per
-        # ce-doc-review adversarial P0 finding). Mark the 4th witness row as
-        # 'deferred to U13' instead of silently aliasing to bcrit_curve.
+        # Per spec §3.3 / D5: wire_pfaffian witness is the per-B min-|Pf|
+        # proxy emitted by T1b (open-chain projection; approximation). The
+        # full Bloch-Pfaffian at PHS-invariant momenta is deferred to U13.
+        # If the producer is missing/truncated, mark the 4th witness row as
+        # 'approximation (open-chain projected; ...)' rather than silently
+        # aliasing to bcrit_curve.
         bcrit_pfaffian = None
-        print(f"WARN: {pf_output} not found; bcrit_pfaffian marked 'deferred to U13' (U13 deferred)")
+        print(f"WARN: {pf_output} not found; bcrit_pfaffian marked "
+              f"'approximation (open-chain projected; full Bloch-Pfaffian "
+              f"deferred U13)'")
 
     if bcrit_curve is not None:
         print(f"  BCRIT wire_curve    {bcrit_curve:.3f}")
@@ -252,7 +256,8 @@ def section_wire_rung(exe):
     if bcrit_pfaffian is not None:
         print(f"  BCRIT wire_pfaffian {bcrit_pfaffian:.3f}")
     else:
-        print(f"  BCRIT wire_pfaffian (deferred to U13)")
+        print(f"  BCRIT wire_pfaffian (approximation (open-chain projected; "
+              f"full Bloch-Pfaffian deferred U13))")
     return True, (bcrit_curve, bcrit_2d, bcrit_pfaffian)
 
 
@@ -322,9 +327,10 @@ def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
     cell_text = []
     for r in rows:
         # Per spec §3.3 / D5: slim Pfaffian witness labeled
-        # "(deferred to U13)" when its value is unavailable.
+        # "approximation (open-chain projected)" when its value is
+        # unavailable (full Bloch-Pfaffian deferred to U13).
         if r[1] is None and r[0] == "Wire (slim Pfaffian)":
-            bc = "deferred to U13"
+            bc = "approximation (open-chain projected)"
         elif r[1] is not None:
             bc = f"{r[1]:.3f}"
         else:
