@@ -41,6 +41,16 @@ import sys
 import tempfile
 from pathlib import Path
 
+# U10 T6: relative-variance threshold below which the slim Pfaffian per-B
+# profile is considered numerically degenerate (cannot distinguish B_crit
+# from FEST precision-floor noise). Below this, argmin(|Pf|_min) returns
+# the first occurrence of the floor value rather than a phase boundary —
+# fall back to the 'approximation' label. Loose enough to tolerate
+# float-rounding noise; tight enough to reject any physically meaningful
+# per-B variation. Dimensionless so the threshold survives any future
+# change to bdg_default_pfaffian_floor (Fortran SSOT, 1.0e-12_dp).
+_PFAFFIAN_DEGENERACY_TOL = 1e-6
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -218,7 +228,11 @@ def section_wire_rung(exe):
                 bcrit_2d = min(avg, key=lambda B: avg[B])
 
     # Per ADR 0008 §4 + spec §5.3: invoke topologicalAnalysis with slim Pfaffian mode
-    # over a B-grid, parse output, emit B_crit = argmin |Pf(kz, B)|.
+    # over a B-grid, parse output, emit B_crit = argmin |Pf(kz, B)|. The argmin
+    # is meaningful only when the per-B profile is non-degenerate; if the slim
+    # Pfaffian is saturated at the FEST precision floor across the B-grid
+    # (current regime: 4.0E-08), argmin returns the first occurrence of the
+    # floor value, not a phase boundary — fall back to approximation.
     pf_output = REPO / "output" / "wire_slim_pfaffian_witness.dat"
     if pf_output.exists():
         pf_mags = {}
@@ -226,7 +240,21 @@ def section_wire_rung(exe):
         for m in re.finditer(r"B=([\d.eE+-]+)\s+\|Pf\|=([\d.eE+-]+)", pf_output.read_text()):
             pf_mags[float(m.group(1))] = float(m.group(2))
         if pf_mags:
-            bcrit_pfaffian = min(pf_mags, key=lambda B: pf_mags[B])
+            pmax = max(pf_mags.values())
+            pmin = min(pf_mags.values())
+            if pmax > 0 and (pmax - pmin) / pmax < _PFAFFIAN_DEGENERACY_TOL:
+                # Per-B |Pf|_min is numerically degenerate (relative variance
+                # below the FEST precision floor). argmin would return the
+                # first occurrence of the floor value, not a phase boundary.
+                # Treat identically to file-absent/empty: approximation.
+                bcrit_pfaffian = None
+                print(f"WARN: |Pf|_min numerically degenerate "
+                      f"(max={pmax:.3e}, min={pmin:.3e}, "
+                      f"rel_var={(pmax-pmin)/pmax:.1e}); bcrit_pfaffian marked "
+                      f"'approximation (open-chain projected; full Bloch-Pfaffian "
+                      f"deferred U13)'")
+            else:
+                bcrit_pfaffian = min(pf_mags, key=lambda B: pf_mags[B])
         else:
             # File present but empty/unmatched — treat identically to the
             # file-absent case (approximation) rather than silently aliasing
