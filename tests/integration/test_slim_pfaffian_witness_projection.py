@@ -82,17 +82,32 @@ def run_topologicalAnalysis_canonical():
 def parse_slim_pf_witness(path):
     """Parse slim-Pfaffian witness output `path`.
 
-    Expected format (after U13 ships): one line per (B, mu) point of
-    `slim_pf_sign = +/-1` or `slim_pf_sign = 0`. Returns list of int signs.
+    Format (per-T1b / U10): one `B=<val> |Pf|=<val>` row per B-grid point.
+    The producer (`write_wire_slim_pfaffian_witness` in
+    `src/io/outputFunctions.f90:833-874`) emits the per-B min |Pf| over the
+    mu-window — the open-chain projected approximation (full Bloch-Pfaffian
+    at PHS-invariant momenta deferred to U13). Returns a list of
+    `(B, magnitude)` tuples (both floats).
+
+    Same regex the lecture 13 acceptance-gate reader uses at
+    `scripts/lecture_13_topological.py:240`:
+        re.finditer("B=([\\d.eE+-]+)\\s+\\|Pf\\|=([\\d.eE+-]+)", text)
+    Character class allows uppercase E (Fortran ES16.8) as well as e.
+
+    Returns empty list if no rows present (caller handles zero-count).
     """
-    signs = []
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith("slim_pf_sign"):
-                value = line.split("=", 1)[1].strip()
-                signs.append(int(float(value)))
-    return signs
+    import re
+    text = Path(path).read_text()
+    # Match the lecture 13 acceptance-gate reader regex verbatim (per spec
+    # §5.3 / ADR 0008 §4): keep the same (non-raw) string literal so any
+    # Python 3.12+ escape-sequence warnings fire in lockstep with the
+    # canonical reader. Character class allows uppercase E (Fortran ES16.8).
+    rows = []
+    for m in re.finditer(
+        "B=([\\d.eE+-]+)\\s+\\|Pf\\|=([\\d.eE+-]+)", text
+    ):
+        rows.append((float(m.group(1)), float(m.group(2))))
+    return rows
 
 
 def call_witness_slim(B, mu, N=3):
@@ -147,22 +162,36 @@ def main():
 
     # Step 2: parse slim-Pfaffian witness output if produced; otherwise label
     # the gap honestly (per spec D5/§3.3: producer reserved for U13).
-    non_zero_count = 0
     if SLIM_PF_FILE.exists():
-        signs = parse_slim_pf_witness(SLIM_PF_FILE)
-        for s in signs:
-            if s != 0:
-                non_zero_count += 1
-        if non_zero_count == 0:
+        rows = parse_slim_pf_witness(SLIM_PF_FILE)
+        # Producer contract (write_wire_slim_pfaffian_witness): one row per
+        # B-grid point, magnitudes non-negative. Reject a malformed producer
+        # (negative Pf, NaN/Inf, or empty regex match with the file present).
+        # NOTE: degenerate-saturation detection (relative variance below the
+        # FEST precision floor) is handled at the lecture 13 acceptance gate
+        # (scripts/lecture_13_topological.py:245); this test is a structural
+        # contract pin, not a physics gate.
+        if not rows:
             print(
-                f"FAIL: slim Pfaffian witness returned 0 across all "
-                f"{len(signs)} witness rows"
+                f"FAIL: slim Pfaffian witness file present but matched no "
+                f"B=val |Pf|=val rows ({SLIM_PF_FILE.relative_to(REPO)})"
             )
             sys.exit(1)
+        bad = [(B, pf) for (B, pf) in rows
+               if pf < 0.0 or not (pf < float('inf')) or pf != pf]
+        if bad:
+            print(
+                f"FAIL: slim Pfaffian witness has {len(bad)} malformed rows "
+                f"(negative or non-finite |Pf|): {bad[:3]}"
+            )
+            sys.exit(1)
+        b_values = [B for (B, _) in rows]
+        pf_values = [pf for (_, pf) in rows]
         print(
-            f"PASS: slim Pfaffian witness non-zero at {non_zero_count}/"
-            f"{len(signs)} points (real output from "
-            f"{SLIM_PF_FILE.relative_to(REPO)})"
+            f"PASS: slim Pfaffian witness parsed {len(rows)} per-B rows "
+            f"(real output from {SLIM_PF_FILE.relative_to(REPO)}): "
+            f"B in [{min(b_values):.3e}, {max(b_values):.3e}] T, "
+            f"|Pf| in [{min(pf_values):.3e}, {max(pf_values):.3e}]"
         )
         return
 
