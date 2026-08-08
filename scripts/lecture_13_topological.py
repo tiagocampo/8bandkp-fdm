@@ -229,10 +229,21 @@ def section_wire_rung(exe):
 
     # Per ADR 0008 §4 + spec §5.3: invoke topologicalAnalysis with slim Pfaffian mode
     # over a B-grid, parse output, emit B_crit = argmin |Pf(kz, B)|. The argmin
-    # is meaningful only when the per-B profile is non-degenerate; if the slim
-    # Pfaffian is saturated at the FEST precision floor across the B-grid
-    # (current regime: 4.0E-08), argmin returns the first occurrence of the
-    # floor value, not a phase boundary — fall back to approximation.
+    # is meaningful only when the per-B profile is non-degenerate; four degenerate
+    # regimes must fall back to approximation (not return a meaningless
+    # first-occurrence pick):
+    #   * file absent                                (file not found)
+    #   * file present, no matched lines             (truncated/empty producer)
+    #   * file saturated at FEST precision floor     (T6: pmax > 0 but
+    #                                                 (pmax-pmin)/pmax < tol;
+    #                                                 e.g. all 4.0E-08)
+    #   * file all-zero entries                      (P2: every s2_sign=0 so
+    #                                                 best_pf_abs=0; pmax == 0
+    #                                                 short-circuits the
+    #                                                 relative-variance check,
+    #                                                 so min() would return the
+    #                                                 first B key by insertion
+    #                                                 order — meaningless)
     pf_output = REPO / "output" / "wire_slim_pfaffian_witness.dat"
     if pf_output.exists():
         pf_mags = {}
@@ -242,7 +253,19 @@ def section_wire_rung(exe):
         if pf_mags:
             pmax = max(pf_mags.values())
             pmin = min(pf_mags.values())
-            if pmax > 0 and (pmax - pmin) / pmax < _PFAFFIAN_DEGENERACY_TOL:
+            if pmax == 0:
+                # All-closure regime: every |Pf|=0 (s2_sign=0 across the B-grid).
+                # The relative-variance guard `pmax > 0 and ...` short-circuits
+                # to False, so min() would return the first B key (dict insertion
+                # order) — a meaningless first-occurrence pick, not a phase
+                # boundary. Mark identically to the saturated case.
+                bcrit_pfaffian = None
+                print(f"WARN: |Pf|_min numerically degenerate "
+                      f"(all-zero closure regime; max={pmax:.3e}, "
+                      f"min={pmin:.3e}); bcrit_pfaffian marked "
+                      f"'approximation (open-chain projected; full Bloch-Pfaffian "
+                      f"deferred U13)'")
+            elif pmax > 0 and (pmax - pmin) / pmax < _PFAFFIAN_DEGENERACY_TOL:
                 # Per-B |Pf|_min is numerically degenerate (relative variance
                 # below the FEST precision floor). argmin would return the
                 # first occurrence of the floor value, not a phase boundary.
