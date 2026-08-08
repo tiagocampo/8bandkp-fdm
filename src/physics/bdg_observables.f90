@@ -3,15 +3,21 @@ module bdg_observables
   ! ==============================================================================
   ! BdG per-point observables — the foundational seam extracted from app glue.
   !
-  ! All three per-point call sites in main_topology (run_bdg_wire, run_bdg_qw,
-  ! eval_wire_bdg_gap) used to inline:
-  !   - minigap: 2 * minval(abs(eigvals_bdg))
-  !   - near-zero threshold: 0.001 * delta_0
-  !   - invariant flag: count(|E| < threshold) >= 2
+  ! Two seams, two consumers:
+  !   - eval_bdg_point (per-point minigap/near-zero-count/invariant_flag):
+  !     four call sites in main_topology (run_bdg_wire ×2, run_bdg_qw,
+  !     eval_wire_bdg_gap) used to inline
+  !       minigap: 2 * minval(abs(eigvals_bdg))
+  !       near-zero threshold: 0.001 * delta_0
+  !       invariant flag: count(|E| < threshold) >= 2
+  !   - eval_bdg_pfaffian_witness_csr (slim projected Pfaffian S2, wire rung):
+  !     one call site in main_topology (eval_wire_bdg_gap). PR #42 retired
+  !     the dense wire_pfaffian_witness (S1+S2) and folded production into
+  !     the seam sibling; U13 is the destination for full Bloch-Pfaffian.
   !
-  ! This module folds those three steps into one pure-function call so the
-  ! build-and-solve stays in main_topology (per ADR 0003) while the per-point
-  ! physics decision lives in one place. Downstream slices (Pfaffian wrapper,
+  ! This module folds the per-point decision into one pure-function call so
+  ! the build-and-solve stays in main_topology (per ADR 0003) while the
+  ! per-point physics lives in one place. Downstream slices (Kitaev wrapper,
   ! polarization, LDOS) consume the same contract.
   !
   ! Pure only — no I/O, no allocations, no state.
