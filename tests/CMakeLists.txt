@@ -998,6 +998,22 @@ set_tests_properties(
     PROPERTIES LABELS "regression" TIMEOUT 900
 )
 
+# U13 T3: Bloch-periodic dispatch regression guard. Asserts the
+# fixed-kz default path (nk_par absent) and the explicit nk_par=1
+# knob produce byte-identical outputs on the canonical wire-bdg 2D
+# fixture. Fails if the dispatch silently diverges.
+add_test(
+    NAME regression_bdg_u13_nk_par_equiv
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_bdg_u13_nk_par_equiv.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_bdg_topological_2d.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_bdg_u13_nk_par_equiv
+    PROPERTIES LABELS "regression" TIMEOUT 900
+)
+
 # U10 T1b: smoke test for the per-B min-|Pf| proxy producer
 # (write_wire_slim_pfaffian_witness in src/io/outputFunctions.f90). Drives
 # the wire_bdg 2D sweep and asserts output/wire_slim_pfaffian_witness.dat
