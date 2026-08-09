@@ -4,8 +4,9 @@
 > this chart; unblocks T2. Materialized from the map's T1 entry.
 
 Type: task
-Status: pending
-Blocked by: 06
+Status: claimed
+Owner: next-session (T1 chart handoff 2026-08-09)
+Blocked by: 06 (closed 2026-08-09 — T6)
 
 ## Question
 
