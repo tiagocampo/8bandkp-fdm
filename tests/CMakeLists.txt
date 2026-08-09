@@ -208,6 +208,17 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    # T2 (U13 Bloch-Pfaffian chart): strict S1xS2 product seam
+    # (`eval_bdg_pfaffian_witness_product_csr`). Wires the k-product
+    # Majorana number (S1) through the slim projected Pfaffian (S2) and
+    # applies the L3 disagreement mapping (cases i-v). RED on main (seam
+    # not implemented yet); GREEN once T2 lands.
+    add_pfunit_ctest(test_bdg_pfaffian_witness_product_csr
+        TEST_SOURCES unit/test_bdg_pfaffian_witness_product_csr.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     # Task 1.5 (P1 BdG stabilization, ADR 0008 §2): cross-module pinning
     # of pairing_sign/pairing_partner as PUBLIC exports from bdg_hamiltonian.
     # RED until Task 1.6 adds them to the public list.
