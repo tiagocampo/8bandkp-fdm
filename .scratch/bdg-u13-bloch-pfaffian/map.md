@@ -7,7 +7,8 @@
 > "Explicitly deferred: U13 (periodic/Bloch BdG construction for the Majorana
 > number; without it the wire Pfaffian sweep evaluates at one point only)").
 
-## Charting session started 2026-08-14; tickets materialized 2026-08-09
+## Charting session started 2026-08-14; tickets materialized 2026-08-09;
+T2 + T5 closed 2026-08-09 (in same session, picked up after T2 handoff)
 
 Source-grounded after landing U10 (PR #43 merged to `main@52743b3`, 2026-08-08).
 U10 closed the slim S2 projected Pfaffian seam; the 4-witness acceptance gate's
@@ -149,6 +150,19 @@ _(L1–L3 resolved by T6 on 2026-08-09 — see [Decisions so far](#decisions-so-
   reproduces fixed-kz CSR bit-for-bit (1e-12 tol). Bx-only Peierls guard mirrors
   `defs.f90:963-969` SSOT as defense-in-depth. 52/52 unit + 5/5 wire-BdG
   regression + 1/1 lecture-13 gate green. Commit `302e092`.
+- [S1×S2 agreement seam `eval_bdg_pfaffian_witness_product_csr` (T2)](issues/02-s1-s2-agreement-seam.md) —
+  public seam in `bdg_observables.f90:283-347` + private `map_s1_s2_to_z2` L3
+  mapper (L361-389) covering all 5 L3 cases. Reads S1 via `kitaev_majorana_number`
+  over T1's Bloch stack; S2 via `eval_bdg_pfaffian_witness_csr` on slice 1
+  dense→CSR scratch. Native `{-1,+1,0}`. 53/53 unit + 5/5 wire-BdG regression
+  + 1/1 lecture-13 gate green. Commit `449c7fb`.
+- [TDD-red strict S1×S2 agreement test (T5)](issues/05-tdd-strict-agreement-test.md) —
+  extended `tests/unit/test_bdg_pfaffian_witness_product_csr.pf` with 3 new
+  `@test` subroutines for cases (ii) S1=S2=0, (iii) S1≠S2 sign-split,
+  (v) S1=0 S2=±1. TDD red→green cycle executed (pre-T2 build error, HEAD green).
+  Resolved T2's "4×4 n_odd=1 fixtures" forward-pointer to 16×16 stacks via
+  `n_k=1` guard for (ii)/(v) + band-7/8 coupling sign for (iii). 53/53 unit
+  + 3/3 wire-BdG regression + 1/1 lecture-13 gate green. Commit `f6498e6`.
 
 ## Out of scope
 
@@ -166,22 +180,17 @@ _(L1–L3 resolved by T6 on 2026-08-09 — see [Decisions so far](#decisions-so-
 <!-- the map is an index; open tickets live as child files under issues/, the -->
 <!-- frontier is the open, unblocked, unclaimed ones (first by number wins). -->
 
-Four child tickets open under `issues/` (T6 closed 2026-08-09, T1 closed 2026-08-09).
+Four child tickets open under `issues/` (T6, T1, T2, T5 closed 2026-08-09).
 Frontier order, with blocking edges:
 
-- [02](issues/02-s1-s2-agreement-seam.md) — T2 · task · **FRONTIER NOW** —
-  `eval_bdg_pfaffian_witness_product_csr` strict S1×S2 seam; native
-  `{-1,+1,0}`; closure-disagreement branch per L3.
-- [05](issues/05-tdd-strict-agreement-test.md) — T5 · task · blocked by T2 —
-  TDD-red strict-agreement test; fails on `main` ("one point only"), green after
-  T1–T4.
-- [03](issues/03-bloch-sweep-config-knob.md) — T3 · task · blocked by T2 —
+- [03](issues/03-bloch-sweep-config-knob.md) — T3 · task · **FRONTIER NOW** —
   `nk_par`/`bloch_sweep` knob + `main_topology.f90` dispatch; bit-for-bit
-  regression guard at `nk_par=1`.
-- [04](issues/04-strict-4witness-gate.md) — T4 · task · blocked by T3, T5 —
+  regression guard at `nk_par=1`. Note: `defs.f90` derived-type edits are a
+  Require-approval boundary per `CLAUDE.md` — pause for user sign-off before
+  touching `topology_config` fields.
+- [04](issues/04-strict-4witness-gate.md) — T4 · task · blocked by T3 —
   the **destination**: strict 4-witness gate + 4-witness label flip +
   `@todo U13` resolution in `lecture_13_topological.py`.
 
-Build order: T2 → (T5 || T3) → T4. No research ticket — the algorithm is
-in-tree (`kitaev_majorana_number`, `zskpfa_reduction` verified this session;
-the "vendor SKBPFA" proposal is collapsed to a verification).
+Build order: T3 → T4. T5 closed ahead of T3 (seam-test work parallelizable;
+the chart's T5 ∥ T3 fork is now T3-alone).
