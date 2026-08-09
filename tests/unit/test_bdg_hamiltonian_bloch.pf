@@ -1,0 +1,262 @@
+module test_bdg_hamiltonian_bloch
+  ! COVERAGE: observable=Bloch_BdG_stack geometry=wire material=GaAs tier=unit
+  ! ==============================================================================
+  ! T1 (U13 Bloch-Pfaffian chart): Bloch-periodic H_BdG(k_par) stack builder.
+  !
+  ! CONTRACT:
+  !   build_bdg_hamiltonian_1d_bloch(H_k_array, n_k, k_par_values, cfg, profile_2d,
+  !                                  kpterms_2d, mu, delta_0, ws, B_vec, g_factor)
+  !
+  !   - H_k_array is dense complex (16N x 16N x n_k), shape matches
+  !     kitaev_majorana_number's consumer at src/math/pfaffian.f90:121.
+  !   - For n_k = 1, k_par_values = [kz], the slice H_k_array(:,:,1) is
+  !     bit-for-bit identical to csr_to_dense(build_bdg_hamiltonian_1d(...,
+  !     kz=...)). This is the regression guard: T3's nk_par=1 default
+  !     reproduces the fixed-kz builder exactly.
+  !   - For n_k >= 2, each slice is Hermitian (max |H - H^dagger| < 1e-10_dp).
+  !   - With Bx != 0 (positive path), the builder runs to completion.
+  !
+  ! SHARED FIXTURE: nx=3, ny=3, dx=dy=5.0, single GaAs material, FDorder=2
+  ! (mirrors test_bdg_csr_assembly at test_bdg_hamiltonian.pf:226).
+  ! ==============================================================================
+
+  use funit
+  use definitions
+  use parameters
+  use bdg_hamiltonian
+  use sparse_matrices
+  use geometry
+  use confinement_init, only: confinementInitialization_2d
+  use hamiltonian_wire, only: wire_workspace, wire_workspace_free
+  use csr_test_helpers, only: csr_to_dense
+  implicit none
+
+contains
+
+  ! ==================================================================
+  ! TDD-red guard: n_k=1 reproduces the fixed-kz CSR builder bit-for-bit.
+  !
+  ! This test is RED on main@52743b3 (build_bdg_hamiltonian_1d_bloch
+  ! does not exist) and turns GREEN once the new subroutine is added
+  ! with the helper extraction described in
+  ! .scratch/bdg-u13-bloch-pfaffian/tdd-plan.md.
+  ! ==================================================================
+  @test
+  subroutine test_bloch_n1_matches_fixed_kz()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    real(kind=dp), parameter :: kz_test = 0.05_dp
+    integer :: ngrid, N, Ntot, i, j
+    real(kind=dp) :: max_diff
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    type(csr_matrix) :: H_bdg_csr
+    complex(kind=dp), allocatable :: H_k_array(:,:,:)
+    complex(kind=dp), allocatable :: H_dense_from_csr(:,:)
+    real(kind=dp), allocatable :: k_par_values(:)
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws_csr, ws_bloch
+    integer :: mat2d(nx, ny)
+
+    ngrid = nx * ny
+    N = ngrid
+    Ntot = 16 * N
+    mat2d = 1
+
+    ! --- Build the wire fixture (GaAs, FDorder=2) ---
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+
+    ! --- Build fixed-kz CSR (the SSOT baseline) ---
+    call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
+                                   kz=kz_test, mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_csr)
+
+    ! --- Build n_k=1 Bloch stack at the same k_par ---
+    allocate(H_k_array(Ntot, Ntot, 1))
+    allocate(k_par_values(1))
+    k_par_values(1) = kz_test
+    call build_bdg_hamiltonian_1d_bloch(H_k_array, 1, k_par_values, cfg, &
+                                        profile_2d, kpterms_2d, &
+                                        mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws_bloch)
+
+    ! --- Compare dense slice to csr_to_dense of the fixed-kz builder ---
+    allocate(H_dense_from_csr(H_bdg_csr%nrows, H_bdg_csr%ncols))
+    call csr_to_dense(H_bdg_csr, H_dense_from_csr)
+
+    max_diff = 0.0_dp
+    do j = 1, Ntot
+      do i = 1, Ntot
+        max_diff = max(max_diff, abs(H_k_array(i, j, 1) - H_dense_from_csr(i, j)))
+      end do
+    end do
+
+    @assertTrue(max_diff < 1.0e-12_dp, message="n_k=1 Bloch slice must match fixed-kz CSR bit-for-bit")
+
+    deallocate(H_k_array, k_par_values, H_dense_from_csr)
+    call csr_free(H_bdg_csr)
+    call wire_workspace_free(ws_csr)
+    call wire_workspace_free(ws_bloch)
+    do i = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(i))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_bloch_n1_matches_fixed_kz
+
+  ! ==================================================================
+  ! n_k=2: each slice is Hermitian, and slices differ at distinct k_par.
+  ! ==================================================================
+  @test
+  subroutine test_bloch_n2_two_hermitian_slices()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, N, Ntot, i, j, k
+    real(kind=dp) :: herr_1, herr_2, slice_diff
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    complex(kind=dp), allocatable :: H_k_array(:,:,:)
+    real(kind=dp), allocatable :: k_par_values(:)
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    integer :: mat2d(nx, ny)
+
+    ngrid = nx * ny
+    N = ngrid
+    Ntot = 16 * N
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+
+    allocate(H_k_array(Ntot, Ntot, 2))
+    allocate(k_par_values(2))
+    k_par_values = [0.0_dp, 0.1_dp]
+
+    call build_bdg_hamiltonian_1d_bloch(H_k_array, 2, k_par_values, cfg, &
+                                        profile_2d, kpterms_2d, &
+                                        mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws)
+
+    ! Hermiticity check on each slice: max |H(i,j) - conjg(H(j,i))|
+    herr_1 = 0.0_dp
+    herr_2 = 0.0_dp
+    do j = 1, Ntot
+      do i = 1, Ntot
+        herr_1 = max(herr_1, abs(H_k_array(i, j, 1) - conjg(H_k_array(j, i, 1))))
+        herr_2 = max(herr_2, abs(H_k_array(i, j, 2) - conjg(H_k_array(j, i, 2))))
+      end do
+    end do
+    @assertTrue(herr_1 < 1.0e-10_dp, message="n_k=2 slice 1 must be Hermitian")
+    @assertTrue(herr_2 < 1.0e-10_dp, message="n_k=2 slice 2 must be Hermitian")
+
+    ! Distinct k_par values must produce distinct slices (sanity)
+    slice_diff = 0.0_dp
+    do j = 1, Ntot
+      do i = 1, Ntot
+        slice_diff = max(slice_diff, abs(H_k_array(i, j, 1) - H_k_array(i, j, 2)))
+      end do
+    end do
+    @assertTrue(slice_diff > 1.0e-8_dp, message="n_k=2 slices at distinct k_par must differ")
+
+    deallocate(H_k_array, k_par_values)
+    call wire_workspace_free(ws)
+    do k = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(k))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_bloch_n2_two_hermitian_slices
+
+  ! ==================================================================
+  ! Bx-only positive path: Bx!=0 must complete (Bx is required for
+  ! Peierls orbital coupling per defs.f90:963-969 SSOT). By-only is
+  ! covered by validate_semantic at config-load time and by an
+  ! error stop in the bloch builder; pFUnit cannot catch error stop,
+  ! so we pin the positive path here.
+  ! ==================================================================
+  @test
+  subroutine test_bloch_accepts_bx_only_no_error()
+    integer, parameter :: nx = 3, ny = 3
+    real(kind=dp), parameter :: dx = 5.0_dp, dy = 5.0_dp
+    integer :: ngrid, N, Ntot, k
+    type(spatial_grid) :: grid
+    type(paramStruct), allocatable :: params(:)
+    type(region_spec), allocatable :: regions(:)
+    character(len=255), allocatable :: material_names(:)
+    real(kind=dp), allocatable :: profile_2d(:,:)
+    type(csr_matrix), allocatable :: kpterms_2d(:)
+    complex(kind=dp), allocatable :: H_k_array(:,:,:)
+    real(kind=dp), allocatable :: k_par_values(:)
+    type(simulation_config) :: cfg
+    type(wire_workspace) :: ws
+    integer :: mat2d(nx, ny)
+
+    ngrid = nx * ny
+    N = ngrid
+    Ntot = 16 * N
+    mat2d = 1
+
+    call grid_init_rect(grid, nx, ny, dx, dy, mat2d)
+    allocate(material_names(1))
+    material_names(1) = "GaAs"
+    allocate(params(1))
+    call paramDatabase(material_names, 1, params)
+    allocate(regions(1))
+    regions(1)%material = "GaAs"
+    call confinementInitialization_2d(grid, params, regions, profile_2d, kpterms_2d, FDorder=2)
+    cfg%grid = grid
+    cfg%confinement = 'wire'
+
+    allocate(H_k_array(Ntot, Ntot, 1))
+    allocate(k_par_values(1))
+    k_par_values(1) = 0.0_dp
+
+    ! Bx = 0.5 T, By = Bz = 0 (the Bx-only case the SSOT permits)
+    call build_bdg_hamiltonian_1d_bloch(H_k_array, 1, k_par_values, cfg, &
+                                        profile_2d, kpterms_2d, &
+                                        mu=0.0_dp, delta_0=0.25e-3_dp, ws=ws, &
+                                        B_vec=[0.5_dp, 0.0_dp, 0.0_dp], g_factor=10.0_dp)
+
+    ! The builder must reach this line — if Peierls path silently dropped,
+    ! the test would still pass trivially. We check that the slice is
+    ! non-trivially populated as a basic sanity guard. @assertTrue must be
+    ! single-line per project memory feedback_pfunit_macro_single_line.
+    @assertTrue(any(abs(H_k_array(:, :, 1)) > 0.0_dp), message="Bx-only build must produce non-empty slice")
+
+    deallocate(H_k_array, k_par_values)
+    call wire_workspace_free(ws)
+    do k = 1, size(kpterms_2d)
+      call csr_free(kpterms_2d(k))
+    end do
+    deallocate(kpterms_2d, profile_2d, params, regions, material_names)
+    call grid_free(grid)
+  end subroutine test_bloch_accepts_bx_only_no_error
+
+end module test_bdg_hamiltonian_bloch

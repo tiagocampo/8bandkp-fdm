@@ -163,6 +163,17 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    # T1 (U13 Bloch-Pfaffian chart): Bloch-periodic H_BdG(k_par) stack
+    # builder. Stack shape H_k_array(:,:,n_k) dense complex, matches
+    # kitaev_majorana_number consumer at src/math/pfaffian.f90:120-171.
+    # RED on main (symbol not found); GREEN once build_bdg_hamiltonian_1d_bloch
+    # is implemented with the n_k=1 bit-for-bit regression guard.
+    add_pfunit_ctest(test_bdg_hamiltonian_bloch
+        TEST_SOURCES unit/test_bdg_hamiltonian_bloch.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     # Issue 02 (U5, Layer A of U4): PHS oracle pinning the BdG hole-block
     # canonical convention (-conjg(H0(-k)) per ADR 0007). Four-field matrix
     # (no_Z/Z x no_P/P) at generic k + cross-builder spectral identity.
