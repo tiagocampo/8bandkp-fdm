@@ -5,20 +5,55 @@
 
 Type: task
 Status: completed
-Owner: next-session (T1 chart handoff 2026-08-09) — landed on `feat/bdg-u13-bloch-pfaffian` (commit `302e092`)
+Owner: next-session (T1 chart handoff 2026-08-09) — landed on `feat/bdg-u13-bloch-pfaffian` (commits `302e092` + `1a14489`)
 Blocked by: 06 (closed 2026-08-09 — T6)
 
 ## Resolution (2026-08-09)
 
 New public subroutine `build_bdg_hamiltonian_1d_bloch` added to
-`src/physics/bdg_hamiltonian.f90:454-563` (private `csr_to_dense_work` from
-`sparse_matrices` does the CSR→dense per-slice). n_k=1 reproduces the
-fixed-kz builder bit-for-bit (regression guard pinned by
-`test_bloch_n1_matches_fixed_kz`, tolerance 1e-12). Bx-only Peierls guard
-mirrors `defs.f90:963-969` SSOT as defense-in-depth at builder entry.
+`src/physics/bdg_hamiltonian.f90`. Private `dispatch_bdg_wire_builder`
+helper routes the (B_vec, g_factor) optional pair (DRY/OCP). n_k=1
+reproduces the fixed-kz builder bit-for-bit (regression guard pinned by
+`test_bloch_n1_matches_fixed_kz` + `test_bloch_n1_matches_fixed_kz_with_bx`,
+tolerance 1e-12 no-B / 1e-10 Bx-only). Bx-only Peierls guard mirrors
+`defs.f90:963-969` SSOT as defense-in-depth at builder entry.
 
-Verification: 52/52 unit (51 baseline + 1 T1 target with 3 `@test`s),
-5/5 wire-BdG regression, 1/1 lecture-13 acceptance gate.
+`H_k_array` is `allocatable, intent(out)` — caller no longer needs to
+know Ntot ahead of time; Ntot derives from `cfg%grid%npoints()` (SSOT).
+
+Test fixture dedup: `setup_wire_gas_fixture` + `teardown_wire_gas_fixture`
+extract ~45 lines of @test-local duplication (DRY/SSOT). Per-@test body
+44-52 lines, within the 50-line budget.
+
+Verification: 52/52 unit (51 baseline + 1 T1 target with 4 `@test`s —
+3 prior + 1 added for Bx parity), 5/5 wire-BdG regression, 1/1
+lecture-13 acceptance gate.
+
+## Review fixes (commits `1a14489`, post code-review)
+
+Code review at `302e092` surfaced 5 hard violations + several smells.
+Applied fixes:
+
+- **S1**: `H_k_array` non-allocatable `intent(out)` → `allocatable, intent(out)`.
+  Caller no longer needs to know Ntot.
+- **S2 / Repeated Switches**: extracted `dispatch_bdg_wire_builder` private
+  helper. Three-way nested if cascade replaced by single call.
+- **S3 / DRY**: extracted fixture helpers, ~45 lines dedup.
+- **S6 / Speculative Generality**: dropped unused `ws=` parameter.
+- **S7 / Mysterious Name**: default-init `ws_slice = wire_workspace()`.
+- **S8 / Assertion Roulette**: tightened third test to Hermiticity check.
+- **P1**: added `test_bloch_n1_matches_fixed_kz_with_bx` — pins the
+  Bx-only Peierls branch bit-for-bit (was only covered at the
+  Hermiticity level).
+- **W1**: per-slice `dense_slice` allocate + deallocate — eliminates
+  leak-on-early-error robustness gap.
+- **W2**: corrected "private from sparse_matrices" — `csr_to_dense_work`
+  is public, accessed via `use sparse_matrices`.
+
+**Out of scope (deferred to future effort)**: `bdg_hamiltonian.f90` module
+size 703→723 lines (still above 300-line file budget). The module-level
+SRP seam split is a parent-plan refactor, not T1 scope; flagged for
+future effort.
 
 T1 unblocks T2 (S1×S2 strict agreement seam).
 
