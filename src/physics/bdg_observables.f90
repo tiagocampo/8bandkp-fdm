@@ -3,15 +3,21 @@ module bdg_observables
   ! ==============================================================================
   ! BdG per-point observables — the foundational seam extracted from app glue.
   !
-  ! All three per-point call sites in main_topology (run_bdg_wire, run_bdg_qw,
-  ! eval_wire_bdg_gap) used to inline:
-  !   - minigap: 2 * minval(abs(eigvals_bdg))
-  !   - near-zero threshold: 0.001 * delta_0
-  !   - invariant flag: count(|E| < threshold) >= 2
+  ! Two seams, two consumers:
+  !   - eval_bdg_point (per-point minigap/near-zero-count/invariant_flag):
+  !     four call sites in main_topology (run_bdg_wire ×2, run_bdg_qw,
+  !     eval_wire_bdg_gap) used to inline
+  !       minigap: 2 * minval(abs(eigvals_bdg))
+  !       near-zero threshold: 0.001 * delta_0
+  !       invariant flag: count(|E| < threshold) >= 2
+  !   - eval_bdg_pfaffian_witness_csr (slim projected Pfaffian S2, wire rung):
+  !     one call site in main_topology (eval_wire_bdg_gap). PR #42 retired
+  !     the dense wire_pfaffian_witness (S1+S2) and folded production into
+  !     the seam sibling; U13 is the destination for full Bloch-Pfaffian.
   !
-  ! This module folds those three steps into one pure-function call so the
-  ! build-and-solve stays in main_topology (per ADR 0003) while the per-point
-  ! physics decision lives in one place. Downstream slices (Pfaffian wrapper,
+  ! This module folds the per-point decision into one pure-function call so
+  ! the build-and-solve stays in main_topology (per ADR 0003) while the
+  ! per-point physics lives in one place. Downstream slices (Kitaev wrapper,
   ! polarization, LDOS) consume the same contract.
   !
   ! Pure only — no I/O, no allocations, no state.
@@ -192,16 +198,26 @@ contains
   ! plan. Until then the seam accepts s2 ∈ {-1, 0, +1} with s2 /= 0 on
   ! non-diagonal synthetic fixtures as the GREEN contract (User Story 5).
   ! ==============================================================================
-  function eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg, params) result(s2_sign)
+  function eval_bdg_pfaffian_witness_csr(H_bdg_csr, Nbdg, params, best_pf_abs) result(s2_sign)
     type(csr_matrix), intent(in)            :: H_bdg_csr
     integer,          intent(in)            :: Nbdg
     type(bdg_pfaffian_params_t), intent(in) :: params
+    ! Optional `best_pf_abs` out-arg threads the per-(B, mu) max-site |Pf|
+    ! magnitude through the seam for callers accumulating a per-B `min-|Pf|`
+    ! proxy (U10 T1a/T1b); absent -> magnitude discarded, existing API contract
+    ! preserved.
+    real(kind=dp), intent(out), optional    :: best_pf_abs
     integer                                  :: s2_sign
+    real(kind=dp)                           :: best_pf_abs_local
 
     ! Delegate to the CSR-aware dense-path witness, threading the SSOT
     ! pfaffian_floor through (PR #42's declared-but-not-consumed gap, closed
     ! by ticket 01 of .scratch/bdg-u2-actual-ship/).
-    call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg, params%pfaffian_floor, s2_sign)
+    if (present(best_pf_abs)) then
+      call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg, params%pfaffian_floor, s2_sign, best_pf_abs)
+    else
+      call wire_pfaffian_witness_sweep(H_bdg_csr, Nbdg, params%pfaffian_floor, s2_sign, best_pf_abs_local)
+    end if
   end function eval_bdg_pfaffian_witness_csr
 
   ! ==============================================================================

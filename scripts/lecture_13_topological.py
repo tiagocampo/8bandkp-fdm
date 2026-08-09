@@ -41,6 +41,16 @@ import sys
 import tempfile
 from pathlib import Path
 
+# U10 T6: relative-variance threshold below which the slim Pfaffian per-B
+# profile is considered numerically degenerate (cannot distinguish B_crit
+# from FEST precision-floor noise). Below this, argmin(|Pf|_min) returns
+# the first occurrence of the floor value rather than a phase boundary —
+# fall back to the 'approximation' label. Loose enough to tolerate
+# float-rounding noise; tight enough to reject any physically meaningful
+# per-B variation. Dimensionless so the threshold survives any future
+# change to bdg_default_pfaffian_floor (Fortran SSOT, 1.0e-12_dp).
+_PFAFFIAN_DEGENERACY_TOL = 1e-6
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -218,7 +228,22 @@ def section_wire_rung(exe):
                 bcrit_2d = min(avg, key=lambda B: avg[B])
 
     # Per ADR 0008 §4 + spec §5.3: invoke topologicalAnalysis with slim Pfaffian mode
-    # over a B-grid, parse output, emit B_crit = argmin |Pf(kz, B)|.
+    # over a B-grid, parse output, emit B_crit = argmin |Pf(kz, B)|. The argmin
+    # is meaningful only when the per-B profile is non-degenerate; four degenerate
+    # regimes must fall back to approximation (not return a meaningless
+    # first-occurrence pick):
+    #   * file absent                                (file not found)
+    #   * file present, no matched lines             (truncated/empty producer)
+    #   * file saturated at FEST precision floor     (T6: pmax > 0 but
+    #                                                 (pmax-pmin)/pmax < tol;
+    #                                                 e.g. all 4.0E-08)
+    #   * file all-zero entries                      (P2: every s2_sign=0 so
+    #                                                 best_pf_abs=0; pmax == 0
+    #                                                 short-circuits the
+    #                                                 relative-variance check,
+    #                                                 so min() would return the
+    #                                                 first B key by insertion
+    #                                                 order — meaningless)
     pf_output = REPO / "output" / "wire_slim_pfaffian_witness.dat"
     if pf_output.exists():
         pf_mags = {}
@@ -226,24 +251,54 @@ def section_wire_rung(exe):
         for m in re.finditer(r"B=([\d.eE+-]+)\s+\|Pf\|=([\d.eE+-]+)", pf_output.read_text()):
             pf_mags[float(m.group(1))] = float(m.group(2))
         if pf_mags:
-            bcrit_pfaffian = min(pf_mags, key=lambda B: pf_mags[B])
+            pmax = max(pf_mags.values())
+            pmin = min(pf_mags.values())
+            if pmax == 0:
+                # All-closure regime: every |Pf|=0 (s2_sign=0 across the B-grid).
+                # The relative-variance guard `pmax > 0 and ...` short-circuits
+                # to False, so min() would return the first B key (dict insertion
+                # order) — a meaningless first-occurrence pick, not a phase
+                # boundary. Mark identically to the saturated case.
+                bcrit_pfaffian = None
+                print(f"WARN: |Pf|_min numerically degenerate "
+                      f"(all-zero closure regime; max={pmax:.3e}, "
+                      f"min={pmin:.3e}); bcrit_pfaffian marked "
+                      f"'approximation (open-chain projected; full Bloch-Pfaffian "
+                      f"deferred U13)'")
+            elif pmax > 0 and (pmax - pmin) / pmax < _PFAFFIAN_DEGENERACY_TOL:
+                # Per-B |Pf|_min is numerically degenerate (relative variance
+                # below the FEST precision floor). argmin would return the
+                # first occurrence of the floor value, not a phase boundary.
+                # Treat identically to file-absent/empty: approximation.
+                bcrit_pfaffian = None
+                print(f"WARN: |Pf|_min numerically degenerate "
+                      f"(max={pmax:.3e}, min={pmin:.3e}, "
+                      f"rel_var={(pmax-pmin)/pmax:.1e}); bcrit_pfaffian marked "
+                      f"'approximation (open-chain projected; full Bloch-Pfaffian "
+                      f"deferred U13)'")
+            else:
+                bcrit_pfaffian = min(pf_mags, key=lambda B: pf_mags[B])
         else:
             # File present but empty/unmatched — treat identically to the
-            # file-absent case (deferred) rather than silently aliasing to
-            # bcrit_curve. A truncated/whitespace-only producer file must not
-            # inject the wire_curve value as the Pfaffian witness (the gate
-            # would then compare wire_curve to itself and pass trivially).
+            # file-absent case (approximation) rather than silently aliasing
+            # to bcrit_curve. A truncated/whitespace-only producer file must
+            # not inject the wire_curve value as the Pfaffian witness (the
+            # gate would then compare wire_curve to itself and pass trivially).
             bcrit_pfaffian = None
             print(f"WARN: {pf_output} present but matched no Pfaffian lines; "
-                  f"bcrit_pfaffian marked 'deferred to U13'")
+                  f"bcrit_pfaffian marked 'approximation (open-chain projected; "
+                  f"full Bloch-Pfaffian deferred U13)'")
     else:
-        # Per spec §3.3 / D5: wire_pfaffian witness is reserved for U13 (full
-        # wire Pfaffian B-sweep with periodic/Bloch BdG). Today no Fortran
-        # producer emits output/wire_slim_pfaffian_witness.dat (per
-        # ce-doc-review adversarial P0 finding). Mark the 4th witness row as
-        # 'deferred to U13' instead of silently aliasing to bcrit_curve.
+        # Per spec §3.3 / D5: wire_pfaffian witness is the per-B min-|Pf|
+        # proxy emitted by T1b (open-chain projection; approximation). The
+        # full Bloch-Pfaffian at PHS-invariant momenta is deferred to U13.
+        # If the producer is missing/truncated, mark the 4th witness row as
+        # 'approximation (open-chain projected; ...)' rather than silently
+        # aliasing to bcrit_curve.
         bcrit_pfaffian = None
-        print(f"WARN: {pf_output} not found; bcrit_pfaffian marked 'deferred to U13' (U13 deferred)")
+        print(f"WARN: {pf_output} not found; bcrit_pfaffian marked "
+              f"'approximation (open-chain projected; full Bloch-Pfaffian "
+              f"deferred U13)'")
 
     if bcrit_curve is not None:
         print(f"  BCRIT wire_curve    {bcrit_curve:.3f}")
@@ -252,7 +307,8 @@ def section_wire_rung(exe):
     if bcrit_pfaffian is not None:
         print(f"  BCRIT wire_pfaffian {bcrit_pfaffian:.3f}")
     else:
-        print(f"  BCRIT wire_pfaffian (deferred to U13)")
+        print(f"  BCRIT wire_pfaffian (approximation (open-chain projected; "
+              f"full Bloch-Pfaffian deferred U13))")
     return True, (bcrit_curve, bcrit_2d, bcrit_pfaffian)
 
 
@@ -322,9 +378,10 @@ def render_reconciliation_table(qw_bcrit, wire_bcrits, out_path):
     cell_text = []
     for r in rows:
         # Per spec §3.3 / D5: slim Pfaffian witness labeled
-        # "(deferred to U13)" when its value is unavailable.
+        # "approximation (open-chain projected)" when its value is
+        # unavailable (full Bloch-Pfaffian deferred to U13).
         if r[1] is None and r[0] == "Wire (slim Pfaffian)":
-            bc = "deferred to U13"
+            bc = "approximation (open-chain projected)"
         elif r[1] is not None:
             bc = f"{r[1]:.3f}"
         else:

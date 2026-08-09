@@ -49,11 +49,14 @@ fi
 # Capture the four B_crit values from the lecture log. The script prints
 # machine-readable lines of the form '  BCRIT <rung> <value_T>' for each rung
 # (lines are indented two spaces for visual grouping).
-# Per spec §3.3 / D5: acceptance gate is 3-witness (wire_curve, wire_2d,
-# qw_dense); the 4th witness (wire_pfaffian) is reserved for U13. The
-# lecture script emits `BCRIT wire_pfaffian (deferred to U13)` when the
-# slim Pfaffian output is absent, which is non-numeric and must be excluded
-# from the numeric range computation.
+# Per spec §3.3 / D5: acceptance gate runs as 3-witness by default
+# (wire_curve, wire_2d, qw_dense); the 4th witness (wire_pfaffian) auto-
+# extends the witness list when emitted as a live numeric row by T1b
+# (per-B min-|Pf| proxy; approximation, full Bloch-Pfaffian deferred U13).
+# The lecture script emits `BCRIT wire_pfaffian <val>` when the slim Pfaffian
+# output is present and matches the lecture regex; when the producer is
+# missing or truncated it emits the approximation label, which is non-
+# numeric and must be excluded from the numeric range computation.
 BCRIT_LINE_WIRE_CURVE=$(grep -E 'BCRIT wire_curve ' "$WORKDIR/lecture.log" | head -1 || true)
 BCRIT_LINE_WIRE_2D=$(grep -E 'BCRIT wire_2d ' "$WORKDIR/lecture.log" | head -1 || true)
 BCRIT_LINE_WIRE_PFAFFIAN=$(grep -E 'BCRIT wire_pfaffian ' "$WORKDIR/lecture.log" | head -1 || true)
@@ -76,13 +79,15 @@ BCRIT_WIRE_2D=$(echo "$BCRIT_LINE_WIRE_2D" | awk '{print $3}')
 BCRIT_WIRE_PFAFFIAN_RAW=$(echo "$BCRIT_LINE_WIRE_PFAFFIAN" | awk '{print $3}')
 BCRIT_QW=$(echo "$BCRIT_LINE_QW" | awk '{print $3}')
 
-# Pfaffian is "(deferred" when U13 is not landed; treat as non-numeric and
-# exclude from the range computation. Gate is 3-witness per spec §3.4 / D5.
+# Pfaffian witness row is non-numeric (approximation label) when the slim
+# Pfaffian producer is missing or truncated; treat as excluded from the
+# range computation in that case. Gate runs 3-witness per spec §3.4 / D5
+# in the excluded case, and extends to 4-witness when the row is numeric.
 if [[ "$BCRIT_WIRE_PFAFFIAN_RAW" =~ ^[0-9.+-]+$ ]]; then
     BCRIT_WIRE_PFAFFIAN="$BCRIT_WIRE_PFAFFIAN_RAW"
     PFAFFIAN_DEFERRED=0
 else
-    BCRIT_WIRE_PFAFFIAN="(deferred to U13)"
+    BCRIT_WIRE_PFAFFIAN="(approximation (open-chain projected; full Bloch-Pfaffian deferred U13))"
     PFAFFIAN_DEFERRED=1
 fi
 
@@ -92,12 +97,13 @@ echo "  Wire (2D colormap)     = $BCRIT_WIRE_2D"
 echo "  Wire (slim Pfaffian)   = $BCRIT_WIRE_PFAFFIAN"
 echo "  Dense QW               = $BCRIT_QW"
 
-# ---- Step 2: 3-witness agreement within tolerance ----
+# ---- Step 2: 3-witness / 4-witness agreement within tolerance ----
 # Per spec §3.4 / D5: acceptance gate is 3-witness (wire_curve, wire_2d,
-# qw_dense). The slim Pfaffian is reserved for U13 (full wire Pfaffian
-# B-sweep with periodic/Bloch BdG). Tolerance 1.0 T accommodates the 2D
-# colormap's coarse 5x2 grid resolution while still surfacing real
-# regressions (e.g. the all-zero 1.22 T legacy value).
+# qw_dense) by default; extends to 4-witness when the slim Pfaffian row is
+# present as a numeric value (T1b producer emits per-B min-|Pf| proxy;
+# approximation, full Bloch-Pfaffian deferred to U13). Tolerance 1.0 T
+# accommodates the 2D colormap's coarse 5x2 grid resolution while still
+# surfacing real regressions (e.g. the all-zero 1.22 T legacy value).
 TOL_BCRIT_RANGE="1.0"  # 3-witness tolerance per spec §3.4 / D5
 
 # Build the witness list once; append the slim-Pfaffian value only when U13

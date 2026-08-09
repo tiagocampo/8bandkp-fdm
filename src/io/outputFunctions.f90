@@ -13,7 +13,7 @@ module outputFunctions
   public :: write_bdg_ldos, write_bdg_ldos_nambu, write_bdg_spectral
   public :: write_topology_result, write_majorana_profile, write_bdg_lowest_state_profile, &
     & write_spectral_function, write_z2_phase_diagram, write_z2_transitions, &
-    & write_majorana_polarization
+    & write_majorana_polarization, write_wire_slim_pfaffian_witness
 
   character(len=*), parameter :: OUTPUT_DIR = 'output'
 
@@ -771,13 +771,29 @@ module outputFunctions
 
       call ensure_output_dir()
       call get_unit(iounit)
-      open(unit=iounit, file='output/z2_phase_diagram.dat', status='replace', &
-           action='write', iostat=status)
+      open(unit=iounit, file='output/' // trim(adjustl(cfg%topo%phase_diagram_file)), &
+           status='replace', action='write', iostat=status)
       if (status /= 0) then
-        print *, 'ERROR: cannot open output/z2_phase_diagram.dat'
-        error stop 'cannot open z2_phase_diagram.dat'
+        print *, 'ERROR: cannot open output/' // trim(adjustl(cfg%topo%phase_diagram_file))
+        error stop 'cannot open phase_diagram.dat'
       end if
       write(iounit, '(A)') '# Z2 phase diagram'
+      ! T3 (U10): the z2 column convention depends on cfg%topo%sweep_model —
+      ! document it inline so downstream consumers (lecture 13 reader,
+      ! gate precondition verify_majorana_polarization.py:74) can parse the
+      ! correct semantic without consulting external docs. wire_bdg emits
+      ! Pfaffian-native {-1,+1,0} (topological/trivial/closure); bhz_analytic
+      ! and qw_fukane dispatch via compute_z2_gap_sweep which retains the
+      ! heuristic {0,1} convention at the helper level (compute_z2_gap_bhz_
+      ! heuristic / eval_bhz_analytic). The wire path's native convention
+      ! matches every other invariant in the codebase (gate, lecture, plans).
+      if (trim(cfg%topo%sweep_model) == 'wire_bdg') then
+        write(iounit, '(A)') '# z2 semantics: {-1,+1,0} = Pfaffian native ' // &
+          & '(topological, trivial, closure)'
+      else
+        write(iounit, '(A)') '# z2 semantics: {0,1} = heuristic ' // &
+          & '(trivial, topological) per compute_z2_gap_bhz_heuristic'
+      end if
       write(iounit, '(A,I0,A,I0)') '# nB=', nB, '  nMu=', nMu
       write(iounit, '(A)') '# B(T) mu(eV) z2 gap(eV)'
       do iB = 1, nB
@@ -791,9 +807,71 @@ module outputFunctions
         end do
       end do
       close(iounit)
-      print *, '  Z2 phase diagram written to output/z2_phase_diagram.dat'
+      print *, '  Z2 phase diagram written to output/' // trim(adjustl(cfg%topo%phase_diagram_file))
 
     end subroutine write_z2_phase_diagram
+
+    ! ==================================================================
+    ! U10 T1b: Write per-B min-|Pf| proxy to output/<slim_pfaffian_witness_file>
+    ! (path is config-driven via cfg%topo%slim_pfaffian_witness_file, default
+    ! 'wire_slim_pfaffian_witness.dat' preserves canonical fixture output).
+    !
+    ! Mirrors the write_z2_phase_diagram header style; data rows use the
+    ! `B=<value> |Pf|=<value>` literal-token format so the lecture 13
+    ! acceptance-gate reader's
+    !   re.finditer(r"B=([\d.eE+-]+)\s+\|Pf\|=([\d.eE+-]+)", ...)
+    ! matches naturally (one row per B). The B grid is reconstructed from
+    ! cfg%topo%gap_sweep_B_min/max/nB so the caller only passes the
+    ! min_pf_abs(nB) reduction.
+    !
+    ! Informational only (per Q4 acceptance): this is the open-chain slim
+    ! Pfaffian per-B min magnitude, NOT the full Bloch-Pfaffian at the
+    ! PHS-invariant k (U13). The 4th acceptance-gate witness
+    ! `bcrit_pfaffian` is approximate-not-deferred while U13 is
+    ! BLOCKING-EMPIRICAL.
+    ! ==================================================================
+    subroutine write_wire_slim_pfaffian_witness(cfg, min_pf_abs)
+
+      type(simulation_config), intent(in) :: cfg
+      real(kind=dp), intent(in), contiguous :: min_pf_abs(:)
+
+      integer(kind=4) :: iounit, status
+      integer :: iB, nB
+      real(kind=dp) :: dB, B_val
+      character(len=32) :: B_str, pf_str
+
+      nB = size(min_pf_abs)
+      dB = 0.0_dp
+      if (nB > 1) dB = (cfg%topo%gap_sweep_B_max - cfg%topo%gap_sweep_B_min) / &
+        & real(nB - 1, kind=dp)
+
+      call ensure_output_dir()
+      call get_unit(iounit)
+      open(unit=iounit, file='output/' // trim(adjustl(cfg%topo%slim_pfaffian_witness_file)), &
+           status='replace', action='write', iostat=status)
+      if (status /= 0) then
+        print *, 'ERROR: cannot open output/' // trim(adjustl(cfg%topo%slim_pfaffian_witness_file))
+        error stop 'cannot open slim_pfaffian_witness.dat'
+      end if
+      write(iounit, '(A)') '# wire slim Pfaffian witness (per-B min |Pf| over mu-window)'
+      write(iounit, '(A,I0)') '# nB=', nB
+      write(iounit, '(A)') '# B=ES16.8 |Pf|=ES16.8'
+      do iB = 1, nB
+        B_val = cfg%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * dB
+        ! Emit B=val |Pf|=val (no leading whitespace) so the lecture 13
+        ! acceptance-gate reader's regex
+        !   re.finditer(r"B=([\d.eE+-]+)\s+\|Pf\|=([\d.eE+-]+)", ...)
+        ! parses the row without an in-script regex tweak. The trimmed
+        ! character buffer avoids Fortran's ES16.8 width padding.
+        write(B_str, '(ES16.8)') B_val
+        write(pf_str, '(ES16.8)') min_pf_abs(iB)
+        write(iounit, '(A,A,A,A,A)') 'B=', trim(adjustl(B_str)), &
+          & ' |Pf|=', trim(adjustl(pf_str)), ''
+      end do
+      close(iounit)
+      print *, '  wire slim Pfaffian witness written to output/' // trim(adjustl(cfg%topo%slim_pfaffian_witness_file))
+
+    end subroutine write_wire_slim_pfaffian_witness
 
     ! ==================================================================
     ! Task 3.3: Write Z2 phase transition list to output/z2_transitions.dat.

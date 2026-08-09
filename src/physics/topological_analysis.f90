@@ -1647,11 +1647,18 @@ contains
   ! Returns: s2_sign in {-1, 0, +1}. S1 needs full diagonalization, deferred
   ! to U13 (per-issue brief: full wire Pfaffian sweep is U13).
   ! ============================================================================
-  subroutine wire_pfaffian_witness_sweep(H_bdg_csr, n_full, pfaffian_floor, s2_sign)
+  subroutine wire_pfaffian_witness_sweep(H_bdg_csr, n_full, pfaffian_floor, s2_sign, &
+       & best_pf_abs)
     type(csr_matrix), intent(in) :: H_bdg_csr
     integer, intent(in) :: n_full
     real(kind=dp), intent(in) :: pfaffian_floor
     integer, intent(out) :: s2_sign
+    ! Per-(B, mu) max-site |Pf| magnitude. Always non-negative; the sign is
+    ! exposed separately via `s2_sign`. Returned on every path (incl. early
+    ! returns at the dim guards below) so callers can accumulate a per-B
+    ! `min-|Pf|` proxy without re-extracting CSR rows. U10 T1a; see
+    ! `.scratch/bdg-u10-pfaffian-phase-diagram/tickets/T1a_pfaffian_magnitude_seam.md`.
+    real(kind=dp), intent(out) :: best_pf_abs
 
     integer :: n_sp, Nsites, s, i, j, k, idx(4), col, best_s
     complex(kind=dp) :: h_proj(4, 4), a_work(4, 4), pf_val
@@ -1660,6 +1667,7 @@ contains
     complex(kind=dp) :: h_proj_best(4, 4), pf_val_best
 
     s2_sign = 0
+    best_pf_abs = 0.0_dp
     if (n_full /= H_bdg_csr%nrows .or. n_full /= H_bdg_csr%ncols) return
     if (mod(n_full, 2) /= 0) return
     n_sp = n_full / 2
@@ -1727,6 +1735,9 @@ contains
         s2_sign = -1
       end if
     end if
+    ! Expose the per-(B, mu) max-site |Pf| regardless of the floor check —
+    ! a sub-floor witness is still a magnitude (closure-region weak signal).
+    best_pf_abs = best_pf
   end subroutine wire_pfaffian_witness_sweep
 
 end module topological_analysis

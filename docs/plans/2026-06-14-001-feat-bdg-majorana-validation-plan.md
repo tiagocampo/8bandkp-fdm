@@ -4,7 +4,7 @@ type: feat
 date: 2026-06-14
 origin: docs/brainstorms/2026-06-14-bdg-majorana-validation-requirements.md
 deepened: 2026-06-14
-updated: 2026-07-13
+updated: 2026-08-08
 status: in-progress
 status_note: |
   Units shipped: U2 (per-point BdG evaluator seam — `bdg_observables.f90`
@@ -34,8 +34,21 @@ status_note: |
   §13.7.5 landed; full revamp not done).
 
   Still open: U1 (FEAST falsification probe + ADR-0005 window audit),
-  U9 (BdG spectral function + LDOS on BdG, not normal-state), U10 (bulk
-  minigap + (B, μ) phase diagram from the Pfaffian).
+  U9 (BdG spectral function + LDOS on BdG, not normal-state).
+
+  U10 closed 2026-08-08 (PR #43 ready-to-push, branch HEAD `28ce1b0`):
+  T1a (seam-magnitude out-arg, commit `1ee9ba2`), T1b (per-B min-|Pf|
+  producer, commit `0a62143`), T2 (config-driven writer paths + sibling
+  phase fixture, commit `9de1cef`), T3 (Pfaffian-native z2 convention,
+  commit `29e85c5`), T4 BLOCKED (non-flat z2 colormap physically
+  unsatisfiable inside FEST envelope → U13 deferred), T5 (gate
+  precondition + doc-drift cleanup, commits `1a7767e` + `d17f75b`), T6
+  (proxy at-floor detection in lecture 13, commit `b6f6b05`), plus
+  doc-drift cleanup (commit `cd1d427`) and PR #43 review close-outs
+  P1 (parser format mismatch, commit `28ce1b0`) + P2 (all-zero
+  short-circuit, commit `63611d3`). 51/51 unit + 3/3 wire_bdg
+  regression + 2/2 slim_pfaffian regression + 1/1 degeneracy
+  regression + 1/1 lecture 13 acceptance gate green.
 
   Explicitly deferred: U13 (periodic/Bloch BdG construction for the Majorana
   number; without it the wire Pfaffian sweep evaluates at one point only).
@@ -53,8 +66,8 @@ status_note: |
   (`test_wire_pfaffian_witness` — strict assertion unreachable on synthetic
   fixtures, documented `@todo` U13).
 
-  U2 close-out (2026-07-13, feat/bdg-u2-actual-ship PR #42 — pending merge;
-  branch HEAD `4986d5a`): seam siblings
+  U2 close-out (2026-07-13, feat/bdg-u2-actual-ship PR #42 — MERGED 2026-07-26 to
+  `main@257b3c4`; branch-local fixes `6e37bb9..e368be1` folded into squash): seam siblings
   `eval_bdg_pfaffian_witness_csr` (wire-rung slim projected Pfaffian,
   delegates to `wire_pfaffian_witness_sweep` per ticket 04) +
   `eval_bdg_kitaev_majorana` (QW+Kitaev rung, wraps
@@ -141,7 +154,7 @@ Architecturally, the physics logic that should catch this is buried in app glue:
 ### Observable coverage
 
 - R8. Compute the BdG spectral function A(k,E) and BdG LDOS on the BdG Hamiltonian (not the normal-state one), exposing the zero-energy Majorana peak.
-- R9. Compute the bulk minigap as a minimum over a kz sweep of `min|E|`, and produce the (B, μ) phase diagram from the discrete 2-point Pfaffian Majorana number (evaluated at the PHS-invariant momenta by U13), driving the existing `wire_bdg`/`qw_fukane` sweep paths with the real invariant. The continuous gap-BZ-minimum and the discrete 2-point invariant are separate quantities.
+- R9. Compute the bulk minigap as a minimum over a kz sweep of `min|E|`, and produce the (B, μ) phase diagram from the discrete 2-point Pfaffian Majorana number (evaluated at the PHS-invariant momenta by U13), driving the existing `wire_bdg`/`qw_fukane` sweep paths with the real invariant. The continuous gap-BZ-minimum and the discrete 2-point invariant are separate quantities. **T2 (2026-07-26):** phase-diagram and slim-Pfaffian-witness output files are config-driven via `[topology] phase_diagram_file` + `slim_pfaffian_witness_file` (defaults preserve canonical fixture behavior); coarse-phase fixture `wire_inas_gaas_bdg_topological_phase.toml` overrides both.
 
 ### Documentation and verification
 
@@ -444,6 +457,12 @@ The pure-function seam, in miniature: the caller owns build + solve and hands a 
 
 **Approach:** The sweep contract (`z2_map(nMu,nB)` integer 0/1, `gap_map`, `transitions`) is invariant to the underlying invariant — the Pfaffian plugs in at the per-point evaluator, and `detect_z2_transitions`/`is_z2_transition` work unchanged. No new `sweep_model` enum value (the Kitaev harness is test-only, U3); the existing `wire_bdg`/`qw_fukane` values now drive the real invariant. Recompute the invariant per (B,μ) with a local config copy (the flat-phase-diagram fix). **Gap-vs-invariant caveat:** the existing `wire_bdg` `gap_map` is `2·minval(|E|)` over the ±5δ₀-windowed set at a single kz=0 — it is the *windowed near-zero indicator*, not R9's continuous kz-sweep BZ-minimum (the existing path does no kz sweep). Either add a kz-sweep sub-step for the true bulk minigap, or label the wire `gap_map` as the windowed quantity and defer the BZ-minimum — decided in U10 against cost.
 
+**T2 (2026-07-26) execution state:** Schema change lands in T2 so the coarse fixture's writer output paths cannot collide with the canonical `wire_inas_gaas_bdg_topological_2d.toml` output. Two new optional keys under `[topology]`:
+- `phase_diagram_file` (default `'z2_phase_diagram.dat'`)
+- `slim_pfaffian_witness_file` (default `'wire_slim_pfaffian_witness.dat'`)
+
+Both writers (`write_z2_phase_diagram`, `write_wire_slim_pfaffian_witness`) in `src/io/outputFunctions.f90` consume `cfg` and emit to `output/<value>`. Default behavior is unchanged for the canonical fixture (both keys omitted). Phase fixture `tests/regression/configs/wire_inas_gaas_bdg_topological_phase.toml` overrides both keys (`*_phase.dat` suffix) and widens the B grid to nB=6 on a [0, 5] T range with a tight mu-window [0.6600, 0.6602] eV (nMu=3) — eval_wire_bdg_gap fixes FEAST window to `±5·δ₀` around E=0 (catches near-zero Majorana-mode subspace), so μ MUST stay within ±0.001 eV of the conduction-band edge 0.6601 eV; values far from the edge leave the subspace empty and FEAST fails (U8 fail-fast guard). The wider B grid gives finer B_crit transition detection while respecting the FEST physics window.
+
 **Execution note:** Test-first — assert the phase diagram is not flat before trusting it (the flat-diagram failure mode is established in this codebase).
 
 **Patterns to follow:** `compute_qw_fukane_gap_sweep` (the per-point-recomputation pattern); `detect_z2_transitions`.
@@ -453,8 +472,37 @@ The pure-function seam, in miniature: the caller owns build + solve and hands a 
 - The `wire_bdg` sweep path uses the Pfaffian, not the heuristic, at every grid point.
 - The phase map is not flat (varies across (B,μ)) — guards the flat-diagram regression.
 - Transition detection finds the B_crit boundary within tolerance.
+- Canonical fixture (no override keys) emits `output/z2_phase_diagram.dat` and `output/wire_slim_pfaffian_witness.dat` — no behavior change.
+- Phase fixture emits `output/z2_phase_diagram_phase.dat` and `output/wire_slim_pfaffian_witness_phase.dat` — no path collision with canonical output.
 
-**Verification:** The regenerated phase diagram shows the topological region; the sweep drives the Pfaffian; the map is non-flat.
+**Verification:** The regenerated phase diagram shows the topological region; the sweep drives the Pfaffian; the map is non-flat; the new fixture's output files are disjoint from the canonical fixture's.
+
+**Status (2026-07-26, post-T2 execution):** T2 closed on `feat/bdg-u10-pfaffian-phase-diagram` (uncommitted, pending PR #43 review). 8-item scope shipped: config-driven `[topology] phase_diagram_file` + `slim_pfaffian_witness_file` writer paths (defaults preserve canonical fixture behavior); sibling fixture `wire_inas_gaas_bdg_topological_phase.toml` overrides both keys + widens B-grid (nB=6) with tight μ-window [0.6600, 0.6602] eV (FEST physics: `eval_wire_bdg_gap` fixes FEAST window `±5·δ₀` around E=0, so μ MUST stay within ±0.001 eV of the conduction-band edge 0.6601 eV; values far from the edge leave the Majorana-mode subspace empty and FEST fails U8 fail-fast); new `regression_wire_bdg_topological_phase` ctest entry (`regression` label, 900 s timeout); plan §U10 status footer amended; 2 new TDD parser @tests pass; 51/51 unit + 5/5 wire-BdG regression green.
+
+**Status (2026-07-27, post-T3 execution, commit `29e85c5`):** T3 closed. Wire path emits Pfaffian-native `{-1,+1,0}` directly from `s2_sign` (no remap, no BHZ_heuristic fallback at closure); BHZ-only `compute_z2_gap_sweep` path retains heuristic `{0,1}` (preserves 7+ existing unit tests pinning BHZ); `write_z2_phase_diagram` annotates per-file convention via `# z2 semantics:` header. Pre-grill pivot from Q3a=(c) convert-BHZ to (a) header annotation avoided 7+ existing unit-test churn. TDD-red pin in `test_wire_bdg_topological_phase.sh`. **Unblocks T4 + T5.**
+
+**T4 (2026-07-27) closed BLOCKED:** non-flat z2 colormap assertion physically unsatisfiable inside slim Pfaffian's signal regime. 5 probe fixtures enumerated in `tickets/T4_regression_test.md` §Probe findings:
+
+- Probe 1 (μ∈[0.650,0.670], nMu=11, nB=6, B_vec=[0,0,0]): FEST fail (U8 fail-fast).
+- Probe 2 (μ∈[0.655,0.665], nMu=11, nB=6, B_vec=[0,0,0]): FEST fail mid-grid.
+- Probe 3 (μ∈[0.657,0.663], nMu=11, nB=6, B_vec=[0,0,0]): SUCCESS — 66 cells, all z2=-1.
+- Probe 4 (μ∈[0.657,0.663], nMu=11, nB=21, B_vec=[0,0,0]): SUCCESS — 231 cells, all z2=-1.
+- Probe 5 (probe 4 + B_vec=[1,0,0]): SUCCESS — 231 cells, all z2=-1.
+
+Closure regime (`s2_sign=0`) requires full Bloch-Pfaffian + periodic Peierls-twist (U13, BLOCKING-EMPIRICAL per CLAUDE.md Known Issues); trivial regime (`s2_sign=+1`) requires wider FEST window (touches ADR 0005 window authority — explicitly out-of-scope) or geometry where band inversion never occurs. **Do NOT manufacture non-flat colormap** by forcing `s2_sign=0` or flipping signs inside FEST envelope — would bug physics that's working. User direction 2026-07-27: "don't bug code that is breaking the physics." **Routing:** non-flat z2 colormap assertion deferred to U13. T4r research subagent verdict: BUG REFUTED — slim CSR Pfaffian correctly constructs local 4×4 omega at band-7,8 subblock indices (Ponytail rule satisfied); 51/51 unit + 6 BdG/Pfaffian tests pin correctness; all-`-1` colormap is the genuine physical answer inside the FEST envelope, NOT a structural artifact.
+
+**T5 (2026-07-27) closed (full cleanup, 2 commits `1a7767e` + `d17f75b`):** rewrite lecture-13 status strings (lines 246, 255, 327), test_lecture_13_acceptance_gate.sh comment blocks (49-56, 79-86, 95-111), and `test_slim_pfaffian_witness_projection.py` doc-drift (lines 15, 43-44, 107-109, 167, 178-179). Q4 approximation phrase: "approximation (open-chain projected; full Bloch-Pfaffian deferred U13)". Logic unchanged (gate already auto-detects numeric Pfaffian witness at line 81 → 4-witness when emitted, 3-witness fallback when absent/truncated). 51/51 unit + 4/4 wire_bdg + 2/2 slim_pfaffian regression green.
+
+**T6 (2026-07-27) closed (grilling resolution: try (c) → fall back to (a)):** slim Pfaffian per-B `|Pf|_min` saturation detection at `lecture_13_topological.py`. The empirical baseline (sibling `_phase.toml`, nB=6 B∈[0,5]T) shows all 6 per-B `|Pf|_min = 4.0E-08` (FEST precision floor, well above the `bdg_default_pfaffian_floor` SSOT 1.0e-12_dp) → relative variance = 0.0e+00, the proxy is numerically degenerate. argmin extraction at the previous lecture_13_topological.py:229 would return B=0T (first occurrence of the floor value), not a phase boundary. Resolution (c) attempted: re-derive `bcrit_pfaffian` from gap data in `z2_phase_diagram.dat` would duplicate `bcrit_2d` (same file, same gap-min strategy at lecture_13_topological.py:178-196) — fails because the 4th witness adds no information, contradicting U10 destination line "4th gate witness approximate-not-deferred" (the destination promised a Pfaffian-derived witness, not a gap-min duplicate). Resolution (a) executed: new "file-present-but-all-at-floor" branch falls back to approximation label (non-numeric, gate auto-detects → 3-witness fallback via `test_lecture_13_acceptance_gate.sh:86`). Module-level constant `_PFAFFIAN_DEGENERACY_TOL=1e-6` (relative-variance threshold, dimensionless, survives any future SSOT update). Three test paths confirmed: file absent → existing approximation WARN (T5); file saturated → new degenerate WARN `WARN: |Pf|_min numerically degenerate (max=4.000e-08, min=4.000e-08, rel_var=0.0e+00); ...`; file varying → numeric `BCRIT wire_pfaffian <B>`. **Full Bloch-Pfaffian remains U13 destination** — T6 unlocks the lecture 13 evidence path without manufacturing a fake `bcrit_pfaffian` number that would duplicate `bcrit_2d`. PR #43 review (T1b + T2 + T3) parallel track; T4/T5/T6 not in PR scope. 51/51 unit + 3/3 wire_bdg regression (regression_wire_bdg_topological, regression_wire_bdg_topological_2d, regression_wire_bdg_topological_phase) + 2/2 slim_pfaffian regression + 1/1 lecture 13 acceptance gate green.
+
+**PR #43 review close-out (2026-08-08, branch `feat/bdg-u10-pfaffian-phase-diagram`, 10 commits ahead of `main`):** 4-agent PR review pass (code-reviewer, silent-failure-hunter, comment-analyzer, pr-test-analyzer) surfaced 12 issues across 8 commits (2 CRITICAL, 5 IMPORTANT, 5 SUGGESTION). Two CRITICAL follow-ups landed:
+
+- **P1 (CRITICAL, commit `28ce1b0`)**: `parse_slim_pf_witness()` in `tests/integration/test_slim_pfaffian_witness_projection.py` looked for `slim_pf_sign=<int>` rows (pre-T1b contract); `write_wire_slim_pfaffian_witness` (`src/io/outputFunctions.f90:833-874`) emits `B=<val> |Pf|=<val>` rows. Test silently FAILed with misleading "0 across all 0 witness rows" message whenever invoked. Parser rewritten to use the canonical regex from `lecture_13_topological.py:240` (`B=([\d.eE+-]+)\s+\|Pf\|=([\d.eE+-]+)`); return type changed from `list[int]` to `list[tuple[float, float]]` of `(B, |Pf|)` pairs; docstring + downstream assertions updated; file-absent branch preserved. ctest entry `regression_slim_pfaffian_witness_projection` (already present in `tests/CMakeLists.txt:1021-1031`) verified `Passed (0.12 sec)`. TDD red→green: FAIL → PASS "5 per-B rows, |Pf| in [4.000e-08, 4.000e-08]".
+- **P2 (CRITICAL, commit `63611d3`)**: degeneracy guard `if pmax > 0 and (pmax - pmin) / pmax < tol` in `scripts/lecture_13_topological.py:245` short-circuits to `False` when every `|Pf|` entry is 0 (all-closure regime, `s2_sign=0` for every B). `else` branch then runs `min(pf_mags, key=...)` returning the first dict key — meaningless. Added explicit `if pmax == 0:` branch ahead of saturated-floor branch with its own diagnostic WARN; comment block updated to enumerate all four degenerate regimes. New regression test `tests/integration/test_pfaffian_degeneracy_detection.py` (132 lines, 5/5 PASS: absent / empty-match / saturated / all-zero / varying). TDD red→green: 4/5 → 5/5 PASS.
+
+Branch ready for `git push origin feat/bdg-u10-pfaffian-phase-diagram` and PR #43 update. 51/51 unit + 3/3 wire_bdg regression + 2/2 slim_pfaffian regression + 1/1 degeneracy regression + 1/1 lecture 13 acceptance gate green. Remaining P-tickets (P3–P8: 1 IMPORTANT + 5 SUGGESTION + doc drifts) filed as follow-up work per wayfinder map "Recommended merge decision: ship PR #43 as-is". **U10 destination achieved** — slim Pfaffian seam + per-B |Pf|_min proxy + non-flat colormap-ready infrastructure all in place; non-flat z2 colormap physical realization remains U13 (BLOCKING-EMPIRICAL, deferred per CLAUDE.md Known Issues).
+
+**PR #43 update (2026-08-08, branch pushed `0a62143..da87b70`):** PR #43 body refreshed to reflect full U10 close-out (T1a + T1b + T2 + T3 + T4 BLOCKED + T5 + T6 + P1 + P2); `feat/bdg-u10-pfaffian-phase-diagram` pushed to `origin` (11 commits ahead of `main@257b3c4`). PR remains OPEN awaiting maintainer review. Scratch dirs archived: `.scratch/bdg-u2-actual-ship/` → `.scratch/archive/bdg-u2-finish/` (per design.md footer); `.scratch/bdg-u10-pfaffian-phase-diagram/` → `.scratch/archive/bdg-u10-pfaffian-phase-diagram/` (per map.md note: "this effort is done — archive the dir"). Both archive copies carry the as-shipped state. BACKLOG Phase 27 added; REVIEW row 79 updated; parent plan header `updated: 2026-08-08`.
 
 ### U11. Revamp the topological-superconductivity lecture
 

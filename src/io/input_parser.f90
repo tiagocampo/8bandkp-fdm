@@ -639,6 +639,20 @@ contains
     call get_value(topo_tbl, 'gap_sweep_nMu', cfg%topo%gap_sweep_nMu, 20, stat=stat)
     call check_optional_stat(stat, 'gap_sweep_nMu', 'topology')
     block
+      character(len=:), allocatable :: phase_diag_file_val
+      call get_value(topo_tbl, 'phase_diagram_file', phase_diag_file_val, &
+        & 'z2_phase_diagram.dat', stat=stat)
+      call check_optional_stat(stat, 'phase_diagram_file', 'topology')
+      if (allocated(phase_diag_file_val)) cfg%topo%phase_diagram_file = trim(phase_diag_file_val)
+    end block
+    block
+      character(len=:), allocatable :: slim_pf_file_val
+      call get_value(topo_tbl, 'slim_pfaffian_witness_file', slim_pf_file_val, &
+        & 'wire_slim_pfaffian_witness.dat', stat=stat)
+      call check_optional_stat(stat, 'slim_pfaffian_witness_file', 'topology')
+      if (allocated(slim_pf_file_val)) cfg%topo%slim_pfaffian_witness_file = trim(slim_pf_file_val)
+    end block
+    block
       character(len=:), allocatable :: sweep_model_val
       call get_value(topo_tbl, 'sweep_model', sweep_model_val, 'bhz_analytic', stat=stat)
       call check_optional_stat(stat, 'sweep_model', 'topology')
