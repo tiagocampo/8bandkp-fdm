@@ -454,15 +454,17 @@ contains
   !
   ! Strategy: per-slice, build the CSR via the existing wire builder (bit-exact
   ! reuse of ZB8bandGeneralized + canonical -conjg(H0(-k)) hole block +
-  ! symmetric class-D Peierls +/-B), then csr_to_dense into the stack slice
-  ! and free the per-slice CSR. A fresh wire_workspace is allocated per slice
-  ! to avoid cross-slice cache contamination (matches the pattern at
+  ! symmetric class-D Peierls +/-B), then csr_to_dense_work into the stack
+  ! slice and free the per-slice CSR. A fresh wire_workspace per slice avoids
+  ! cross-slice cache contamination (matches the test pattern at
   ! tests/unit/test_bdg_hamiltonian.pf:394-437).
   !
   ! n_k = 1 regression guard: at k_par_values(1) = kz, H_k_array(:,:,1) is
-  ! bit-for-bit identical to csr_to_dense(build_bdg_hamiltonian_1d(...,
-  ! kz=...)). Pinned by test_bloch_n1_matches_fixed_kz in
-  ! tests/unit/test_bdg_hamiltonian_bloch.pf.
+  ! bit-for-bit identical to csr_to_dense_work applied to the CSR emitted by
+  ! build_bdg_hamiltonian_1d at the same kz. Pinned by
+  ! test_bloch_n1_matches_fixed_kz in tests/unit/test_bdg_hamiltonian_bloch.pf.
+  ! The test cross-checks BOTH the no-B and Bx-only paths so the Peierls
+  ! branch is also parity-pinned (not just the Hermitian-block path).
   !
   ! Bx-only Peierls gate: defense-in-depth mirror of the SSOT at
   ! defs.f90:963-969. The validate_semantic config-level rejection is the
@@ -470,7 +472,7 @@ contains
   ! callers (e.g. unit tests, future T3 dispatch) that bypass validation.
   !
   ! Arguments:
-  !   H_k_array    - (out) (16N x 16N x n_k) dense complex BdG stack
+  !   H_k_array    - (out) (16N x 16N x n_k) dense complex BdG stack (allocated here)
   !   n_k          - (in)  number of k_par slices (must equal size(k_par_values))
   !   k_par_values - (in)  1D lattice of k_par values to evaluate
   !   cfg          - (in)  simulation configuration (grid + confinement)
@@ -478,37 +480,27 @@ contains
   !   kpterms_2d   - (in)  N x N x 10 k.p parameter matrices
   !   mu           - (in)  chemical potential
   !   delta_0      - (in)  superconducting pairing amplitude (> 0)
-  !   ws           - (inout, opt) wire_workspace (unused; per-slice workspaces
-  !                            are allocated internally — see Strategy above)
   !   B_vec        - (in, opt) magnetic field vector [Bx, By, Bz]
   !   g_factor     - (in, opt) effective g-factor for Zeeman splitting
   ! ==============================================================================
   subroutine build_bdg_hamiltonian_1d_bloch(H_k_array, n_k, k_par_values, cfg, &
                                               profile_2d, kpterms_2d, &
-                                              mu, delta_0, ws, B_vec, g_factor)
+                                              mu, delta_0, B_vec, g_factor)
 
-    complex(kind=dp), intent(out) :: H_k_array(:,:,:)
+    complex(kind=dp), allocatable, intent(out) :: H_k_array(:,:,:)
     integer, intent(in) :: n_k
     real(kind=dp), intent(in) :: k_par_values(:)
     type(simulation_config), intent(in) :: cfg
     real(kind=dp), contiguous, intent(in) :: profile_2d(:,:)
     type(csr_matrix), intent(in) :: kpterms_2d(:)
     real(kind=dp), intent(in) :: mu, delta_0
-    type(wire_workspace), intent(inout), optional :: ws
     real(kind=dp), intent(in), optional :: B_vec(3)
     real(kind=dp), intent(in), optional :: g_factor
 
     type(csr_matrix) :: H_bdg_csr
     type(wire_workspace) :: ws_slice
     complex(kind=dp), allocatable :: dense_slice(:,:)
-    integer :: i, Ntot
-
-    ! --- Shape contract: n_k must match the array's third dimension ---
-    if (size(H_k_array, 3) /= n_k) then
-      print *, 'ERROR: build_bdg_hamiltonian_1d_bloch: H_k_array third dim /= n_k'
-      print *, '  size(H_k_array,3)=', size(H_k_array, 3), ' n_k=', n_k
-      error stop 'bdg_hamiltonian_bloch: H_k_array shape mismatch'
-    end if
+    integer :: i, N, Ntot
 
     ! --- Shape contract: k_par_values must have n_k entries ---
     if (size(k_par_values) /= n_k) then
@@ -528,13 +520,15 @@ contains
       end if
     end if
 
-    Ntot = size(H_k_array, 1)
-    if (Ntot /= size(H_k_array, 2)) then
-      print *, 'ERROR: build_bdg_hamiltonian_1d_bloch: H_k_array is not square'
-      error stop 'bdg_hamiltonian_bloch: H_k_array must be square in first two dims'
+    ! --- Dimension from cfg%grid (SSOT — caller does not pass N separately) ---
+    N = cfg%grid%npoints()
+    if (N <= 0) then
+      print *, 'ERROR: build_bdg_hamiltonian_1d_bloch: cfg%grid%npoints() = ', N
+      error stop 'bdg_hamiltonian_bloch: invalid grid npoints'
     end if
+    Ntot = 16 * N
 
-    allocate(dense_slice(Ntot, Ntot))
+    allocate(H_k_array(Ntot, Ntot, n_k))
 
     ! --- Per-slice build: fresh wire_workspace avoids cross-slice cache
     ! contamination (matches the test_bdg_wire_optional_bvec pattern at
@@ -542,32 +536,58 @@ contains
     ! -conjg(H0(-k)) hole block + symmetric +/-B Peierls via the existing
     ! wire builder, then converts CSR -> dense for the stack slice.
     do i = 1, n_k
-      if (present(B_vec)) then
-        if (present(g_factor)) then
-          call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
-                                         kz=k_par_values(i), mu=mu, delta_0=delta_0, &
-                                         ws=ws_slice, B_vec=B_vec, g_factor=g_factor)
-        else
-          call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
-                                         kz=k_par_values(i), mu=mu, delta_0=delta_0, &
-                                         ws=ws_slice, B_vec=B_vec)
-        end if
-      else
-        call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
+      ! Default-initialise ws_slice: type-bound finalizer handles cleanup
+      ! if the builder errors before this loop completes.
+      ws_slice = wire_workspace()
+      allocate(dense_slice(Ntot, Ntot))
+
+      call dispatch_bdg_wire_builder(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
                                        kz=k_par_values(i), mu=mu, delta_0=delta_0, &
-                                       ws=ws_slice)
-      end if
+                                       ws=ws_slice, B_vec=B_vec, g_factor=g_factor)
 
       call csr_to_dense_work(H_bdg_csr, dense_slice, Ntot)
       H_k_array(:, :, i) = dense_slice(:, :)
 
+      deallocate(dense_slice)
       call csr_free(H_bdg_csr)
       call wire_workspace_free(ws_slice)
     end do
 
-    deallocate(dense_slice)
-
   end subroutine build_bdg_hamiltonian_1d_bloch
+
+  ! ==============================================================================
+  ! Private dispatch helper: route the (B_vec, g_factor) optional pair to the
+  ! matching build_bdg_hamiltonian_1d signature. Centralizes the four-way
+  ! dispatch that previously appeared inline at the call sites of
+  ! build_bdg_hamiltonian_1d (DRY/OCP, CLAUDE.md). Only called from
+  ! build_bdg_hamiltonian_1d_bloch — kept private to the module.
+  ! ==============================================================================
+  subroutine dispatch_bdg_wire_builder(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
+                                        kz, mu, delta_0, ws, B_vec, g_factor)
+    type(csr_matrix), intent(out) :: H_bdg_csr
+    type(simulation_config), intent(in) :: cfg
+    real(kind=dp), contiguous, intent(in) :: profile_2d(:,:)
+    type(csr_matrix), intent(in) :: kpterms_2d(:)
+    real(kind=dp), intent(in) :: kz, mu, delta_0
+    type(wire_workspace), intent(inout) :: ws
+    real(kind=dp), intent(in), optional :: B_vec(3)
+    real(kind=dp), intent(in), optional :: g_factor
+
+    if (present(B_vec)) then
+      if (present(g_factor)) then
+        call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
+                                       kz=kz, mu=mu, delta_0=delta_0, &
+                                       ws=ws, B_vec=B_vec, g_factor=g_factor)
+      else
+        call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
+                                       kz=kz, mu=mu, delta_0=delta_0, &
+                                       ws=ws, B_vec=B_vec)
+      end if
+    else
+      call build_bdg_hamiltonian_1d(H_bdg_csr, cfg, profile_2d, kpterms_2d, &
+                                     kz=kz, mu=mu, delta_0=delta_0, ws=ws)
+    end if
+  end subroutine dispatch_bdg_wire_builder
 
   ! ==============================================================================
   ! Build the 16N x 16N dense BdG Hamiltonian for a quantum well (QW).
