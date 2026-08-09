@@ -686,6 +686,25 @@ ctest 51/51 unit tests pass (the 52→51 drop is the ctest-target-vs-`@test`-sub
 
 ---
 
+## Phase 27: COMPLETED (2026-08-08)
+
+U10 close-out (Pfaffian phase diagram from the wire path). Branch: `feat/bdg-u10-pfaffian-phase-diagram`, plan at `docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md` §U10, 10 commits ahead of `main` (PR #43 ready-to-push at HEAD `28ce1b0`).
+
+- **T1a (seam extension, commit `1ee9ba2`)**: `wire_pfaffian_witness_sweep` + `eval_bdg_pfaffian_witness_csr` gained optional `best_pf_abs` out-arg threading the per-B min-|Pf| magnitude through the seam.
+- **T1b (per-B min-|Pf| producer, commit `0a62143`)**: `write_wire_slim_pfaffian_witness` added to `outputFunctions.f90`; emits `B=<val> |Pf|=<val>` rows consumable by the lecture 13 regex.
+- **T2 (config-driven writer paths + sibling phase fixture, commit `9de1cef`)**: `[topology] phase_diagram_file` + `slim_pfaffian_witness_file` keys (defaults preserve canonical fixture behavior); sibling `wire_inas_gaas_bdg_topological_phase.toml` overrides both keys + widens B-grid (nB=6) with FEST-constrained tight μ-window [0.6600, 0.6602] eV; new `regression_wire_bdg_topological_phase` ctest entry (regression label, 900s timeout).
+- **T3 (Pfaffian-native z2 convention, commit `29e85c5`)**: wire path emits `{-1,+1,0}` directly from `s2_sign`; BHZ-only `compute_z2_gap_sweep` retains heuristic `{0,1}` (preserves 7+ existing unit tests); `write_z2_phase_diagram` annotates per-file convention via `# z2 semantics:` header.
+- **T4 BLOCKED (no source change)**: non-flat z2 colormap physically unsatisfiable inside slim Pfaffian's signal regime (5 probe fixtures enumerated; all 231 probed cells return `s2_sign=-1` inside FEST envelope). Closure regime requires full Bloch-Pfaffian + periodic Peierls-twist (U13, BLOCKING-EMPIRICAL per CLAUDE.md Known Issues). T4r research subagent verdict: BUG REFUTED — slim CSR Pfaffian correctly constructs local 4×4 omega at band-7,8 subblock indices; all-`-1` colormap is the genuine physical answer, NOT a structural artifact.
+- **T5 (gate precondition + doc-drift cleanup, commits `1a7767e` + `d17f75b`)**: rewrite lecture-13 status strings, `test_lecture_13_acceptance_gate.sh` comment blocks, and `test_slim_pfaffian_witness_projection.py` doc-drift. Q4 approximation phrase: "approximation (open-chain projected; full Bloch-Pfaffian deferred U13)". Logic unchanged.
+- **T6 (proxy at-floor detection, commit `b6f6b05`)**: `lecture_13_topological.py` falls back to approximation label when per-B `|Pf|_min` is numerically degenerate (relative variance < 1e-6); module-level constant `_PFAFFIAN_DEGENERACY_TOL=1e-6`.
+- **Doc-drift cleanup (commit `cd1d427`)**: `bdg_observables.f90` header seam-call-site count fixed post-#42 (eval_bdg_point=4 sites, eval_bdg_pfaffian_witness_csr=1 site).
+- **P1 (parser format mismatch, commit `28ce1b0`)**: `parse_slim_pf_witness()` rewritten to use the canonical regex `B=([\d.eE+-]+)\s+\|Pf\|=([\d.eE+-]+)` from `lecture_13_topological.py:240`; return type changed from `list[int]` to `list[tuple[float, float]]` of `(B, |Pf|)` pairs. TDD red→green: FAIL "0 across all 0 witness rows" → PASS "5 per-B rows, |Pf| in [4.000e-08, 4.000e-08]".
+- **P2 (all-zero short-circuit, commit `63611d3`)**: explicit `if pmax == 0:` branch in `lecture_13_topological.py` degeneracy guard; new regression test `tests/integration/test_pfaffian_degeneracy_detection.py` (132 lines, 5/5 PASS: absent / empty-match / saturated / all-zero / varying).
+
+ctest 51/51 unit + 3/3 wire_bdg regression (regression_wire_bdg_topological, regression_wire_bdg_topological_2d, regression_wire_bdg_topological_phase) + 2/2 slim_pfaffian regression (regression_slim_pfaffian_witness, regression_wire_slim_pfaffian_witness) + 1/1 degeneracy regression (test_pfaffian_degeneracy_detection.py) + 1/1 lecture 13 acceptance gate green. PR #43 review pass (4 parallel agents) surfaced 12 issues (2 CRITICAL = P1+P2, 5 IMPORTANT, 5 SUGGESTION); CRITICALs landed in branch. Remaining P-tickets (P3–P8) filed as follow-up work per wayfinder map "Recommended merge decision: ship PR #43 as-is". **U10 destination achieved** — non-flat z2 colormap physical realization remains U13 (BLOCKING-EMPIRICAL, deferred per CLAUDE.md Known Issues).
+
+---
+
 ## PR #39 Review — Deferred Refactors
 
 Larger refactors surfaced by the PR #39 max-effort code review, deliberately

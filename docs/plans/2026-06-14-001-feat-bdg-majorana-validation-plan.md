@@ -4,7 +4,7 @@ type: feat
 date: 2026-06-14
 origin: docs/brainstorms/2026-06-14-bdg-majorana-validation-requirements.md
 deepened: 2026-06-14
-updated: 2026-07-13
+updated: 2026-08-08
 status: in-progress
 status_note: |
   Units shipped: U2 (per-point BdG evaluator seam — `bdg_observables.f90`
@@ -34,8 +34,21 @@ status_note: |
   §13.7.5 landed; full revamp not done).
 
   Still open: U1 (FEAST falsification probe + ADR-0005 window audit),
-  U9 (BdG spectral function + LDOS on BdG, not normal-state), U10 (bulk
-  minigap + (B, μ) phase diagram from the Pfaffian).
+  U9 (BdG spectral function + LDOS on BdG, not normal-state).
+
+  U10 closed 2026-08-08 (PR #43 ready-to-push, branch HEAD `28ce1b0`):
+  T1a (seam-magnitude out-arg, commit `1ee9ba2`), T1b (per-B min-|Pf|
+  producer, commit `0a62143`), T2 (config-driven writer paths + sibling
+  phase fixture, commit `9de1cef`), T3 (Pfaffian-native z2 convention,
+  commit `29e85c5`), T4 BLOCKED (non-flat z2 colormap physically
+  unsatisfiable inside FEST envelope → U13 deferred), T5 (gate
+  precondition + doc-drift cleanup, commits `1a7767e` + `d17f75b`), T6
+  (proxy at-floor detection in lecture 13, commit `b6f6b05`), plus
+  doc-drift cleanup (commit `cd1d427`) and PR #43 review close-outs
+  P1 (parser format mismatch, commit `28ce1b0`) + P2 (all-zero
+  short-circuit, commit `63611d3`). 51/51 unit + 3/3 wire_bdg
+  regression + 2/2 slim_pfaffian regression + 1/1 degeneracy
+  regression + 1/1 lecture 13 acceptance gate green.
 
   Explicitly deferred: U13 (periodic/Bloch BdG construction for the Majorana
   number; without it the wire Pfaffian sweep evaluates at one point only).
@@ -481,6 +494,13 @@ Closure regime (`s2_sign=0`) requires full Bloch-Pfaffian + periodic Peierls-twi
 **T5 (2026-07-27) closed (full cleanup, 2 commits `1a7767e` + `d17f75b`):** rewrite lecture-13 status strings (lines 246, 255, 327), test_lecture_13_acceptance_gate.sh comment blocks (49-56, 79-86, 95-111), and `test_slim_pfaffian_witness_projection.py` doc-drift (lines 15, 43-44, 107-109, 167, 178-179). Q4 approximation phrase: "approximation (open-chain projected; full Bloch-Pfaffian deferred U13)". Logic unchanged (gate already auto-detects numeric Pfaffian witness at line 81 → 4-witness when emitted, 3-witness fallback when absent/truncated). 51/51 unit + 4/4 wire_bdg + 2/2 slim_pfaffian regression green.
 
 **T6 (2026-07-27) closed (grilling resolution: try (c) → fall back to (a)):** slim Pfaffian per-B `|Pf|_min` saturation detection at `lecture_13_topological.py`. The empirical baseline (sibling `_phase.toml`, nB=6 B∈[0,5]T) shows all 6 per-B `|Pf|_min = 4.0E-08` (FEST precision floor, well above the `bdg_default_pfaffian_floor` SSOT 1.0e-12_dp) → relative variance = 0.0e+00, the proxy is numerically degenerate. argmin extraction at the previous lecture_13_topological.py:229 would return B=0T (first occurrence of the floor value), not a phase boundary. Resolution (c) attempted: re-derive `bcrit_pfaffian` from gap data in `z2_phase_diagram.dat` would duplicate `bcrit_2d` (same file, same gap-min strategy at lecture_13_topological.py:178-196) — fails because the 4th witness adds no information, contradicting U10 destination line "4th gate witness approximate-not-deferred" (the destination promised a Pfaffian-derived witness, not a gap-min duplicate). Resolution (a) executed: new "file-present-but-all-at-floor" branch falls back to approximation label (non-numeric, gate auto-detects → 3-witness fallback via `test_lecture_13_acceptance_gate.sh:86`). Module-level constant `_PFAFFIAN_DEGENERACY_TOL=1e-6` (relative-variance threshold, dimensionless, survives any future SSOT update). Three test paths confirmed: file absent → existing approximation WARN (T5); file saturated → new degenerate WARN `WARN: |Pf|_min numerically degenerate (max=4.000e-08, min=4.000e-08, rel_var=0.0e+00); ...`; file varying → numeric `BCRIT wire_pfaffian <B>`. **Full Bloch-Pfaffian remains U13 destination** — T6 unlocks the lecture 13 evidence path without manufacturing a fake `bcrit_pfaffian` number that would duplicate `bcrit_2d`. PR #43 review (T1b + T2 + T3) parallel track; T4/T5/T6 not in PR scope. 51/51 unit + 3/3 wire_bdg regression (regression_wire_bdg_topological, regression_wire_bdg_topological_2d, regression_wire_bdg_topological_phase) + 2/2 slim_pfaffian regression + 1/1 lecture 13 acceptance gate green.
+
+**PR #43 review close-out (2026-08-08, branch `feat/bdg-u10-pfaffian-phase-diagram`, 10 commits ahead of `main`):** 4-agent PR review pass (code-reviewer, silent-failure-hunter, comment-analyzer, pr-test-analyzer) surfaced 12 issues across 8 commits (2 CRITICAL, 5 IMPORTANT, 5 SUGGESTION). Two CRITICAL follow-ups landed:
+
+- **P1 (CRITICAL, commit `28ce1b0`)**: `parse_slim_pf_witness()` in `tests/integration/test_slim_pfaffian_witness_projection.py` looked for `slim_pf_sign=<int>` rows (pre-T1b contract); `write_wire_slim_pfaffian_witness` (`src/io/outputFunctions.f90:833-874`) emits `B=<val> |Pf|=<val>` rows. Test silently FAILed with misleading "0 across all 0 witness rows" message whenever invoked. Parser rewritten to use the canonical regex from `lecture_13_topological.py:240` (`B=([\d.eE+-]+)\s+\|Pf\|=([\d.eE+-]+)`); return type changed from `list[int]` to `list[tuple[float, float]]` of `(B, |Pf|)` pairs; docstring + downstream assertions updated; file-absent branch preserved. ctest entry `regression_slim_pfaffian_witness_projection` (already present in `tests/CMakeLists.txt:1021-1031`) verified `Passed (0.12 sec)`. TDD red→green: FAIL → PASS "5 per-B rows, |Pf| in [4.000e-08, 4.000e-08]".
+- **P2 (CRITICAL, commit `63611d3`)**: degeneracy guard `if pmax > 0 and (pmax - pmin) / pmax < tol` in `scripts/lecture_13_topological.py:245` short-circuits to `False` when every `|Pf|` entry is 0 (all-closure regime, `s2_sign=0` for every B). `else` branch then runs `min(pf_mags, key=...)` returning the first dict key — meaningless. Added explicit `if pmax == 0:` branch ahead of saturated-floor branch with its own diagnostic WARN; comment block updated to enumerate all four degenerate regimes. New regression test `tests/integration/test_pfaffian_degeneracy_detection.py` (132 lines, 5/5 PASS: absent / empty-match / saturated / all-zero / varying). TDD red→green: 4/5 → 5/5 PASS.
+
+Branch ready for `git push origin feat/bdg-u10-pfaffian-phase-diagram` and PR #43 update. 51/51 unit + 3/3 wire_bdg regression + 2/2 slim_pfaffian regression + 1/1 degeneracy regression + 1/1 lecture 13 acceptance gate green. Remaining P-tickets (P3–P8: 1 IMPORTANT + 5 SUGGESTION + doc drifts) filed as follow-up work per wayfinder map "Recommended merge decision: ship PR #43 as-is". **U10 destination achieved** — slim Pfaffian seam + per-B |Pf|_min proxy + non-flat colormap-ready infrastructure all in place; non-flat z2 colormap physical realization remains U13 (BLOCKING-EMPIRICAL, deferred per CLAUDE.md Known Issues).
 
 ### U11. Revamp the topological-superconductivity lecture
 
