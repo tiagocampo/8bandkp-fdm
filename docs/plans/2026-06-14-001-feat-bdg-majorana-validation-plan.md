@@ -66,8 +66,8 @@ status_note: |
   (`test_wire_pfaffian_witness` — strict assertion unreachable on synthetic
   fixtures, documented `@todo` U13).
 
-  U2 close-out (2026-07-13, feat/bdg-u2-actual-ship PR #42 — pending merge;
-  branch HEAD `4986d5a`): seam siblings
+  U2 close-out (2026-07-13, feat/bdg-u2-actual-ship PR #42 — MERGED 2026-07-26 to
+  `main@257b3c4`; branch-local fixes `6e37bb9..e368be1` folded into squash): seam siblings
   `eval_bdg_pfaffian_witness_csr` (wire-rung slim projected Pfaffian,
   delegates to `wire_pfaffian_witness_sweep` per ticket 04) +
   `eval_bdg_kitaev_majorana` (QW+Kitaev rung, wraps
@@ -501,6 +501,8 @@ Closure regime (`s2_sign=0`) requires full Bloch-Pfaffian + periodic Peierls-twi
 - **P2 (CRITICAL, commit `63611d3`)**: degeneracy guard `if pmax > 0 and (pmax - pmin) / pmax < tol` in `scripts/lecture_13_topological.py:245` short-circuits to `False` when every `|Pf|` entry is 0 (all-closure regime, `s2_sign=0` for every B). `else` branch then runs `min(pf_mags, key=...)` returning the first dict key — meaningless. Added explicit `if pmax == 0:` branch ahead of saturated-floor branch with its own diagnostic WARN; comment block updated to enumerate all four degenerate regimes. New regression test `tests/integration/test_pfaffian_degeneracy_detection.py` (132 lines, 5/5 PASS: absent / empty-match / saturated / all-zero / varying). TDD red→green: 4/5 → 5/5 PASS.
 
 Branch ready for `git push origin feat/bdg-u10-pfaffian-phase-diagram` and PR #43 update. 51/51 unit + 3/3 wire_bdg regression + 2/2 slim_pfaffian regression + 1/1 degeneracy regression + 1/1 lecture 13 acceptance gate green. Remaining P-tickets (P3–P8: 1 IMPORTANT + 5 SUGGESTION + doc drifts) filed as follow-up work per wayfinder map "Recommended merge decision: ship PR #43 as-is". **U10 destination achieved** — slim Pfaffian seam + per-B |Pf|_min proxy + non-flat colormap-ready infrastructure all in place; non-flat z2 colormap physical realization remains U13 (BLOCKING-EMPIRICAL, deferred per CLAUDE.md Known Issues).
+
+**PR #43 update (2026-08-08, branch pushed `0a62143..da87b70`):** PR #43 body refreshed to reflect full U10 close-out (T1a + T1b + T2 + T3 + T4 BLOCKED + T5 + T6 + P1 + P2); `feat/bdg-u10-pfaffian-phase-diagram` pushed to `origin` (11 commits ahead of `main@257b3c4`). PR remains OPEN awaiting maintainer review. Scratch dirs archived: `.scratch/bdg-u2-actual-ship/` → `.scratch/archive/bdg-u2-finish/` (per design.md footer); `.scratch/bdg-u10-pfaffian-phase-diagram/` → `.scratch/archive/bdg-u10-pfaffian-phase-diagram/` (per map.md note: "this effort is done — archive the dir"). Both archive copies carry the as-shipped state. BACKLOG Phase 27 added; REVIEW row 79 updated; parent plan header `updated: 2026-08-08`.
 
 ### U11. Revamp the topological-superconductivity lecture
 

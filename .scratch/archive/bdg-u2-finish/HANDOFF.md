@@ -11,12 +11,16 @@
 
 ## Status footer
 
-**IN PROGRESS (2026-07-25).** U2 finish design follow-up on
-`feat/bdg-u2-actual-ship` — closing PR #42 review findings (9 Standards + 3
-Spec, two-axis code review) + the 2 Codacy high `ErrorProne` flags (pyflakes
-F541, both fixed in `8e9128d`). Tests green: `ctest -L unit` 51/51 PASS,
-`lecture_13_acceptance_gate` GREEN (3-witness gate). PR #42 is **open**;
-the branch has not merged.
+**SHIPPED via PR #42 (merged 2026-07-26, `main@257b3c4`).** U2 finish design
+follow-up on `feat/bdg-u2-actual-ship` — closing PR #42 review findings (9
+Standards + 3 Spec, two-axis code review) + the 2 Codacy high `ErrorProne`
+flags (pyflakes F541, both fixed in `8e9128d`). Tests green: `ctest -L
+unit` 51/51 PASS, `lecture_13_acceptance_gate` GREEN (3-witness gate).
+PR #42 is **merged** with branch-local fixes `6e37bb9..e368be1` folded into
+the squash commit. **Archiving this scratch dir (move to
+`.scratch/archive/bdg-u2-finish/`) 2026-08-08** per the design.md footer
+"When this PR merges, this design doc auto-archives alongside the rest of
+`.scratch/bdg-u2-actual-ship/` → `.scratch/archive/bdg-u2-finish/`".
 
 ## Destination
 
