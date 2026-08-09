@@ -4,8 +4,69 @@
 > the red half of T4's green. Materialized from the map's T5 entry.
 
 Type: task
-Status: pending
-Blocked by: 02
+Status: completed
+Owner: this-session (2026-08-09 — claimed after T2 closure at a864f98)
+Blocked by: 02 (closed 2026-08-09 — T2 at 449c7fb)
+
+## Resolution (2026-08-09)
+
+Extended `tests/unit/test_bdg_pfaffian_witness_product_csr.pf` with 3 new
+`@test` subroutines covering the remaining L3 branches (cases ii, iii, v).
+The 5-branch L3 mapping in `bdg_observables.f90:361-389` is now
+end-to-end pinned by 6 `@test` subroutines (3 from T2 + 3 from T5):
+
+  - case (i) — `test_product_seam_strict_agreement_sign_split` (T2) — z2=-1, reason=0
+  - case (i) — `test_product_seam_strict_topological_sign`     (T2) — z2=-1, reason=0
+  - case (ii) — `test_product_seam_strict_agreement_both_zero`  (T5) — z2=0,  reason=0
+  - case (iii) — `test_product_seam_strict_sign_split`          (T5) — z2=0,  reason=1
+  - case (iv) — `test_product_seam_s2_fest_saturation_branch`   (T2) — z2=0,  reason=2
+  - case (v) — `test_product_seam_s1_closure_s2_misses`         (T5) — z2=0,  reason=3
+
+### Design refinement vs T2's forward-pointer
+
+T2's ticket body suggested 4×4 (n_odd=1) Kitaev fixtures with controlled
+det for cases (iii) and (v). Resolved in T5 to 16×16 stacks exploiting
+two cleaner mechanisms:
+
+  - **n_k=1 stacks** trigger `kitaev_majorana_number`'s `n_k < 2` guard
+    (`src/math/pfaffian.f90:132`) → S1=0 immediately. Used for cases
+    (ii) and (v).
+  - **Band-7/8 coupling sign** controls S2 sign on a 16×16 slice-1 CSR
+    (empirically: +0.3 → s2=-1, -0.3 → s2=+1). Used for case (iii).
+
+No 4×4 detour needed; all 5 branches pinned on the existing 16×16 stack
+shape T2 already validated.
+
+### TDD red/green cycle (executed)
+
+RED: stashed T5 test changes + reverted `src/physics/bdg_observables.f90`
+to pre-T2 baseline `1a14489`. Build failed:
+```
+Error: Symbol 'eval_bdg_pfaffian_witness_product_csr' referenced at (1)
+not found in module 'bdg_observables'
+```
+GREEN: restored T2 seam at HEAD + restored T5 tests. `ctest -V` reports
+`(6 tests) OK`. Full cycle: red on pre-T2, green at HEAD.
+
+### Fixture math notes (empirical, not derived)
+
+T5 fixtures do not analytically derive S1; they trigger the polar
+decomposition + slim Pfaffian empirically and assert the seam's
+disagreement_reason mapping. The seam's `map_s1_s2_to_z2` is the SSOT
+for the S1×S2 → z2 mapping, and the tests pin it end-to-end.
+
+### Out of scope (deferred to T4)
+
+- B-sweep full-fixture strict-agreement assertion (the gate-flip ticket).
+- `tests/integration/test_wire_bdg_topological_phase.sh` extension —
+  T5 is unit-only per the seam/gate split the map §State records.
+- Updating the file header's `RED on main` → `GREEN at HEAD` line
+  (T2 still says "RED on main"; factual at the time T2 wrote it, but
+  no longer accurate).
+
+T5 unblocks T4 (the destination row of the chart).
+
+## Question
 
 ## Question
 
