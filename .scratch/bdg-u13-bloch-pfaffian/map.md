@@ -7,7 +7,7 @@
 > "Explicitly deferred: U13 (periodic/Bloch BdG construction for the Majorana
 > number; without it the wire Pfaffian sweep evaluates at one point only)").
 
-## Charting session started 2026-08-14
+## Charting session started 2026-08-14; tickets materialized 2026-08-09
 
 Source-grounded after landing U10 (PR #43 merged to `main@52743b3`, 2026-08-08).
 U10 closed the slim S2 projected Pfaffian seam; the 4-witness acceptance gate's
@@ -111,23 +111,11 @@ strict invariant the gate can check.
 
 ## Loose (open questions to resolve in a grill/chart sub-session before claiming a ticket)
 
-- **L1 — By-orbital Peierls:** `defs.f90:957-968` gates on Bx-only; the By
-  Peierls path is "not yet implemented." Does U13's Bloch builder need By
-  coupling for the (B, μ) phase-diagram physics the gate checks, or is the
-  transverse-Bx axial-wire regime (the one already validated U2/U10) the
-  intended physical scope? Deciding L1 bounds whether a Peierls-twist builder
-  is in U13 or deferred past it.
-- **L2 — k_par lattice / BZ slice:** is the 1D BZ the wire-axis `kz ∈ [−π/R,
-  π/R]` (R = transverse wire-unit pitch), or does the Bloch slice mean
-  something different for the Rashba-wire geometry than the QW? `ZB8bandGeneral
-  ized` already parametrizes on `kz`; confirm the Bloch lattice vector maps to
-  that same `kz` axis (not a separate `k_par`) so the builder reuses the
-  existing k-dependent path without a new k-mesh subsystem.
-- **L3 — S1/S2 disagreement regime:** at the gap-closure curve, can S1 and S2
-  disagree by construction (S1 k-product zero, S2 single-point sign) such that
-  strict equality is too strong? If yes, the agreement seam needs a documented
-  closure-disagreement -> z2=0 branch (not a defect), matching U2's User Story
-  5 "structurally valid gap-closure signal" wording (parent plan L97-99).
+<!-- L1–L3 resolved 2026-08-09 by T6 (closed). See Decisions so far for the
+     locked answers; By/Bz Peierls logged in Out of scope. No loose questions
+     remain before claiming T1. -->
+
+_(L1–L3 resolved by T6 on 2026-08-09 — see [Decisions so far](#decisions-so-far). No loose questions remain before claiming T1.)_
 
 ## Files to Read first (when claiming a ticket)
 
@@ -145,28 +133,51 @@ strict invariant the gate can check.
 7. `docs/plans/2026-06-14-001-feat-bdg-majorana-validation-plan.md` L53-55 —
    the parent spec sentence U13 exists to satisfy.
 
-## Frontier tickets (TBD — enumeration refined 2026-08-14)
+## Decisions so far
 
-This is the *initial* chart; tickets are not yet claimed. Refined from the
-proposal that preceded the source dive (the "vendor SKBPFA" research ticket is
-collapsed to a verification since `zskpfa_reduction` is in-tree):
+<!-- the index — one line per closed ticket: enough to judge relevance, then zoom the link -->
 
-- **T1** — Bloch-periodic H_BdG(k_par) builder (generalize
-  `build_bdg_hamiltonian_1d` at fixed kz → k_par stack; reuse
-  `ZB8bandGeneralized`; preserve Bx-only gate).
-- **T2** — S1×S2 agreement seam `eval_bdg_pfaffian_witness_product_csr`
-  (wire `kitaev_majorana_number` over T1's stack × existing slim S2; native
-  `{-1,+1,0}`; closure-disagreement branch per L3).
-- **T3** — Config-driven `nk_par` / `bloch_sweep` knob + dispatch in
-  `main_topology.f90`; `nk_par=1` default reproduces fixed-kz bit-for-bit
-  (scope isolation regression guard).
-- **T4** — Strict invariant → 4-witness gate: regenerate (B, μ) diagram with
-  z2 = strict S1×S2 product; flip `lecture_13_topological.py` 4-witness label
-  from "approximate" to "strict"; resolve `@todo U13` markers.
-- **T5** — TDD-red test asserting strict agreement at μ≈0.6601 (fails on main
-  "one point only") → green after T1-T4.
-- **T6** — Grill/loose resolution L1-L3 before claiming T1 (By-Peierls scope,
-  BZ-slice lattice, closure-disagreement semantics).
+- [Resolve loose fog L1–L3 (T6)](issues/06-grill-loose-fog.md) — L1 preserve
+  Bx-only Peierls (By/Bz deferred); L2 k_par = wire free-z + new `[bdg]`
+  `nk_par` knob (defaults preserve U10 bit-for-bit); L3 disagreement → `z2 = 0`
+  with `disagreement_reason` WARN logged; case (iii) strict-sign-split reserved
+  for a follow-up `error stop` guard. T1 unblocked.
 
-Order: T6 (grill) unblocks T1; T1 → T2 → T3 → T4; T5 is the red→green gate that
-straddles T2. No research ticket — the algorithm is in-tree.
+## Out of scope
+
+<!-- scope, not sharpness, lands here — closed tickets whose answer is "this
+     isn't on the route to the destination." Returns only if the destination
+     is redrawn. -->
+
+- **By/Bz Peierls (transverse-field generality)** — `defs.f90:957-968` keeps
+  its `error stop` on `Bx=0 ∧ (By∨Bz≠0)`. Lifting the guard (extending
+  `add_peierls_coo` to y/z directions, new fixtures, loosening `validate_semantic`)
+  is a fresh effort — not part of U13. Confirmed via T6/L1.
+
+## Open tickets
+
+<!-- the map is an index; open tickets live as child files under issues/, the -->
+<!-- frontier is the open, unblocked, unclaimed ones (first by number wins). -->
+
+Five child tickets open under `issues/` (T6 closed 2026-08-09).
+Frontier order, with blocking edges:
+
+- [01](issues/01-bloch-periodic-bdg-builder.md) — **T1 · task · FRONTIER NOW**
+  (T6 closed) — Bloch-periodic `H_BdG(k_par)` stack builder; `n_k=1` reproduces
+  fixed-kz bit-for-bit.
+- [02](issues/02-s1-s2-agreement-seam.md) — T2 · task · blocked by T1 —
+  `eval_bdg_pfaffian_witness_product_csr` strict S1×S2 seam; native
+  `{-1,+1,0}`; closure-disagreement branch per L3.
+- [05](issues/05-tdd-strict-agreement-test.md) — T5 · task · blocked by T2 —
+  TDD-red strict-agreement test; fails on `main` ("one point only"), green after
+  T1–T4.
+- [03](issues/03-bloch-sweep-config-knob.md) — T3 · task · blocked by T2 —
+  `nk_par`/`bloch_sweep` knob + `main_topology.f90` dispatch; bit-for-bit
+  regression guard at `nk_par=1`.
+- [04](issues/04-strict-4witness-gate.md) — T4 · task · blocked by T3, T5 —
+  the **destination**: strict 4-witness gate + 4-witness label flip +
+  `@todo U13` resolution in `lecture_13_topological.py`.
+
+Build order: T1 → T2 → (T5 || T3) → T4. No research ticket — the algorithm is
+in-tree (`kitaev_majorana_number`, `zskpfa_reduction` verified this session;
+the "vendor SKBPFA" proposal is collapsed to a verification).
