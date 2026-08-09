@@ -142,6 +142,13 @@ _(L1–L3 resolved by T6 on 2026-08-09 — see [Decisions so far](#decisions-so-
   `nk_par` knob (defaults preserve U10 bit-for-bit); L3 disagreement → `z2 = 0`
   with `disagreement_reason` WARN logged; case (iii) strict-sign-split reserved
   for a follow-up `error stop` guard. T1 unblocked.
+- [Bloch-periodic H_BdG(k_par) builder (T1)](issues/01-bloch-periodic-bdg-builder.md) —
+  `build_bdg_hamiltonian_1d_bloch(H_k_array(:,:,n_k), n_k, k_par_values, ...)` in
+  `src/physics/bdg_hamiltonian.f90:454-563`. Per-slice CSR via existing wire builder
+  + `csr_to_dense_work` into the stack; fresh `wire_workspace` per slice. n_k=1
+  reproduces fixed-kz CSR bit-for-bit (1e-12 tol). Bx-only Peierls guard mirrors
+  `defs.f90:963-969` SSOT as defense-in-depth. 52/52 unit + 5/5 wire-BdG
+  regression + 1/1 lecture-13 gate green. Commit `302e092`.
 
 ## Out of scope
 
@@ -159,13 +166,10 @@ _(L1–L3 resolved by T6 on 2026-08-09 — see [Decisions so far](#decisions-so-
 <!-- the map is an index; open tickets live as child files under issues/, the -->
 <!-- frontier is the open, unblocked, unclaimed ones (first by number wins). -->
 
-Five child tickets open under `issues/` (T6 closed 2026-08-09).
+Four child tickets open under `issues/` (T6 closed 2026-08-09, T1 closed 2026-08-09).
 Frontier order, with blocking edges:
 
-- [01](issues/01-bloch-periodic-bdg-builder.md) — **T1 · task · FRONTIER NOW**
-  (T6 closed) — Bloch-periodic `H_BdG(k_par)` stack builder; `n_k=1` reproduces
-  fixed-kz bit-for-bit.
-- [02](issues/02-s1-s2-agreement-seam.md) — T2 · task · blocked by T1 —
+- [02](issues/02-s1-s2-agreement-seam.md) — T2 · task · **FRONTIER NOW** —
   `eval_bdg_pfaffian_witness_product_csr` strict S1×S2 seam; native
   `{-1,+1,0}`; closure-disagreement branch per L3.
 - [05](issues/05-tdd-strict-agreement-test.md) — T5 · task · blocked by T2 —
@@ -178,6 +182,6 @@ Frontier order, with blocking edges:
   the **destination**: strict 4-witness gate + 4-witness label flip +
   `@todo U13` resolution in `lecture_13_topological.py`.
 
-Build order: T1 → T2 → (T5 || T3) → T4. No research ticket — the algorithm is
+Build order: T2 → (T5 || T3) → T4. No research ticket — the algorithm is
 in-tree (`kitaev_majorana_number`, `zskpfa_reduction` verified this session;
 the "vendor SKBPFA" proposal is collapsed to a verification).

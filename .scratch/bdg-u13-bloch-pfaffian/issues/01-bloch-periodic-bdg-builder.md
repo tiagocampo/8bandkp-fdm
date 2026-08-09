@@ -4,9 +4,23 @@
 > this chart; unblocks T2. Materialized from the map's T1 entry.
 
 Type: task
-Status: claimed
-Owner: next-session (T1 chart handoff 2026-08-09)
+Status: completed
+Owner: next-session (T1 chart handoff 2026-08-09) — landed on `feat/bdg-u13-bloch-pfaffian` (commit `302e092`)
 Blocked by: 06 (closed 2026-08-09 — T6)
+
+## Resolution (2026-08-09)
+
+New public subroutine `build_bdg_hamiltonian_1d_bloch` added to
+`src/physics/bdg_hamiltonian.f90:454-563` (private `csr_to_dense_work` from
+`sparse_matrices` does the CSR→dense per-slice). n_k=1 reproduces the
+fixed-kz builder bit-for-bit (regression guard pinned by
+`test_bloch_n1_matches_fixed_kz`, tolerance 1e-12). Bx-only Peierls guard
+mirrors `defs.f90:963-969` SSOT as defense-in-depth at builder entry.
+
+Verification: 52/52 unit (51 baseline + 1 T1 target with 3 `@test`s),
+5/5 wire-BdG regression, 1/1 lecture-13 acceptance gate.
+
+T1 unblocks T2 (S1×S2 strict agreement seam).
 
 ## Question
 
