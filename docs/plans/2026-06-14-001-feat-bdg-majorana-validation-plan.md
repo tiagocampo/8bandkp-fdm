@@ -50,9 +50,14 @@ status_note: |
   regression + 2/2 slim_pfaffian regression + 1/1 degeneracy
   regression + 1/1 lecture 13 acceptance gate green.
 
-  Explicitly deferred: U13 (periodic/Bloch BdG construction for the Majorana
-  number; without it the wire Pfaffian sweep evaluates at one point only).
-  Per CLAUDE.md Known Issues — separate scoped PR.
+  U13 partial as of 2026-08-09 (chart `.scratch/bdg-u13-bloch-pfaffian/`):
+  T1 (Bloch stack builder, commit `302e092`), T2 (S1×S2 strict seam, commit
+  `449c7fb`), T5 (5-branch L3 coverage, commit `f6498e6`), T6 (L1–L3 loose
+  fog reserved), T3 (config-driven `nk_par` knob + dispatch + bit-for-bit
+  regression guard, commits `e17fe11`, `5896455`, `9336dac`, `f4af568`,
+  `3db44cc`). T4 (strict 4-witness gate flip in `lecture_13_topological.py`)
+  is the **destination** — open on the frontier. 53/53 unit + 4/4 wire-BdG
+  regression + 1/1 lecture-13 acceptance gate green.
 
   Post-archive cleanup pass (2026-07-12, documented in BACKLOG.md Phase 24
   follow-ups): `extract_block_csr` moved from `spectral_bdg_wire.f90` to

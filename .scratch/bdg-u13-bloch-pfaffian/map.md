@@ -163,6 +163,17 @@ _(L1–L3 resolved by T6 on 2026-08-09 — see [Decisions so far](#decisions-so-
   Resolved T2's "4×4 n_odd=1 fixtures" forward-pointer to 16×16 stacks via
   `n_k=1` guard for (ii)/(v) + band-7/8 coupling sign for (iii). 53/53 unit
   + 3/3 wire-BdG regression + 1/1 lecture-13 gate green. Commit `f6498e6`.
+- [Config-driven `nk_par` knob + dispatch + bit-for-bit regression guard (T3)](issues/03-bloch-sweep-config-knob.md) —
+  `bdg_config` gains `nk_par` + `k_par_min`/`k_par_max` (optional, defaults preserve U10).
+  `validate_semantic` rejects `nk_par<1` and `nk_par>1 ∧ k_par_max<=k_par_min` with
+  `error stop`. `compute_wire_bdg_gap_sweep` branches on `nk_par`: `<=1` → existing
+  `eval_wire_bdg_gap` (bit-exact U10); `>1` → new `eval_wire_bdg_gap_bloch` (T1 stack
+  + T2 strict seam + `dense_to_csr` extraction in `sparse_matrices.f90`). Two
+  regression guards: `regression_bdg_u13_nk_par_equiv` (byte-equivalence nk_par=1
+  vs absent) + `regression_bdg_u13_nk_par_sweep` (nk_par=4 smoke near Gamma).
+  53/53 unit + 4/4 wire-BdG regression + 1/1 lecture-13 gate green. Commits
+  `e17fe11`, `5896455`, `9336dac`, `f4af568`, `3db44cc`. Side-finding: latency UB
+  in `test_green_functions.pf` (unallocated `cfg%params`) fixed at `5896455`.
 
 ## Out of scope
 
@@ -180,17 +191,14 @@ _(L1–L3 resolved by T6 on 2026-08-09 — see [Decisions so far](#decisions-so-
 <!-- the map is an index; open tickets live as child files under issues/, the -->
 <!-- frontier is the open, unblocked, unclaimed ones (first by number wins). -->
 
-Four child tickets open under `issues/` (T6, T1, T2, T5 closed 2026-08-09).
-Frontier order, with blocking edges:
-
-- [03](issues/03-bloch-sweep-config-knob.md) — T3 · task · **FRONTIER NOW** —
-  `nk_par`/`bloch_sweep` knob + `main_topology.f90` dispatch; bit-for-bit
-  regression guard at `nk_par=1`. Note: `defs.f90` derived-type edits are a
-  Require-approval boundary per `CLAUDE.md` — pause for user sign-off before
-  touching `topology_config` fields.
-- [04](issues/04-strict-4witness-gate.md) — T4 · task · blocked by T3 —
+Five child tickets closed (T6, T1, T2, T5, T3 closed 2026-08-09). One
+ticket remains on the frontier:
+Untitled: T4 → [04](issues/04-strict-4witness-gate.md) — T4 · task · **FRONTIER NOW** —
   the **destination**: strict 4-witness gate + 4-witness label flip +
-  `@todo U13` resolution in `lecture_13_topological.py`.
+  `@todo U13` resolution in `lecture_13_topological.py`. Regenerated
+  phase diagram from the strict S1×S2 product seam (T3's `nk_par>1`
+  branch) is the input.
 
-Build order: T3 → T4. T5 closed ahead of T3 (seam-test work parallelizable;
-the chart's T5 ∥ T3 fork is now T3-alone).
+Build order: T4 → destination. T3 closed 2026-08-09 (5 commits, all
+summary at T3's ticket body). T5 closed ahead of T3 (seam-test work
+parallelizable; the chart's T5 ∥ T3 fork is now T4-alone).
