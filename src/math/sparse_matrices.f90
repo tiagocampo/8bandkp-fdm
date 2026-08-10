@@ -27,6 +27,7 @@ module sparse_matrices
   public :: csr_conjugate_transpose, csr_conjugate_transpose_to_preallocated
   public :: csr_to_dense_work
   public :: extract_block_csr
+  public :: dense_to_csr
 
   ! ------------------------------------------------------------------
   ! Compressed Sparse Row (CSR) matrix type for complex-valued
@@ -1220,5 +1221,55 @@ contains
     end if
     deallocate(rows_out, colind_out, values_out)
   end subroutine extract_block_csr
+
+  ! ==================================================================
+  ! dense_to_csr — public dense->CSR converter.
+  !
+  ! Inverse of csr_to_dense_work. Walks a square dense complex matrix once,
+  ! counts and emits nonzero entries as CSR via csr_build_from_coo. The
+  ! caller owns the returned csr_matrix and must call csr_free on it.
+  !
+  ! Used by U13 T3 dispatch (eval_wire_bdg_gap_bloch converts Bloch slice 1
+  ! back to CSR for FEAST) and by bdg_observables.f90's
+  ! eval_bdg_pfaffian_witness_product_csr (S2 reference-slice conversion).
+  !
+  ! Shape contract: dense is N x N, square. Returns csr with nrows = ncols = N.
+  ! ==================================================================
+  subroutine dense_to_csr(csr, dense)
+    type(csr_matrix), intent(out) :: csr
+    complex(kind=dp), intent(in) :: dense(:,:)
+    integer :: i, j, n, nnz
+    integer, allocatable :: rows(:), cols(:)
+    complex(kind=dp), allocatable :: vals(:)
+
+    n = size(dense, 1)
+    if (n /= size(dense, 2)) then
+      print *, 'ERROR: dense_to_csr: shape mismatch (', size(dense,1), 'x', size(dense,2), ')'
+      error stop 'dense_to_csr: dense matrix must be square'
+    end if
+
+    nnz = 0
+    do j = 1, n
+      do i = 1, n
+        if (abs(dense(i, j)) > 0.0_dp) nnz = nnz + 1
+      end do
+    end do
+
+    allocate(rows(nnz), cols(nnz), vals(nnz))
+    nnz = 0
+    do j = 1, n
+      do i = 1, n
+        if (abs(dense(i, j)) > 0.0_dp) then
+          nnz = nnz + 1
+          rows(nnz) = i
+          cols(nnz) = j
+          vals(nnz) = dense(i, j)
+        end if
+      end do
+    end do
+
+    call csr_build_from_coo(csr, n, n, nnz, rows, cols, vals)
+    deallocate(rows, cols, vals)
+  end subroutine dense_to_csr
 
 end module sparse_matrices

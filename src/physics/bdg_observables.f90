@@ -30,7 +30,7 @@ module bdg_observables
   ! ==============================================================================
 
   use definitions, only: dp
-  use sparse_matrices, only: csr_matrix, csr_build_from_coo, csr_free
+  use sparse_matrices, only: csr_matrix, csr_build_from_coo, csr_free, dense_to_csr
   use pfaffian, only: complex_pfaffian, kitaev_majorana_number
   use topological_analysis, only: wire_pfaffian_witness_sweep
 
@@ -275,10 +275,9 @@ contains
   ! against. This is the slim-seam "one point" approximation lifted to the
   ! strict k-product invariant.
   !
-  ! The dense→CSR conversion of slice 1 is private to this seam — no public
-  ! dense→CSR helper exists in `sparse_matrices` (only `csr_to_dense_work`,
-  ! the inverse direction). The seam enumerates the slice's nonzero entries
-  ! once, builds a CSR via `csr_build_from_coo`, and frees it before returning.
+  ! The dense→CSR conversion of slice 1 uses the public `dense_to_csr`
+  ! helper in `sparse_matrices` (the inverse of `csr_to_dense_work`),
+  ! shared with U13 T3's `eval_wire_bdg_gap_bloch` dispatch path.
   ! ==============================================================================
   function eval_bdg_pfaffian_witness_product_csr(H_k_array, k_par_values, params, &
                                                    best_pf_abs, disagreement_reason) result(z2)
@@ -289,9 +288,7 @@ contains
     integer, intent(out), optional           :: disagreement_reason
     integer :: z2
 
-    integer :: s1, s2, n_full, nnz, i, j, idx
-    integer, allocatable :: rows(:), cols(:)
-    complex(kind=dp), allocatable :: vals(:)
+    integer :: s1, s2, n_full
     type(csr_matrix) :: H_csr_slice
     real(kind=dp) :: best_pf_abs_local
 
@@ -312,28 +309,7 @@ contains
       return
     end if
 
-    nnz = 0
-    do j = 1, n_full
-      do i = 1, n_full
-        if (abs(H_k_array(i, j, 1)) > 0.0_dp) nnz = nnz + 1
-      end do
-    end do
-
-    allocate(rows(nnz), cols(nnz), vals(nnz))
-    idx = 0
-    do i = 1, n_full
-      do j = 1, n_full
-        if (abs(H_k_array(i, j, 1)) > 0.0_dp) then
-          idx = idx + 1
-          rows(idx) = i
-          cols(idx) = j
-          vals(idx) = H_k_array(i, j, 1)
-        end if
-      end do
-    end do
-
-    call csr_build_from_coo(H_csr_slice, n_full, n_full, nnz, rows, cols, vals)
-    deallocate(rows, cols, vals)
+    call dense_to_csr(H_csr_slice, H_k_array(:, :, 1))
 
     s2 = eval_bdg_pfaffian_witness_csr(H_csr_slice, n_full, params, best_pf_abs_local)
 
