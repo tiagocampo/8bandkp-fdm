@@ -736,6 +736,14 @@ contains
     end if
     call get_value(bdg_tbl, 'kz', cfg%bdg%kz, 0.0_dp, stat=stat)
     call check_optional_stat(stat, 'kz', 'bdg')
+    ! U13 T3: Bloch-periodic sweep knob. Optional keys; defaults preserve
+    ! the fixed-kz bit-exact path (nk_par=1, k_par_min/max=0.0).
+    call get_value(bdg_tbl, 'nk_par', cfg%bdg%nk_par, 1, stat=stat)
+    call check_optional_stat(stat, 'nk_par', 'bdg')
+    call get_value(bdg_tbl, 'k_par_min', cfg%bdg%k_par_min, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'k_par_min', 'bdg')
+    call get_value(bdg_tbl, 'k_par_max', cfg%bdg%k_par_max, 0.0_dp, stat=stat)
+    call check_optional_stat(stat, 'k_par_max', 'bdg')
 
     ! Read B_vec from [bdg] if present (overrides b_field copy)
     call get_value(bdg_tbl, 'B_vec', bvec_arr, requested=.false., stat=stat)

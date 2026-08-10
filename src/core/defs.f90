@@ -298,6 +298,14 @@ module definitions
     character(len=20) :: gauge = 'landau_x'  ! gauge choice
     real(kind=dp)   :: B_sweep(3) = 0.0_dp ! B sweep: min, max, step
     real(kind=dp)   :: kz = 0.0_dp        ! along-wire momentum (1/A) for BdG dispersion
+    ! U13 T3: Bloch-periodic sweep knob. nk_par=1 (default) reproduces
+    ! the fixed-kz build bit-for-bit (regression-pinned by
+    ! regression_bdg_u13_nk_par_equiv); nk_par > 1 enables the strict
+    ! S1xS2 product seam (T2) over a uniform k_par grid spanning
+    ! [k_par_min, k_par_max] in the wire free-z direction.
+    integer          :: nk_par = 1
+    real(kind=dp)   :: k_par_min = 0.0_dp
+    real(kind=dp)   :: k_par_max = 0.0_dp
   end type
 
   ! ------------------------------------------------------------------
@@ -980,6 +988,21 @@ module definitions
       if (trim(cfg%topo%mode) == 'bdg' .or. trim(cfg%topo%mode) == 'bdq_spectral' .or. &
           (trim(cfg%topo%mode) == 'sweep' .and. &
            trim(cfg%topo%sweep_model) == 'wire_bdg')) then
+        ! U13 T3: Bloch-periodic sweep guard. Inside the wire_bdg branch
+        ! so fixed-kz regressions (nk_par absent -> 1, k_par_min/max=0.0)
+        ! remain bit-exact. nk_par > 1 enables the strict S1xS2 seam.
+        if (cfg%bdg%nk_par < 1) then
+          block
+            character(len=32) :: buf_nk
+            write(buf_nk, '(I0)') cfg%bdg%nk_par
+            error stop 'validate_semantic: bdg.nk_par must be >= 1, got nk_par=' // &
+              trim(buf_nk)
+          end block
+        end if
+        if (cfg%bdg%nk_par > 1 .and. cfg%bdg%k_par_max <= cfg%bdg%k_par_min) then
+          error stop 'validate_semantic: bdg.nk_par > 1 requires ' // &
+            'k_par_max > k_par_min'
+        end if
         if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
           if (max(abs(cfg%solver%emin), abs(cfg%solver%emax)) > BDG_WINDOW_BOUND) then
             if (trim(cfg%topo%mode) == 'bdg') then
