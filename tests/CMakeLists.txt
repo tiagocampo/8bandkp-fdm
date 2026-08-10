@@ -1014,6 +1014,21 @@ set_tests_properties(
     PROPERTIES LABELS "regression" TIMEOUT 900
 )
 
+# U13 T3: nk_par > 1 smoke. Verifies the new dispatch branch (Bloch
+# stack + T2 strict seam) executes end-to-end without error on the
+# canonical wire-bdg fixture with nk_par=4 over [-0.05, +0.05] 1/A.
+add_test(
+    NAME regression_bdg_u13_nk_par_sweep
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_bdg_u13_nk_par_sweep.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_bdg_topological_2d.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_bdg_u13_nk_par_sweep
+    PROPERTIES LABELS "regression" TIMEOUT 900
+)
+
 # U10 T1b: smoke test for the per-B min-|Pf| proxy producer
 # (write_wire_slim_pfaffian_witness in src/io/outputFunctions.f90). Drives
 # the wire_bdg 2D sweep and asserts output/wire_slim_pfaffian_witness.dat

@@ -17,6 +17,7 @@ program topologicalAnalysis
   use bdg_hamiltonian
   use bdg_observables, only: bdg_eval_params_t, bdg_eval_result_t, eval_bdg_point, &
     & q_zero_tol, bdg_eval_params_with_delta, eval_bdg_pfaffian_witness_csr, &
+    & eval_bdg_pfaffian_witness_product_csr, &
     & bdg_pfaffian_params_with_floor, bdg_default_pfaffian_floor
   use green_functions, only: compute_ldos_csr, compute_spectral_function_bulk, compute_spectral_function_qw, &
     & compute_spectral_function_wire, compute_landauer_transmission_1d
@@ -1284,8 +1285,34 @@ contains
       B_val = cfg_in%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * dB
       do iMu = 1, nMu
         mu_val = cfg_in%topo%gap_sweep_mu_min + real(iMu - 1, kind=dp) * dmu
-        call eval_wire_bdg_gap(cfg_in, B_val, mu_val, gap_threshold, &
-          & z2_map(iMu, iB), gap_map(iMu, iB), pf_mag)
+        if (cfg_in%bdg%nk_par <= 1) then
+          ! U10 fixed-kz path (bit-exact U10 behavior at nk_par=1).
+          call eval_wire_bdg_gap(cfg_in, B_val, mu_val, gap_threshold, &
+            & z2_map(iMu, iB), gap_map(iMu, iB), pf_mag)
+        else
+          ! U13 T3: Bloch-periodic path. Build uniform k_par lattice
+          ! over [k_par_min, k_par_max] and route through T2's strict
+          ! S1xS2 product seam (eval_bdg_pfaffian_witness_product_csr).
+          block
+            real(kind=dp), allocatable :: k_par_values(:)
+            real(kind=dp) :: d_k, k_min, k_max
+            integer :: nk_par_local, ik
+            nk_par_local = cfg_in%bdg%nk_par
+            k_min = cfg_in%bdg%k_par_min
+            k_max = cfg_in%bdg%k_par_max
+            allocate(k_par_values(nk_par_local))
+            d_k = 0.0_dp
+            if (nk_par_local > 1) &
+              & d_k = (k_max - k_min) / real(nk_par_local - 1, kind=dp)
+            do ik = 1, nk_par_local
+              k_par_values(ik) = k_min + real(ik - 1, kind=dp) * d_k
+            end do
+            call eval_wire_bdg_gap_bloch(cfg_in, B_val, mu_val, gap_threshold, &
+              & z2_map(iMu, iB), gap_map(iMu, iB), pf_mag, &
+              & nk_par_local, k_par_values)
+            deallocate(k_par_values)
+          end block
+        end if
         pf_mag_grid(iMu, iB) = pf_mag
       end do
     end do
@@ -1432,5 +1459,132 @@ contains
 
     call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
   end subroutine eval_wire_bdg_gap
+
+  ! ==============================================================================
+  ! U13 T3: Bloch-periodic dispatch entry point.
+  !
+  ! Builds a stack of nk_par BdG Hamiltonians over the wire free-z k_par
+  ! lattice (via T1's build_bdg_hamiltonian_1d_bloch), runs FEAST on the
+  ! reference slice (k_par_values(1) — converted to CSR via the public
+  ! dense_to_csr helper from sparse_matrices), and routes the eigen-
+  ! snapshot plus the full stack through T2's strict S1×S2 product seam
+  ! (eval_bdg_pfaffian_witness_product_csr).
+  !
+  ! Scope isolation: at nk_par=1 with k_par_values=[kz], the gap, z2,
+  ! and pf_mag outputs are NOT bit-identical to eval_wire_bdg_gap
+  ! (the gap is identical — same FEST window — but the z2 is the
+  ! strict k-product invariant, not the fixed-kz slim S2). The
+  ! regression_bdg_u13_nk_par_equiv shell test enforces the dispatch's
+  ! nk_par-path selection at the COMPUTE_WIRE_BDG_GAP_SWEEP level
+  ! (nk_par=1 routes through eval_wire_bdg_gap, which is preserved
+  ! bit-exact); the equivalence test does NOT compare this subroutine's
+  ! output to the fixed-kz path's z2 — that comparison is the
+  ! destination of T4 (the 4-witness acceptance gate flip).
+  !
+  ! Resource model: per (B, mu) cell, allocate one stack, one CSR
+  ! (slice 1), one eigensolver, one eigen_res, one eigvals_bdg. The
+  ! wire_setup is local to this routine (mirrors eval_wire_bdg_gap).
+  ! ===========================================================================
+  subroutine eval_wire_bdg_gap_bloch(cfg_in, B_val, mu_val, gap_threshold, &
+                                      z2, gap, pf_mag, nk_par, k_par_values)
+    type(simulation_config), intent(in) :: cfg_in
+    real(kind=dp), intent(in) :: B_val, mu_val, gap_threshold
+    integer, intent(out) :: z2
+    real(kind=dp), intent(out) :: gap, pf_mag
+    integer, intent(in) :: nk_par
+    real(kind=dp), intent(in) :: k_par_values(:)
+
+    type(simulation_config) :: cfg
+    type(wire_setup) :: wsetup
+    type(csr_matrix) :: H_bdg_csr
+    class(eigensolver_base), allocatable :: eigen_solver_local
+    type(eigensolver_config) :: eigen_cfg_local
+    type(eigensolver_result) :: eigen_res_local
+    complex(kind=dp), allocatable :: H_k_array(:,:,:)
+    real(kind=dp), allocatable :: eigvals_bdg(:)
+    integer :: Ngrid_local, Ntot_local, Nbdg_local, nev_local
+    real(kind=dp) :: emin_local, emax_local
+    real(kind=dp) :: best_pf_abs_local
+    character(len=*), parameter :: THIS_ROUTINE = 'eval_wire_bdg_gap_bloch'
+
+    cfg = cfg_in
+    cfg%bdg%enabled = .true.
+    cfg%bdg%mu = mu_val
+    cfg%bdg%B_vec = [B_val, 0.0_dp, 0.0_dp]
+
+    ! Strain-aware wire init (same as eval_wire_bdg_gap).
+    call wire_setup_init(wsetup, cfg)
+
+    Ngrid_local = grid_ngrid(cfg%grid)
+    Ntot_local = 8 * Ngrid_local
+    Nbdg_local = 2 * Ntot_local
+
+    ! T1 stack builder: 16N x 16N x nk_par dense complex.
+    call build_bdg_hamiltonian_1d_bloch(H_k_array, nk_par, k_par_values, cfg, &
+         wsetup%profile_2d, wsetup%kpterms_2d, &
+         cfg%bdg%mu, cfg%bdg%delta_0, cfg%bdg%B_vec, cfg%bdg%g_factor)
+
+    ! FEAST: same ±5·δ₀ default + user override as eval_wire_bdg_gap.
+    ! Convert slice 1 (the canonical reference kz) to CSR for FEAST.
+    call dense_to_csr(H_bdg_csr, H_k_array(:, :, 1))
+
+    nev_local = max(2, cfg%bands%num_cb + cfg%bands%num_vb)
+    eigen_cfg_local%method = 'FEAST'
+    eigen_cfg_local%mode = EIGEN_MODE_ENERGY
+    eigen_cfg_local%nev = nev_local
+    eigen_cfg_local%max_iter = 200
+    eigen_cfg_local%tol = 1.0e-10_dp
+    eigen_cfg_local%m0 = min(max(8 * nev_local, 200), Nbdg_local)
+
+    if (cfg%solver%emin /= 0.0_dp .or. cfg%solver%emax /= 0.0_dp) then
+      emin_local = cfg%solver%emin
+      emax_local = cfg%solver%emax
+    else
+      emin_local = -5.0_dp * cfg%bdg%delta_0
+      emax_local =  5.0_dp * cfg%bdg%delta_0
+    end if
+
+    call apply_solver_window(H_bdg_csr, emin_local, emax_local, &
+                             eigen_cfg_local%emin, eigen_cfg_local%emax)
+    eigen_solver_local = make_eigensolver(eigen_cfg_local)
+    call eigen_solver_local%solve_sparse(H_bdg_csr, eigen_cfg_local, eigen_res_local)
+
+    if (.not. eigen_res_local%converged .or. eigen_res_local%nev_found < 1) then
+      print *, 'ERROR: ', THIS_ROUTINE, ': FEAST failed or found no states'
+      call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
+      deallocate(H_k_array)
+      error stop 'eval_wire_bdg_gap_bloch: FEAST failed (mu likely in band gap or window mis-sized)'
+    end if
+    if (eigen_res_local%m0_used > 0 .and. &
+        eigen_res_local%nev_found >= eigen_res_local%m0_used .and. &
+        eigen_res_local%m0_used < Nbdg_local) then
+      print *, 'WARNING: ', THIS_ROUTINE, ': FEAST subspace likely truncated'
+      print *, '  nev_found=', eigen_res_local%nev_found, ' m0=', eigen_res_local%m0_used
+      call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
+      deallocate(H_k_array)
+      error stop 'eval_wire_bdg_gap_bloch: FEAST subspace truncated (fail-fast)'
+    end if
+
+    allocate(eigvals_bdg(eigen_res_local%nev_found))
+    eigvals_bdg = eigen_res_local%eigenvalues
+
+    block
+      type(bdg_eval_params_t) :: evp
+      type(bdg_eval_result_t) :: evr
+      evp = bdg_eval_params_with_delta(cfg_in%bdg%delta_0)
+      evr = eval_bdg_point(eigvals_bdg, evp)
+      gap = evr%minigap
+    end block
+    deallocate(eigvals_bdg)
+
+    ! T2 strict seam: S1 from the full k-stack, S2 from slice 1.
+    z2 = eval_bdg_pfaffian_witness_product_csr(H_k_array, k_par_values, &
+         bdg_pfaffian_params_with_floor(bdg_default_pfaffian_floor), &
+         best_pf_abs_local)
+    pf_mag = best_pf_abs_local
+
+    call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
+    deallocate(H_k_array)
+  end subroutine eval_wire_bdg_gap_bloch
 
 end program topologicalAnalysis
