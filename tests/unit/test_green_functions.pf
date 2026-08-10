@@ -487,6 +487,7 @@ contains
   subroutine test_spectral_function_wire_ktd6_equivalence()
     type(simulation_config) :: cfg
     real(kind=dp), allocatable :: A_kE(:,:), k_arr(:), E_arr(:)
+    character(len=20) :: material(1)
 
     cfg%confinement = 'wire'
     cfg%fd_step = 1
@@ -522,6 +523,12 @@ contains
     cfg%wire%regions(1)%outer = 100.0_dp
     cfg%wire%num_regions = 1
 
+    ! Populate cfg%params so wire_setup_init -> confinementInitialization_2d
+    ! (confinement_init.f90:477) reads valid material parameters.
+    material(1) = 'GaAs'
+    allocate(cfg%params(1))
+    call paramDatabase(material, 1, cfg%params)
+
     allocate(k_arr(1), E_arr(3))
     k_arr = [0.0_dp]
     E_arr = [-1.0_dp, 0.0_dp, 1.0_dp]
@@ -555,6 +562,7 @@ contains
   subroutine test_spectral_function_wire_user_override_honored()
     type(simulation_config) :: cfg
     real(kind=dp), allocatable :: A_kE(:,:), k_arr(:), E_arr(:)
+    character(len=20) :: material(1)
 
     cfg%confinement = 'wire'
     cfg%fd_step = 1
@@ -586,6 +594,12 @@ contains
     cfg%wire%regions(1)%inner = 0.0_dp
     cfg%wire%regions(1)%outer = 100.0_dp
     cfg%wire%num_regions = 1
+
+    ! Populate cfg%params so wire_setup_init -> confinementInitialization_2d
+    ! (confinement_init.f90:477) reads valid material parameters.
+    material(1) = 'GaAs'
+    allocate(cfg%params(1))
+    call paramDatabase(material, 1, cfg%params)
 
     allocate(k_arr(1), E_arr(3))
     k_arr = [0.0_dp]
