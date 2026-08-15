@@ -174,6 +174,13 @@ _(L1–L3 resolved by T6 on 2026-08-09 — see [Decisions so far](#decisions-so-
   53/53 unit + 4/4 wire-BdG regression + 1/1 lecture-13 gate green. Commits
   `e17fe11`, `5896455`, `9336dac`, `f4af568`, `3db44cc`. Side-finding: latency UB
   in `test_green_functions.pf` (unallocated `cfg%params`) fixed at `5896455`.
+- **T4 review checkpoint (2026-08-15):** the full odd-sector determinant in
+  `kitaev_majorana_number` was corrected from the production-incorrect leading
+  2x2 shortcut to a full LU determinant, with a red-first 16x16 regression.
+  After relinking `topologicalAnalysis`, canonical `nk_par=4` probes at B=0
+  and 5 T both return native `z2=0`, `disagreement_reason=1` (S1/S2 sign
+  split). T4 therefore remains claimed/open; the strict gate is not yet
+  certified.
 
 ## Out of scope
 

@@ -4,11 +4,11 @@
 > this chart; unblocks T2. Materialized from the map's T1 entry.
 
 Type: task
-Status: completed
+Status: resolved
 Owner: next-session (T1 chart handoff 2026-08-09) — landed on `feat/bdg-u13-bloch-pfaffian` (commits `302e092` + `1a14489`)
 Blocked by: 06 (closed 2026-08-09 — T6)
 
-## Resolution (2026-08-09)
+## Answer (2026-08-09)
 
 New public subroutine `build_bdg_hamiltonian_1d_bloch` added to
 `src/physics/bdg_hamiltonian.f90`. Private `dispatch_bdg_wire_builder`

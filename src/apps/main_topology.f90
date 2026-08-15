@@ -1111,7 +1111,9 @@ contains
     ! U10 T1b: per-(B, mu) max-site |Pf| magnitude grid (returned by
     ! compute_wire_bdg_gap_sweep) and its per-B min across the mu-window.
     real(kind=dp), allocatable :: pf_mag_grid_real(:,:)
+    integer, allocatable :: disagreement_reason_grid(:,:)
     real(kind=dp), allocatable :: min_pf_abs_per_b(:)
+    integer, allocatable :: disagreement_reason_per_b(:)
     real(kind=dp) :: gap_threshold
     integer :: iB, iMu, nB, nMu
 
@@ -1134,14 +1136,16 @@ contains
         & gap_threshold, z2_map_int, gap_map_real, transitions)
       ! T1b: per-B min-|Pf| proxy is wire-only (per Q4 / Q1 acceptance).
       allocate(pf_mag_grid_real(0,0))
+      allocate(disagreement_reason_grid(0,0))
     case ('qw_fukane')
       call compute_qw_fukane_gap_sweep(cfg_in, profile_in, kpterms_in, gap_threshold, &
         & z2_map_int, gap_map_real, transitions)
       ! T1b: per-B min-|Pf| proxy is wire-only (per Q4 / Q1 acceptance).
       allocate(pf_mag_grid_real(0,0))
+      allocate(disagreement_reason_grid(0,0))
     case ('wire_bdg')
       call compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map_int, gap_map_real, &
-        & transitions, pf_mag_grid_real)
+        & transitions, pf_mag_grid_real, disagreement_reason_grid)
     case default
       print *, 'ERROR: unknown topology sweep_model: ', trim(cfg_in%topo%sweep_model)
       error stop 'unknown topology sweep_model'
@@ -1162,20 +1166,31 @@ contains
     ! Write phase diagram output
     call write_z2_phase_diagram(cfg_in, result%z2_map, result%gap_map)
 
-    ! U10 T1b: emit the per-B min-|Pf| proxy file (wire-only; per Q4 /
-    ! Q1 acceptance). Folded into min_pf_abs_per_b(iB) across the mu-window
-    ! so the lecture 13 acceptance-gate reader's
-    !   re.finditer(r"B=([\d.eE+-]+)\s+\|Pf\|=([\d.eE+-]+)", ...)
-    ! picks up one |Pf| row per B, with the 4th witness `bcrit_pfaffian`
-    ! emitted approximately (full Bloch-Pfaffian @ PHS-invariant k is U13).
+    ! Emit the wire Pfaffian witness file.  The magnitude remains an
+    ! informational S2 diagnostic; strict U13 rows additionally carry the
+    ! L3 disagreement reason so closure cells are auditable.
     if (trim(cfg_in%topo%sweep_model) == 'wire_bdg' .and. size(pf_mag_grid_real, 1) > 0) then
       if (allocated(min_pf_abs_per_b)) deallocate(min_pf_abs_per_b)
+      if (allocated(disagreement_reason_per_b)) deallocate(disagreement_reason_per_b)
       allocate(min_pf_abs_per_b(nB))
+      allocate(disagreement_reason_per_b(nB))
       do iB = 1, nB
         min_pf_abs_per_b(iB) = minval(pf_mag_grid_real(:, iB))
+        disagreement_reason_per_b(iB) = 0
+        do iMu = 1, nMu
+          if (disagreement_reason_grid(iMu, iB) /= 0) then
+            disagreement_reason_per_b(iB) = disagreement_reason_grid(iMu, iB)
+            exit
+          end if
+        end do
       end do
-      call write_wire_slim_pfaffian_witness(cfg_in, min_pf_abs_per_b)
+      if (cfg_in%bdg%nk_par > 1) then
+        call write_wire_slim_pfaffian_witness(cfg_in, min_pf_abs_per_b, disagreement_reason_per_b)
+      else
+        call write_wire_slim_pfaffian_witness(cfg_in, min_pf_abs_per_b)
+      end if
       deallocate(min_pf_abs_per_b)
+      deallocate(disagreement_reason_per_b)
     end if
 
     call write_z2_transitions(transitions)
@@ -1253,7 +1268,8 @@ contains
       & cfg_in%topo%gap_sweep_mu_max, gap_threshold, transitions)
   end subroutine compute_qw_fukane_gap_sweep
 
-  subroutine compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map, gap_map, transitions, pf_mag_grid)
+  subroutine compute_wire_bdg_gap_sweep(cfg_in, gap_threshold, z2_map, gap_map, transitions, &
+                                        pf_mag_grid, disagreement_reason_grid)
     type(simulation_config), intent(in) :: cfg_in
     real(kind=dp), intent(in) :: gap_threshold
     integer, allocatable, intent(out) :: z2_map(:,:)
@@ -1263,19 +1279,23 @@ contains
     ! output/wire_slim_pfaffian_witness.dat). Returned as (nMu, nB) to
     ! mirror the z2_map / gap_map layout.
     real(kind=dp), allocatable, intent(out) :: pf_mag_grid(:,:)
+    integer, allocatable, intent(out) :: disagreement_reason_grid(:,:)
 
     integer :: iB, iMu, nB, nMu
     real(kind=dp) :: dB, dmu, B_val, mu_val
     real(kind=dp) :: pf_mag
+    integer :: disagreement_reason
 
     nB = cfg_in%topo%gap_sweep_nB
     nMu = cfg_in%topo%gap_sweep_nMu
     if (nB < 1 .or. nMu < 1) then
-      allocate(z2_map(0,0), gap_map(0,0), transitions(0,2), pf_mag_grid(0,0))
+      allocate(z2_map(0,0), gap_map(0,0), transitions(0,2), pf_mag_grid(0,0), &
+        & disagreement_reason_grid(0,0))
       return
     end if
 
-    allocate(z2_map(nMu, nB), gap_map(nMu, nB), pf_mag_grid(nMu, nB))
+    allocate(z2_map(nMu, nB), gap_map(nMu, nB), pf_mag_grid(nMu, nB), &
+      & disagreement_reason_grid(nMu, nB))
     dB = 0.0_dp
     if (nB > 1) dB = (cfg_in%topo%gap_sweep_B_max - cfg_in%topo%gap_sweep_B_min) / real(nB - 1, kind=dp)
     dmu = 0.0_dp
@@ -1289,6 +1309,7 @@ contains
           ! U10 fixed-kz path (bit-exact U10 behavior at nk_par=1).
           call eval_wire_bdg_gap(cfg_in, B_val, mu_val, gap_threshold, &
             & z2_map(iMu, iB), gap_map(iMu, iB), pf_mag)
+          disagreement_reason = 0
         else
           ! U13 T3: Bloch-periodic path. Build uniform k_par lattice
           ! over [k_par_min, k_par_max] and route through T2's strict
@@ -1309,11 +1330,12 @@ contains
             end do
             call eval_wire_bdg_gap_bloch(cfg_in, B_val, mu_val, gap_threshold, &
               & z2_map(iMu, iB), gap_map(iMu, iB), pf_mag, &
-              & nk_par_local, k_par_values)
+              & disagreement_reason, nk_par_local, k_par_values)
             deallocate(k_par_values)
           end block
         end if
         pf_mag_grid(iMu, iB) = pf_mag
+        disagreement_reason_grid(iMu, iB) = disagreement_reason
       end do
     end do
 
@@ -1486,11 +1508,13 @@ contains
   ! wire_setup is local to this routine (mirrors eval_wire_bdg_gap).
   ! ===========================================================================
   subroutine eval_wire_bdg_gap_bloch(cfg_in, B_val, mu_val, gap_threshold, &
-                                      z2, gap, pf_mag, nk_par, k_par_values)
+                                      z2, gap, pf_mag, disagreement_reason, &
+                                      nk_par, k_par_values)
     type(simulation_config), intent(in) :: cfg_in
     real(kind=dp), intent(in) :: B_val, mu_val, gap_threshold
     integer, intent(out) :: z2
     real(kind=dp), intent(out) :: gap, pf_mag
+    integer, intent(out) :: disagreement_reason
     integer, intent(in) :: nk_par
     real(kind=dp), intent(in) :: k_par_values(:)
 
@@ -1580,8 +1604,12 @@ contains
     ! T2 strict seam: S1 from the full k-stack, S2 from slice 1.
     z2 = eval_bdg_pfaffian_witness_product_csr(H_k_array, k_par_values, &
          bdg_pfaffian_params_with_floor(bdg_default_pfaffian_floor), &
-         best_pf_abs_local)
+         best_pf_abs_local, disagreement_reason)
     pf_mag = best_pf_abs_local
+    if (disagreement_reason /= 0) then
+      print *, 'WARNING: wire BdG S1xS2 disagreement reason=', disagreement_reason, &
+        & ' at B=', B_val, ' mu=', mu_val
+    end if
 
     call bdg_wire_cleanup(H_bdg_csr, eigen_res_local, eigen_solver_local, wsetup)
     deallocate(H_k_array)

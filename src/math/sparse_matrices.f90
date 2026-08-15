@@ -1237,7 +1237,7 @@ contains
   ! ==================================================================
   subroutine dense_to_csr(csr, dense)
     type(csr_matrix), intent(out) :: csr
-    complex(kind=dp), intent(in) :: dense(:,:)
+    complex(kind=dp), intent(in), contiguous :: dense(:,:)
     integer :: i, j, n, nnz
     integer, allocatable :: rows(:), cols(:)
     complex(kind=dp), allocatable :: vals(:)

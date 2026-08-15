@@ -4,11 +4,11 @@
 > the red half of T4's green. Materialized from the map's T5 entry.
 
 Type: task
-Status: completed
+Status: resolved
 Owner: this-session (2026-08-09 — claimed after T2 closure at a864f98)
 Blocked by: 02 (closed 2026-08-09 — T2 at 449c7fb)
 
-## Resolution (2026-08-09)
+## Answer (2026-08-09)
 
 Extended `tests/unit/test_bdg_pfaffian_witness_product_csr.pf` with 3 new
 `@test` subroutines covering the remaining L3 branches (cases ii, iii, v).

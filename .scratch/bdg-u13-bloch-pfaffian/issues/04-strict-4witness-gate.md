@@ -4,8 +4,8 @@
 > the destination row of this map. Materialized from the map's T4 entry.
 
 Type: task
-Status: pending
-Blocked by: 03, 05
+Status: claimed
+Blocked by: 03, 05 (both dependencies resolved); empirical invariant review remains open.
 
 ## Question
 
@@ -64,3 +64,18 @@ test — T4 makes it green.
   spec + plan status footers. When you close T4, refresh the parent plan's U13
   status footer (`docs/plans/2026-06-14-001-...-plan.md`) and archive the
   finished-map directory under `.scratch/archive/`.
+
+## Review checkpoint (2026-08-15)
+
+T4 remains open. A red-first regression exposed that
+`kitaev_majorana_number` was computing only the leading 2x2 determinant when
+the production odd sector has dimension `4*N`; the implementation now uses a
+full LU determinant, and the regression is green. With that correction, the
+canonical `nk_par=4` wire probes at both `B=0` and `B=5 T` return
+`z2=0, disagreement_reason=1` (S1/S2 sign split). The strict phase verifier
+therefore fails its required non-flat native `{−1,0,+1}` witness precondition.
+Do not close T4, loosen the gate, or manufacture a non-flat fixture until the
+S1/S2 convention or the physical wire witness is reconciled. The parent U13
+text also describes PHS-invariant/BZ endpoints, while the current T3 surface
+accepts an explicitly configured near-Γ uniform stack; that contract mismatch
+must be documented or corrected before merge.

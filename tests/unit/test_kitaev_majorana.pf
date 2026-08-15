@@ -315,4 +315,27 @@ contains
     deallocate(H_k0, H_kpi, H_arr)
   end subroutine
 
+  @test
+  subroutine test_kitaev_majorana_uses_full_odd_sector_determinant()
+    ! A 16x16 stack has n_odd=4.  Flip only the third odd-sector channel at
+    ! the second momentum: the leading 2x2 determinant stays positive, while
+    ! the full determinant changes sign.  The production wire stack is much
+    ! larger, so silently reducing this calculation to 2x2 gives the wrong
+    ! invariant.
+    complex(kind=dp), allocatable :: H_arr(:,:,:)
+    integer :: M, i
+
+    allocate(H_arr(16, 16, 2))
+    H_arr = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    do i = 1, 16
+      H_arr(i, i, 1) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+      H_arr(i, i, 2) = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    end do
+    H_arr(3, 3, 2) = cmplx(-1.0_dp, 0.0_dp, kind=dp)
+
+    M = kitaev_majorana_number(H_arr, [0.0_dp, 3.14159265358979323846_dp])
+    @assertEqual(-1, M)
+    deallocate(H_arr)
+  end subroutine
+
 end module test_kitaev_majorana

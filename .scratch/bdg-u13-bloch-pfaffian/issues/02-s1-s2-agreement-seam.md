@@ -4,11 +4,11 @@
 > unblocks T3. Materialized from the map's T2 entry.
 
 Type: task
-Status: completed
+Status: resolved
 Owner: this-session (2026-08-09 — proceeded per `/loop` continuation after handoff; landed seam on `feat/bdg-u13-bloch-pfaffian`)
 Blocked by: 01 (closed 2026-08-09 — T1)
 
-## Resolution (2026-08-09)
+## Answer (2026-08-09)
 
 New public function `eval_bdg_pfaffian_witness_product_csr` added to
 `src/physics/bdg_observables.f90`. Sibling to `eval_bdg_pfaffian_witness_csr`
