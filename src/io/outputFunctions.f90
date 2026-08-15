@@ -824,16 +824,14 @@ module outputFunctions
     ! cfg%topo%gap_sweep_B_min/max/nB so the caller only passes the
     ! min_pf_abs(nB) reduction.
     !
-    ! Informational only (per Q4 acceptance): this is the open-chain slim
-    ! Pfaffian per-B min magnitude, NOT the full Bloch-Pfaffian at the
-    ! PHS-invariant k (U13). The 4th acceptance-gate witness
-    ! `bcrit_pfaffian` is approximate-not-deferred while U13 is
-    ! BLOCKING-EMPIRICAL.
+    ! The magnitude is an informational S2 diagnostic. Strict U13 rows also
+    ! carry the L3 disagreement reason from the S1xS2 seam.
     ! ==================================================================
-    subroutine write_wire_slim_pfaffian_witness(cfg, min_pf_abs)
+    subroutine write_wire_slim_pfaffian_witness(cfg, min_pf_abs, disagreement_reason)
 
       type(simulation_config), intent(in) :: cfg
       real(kind=dp), intent(in), contiguous :: min_pf_abs(:)
+      integer, intent(in), contiguous, optional :: disagreement_reason(:)
 
       integer(kind=4) :: iounit, status
       integer :: iB, nB
@@ -855,7 +853,11 @@ module outputFunctions
       end if
       write(iounit, '(A)') '# wire slim Pfaffian witness (per-B min |Pf| over mu-window)'
       write(iounit, '(A,I0)') '# nB=', nB
-      write(iounit, '(A)') '# B=ES16.8 |Pf|=ES16.8'
+      if (present(disagreement_reason)) then
+        write(iounit, '(A)') '# B=ES16.8 |Pf|=ES16.8 reason=I0'
+      else
+        write(iounit, '(A)') '# B=ES16.8 |Pf|=ES16.8'
+      end if
       do iB = 1, nB
         B_val = cfg%topo%gap_sweep_B_min + real(iB - 1, kind=dp) * dB
         ! Emit B=val |Pf|=val (no leading whitespace) so the lecture 13
@@ -865,8 +867,13 @@ module outputFunctions
         ! character buffer avoids Fortran's ES16.8 width padding.
         write(B_str, '(ES16.8)') B_val
         write(pf_str, '(ES16.8)') min_pf_abs(iB)
-        write(iounit, '(A,A,A,A,A)') 'B=', trim(adjustl(B_str)), &
-          & ' |Pf|=', trim(adjustl(pf_str)), ''
+        if (present(disagreement_reason)) then
+          write(iounit, '(A,A,A,A,A,I0)') 'B=', trim(adjustl(B_str)), &
+            & ' |Pf|=', trim(adjustl(pf_str)), ' reason=', disagreement_reason(iB)
+        else
+          write(iounit, '(A,A,A,A,A)') 'B=', trim(adjustl(B_str)), &
+            & ' |Pf|=', trim(adjustl(pf_str)), ''
+        end if
       end do
       close(iounit)
       print *, '  wire slim Pfaffian witness written to output/' // trim(adjustl(cfg%topo%slim_pfaffian_witness_file))

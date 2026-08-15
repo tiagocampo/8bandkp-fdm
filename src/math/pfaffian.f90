@@ -122,7 +122,7 @@ contains
     real(kind=dp), intent(in) :: k_par_values(:)
     complex(kind=dp), intent(in), optional :: omega_struct(:,:)
     integer :: majorana_number
-    integer :: i, n_full, n_k, n_odd, info
+    integer :: i, n_full, n_k, n_odd, info, det_info
     real(kind=dp) :: sign_prod
     complex(kind=dp), allocatable :: U_odd(:,:)
     complex(kind=dp) :: det_val
@@ -146,14 +146,11 @@ contains
       else if (info == 2) then
         error stop 'kitaev_majorana_number: zheev eigendecomposition failed'
       end if
-      ! Compute det(U_odd) directly (small matrix).
-      if (n_odd == 1) then
-        det_val = U_odd(1, 1)
-      else
-        ! 2x2 det for n_odd=2 (typical case).
-        det_val = U_odd(1,1) * U_odd(2,2) - U_odd(1,2) * U_odd(2,1)
-      end if
-      if (abs(det_val) < 1.0e-12_dp) then
+      ! The wire stack has n_odd = 4*N, so the determinant must include the
+      ! entire restricted odd sector.  A 1x1/2x2 special case silently
+      ! discards all transverse channels once N > 1.
+      det_val = complex_matrix_determinant(U_odd, det_info)
+      if (det_info /= 0 .or. abs(det_val) < 1.0e-12_dp) then
         majorana_number = 0
         deallocate(U_odd)
         return
@@ -169,6 +166,45 @@ contains
 
     if (allocated(U_odd)) deallocate(U_odd)
   end function kitaev_majorana_number
+
+  ! ============================================================================
+  ! Determinant of a general complex matrix via LAPACK LU factorization.
+  ! The pivot parity is included so the sign is valid for arbitrary matrix
+  ! dimensions; this is used by the multi-subband Kitaev invariant.
+  ! ============================================================================
+  function complex_matrix_determinant(A, info) result(det_val)
+    use linalg, only: zgetrf
+    complex(kind=dp), intent(in) :: A(:,:)
+    integer, intent(out) :: info
+    complex(kind=dp) :: det_val
+    complex(kind=dp), allocatable :: LU(:,:)
+    integer, allocatable :: ipiv(:)
+    integer :: n, i, info_lapack
+
+    info = 0
+    det_val = cmplx(0.0_dp, 0.0_dp, kind=dp)
+    n = size(A, 1)
+    if (n /= size(A, 2) .or. n < 1) then
+      info = 1
+      return
+    end if
+
+    allocate(LU(n, n), ipiv(n))
+    LU = A
+    call zgetrf(n, n, LU, n, ipiv, info_lapack)
+    if (info_lapack /= 0) then
+      info = 1
+      deallocate(LU, ipiv)
+      return
+    end if
+
+    det_val = cmplx(1.0_dp, 0.0_dp, kind=dp)
+    do i = 1, n
+      det_val = det_val * LU(i, i)
+      if (ipiv(i) /= i) det_val = -det_val
+    end do
+    deallocate(LU, ipiv)
+  end function complex_matrix_determinant
 
   ! ==============================================================================
   ! Real Pfaffian via Laplace expansion (small n; O(n!)).

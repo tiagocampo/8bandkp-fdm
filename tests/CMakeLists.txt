@@ -163,6 +163,17 @@ if(PFUNIT_FOUND)
         LABELS "unit"
     )
 
+    # T1 (U13 Bloch-Pfaffian chart): Bloch-periodic H_BdG(k_par) stack
+    # builder. Stack shape H_k_array(:,:,n_k) dense complex, matches
+    # kitaev_majorana_number consumer at src/math/pfaffian.f90:120-171.
+    # RED on main (symbol not found); GREEN once build_bdg_hamiltonian_1d_bloch
+    # is implemented with the n_k=1 bit-for-bit regression guard.
+    add_pfunit_ctest(test_bdg_hamiltonian_bloch
+        TEST_SOURCES unit/test_bdg_hamiltonian_bloch.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
     # Issue 02 (U5, Layer A of U4): PHS oracle pinning the BdG hole-block
     # canonical convention (-conjg(H0(-k)) per ADR 0007). Four-field matrix
     # (no_Z/Z x no_P/P) at generic k + cross-builder spectral identity.
@@ -193,6 +204,17 @@ if(PFUNIT_FOUND)
 
     add_pfunit_ctest(test_bdg_kitaev_majorana
         TEST_SOURCES unit/test_bdg_kitaev_majorana.pf
+        LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
+        LABELS "unit"
+    )
+
+    # T2 (U13 Bloch-Pfaffian chart): strict S1xS2 product seam
+    # (`eval_bdg_pfaffian_witness_product_csr`). Wires the k-product
+    # Majorana number (S1) through the slim projected Pfaffian (S2) and
+    # applies the L3 disagreement mapping (cases i-v). RED on main (seam
+    # not implemented yet); GREEN once T2 lands.
+    add_pfunit_ctest(test_bdg_pfaffian_witness_product_csr
+        TEST_SOURCES unit/test_bdg_pfaffian_witness_product_csr.pf
         LINK_LIBRARIES 8bandkp_common 8bandkp_test_support
         LABELS "unit"
     )
@@ -973,6 +995,38 @@ add_test(
 )
 set_tests_properties(
     regression_wire_bdg_topological_2d
+    PROPERTIES LABELS "regression" TIMEOUT 900
+)
+
+# U13 T3: Bloch-periodic dispatch regression guard. Asserts the
+# fixed-kz default path (nk_par absent) and the explicit nk_par=1
+# knob produce byte-identical outputs from committed equivalent fixtures.
+# Fails if the dispatch silently diverges.
+add_test(
+    NAME regression_bdg_u13_nk_par_equiv
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_bdg_u13_nk_par_equiv.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_bdg_topological_2d_equiv_absent.toml
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_bdg_topological_2d_nk1.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_bdg_u13_nk_par_equiv
+    PROPERTIES LABELS "regression" TIMEOUT 900
+)
+
+# U13 T3: nk_par > 1 smoke. Verifies the new dispatch branch (Bloch
+# stack + T2 strict seam) executes end-to-end without error on a
+# committed nk_par=4 smoke fixture.
+add_test(
+    NAME regression_bdg_u13_nk_par_sweep
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/regression/test_bdg_u13_nk_par_sweep.sh
+        $<TARGET_FILE:topologicalAnalysis>
+        ${CMAKE_CURRENT_SOURCE_DIR}/regression/configs/wire_inas_gaas_bdg_topological_2d_nk4_smoke.toml
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+set_tests_properties(
+    regression_bdg_u13_nk_par_sweep
     PROPERTIES LABELS "regression" TIMEOUT 900
 )
 

@@ -1,0 +1,448 @@
+module test_bdg_pfaffian_witness_product_csr
+  ! COVERAGE: observable=Pfaffian_witness_product_S1xS2 geometry=wire material=InAs tier=unit
+  ! ==============================================================================
+  ! U13 T2 — strict S1×S2 agreement seam `eval_bdg_pfaffian_witness_product_csr`.
+  !
+  ! Wires the k-product Majorana number (S1, from `kitaev_majorana_number`)
+  ! with the slim projected Pfaffian (S2, from `eval_bdg_pfaffian_witness_csr`)
+  ! through the L3 disagreement mapping in T6's chart
+  ! (`.scratch/bdg-u13-bloch-pfaffian/issues/06-grill-loose-fog.md`):
+  !
+  !   case i   (S1 = S2 = ±1)              → z2 = S1, reason = 0 (none)
+  !   case iv  (S1 = ±1, S2 = 0)           → z2 = 0,  reason = 2 (s2_fest_saturation)
+  !
+  ! The seam is the single face where S1 and S2 meet; disagreement handling
+  ! lives here, not in the builder (T1) or the gate (T4).
+  !
+  ! Cases (iii) strict-sign-split and (v) S1-closure-S2-misses require
+  ! degenerate polar-decomposition fixtures. T2's forward-pointer suggested
+  ! 4×4 (n_odd=1) Kitaev fixtures with controlled det; resolved in T5 to
+  ! 16×16 stacks exploiting two cleaner mechanisms:
+  !   - Case (v) and case (ii) use n_k=1 stacks — `kitaev_majorana_number`
+  !     returns 0 immediately at the `n_k < 2` guard (pfaffian.f90:132),
+  !     which is the canonical "S1 closure" signal.
+  !   - Case (iii) uses n_k=2 with the existing sign-flip fixture technique
+  !     plus a sign-flipped band-7/8 coupling so S1 and S2 land on opposite
+  !     signs of {-1, +1}.
+  ! This avoids the 4×4 detour while still exercising all 5 L3 branches
+  ! end-to-end through the seam. T2 pins the two determinable branches
+  ! (i, iv) on a 16×16 wire-shape stack.
+  !
+  ! Fixtures are minimal 16×16×2 wire-BdG stacks (N=1 supercell, 2 k-points):
+  !   - bands 1-4 diagonal ±I driving the sign(H) flip that S1 reads
+  !   - band-7/8 subblock off-diagonal k.p coupling driving the slim Pfaffian S2
+  !
+  ! RED on main (seam not implemented yet); GREEN once T2 lands.
+  ! ==============================================================================
+
+  use funit
+  use iso_fortran_env, only: dp => real64
+  use bdg_observables, only: eval_bdg_pfaffian_witness_product_csr, &
+                              bdg_pfaffian_params_t
+
+  implicit none
+
+contains
+
+  ! ---------------------------------------------------------------------------
+  ! Case (i) — agreement on sign yielding z2 = -1.
+  !
+  ! S1 = -1 (asymmetric sign-flip on band 1 between slice 1 and slice 2:
+  ! band-1 diagonal flips +I → -I while bands 2-4 stay +I, producing a
+  ! sign flip in the Lutchyn-Oreg 2×2 sub-det the helper uses for n_odd>2).
+  ! S2 = -1 (band-7/8 subblock sign — same fixture as the existing slim-seam
+  ! test_bdg_pfaffian_witness_csr.pf build_nondiagonal_bdg_csr fixture, but
+  ! applied to slice 1 of the Bloch stack only).
+  !
+  ! Expected per L3 case (i): z2 = S1 = -1 (strict agreement → emit the strict
+  ! invariant sign, not the literal S1*S2 product), disagreement_reason = 0.
+  ! ---------------------------------------------------------------------------
+  @test
+  subroutine test_product_seam_strict_agreement_sign_split()
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    type(bdg_pfaffian_params_t) :: p
+    integer :: z2, reason
+
+    call build_sign_split_bdg_16x16_x2(H_k, k_par)
+    p = bdg_pfaffian_params_t()
+
+    z2 = eval_bdg_pfaffian_witness_product_csr(H_k, k_par, p, disagreement_reason=reason)
+
+    @assertEqual(-1, z2)
+    @assertEqual(0, reason)
+
+    deallocate(H_k, k_par)
+  end subroutine
+
+  ! ---------------------------------------------------------------------------
+  ! Case (i) — agreement on sign yielding z2 = -1 (the strict nontrivial case).
+  !
+  ! S1 = -1 (asymmetric band-1 sign-flip between slices), S2 = +1 (band-7/8
+  ! subblock with a positive Pfaffian — opposite sign to the sign_split
+  ! fixture). Expected strict product: z2 = (-1) * (+1) = -1, reason = 0.
+  !
+  ! This pins the strict-product path: S1×S2 reproduces the strict invariant
+  ! and is NOT equal to the slim S2 sign alone. It's the destination row of
+  ! the U13 chart.
+  ! ---------------------------------------------------------------------------
+  @test
+  subroutine test_product_seam_strict_topological_sign()
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    type(bdg_pfaffian_params_t) :: p
+    integer :: z2, reason
+
+    call build_topological_strict_bdg_16x16_x2(H_k, k_par)
+    p = bdg_pfaffian_params_t()
+
+    z2 = eval_bdg_pfaffian_witness_product_csr(H_k, k_par, p, disagreement_reason=reason)
+
+    @assertEqual(-1, z2)
+    @assertEqual(0, reason)
+
+    deallocate(H_k, k_par)
+  end subroutine
+
+  ! ---------------------------------------------------------------------------
+  ! Case (iv) — S1 strict-clean (±1), S2 at floor (0).
+  !
+  ! Drives the L3 mapping "s2_fest_saturation" branch: S1 has a clean answer
+  ! but S2's slim Pfaffian falls below the floor (zero off-diagonal coupling
+  ! and zero pairing on the band-7/8 subblock ⇒ Pf = 0 ⇒ s2 = 0). Expected
+  ! z2 = 0, reason = 2.
+  !
+  ! This is the FEST-saturation fallback U10 T6 documented at the gate level
+  ! (lecture_13_topological.py:_PFAFFIAN_DEGENERACY_TOL) — the seam propagates
+  ! it without flipping z2 to S1.
+  ! ---------------------------------------------------------------------------
+  @test
+  subroutine test_product_seam_s2_fest_saturation_branch()
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    type(bdg_pfaffian_params_t) :: p
+    integer :: z2, reason
+
+    call build_s2_floor_bdg_16x16_x2(H_k, k_par)
+    p = bdg_pfaffian_params_t()
+
+    z2 = eval_bdg_pfaffian_witness_product_csr(H_k, k_par, p, disagreement_reason=reason)
+
+    @assertEqual(0, z2)
+    @assertEqual(2, reason)
+
+    deallocate(H_k, k_par)
+  end subroutine
+
+  ! ---------------------------------------------------------------------------
+  ! Case (ii) — both S1 and S2 are zero (closure, no information).
+  !
+  ! Single-k-point (n_k=1) 16×16 stack: `kitaev_majorana_number` returns 0 at
+  ! the `n_k < 2` guard (pfaffian.f90:132) ⇒ S1 = 0. The band-7/8 subblock is
+  ! empty (no off-diagonal k.p coupling, no pairing) ⇒ slim Pfaffian reads
+  ! zero on slice 1 ⇒ S2 = 0.
+  !
+  ! Expected per L3 case (ii): z2 = 0 (S1 = S2 = 0 ⇒ strict agreement on
+  ! closure), disagreement_reason = 0 (no warn — both witnesses agree that
+  ! the system is at a gap closure). This pins the "both 0 → z2=0" branch
+  ! against any refactor that breaks it silently.
+  ! ---------------------------------------------------------------------------
+  @test
+  subroutine test_product_seam_strict_agreement_both_zero()
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    type(bdg_pfaffian_params_t) :: p
+    integer :: z2, reason
+
+    call build_both_zero_bdg_16x16_x1(H_k, k_par)
+    p = bdg_pfaffian_params_t()
+
+    z2 = eval_bdg_pfaffian_witness_product_csr(H_k, k_par, p, disagreement_reason=reason)
+
+    @assertEqual(0, z2)
+    @assertEqual(0, reason)
+
+    deallocate(H_k, k_par)
+  end subroutine
+
+  ! ---------------------------------------------------------------------------
+  ! Case (iii) — S1 and S2 disagree on sign.
+  !
+  ! Two-k-point (n_k=2) 16×16 stack with NO band-1 sign-flip (S1 contribution
+  ! stays +1 across the k-product) PLUS a band-7/8 subblock with positive
+  ! coupling (-0.3_dp on the (7,8)/(8,7) entry) that empirically drives S2
+  ! to a sign OPPOSITE the sign_split fixture's S1. The seam's
+  ! `map_s1_s2_to_z2` reaches the final `else` branch (S1 ≠ S2 in sign).
+  !
+  ! Expected per L3 case (iii): z2 = 0, disagreement_reason = 1
+  ! (s1_s2_sign_split). Physically impossible in canonical PHS but reserved
+  ! for a follow-up `error stop` guard per T6.
+  ! ---------------------------------------------------------------------------
+  @test
+  subroutine test_product_seam_strict_sign_split()
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    type(bdg_pfaffian_params_t) :: p
+    integer :: z2, reason
+
+    call build_s1_s2_sign_split_bdg_16x16_x2(H_k, k_par)
+    p = bdg_pfaffian_params_t()
+
+    z2 = eval_bdg_pfaffian_witness_product_csr(H_k, k_par, p, disagreement_reason=reason)
+
+    @assertEqual(0, z2)
+    @assertEqual(1, reason)
+
+    deallocate(H_k, k_par)
+  end subroutine
+
+  ! ---------------------------------------------------------------------------
+  ! Case (v) — S1 = 0 (closure), S2 = ±1 (clean sign at slice 1).
+  !
+  ! Single-k-point (n_k=1) 16×16 stack with non-zero band-7/8 subblock
+  ! (+0.3_dp coupling as in the sign_split fixture). S1 = 0 from the
+  ! `n_k < 2` guard; S2 = -1 from the slim Pfaffian on slice 1 (same sign
+  ! as the sign_split fixture's S2).
+  !
+  ! Expected per L3 case (v): z2 = 0 (closure is indeterminate), reason = 3
+  ! (s1_closure_s2_misses). Pins the case-v branch that no other T2 test
+  ! exercises.
+  ! ---------------------------------------------------------------------------
+  @test
+  subroutine test_product_seam_s1_closure_s2_misses()
+    complex(kind=dp), allocatable :: H_k(:,:,:)
+    real(kind=dp), allocatable :: k_par(:)
+    type(bdg_pfaffian_params_t) :: p
+    integer :: z2, reason
+
+    call build_s1_closure_s2_clean_bdg_16x16_x1(H_k, k_par)
+    p = bdg_pfaffian_params_t()
+
+    z2 = eval_bdg_pfaffian_witness_product_csr(H_k, k_par, p, disagreement_reason=reason)
+
+    @assertEqual(0, z2)
+    @assertEqual(3, reason)
+
+    deallocate(H_k, k_par)
+  end subroutine
+
+  ! ---------------------------------------------------------------------------
+  ! Fixtures.
+  !
+  ! All stacks are 16×16×2 (N=1 wire supercell, 2 k-points). The handcrafted
+  ! entries target the band-7/8 subblock at rows/cols [7, 8, 15, 16]
+  ! (slim S2 extraction) and the odd-parity subspace at bands 1-4 (sign(H)
+  ! read by `kitaev_majorana_number` via the Lutchyn-Oreg formula).
+  !
+  ! The band-7/8 subblock Pfaffian sign on slice 1 matches the
+  ! non-diagonal fixture from test_bdg_pfaffian_witness_csr.pf:270-289
+  ! (s2_sign = -1 for +0.3 coupling, +1 for -0.3 coupling).
+  ! ---------------------------------------------------------------------------
+
+  subroutine build_sign_split_bdg_16x16_x2(H_k, k_par)
+    complex(kind=dp), allocatable, intent(out) :: H_k(:,:,:)
+    real(kind=dp), allocatable, intent(out) :: k_par(:)
+    integer :: i, n
+
+    n = 16
+    allocate(k_par(2))
+    k_par = [0.0_dp, 3.141592653589793_dp]
+    allocate(H_k(n, n, 2))
+    H_k = (0.0_dp, 0.0_dp)
+
+    ! --- Slice 1: +I on bands 1-4 (all-positive det on the Lutchyn-Oreg 2x2
+    ! sub-det), non-diagonal k.p coupling on band-7/8 subblock
+    ! (s2_sign = -1 from the slim witness). ---
+    do i = 1, 4
+      H_k(i, i, 1) = (1.0_dp, 0.0_dp)
+    end do
+    H_k(7, 8, 1)  = (0.3_dp, 0.0_dp)
+    H_k(8, 7, 1)  = (0.3_dp, 0.0_dp)
+    H_k(7, 15, 1) = (0.0_dp, 0.25e-3_dp)
+    H_k(8, 16, 1) = (0.0_dp, 0.25e-3_dp)
+    H_k(15, 7, 1) = (0.0_dp, -0.25e-3_dp)
+    H_k(16, 8, 1) = (0.0_dp, -0.25e-3_dp)
+
+    ! --- Slice 2: BAND 1 flipped to -I (asymmetric sign-flip so the Lutchyn-Oreg
+    ! 2x2 sub-det flips sign → S1 contribution = -1). Bands 2-4 stay +1 to
+    ! preserve the rest of the structure. band-7/8 subblock unchanged → s2 at
+    ! slice 1 reads -1. ---
+    H_k(1, 1, 2) = (-1.0_dp, 0.0_dp)
+    do i = 2, 4
+      H_k(i, i, 2) = (1.0_dp, 0.0_dp)
+    end do
+    H_k(7, 8, 2)  = (0.3_dp, 0.0_dp)
+    H_k(8, 7, 2)  = (0.3_dp, 0.0_dp)
+    H_k(7, 15, 2) = (0.0_dp, 0.25e-3_dp)
+    H_k(8, 16, 2) = (0.0_dp, 0.25e-3_dp)
+    H_k(15, 7, 2) = (0.0_dp, -0.25e-3_dp)
+    H_k(16, 8, 2) = (0.0_dp, -0.25e-3_dp)
+
+    ! Result: S1 = (+1) * (-1) = -1, S2 = -1, agreement → z2 = -1, reason = 0.
+  end subroutine
+
+  subroutine build_topological_strict_bdg_16x16_x2(H_k, k_par)
+    complex(kind=dp), allocatable, intent(out) :: H_k(:,:,:)
+    real(kind=dp), allocatable, intent(out) :: k_par(:)
+    integer :: i, n
+
+    n = 16
+    allocate(k_par(2))
+    k_par = [0.0_dp, 3.141592653589793_dp]
+    allocate(H_k(n, n, 2))
+    H_k = (0.0_dp, 0.0_dp)
+
+    ! --- Slice 1: +I on bands 1-4, band-7/8 subblock sign-flipped
+    ! (negative coupling → s2_sign = +1, opposite to the sign_split fixture) ---
+    do i = 1, 4
+      H_k(i, i, 1) = (1.0_dp, 0.0_dp)
+    end do
+    H_k(7, 8, 1)  = (-0.3_dp, 0.0_dp)
+    H_k(8, 7, 1)  = (-0.3_dp, 0.0_dp)
+    H_k(7, 15, 1) = (0.0_dp, 0.25e-3_dp)
+    H_k(8, 16, 1) = (0.0_dp, 0.25e-3_dp)
+    H_k(15, 7, 1) = (0.0_dp, -0.25e-3_dp)
+    H_k(16, 8, 1) = (0.0_dp, -0.25e-3_dp)
+
+    ! --- Slice 2: band 1 flipped (asymmetric, so S1 contribution = -1) ---
+    H_k(1, 1, 2) = (-1.0_dp, 0.0_dp)
+    do i = 2, 4
+      H_k(i, i, 2) = (1.0_dp, 0.0_dp)
+    end do
+    H_k(7, 8, 2)  = (-0.3_dp, 0.0_dp)
+    H_k(8, 7, 2)  = (-0.3_dp, 0.0_dp)
+    H_k(7, 15, 2) = (0.0_dp, 0.25e-3_dp)
+    H_k(8, 16, 2) = (0.0_dp, 0.25e-3_dp)
+    H_k(15, 7, 2) = (0.0_dp, -0.25e-3_dp)
+    H_k(16, 8, 2) = (0.0_dp, -0.25e-3_dp)
+
+    ! Result: S1 = (+1) * (-1) = -1, S2 = +1, z2 = -1, reason = 0.
+  end subroutine
+
+  subroutine build_s2_floor_bdg_16x16_x2(H_k, k_par)
+    complex(kind=dp), allocatable, intent(out) :: H_k(:,:,:)
+    real(kind=dp), allocatable, intent(out) :: k_par(:)
+    integer :: i, n
+
+    n = 16
+    allocate(k_par(2))
+    k_par = [0.0_dp, 3.141592653589793_dp]
+    allocate(H_k(n, n, 2))
+    H_k = (0.0_dp, 0.0_dp)
+
+    ! --- Slice 1: +I on bands 1-4 (clean S1), band-7/8 subblock has zero
+    ! off-diagonal coupling and zero pairing ⇒ Pf = 0 ⇒ s2 = 0 (FEST-floor
+    ! analogue for a synthetic stack) ---
+    do i = 1, 4
+      H_k(i, i, 1) = (1.0_dp, 0.0_dp)
+    end do
+    ! No entries in band-7/8 subblock — Pf = 0.
+
+    ! --- Slice 2: band 1 flipped (asymmetric, so S1 contribution = -1) ---
+    H_k(1, 1, 2) = (-1.0_dp, 0.0_dp)
+    do i = 2, 4
+      H_k(i, i, 2) = (1.0_dp, 0.0_dp)
+    end do
+    ! No entries in band-7/8 subblock — Pf = 0.
+
+    ! Result: S1 = (+1) * (-1) = -1, S2 = 0, z2 = 0, reason = 2.
+  end subroutine
+
+  ! ---------------------------------------------------------------------------
+  ! T5 fixtures — remaining L3 branches (cases ii, iii, v).
+  !
+  ! All three fixtures use 16×16 stacks. T2's forward-pointer suggested
+  ! 4×4 (n_odd=1) Kitaev fixtures with controlled det for cases (iii) and
+  ! (v); resolved here to 16×16 stacks exploiting:
+  !   - n_k=1 → `kitaev_majorana_number` returns 0 at the `n_k < 2` guard
+  !     (pfaffian.f90:132) for S1=0 (cases ii and v).
+  !   - S2 sign on a 16×16 slice-1 CSR is controlled by the band-7/8 coupling
+  !     sign (+0.3 → s2=-1, -0.3 → s2=+1 — empirically established by the
+  !     existing sign_split and topological_strict fixtures).
+  ! ---------------------------------------------------------------------------
+  subroutine build_both_zero_bdg_16x16_x1(H_k, k_par)
+    complex(kind=dp), allocatable, intent(out) :: H_k(:,:,:)
+    real(kind=dp), allocatable, intent(out) :: k_par(:)
+    integer :: n
+
+    n = 16
+    allocate(k_par(1))
+    k_par = [0.0_dp]
+    allocate(H_k(n, n, 1))
+    H_k = (0.0_dp, 0.0_dp)
+
+    ! Single k-point ⇒ S1 = 0 from the n_k < 2 guard.
+    ! Empty band-7/8 subblock (no entries beyond identity-zero) ⇒ S2 = 0.
+
+    ! Result: S1 = 0, S2 = 0, z2 = 0, reason = 0.
+  end subroutine
+
+  subroutine build_s1_s2_sign_split_bdg_16x16_x2(H_k, k_par)
+    complex(kind=dp), allocatable, intent(out) :: H_k(:,:,:)
+    real(kind=dp), allocatable, intent(out) :: k_par(:)
+    integer :: i, n
+
+    n = 16
+    allocate(k_par(2))
+    k_par = [0.0_dp, 3.141592653589793_dp]
+    allocate(H_k(n, n, 2))
+    H_k = (0.0_dp, 0.0_dp)
+
+    ! --- Slice 1: +I on bands 1-4 (clean S1, no band-1 flip on slice 2),
+    ! band-7/8 subblock with NEGATIVE coupling (-0.3) which empirically drives
+    ! S2 to the sign OPPOSITE the sign_split fixture's S2. ---
+    do i = 1, 4
+      H_k(i, i, 1) = (1.0_dp, 0.0_dp)
+    end do
+    H_k(7, 8, 1)  = (-0.3_dp, 0.0_dp)
+    H_k(8, 7, 1)  = (-0.3_dp, 0.0_dp)
+    H_k(7, 15, 1) = (0.0_dp, 0.25e-3_dp)
+    H_k(8, 16, 1) = (0.0_dp, 0.25e-3_dp)
+    H_k(15, 7, 1) = (0.0_dp, -0.25e-3_dp)
+    H_k(16, 8, 1) = (0.0_dp, -0.25e-3_dp)
+
+    ! --- Slice 2: NO band-1 flip — both slices' bands 1-4 are +I, so the
+    ! Lutchyn-Oreg k-product stays at +1 (S1 = +1 across the k-product,
+    ! no per-slice sign flip). band-7/8 subblock unchanged. ---
+    do i = 1, 4
+      H_k(i, i, 2) = (1.0_dp, 0.0_dp)
+    end do
+    H_k(7, 8, 2)  = (-0.3_dp, 0.0_dp)
+    H_k(8, 7, 2)  = (-0.3_dp, 0.0_dp)
+    H_k(7, 15, 2) = (0.0_dp, 0.25e-3_dp)
+    H_k(8, 16, 2) = (0.0_dp, 0.25e-3_dp)
+    H_k(15, 7, 2) = (0.0_dp, -0.25e-3_dp)
+    H_k(16, 8, 2) = (0.0_dp, -0.25e-3_dp)
+
+    ! Result: S1 = +1 (no sign flip), S2 = sign_opposite(S1), z2 = 0, reason = 1.
+  end subroutine
+
+  subroutine build_s1_closure_s2_clean_bdg_16x16_x1(H_k, k_par)
+    complex(kind=dp), allocatable, intent(out) :: H_k(:,:,:)
+    real(kind=dp), allocatable, intent(out) :: k_par(:)
+    integer :: n
+
+    n = 16
+    allocate(k_par(1))
+    k_par = [0.0_dp]
+    allocate(H_k(n, n, 1))
+    H_k = (0.0_dp, 0.0_dp)
+
+    ! --- Slice 1 (the only slice): +I on bands 1-4, band-7/8 subblock with
+    ! POSITIVE coupling (+0.3) which empirically drives S2 = -1 (same sign
+    ! as the sign_split fixture's S2). ---
+    H_k(1, 1, 1) = (1.0_dp, 0.0_dp)
+    H_k(2, 2, 1) = (1.0_dp, 0.0_dp)
+    H_k(3, 3, 1) = (1.0_dp, 0.0_dp)
+    H_k(4, 4, 1) = (1.0_dp, 0.0_dp)
+    H_k(7, 8, 1)  = (0.3_dp, 0.0_dp)
+    H_k(8, 7, 1)  = (0.3_dp, 0.0_dp)
+    H_k(7, 15, 1) = (0.0_dp, 0.25e-3_dp)
+    H_k(8, 16, 1) = (0.0_dp, 0.25e-3_dp)
+    H_k(15, 7, 1) = (0.0_dp, -0.25e-3_dp)
+    H_k(16, 8, 1) = (0.0_dp, -0.25e-3_dp)
+
+    ! Result: S1 = 0 (n_k < 2 guard), S2 = -1, z2 = 0, reason = 3.
+  end subroutine
+
+end module test_bdg_pfaffian_witness_product_csr

@@ -462,6 +462,9 @@ Optional. Bogoliubov-de Gennes parameters for topological superconductor / Major
 | `B_vec` | 3 floats | `[0.0, 0.0, 0.0]` | any (T) | W | Magnetic field `[Bx, By, Bz]` for Zeeman splitting in Tesla. |
 | `gauge` | string | `"landau_x"` | `"landau_x"`, `"landau_z"`, `"zeeman"` | W | Gauge choice for magnetic field coupling. |
 | `kz` | float | `0.0` | any (1/A) | W | Out-of-plane wave vector. |
+| `nk_par` | integer | `1` | >= 1 | W | Number of uniform free-direction Bloch wave-vector points used by the wire BdG Pfaffian sweep. `1` preserves the fixed-`kz` path; values > 1 enable the strict S1xS2 product. |
+| `k_par_min` | float | `0.0` | any (1/A) | W | Lower endpoint of the uniform free-direction Bloch grid when `nk_par > 1`. |
+| `k_par_max` | float | `0.0` | any (1/A) | W | Upper endpoint of the uniform free-direction Bloch grid when `nk_par > 1`; it must exceed `k_par_min`. |
 | `self_consistent` | boolean | `false` | `true`/`false` | W | Enable self-consistent gap computation (future). |
 | `B_sweep` | 3 floats | -- | `[min, max, step]` (T) | W | B-field sweep parameters for phase diagram. |
 
